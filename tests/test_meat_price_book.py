@@ -45,6 +45,17 @@ class MeatPriceBookTests(unittest.TestCase):
         self.assertFalse(estimate["creates_order"])
         self.assertFalse(estimate["changes_stock"])
 
+    def test_current_meat_estimate_defaults_to_delivery_only(self):
+        lead = {"interest": {"product_type": "full_carcass", "cut_set": "Set C"}, "events": []}
+        estimate = build_meat_pricing_estimate_from_contract(
+            lead,
+            {"lead_summary": {"product": "Full Carcass", "cut_set": "Set C", "location": "Riversdale"}, "required_before_money_path": {}},
+            DEFAULT_MEAT_PRICE_BOOK,
+        )
+        self.assertEqual(estimate["recommended_owner_approval"]["delivery_or_collection"], "delivery")
+        self.assertIn("38–42 kg", estimate["recommended_owner_approval"]["estimated_weight_or_size"])
+
+
     def test_estimate_uses_selected_pig_live_weight_when_available(self):
         lead = {
             "interest": {

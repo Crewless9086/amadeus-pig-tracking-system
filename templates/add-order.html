@@ -4,15 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Create Order</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
-<body>
+<body class="farm-home operations-page">
+  {% include '_farm_nav.html' %}
+  <main class="farm-app-shell">
   <div class="page-shell">
     <div class="page-card">
       <div class="page-header page-header-with-link">
         <div>
-          <h1>Create Order</h1>
-          <p>Create a draft order in ORDER_MASTER.</p>
+          <h1>Livestock request &amp; draft quote preview</h1>
+          <p>Capture the customer request once. Previewing does not create an order or attach pigs.</p>
         </div>
         <a href="/orders" class="secondary-link">← Orders</a>
       </div>
@@ -72,34 +75,19 @@
           </div>
         </div>
 
-        <div class="form-grid">
+        <section class="operation-section">
+          <div class="section-title-row"><div><h2>Customer request</h2><p>Requested quantities only — no animal selection or reservation.</p></div><button id="add_request_line" type="button" class="small-action-button">Add line</button></div>
           <div class="form-group">
-            <label for="requested_category">Requested Category</label>
-            <input id="requested_category" name="requested_category" type="text" />
-          </div>
-
-          <div class="form-group">
-            <label for="requested_weight_range">Requested Weight Range</label>
-            <input id="requested_weight_range" name="requested_weight_range" type="text" />
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="requested_sex">Requested Sex</label>
-            <select id="requested_sex" name="requested_sex">
-              <option value="">Any</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Castrated_Male">Castrated_Male</option>
+            <label for="quotation_journey">What does the customer need?</label>
+            <select id="quotation_journey">
+              <option value="price_indication">Price indication - answer the category price now</option>
+              <option value="budgetary_quotation" selected>Funding / budget approval quotation - no pigs selected</option>
+              <option value="sales_quotation">Current-availability sales quotation - HERDMASTER advisory</option>
             </select>
+            <p class="field-helper">A request, quotation, allocation proposal, reservation and order are separate records.</p>
           </div>
-
-          <div class="form-group">
-            <label for="requested_quantity">Requested Quantity</label>
-            <input id="requested_quantity" name="requested_quantity" type="number" step="1" />
-          </div>
-        </div>
+          <div id="requested_items_editor"></div>
+        </section>
 
         <div class="form-grid">
           <div class="form-group">
@@ -119,13 +107,28 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit">Create Draft Order</button>
+          <button type="submit">Build quotation preview</button>
         </div>
 
         <div id="add_order_message" class="message-box hidden"></div>
+        <section id="livestock_preview" class="operation-section hidden" aria-live="polite"></section>
       </form>
+
+      <details class="operation-section" id="already_sold_recording">
+        <summary>Record an already-completed livestock sale</summary>
+        <div class="section-title-row"><div><h2>Record pigs already sold</h2><p>Owner report is evidence, not a sale record. Complete the missing facts and review one protected confirmation.</p></div></div>
+        <form id="alreadySoldForm" class="weight-form">
+          <div class="form-grid"><div class="form-group"><label for="sold_tags">Exact tags</label><input id="sold_tags" value="123, 151" required></div><div class="form-group"><label for="sold_date">Sale date</label><input id="sold_date" type="date" value="2026-08-16" required></div></div>
+          <div class="form-grid"><div class="form-group"><label for="sold_buyer">Buyer name</label><input id="sold_buyer" autocomplete="off" required></div><div class="form-group"><label for="sold_channel">Sale channel</label><select id="sold_channel" required><option value="">Select</option><option>Farm gate</option><option>WhatsApp</option><option>Telephone</option><option>Other</option></select></div></div>
+          <div class="form-group"><label for="sold_destination">Handover destination</label><input id="sold_destination" required></div>
+          <div class="form-group"><label for="sold_owner_report">Owner-reported evidence</label><textarea id="sold_owner_report" readonly>Charl reports tags 123 and 151 were sold Sunday, 2026-08-16.</textarea></div>
+          <div class="form-actions"><button type="submit">Build protected sale-recording preview</button></div>
+          <div id="already_sold_message" class="message-box hidden"></div><div id="already_sold_preview" class="operation-section hidden" aria-live="polite"></div>
+        </form>
+      </details>
     </div>
   </div>
+  </main>
 
   <script src="{{ url_for('static', filename='js/addOrder.js') }}"></script>
 </body>

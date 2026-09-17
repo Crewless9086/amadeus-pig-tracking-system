@@ -4,6 +4,20 @@
 
 What this agent owns.
 
+## Continuous Operating Contract
+
+- genuine event and scheduled triggers;
+- durable worker/supervisor and heartbeat;
+- how the agent observes, understands, acts, verifies and follows up;
+- standing authority and exact exception boundary;
+- unresolved-work ownership and next trigger;
+- terminal-independent acceptance proof;
+- recurring owner work removed;
+- current honest operating state.
+
+Do not use a brief, page, request answer, source, PR, deployment, manual canary or
+shadow cycle as the agent's operating contract.
+
 ## Department
 
 Which business/system area this agent belongs to.
@@ -64,3 +78,6 @@ Where the owner sees this agent.
 ## Review Evidence
 
 Evidence required before this agent's work is accepted.
+
+Acceptance must include a fresh genuine deployed cycle, authoritative result,
+next trigger and a later cycle after the development terminal closes.

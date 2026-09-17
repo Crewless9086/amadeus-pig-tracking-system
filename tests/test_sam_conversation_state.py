@@ -4,6 +4,18 @@ from modules.sales.sam_conversation_state import plan_live_stock_next_action
 
 
 class SamConversationStateTests(unittest.TestCase):
+    def test_message_intent_can_select_collection_action(self):
+        plan = plan_live_stock_next_action(
+            {},
+            {"message_intent": "timing_or_collection", "customer_language": "afrikaans", "timing": "Vrydag"},
+        )
+        self.assertEqual(plan["next_action"], "confirm_collection")
+        self.assertEqual(plan["stage"], "collection")
+        self.assertEqual(plan["customer_language"], "afrikaans")
+
+    def test_social_acknowledgement_does_not_restart_discovery(self):
+        plan = plan_live_stock_next_action({}, {"message_intent": "social_acknowledgement"})
+        self.assertEqual(plan["next_action"], "no_reply_needed")
     def test_plan_asks_for_missing_item_details(self):
         plan = plan_live_stock_next_action(
             {"conversation_id": "1845", "known_fields": {}, "items": []},

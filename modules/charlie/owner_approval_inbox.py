@@ -8,7 +8,7 @@ from modules.charlie.mission_store import (
 )
 
 
-INBOX_VERSION = "owner_approval_inbox_v1"
+INBOX_VERSION = "owner_approval_inbox_v2"
 INBOX_MISSION_STATUSES = (
     "in_progress",
     "pr_ready",
@@ -31,6 +31,11 @@ ALLOWED_SOURCES = {
         "agent": "SAM Meat",
         "lane": "customer_reply",
         "gate": "meat_customer_send_or_money_path_gate",
+    },
+    "sam_meat_learning_signal": {
+        "agent": "SAM Meat",
+        "lane": "learning_only",
+        "gate": "no_owner_decision_or_customer_send_from_learning_signal",
     },
     "butcher_recommendation": {
         "agent": "Butcher",
@@ -99,6 +104,17 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
         configured = False
     if runtime_status < 400:
         items.extend(runtime_result.get("items", []))
+    meat_result, meat_status = list_sam_meat_learning_owner_review_items(
+        limit=limit_per_status,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    source_statuses["meat_sales_conversation_learning_events"] = meat_status
+    if meat_status == 503 and meat_result.get("configured") is False and not items:
+        configured = False
+    if meat_status < 400:
+        items.extend(meat_result.get("items", []))
+    items = _collapse_conversation_items(items)
     items = sorted(items, key=_item_sort_key)
     pending_count = sum(1 for item in items if item.get("status") in {"pending", "send_back"})
     return {
@@ -118,6 +134,133 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
             "reservation/farm-write gates must execute separately after exact owner approval."
         ),
     }, 200
+
+
+def list_sam_meat_learning_owner_review_items(limit=12, database_url=None, connect_factory=None):
+    parsed_limit = _bounded_limit(limit)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured", "items": []}, 503
+    try:
+        if connect_factory:
+            connection_context = connect_factory(database_url)
+        else:
+            import psycopg
+            connection_context = psycopg.connect(database_url, connect_timeout=5)
+        with connection_context as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        learning_event_id,
+                        lead_id,
+                        chatwoot_conversation_id,
+                        channel,
+                        source_agent,
+                        event_source,
+                        event_type,
+                        customer_message_excerpt,
+                        sam_reply_excerpt,
+                        customer_wanted_json,
+                        captured_facts_json,
+                        missing_facts_json,
+                        objections_json,
+                        confusion_signals_json,
+                        sam_misses_json,
+                        conversion_signal,
+                        improvement_suggestion,
+                        campaign_source,
+                        recorded_by,
+                        created_at
+                    from public.meat_sales_conversation_learning_events
+                    where coalesce(customer_message_excerpt, '') <> ''
+                       or coalesce(sam_reply_excerpt, '') <> ''
+                       or coalesce(improvement_suggestion, '') <> ''
+                       or jsonb_array_length(coalesce(missing_facts_json, '[]'::jsonb)) > 0
+                       or jsonb_array_length(coalesce(sam_misses_json, '[]'::jsonb)) > 0
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": min(parsed_limit * 4, 200)},
+                )
+                rows = cursor.fetchall()
+                columns = [column.name for column in cursor.description]
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sam_meat_learning_owner_review_items_failed",
+            "error_type": exc.__class__.__name__,
+            "items": [],
+        }, 503
+    items = [
+        owner_approval_item_from_sam_meat_learning_event(dict(zip(columns, row)))
+        for row in rows
+    ]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "items": _collapse_conversation_items([item for item in items if item.get("approval_id")])[:parsed_limit],
+    }, 200
+
+
+def owner_approval_item_from_sam_meat_learning_event(event):
+    event = event if isinstance(event, dict) else {}
+    reply = _clean(event.get("sam_reply_excerpt"), 2500)
+    message = _clean(event.get("customer_message_excerpt"), 500)
+    suggestion = _clean(event.get("improvement_suggestion"), 500)
+    title_parts = ["SAM Meat conversation review"]
+    lead_id = _clean(event.get("lead_id"), 80)
+    if lead_id:
+        title_parts.append(lead_id)
+    attention_class = _sam_meat_attention_class(event)
+    decision_required = attention_class in {"customer_reply_decision", "owner_handoff"}
+    learning_only = not decision_required
+    item = normalize_owner_approval_item({
+        "approval_id": event.get("learning_event_id"),
+        "source_type": "sam_meat_learning_signal" if learning_only else "sam_meat_controlled_reply",
+        "source_agent": event.get("source_agent") or "SAM Meat",
+        "title": " - ".join(title_parts),
+        "status": "learning_only" if learning_only else "pending",
+        "action_label": suggestion or "Review SAM Meat learning evidence",
+        "exact_action": (
+            "Review the saved SAM Meat conversation learning evidence. This inbox card is "
+            "read-only; use the meat sales owner/customer send and money-path gates for any "
+            "customer reply, quote, payment, reservation, fulfilment, or rule change."
+        ),
+        "exact_text": reply,
+        "editable_text": reply,
+        "target_label": lead_id or event.get("chatwoot_conversation_id"),
+        "source_ref": event.get("chatwoot_conversation_id") or lead_id,
+        "conversation_id": event.get("chatwoot_conversation_id"),
+        "risk_flags": _sam_meat_learning_risk_flags(event, message),
+        "forbidden_actions": [
+            "Inbox review does not send the customer message.",
+            "No quote, invoice, payment confirmation, reservation, stock, Chatwoot, prompt, rule, or farm lifecycle write from this card.",
+        ],
+        "created_at": _iso(event.get("created_at")),
+        "updated_at": _iso(event.get("created_at")),
+    }, {
+        "mission_id": "",
+        "status": "runtime_review",
+        "title": "SAM Meat conversation learning",
+    })
+    item.update({
+        "mission_id": "",
+        "mission_title": "SAM Meat conversation learning",
+        "mission_status": "runtime_review",
+        "decision_supported": False,
+        "attention_class": attention_class,
+        "learning_only": learning_only,
+        "runtime_source": "meat_sales_conversation_learning_events",
+        "learning_event_id": _clean(event.get("learning_event_id"), 120),
+        "lead_id": lead_id,
+        "customer_message_excerpt": message,
+        "conversion_signal": _clean(event.get("conversion_signal"), 80),
+        "improvement_suggestion": suggestion,
+    })
+    return item
 
 
 def list_sam_live_stock_runtime_owner_review_items(limit=12, database_url=None, connect_factory=None):
@@ -156,7 +299,7 @@ def list_sam_live_stock_runtime_owner_review_items(limit=12, database_url=None, 
                         facts_json,
                         decision_json,
                         created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where owner_send_required = true
                        or safe_to_send = true
                        or coalesce(sam_reply_excerpt, '') <> ''
@@ -449,7 +592,7 @@ def _default_title(source_type):
 
 
 def _inbox_counts(items):
-    counts = {status: 0 for status in ["pending", "approved", "edited", "rejected", "paused", "send_back"]}
+    counts = {status: 0 for status in ["pending", "approved", "edited", "rejected", "paused", "send_back", "learning_only"]}
     by_source = {}
     for item in items:
         status = item.get("status") or "pending"
@@ -459,6 +602,57 @@ def _inbox_counts(items):
     counts["total"] = len(items)
     counts["by_source"] = by_source
     return counts
+
+
+def _sam_meat_attention_class(event):
+    """Classify evidence without treating a learning row as executable approval work."""
+    event = event if isinstance(event, dict) else {}
+    facts = _json_dict(event.get("captured_facts_json"))
+    conversion_signal = _clean(event.get("conversion_signal"), 80).lower()
+    text = " ".join(str(event.get(key) or "") for key in ("event_type", "improvement_suggestion", "conversion_signal")).lower()
+    if facts.get("owner_handoff_required") is True or "owner handoff" in text:
+        return "owner_handoff"
+    if conversion_signal in {"booking_review_requested", "deposit_proof_received_unverified"}:
+        return "owner_handoff"
+    if facts.get("customer_reply_decision_required") is True:
+        return "customer_reply_decision"
+    if "no_reply" in text or "close" in text or "lost" in text:
+        return "no_reply_close"
+    if _json_list(event.get("missing_facts_json")):
+        return "missing_fact_follow_up"
+    return "learning_only"
+
+
+def _collapse_conversation_items(items):
+    """Keep the newest item for a conversation/class and retain the collapsed audit ids."""
+    grouped = {}
+    for item in items:
+        item = dict(item) if isinstance(item, dict) else {}
+        conversation_id = _clean(item.get("conversation_id") or item.get("source_ref"), 180)
+        attention_class = _clean(item.get("attention_class"), 80) or item.get("source_type") or "owner_attention"
+        if not conversation_id:
+            grouped[f"item:{item.get('approval_id')}"] = item
+            continue
+        key = f"{item.get('runtime_source') or item.get('source_type')}:{conversation_id}:{attention_class}"
+        current = grouped.get(key)
+        if current is None or _is_newer(item, current):
+            if current:
+                item["collapsed_event_ids"] = list(current.get("collapsed_event_ids") or []) + [current.get("approval_id")]
+            grouped[key] = item
+        else:
+            current["collapsed_event_ids"] = list(current.get("collapsed_event_ids") or []) + [item.get("approval_id")]
+    collapsed = []
+    for item in grouped.values():
+        event_ids = [value for value in item.get("collapsed_event_ids", []) if value]
+        item["collapsed_event_count"] = len(event_ids) + 1
+        if event_ids:
+            item["collapsed_event_ids"] = event_ids
+        collapsed.append(item)
+    return collapsed
+
+
+def _is_newer(candidate, current):
+    return str(candidate.get("updated_at") or candidate.get("created_at") or "") > str(current.get("updated_at") or current.get("created_at") or "")
 
 
 def _sam_live_stock_review_risk_flags(event, facts, message):
@@ -478,10 +672,34 @@ def _sam_live_stock_review_risk_flags(event, facts, message):
     return flags
 
 
+def _sam_meat_learning_risk_flags(event, message):
+    flags = []
+    if message:
+        flags.append("customer_message_captured")
+    for key, prefix in (
+        ("missing_facts_json", "missing"),
+        ("objections_json", "objection"),
+        ("confusion_signals_json", "confusion"),
+        ("sam_misses_json", "sam_miss"),
+    ):
+        for value in _json_list(event.get(key))[:4]:
+            flags.append(f"{prefix}:{_clean(value, 80)}")
+    signal = _clean(event.get("conversion_signal"), 80)
+    if signal:
+        flags.append(f"conversion:{signal}")
+    return flags
+
+
 def _json_dict(value):
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _json_list(value):
+    if isinstance(value, list):
+        return value
+    return []
 
 
 def _iso(value):
@@ -509,6 +727,7 @@ def _item_sort_key(item):
         "edited": 3,
         "approved": 4,
         "rejected": 5,
+        "learning_only": 6,
     }
     return (
         status_rank.get(item.get("status"), 9),

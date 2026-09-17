@@ -1,0 +1,180 @@
+name: CORE validator immutable image
+
+on:
+  pull_request:
+    paths: ["core_validator/**", "tests/test_core_validator_image.py", ".github/workflows/core-validator-image.yml"]
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: Exact 40-character authoritative main revision to publish
+        required: true
+        type: string
+      publish:
+        description: Perform the protected immutable publication
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-validator-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/crewless9086/amadeus-core-validator
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest
+      - run: python -m pytest -q tests/test_core_validator_image.py
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: core_validator/Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          sbom: false
+          build-args: SOURCE_COMMIT=${{ github.sha }}
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+        with:
+          ref: ${{ inputs.expected_source_commit }}
+      - name: Bind exact authoritative source
+        shell: bash
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$EXPECTED_SOURCE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_COMMIT"
+          test "$GITHUB_REF" = "refs/heads/main"
+          echo "EXPECTED_SOURCE_COMMIT=$EXPECTED_SOURCE_COMMIT" >> "$GITHUB_ENV"
+          echo "TAG=v1-$EXPECTED_SOURCE_COMMIT" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse an existing immutable version tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing tag $IMAGE:$TAG" >&2
+            exit 1
+          fi
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: core_validator/Dockerfile
+          platforms: linux/amd64
+          push: true
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=true
+          provenance: false
+          sbom: false
+          build-args: SOURCE_COMMIT=${{ inputs.expected_source_commit }}
+      - name: Create unique immutable tag
+        shell: bash
+        env:
+          BUILD_MANIFEST_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing tag $IMAGE:$TAG after build" >&2
+            exit 1
+          fi
+          docker buildx imagetools create --tag "$IMAGE:$TAG" "$IMAGE@$BUILD_MANIFEST_DIGEST"
+          RESOLVED_DIGEST="$(docker buildx imagetools inspect "$IMAGE:$TAG" | awk '$1 == "Digest:" {print $2; exit}')"
+          test -n "$RESOLVED_DIGEST"
+          echo "BUILD_MANIFEST_DIGEST=$BUILD_MANIFEST_DIGEST" >> "$GITHUB_ENV"
+          echo "DIGEST=$RESOLVED_DIGEST" >> "$GITHUB_ENV"
+      - name: Verify raw OCI identity and labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="$(docker buildx imagetools inspect "$IMAGE:$TAG" --raw)"
+          test "$(jq '.manifests | length' <<<"$RAW")" = "1"
+          test "$(jq '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")] | length' <<<"$RAW")" = "1"
+          test "$(jq -r '.manifests[0].digest' <<<"$RAW")" = "$BUILD_MANIFEST_DIGEST"
+          IMAGE_JSON="$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{json .Image}}')"
+          test "$(jq -r '.architecture' <<<"$IMAGE_JSON")" = "amd64"
+          test "$(jq -r '.os' <<<"$IMAGE_JSON")" = "linux"
+          test "$(jq -r '.config.Labels["org.opencontainers.image.revision"]' <<<"$IMAGE_JSON")" = "$EXPECTED_SOURCE_COMMIT"
+          test "$(jq -r '.config.Labels["org.opencontainers.image.version"]' <<<"$IMAGE_JSON")" = "$TAG"
+          test "$(jq -r '.config.Labels["org.opencontainers.image.source"]' <<<"$IMAGE_JSON")" = "https://github.com/Crewless9086/amadeus-pig-tracking-system"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign immutable digest
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+      - name: Install pinned Syft scanner
+        id: syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.42.3
+      - name: Generate SPDX SBOM
+        shell: bash
+        run: |
+          "${{ steps.syft.outputs.cmd }}" scan --platform linux/amd64 "registry:${IMAGE}@${DIGEST}" --output "spdx-json=core-validator.spdx.json"
+          jq -e '.spdxVersion == "SPDX-2.3"' core-validator.spdx.json >/dev/null
+      - name: Attest SLSA provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.DIGEST }}
+          push-to-registry: true
+      - name: Attest SPDX SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.DIGEST }}
+          sbom-path: core-validator.spdx.json
+          push-to-registry: true
+      - name: Verify publication and write release receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/core-validator-image.yml@refs/heads/main"
+          cosign verify "$IMAGE@$DIGEST" --certificate-identity "$IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com > cosign-verification.json
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --predicate-type "https://slsa.dev/provenance/v1" --cert-identity "$IDENTITY" --source-digest "$EXPECTED_SOURCE_COMMIT" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > provenance-verification.json
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "$IDENTITY" --source-digest "$EXPECTED_SOURCE_COMMIT" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > sbom-attestation-verification.json
+          FINAL_DIGEST="$(docker buildx imagetools inspect "$IMAGE:$TAG" | awk '$1 == "Digest:" {print $2; exit}')"
+          test "$FINAL_DIGEST" = "$DIGEST"
+          COSIGN_SHA256="$(sha256sum cosign-verification.json | awk '{print $1}')"
+          PROVENANCE_SHA256="$(sha256sum provenance-verification.json | awk '{print $1}')"
+          SBOM_ATTESTATION_SHA256="$(sha256sum sbom-attestation-verification.json | awk '{print $1}')"
+          SBOM_SHA256="$(sha256sum core-validator.spdx.json | awk '{print $1}')"
+          jq -n --arg image "$IMAGE" --arg tag "$TAG" --arg digest "$DIGEST" --arg source_commit "$EXPECTED_SOURCE_COMMIT" --arg workflow "$GITHUB_WORKFLOW_REF" --arg run_id "$GITHUB_RUN_ID" --arg platform linux/amd64 --arg cosign_verification_sha256 "$COSIGN_SHA256" --arg provenance_verification_sha256 "$PROVENANCE_SHA256" --arg sbom_attestation_verification_sha256 "$SBOM_ATTESTATION_SHA256" --arg sbom_sha256 "$SBOM_SHA256" '{image:$image,tag:$tag,digest:$digest,source_commit:$source_commit,platform:$platform,cosign_verified:true,slsa_provenance_verified:true,spdx_sbom_verified:true,sbom_attestation_verified:true,cosign_verification_sha256:$cosign_verification_sha256,provenance_verification_sha256:$provenance_verification_sha256,sbom_attestation_verification_sha256:$sbom_attestation_verification_sha256,sbom_sha256:$sbom_sha256,workflow:$workflow,run_id:$run_id}' > core-validator-release-receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: core-validator-release-${{ env.EXPECTED_SOURCE_COMMIT }}
+          path: |
+            core-validator-release-receipt.json
+            core-validator.spdx.json
+            cosign-verification.json
+            provenance-verification.json
+            sbom-attestation-verification.json
+          if-no-files-found: error

@@ -260,7 +260,7 @@ WORKFLOW_TEMPLATES = {
     },
     "system_improvement": {
         "label": "System Improvement",
-        "mission_type_aliases": ["system", "workflow", "governance", "dashboard", "runner"],
+        "mission_type_aliases": ["system", "system improvement", "workflow", "governance", "dashboard", "runner"],
         "agent_order": [
             "idea_expander",
             "source_mapper",
@@ -418,11 +418,63 @@ def explicit_non_ui_requested(text):
     ))
 
 
-def classify_workflow_template(mission_type="", raw_text=""):
-    haystack = f"{mission_type} {raw_text}".lower()
+def classify_workflow_template(mission_type="", raw_text="", title=""):
+    haystack = f"{mission_type} {title} {raw_text}".lower()
+    mission_type_text = str(mission_type or "").strip().lower()
     explicit_non_ui = explicit_non_ui_requested(haystack)
-    if not explicit_non_ui and re.search(r"\b(ui|frontend|dashboard|visual|page|browser|screen|interface|command center|control room)\b", haystack):
+    core_reliability = re.search(
+        r"\b(charlie core|agent runner|runner|conveyor|supervisor|heartbeat|artifact ingest|workflow engine)\b",
+        haystack,
+    )
+    implementation_intent = re.search(
+        r"\b(build|rebuild|implement|develop|code|create|fix|repair|upgrade|add|wire|persist)\b",
+        haystack,
+    )
+    explicit_ui = re.search(
+        r"\b(ui|frontend|dashboard|page|browser|screen|interface|command center|control room)\b",
+        haystack,
+    )
+    visual_ui = (
+        re.search(r"\bvisual\b.{0,50}\b(layout|screen|page|interface|ui|frontend|dashboard)\b", haystack)
+        or re.search(r"\b(layout|screen|page|interface|ui|frontend|dashboard)\b.{0,50}\bvisual\b", haystack)
+    )
+    ui_advisory_only = bool(re.search(r"\b(ui|page|navigation|screen)\s+(navigation\s+)?(recommendations?|guidance|notes?|advice)\b", haystack))
+    strong_ui_build = bool(
+        re.search(r"\b(attached|reference)\s+(screenshot|image|mockup|design)\b", haystack)
+        or re.search(r"\b(rebuild|redesign|create|build)\b.{0,80}\b(dashboard|page|ui|interface|command center|control room)\b", haystack)
+    )
+    if implementation_intent and strong_ui_build and not explicit_non_ui and not ui_advisory_only:
         return "ui_product_build"
+    # An explicit mission type is an owner/system classification and wins over
+    # incidental verbs in the description. UI remains content-routed below so
+    # generic labels such as "software build" can still select its workflow.
+    for template_id, template in WORKFLOW_TEMPLATES.items():
+        if template_id == "ui_product_build":
+            continue
+        if any(alias == mission_type_text for alias in template["mission_type_aliases"]):
+            if template_id != "software_build":
+                return template_id
+            break
+    implementation_followup = re.search(
+        r"\b(follow[- ]?up|resolve|fix|repair|correct)\b.{0,100}"
+        r"\b(implementation defect|code defect|bug|regression|failing test|test failure)\b",
+        haystack,
+    )
+    if implementation_followup:
+        return "software_build"
+    implementation_request = re.search(
+        r"\b(build|implement|develop|code|create|fix|repair|upgrade)\b.{0,120}"
+        r"\b(scanner|api|backend|service|module|data model|database reader|endpoint)\b",
+        haystack,
+    )
+    if implementation_request:
+        return "software_build"
+    if core_reliability and implementation_intent:
+        return "software_build"
+    if implementation_intent and not explicit_non_ui and not ui_advisory_only and (explicit_ui or visual_ui):
+        return "ui_product_build"
+    if implementation_intent:
+        return "software_build"
     for template_id, template in WORKFLOW_TEMPLATES.items():
         if template_id == "ui_product_build":
             continue
@@ -460,6 +512,24 @@ def right_sized_workflow_template(template_id, mission=None):
         template["pipeline_profile"] = profile
         template["right_sized"] = True
         template["right_sizing_reason"] = "Small non-UI software fix; skipped broad product/council stages to reduce retry surface and token cost."
+    elif profile == "high_risk_backend":
+        template["agent_order"] = [
+            "source_mapper",
+            "product_architect",
+            "technical_architect",
+            "planner",
+            "architect",
+            "builder",
+            "tester",
+            "qa_red_team",
+            "evidence_reviewer",
+            "reviewer",
+            "publisher",
+        ]
+        template["required_artifacts"] = ["source_map", "product_requirements", "technical_architecture", "build_plan", "test_report", "review_board_packet"]
+        template["pipeline_profile"] = profile
+        template["right_sized"] = True
+        template["right_sizing_reason"] = "Risk-sensitive backend mission; retained architecture, test, red-team and evidence gates while excluding unrelated UI and broad council stages."
     else:
         template["pipeline_profile"] = profile
         template["right_sized"] = False
@@ -471,9 +541,9 @@ def pipeline_profile_for_mission(template_id, mission=None):
     haystack = f"{mission.get('mission_type', '')} {mission.get('title', '')} {mission.get('raw_text', '')}".lower()
     if template_id != "software_build":
         return "full"
-    if not explicit_non_ui_requested(haystack):
-        return "full"
     if re.search(r"\b(customer-facing|sales|payment|security|migration|schema|database|telegram|chatwoot)\b", haystack):
+        return "high_risk_backend"
+    if not explicit_non_ui_requested(haystack):
         return "full"
     if re.search(r"\b(simple|small|tiny|focused|bug|fix|regression|test|cleanup|one[- ]?line|backend|service)\b", haystack):
         return "minimal_software_fix"
@@ -492,11 +562,12 @@ def agent_instruction_pack(agent):
             "may_not": definition.get("may_not", []),
         },
         "vault_rules": [
+            "Follow the frozen Agentic Architecture Packet. Domain reasoning belongs to the owning operational agent, not a question-specific route, UI, regex, or transport handler.",
             "Check mission vault before opinion.",
             "Cite vault/source context when making claims.",
             "Mark assumptions and uncertainty.",
-            "Target 96% confidence before finalizing; below 96%, ask a clarifying question or inspect more source evidence.",
-            "Do not mark a handoff as complete if confidence is below 96% or if the confidence reason is not evidence-backed.",
+            "Calibrate confidence to consequence; objective acceptance evidence governs reversible low-risk work.",
+            "State uncertainty explicitly and escalate protected impact rather than adding ceremony solely for a subjective percentage.",
             "Write a handoff report before completion.",
         ],
         "output_contract": HANDOFF_VERSION,
@@ -504,7 +575,7 @@ def agent_instruction_pack(agent):
             "All required artifacts for this stage are present.",
             "Tests or review evidence are recorded where applicable.",
             "Risks and owner decisions are explicit.",
-            "Confidence is at least 96% or the output is clearly marked draft/advisory with a clarification request.",
+            "Confidence and evidence strength are proportionate to consequence and protected authority.",
         ],
     }
 
@@ -537,8 +608,13 @@ def build_workflow_from_template(template):
 def build_project_truth(mission):
     mission = mission if isinstance(mission, dict) else {}
     mission_type = clean_text(mission.get("mission_type", "feature build"), 80)
-    template_id = classify_workflow_template(mission_type, mission.get("raw_text", ""))
+    template_id = classify_workflow_template(
+        mission_type,
+        mission.get("raw_text", ""),
+        mission.get("title", ""),
+    )
     template = right_sized_workflow_template(template_id, mission)
+    from modules.charlie.agentic_architecture import build_agentic_architecture_packet
     return {
         "version": CHARLIE_CORE_VERSION,
         "project_key": clean_text(mission.get("project_key") or _project_key_for_mission(mission_type), 80),
@@ -552,10 +628,12 @@ def build_project_truth(mission):
         "required_artifacts": list(template["required_artifacts"]),
         "owner_gates": list(template["owner_gates"]),
         "created_at": utc_now(),
+        "agentic_architecture": build_agentic_architecture_packet(mission),
     }
 
 
 def build_core_plan(mission):
+    from modules.charlie.adaptive_orchestration import build_orchestration_packet
     from modules.charlie.model_registry import model_registry_packet
     from modules.charlie.mission_memory import (
         final_artifact_contract_packet,
@@ -565,14 +643,29 @@ def build_core_plan(mission):
     from modules.charlie.tool_permissions import tool_permission_registry
 
     project_truth = build_project_truth(mission)
+    orchestration = build_orchestration_packet(mission)
     template_id = project_truth["workflow_template"]
     template = right_sized_workflow_template(template_id, mission)
+    template["agent_order"] = [
+        item["agent"] for item in orchestration["selected_agents"]
+    ]
+    template["pipeline_profile"] = f"adaptive_{orchestration['tier'].lower()}"
+    template["right_sized"] = True
+    template["right_sizing_reason"] = "Evidence-based minimum sufficient team."
     agent_workflow = build_workflow_from_template(template)
+    selected = {item["agent"]: item for item in orchestration["selected_agents"]}
+    for stage in agent_workflow:
+        contract = selected.get(stage["agent"], {})
+        stage["selection_reason"] = contract.get("selection_reason", "")
+        stage["mandatory"] = bool(contract.get("mandatory"))
+        stage["authority"] = contract.get("authority", "")
+        stage["budget"] = contract.get("budget", {})
     agent_order = [item.get("agent", "") for item in agent_workflow if isinstance(item, dict)]
     return {
         "version": CHARLIE_CORE_VERSION,
         "vault_schema": VAULT_SCHEMA,
         "project_truth": project_truth,
+        "agentic_architecture": project_truth["agentic_architecture"],
         "workflow_template": template,
         "agent_workflow": agent_workflow,
         "review_board": build_review_board_packet({}),
@@ -581,6 +674,7 @@ def build_core_plan(mission):
         "final_artifact_contract": final_artifact_contract_packet(),
         "partial_recovery_contract": partial_recovery_contract_packet(),
         "parallel_agent_planning": parallel_agent_planning_packet(agent_order),
+        "orchestration": orchestration,
         "intelligence_loop": {
             "version": INTELLIGENCE_LOOP_VERSION,
             "lesson_records": [],
@@ -794,6 +888,7 @@ def attach_core_plan_to_metadata(mission, metadata=None):
         "owner_gates": plan["project_truth"]["owner_gates"],
     }
     metadata.setdefault("agent_workflow", plan["agent_workflow"])
+    metadata.setdefault("orchestration", plan["orchestration"])
     metadata.setdefault("charlie_core", {
         "version": CHARLIE_CORE_VERSION,
         "vault_schema": VAULT_SCHEMA,
@@ -816,6 +911,10 @@ def attach_core_plan_to_metadata(mission, metadata=None):
             "shows_risks": True,
             "shows_artifacts": True,
             "shows_review_quality": True,
+            "shows_orchestration_tier": True,
+            "shows_selected_and_skipped_agents": True,
+            "shows_budgets_and_expansion_history": True,
+            "shows_elapsed_attempts_backflows_and_outcome": True,
         },
         "model_registry": plan["model_registry"],
         "tool_permissions": plan["tool_permissions"],

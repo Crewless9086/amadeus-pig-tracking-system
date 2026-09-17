@@ -1,10 +1,28 @@
 from flask import Blueprint, current_app, jsonify, request
 
+from modules.auth.owner_access import (
+    require_weaning_session, weaning_session_identity,
+    require_treatment_session, treatment_session_identity,
+    correction_batch_owner_admin_principal,
+    require_correction_batch_owner_admin_access,
+    require_owner_admin_access,
+    require_strict_owner_admin_access,
+    require_owner_read_access,
+    owner_admin_principal,
+    strict_owner_admin_principal,
+    mortality_session_identity,
+    require_mortality_session,
+)
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
     process_bulk_weight_batch,
     retry_failed_bulk_weight_batch,
     stage_bulk_weight_batch,
+)
+from modules.pig_weights.bulk_body_condition_service import record_body_condition_batch
+from modules.pig_weights.herdmaster_piglet_observation_action import (
+    execute_action as execute_piglet_observations,
+    preview_authoritative as preview_piglet_observations,
 )
 
 from modules.pig_weights.pig_weights_controller import (
@@ -12,8 +30,17 @@ from modules.pig_weights.pig_weights_controller import (
     get_dashboard_data,
     get_sales_dashboard_data,
     get_pig_allocation_readiness_data,
+    get_pig_allocation_alerts_data,
+    get_riversdale_auction_recommendation_data,
+    record_riversdale_auction_decision_data,
+    record_riversdale_candidate_review_data,
+    get_riversdale_auction_list_data,
+    update_riversdale_auction_list_data,
     get_purpose_review_queue_data,
     apply_purpose_review_queue_decisions,
+    create_purpose_correction_batch,
+    approve_purpose_correction_batch,
+    execute_purpose_correction_batch,
     get_purpose_review_recheck_packet,
     get_meat_planning_data,
     list_parent_options,
@@ -25,6 +52,7 @@ from modules.pig_weights.pig_weights_controller import (
     mark_litter_profile_weaned,
     process_litter_profile_weaning_day,
     record_litter_profile_newborn_health,
+    skip_litter_profile_first_treatment,
     mark_litter_profile_piglets_dead,
     record_litter_profile_piglet_sex_counts,
     assign_litter_profile_piglet_tag_numbers,
@@ -103,7 +131,68 @@ def sales_dashboard():
 
 @pig_weights_bp.route("/pig-allocation-readiness", methods=["GET"])
 def pig_allocation_readiness():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     return jsonify(get_pig_allocation_readiness_data())
+
+
+@pig_weights_bp.route("/pig-allocation-alerts", methods=["GET"])
+def pig_allocation_alerts():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return jsonify(get_pig_allocation_alerts_data())
+
+
+@pig_weights_bp.route("/riversdale-auction-recommendation", methods=["GET"])
+def riversdale_auction_recommendation():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return jsonify(get_riversdale_auction_recommendation_data())
+
+
+@pig_weights_bp.route("/riversdale-auction-confirmation", methods=["POST"])
+def riversdale_auction_confirmation():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_riversdale_auction_decision_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/riversdale-auction-candidate-reviews", methods=["POST"])
+def riversdale_auction_candidate_review():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_riversdale_candidate_review_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/riversdale-auction-list", methods=["GET"])
+def riversdale_auction_list():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_riversdale_auction_list_data()
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/riversdale-auction-list/events", methods=["POST"])
+def riversdale_auction_list_events():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = update_riversdale_auction_list_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/purpose-review", methods=["GET"])
@@ -113,8 +202,41 @@ def purpose_review_queue():
 
 @pig_weights_bp.route("/purpose-review/apply", methods=["POST"])
 def purpose_review_apply():
+    denied = require_correction_batch_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
-    result, status_code = apply_purpose_review_queue_decisions(payload)
+    result, status_code = apply_purpose_review_queue_decisions(
+        payload, actor_id=correction_batch_owner_admin_principal())
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/purpose-review/correction-batches", methods=["POST"])
+def purpose_review_correction_batch_create():
+    denied = require_correction_batch_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = create_purpose_correction_batch(
+        request.get_json(silent=True) or {}, actor_id=correction_batch_owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/purpose-review/correction-batches/<batch_id>/approve", methods=["POST"])
+def purpose_review_correction_batch_approve(batch_id):
+    denied = require_correction_batch_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = approve_purpose_correction_batch(batch_id, actor_id=correction_batch_owner_admin_principal())
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/purpose-review/correction-batches/<batch_id>/execute", methods=["POST"])
+def purpose_review_correction_batch_execute(batch_id):
+    denied = require_correction_batch_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = execute_purpose_correction_batch(batch_id, actor_id=correction_batch_owner_admin_principal())
     return jsonify(result), status_code
 
 
@@ -142,6 +264,9 @@ def pigs():
 
 @pig_weights_bp.route("/sales-availability", methods=["GET"])
 def sales_availability():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     return jsonify(list_sales_availability())
 
 
@@ -166,10 +291,39 @@ def pig_profile(pig_id):
     return jsonify(result), status_code
 
 
-@pig_weights_bp.route("/pig/<pig_id>/lifecycle/death", methods=["POST"])
+@pig_weights_bp.route("/pig/<pig_id>/welfare-observations", methods=["GET"])
+def pig_welfare_observations(pig_id):
+    from modules.auth.owner_access import farm_session_principal, owner_session_is_valid
+    if not (farm_session_principal() or owner_session_is_valid("read")):
+        return jsonify(success=False, status="authenticated_welfare_read_required"), 403
+    from modules.pig_weights.herdmaster_health_loss_recording import list_health_observations
+    result, status_code = list_health_observations(pig_id)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/pig/<pig_id>/lifecycle/death", methods=["GET", "POST"])
 def pig_lifecycle_death(pig_id):
     payload = request.get_json(silent=True) or {}
-    result, status_code = mark_pig_lifecycle_death(pig_id, payload)
+    # Preserve the existing non-mortality removal journey under its admin guard.
+    if request.method == "POST" and payload.get("reason") in {"Culled", "Lost", "Removed", "Other"}:
+        denied = require_owner_admin_access()
+        if denied:
+            return denied
+        payload = {**payload, "changed_by": owner_admin_principal()}
+        result, status_code = mark_pig_lifecycle_death(pig_id, payload)
+        return jsonify(result), status_code
+    identity = mortality_session_identity()
+    if not identity:
+        return jsonify(success=False, status="authenticated_mortality_permission_required"), 403
+    denied = require_mortality_session() if request.method == "POST" else None
+    if denied:
+        return denied
+    from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_application_mortality
+    try:
+        result, status_code = handle_application_mortality(pig_id, payload, identity,
+            resume=request.method == "GET")
+    except Exception:
+        return jsonify(success=False, status="mortality_service_unavailable"), 503
     return jsonify(result), status_code
 
 
@@ -198,6 +352,7 @@ def weight_report():
         date_from=request.args.get("date_from", ""),
         date_to=request.args.get("date_to", ""),
         pen_id=request.args.get("pen_id", ""),
+        batch_id=request.args.get("batch_id", ""),
     )
     return jsonify(result), status_code
 
@@ -227,14 +382,30 @@ def litter_profile(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/mark-weaned", methods=["POST"])
 def mark_litter_weaned_route(litter_id):
-    payload = request.get_json(silent=True) or {}
-    result, status_code = mark_litter_profile_weaned(litter_id, payload)
-    return jsonify(result), status_code
+    return litter_weaning_day_route(litter_id)
 
 
 @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
 def litter_weaning_day_route(litter_id):
-    payload = request.get_json(silent=True) or {}
+    denied = require_weaning_session()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, status="weaning_request_invalid"), 400
+    payload = dict(payload)
+    if request.path.endswith("/mark-weaned"):
+        if payload.pop("use_latest_weights_as_wean_weights", False):
+            return jsonify(success=False, status="explicit_weaning_weights_required",
+                operation_committed=False, errors=["Supply actual weights; historical weights are not copied."]), 409
+        weights = payload.pop("wean_weights", None)
+        if weights is not None:
+            if not isinstance(weights, dict) or "assignments" in payload:
+                return jsonify(success=False, status="weaning_request_invalid", operation_committed=False), 400
+            payload["assignments"] = [{"pig_id": key, "wean_weight_kg": value} for key, value in weights.items()]
+    # Audit identity is always derived from the authenticated server session.
+    # A browser-supplied changed_by value has no authority.
+    payload["changed_by"] = weaning_session_identity()["actor_id"]
     try:
         result, status_code = process_litter_profile_weaning_day(litter_id, payload)
         return jsonify(result), status_code
@@ -242,22 +413,71 @@ def litter_weaning_day_route(litter_id):
         current_app.logger.exception("Weaning day workflow failed for litter %s", litter_id)
         return jsonify({
             "success": False,
-            "errors": [f"Weaning day workflow failed: {exc}"],
+            "status": "weaning_day_unexpected_failure",
+            "errors": [
+                "The Weaning Day request could not be completed. Reload the "
+                "litter to verify its current state before any retry."
+            ],
+            "error_type": type(exc).__name__,
             "litter_id": litter_id,
-            "writes_to_sheets": False,
-            "writes_to_supabase": False,
+            "operation_committed": None,
+            "operation_state": "unknown_verify_before_retry",
+            "writes_to_sheets": None,
+            "writes_to_supabase": None,
         }), 500
+
+
+@pig_weights_bp.route("/litter/<litter_id>/piglet-observations", methods=["POST"])
+def litter_piglet_observations_route(litter_id):
+    denied = require_owner_admin_access()
+    if not denied:
+        denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = dict(request.get_json(silent=True) or {})
+    payload["litter_id"] = litter_id
+    actor_id = owner_admin_principal() or strict_owner_admin_principal()
+    if payload.get("dry_run", True) is True:
+        result, status = preview_piglet_observations(payload, actor_id=actor_id, channel="application")
+    else:
+        result, status = execute_piglet_observations(
+            payload, actor_id=actor_id, channel="application",
+            confirmation_binding=payload.get("confirmation_binding"),
+        )
+    return jsonify(result), status
 
 
 @pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])
 def litter_newborn_health_route(litter_id):
-    payload = request.get_json(silent=True) or {}
+    denied = require_treatment_session()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(success=False, status="first_treatment_request_invalid"), 400
+    payload["changed_by"] = treatment_session_identity()["actor_id"]
     result, status_code = record_litter_profile_newborn_health(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/first-treatment/skip", methods=["POST"])
+def litter_first_treatment_skip_route(litter_id):
+    denied = require_treatment_session()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or payload.get("confirmed") is not True:
+        return jsonify(success=False, status="explicit_treatment_skip_confirmation_required"), 409
+    payload["changed_by"] = treatment_session_identity()["actor_id"]
+    result, status_code = skip_litter_profile_first_treatment(litter_id, payload)
     return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/litter/<litter_id>/piglet-deaths", methods=["POST"])
 def litter_piglet_deaths_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = mark_litter_profile_piglets_dead(litter_id, payload)
     return jsonify(result), status_code
@@ -342,6 +562,18 @@ def stage_weights_batch():
         return jsonify(result), status_code
     except Exception as exc:
         return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint="/api/pig-weights/bulk-batches")
+
+
+@pig_weights_bp.route("/bulk-body-condition", methods=["POST"])
+def add_bulk_body_condition():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_body_condition_batch(
+        request.get_json(silent=True) or {},
+        actor_id=strict_owner_admin_principal(),
+    )
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/bulk-batches/<batch_id>", methods=["GET"])

@@ -2,6 +2,22 @@
 
 Status: owner-reviewed governance questions were moved to `OWNER_DECISIONS.md`. This file now tracks only unresolved or verification-needed questions.
 
+## Pig Lifecycle Audit Application And Capture
+
+Question: before the additive lifecycle audit migration is applied or any protected event producer is built, which approved backend rail may emit each event type, which roles are valid actors, and what correction authorization/retention policy applies?
+
+Known boundary: the additive, unapplied `pig_lifecycle_events` migration preserves immutable lifecycle evidence linked to canonical `pigs`. It has RLS, retry-safe idempotency, same-pig correction-by-supersession, requires every `lifecycle_correction` to supersede a prior event, prohibits supersession for other event types, and database-blocks updates/deletes. It does not change `pigs`, perform lifecycle actions, or expose detail/history reads.
+
+Owner decision needed: explicitly approve migration application and the protected write/correction authority; approve the separate lifecycle-read/frontend work before exit/history visibility is changed.
+
+## Pig Observation Capture And Retention
+
+Question: before a protected observation-capture path is implemented, which farm roles may submit factual observations, what retention period applies, and who can authorize a correction event?
+
+Known boundary: the additive, unapplied `pig_observation_events` migration stores factual pig evidence only. It has RLS, retry-safe idempotency, same-pig correction-by-supersession, and database-blocked updates/deletes. It stores no alert acknowledgement, recommendation, owner decision, notification, automation, lifecycle, medical, sales, reservation, or slaughter state.
+
+Owner decision needed: approve the capture-role list, retention/deletion policy, and correction authorization before any protected backend capture rail is built or migration is applied.
+
 ## Supabase Vault Production Status
 
 Question: which Supabase Vault tables are applied in production and which remain pending?
@@ -113,7 +129,7 @@ Owner decisions still needed:
 
 Source references:
 
-- `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
+- reconcile remaining livestock-sales Unknowns only through the focused SAM Livestock pack and current mission evidence;
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
 
@@ -146,6 +162,6 @@ Current recommendation:
 
 Owner review needed:
 
-- confirm whether `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`, `PORK_SALES_MODEL.md`, and related campaign docs should remain active references after Vault business review;
+- confirm future Meat launch graduation only from focused SAM/BEACON/Meat doctrine and fresh operational evidence; legacy business-module drafts were archived in Batch 25;
 - confirm whether old operation evidence logs should be compressed into monthly archive summaries;
 - confirm whether external source folders are still needed locally or can be archived/deleted after useful context is captured.

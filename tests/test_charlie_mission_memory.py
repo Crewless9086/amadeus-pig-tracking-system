@@ -26,6 +26,9 @@ class CharlieMissionMemoryTest(unittest.TestCase):
                 "confidence": "0.97",
                 "confidence_reason": "Focused tests passed.",
                 "next_action": "Send to tester.",
+                "pr_url": "https://github.com/org/repo/pull/77",
+                "branch_name": "charlie/replay-console",
+                "commit_sha": "abc1234",
             },
             quality_gate={"passed": True, "reason": "ok"},
         )
@@ -39,6 +42,9 @@ class CharlieMissionMemoryTest(unittest.TestCase):
         self.assertEqual(memory["handoffs"][0]["from_agent"], "builder")
         self.assertEqual(prompt["latest_agent_notes"][0]["agent"], "builder")
         self.assertIn("Built replay console", prompt["latest_agent_notes"][0]["summary"])
+        self.assertEqual(memory["latest_by_agent"]["builder"]["pr_url"], "https://github.com/org/repo/pull/77")
+        self.assertEqual(memory["latest_by_agent"]["builder"]["branch_name"], "charlie/replay-console")
+        self.assertEqual(memory["latest_by_agent"]["builder"]["commit_sha"], "abc1234")
 
     def test_done_lock_survives_later_backflow_for_same_agent(self):
         metadata = append_memory_event({}, build_memory_event(

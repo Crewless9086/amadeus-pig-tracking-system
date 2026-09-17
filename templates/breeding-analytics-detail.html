@@ -1,101 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Breeding Analytics Detail</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-</head>
-<body>
-  <div class="page-shell">
-    <div class="page-card breeding-analytics-page">
-      <div class="page-header page-header-with-link">
-        <div>
-          <h1 id="breeding_detail_title">Breeding Analytics Detail</h1>
-          <p id="breeding_detail_subtitle">Read-only breeding record, litter outcomes, and data-quality context.</p>
-        </div>
-        <div class="header-link-group">
-          <a id="breeding_detail_back_link" href="/breeding-analytics" class="secondary-link">Back to Analytics</a>
-          <a href="/matings" class="secondary-link">Breeding Board</a>
-        </div>
-      </div>
-
-      <div id="breeding_detail_message" class="message-box hidden"></div>
-
-      <div class="bulk-weight-summary breeding-summary breeding-detail-summary">
-        <div>
-          <span class="info-title">Animal</span>
-          <span id="breeding_detail_animal" class="info-value">-</span>
-        </div>
-        <div>
-          <span class="info-title">Matings</span>
-          <span id="breeding_detail_matings" class="info-value">-</span>
-        </div>
-        <div>
-          <span class="info-title">Litters</span>
-          <span id="breeding_detail_litters" class="info-value">-</span>
-        </div>
-        <div>
-          <span class="info-title">Data Flags</span>
-          <span id="breeding_detail_flags" class="info-value">-</span>
-        </div>
-      </div>
-
-      <section class="analytics-section">
-        <div class="section-subtitle">Data Quality</div>
-        <div id="breeding_quality_list" class="breeding-quality-list">
-          <span class="quality-flag-muted">Loading data-quality context...</span>
-        </div>
-      </section>
-
-      <section class="analytics-section">
-        <div class="section-subtitle">Matings</div>
-        <div class="simple-table-wrap">
-          <table class="simple-table breeding-analytics-table breeding-detail-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Mating</th>
-                <th>Pairing</th>
-                <th>Status</th>
-                <th>Check Result</th>
-                <th>Litter</th>
-                <th>Flags</th>
-              </tr>
-            </thead>
-            <tbody id="breeding_detail_matings_body">
-              <tr><td colspan="7" class="table-empty">Loading matings...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="analytics-section">
-        <div class="section-subtitle">Litters</div>
-        <div class="simple-table-wrap">
-          <table class="simple-table breeding-analytics-table breeding-detail-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Litter</th>
-                <th>Pairing</th>
-                <th>Born Alive</th>
-                <th>Weaned</th>
-                <th>Survival</th>
-                <th>Active / Exited</th>
-                <th>Avg Weight</th>
-                <th>Flags</th>
-              </tr>
-            </thead>
-            <tbody id="breeding_detail_litters_body">
-              <tr><td colspan="9" class="table-empty">Loading litters...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <script src="{{ url_for('static', filename='js/breedingAnalyticsDetail.js') }}"></script>
-</body>
-</html>
+<!DOCTYPE html><html lang="af"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Teeldier-merietebewyse</title><link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/breedingAnalyticsV2.css') }}"></head>
+<body><div class="page-shell merit-shell"><main class="page-card merit-page" aria-labelledby="merit_detail_title">
+  <header class="merit-hero"><div><span class="merit-eyebrow">HERDMASTER · benoemde dier · leesalleen</span><h1 id="merit_detail_title">Teeldier-merietebewyse</h1><p id="merit_detail_subtitle">Kanonieke identiteit en lewenslange bewysdekking.</p></div><nav aria-label="Bladsynavigasie"><a id="breeding_detail_back_link" href="/breeding-analytics" class="secondary-link">Terug na kudde</a><a href="/matings" class="secondary-link">Parings</a></nav></header>
+  <aside class="merit-boundary" id="merit_detail_boundary">Hierdie uitkomste wys assosiasies onder aangetekende bestuur en tydperke. Dit bewys nie genetiese oorsaaklikheid nie.</aside>
+  <div id="breeding_detail_status" class="merit-status" role="status" aria-live="polite"><span class="merit-spinner" aria-hidden="true"></span><span>Besig om die kanonieke HERDMASTER-profiel te laai…</span></div>
+  <section id="breeding_detail_content" class="hidden">
+    <div id="merit_detail_identity" class="merit-identity"></div>
+    <div id="merit_detail_interpretation" class="merit-interpretation"></div>
+    <div id="merit_detail_metrics" class="merit-detail-grid"></div>
+    <section class="merit-section"><header><div><span class="merit-kicker">Vergelykingskonteks</span><h2>Vennote en tydlyn</h2></div></header><div id="merit_detail_partners"></div><div id="merit_detail_trend"></div></section>
+    <section class="merit-section"><header><div><span class="merit-kicker">Bewyse</span><h2>Familie, gesondheid en waarnemings</h2></div></header><div id="merit_detail_context" class="merit-detail-grid"></div></section>
+    <section class="merit-section merit-lineage-section"><header><div><span class="merit-kicker">Naspeurbaarheid</span><h2>Regstellings en vervangings</h2></div></header><div id="merit_detail_lineage"></div></section>
+  </section>
+</main></div><script src="{{ url_for('static', filename='js/breedingAnalyticsDetail.js') }}"></script></body></html>

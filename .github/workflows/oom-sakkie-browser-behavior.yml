@@ -10,6 +10,7 @@ jobs:
   browser-behavior:
     name: Playwright real-browser behavior gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -19,13 +20,18 @@ jobs:
       OOM_SAKKIE_PLAYWRIGHT_SERVER_COMMAND: "python -m flask --app app run --host 127.0.0.1 --port 5000"
       OOM_SAKKIE_PLAYWRIGHT_BASE_URL: "http://127.0.0.1:5000"
       OOM_SAKKIE_PLAYWRIGHT_SERVER_URL: "http://127.0.0.1:5000/oom-sakkie"
+      OWNER_ACCESS_ENABLED: "1"
+      OWNER_ACCESS_ALLOW_LOCAL_DEV: "0"
+      OWNER_READ_TOKEN: "riversdale-browser-fixture-token-000000000000"
+      OWNER_ADMIN_TOKEN: "riversdale-browser-admin-token-0000000000000"
+      OWNER_SESSION_SECRET: "riversdale-browser-session-secret-0000000000"
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -41,7 +47,18 @@ jobs:
         run: npm install
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2; do
+            if timeout 300s npx playwright install chromium; then
+              exit 0
+            fi
+            echo "Chromium installation attempt ${attempt} failed or timed out."
+          done
+          exit 1
 
       - name: Run Oom Sakkie Playwright behavior gate
-        run: npm run test:oom-sakkie:browser
+        run: |
+          npm run test:oom-sakkie:browser
+          npx playwright test tests/riversdale_auction_list_visual_proof.spec.js
+          npx playwright test tests/breeding_attention_phase2_visual_proof.spec.js
+          npx playwright test tests/litter_weaning_day_browser.spec.js

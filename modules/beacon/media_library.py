@@ -16,13 +16,14 @@ RAW_INTAKE_BUCKET = "beacon-raw-intake"
 APPROVED_MEDIA_BUCKET = "beacon-approved-media"
 MAX_STANDARD_UPLOAD_BYTES = 6 * 1024 * 1024
 
-MEDIA_TYPES = {"image", "video", "document", "unknown"}
+MEDIA_TYPES = {"image", "video", "audio", "document", "unknown"}
 ASSET_SOURCES = {
     "farm_app_upload",
     "telegram_upload",
     "folder_import",
     "whatsapp_media",
     "owner_note",
+    "creative_studio_mock",
     "other",
 }
 APPROVAL_STATUSES = {"needs_review", "approved", "rejected", "archived"}
@@ -102,7 +103,8 @@ def register_beacon_media_asset(payload, database_url=None):
                     """
                     insert into public.beacon_media_assets (
                         asset_id, mode, storage_bucket, storage_path, original_filename,
-                        media_type, mime_type, file_size_bytes, source, source_reference,
+                        media_type, mime_type, file_size_bytes, content_sha256,
+                        content_hash_provenance, source, source_reference,
                         uploader_label, title, description, sale_stream_relevance_json,
                         subject_tags_json, location_context, quality_score, privacy_risk,
                         safety_flags_json, public_use_approved, approval_status,
@@ -116,7 +118,8 @@ def register_beacon_media_asset(payload, database_url=None):
                     values (
                         %(asset_id)s, %(mode)s, %(storage_bucket)s, %(storage_path)s,
                         %(original_filename)s, %(media_type)s, %(mime_type)s,
-                        %(file_size_bytes)s, %(source)s, %(source_reference)s,
+                        %(file_size_bytes)s, %(content_sha256)s, %(content_hash_provenance)s,
+                        %(source)s, %(source_reference)s,
                         %(uploader_label)s, %(title)s, %(description)s,
                         %(sale_stream_relevance_json)s::jsonb,
                         %(subject_tags_json)s::jsonb,
@@ -212,6 +215,8 @@ def upload_beacon_media_asset(file_storage, form=None, environ=None, database_ur
         "media_type": media_type,
         "mime_type": content_type,
         "file_size_bytes": len(data),
+        "content_sha256": hashlib.sha256(data).hexdigest(),
+        "content_hash_provenance": "server_computed_on_upload",
         "source": form.get("source") or "farm_app_upload",
         "approval_status": "needs_review",
         "public_use_approved": False,
@@ -322,7 +327,8 @@ def list_beacon_media_assets(limit=50, approval_status="", media_type="", databa
                            coalesce(e.notes, '') as latest_event_notes,
                            e.created_at as latest_event_at,
                            coalesce(e.approval_status, '') as latest_approval_status,
-                           coalesce(e.public_use_approved, false) as latest_public_use_approved
+                           coalesce(e.public_use_approved, false) as latest_public_use_approved,
+                           a.content_sha256, a.content_hash_provenance
                     from public.beacon_media_assets a
                     left join lateral (
                         select event_type, notes, approval_status, public_use_approved, created_at
@@ -431,6 +437,8 @@ def _asset_params(payload):
         "media_type": media_type,
         "mime_type": _clean(payload.get("mime_type"), 120),
         "file_size_bytes": _int(payload.get("file_size_bytes"), 0),
+        "content_sha256": _sha256_or_blank(payload.get("content_sha256")),
+        "content_hash_provenance": _clean(payload.get("content_hash_provenance"), 120),
         "source": source,
         "source_reference": _clean(payload.get("source_reference"), 220),
         "uploader_label": _clean(payload.get("uploader_label") or payload.get("uploaded_by"), 120),
@@ -494,6 +502,8 @@ def _public_asset(params):
         "media_type": params.get("media_type", ""),
         "mime_type": params.get("mime_type", ""),
         "file_size_bytes": params.get("file_size_bytes", 0),
+        "content_sha256": params.get("content_sha256", ""),
+        "content_hash_provenance": params.get("content_hash_provenance", ""),
         "source": params.get("source", ""),
         "source_reference": params.get("source_reference", ""),
         "uploader_label": params.get("uploader_label", ""),
@@ -570,6 +580,8 @@ def _asset_row(row):
             "approval_status": row[27] or "",
             "public_use_approved": bool(row[28]),
         },
+        "content_sha256": row[29] or "",
+        "content_hash_provenance": row[30] or "",
         **AUTHORITY_FLAGS,
     }
 
@@ -605,6 +617,8 @@ def _media_type_from_mime(mime_type):
         return "image"
     if mime_type.startswith("video/"):
         return "video"
+    if mime_type.startswith("audio/"):
+        return "audio"
     if mime_type:
         return "document"
     return "unknown"
@@ -618,6 +632,11 @@ def _media_type_or_blank(value):
 def _source_or_default(value):
     value = _clean(value, 80)
     return value if value in ASSET_SOURCES else "other" if value else "farm_app_upload"
+
+
+def _sha256_or_blank(value):
+    value = str(value or "").strip().lower()
+    return value if len(value) == 64 and all(char in "0123456789abcdef" for char in value) else ""
 
 
 def _approval_status_or_blank(value):

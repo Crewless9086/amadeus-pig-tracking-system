@@ -13,6 +13,7 @@ def cleaned_order(**overrides):
         "customer_channel": "WhatsApp",
         "customer_language": "English",
         "order_source": "Sam",
+        "order_stream": "Livestock",
         "requested_category": "Grower",
         "requested_weight_range": "40_to_44_Kg",
         "requested_sex": "Any",
@@ -43,6 +44,43 @@ def available_pig(**overrides):
 
 
 class OrderCrudServiceTests(unittest.TestCase):
+    def test_selector_includes_live_transfer_eligible_withdrawal_and_discloses_food_chain_hold(self):
+        rows = [{
+            "pig_id": "PIG-2026-B156", "tag_number": "151", "sex": "Male",
+            "current_weight_kg": 4.0, "weight_band": "2_to_4_Kg",
+            "sale_category": "Young Piglets", "reserved_status": "Not_Reserved",
+            "available_for_sale": "No", "live_stock_sale_eligible": True,
+            "withdrawal_evidence_state": "hold",
+            "current_withdrawal_end_date": "2026-09-08",
+            "last_product_name": "Ecomectin",
+        }]
+
+        pigs = order_write._available_pigs_from_sales_rows(rows)
+
+        self.assertEqual([pig["pig_id"] for pig in pigs], ["PIG-2026-B156"])
+        self.assertTrue(pigs[0]["livestock_transfer_eligible"])
+        self.assertFalse(pigs[0]["food_chain_eligible"])
+        self.assertEqual(pigs[0]["treatment_disclosure"]["product"], "Ecomectin")
+        self.assertEqual(pigs[0]["treatment_disclosure"]["withdrawal_end_date"], "2026-09-08")
+        self.assertTrue(pigs[0]["treatment_disclosure"]["food_chain_prohibition"])
+
+    def test_selector_still_excludes_noneligible_reserved_and_unavailable_rows(self):
+        base = {
+            "sex": "Male", "current_weight_kg": 4.0, "weight_band": "2_to_4_Kg",
+            "sale_category": "Young Piglets", "available_for_sale": "No",
+            "live_stock_sale_eligible": False,
+        }
+        rows = [
+            {**base, "pig_id": "SOLD", "tag_number": "sold", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "OFF", "tag_number": "off", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "HEALTH", "tag_number": "health", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "SOURCE", "tag_number": "source", "reserved_status": "Not_Reserved"},
+            {**base, "pig_id": "RESERVED", "tag_number": "reserved", "available_for_sale": "Yes",
+             "live_stock_sale_eligible": True, "reserved_status": "Reserved"},
+        ]
+
+        self.assertEqual(order_write._available_pigs_from_sales_rows(rows), [])
+
     def test_create_order_appends_draft_defaults_and_status_log(self):
         with patch.object(order_write, "generate_order_id", return_value="ORD-1"), \
              patch.object(order_write, "append_row") as append_row, \
@@ -116,6 +154,17 @@ class OrderCrudServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No valid order fields"):
                 order_write.update_order("ORD-1", {"changed_by": "Tester"})
 
+    def test_update_order_saves_conversation_id_beyond_draft(self):
+        with patch.object(order_write, "_get_order_master_row", return_value={"Order_ID": "ORD-1", "Order_Status": "Approved"}), \
+             patch.object(order_write, "_update_sheet_row_by_id") as update_row:
+            result = order_write.update_order(
+                "ORD-1",
+                {"conversation_id": "1871", "changed_by": "Tester"},
+            )
+
+        self.assertEqual(result["updated_fields"], ["conversation_id"])
+        self.assertEqual(update_row.call_args.args[2]["Conversation_ID"], "1871")
+
     def test_create_order_line_appends_available_pig_with_defaults(self):
         with patch.object(order_write, "get_available_pigs_for_orders", return_value=[available_pig()]), \
              patch.object(order_write, "get_all_records", return_value=[]), \
@@ -138,6 +187,26 @@ class OrderCrudServiceTests(unittest.TestCase):
         self.assertEqual(row_values[9], "Draft")
         self.assertEqual(row_values[10], "Not_Reserved")
         self.assertEqual(row_values[14], "primary_1")
+
+    def test_create_order_line_resolves_blank_price_automatically(self):
+        with patch.object(order_write, "get_available_pigs_for_orders", return_value=[available_pig()]), \
+             patch.object(order_write, "get_all_records", return_value=[]), \
+             patch.object(order_write, "generate_order_line_id", return_value="OL-1"), \
+             patch("modules.sales.sam_pricing.resolve_live_stock_price_rule", return_value={
+                 "found": True,
+                 "unit_price": 800,
+                 "source": "supabase",
+             }), \
+             patch.object(order_write, "append_row") as append_row:
+            result = order_write.create_order_line({
+                "order_id": "ORD-1",
+                "pig_id": "PIG-1",
+                "unit_price": None,
+                "notes": "",
+            })
+
+        self.assertTrue(result["success"])
+        self.assertEqual(append_row.call_args.args[1][8], 800)
 
     def test_create_order_line_blocks_unavailable_duplicate_and_reserved_pigs(self):
         with patch.object(order_write, "get_available_pigs_for_orders", return_value=[]):

@@ -78,7 +78,7 @@ SPECIALIST_MANIFESTS = (
         risk_level=0,
         allowed_mode="read_only_advisory",
         approval_required_for=("any_irrigation_control", "any_physical_action", "any_crop_schedule_write"),
-        first_inputs=("weather_now", "weather_today", "weather_forecast", "irrigation_status"),
+        first_inputs=("rootline_water_energy_plan", "weather_now", "weather_today", "weather_forecast", "irrigation_status"),
         first_outputs=("crop_attention_brief", "inspection_questions"),
     ),
     SpecialistManifest(

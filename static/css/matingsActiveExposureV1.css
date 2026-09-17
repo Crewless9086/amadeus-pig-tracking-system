@@ -1,0 +1,19 @@
+.active-exposure-workspace { margin-bottom: 20px; background: linear-gradient(135deg, #f3f7ef, #fff); }
+.active-exposure-card { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(420px, 2fr) auto; align-items: center; gap: 20px; padding: 17px 18px; border: 1px solid var(--farm-line); border-left: 5px solid var(--farm-water); border-radius: 15px; background: #fff; }
+.active-exposure-card.exposure-due,.active-exposure-card.exposure-overdue { border-left-color: var(--farm-alert); }
+.active-exposure-main h3 { margin: 5px 0 4px; font: 800 22px Georgia, serif; }
+.active-exposure-main p { margin: 0; color: var(--farm-muted); font-weight: 750; }
+.exposure-state { display: inline-flex; padding: 5px 9px; border-radius: 999px; background: var(--farm-green-soft); color: var(--farm-green); font-size: 11px; font-weight: 900; text-transform: uppercase; }
+.exposure-overdue .exposure-state,.exposure-due .exposure-state { background: #f7e2dd; color: #843a2d; }
+.active-exposure-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.active-exposure-facts div { padding-left: 12px; border-left: 1px solid var(--farm-line); }
+.active-exposure-facts dt { color: var(--farm-muted); font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.active-exposure-facts dd { margin: 5px 0 0; color: var(--farm-ink); font-weight: 800; }
+.active-exposure-actions { display: grid; justify-items: end; gap: 10px; }
+.removal-action { display: flex; align-items: end; gap: 8px; }
+.removal-action.hidden { display: none; }
+.removal-action label { display: grid; gap: 4px; color: var(--farm-muted); font-size: 11px; font-weight: 800; }
+.removal-action input { min-height: 39px; padding: 0 8px; border: 1px solid var(--farm-line); border-radius: 9px; }
+@media (max-width: 1040px) { .active-exposure-card { grid-template-columns: 1fr; } .active-exposure-actions { justify-items: start; } }
+@media (max-width: 620px) { .active-exposure-facts { grid-template-columns: 1fr; } .active-exposure-facts div { padding: 8px 0 0; border-top: 1px solid var(--farm-line); border-left: 0; } .removal-action { align-items: stretch; flex-direction: column; width: 100%; } }
+@media (max-width: 620px) { .farm-nav { flex-wrap: wrap; } .farm-nav-owner { margin-left: auto; } }

@@ -1,50 +1,11 @@
-# Start Here
+# Legacy Start-Here Compatibility Pointer
 
-This folder is the active entry point for future Cursor/Codex sessions.
+Lifecycle: `POINTER_ONLY / NON_DOCTRINE`.
 
-Read in this order:
+The only normative agent-doctrine entry point is `../09-vault-brain/README.md`.
+Use its mandatory mission-pack routing and `../09-vault-brain/INDEX.md`; use
+Supabase/provider/runtime evidence for live state and
+`../06-operations/CONTROL_TOWER_MISSION_REGISTER.md` for durable mission state.
 
-1. `CURRENT_STATE.md` - what is live, what is protected, and what is risky now.
-2. `NEXT_STEPS.md` - the current priority queue.
-3. `WORKFLOW.md` - how owner notes become scoped plans and phases.
-4. `DEPLOYMENT_SOP.md` - release and branch safety rules.
-5. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
-6. `../09-vault-brain/README.md` - draft CHARLIE Vault Brain operating manual for identity, roles, playbooks, review standards, and Brain Guard governance.
-
-Raw intake can use `planning/ToDoList.md` today and the `planning/inbox/` structure as it grows.
-
-## Operating Truth
-
-Supabase is the operational truth for live state, approvals, ledgers, and future cross-agent work records.
-
-Markdown/docs are guidance. They describe decisions, plans, safety rules, and current state. They are not runtime infrastructure and must not become live collaboration state.
-
-## Current Hierarchy
-
-CHARLIE is the top-level owner operating layer.
-
-Oom Sakkie remains Farm Commander under CHARLIE.
-
-SAM is Meat Sales Command and is the urgent money-flow path.
-
-FRED is the future Transport Commander and transport money path.
-
-## Safety Rails
-
-Gatekeeper and owner approval rails cannot be bypassed.
-
-No customer sends, public posts, payment/deposit actions, reservations, dispatch, stock allocation, farm records, hardware control, migrations, or deployments may happen without the approved rail for that action.
-
-## Canonical Active Docs
-
-- `docs/00-start-here/CURRENT_STATE.md`
-- `docs/00-start-here/NEXT_STEPS.md`
-- `docs/00-start-here/WORKFLOW.md`
-- `docs/00-start-here/DEPLOYMENT_SOP.md`
-- `docs/00-start-here/OWNER_INBOX_GUIDE.md`
-- `docs/05-ai/AGENT_ROLES.md`
-- `docs/09-vault-brain/README.md` after owner review; until then it is the draft consolidated brain layer.
-
-Some older docs are still useful as history or module detail. If an older doc conflicts with this folder or the accepted CHARLIE direction, treat it as legacy until it is reviewed.
-
-Archived docs live under `docs/99-archive/`. They are reference material only unless the owner restores them to active status.
+Files retained in this folder are compatibility paths, current-state evidence,
+technical runbooks, or history. Their location does not make them authority.

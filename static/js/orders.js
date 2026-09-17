@@ -4,6 +4,7 @@ const ordersList = document.getElementById("orders_list");
 const ordersMessage = document.getElementById("orders_message");
 
 const ordersSearch = document.getElementById("orders_search");
+const streamFilter = document.getElementById("orders_stream_filter");
 const sourceFilter = document.getElementById("orders_source_filter");
 const paymentFilter = document.getElementById("orders_payment_filter");
 const locationFilter = document.getElementById("orders_location_filter");
@@ -29,6 +30,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 function setupOrderFilters() {
   ordersSearch.addEventListener("input", applyOrderFilters);
+  streamFilter.addEventListener("change", applyOrderFilters);
   sourceFilter.addEventListener("change", applyOrderFilters);
   paymentFilter.addEventListener("change", applyOrderFilters);
   locationFilter.addEventListener("change", applyOrderFilters);
@@ -137,6 +139,7 @@ function populateSelect(select, values) {
 }
 
 function populateFilters() {
+  populateSelect(streamFilter, uniqueSortedValues(allOrders.map(order => ({ stream: displayOrderStream(order) })), "stream"));
   populateSelect(sourceFilter, uniqueSortedValues(allOrders, "order_source"));
   populateSelect(paymentFilter, uniqueSortedValues(allOrders, "payment_method"));
   populateSelect(locationFilter, uniqueSortedValues(allOrders, "collection_location"));
@@ -171,12 +174,13 @@ function applyOrderFilters() {
 
   const filtered = allOrders.filter(order => {
     const matchesTab = orderMatchesTab(order);
+    const matchesStream = !streamFilter.value || displayOrderStream(order) === streamFilter.value;
     const matchesSearch = orderMatchesSearch(order, query);
     const matchesSource = !sourceFilter.value || order.order_source === sourceFilter.value;
     const matchesPayment = !paymentFilter.value || order.payment_method === paymentFilter.value;
     const matchesLocation = !locationFilter.value || order.collection_location === locationFilter.value;
 
-    return matchesTab && matchesSearch && matchesSource && matchesPayment && matchesLocation;
+    return matchesTab && matchesStream && matchesSearch && matchesSource && matchesPayment && matchesLocation;
   });
 
   renderStatusTabs();
@@ -186,6 +190,7 @@ function applyOrderFilters() {
 
 function clearAllFilters() {
   ordersSearch.value = "";
+  streamFilter.value = "";
   sourceFilter.value = "";
   paymentFilter.value = "";
   locationFilter.value = "";
@@ -210,6 +215,11 @@ function orderRequestSummary(order) {
   return parts.length ? parts.join(" ") : "No request summary";
 }
 
+function displayOrderStream(order) {
+  const explicitStream = String(order.stream || order.sale_stream || "").trim();
+  return explicitStream || "Legacy livestock (unclassified)";
+}
+
 function buildOrderCard(order) {
   const card = document.createElement("a");
   card.className = "pig-list-card";
@@ -226,6 +236,7 @@ function buildOrderCard(order) {
       <div class="pig-list-action">Open Order -></div>
     </div>
     <div class="order-card-status-row">
+      <span class="status-pill order-stream-pill">${escapeHtml(displayOrderStream(order))}</span>
       <span class="status-pill">${escapeHtml(statusLabel(order))}</span>
       <span class="status-pill status-pill-muted">${escapeHtml(order.payment_method || "Payment not set")}</span>
     </div>
@@ -251,6 +262,7 @@ function renderOrdersList(orders) {
     const currentTab = STATUS_TABS.find(tab => tab.id === activeTabId) || STATUS_TABS[0];
     const hasSearchOrFilters = Boolean(
       ordersSearch.value.trim()
+      || streamFilter.value
       || sourceFilter.value
       || paymentFilter.value
       || locationFilter.value

@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from modules.charlie.execution_bridge import (
     prepare_codex_execution,
     run_codex_execution_bridge,
 )
+from modules.charlie.mission_admission_delivery import provision_from_canonical_runner_state
 
 
 def main():
@@ -26,6 +28,11 @@ def main():
     parser.add_argument("--recover-final-artifact", action="store_true", help="Move an in-progress mission to owner review from an existing final artifact.")
     parser.add_argument("--final-path", default="", help="Optional explicit .final.md artifact path for recovery.")
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--admission-state-root",
+        default=os.getenv("CHARLIE_ADMISSION_SOURCE_STATE_ROOT", ""),
+        help="Trusted runner state containing the canonical key and receipt.",
+    )
     args = parser.parse_args()
 
     if args.recover_final_artifact:
@@ -34,11 +41,19 @@ def main():
             final_path=args.final_path or None,
         )
     elif args.execute_codex:
+        admission_runtime = None
+        if args.admission_state_root:
+            admission_runtime = provision_from_canonical_runner_state(
+                args.mission_id,
+                args.admission_state_root,
+                REPO_ROOT.parent / ".charlie_runner" / "admission-runs",
+            )
         result, status_code = run_codex_execution_bridge(
             mission_id=args.mission_id,
             status=args.status,
             execute_codex=True,
             timeout_seconds=args.timeout_seconds,
+            admission_runtime=admission_runtime,
         )
     else:
         result, status_code = prepare_codex_execution(

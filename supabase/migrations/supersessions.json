@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "superseded_migrations": {
+    "202607260005_create_irrigation_daily_plans": {
+      "status": "superseded_unapplied",
+      "reason": "Legacy irrigation evidence must be reconciled before a canonical daily-plan schema is activated."
+    }
+  }
+}

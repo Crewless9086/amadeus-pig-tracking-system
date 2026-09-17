@@ -3,22 +3,54 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
+from modules.beacon.facebook_media_transport import (
+    create_multi_photo_feed,
+    load_supabase_asset_bytes,
+    manual_composer_handoff,
+    resolve_server_publication_assets,
+    upload_unpublished_photo_binary,
+    validate_facebook_image_asset,
+)
+from modules.beacon.public_livestock_content_policy import (
+    RISK_STATUS,
+    assess_public_livestock_content,
+    public_livestock_policy_binding_matches,
+    public_livestock_policy_contract,
+)
+from modules.beacon.organic_publication_binding import (
+    require_organic_publication_binding,
+)
+from modules.beacon.organic_publication_authorization import (
+    canonical_caption_text,
+)
+from modules.beacon.publication_execution_identity import (
+    ASSET_SHA256 as SUCCESSOR_ASSET_SHA256,
+    CAPTION_SHA256 as SUCCESSOR_CAPTION_SHA256,
+    require_publish_now_authority, validate_successor_execution,
+)
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
 BEACON_LIVE_STOCK_AWARENESS_MODE = "beacon_live_stock_awareness_campaign_draft_only"
-CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness"}
+CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness", "live_stock_sales",
+    "live_stock_enquiry_capture"}
 LIVE_STOCK_DIRECT_SALES_TERMS = (
     "buy",
+    "sale",
+    "available",
+    "stock",
     "order",
-    "available now",
     "reserve",
     "price",
+    "cost",
+    "book",
     "special",
     "discount",
     "limited stock",
@@ -64,12 +96,39 @@ PERFORMANCE_AUTHORITY_FLAGS = {
     "boost_requires_owner_approval": True,
 }
 
+FOLLOW_UP_AUTHORITY_FLAGS = {
+    "creates_core_mission": False, "approves_core_mission": False,
+    "advances_core_mission": False, "executes_core_mission": False,
+    "posts_publicly": False, "boosts_post": False, "sends_customer_message": False,
+    "spends_money": False, "calls_meta": False, "calls_chatwoot": False,
+    "calls_n8n": False, "creates_order": False, "reserves_stock": False,
+    "changes_stock": False, "takes_payment": False, "writes_farm_data": False,
+}
+FOLLOW_UP_SAFETY_LEVELS = ("low", "medium", "high")
+FOLLOW_UP_TAXONOMY = {
+    "paid_spend_without_qualified_leads": {
+        "title": "Reduce repeated paid spend without qualified leads",
+        "safety_level": "medium",
+        "scope": ["Review campaign targeting and offer evidence", "Propose a bounded campaign experiment"],
+        "non_goals": ["No campaign execution", "No post, boost, send, spend, order, stock, payment, or farm action"],
+        "tests": ["Verify targeting change against two compatible campaign snapshots", "Verify every execution authority remains disabled"],
+    },
+    "insufficient_evidence_or_adjustment_needed": {
+        "title": "Improve repeated low-signal campaign evidence",
+        "safety_level": "low",
+        "scope": ["Review repeated low-signal campaign evidence", "Propose measurable copy or targeting changes"],
+        "non_goals": ["No campaign execution", "No post, boost, send, spend, order, stock, payment, or farm action"],
+        "tests": ["Verify the proposed measurement contract", "Verify every execution authority remains disabled"],
+    },
+}
+
 BOOST_RECOMMENDATION_SPEND_CAP = 500
 FACEBOOK_POSTING_ENABLED_ENV = "BEACON_FACEBOOK_POSTING_ENABLED"
 FACEBOOK_PAGE_ID_ENV = "BEACON_FACEBOOK_PAGE_ID"
 FACEBOOK_PAGE_ACCESS_TOKEN_ENV = "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN"
 FACEBOOK_GRAPH_VERSION_ENV = "BEACON_FACEBOOK_GRAPH_VERSION"
 FACEBOOK_POST_CONFIRMATION_PHRASE = "POST EXACT BEACON PACKET"
+MEAT_PUBLIC_OFFER_ENABLED_ENV = "SAM_MEAT_PUBLIC_OFFER_ENABLED"
 SUPABASE_URL_ENV = "SUPABASE_URL"
 SUPABASE_SERVICE_ROLE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 
@@ -112,6 +171,10 @@ def normalize_campaign_lane(value):
         return "meat_launch"
     if lane in {"live", "livestock", "live_stock", "live_pig", "live_pigs", "piglets", "farm_life"}:
         return "live_stock_awareness"
+    if lane in {"live_sales", "livestock_sales", "live_pig_sales"}:
+        return "live_stock_sales"
+    if lane in {"livestock_enquiry", "live_stock_enquiries", "live_stock_interest_capture"}:
+        return "live_stock_enquiry_capture"
     return lane
 
 
@@ -121,7 +184,7 @@ def invalid_campaign_lane_response(lane):
         "status": "campaign_lane_required" if not lane else "invalid_campaign_lane",
         "campaign_lane": lane,
         "allowed_campaign_lanes": sorted(CAMPAIGN_LANES),
-        "message": "Choose meat_launch or live_stock_awareness before Beacon builds a draft or publish packet.",
+        "message": "Choose meat_launch, live_stock_awareness, or live_stock_sales before Beacon builds a draft or publish packet.",
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
     }
@@ -134,6 +197,8 @@ def build_beacon_campaign_selection(payload=None, approved_assets=None):
         return build_meat_launch_campaign_selection(payload, approved_assets=approved_assets)
     if lane == "live_stock_awareness":
         return build_live_stock_awareness_campaign_selection(payload, approved_assets=approved_assets)
+    if lane == "live_stock_sales":
+        return build_live_stock_sales_campaign_selection(payload, approved_assets=approved_assets)
     return invalid_campaign_lane_response(lane)
 
 
@@ -144,6 +209,8 @@ def build_beacon_campaign_publish_packet(payload=None, approved_assets=None):
         return build_meat_launch_campaign_publish_packet(payload, approved_assets=approved_assets)
     if lane == "live_stock_awareness":
         return build_live_stock_awareness_campaign_publish_packet(payload, approved_assets=approved_assets)
+    if lane == "live_stock_sales":
+        return build_live_stock_sales_campaign_publish_packet(payload, approved_assets=approved_assets)
     return invalid_campaign_lane_response(lane)
 
 
@@ -154,6 +221,7 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
     ranked_assets = _rank_approved_assets(approved_assets)
     channel_pairings = _channel_asset_pairings(packet.get("channel_drafts", []), ranked_assets)
     story_pairings = _channel_asset_pairings(packet.get("story_updates", []), ranked_assets, fallback_channel="story")
+    readiness = meat_launch_readiness(payload)
     return {
         "success": True,
         "mode": "beacon_meat_launch_campaign_media_selection_review_only",
@@ -161,6 +229,7 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
         "alias": "Prisma/Beacon",
         "campaign_lane": "meat_launch",
         "campaign": packet.get("campaign", {}),
+        "meat_launch_readiness": readiness,
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
         "approved_media_count": len(ranked_assets),
@@ -190,14 +259,19 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
     owner_notes = _clean_text(payload.get("owner_notes"))
     draft = _find_draft(campaign_packet, draft_id)
     asset = _find_asset(ranked_assets, selected_asset_id)
-    errors = []
+    readiness = meat_launch_readiness(payload)
+    errors = list(readiness["errors"])
     if not draft:
         errors.append("selected_draft_not_found")
     if selected_asset_id and not asset:
         errors.append("selected_asset_not_approved_or_not_found")
+    if not selected_asset_id:
+        errors.append("selected_image_asset_required")
     channel = selected_channel or (draft.get("channel") if draft else "")
-    packet_id = _publish_packet_id(draft_id, selected_asset_id, channel, pilot_cap)
     exact_text = draft.get("text", "") if draft else ""
+    packet_id = _meat_launch_publish_packet_id(
+        draft_id, selected_asset_id, channel, pilot_cap, exact_text, readiness["owner_offer_enabled"]
+    )
     return {
         "success": not errors,
         "mode": "beacon_campaign_publish_packet_owner_review_only",
@@ -215,6 +289,7 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         },
         "selected_asset": asset,
         "pilot_cap": pilot_cap,
+        "meat_launch_readiness": readiness,
         "owner_notes": owner_notes,
         "approval_status": "owner_review_required",
         "approval_records_publish": False,
@@ -226,7 +301,9 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         "safety_checks": {
             "draft_is_limited_preorder": _has_preorder_signal(exact_text.lower()) and "limited" in exact_text.lower(),
             "draft_has_no_forbidden_promise": not _has_forbidden_promise(exact_text.lower()),
-            "asset_is_owner_approved": bool(asset.get("public_use_approved")) if asset else not selected_asset_id,
+            "asset_is_owner_approved": bool(
+                asset.get("effective_public_use_approved") or asset.get("public_use_approved")
+            ) if asset else False,
             "no_public_send_or_post": True,
             "no_meta_call": True,
             "no_signed_url_created": True,
@@ -280,21 +357,30 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
     approved_assets = approved_assets if isinstance(approved_assets, list) else []
     ranked_assets = _rank_approved_assets(approved_assets, campaign_lane="live_stock_awareness")
     draft_id = _clean_text(payload.get("draft_id"))
-    selected_asset_id = _clean_text(payload.get("asset_id"))
+    selected_asset_ids = _selected_asset_ids(payload)
     selected_channel = _clean_text(payload.get("channel"))
     owner_notes = _clean_text(payload.get("owner_notes"))
     draft = _find_draft(campaign_packet, draft_id)
-    asset = _find_asset(ranked_assets, selected_asset_id)
+    assets = [_find_asset(ranked_assets, asset_id) for asset_id in selected_asset_ids]
+    missing_asset_ids = [asset_id for asset_id, asset in zip(selected_asset_ids, assets) if not asset]
+    assets = [asset for asset in assets if asset]
+    asset = assets[0] if assets else None
     errors = []
     if not draft:
         errors.append("selected_draft_not_found")
-    if selected_asset_id and not asset:
+    if missing_asset_ids:
         errors.append("selected_asset_not_approved_or_not_found")
-    exact_text = draft.get("text", "") if draft else ""
-    if _has_live_stock_direct_sales_wording(exact_text):
-        errors.append("live_stock_awareness_direct_sales_wording_blocked")
+    exact_text = _clean_caption_text(payload.get("owner_exact_text")) or (draft.get("text", "") if draft else "")
+    content_policy = assess_public_livestock_content(
+        exact_text,
+        objective="farm_awareness",
+        campaign_lane="live_stock_awareness",
+        media=assets,
+    )
+    if not content_policy["allowed"]:
+        errors.append(RISK_STATUS)
     channel = selected_channel or (draft.get("channel") if draft else "")
-    packet_id = _publish_packet_id(draft_id, selected_asset_id, channel, "live_stock_awareness")
+    packet_id = _publish_packet_id(draft_id, "|".join(selected_asset_ids), channel, "live_stock_awareness", exact_text)
     return {
         "success": not errors,
         "mode": "beacon_live_stock_awareness_publish_packet_owner_review_only",
@@ -311,18 +397,23 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
             "exact_text": exact_text,
         },
         "selected_asset": asset,
+        "selected_assets": assets,
+        "asset_ids": selected_asset_ids,
         "owner_notes": owner_notes,
+        "public_livestock_policy": content_policy,
         "approval_status": "owner_review_required",
         "approval_records_publish": False,
         "approval_sends_or_posts": False,
         "requires_owner_exact_text_confirmation": True,
-        "requires_owner_exact_media_confirmation": bool(asset),
+        "requires_owner_exact_media_confirmation": bool(assets),
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
         "safety_checks": {
-            "draft_is_awareness_only": not _has_live_stock_direct_sales_wording(exact_text),
-            "draft_has_no_direct_sales_wording": not _has_live_stock_direct_sales_wording(exact_text),
-            "asset_is_owner_approved": bool(asset.get("public_use_approved")) if asset else not selected_asset_id,
+            "draft_is_awareness_only": content_policy["allowed"],
+            "draft_has_no_direct_sales_wording": content_policy["allowed"],
+            "assets_are_owner_approved": len(assets) == len(selected_asset_ids) and all(
+                item.get("effective_public_use_approved") or item.get("public_use_approved") for item in assets
+            ),
             "no_public_send_or_post": True,
             "no_meta_call": True,
             "no_signed_url_created": True,
@@ -331,6 +422,133 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         "owner_review_checklist": list(LIVE_STOCK_OWNER_REVIEW_CHECKLIST),
         "next_gate": "owner_approves_exact_live_stock_awareness_packet_before_manual_or_gated_public_post",
     }
+
+
+def meat_launch_readiness(payload=None, environ=None):
+    """Return fail-closed, server-owned readiness for the bounded meat Facebook pilot."""
+    payload = payload if isinstance(payload, dict) else {}
+    source = environ if environ is not None else os.environ
+    owner_offer_enabled = _truthy(source.get(MEAT_PUBLIC_OFFER_ENABLED_ENV))
+    pilot_cap = _clean_text(payload.get("pilot_cap"))
+    pilot_cap_valid = pilot_cap.isdigit() and int(pilot_cap) > 0
+    errors = []
+    if not owner_offer_enabled:
+        errors.append("meat_public_offer_not_owner_enabled")
+    if not pilot_cap_valid:
+        errors.append("meat_pilot_cap_positive_whole_number_required")
+    return {
+        "schema_version": "beacon_meat_launch_readiness_v1",
+        "owner_offer_enabled": owner_offer_enabled,
+        "owner_offer_source": MEAT_PUBLIC_OFFER_ENABLED_ENV,
+        "pilot_cap": pilot_cap,
+        "pilot_cap_valid": pilot_cap_valid,
+        "sam_mode": "interest_capture_only",
+        "ready": not errors,
+        "errors": errors,
+    }
+
+
+def build_live_stock_sales_campaign_selection(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    truth, errors = _live_stock_sales_truth(payload)
+    ranked = [asset for asset in _rank_approved_assets(approved_assets or [], campaign_lane="live_stock_sales")
+              if asset.get("public_use_approved") and asset.get("content_sha256")]
+    errors.append(RISK_STATUS)
+    drafts = []
+    return {
+        "success": False,
+        "mode": "beacon_live_stock_sales_campaign_review_only",
+        "campaign_lane": "live_stock_sales",
+        "campaign": {"name": "Live-Stock Sales", "status": "owner_review_required", "product_focus": truth.get("product_focus", "")},
+        "source_truth": truth,
+        "channel_drafts": drafts,
+        "channel_draft_pairings": _channel_asset_pairings(drafts, ranked),
+        "ranked_media_assets": ranked,
+        "approved_media_count": len(ranked),
+        "errors": errors,
+        "handoff_to_sam": {"sales_lane": "live_stock_sales", "campaign_attribution_id": truth.get("campaign_attribution_id", ""), "negotiates": False, "reserves": False, "creates_order": False},
+        "whatsapp_suggestion_only": True,
+        "public_livestock_policy": public_livestock_policy_contract(),
+        "next_gate": "use_private_sam_livestock_sales_for_independent_customer_enquiries",
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+    }
+
+
+def build_live_stock_sales_campaign_publish_packet(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    selection = build_live_stock_sales_campaign_selection(payload, approved_assets=approved_assets)
+    truth = selection.get("source_truth", {})
+    drafts = selection.get("channel_drafts", [])
+    draft_id = _clean_text(payload.get("draft_id"))
+    asset_id = _clean_text(payload.get("asset_id"))
+    draft = next((item for item in drafts if item.get("id") == draft_id), None)
+    asset = _find_asset(selection.get("ranked_media_assets", []), asset_id)
+    errors = list(selection.get("errors", []))
+    if not draft or draft.get("channel") != "Facebook":
+        errors.append("facebook_sales_draft_required")
+    if not asset_id or not asset:
+        errors.append("owner_approved_sales_image_required")
+    exact_text = draft.get("text", "") if draft else ""
+    binding = {
+        "campaign_lane": "live_stock_sales", "channel": "Facebook", "exact_text": exact_text,
+        "asset_id": asset.get("asset_id", "") if asset else asset_id,
+        "asset_hash": asset.get("content_sha256", "") if asset else "",
+        "opportunity_fingerprint": truth.get("opportunity_fingerprint", ""),
+        "fulfilment_cap": truth.get("fulfilment_cap", 0), "pricing_id": truth.get("pricing_id", ""),
+        "unit_price": truth.get("unit_price"), "price_effective_from": truth.get("price_effective_from", ""),
+        "campaign_attribution_id": truth.get("campaign_attribution_id", ""),
+    }
+    packet_id = "BEACON-LIVE-SALES-" + hashlib.sha256(json.dumps(binding, sort_keys=True, default=str).encode()).hexdigest()[:24].upper()
+    return {
+        "success": not errors, "mode": "beacon_live_stock_sales_exact_publish_packet_owner_review_only",
+        "campaign_lane": "live_stock_sales", "publish_packet_id": packet_id, "packet_binding": binding,
+        "selected_draft": {"draft_id": draft_id, "channel": "Facebook", "exact_text": exact_text},
+        "selected_asset": asset, "source_truth": truth, "errors": sorted(set(errors)),
+        "whatsapp_suggestion": next((item for item in drafts if item.get("channel") == "WhatsApp"), {}),
+        "whatsapp_suggestion_only": True, "requires_owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "approval_status": "owner_review_required", "posts_publicly_now": False,
+        "authority": deepcopy(AUTHORITY_FLAGS), "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "next_gate": "owner_confirms_exact_server_revalidated_packet" if not errors else "repair_packet_evidence",
+    }
+
+
+def _live_stock_sales_truth(payload):
+    card = payload.get("opportunity_card") if isinstance(payload.get("opportunity_card"), dict) else {}
+    pricing = payload.get("pricing") if isinstance(payload.get("pricing"), dict) else {}
+    errors = []
+    if card.get("lane") != "live_stock" or card.get("status") != "ready_for_owner_review": errors.append("current_sale_eligibility_required")
+    if card.get("blockers"): errors.append("sale_eligibility_blocked")
+    if not (card.get("freshness") or {}).get("fresh"): errors.append("sale_eligibility_stale")
+    cap = card.get("demand_cap")
+    if not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0: errors.append("positive_fulfilment_cap_required")
+    if pricing.get("source") != "supabase" or not pricing.get("pricing_id"): errors.append("sheet_lineaged_supabase_price_required")
+    if pricing.get("unit_price") in (None, ""): errors.append("effective_price_required")
+    fingerprint = _clean_text(card.get("fingerprint"))
+    if not fingerprint: errors.append("opportunity_revision_required")
+    attribution = "BEACON-SAM-LIVE-" + hashlib.sha256(f"{fingerprint}|{pricing.get('pricing_id','')}".encode()).hexdigest()[:16].upper() if fingerprint else ""
+    truth = {"product_focus": _clean_text(payload.get("product_focus")) or "live pigs", "fulfilment_cap": cap or 0,
+             "fulfilment_unit": "animals", "sale_eligible": not any(e in errors for e in ("current_sale_eligibility_required", "sale_eligibility_blocked", "sale_eligibility_stale")),
+             "opportunity_fingerprint": fingerprint, "opportunity_expires_at": (card.get("timing") or {}).get("expires_at", ""),
+             "stock_source": "Supabase canonical allocation derived from sheet-backed herd facts", "stock_source_ids": (card.get("provenance") or {}).get("source_ids", []),
+             "stock_lineage_approved": card.get("lane") == "live_stock" and bool(fingerprint),
+             "pricing_id": pricing.get("pricing_id", ""), "unit_price": pricing.get("unit_price"), "currency": pricing.get("currency", "ZAR"),
+             "price_effective_from": pricing.get("effective_from", ""), "price_source": pricing.get("source", ""),
+             "price_display": f"{pricing.get('currency', 'ZAR')} {pricing.get('unit_price', '')}", "price_lineage_approved": pricing.get("source") == "supabase" and bool(pricing.get("pricing_id")),
+             "blocker": ", ".join(sorted(set(errors))),
+             "campaign_attribution_id": attribution}
+    return truth, sorted(set(errors))
+
+
+def _live_stock_sales_drafts(truth):
+    product = truth["product_focus"]; cap = truth["fulfilment_cap"]; price = truth["unit_price"]; currency = truth["currency"]
+    attribution = truth["campaign_attribution_id"]
+    return [
+        {"id": "facebook_live_stock_sales", "label": "Facebook sales post", "channel": "Facebook", "intent": "owner-gated live-stock sale",
+         "text": f"Amadeus Farm has {product} available near Riversdale. We can safely take enquiries for up to {cap} animals at {currency} {price} each. Message us with the quantity and type you need. Reference: {attribution}."},
+        {"id": "whatsapp_live_stock_sales", "label": "WhatsApp suggestion", "channel": "WhatsApp", "intent": "copy suggestion only",
+         "text": f"Live-stock update from Amadeus Farm: enquiries are open for up to {cap} {product} at {currency} {price} each. Reply with the quantity and type you need and SAM will help. Reference: {attribution}."},
+    ]
 
 
 def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None):
@@ -350,7 +568,7 @@ def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None
             "draft_id": "facebook_post",
             "channel": "Facebook",
             "asset_id": asset_id,
-            "pilot_cap": payload.get("pilot_cap") or "2 halves",
+            "pilot_cap": payload.get("pilot_cap"),
         },
         approved_assets=approved_assets,
     )
@@ -360,6 +578,7 @@ def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None
         "exact_text": (publish_packet.get("selected_draft") or {}).get("exact_text", ""),
         "asset_id": ((publish_packet.get("selected_asset") or {}).get("asset_id") or ""),
         "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "pilot_cap": publish_packet.get("pilot_cap", ""),
     }
     return {
         "success": bool(publish_packet.get("success")) and bool((publish_packet.get("selected_asset") or {}).get("asset_id")),
@@ -582,6 +801,8 @@ def record_beacon_campaign_performance_event(payload, database_url=None):
                         reserves_stock, dispatch_enabled, changes_runtime_now,
                         changes_prompt_now, physical_controls_enabled,
                         customer_public_output_enabled, writes_farm_data, recorded_by
+                        , metric_evidence, evidence_source, source_reference, retrieved_at,
+                        source_snapshot_key, supersedes_event_id
                     )
                     values (
                         %(performance_event_id)s, %(mode)s, %(manual_post_event_id)s,
@@ -602,6 +823,8 @@ def record_beacon_campaign_performance_event(payload, database_url=None):
                         %(changes_runtime_now)s, %(changes_prompt_now)s,
                         %(physical_controls_enabled)s, %(customer_public_output_enabled)s,
                         %(writes_farm_data)s, %(recorded_by)s
+                        , %(metric_evidence_json)s::jsonb, %(evidence_source)s, %(source_reference)s,
+                        %(retrieved_at)s::timestamptz, %(performance_event_id)s, nullif(%(supersedes_event_id)s, '')
                     )
                     on conflict (performance_event_id) do nothing
                     """,
@@ -672,7 +895,9 @@ def list_beacon_campaign_performance_events(limit=25, publish_packet_id="", manu
                            recommendation_reason, recommended_spend_amount,
                            recommended_duration_days, max_spend_cap_amount,
                            cost_per_message, cost_per_qualified_lead,
-                           recommends_boost, recorded_by, created_at
+                           recommends_boost, recorded_by, created_at,
+                           metric_evidence, evidence_source, source_reference, retrieved_at,
+                           source_snapshot_key, supersedes_event_id
                     from public.beacon_campaign_performance_events
                     {where}
                     order by created_at desc
@@ -709,6 +934,290 @@ def list_beacon_campaign_performance_events(limit=25, publish_packet_id="", manu
     }, 200
 
 
+def build_beacon_weekly_command_brief(events, now=None, stale_after_hours=168, weekly_targets=None):
+    """Project append-only performance snapshots into a read-only owner brief."""
+    now = now or datetime.now(timezone.utc)
+    unique, seen_ids = [], set()
+    ordered_events = sorted(events or [], key=lambda item: _event_datetime(item) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    for event in ordered_events:
+        event_id = _clean_text(event.get("performance_event_id"))
+        if event_id and event_id in seen_ids:
+            continue
+        if event_id:
+            seen_ids.add(event_id)
+        unique.append(event)
+    authority = {**deepcopy(PERFORMANCE_AUTHORITY_FLAGS), "creates_core_work": False, "approves_campaign": False}
+    if not unique:
+        unavailable = {"status": "unavailable", "target": None, "actual": None}
+        return {"mode": "beacon_weekly_command_brief_read_only", "truth_state": "unavailable",
+                "targets": {"spend": {**unavailable, "actual": 0}, "qualified_leads": {**unavailable, "actual": 0},
+                            "attributed_revenue": unavailable},
+                "comparison": {"status": "insufficient_data", "measurement_window": "", "campaigns": []},
+                "recommendations": [], "alerts": [{"code": "missing_evidence", "severity": "blocked"}], "authority": authority}
+
+    latest = unique[0]
+    latest_datetime = _event_datetime(latest)
+    if latest_datetime:
+        latest_week = latest_datetime.isocalendar()[:2]
+        unique = [event for event in unique if (_event_datetime(event) or latest_datetime).isocalendar()[:2] == latest_week]
+    window = " ".join(_clean_text(latest.get("measurement_window")).lower().split())
+    currency = (_clean_text(latest.get("spend_currency")) or "ZAR").upper()
+    compatible, seen_campaigns = [], set()
+    for event in unique:
+        event_window = " ".join(_clean_text(event.get("measurement_window")).lower().split())
+        event_currency = (_clean_text(event.get("spend_currency")) or "ZAR").upper()
+        campaign_id = _clean_text(event.get("publish_packet_id") or event.get("manual_post_event_id") or event.get("channel"))
+        key = (campaign_id, event_window, event_currency)
+        if event_window != window or event_currency != currency or key in seen_campaigns:
+            continue
+        seen_campaigns.add(key)
+        compatible.append(event)
+
+    recommendations = [_command_recommendation(event) for event in compatible]
+    alerts = []
+    latest_at = _event_datetime(latest)
+    if not latest_at or (now - latest_at).total_seconds() > stale_after_hours * 3600:
+        alerts.append({"code": "stale_evidence", "severity": "warning"})
+    alerts.append({"code": "stop_recommendation_waiting" if any(r["classification"] == "STOP" for r in recommendations)
+                   else "recommendations_waiting", "severity": "blocked" if any(r["classification"] == "STOP" for r in recommendations) else "review"})
+    targets = _weekly_target_contract(weekly_targets, compatible, currency)
+    return {"mode": "beacon_weekly_command_brief_read_only", "truth_state": "comparable" if len(compatible) > 1 else "limited",
+            "last_updated_at": latest.get("created_at"),
+            "targets": targets,
+            "comparison": {"status": "compatible" if len(compatible) > 1 else "insufficient_data", "measurement_window": latest.get("measurement_window") or "", "currency": currency, "campaigns": compatible},
+            "recommendations": recommendations, "alerts": alerts, "authority": authority}
+
+
+def prepare_beacon_owner_decision(performance_event, destination):
+    """Prepare an owner-review packet without recording or executing the decision."""
+    performance_event = performance_event if isinstance(performance_event, dict) else {}
+    destination = _clean_text(destination).lower()
+    if destination not in {"campaign_decision", "core_work"}:
+        return {"success": False, "status": "decision_destination_unavailable", "allowed_destinations": ["campaign_decision", "core_work"], **_decision_authority()}, 400
+    source_id = _clean_text(performance_event.get("performance_event_id"))
+    if not source_id:
+        return {"success": False, "status": "recommendation_source_required", **_decision_authority()}, 400
+    recommendation = _command_recommendation(performance_event)
+    return {
+        "success": True,
+        "status": "owner_decision_packet_prepared",
+        "mode": "beacon_owner_decision_prepare_only",
+        "destination": destination,
+        "classification": recommendation["classification"],
+        "performance_event_id": source_id,
+        "reason": _clean_text(recommendation.get("reason")),
+        "supporting_metrics": recommendation.get("supporting_metrics") if isinstance(recommendation.get("supporting_metrics"), dict) else {},
+        "owner_gate": "owner_review_required",
+        "next_gate": "owner_records_separate_campaign_decision" if destination == "campaign_decision" else "owner_creates_or_approves_separate_core_mission",
+        **_decision_authority(),
+    }, 200
+
+
+def build_beacon_follow_up_suggestions(events, now=None, stale_after_hours=168):
+    """Build deterministic, read-only CORE mission suggestions from recurring weaknesses."""
+    now = now or datetime.now(timezone.utc)
+    events = [item for item in (events or []) if isinstance(item, dict)]
+    superseded = {_clean_text(item.get("supersedes_event_id")) for item in events if _clean_text(item.get("supersedes_event_id"))}
+    latest_by_campaign = {}
+    exclusions = set()
+    for event in sorted(events, key=lambda item: (_event_datetime(item) or datetime.min.replace(tzinfo=timezone.utc)), reverse=True):
+        event_id = _clean_text(event.get("performance_event_id"))
+        campaign_id = _clean_text(event.get("publish_packet_id") or event.get("manual_post_event_id"))
+        if not event_id or not campaign_id or event_id in superseded:
+            exclusions.add("malformed_or_superseded_evidence")
+            continue
+        if campaign_id in latest_by_campaign:
+            exclusions.add("duplicate_campaign_snapshot")
+            continue
+        created_at = _event_datetime(event)
+        if not created_at or (now - created_at).total_seconds() > stale_after_hours * 3600:
+            exclusions.add("stale_evidence")
+            continue
+        try:
+            spend = float(event["spend_amount"])
+            leads = int(event["qualified_buyer_leads"])
+        except (KeyError, TypeError, ValueError):
+            exclusions.add("missing_or_malformed_metrics")
+            continue
+        metric_evidence = event.get("metric_evidence")
+        required_evidence = _follow_up_required_metric_evidence(metric_evidence, spend, leads)
+        if required_evidence is None:
+            exclusions.add("missing_malformed_or_unavailable_metric_evidence")
+            continue
+        window = " ".join(_clean_text(event.get("measurement_window")).lower().split())
+        currency = _clean_text(event.get("spend_currency")).upper()
+        if not window or (spend > 0 and not currency):
+            exclusions.add("incompatible_evidence")
+            continue
+        normalized = dict(event, spend_amount=spend, qualified_buyer_leads=leads)
+        normalized["_compatibility"] = (
+            window,
+            currency if spend > 0 else "NO_SPEND",
+            required_evidence["metric_definition"],
+            required_evidence["evidence_state"],
+        )
+        latest_by_campaign[campaign_id] = normalized
+
+    groups = {}
+    for campaign_id, event in latest_by_campaign.items():
+        recommendation = _command_recommendation(event)
+        category = recommendation["reason"]
+        if category not in FOLLOW_UP_TAXONOMY:
+            continue
+        groups.setdefault((category, event["_compatibility"]), []).append((campaign_id, event))
+
+    suggestions = []
+    for (category, compatibility), matches in groups.items():
+        if len(matches) < 2:
+            continue
+        matches.sort(key=lambda item: item[0])
+        lineage = [{"campaign_id": campaign_id, "performance_event_id": _clean_text(event.get("performance_event_id"))}
+                   for campaign_id, event in matches]
+        identity_seed = json.dumps({"category": category, "compatibility": compatibility, "lineage": lineage}, sort_keys=True, separators=(",", ":"))
+        suggestion_id = "BEACON-FOLLOWUP-" + hashlib.sha256(identity_seed.encode("utf-8")).hexdigest()[:20].upper()
+        contract = FOLLOW_UP_TAXONOMY[category]
+        suggestions.append({
+            "suggestion_id": suggestion_id, "weakness_category": category,
+            "title": contract["title"], "recurrence_count": len(matches),
+            "recurrence_rationale": f"{len(matches)} distinct compatible campaigns share the server-classified weakness.",
+            "evidence_lineage": lineage,
+            "compatibility": {"measurement_window": compatibility[0], "currency": compatibility[1], "metric_definition": compatibility[2], "evidence_state": compatibility[3]},
+            "expected_value": {"status": "estimated", "estimate": "Improved evidence quality and reduced repeat weak-campaign risk", "provenance": "server_classified_campaign_performance", "uncertainty": "Outcome and revenue impact are not guaranteed"},
+            "scope": list(contract["scope"]), "non_goals": list(contract["non_goals"]),
+            "proposed_tests": list(contract["tests"]), "safety_level": contract["safety_level"],
+            "owner_review_status": "new", "authority": dict(FOLLOW_UP_AUTHORITY_FLAGS),
+        })
+    suggestions.sort(key=lambda item: (item["weakness_category"], item["suggestion_id"]))
+    status = "recurring_weaknesses_found" if suggestions else "insufficient_evidence"
+    if len(latest_by_campaign) < 2:
+        exclusions.add("at_least_two_distinct_campaigns_required")
+    return {"success": True, "status": status, "mode": "beacon_follow_up_suggestions_read_only",
+            "suggestions": suggestions, "evidence_result": {"eligible_campaign_count": len(latest_by_campaign), "exclusions": sorted(exclusions)},
+            "authority": dict(FOLLOW_UP_AUTHORITY_FLAGS)}
+
+
+def _follow_up_required_metric_evidence(metric_evidence, spend, leads):
+    """Return compatibility metadata only for trusted, snapshot-matching evidence."""
+    if not isinstance(metric_evidence, dict):
+        return None
+    requirements = (
+        ("spend_amount", float(spend), "currency_amount_v1"),
+        ("qualified_buyer_leads", int(leads), "whole_number_count_v1"),
+    )
+    states = []
+    definitions = []
+    for name, expected_value, server_definition in requirements:
+        evidence = metric_evidence.get(name)
+        if not isinstance(evidence, dict):
+            return None
+        status = _clean_text(evidence.get("status")).lower()
+        if status not in {"verified", "owner_correction"}:
+            return None
+        supplied_definition = _clean_text(evidence.get("metric_definition") or server_definition).lower()
+        if supplied_definition != server_definition:
+            return None
+        try:
+            actual_value = float(evidence.get("value"))
+        except (TypeError, ValueError):
+            return None
+        if actual_value < 0 or actual_value != float(expected_value):
+            return None
+        if name == "qualified_buyer_leads" and not actual_value.is_integer():
+            return None
+        states.append(status)
+        definitions.append(server_definition)
+    return {
+        "metric_definition": "+".join(definitions),
+        "evidence_state": "+".join(states),
+    }
+
+
+def beacon_follow_up_mission(suggestion):
+    """Translate a server-built suggestion into a new, unapproved CORE mission contract."""
+    return {
+        "mission_id": suggestion["suggestion_id"], "status": "new", "title": suggestion["title"],
+        "raw_text": suggestion["recurrence_rationale"] + " Prepare the bounded follow-up described in the attached Beacon evidence contract.",
+        "urgency": "P2", "mission_type": "system improvement", "approval_level": "LEVEL 3",
+        "owner_decision": "", "metadata": {"beacon_follow_up_suggestion": suggestion,
+            "authority": dict(FOLLOW_UP_AUTHORITY_FLAGS), "owner_approval_required": True},
+    }
+
+
+def _event_datetime(event):
+    try:
+        value = datetime.fromisoformat(_clean_text(event.get("created_at")).replace("Z", "+00:00"))
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _weekly_target_contract(weekly_targets, events, currency):
+    weekly_targets = weekly_targets if isinstance(weekly_targets, dict) else {}
+    actuals = {
+        "spend": sum(float(event.get("spend_amount") or 0) for event in events),
+        "qualified_leads": sum(int(event.get("qualified_buyer_leads") or 0) for event in events),
+    }
+    targets = {}
+    for key in ("spend", "qualified_leads"):
+        source = weekly_targets.get(key) if isinstance(weekly_targets.get(key), dict) else {}
+        status = _clean_text(source.get("status")).lower()
+        if status not in {"proposed", "owner_approved", "blocked"}:
+            status = "unavailable"
+        targets[key] = {"status": status, "target": source.get("target") if status != "unavailable" else None, "actual": actuals[key]}
+        if key == "spend":
+            targets[key]["currency"] = currency
+        if status == "blocked":
+            targets[key]["blocker"] = _clean_text(source.get("blocker")) or "owner_or_fulfilment_block"
+    targets["attributed_revenue"] = {"status": "unavailable", "target": None, "actual": None, "reason": "canonical_paid_completed_sale_join_unproven"}
+    return targets
+
+
+def _decision_authority():
+    return {
+        "creates_core_work": False, "approves_campaign": False, "posts_publicly": False,
+        "sends_customer_message": False, "calls_meta": False, "calls_chatwoot": False,
+        "calls_n8n": False, "spends_money": False, "creates_order": False,
+        "reserves_stock": False, "changes_stock": False, "writes_farm_data": False,
+    }
+
+
+def _command_recommendation(event):
+    evidence = event.get("metric_evidence") if isinstance(event.get("metric_evidence"), dict) else {}
+    spend_evidence = evidence.get("spend_amount") if isinstance(evidence.get("spend_amount"), dict) else {}
+    lead_evidence = evidence.get("qualified_buyer_leads") if isinstance(evidence.get("qualified_buyer_leads"), dict) else {}
+    accepted_statuses = {"verified", "owner_correction"}
+    spend_available = _clean_text(spend_evidence.get("status")).lower() in accepted_statuses
+    leads_available = _clean_text(lead_evidence.get("status")).lower() in accepted_statuses
+    spend = float(spend_evidence.get("value") or 0) if spend_available else None
+    leads = int(lead_evidence.get("value") or 0) if leads_available else None
+    cap = float(event.get("max_spend_cap_amount") or BOOST_RECOMMENDATION_SPEND_CAP)
+    upstream = _clean_text(event.get("recommended_action")).lower()
+    if not spend_available or not leads_available:
+        result = ("CHANGE", "spend_or_qualified_lead_evidence_unavailable", "evidence_unavailable")
+    elif spend > cap:
+        result = ("STOP", "spend_cap_conflict", "blocked")
+    elif upstream == "do_not_boost" or (spend > 0 and leads == 0):
+        result = ("STOP", "paid_spend_without_qualified_leads", "blocked")
+    elif upstream == "light_boost_owner_review" and leads > 0:
+        result = ("BOOST", "qualified_leads_support_owner_review", "owner_review_required")
+    elif leads > 0 and spend == 0:
+        result = ("REUSE", "qualified_leads_without_paid_spend", "owner_review_required")
+    else:
+        result = ("CHANGE", "insufficient_evidence_or_adjustment_needed", "owner_review_required")
+    return {"classification": result[0], "reason": result[1], "truth_state": result[2],
+            "performance_event_id": event.get("performance_event_id") or "",
+            "supporting_metrics": {
+                "spend_amount": spend,
+                "qualified_buyer_leads": leads,
+                "currency": event.get("spend_currency") or "ZAR",
+                "metric_evidence_status": {
+                    "spend_amount": _clean_text(spend_evidence.get("status")).lower() or "missing",
+                    "qualified_buyer_leads": _clean_text(lead_evidence.get("status")).lower() or "missing",
+                },
+            },
+            "owner_gate": "prepare_decision_only"}
+
+
 def facebook_posting_policy(environ=None):
     source = environ if environ is not None else os.environ
     enabled = _truthy(source.get(FACEBOOK_POSTING_ENABLED_ENV))
@@ -738,7 +1247,7 @@ def facebook_posting_policy(environ=None):
         "posts_text_only_now": posting_ready,
         "posts_media_now": bool(posting_ready and media_storage_configured),
         "posts_image_now": bool(posting_ready and media_storage_configured),
-        "media_source": "approved_beacon_supabase_image_signed_url",
+        "media_source": "approved_beacon_server_validated_binary_multipart",
         "boosts_or_spends_now": False,
         "required_envs": [
             FACEBOOK_POSTING_ENABLED_ENV,
@@ -749,10 +1258,121 @@ def facebook_posting_policy(environ=None):
     }
 
 
-def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None):
+def _public_livestock_execution_policy_assessment(params, *, environ=None, now=None):
+    """Return the fresh assessment when public execution authority is invalid."""
+    lane = normalize_campaign_lane(params.get("campaign_lane"))
+    if lane not in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
+        return None
+    source = environ if environ is not None else os.environ
+    configured_page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    target_page_id = _clean_text(params.get("target_page_id"))
+    assessment = assess_public_livestock_content(
+        params.get("exact_text") or params.get("message"),
+        objective=params.get("objective") or "farm_awareness",
+        campaign_lane=lane,
+        media=params.get("selected_assets") or params.get("selected_asset"),
+    )
+    if (not configured_page_id or target_page_id != configured_page_id
+            or not assessment["allowed"]
+            or not public_livestock_policy_binding_matches(
+                params.get("public_content_policy"), assessment,
+                target_page_id=target_page_id, now=now)):
+        return assessment
+    return None
+
+
+def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
+                                      meat_launch_authorized=False, media_projector=None,
+                                      now_provider=None, publish_now_authority_reader=None,
+                                      protected_campaign_authority_reader=None,
+                                      meta_readback_reader=None):
     payload = payload if isinstance(payload, dict) else {}
+    current_time = now_provider or (lambda: datetime.now(timezone.utc))
+    raw_campaign_lane = payload.get("campaign_lane")
+    raw_objective = payload.get("objective")
+    campaign_lane = normalize_campaign_lane(raw_campaign_lane)
+    is_publish_now = (
+        payload.get("publish_packet_id") == "BEACON-PROPOSAL-18DEAAD8E896A87FE961F45B"
+        and payload.get("publication_authority_mode") == "publish_now"
+    )
+    authority_reader = publish_now_authority_reader or require_publish_now_authority
+    successor_error = validate_successor_execution(payload, now=current_time())
+    if successor_error:
+        return {"success": False, "status": successor_error,
+                **_facebook_execution_authority(False)}, 409
+    if is_publish_now:
+        authority_result, authority_status = authority_reader(database_url)
+        if authority_status != 200 or authority_result.get("success") is not True:
+            return {**authority_result, **_facebook_execution_authority(False)}, authority_status
+        if poster is not None:
+            return {
+                "success": False,
+                "status": "publish_now_custom_poster_forbidden",
+                **_facebook_execution_authority(False),
+            }, 409
+    authorization_generation_id = _clean_text(
+        payload.get("authorization_generation_id")
+    )
+    if authorization_generation_id or campaign_lane in {"live_stock_awareness", "live_stock_enquiry_capture"}:
+        valid_dimensions = {
+            ("live_stock_awareness", "farm_awareness"),
+            ("live_stock_enquiry_capture", "qualified_livestock_enquiries"),
+        }
+        if (not isinstance(raw_campaign_lane, str)
+                or not isinstance(raw_objective, str)
+                or (raw_campaign_lane, raw_objective) not in valid_dimensions):
+            return {
+                "success": False,
+                "status": "organic_publication_objective_binding_mismatch",
+                **_facebook_execution_authority(False),
+            }, 409
+    if campaign_lane == "meat_launch" and not meat_launch_authorized:
+        return controlled_mode_denial("publish_meat_campaign")
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
+        assessment = _public_livestock_execution_policy_assessment(
+            payload, environ=environ, now=current_time())
+        if assessment is not None:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": assessment,
+                **_facebook_execution_authority(False),
+            }, 409
     policy = facebook_posting_policy(environ=environ)
-    params = _facebook_post_params(payload, policy)
+    requested_assets = payload.get("selected_assets") if isinstance(payload.get("selected_assets"), list) else []
+    if not requested_assets and isinstance(payload.get("selected_asset"), dict):
+        requested_assets = [payload["selected_asset"]]
+    requested_types = {str(item.get("media_type") or "").lower() for item in requested_assets if isinstance(item, dict)}
+    projector = media_projector or resolve_server_publication_assets
+    projected = []
+    if requested_assets and requested_types == {"image"}:
+        identities = [str(item.get("asset_id") or "").strip() for item in requested_assets if isinstance(item, dict)]
+        projection, projection_status = projector(identities, database_url)
+        if projection_status != 200 or projection.get("success") is not True:
+            return {**projection, **_facebook_execution_authority(False)}, projection_status
+        projected = projection["assets"]
+        if payload.get("protected_campaign_claim_token"):
+            exact_keys = ("asset_id", "content_sha256", "library_accept_event_id", "public_use_event_id")
+            approved = [{key: item.get(key) for key in exact_keys} for item in requested_assets]
+            current = [{key: item.get(key) for key in exact_keys} for item in projected]
+            if approved != current:
+                return {"success": False, "status": "protected_campaign_exact_media_changed",
+                        "outcome": "definite_failure_before_meta", "automatic_retry_allowed": False,
+                        **_facebook_execution_authority(False)}, 409
+        payload = {**payload, "asset_id": projected[0]["asset_id"],
+                   "selected_asset": projected[0], "selected_assets": projected}
+        successor_error = validate_successor_execution(payload, now=current_time())
+        if successor_error:
+            return {"success": False, "status": successor_error,
+                    **_facebook_execution_authority(False)}, 409
+    try:
+        params = _facebook_post_params(payload, policy)
+    except ValueError:
+        return {
+            "success": False,
+            "status": "canonical_caption_invalid",
+            **_facebook_execution_authority(False),
+        }, 400
     validation_error = _facebook_post_validation_error(params, policy)
     if validation_error:
         params["execution_status"] = validation_error
@@ -764,16 +1384,199 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             "execution_event": _public_facebook_post_event(params),
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
+    protected_token = ""
+    if campaign_lane in {"live_stock_awareness", "live_stock_enquiry_capture"}:
+        source = environ if environ is not None else os.environ
+        protected_token = _clean_text(payload.get("protected_campaign_claim_token"))
+        if protected_token:
+            reader = protected_campaign_authority_reader or _require_protected_campaign_authority
+            binding_result, binding_status = reader(payload, params, database_url)
+        else:
+            binding_result, binding_status = require_organic_publication_binding(
+                params,
+                target_page_id=_clean_text(source.get(FACEBOOK_PAGE_ID_ENV)),
+                database_url=database_url,
+            )
+        if binding_status != 200:
+            return {
+                **binding_result,
+                "policy": policy,
+                **_facebook_execution_authority(False),
+            }, binding_status
+        binding = binding_result["binding"]
+        authorization = binding_result["authorization"]
+        params["publication_binding_id"] = binding["binding_id"]
+        params["approved_weekly_packet_id"] = binding.get("weekly_packet_id", "")
+        params["owner_decision_event_id"] = binding["owner_decision_event_id"]
+        params["authorization_generation_id"] = authorization["authorization_generation_id"]
+        successor_error = validate_successor_execution(
+            params,
+            now=current_time(),
+            authoritative_timing_authorization_id=authorization[
+                "authorization_generation_id"
+            ],
+        )
+        if successor_error:
+            return {"success": False, "status": successor_error,
+                    **_facebook_execution_authority(False)}, 409
+        params["execution_event_id"] = _facebook_post_execution_id(params)
+        if (authorization.get("expected_attempt_identity")
+                and params["execution_event_id"] != authorization["expected_attempt_identity"]):
+            return {
+                "success": False,
+                "status": "organic_publication_attempt_identity_mismatch",
+                "publish": False,
+                "upload": False,
+                "scheduled": False,
+                "meta_call": False,
+                **_facebook_execution_authority(False),
+            }, 409
 
-    post_fn = poster or _post_to_facebook_page
-    post_result, post_status = post_fn(params, policy)
+        final_assessment = _public_livestock_execution_policy_assessment(
+            params, environ=environ, now=current_time())
+        if final_assessment is not None:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": final_assessment,
+                **_facebook_execution_authority(False),
+            }, 409
+
+    recorder = execution_recorder or _record_facebook_post_execution_event
+    params["execution_status"] = "record_only_before_send"
+    params["facebook_response_json"] = json.dumps({
+        "transport_stage": "attempt_claimed",
+        "post_kind": params.get("post_kind", "feed"),
+        "campaign_lane": params.get("campaign_lane", ""),
+        "objective": params.get("objective", ""),
+        "selected_media": _facebook_selected_media(params),
+        "caption_sha256": hashlib.sha256(
+            params.get("exact_text", "").encode("utf-8")
+        ).hexdigest(),
+        "automatic_retry_allowed": False,
+    }, sort_keys=True, default=str)
+    claim_result, claim_status = recorder(params, database_url=database_url)
+    if claim_status != 201 or not claim_result.get("created_count"):
+        return {
+            "success": False,
+            "status": "facebook_publish_packet_already_claimed" if claim_status < 400 else "facebook_publish_claim_failed",
+            "record_status_code": claim_status,
+            "record_result": claim_result,
+            "execution_event": _public_facebook_post_event(params),
+            "policy": policy,
+            **_facebook_execution_authority(False),
+        }, 409 if claim_status < 400 else 503
+
+    if projected:
+        current_projection, current_status = projector(
+            [asset.get("asset_id", "") for asset in projected], database_url
+        )
+        if (current_status != 200
+                or current_projection.get("success") is not True
+                or current_projection.get("assets") != projected):
+            return {
+                "success": False,
+                "status": "server_media_authority_changed_after_claim",
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+                **_facebook_execution_authority(False),
+            }, 409
+
+    successor_error = validate_successor_execution(
+        params,
+        now=current_time(),
+        authoritative_timing_authorization_id=(
+            params.get("authorization_generation_id") or None
+        ),
+    )
+    if successor_error:
+        return {
+            "success": False,
+            "status": successor_error,
+            "outcome": "definite_failure_before_meta",
+            "automatic_retry_allowed": False,
+            **_facebook_execution_authority(False),
+        }, 409
+
+    if is_publish_now:
+        authority_result, authority_status = authority_reader(database_url)
+        if authority_status != 200 or authority_result.get("success") is not True:
+            return {
+                **authority_result,
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+                **_facebook_execution_authority(False),
+            }, authority_status
+
+    def public_policy_guard():
+        return _public_livestock_execution_policy_assessment(
+            params, environ=environ, now=current_time()) is None
+
+    if not public_policy_guard():
+        return {
+            "success": False,
+            "status": RISK_STATUS,
+            "outcome": "definite_failure_before_meta",
+            "automatic_retry_allowed": False,
+            **_facebook_execution_authority(False),
+        }, 409
+
+    if poster:
+        post_result, post_status = poster(params, policy)
+    else:
+        def record_stage(stage):
+            stage_params = dict(params)
+            stage_name = _clean_text(stage.get("transport_stage"))[:80]
+            stage_identity = (
+                f"{stage_name}|{stage.get('asset_position', '')}|"
+                f"{stage.get('asset_id', '')}"
+            )
+            stage_params["execution_event_id"] = (
+                f'{params["execution_event_id"]}-STAGE-'
+                f'{hashlib.sha256(stage_identity.encode()).hexdigest()[:12].upper()}'
+            )
+            stage_params["execution_status"] = "record_only_before_send"
+            stage_params["facebook_response_json"] = json.dumps(
+                stage, sort_keys=True, default=str
+            )
+            result, status = recorder(stage_params, database_url=database_url)
+            return status < 400 and bool(result.get("success"))
+
+        def authority_guard():
+            if protected_token:
+                guarded, guarded_status = reader(payload, params, database_url)
+                return guarded_status == 200 and guarded.get("success") is True
+            if not is_publish_now: return True
+            guard_result, guard_status = authority_reader(database_url)
+            return guard_status == 200 and guard_result.get("success") is True
+
+        post_result, post_status = _post_to_facebook_page(
+            params, policy, stage_recorder=record_stage,
+            authority_guard=authority_guard,
+            public_policy_guard=public_policy_guard,
+        )
+        if protected_token and post_status < 400 and post_result.get("success") is True:
+            readback = meta_readback_reader or _readback_facebook_page_post
+            readback_result, readback_status = readback(
+                post_result.get("facebook_post_id") or post_result.get("id"), params,
+                environ=environ, expected_media_ids=post_result.get("uploaded_media_ids") or [])
+            if readback_status >= 400 or readback_result.get("success") is not True:
+                post_result = {**post_result, "success": False,
+                    "status": "meta_provider_readback_ambiguous",
+                    "provider_readback": readback_result, "outcome": "ambiguous",
+                    "automatic_retry_allowed": False}
+                post_status = 503
+            else:
+                post_result = {**post_result, "provider_readback": readback_result,
+                               "provider_readback_confirmed": True}
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
+        "execution_event_id": f'{params["execution_event_id"]}-RESULT',
         "execution_status": execution_status,
         "facebook_post_id": _clean_text(post_result.get("facebook_post_id") or post_result.get("id"))[:160],
         "facebook_response_json": json.dumps(post_result, sort_keys=True, default=str),
     })
-    record_result, record_status = _record_facebook_post_execution_event(params, database_url=database_url)
+    record_result, record_status = recorder(params, database_url=database_url)
     return {
         "success": execution_status == "facebook_page_post_sent",
         "status": execution_status,
@@ -786,6 +1589,103 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
         "policy": policy,
         **_facebook_execution_authority(execution_status == "facebook_page_post_sent"),
     }, 200 if execution_status == "facebook_page_post_sent" else 502
+
+
+def _require_protected_campaign_authority(payload, params, database_url=None):
+    """Re-read the claimed owner decision; request fields are never authority."""
+    token = _clean_text(payload.get("protected_campaign_claim_token"))
+    digest = _clean_text(payload.get("protected_campaign_digest"))
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV) or "").strip()
+    if not token or not digest or not database_url:
+        return {"success": False, "status": "protected_campaign_authority_unavailable"}, 503
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=10,
+                options="-c default_transaction_read_only=on -c statement_timeout=10000") as db, db.cursor() as cur:
+            cur.execute("""select c.evidence_generation,c.preview_payload,c.result_payload,c.expires_at,
+                    p.consumer_id,p.status
+                from app_private.oom_protected_action_claims c
+                join app_private.beacon_protected_publication_consumers p on p.callback_token=c.callback_token
+                where c.callback_token=%s and c.action_kind='beacon_campaign_review'
+                  and c.status='completed'""", (token,))
+            row = cur.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "protected_campaign_authority_read_failed",
+                "error_type": exc.__class__.__name__}, 503
+    if not row or row[5] != "claimed" or row[3] <= datetime.now(timezone.utc):
+        return {"success": False, "status": "protected_campaign_authority_not_actionable"}, 409
+    preview = row[1] if isinstance(row[1], dict) else {}
+    decision = row[2] if isinstance(row[2], dict) else {}
+    configured_page_id = _clean_text(os.getenv(FACEBOOK_PAGE_ID_ENV))
+    media_keys = ("asset_id", "content_sha256", "library_accept_event_id", "public_use_event_id")
+    selected_media = preview.get("selected_media")
+    media = [] if selected_media == {"mode": "text_only"} else [
+        {key:item.get(key) for key in media_keys}
+        for item in selected_media or [] if isinstance(item, dict)]
+    requested = [{key:item.get(key) for key in media_keys} for item in params.get("selected_assets") or []]
+    if (row[0] != digest or preview.get("campaign_digest") != digest
+            or decision.get("status") != "beacon_campaign_review_approved"
+            or preview.get("packet_id") != params.get("publish_packet_id")
+            or preview.get("exact_post_copy") != params.get("exact_text")
+            or (preview.get("campaign_lane") or "live_stock_awareness") != params.get("campaign_lane")
+            or (preview.get("campaign_objective") or "farm_awareness") != params.get("objective")
+            or not configured_page_id
+            or preview.get("target_page_id") != configured_page_id
+            or _clean_text(payload.get("target_page_id")) != configured_page_id
+            or media != requested):
+        return {"success": False, "status": "protected_campaign_authority_binding_mismatch"}, 409
+    if selected_media == {"mode": "text_only"}:
+        if params.get("selected_assets") or params.get("asset_id"):
+            return {"success": False, "status": "protected_campaign_text_only_media_conflict"}, 409
+    else:
+        current_projection, current_status = resolve_server_publication_assets(
+            [item.get("asset_id") for item in params.get("selected_assets") or []], database_url)
+        if current_status != 200 or current_projection.get("success") is not True:
+            return {"success": False, "status": "protected_campaign_media_authority_revoked"}, 409
+        current = [{key:item.get(key) for key in media_keys} for item in current_projection["assets"]]
+        if current != media:
+            return {"success": False, "status": "protected_campaign_media_authority_changed"}, 409
+    binding_id = "BEACON-PROTECTED-BINDING-" + hashlib.sha256(token.encode()).hexdigest()[:24].upper()
+    return {"success": True, "status": "protected_campaign_authority_verified",
+        "binding": {"binding_id": binding_id, "owner_decision_event_id": token},
+        "authorization": {"authorization_generation_id": digest}}, 200
+
+
+def _readback_facebook_page_post(post_id, params, environ=None, expected_media_ids=None):
+    """Confirm Meta can read the exact created object and caption."""
+    source = environ if environ is not None else os.environ
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    post_id = _clean_text(post_id)
+    if not post_id or not token:
+        return {"success": False, "status": "meta_readback_configuration_missing"}, 503
+    query = urllib_parse.urlencode({"fields":"id,message,created_time,attachments{target,subattachments{target}}","access_token":token})
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version,safe='')}/{urllib_parse.quote(post_id,safe='')}?{query}"
+    try:
+        with urllib_request.urlopen(urllib_request.Request(endpoint,method="GET"), timeout=25) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError,
+            ValueError, json.JSONDecodeError) as exc:
+        return {"success": False, "status": "meta_readback_failed",
+                "error_type": exc.__class__.__name__}, 503
+    if payload.get("id") != post_id or canonical_caption_text(payload.get("message", "")) != params.get("exact_text"):
+        return {"success": False, "status": "meta_readback_binding_mismatch"}, 409
+    expected = [str(value) for value in expected_media_ids or [] if str(value)]
+    attachments = ((payload.get("attachments") or {}).get("data") or [])
+    def target_ids(items):
+        values=[]
+        for item in items:
+            target=item.get("target") if isinstance(item.get("target"),dict) else {}
+            if target.get("id"): values.append(str(target["id"]))
+            children=((item.get("subattachments") or {}).get("data") or [])
+            values.extend(target_ids(children))
+        return values
+    returned = target_ids(attachments)
+    if expected and sorted(expected) != sorted(returned):
+        return {"success": False, "status": "meta_readback_media_binding_mismatch"}, 409
+    return {"success": True, "status": "meta_readback_confirmed", "id":payload["id"],
+            "message_sha256":hashlib.sha256(payload["message"].encode()).hexdigest(),
+            "provider_media_ids":sorted(set(returned)),"created_time":payload.get("created_time","")}, 200
 
 
 def list_beacon_facebook_post_execution_events(limit=25, publish_packet_id="", database_url=None):
@@ -1277,6 +2177,8 @@ def _rank_approved_assets(assets, campaign_lane="meat_launch"):
             score += 25
         if campaign_lane == "live_stock_awareness" and any(item in relevance for item in ("live", "live_stock", "livestock", "farm_life")):
             score += 30
+        if campaign_lane == "live_stock_sales" and any(item in relevance for item in ("live", "live_stock", "livestock", "live_stock_sales")):
+            score += 35
         if campaign_lane == "meat_launch" and any(tag in tags for tag in ("pork", "freezer", "set a", "half carcass", "family pack")):
             score += 15
         if campaign_lane == "live_stock_awareness" and any(tag in tags for tag in ("piglet", "piglets", "litter", "weaner", "weaners", "sow", "farm life", "new life")):
@@ -1289,6 +2191,7 @@ def _rank_approved_assets(assets, campaign_lane="meat_launch"):
             "media_type": media_type,
             "storage_bucket": asset.get("storage_bucket", ""),
             "storage_path": asset.get("storage_path", ""),
+            "content_sha256": asset.get("content_sha256", ""),
             "subject_tags": tags,
             "sale_stream_relevance": relevance,
             "quality_score": asset.get("quality_score"),
@@ -1392,12 +2295,41 @@ def _find_asset(assets, asset_id):
     return {}
 
 
-def _publish_packet_id(draft_id, asset_id, channel, pilot_cap):
-    seed = "|".join([draft_id or "draft", asset_id or "text-only", channel or "channel", pilot_cap or "cap"])
+def _selected_asset_ids(payload, limit=10):
+    values = payload.get("asset_ids") if isinstance(payload.get("asset_ids"), list) else []
+    if not values and payload.get("asset_id"):
+        values = [payload.get("asset_id")]
+    result = []
+    for value in values:
+        asset_id = _clean_text(value)[:120]
+        if asset_id and asset_id not in result:
+            result.append(asset_id)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _publish_packet_id(draft_id, asset_id, channel, pilot_cap, exact_text=""):
+    seed = "|".join([draft_id or "draft", asset_id or "text-only", channel or "channel", pilot_cap or "cap", exact_text or "canonical"])
     total = 0
     for char in seed:
         total = (total * 33 + ord(char)) % 0xFFFFFFFF
     return f"BEACON-PUBLISH-PACKET-{total:08X}"
+
+
+def _meat_launch_publish_packet_id(draft_id, asset_id, channel, pilot_cap, exact_text, owner_offer_enabled):
+    snapshot = {
+        "schema_version": "beacon_meat_launch_readiness_v1",
+        "campaign_lane": "meat_launch",
+        "draft_id": draft_id,
+        "asset_id": asset_id,
+        "channel": channel,
+        "pilot_cap": pilot_cap,
+        "exact_text": exact_text,
+        "owner_offer_enabled": bool(owner_offer_enabled),
+    }
+    digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode("utf-8")).hexdigest()[:20].upper()
+    return f"BEACON-MEAT-PUBLISH-{digest}"
 
 
 def _manual_post_params(payload):
@@ -1489,9 +2421,10 @@ def _manual_post_unavailable(status, configured):
 
 def _performance_params(payload):
     spend_amount = _safe_money(payload.get("spend_amount") or payload.get("spend"))
-    messages = _safe_int(payload.get("messages_to_sam") or payload.get("messages"), 0)
-    qualified = _safe_int(payload.get("qualified_buyer_leads") or payload.get("qualified_leads"), 0)
-    recommendation = _recommend_boost(payload, spend_amount, messages, qualified)
+    evidence = _performance_metric_evidence(payload)
+    messages = _verified_metric_value(evidence, "messages_to_sam")
+    qualified = _verified_metric_value(evidence, "qualified_buyer_leads")
+    recommendation = _recommend_boost(payload, spend_amount, messages, qualified, evidence=evidence)
     cost_per_message = _cost(spend_amount, messages)
     cost_per_qualified_lead = _cost(spend_amount, qualified)
     params = {
@@ -1500,6 +2433,8 @@ def _performance_params(payload):
         "manual_post_event_id": _clean_text(payload.get("manual_post_event_id"))[:120],
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
+        "campaign_lane": normalize_campaign_lane(payload.get("campaign_lane")),
+        "objective": _clean_text(payload.get("objective") or "farm_awareness")[:120],
         "measurement_window": _clean_text(payload.get("measurement_window") or "manual_snapshot")[:120],
         "spend_amount": spend_amount,
         "spend_currency": _clean_text(payload.get("spend_currency") or "ZAR")[:12],
@@ -1520,6 +2455,11 @@ def _performance_params(payload):
         "cost_per_message": cost_per_message,
         "cost_per_qualified_lead": cost_per_qualified_lead,
         "recorded_by": _clean_text(payload.get("recorded_by") or "beacon_performance_tracking")[:120],
+        "metric_evidence_json": json.dumps(evidence, sort_keys=True, default=str),
+        "evidence_source": _clean_text(payload.get("evidence_source") or "owner_manual")[:80],
+        "source_reference": _clean_text(payload.get("source_reference") or payload.get("manual_post_event_id") or payload.get("publish_packet_id"))[:240],
+        "retrieved_at": _clean_text(payload.get("retrieved_at")) or datetime.now(timezone.utc).isoformat(),
+        "supersedes_event_id": _clean_text(payload.get("supersedes_event_id"))[:120],
         **PERFORMANCE_AUTHORITY_FLAGS,
     }
     params["recommends_boost"] = params["recommended_action"] == "light_boost_owner_review"
@@ -1528,7 +2468,20 @@ def _performance_params(payload):
     return params
 
 
-def _recommend_boost(payload, spend_amount, messages, qualified):
+def _recommend_boost(payload, spend_amount, messages, qualified, evidence=None):
+    evidence = evidence or _performance_metric_evidence(payload)
+    campaign_lane = normalize_campaign_lane(payload.get("campaign_lane"))
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales", "live_stock_enquiry_capture"}:
+        return {
+            "recommended_action": "do_not_boost",
+            "recommendation_reason": (
+                "Public livestock performance may be reported, but clicks, messages "
+                "and engagement cannot optimize or graduate commercial livestock copy."
+            ),
+            "recommended_spend_amount": 0,
+            "recommended_duration_days": 0,
+            "public_livestock_commerce_optimization_allowed": False,
+        }
     fulfillment_risk = _clean_text(payload.get("fulfillment_risk")).lower()
     safety_risk = _clean_text(payload.get("safety_risk")).lower()
     owner_blocked = str(payload.get("owner_blocked") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -1540,6 +2493,8 @@ def _recommend_boost(payload, spend_amount, messages, qualified):
             "recommended_spend_amount": 0,
             "recommended_duration_days": 0,
         }
+    if (evidence.get("messages_to_sam") or {}).get("status") not in {"verified", "owner_correction"} and (evidence.get("qualified_buyer_leads") or {}).get("status") not in {"verified", "owner_correction"}:
+        return {"recommended_action": "wait_for_more_data", "recommendation_reason": "Message and qualified-lead evidence is unavailable; no performance conclusion is supported.", "recommended_spend_amount": 0, "recommended_duration_days": 0}
     if requested_spend > BOOST_RECOMMENDATION_SPEND_CAP:
         return {
             "recommended_action": "owner_review_required",
@@ -1637,6 +2592,12 @@ def _public_performance_event(params):
         "cost_per_message": params.get("cost_per_message"),
         "cost_per_qualified_lead": params.get("cost_per_qualified_lead"),
         "recorded_by": params.get("recorded_by", ""),
+        "metric_evidence": _loads(params.get("metric_evidence_json"), {}),
+        "evidence_source": params.get("evidence_source", ""),
+        "source_reference": params.get("source_reference", ""),
+        "retrieved_at": params.get("retrieved_at", ""),
+        "source_snapshot_key": params.get("performance_event_id", ""),
+        "supersedes_event_id": params.get("supersedes_event_id", ""),
         **PERFORMANCE_AUTHORITY_FLAGS,
         "recommends_boost": params.get("recommended_action") == "light_boost_owner_review",
     }
@@ -1671,6 +2632,12 @@ def _performance_row_to_event(row):
         "recommends_boost": bool(row[23]),
         "recorded_by": row[24],
         "created_at": row[25].isoformat() if hasattr(row[25], "isoformat") else str(row[25] or ""),
+        "metric_evidence": row[26] or {},
+        "evidence_source": row[27] or "",
+        "source_reference": row[28] or "",
+        "retrieved_at": row[29].isoformat() if hasattr(row[29], "isoformat") else str(row[29] or ""),
+        "source_snapshot_key": row[30] or "",
+        "supersedes_event_id": row[31] or "",
         **PERFORMANCE_AUTHORITY_FLAGS,
     }
 
@@ -1688,14 +2655,51 @@ def _event_to_performance_params(event):
 
 
 def _performance_event_id(params):
+    evidence = _loads(params.get("metric_evidence_json"), {})
+    canonical_evidence = {name: {key: value for key, value in item.items() if key != "retrieved_at"} for name, item in evidence.items()}
     seed = {
         "manual_post_event_id": params.get("manual_post_event_id", ""),
         "publish_packet_id": params.get("publish_packet_id", ""),
         "measurement_window": params.get("measurement_window", ""),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_reference": params.get("source_reference", ""),
+        "metric_evidence": canonical_evidence,
+        "supersedes_event_id": params.get("supersedes_event_id", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-PERF-{digest}"
+
+
+def _performance_metric_evidence(payload):
+    supplied = payload.get("metric_evidence") if isinstance(payload.get("metric_evidence"), dict) else {}
+    source = _clean_text(payload.get("evidence_source") or "owner_manual")[:80]
+    reference = _clean_text(payload.get("source_reference") or payload.get("manual_post_event_id") or payload.get("publish_packet_id"))[:240]
+    retrieved = _clean_text(payload.get("retrieved_at")) or datetime.now(timezone.utc).isoformat()
+    aliases = {"messages_to_sam": "messages", "qualified_buyer_leads": "qualified_leads"}
+    result = {}
+    for name in ("spend_amount", "reach", "impressions", "reactions", "comments", "shares", "messages_to_sam", "qualified_buyer_leads", "booking_review_requests", "sales", "revenue"):
+        item = supplied.get(name) if isinstance(supplied.get(name), dict) else None
+        if item:
+            status = _clean_text(item.get("status"))
+            value = item.get("value")
+        else:
+            key = name if name in payload else aliases.get(name)
+            raw = payload.get(key) if key else None
+            status, value = ("verified", raw) if raw not in (None, "") else ("missing", None)
+        if status in {"verified", "owner_correction"}:
+            try:
+                value = float(value) if name in {"spend_amount", "revenue"} else int(value)
+                if value < 0: raise ValueError
+            except (TypeError, ValueError):
+                status, value = "malformed", None
+        elif status not in {"missing", "unsupported", "malformed", "provider_error", "owner_correction"}:
+            status, value = "malformed", None
+        result[name] = {"value": value, "status": status, "source": _clean_text((item or {}).get("source") or source), "source_reference": _clean_text((item or {}).get("source_reference") or reference), "retrieved_at": _clean_text((item or {}).get("retrieved_at") or retrieved)}
+    return result
+
+
+def _verified_metric_value(evidence, name):
+    item = evidence.get(name) or {}
+    return item.get("value") if item.get("status") in {"verified", "owner_correction"} else 0
 
 
 def _performance_unavailable(status, configured):
@@ -1724,17 +2728,63 @@ def _facebook_execution_authority(executed):
 
 def _facebook_post_params(payload, policy):
     selected_asset = payload.get("selected_asset") if isinstance(payload.get("selected_asset"), dict) else {}
+    selected_assets = payload.get("selected_assets") if isinstance(payload.get("selected_assets"), list) else []
+    selected_assets = [item for item in selected_assets if isinstance(item, dict)][:10]
+    if not selected_assets and selected_asset:
+        selected_assets = [selected_asset]
+    media_types = [str(item.get("media_type") or "").lower() for item in selected_assets]
+    if not selected_assets:
+        post_kind = "feed"
+    elif len(selected_assets) == 1:
+        post_kind = "video" if media_types[0] == "video" else "photo"
+    elif all(value == "image" for value in media_types):
+        post_kind = "multi_photo"
+    else:
+        post_kind = "mixed_media_manual"
     params = {
-        "execution_event_id": _clean_text(payload.get("execution_event_id"))[:120],
+        "execution_event_id": "",
         "mode": "beacon_facebook_page_post_execution_gate",
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
-        "exact_text": _clean_text(payload.get("exact_text") or payload.get("message"))[:5000],
+        "exact_text": canonical_caption_text(
+            payload.get("exact_text")
+            if "exact_text" in payload
+            else payload.get("message", "")
+        )[:5000],
         "asset_id": _clean_text(payload.get("asset_id") or selected_asset.get("asset_id"))[:120],
         "selected_asset": selected_asset,
+        "selected_assets": selected_assets,
         "selected_media_json": "{}",
-        "post_kind": "photo" if _clean_text(payload.get("asset_id") or selected_asset.get("asset_id")) else "feed",
+        "post_kind": post_kind,
         "owner_confirmation": _clean_text(payload.get("owner_confirmation"))[:120],
+        "authorization_generation_id": _clean_text(
+            payload.get("authorization_generation_id")
+        )[:160],
+        "publication_execution_identity": _clean_text(
+            payload.get("publication_execution_identity")
+        )[:160],
+        "publication_authority_mode": _clean_text(
+            payload.get("publication_authority_mode") or "scheduled_exact"
+        )[:40],
+        "publication_authority_id": _clean_text(
+            payload.get("publication_authority_id")
+        )[:160],
+        "publication_authority_state": _clean_text(
+            payload.get("publication_authority_state") or "active"
+        )[:40],
+        "zero_spend": payload.get("zero_spend") is True,
+        "timing_authorization_id": _clean_text(
+            payload.get("timing_authorization_id")
+        )[:160],
+        "timing_start": _clean_text(payload.get("timing_start"))[:80],
+        "timing_end": _clean_text(payload.get("timing_end"))[:80],
+        "campaign_lane": payload.get("campaign_lane", ""),
+        "objective": payload.get("objective", ""),
+        "target_page_id": _clean_text(payload.get("target_page_id"))[:160],
+        "public_content_policy": deepcopy(payload.get("public_content_policy"))
+            if isinstance(payload.get("public_content_policy"), dict) else {},
+        "protected_campaign_claim_token": _clean_text(
+            payload.get("protected_campaign_claim_token"))[:240],
         "execution_status": "not_attempted",
         "facebook_post_id": "",
         "facebook_response_json": "{}",
@@ -1743,10 +2793,9 @@ def _facebook_post_params(payload, policy):
         "page_id_configured": bool(policy.get("page_id_configured")),
         "page_access_token_configured": bool(policy.get("page_access_token_configured")),
     }
-    if params["asset_id"]:
+    if selected_assets:
         params["selected_media_json"] = json.dumps(_facebook_selected_media(params), sort_keys=True, default=str)
-    if not params["execution_event_id"]:
-        params["execution_event_id"] = _facebook_post_execution_id(params)
+    params["execution_event_id"] = _facebook_post_execution_id(params)
     return params
 
 
@@ -1755,18 +2804,19 @@ def _facebook_post_validation_error(params, policy):
         return "publish_packet_id_required"
     if not params.get("exact_text"):
         return "exact_text_required"
-    if params.get("asset_id"):
-        asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
-        if not asset:
-            return "selected_image_asset_required"
-        if asset.get("media_type") != "image":
-            return "selected_asset_must_be_image"
-        if not (asset.get("effective_public_use_approved") or asset.get("public_use_approved")):
-            return "selected_image_asset_not_public_use_approved"
-        if not asset.get("storage_bucket") or not asset.get("storage_path"):
-            return "selected_image_asset_storage_missing"
+    assets = params.get("selected_assets") if isinstance(params.get("selected_assets"), list) else []
+    if assets:
+        if params.get("post_kind") == "mixed_media_manual":
+            return "facebook_mixed_media_requires_manual_composer"
+        for asset in assets:
+            if asset.get("media_type") not in {"image", "video"}:
+                return "selected_media_type_not_supported"
+            if not (asset.get("effective_public_use_approved") or asset.get("public_use_approved")):
+                return "selected_media_asset_not_public_use_approved"
+            if not asset.get("storage_bucket") or not asset.get("storage_path"):
+                return "selected_media_asset_storage_missing"
         if not policy.get("media_storage_configured"):
-            return "facebook_image_posting_storage_not_configured"
+            return "facebook_media_posting_storage_not_configured"
     if params.get("owner_confirmation") != FACEBOOK_POST_CONFIRMATION_PHRASE:
         return "owner_confirmation_required"
     if "facebook" not in params.get("channel", "").lower():
@@ -1778,19 +2828,43 @@ def _facebook_post_validation_error(params, policy):
     return ""
 
 
-def _post_to_facebook_page(params, policy, environ=None):
+def _post_to_facebook_page(params, policy, environ=None, stage_recorder=None,
+                           authority_guard=None, public_policy_guard=None):
+    if params.get("post_kind") == "multi_photo":
+        return _post_to_facebook_page_binary_images(
+            params, policy, environ=environ, stage_recorder=stage_recorder,
+            authority_guard=authority_guard,
+            public_policy_guard=public_policy_guard,
+        )
+    if params.get("post_kind") == "video":
+        return _post_to_facebook_page_video(
+            params, policy, environ=environ,
+            public_policy_guard=public_policy_guard,
+        )
     if params.get("asset_id"):
-        return _post_to_facebook_page_photos(params, policy, environ=environ)
-    return _post_to_facebook_page_feed(params, policy, environ=environ)
+        return _post_to_facebook_page_binary_images(
+            params, policy, environ=environ, stage_recorder=stage_recorder,
+            authority_guard=authority_guard,
+            public_policy_guard=public_policy_guard,
+        )
+    return _post_to_facebook_page_feed(
+        params, policy, environ=environ,
+        public_policy_guard=public_policy_guard,
+    )
 
 
-def _post_to_facebook_page_feed(params, policy, environ=None):
+def _post_to_facebook_page_feed(params, policy, environ=None,
+                                public_policy_guard=None):
     source = environ if environ is not None else os.environ
     page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
     token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
     version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
     if not page_id or not token:
         return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False}, 409
     endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/feed"
     body = urllib_parse.urlencode({
         "message": params.get("exact_text", ""),
@@ -1814,9 +2888,245 @@ def _post_to_facebook_page_feed(params, policy, environ=None):
         return {
             "success": False,
             "status": "facebook_post_request_failed",
+            "outcome": "ambiguous", "automatic_retry_allowed": False,
             "error_type": exc.__class__.__name__,
             "error": str(exc)[:240],
         }, 502
+
+
+def _post_to_facebook_page_binary_images(
+    params,
+    policy,
+    environ=None,
+    stage_recorder=None,
+    storage_loader=None,
+    photo_uploader=None,
+    feed_creator=None,
+    authority_guard=None,
+    public_policy_guard=None,
+):
+    """Validate all bytes, then upload once per image with no retry."""
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    assets = [
+        asset for asset in params.get("selected_assets", [])
+        if isinstance(asset, dict)
+    ]
+    load_fn = storage_loader or (
+        lambda asset: load_supabase_asset_bytes(asset, environ=source)
+    )
+    upload_fn = photo_uploader or (
+        lambda asset, data, mime: upload_unpublished_photo_binary(
+            page_id, token, version, asset, data, mime
+        )
+    )
+    feed_fn = feed_creator or (
+        lambda caption, ids: create_multi_photo_feed(
+            page_id, token, version, caption, ids
+        )
+    )
+    stage_fn = stage_recorder or (lambda _stage: True)
+    authority_fn = authority_guard or (lambda: True)
+    validations = []
+    loaded = []
+    for position, asset in enumerate(assets, start=1):
+        loaded_result, loaded_status = load_fn(asset)
+        if loaded_status >= 400 or not loaded_result.get("success"):
+            handoff = manual_composer_handoff(
+                params, validations, loaded_result.get("status")
+                or "private_storage_read_failed"
+            )
+            return {
+                "success": False,
+                "status": "facebook_image_validation_failed",
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "storage_status": loaded_result.get("status"),
+                "manual_handoff": handoff,
+                "uploaded_media_ids": [],
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+            }, 422
+        validation = validate_facebook_image_asset(
+            asset,
+            loaded_result.get("data"),
+            loaded_result.get("returned_mime"),
+            loaded_result.get("readback_proof"),
+        )
+        validation["position"] = position
+        validations.append(validation)
+        if not validation["allowed"]:
+            return {
+                "success": False,
+                "status": "facebook_image_validation_failed",
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "asset_validations": validations,
+                "manual_handoff": manual_composer_handoff(
+                    params, validations, "image_validation_failed"
+                ),
+                "uploaded_media_ids": [],
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+            }, 422
+        loaded.append((
+            asset,
+            loaded_result["data"],
+            validation["returned_mime"],
+        ))
+
+    validation_stage = {
+        "transport_stage": "validation_complete",
+        "post_kind": params.get("post_kind"),
+        "selected_media": _facebook_selected_media(params),
+        "asset_order": [asset.get("asset_id", "") for asset in assets],
+        "asset_validations": validations,
+        "meta_call_performed": False,
+        "automatic_retry_allowed": False,
+    }
+    if not stage_fn(validation_stage):
+        return {
+            "success": False,
+            "status": "facebook_stage_evidence_failed_before_meta",
+            "outcome": "definite_failure_before_meta",
+            "uploaded_media_ids": [],
+            "manual_handoff": manual_composer_handoff(
+                params, validations, "stage_evidence_failed"
+            ),
+            "automatic_retry_allowed": False,
+        }, 503
+
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
+                "outcome": "definite_failure_before_meta",
+                "uploaded_media_ids": [],
+                "automatic_retry_allowed": False}, 409
+
+    media_ids = []
+    for position, (asset, data, mime_type) in enumerate(loaded, start=1):
+        if public_policy_guard is not None and not public_policy_guard():
+            return {"success": False, "status": RISK_STATUS,
+                    "outcome": "definite_failure_before_meta",
+                    "uploaded_media_ids": media_ids,
+                    "automatic_retry_allowed": False}, 409
+        if not authority_fn():
+            return {"success": False, "status": "publish_now_authority_not_actionable",
+                    "outcome": "definite_failure_before_meta",
+                    "automatic_retry_allowed": False}, 409
+        result, status = upload_fn(asset, data, mime_type)
+        media_id = str(result.get("id") or "")
+        upload_stage = {
+            "transport_stage": "image_upload_result",
+            "asset_id": asset.get("asset_id", ""),
+            "asset_position": position,
+            "http_status": status,
+            "success": status < 400 and bool(media_id),
+            "returned_media_id": media_id,
+            "uploaded_media_ids": [*media_ids, *([media_id] if media_id else [])],
+            "meta_error": result.get("meta_error", {}),
+            "outcome": result.get("outcome", ""),
+            "meta_call_performed": True,
+            "automatic_retry_allowed": False,
+        }
+        recorded = stage_fn(upload_stage)
+        if media_id:
+            media_ids.append(media_id)
+        if not recorded:
+            return {
+                "success": False,
+                "status": "facebook_upload_evidence_failed",
+                "outcome": "ambiguous",
+                "uploaded_media_ids": media_ids,
+                "owner_reconciliation_required": True,
+                "automatic_retry_allowed": False,
+            }, 503
+        if status >= 400 or not media_id:
+            outcome = (
+                "ambiguous"
+                if result.get("outcome") == "ambiguous"
+                else "partial_upload_final_post_not_created"
+                if media_ids
+                else "definitely_not_posted_no_media_accepted"
+            )
+            return {
+                **result,
+                "success": False,
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "uploaded_media_ids": media_ids,
+                "outcome": outcome,
+                "owner_reconciliation_required": bool(media_ids)
+                or outcome == "ambiguous",
+                "manual_handoff": manual_composer_handoff(
+                    params, validations, result.get("status")
+                    or "image_upload_failed"
+                ),
+                "automatic_retry_allowed": False,
+            }, status
+
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
+                "outcome": "media_uploaded_final_post_not_published",
+                "uploaded_media_ids": media_ids,
+                "automatic_retry_allowed": False}, 409
+    if not authority_fn():
+        return {"success": False, "status": "publish_now_authority_not_actionable",
+                "outcome": "media_uploaded_final_post_not_published",
+                "automatic_retry_allowed": False}, 409
+    result, status = feed_fn(params.get("exact_text", ""), media_ids)
+    post_id = str(result.get("id") or result.get("post_id") or "")
+    feed_stage = {
+        "transport_stage": "final_feed_result",
+        "http_status": status,
+        "success": status < 400 and bool(post_id),
+        "uploaded_media_ids": media_ids,
+        "final_post_id": post_id,
+        "meta_error": result.get("meta_error", {}),
+        "outcome": result.get("outcome", ""),
+        "meta_call_performed": True,
+        "automatic_retry_allowed": False,
+    }
+    if not stage_fn(feed_stage):
+        return {
+            "success": False,
+            "status": "facebook_final_evidence_failed",
+            "outcome": "ambiguous",
+            "uploaded_media_ids": media_ids,
+            "final_post_id": post_id,
+            "owner_reconciliation_required": True,
+            "automatic_retry_allowed": False,
+        }, 503
+    if status >= 400 or not post_id:
+        return {
+            **result,
+            "success": False,
+            "post_kind": params.get("post_kind"),
+            "uploaded_media_ids": media_ids,
+            "outcome": (
+                "ambiguous"
+                if result.get("outcome") == "ambiguous"
+                else "media_uploaded_final_post_not_published"
+            ),
+            "owner_reconciliation_required": True,
+            "manual_handoff": manual_composer_handoff(
+                params, validations, result.get("status")
+                or "final_feed_failed"
+            ),
+            "automatic_retry_allowed": False,
+        }, status
+    return {
+        "success": True,
+        "status": "facebook_page_post_sent",
+        "post_kind": params.get("post_kind"),
+        "selected_media": _facebook_selected_media(params),
+        "uploaded_media_ids": media_ids,
+        "id": post_id,
+        "facebook_post_id": post_id,
+        "outcome": "post_published_and_evidence_recorded",
+        "automatic_retry_allowed": False,
+    }, status
 
 
 def _post_to_facebook_page_photos(params, policy, environ=None):
@@ -1860,6 +3170,7 @@ def _post_to_facebook_page_photos(params, policy, environ=None):
         return {
             "success": False,
             "status": "facebook_photo_post_request_failed",
+            "outcome": "ambiguous", "automatic_retry_allowed": False,
             "post_kind": "photo",
             "selected_media": _facebook_selected_media(params),
             "error_type": exc.__class__.__name__,
@@ -1867,11 +3178,93 @@ def _post_to_facebook_page_photos(params, policy, environ=None):
         }, 502
 
 
-def _signed_supabase_media_url(params, environ=None):
+def _post_to_facebook_page_multi_photo(params, policy, environ=None):
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    if not page_id or not token:
+        return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    media_ids = []
+    for asset in params.get("selected_assets", []):
+        signed, signed_status = _signed_supabase_media_url(params, environ=source, asset=asset)
+        if signed_status >= 400:
+            return {**signed, "status": "facebook_multi_photo_sign_failed", "uploaded_media_ids": media_ids}, signed_status
+        endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/photos"
+        body = urllib_parse.urlencode({
+            "url": signed.get("signed_url", ""),
+            "published": "false",
+            "access_token": token,
+        }).encode("utf-8")
+        result, status = _facebook_form_request(endpoint, body, "facebook_multi_photo_upload_failed", timeout=35)
+        if status >= 400 or not result.get("id"):
+            return {**result, "uploaded_media_ids": media_ids}, status
+        media_ids.append(str(result["id"]))
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/feed"
+    fields = {
+        "message": params.get("exact_text", ""),
+        "access_token": token,
+    }
+    for index, media_id in enumerate(media_ids):
+        fields[f"attached_media[{index}]"] = json.dumps({"media_fbid": media_id})
+    result, status = _facebook_form_request(
+        endpoint,
+        urllib_parse.urlencode(fields).encode("utf-8"),
+        "facebook_multi_photo_post_failed",
+        timeout=35,
+    )
+    return {
+        **result,
+        "post_kind": "multi_photo",
+        "uploaded_media_ids": media_ids,
+        "selected_media": _facebook_selected_media(params),
+    }, status
+
+
+def _post_to_facebook_page_video(params, policy, environ=None,
+                                 public_policy_guard=None):
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    if not page_id or not token:
+        return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    asset = params.get("selected_assets", [{}])[0]
+    signed, signed_status = _signed_supabase_media_url(params, environ=source, asset=asset)
+    if signed_status >= 400:
+        return signed, signed_status
+    if public_policy_guard is not None and not public_policy_guard():
+        return {"success": False, "status": RISK_STATUS,
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False}, 409
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/videos"
+    body = urllib_parse.urlencode({
+        "file_url": signed.get("signed_url", ""),
+        "description": params.get("exact_text", ""),
+        "access_token": token,
+    }).encode("utf-8")
+    result, status = _facebook_form_request(endpoint, body, "facebook_video_post_failed", timeout=60)
+    return {**result, "post_kind": "video", "selected_media": _facebook_selected_media(params)}, status
+
+
+def _facebook_form_request(endpoint, body, failure_status, timeout=35):
+    req = urllib_request.Request(endpoint, data=body, method="POST")
+    try:
+        with urllib_request.urlopen(req, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+            return {"success": True, **payload}, response.status
+    except urllib_error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        return {"success": False, "status": failure_status, "http_status": exc.code, "error": raw[:500]}, exc.code
+    except (urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return {"success": False, "status": failure_status, "error_type": exc.__class__.__name__, "error": str(exc)[:240]}, 502
+
+
+def _signed_supabase_media_url(params, environ=None, asset=None):
     source = environ if environ is not None else os.environ
     url = _clean_text(source.get(SUPABASE_URL_ENV)).rstrip("/")
     key = _clean_text(source.get(SUPABASE_SERVICE_ROLE_KEY_ENV))
-    asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
+    asset = asset if isinstance(asset, dict) else params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
     bucket = _clean_text(asset.get("storage_bucket"))
     storage_path = str(asset.get("storage_path") or "").strip().replace("\\", "/")
     if not url or not key:
@@ -2015,11 +3408,36 @@ def _facebook_post_row_to_event(row):
 
 
 def _facebook_post_execution_id(params):
+    if (params.get("publish_packet_id") == "BEACON-PROPOSAL-18DEAAD8E896A87FE961F45B"
+            and params.get("publication_authority_mode") == "publish_now"):
+        assets = params.get("selected_assets") or []
+        seed = {
+            "publish_packet_id": params.get("publish_packet_id", ""),
+            "channel": params.get("channel", ""),
+            "publication_execution_identity": params.get(
+                "publication_execution_identity", ""
+            ),
+            "caption_sha256": SUCCESSOR_CAPTION_SHA256,
+            "asset_sha256": SUCCESSOR_ASSET_SHA256,
+            "zero_spend": params.get("zero_spend") is True,
+        }
+        digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
+        return f"BEACON-FB-POST-{digest}"
     seed = {
         "publish_packet_id": params.get("publish_packet_id", ""),
-        "exact_text": params.get("exact_text", ""),
-        "asset_id": params.get("asset_id", ""),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "channel": params.get("channel", ""),
+        "publication_binding_id": params.get("publication_binding_id", ""),
+        "approved_weekly_packet_id": params.get("approved_weekly_packet_id", ""),
+        "owner_decision_event_id": params.get("owner_decision_event_id", ""),
+        "authorization_generation_id": params.get(
+            "authorization_generation_id", ""
+        ),
+        "publication_execution_identity": params.get(
+            "publication_execution_identity", ""
+        ),
+        "timing_authorization_id": params.get("timing_authorization_id", ""),
+        "timing_start": params.get("timing_start", ""),
+        "timing_end": params.get("timing_end", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-FB-POST-{digest}"
@@ -2037,20 +3455,24 @@ def _facebook_post_unavailable(status, configured):
 
 
 def _facebook_selected_media(params):
-    asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
-    if not asset and not params.get("asset_id"):
+    assets = params.get("selected_assets") if isinstance(params.get("selected_assets"), list) else []
+    assets = [asset for asset in assets if isinstance(asset, dict)]
+    if not assets:
+        asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
+        if asset:
+            assets = [asset]
+    if not assets and not params.get("asset_id"):
         return {}
-    return {
-        "asset_id": params.get("asset_id") or asset.get("asset_id", ""),
+    selected = [{
+        "asset_id": asset.get("asset_id", ""),
         "title": asset.get("title", ""),
         "media_type": asset.get("media_type", ""),
         "mime_type": asset.get("mime_type", ""),
-        "storage_bucket": asset.get("storage_bucket", ""),
-        "storage_path": asset.get("storage_path", ""),
-        "privacy_risk": asset.get("privacy_risk", ""),
-        "quality_score": asset.get("quality_score"),
         "public_use_approved": bool(asset.get("effective_public_use_approved") or asset.get("public_use_approved")),
-    }
+    } for asset in assets]
+    if len(selected) == 1:
+        return selected[0]
+    return {"asset_count": len(selected), "post_kind": params.get("post_kind", ""), "assets": selected}
 
 
 def _truthy(value):
@@ -2110,8 +3532,13 @@ def _has_forbidden_promise(text):
 
 def _has_live_stock_direct_sales_wording(text):
     clean = str(text or "").lower()
-    return any(term in clean for term in LIVE_STOCK_DIRECT_SALES_TERMS)
+    return any(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", clean) for term in LIVE_STOCK_DIRECT_SALES_TERMS)
 
 
 def _clean_text(value):
     return " ".join(str(value or "").strip().split())
+
+
+def _clean_caption_text(value, limit=2200):
+    lines = [" ".join(line.split()) for line in str(value or "").replace("\x00", " ").splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()[:limit]

@@ -5,6 +5,35 @@ from modules.orders import order_intake_service, order_intake_supabase_store
 
 
 class OrderIntakeServiceTests(unittest.TestCase):
+    def test_new_request_reset_allows_stale_context_fields_to_be_cleared(self):
+        intake = {
+            "Collection_Location": "Any",
+            "Collection_Time_Text": "friday",
+            "Collection_Date": "2026-07-25",
+            "Collection_Time": "10:00",
+            "Payment_Method": "EFT",
+        }
+        cleaned = {
+            "reset_request_context": True,
+            "patch": {
+                "collection_location": "",
+                "collection_time_text": "",
+                "collection_date": "",
+                "collection_time": "",
+                "payment_method": "",
+            },
+        }
+
+        updates = order_intake_service._build_state_updates(
+            intake, cleaned["patch"], cleaned, "2026-07-24T09:00:00Z", "Sam Live Stock"
+        )
+
+        self.assertEqual(updates["Collection_Location"], "")
+        self.assertEqual(updates["Collection_Time_Text"], "")
+        self.assertEqual(updates["Collection_Date"], "")
+        self.assertEqual(updates["Collection_Time"], "")
+        self.assertEqual(updates["Payment_Method"], "")
+
     def test_context_prefers_supabase_store_when_available(self):
         intake = {
             "Intake_ID": "INTAKE-1",

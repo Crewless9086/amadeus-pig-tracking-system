@@ -2,6 +2,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from modules.charlie.process_policy import background_run_kwargs
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REQUIRED_PYTHON_MODULES = ("psycopg", "reportlab")
@@ -70,6 +72,7 @@ def _browser_preflight(repo_root):
             errors="replace",
             timeout=15,
             check=False,
+            **background_run_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {
@@ -111,6 +114,7 @@ def _missing_modules_for_python(python_executable):
                 errors="replace",
                 timeout=15,
                 check=False,
+                **background_run_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired):
             missing.append(module_name)

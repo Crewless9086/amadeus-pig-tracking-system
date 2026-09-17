@@ -7,12 +7,14 @@ from modules.pig_weights.pig_weights_utils import to_clean_string, to_float
 
 
 ORDER_FIELD_MAP = {
+    "Order_Stream": "order_stream",
     "Requested_Quantity": "requested_quantity",
     "Requested_Category": "requested_category",
     "Requested_Weight_Range": "requested_weight_range",
     "Requested_Sex": "requested_sex",
     "Collection_Location": "collection_location",
     "Payment_Method": "payment_method",
+    "Conversation_ID": "conversation_id",
     "Notes": "notes",
     "Order_Status": "order_status",
     "Approval_Status": "approval_status",
@@ -80,6 +82,7 @@ def _order_sheet_row(row):
         "Customer_Channel": to_clean_string(row.get("customer_channel")),
         "Customer_Language": to_clean_string(row.get("customer_language")),
         "Order_Source": to_clean_string(row.get("order_source")),
+        "Order_Stream": to_clean_string(row.get("order_stream")),
         "Requested_Category": to_clean_string(row.get("requested_category")),
         "Requested_Weight_Range": to_clean_string(row.get("requested_weight_range")),
         "Requested_Sex": to_clean_string(row.get("requested_sex")),
@@ -168,6 +171,7 @@ def insert_order(order_id, cleaned_data, connect_factory=None):
         "customer_channel": cleaned_data["customer_channel"],
         "customer_language": cleaned_data["customer_language"],
         "order_source": cleaned_data["order_source"],
+        "order_stream": cleaned_data["order_stream"],
         "requested_category": cleaned_data["requested_category"],
         "requested_weight_range": cleaned_data["requested_weight_range"],
         "requested_sex": cleaned_data["requested_sex"],

@@ -19,7 +19,7 @@ class DocumentServiceSendTests(unittest.TestCase):
                 return False
 
             def read(self):
-                return b'{"id":123}'
+                return b'{"id":123,"status":"sent","source_id":"wamid.SECRET"}'
 
         def opener(request, timeout=0):
             calls.append((request, timeout))
@@ -53,8 +53,13 @@ class DocumentServiceSendTests(unittest.TestCase):
                 account_id="147387",
             )
 
-        self.assertTrue(result["sent"])
-        self.assertTrue(result["attachment_sent"])
+        self.assertFalse(result["sent"])
+        self.assertFalse(result["attachment_sent"])
+        self.assertIn("chatwoot_accepted", result, result)
+        self.assertTrue(result["chatwoot_accepted"])
+        self.assertFalse(result["customer_send_confirmed"])
+        self.assertEqual(result["delivery_state"], "chatwoot_accepted_unverified")
+        self.assertNotIn("wamid.SECRET", str(result))
         self.assertEqual(result["delivery_channel"], "chatwoot_direct_attachment")
         self.assertIn("Q-1", result["message_text"])
         self.assertNotIn("https://drive.google.com/file/d/test/view", result["message_text"])
@@ -67,8 +72,9 @@ class DocumentServiceSendTests(unittest.TestCase):
         body = request.data
         self.assertIn(b'name="attachments[]"; filename="Quote 1.pdf"', body)
         self.assertIn(b"%PDF-QUOTE%", body)
-        self.assertIn(b'name="source_id"', body)
-        self.assertIn(b"order_document:DOC-1", body)
+        self.assertNotIn(b'name="source_id"', body)
+        self.assertNotIn(b"order_document:DOC-1", body)
+        self.assertNotIn(b"wamid.SECRET", body)
 
     def test_document_delivery_reports_missing_chatwoot_token_when_no_webhook(self):
         result = None

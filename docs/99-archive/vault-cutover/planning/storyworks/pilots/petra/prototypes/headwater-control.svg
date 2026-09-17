@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Distributed headwater flood-control concept</title>
+  <desc id="desc">A conceptual cross-section showing several small stone structures slowing runoff before it reaches an urban basin.</desc>
+  <rect width="1600" height="900" fill="#f2eadb"/>
+  <path d="M0 160 C280 180 390 350 600 390 C820 430 900 610 1140 650 C1320 680 1420 720 1600 735 L1600 900 L0 900 Z" fill="#ae6d4f"/>
+  <path d="M0 195 C280 215 390 385 600 425 C820 465 900 645 1140 685 C1320 715 1420 755 1600 770" fill="none" stroke="#714231" stroke-width="10"/>
+  <path d="M120 85 C235 155 300 235 390 318 C500 420 670 415 745 500 C850 620 985 650 1215 722" fill="none" stroke="#328eb0" stroke-width="24" stroke-linecap="round"/>
+  <g stroke="#564139" stroke-width="20" stroke-linecap="round">
+    <path d="M275 235 L390 270"/>
+    <path d="M500 395 L625 420"/>
+    <path d="M760 535 L885 565"/>
+  </g>
+  <g fill="#d8a765" opacity="0.8">
+    <path d="M285 252 Q340 310 400 275 L390 330 L315 315 Z"/>
+    <path d="M510 412 Q565 465 635 425 L625 480 L540 468 Z"/>
+    <path d="M770 552 Q830 605 895 570 L880 630 L805 615 Z"/>
+  </g>
+  <path d="M1215 722 C1340 740 1430 755 1540 785" fill="none" stroke="#5bb5cf" stroke-width="14"/>
+  <g font-family="Arial, sans-serif">
+    <text x="70" y="90" font-size="54" font-weight="700" fill="#2b2926">SLOW THE SURGE BEFORE THE CITY</text>
+    <text x="265" y="205" font-size="28" font-weight="700" fill="#2b2926">CHECK 1</text>
+    <text x="500" y="360" font-size="28" font-weight="700" fill="#2b2926">CHECK 2</text>
+    <text x="760" y="500" font-size="28" font-weight="700" fill="#2b2926">CHECK 3</text>
+    <text x="1250" y="690" font-size="30" font-weight="700" fill="#2b2926">URBAN BASIN</text>
+    <text x="70" y="845" font-size="25" fill="#514a44">CONCEPTUAL FLOW • NOT A MEASURED EVENT • STRUCTURES AND TERRAIN SIMPLIFIED</text>
+  </g>
+</svg>

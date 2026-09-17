@@ -8,6 +8,7 @@ from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import (
     get_active_sales_lead_by_conversation,
+    get_active_sales_lead_by_customer_identity,
     get_sales_lead_preorder_contract,
     record_customer_booking_confirmation,
     record_sales_lead_event,
@@ -34,11 +35,20 @@ from modules.sales.meat_documents import (
     send_meat_estimated_quote_to_chatwoot,
 )
 from modules.sales.meat_fulfillment import record_meat_fulfillment_event
+from modules.sales.sam_meat_control_mode import sam_meat_control_policy
 from modules.sales.chatwoot_hygiene import (
     HYGIENE_ENABLED_ENV,
     sync_sam_meat_chatwoot_hygiene,
 )
-from modules.sales.conversation_learning import record_learning_event_from_sam_result
+from modules.sales.conversation_learning import (
+    record_learning_event_from_sam_result,
+    record_sam_meat_launch_review_packet,
+)
+from modules.sales.sam_delivery_truth import (
+    CHATWOOT_ACCEPTED_UNVERIFIED,
+    classify_chatwoot_response,
+    classify_dispatch_exception,
+)
 from modules.sales.sam_farm_knowledge import (
     load_sam_farm_knowledge,
     meat_sales_knowledge,
@@ -46,7 +56,15 @@ from modules.sales.sam_farm_knowledge import (
     public_profile,
 )
 from modules.sales.sam_shared_context import build_sam_v3_context_packet
-from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
+from modules.sales.sam_customer_context import canonical_customer_identity
+from modules.sales.sam_sales_router import LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
+from modules.sales.sam_sales_autonomy import (
+    bind_authoritative_conversation_evidence,
+    evaluate_level1_authority,
+    sales_autonomy_level1_policy,
+    supporting_claims_are_evidence_backed,
+)
+from modules.sales.sam_meat_commercial_standard import COLLECTIONS, collection_description
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -63,12 +81,15 @@ LLM_TIMEOUT_ENV = "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
 MIN_TOKEN_CHARS = 32
-CUT_SET_MENU = {
-    "Set A": "Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.",
-    "Set B": "Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.",
-    "Set C": "Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.",
-    "Set D": "Slow-Cook Family Roast Pack: larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking, roasting, and family meals.",
-}
+CUT_SET_MENU = {code: collection_description(code) for code in COLLECTIONS}
+# Search/audit compatibility only. Never use these retired labels in a new
+# customer offer or map them into CUT_SET_MENU.
+HISTORICAL_CUT_SET_LABELS = (
+    "Set A: Family Freezer Pack",
+    "Set B: Braai Pack",
+    "Set C: Lean Pack",
+    "Set D: Budget Bulk Pack",
+)
 ROBOTIC_REPLY_PATTERNS = [
     r"\bI am still with you on the pork preorder\b",
     r"\bPlease send the delivery street address\b",
@@ -87,8 +108,10 @@ def sam_meat_webhook_policy(environ=None):
     agent_v3_enabled = _truthy(source.get(AGENT_V3_ENABLED_ENV))
     hygiene_enabled = _truthy(source.get(HYGIENE_ENABLED_ENV))
     llm_configured = bool(_configured_llm_model(source) and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
+    level1_policy = sales_autonomy_level1_policy(source)
     return {
         "enabled": enabled,
+        "sales_autonomy_level1": level1_policy,
         "token_configured": len(token) >= MIN_TOKEN_CHARS,
         "autoreply_enabled": autoreply_enabled,
         "chatwoot_hygiene_enabled": hygiene_enabled,
@@ -143,6 +166,23 @@ def authorize_sam_meat_webhook(headers, query_args=None, environ=None):
     return True, {}
 
 
+def _is_low_risk_general_current_message(content):
+    text = re.sub(r"[^a-z0-9\s]", " ", str(content or "").lower())
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return True
+    if text in {
+        "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+        "thanks", "thank you", "thanks noted", "okay thanks", "ok thanks",
+    }:
+        return True
+    return bool(re.fullmatch(
+        r"(?:hi |hello )?(?:can|could|may) i (?:please )?(?:get|have) "
+        r"(?:some |more )?(?:info|information)(?: on| about)? (?:this|it|the post)",
+        text,
+    ))
+
+
 def handle_sam_meat_chatwoot_inbound(
     payload,
     *,
@@ -153,8 +193,16 @@ def handle_sam_meat_chatwoot_inbound(
     llm_agent_decider=None,
     llm_agent_v3_decider=None,
     llm_reply_rewriter=None,
+    launch_packet_builder=None,
+    launch_evidence_recorder=None,
+    launch_truth_readers=None,
+    routine_delivery_claim=None,
+    routine_delivery_evidence_recorder=None,
+    conversation_history_loader=None,
+    retained_context_loader=None,
 ):
     source = environ if environ is not None else os.environ
+    control_policy = sam_meat_control_policy()
     inbound = parse_chatwoot_inbound(payload)
     if not inbound["processable"]:
         return {
@@ -167,11 +215,102 @@ def handle_sam_meat_chatwoot_inbound(
             **_authority_flags(False, False),
         }, 200
 
-    facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
+    context_errors = []
+    try:
+        lead_context = _conversation_lead_context(inbound.get("conversation_id"))
+    except Exception as exc:
+        lead_context = {}
+        context_errors.append(_integration_failure("conversation_lead_context_failed", exc))
+    canonical_identity = canonical_customer_identity(inbound)
+    try:
+        retained_context = (
+            retained_context_loader(inbound, canonical_identity)
+            if retained_context_loader
+            else _canonical_meat_lead_context(inbound, canonical_identity)
+        )
+    except Exception as exc:
+        retained_context = {}
+        context_errors.append(_integration_failure("canonical_meat_context_failed", exc))
+    lead_context = _merge_lead_contexts(lead_context, retained_context)
+
     lane_route = classify_sam_sales_lane(inbound["content"])
-    live_stock_context = _conversation_live_stock_context(inbound.get("conversation_id"))
-    if lane_route.get("lane") == LANE_LIVE_STOCK or live_stock_context.get("active"):
+    if (
+        lane_route.get("lane") not in {LANE_MEAT, LANE_LIVE_STOCK}
+        and _is_low_risk_general_current_message(inbound["content"])
+        and not lead_context.get("lead_id")
+    ):
+        return {
+            "success": True,
+            "status": "sam_meat_general_first_withheld",
+            "processed": False,
+            "sent": False,
+            "inbound": inbound,
+            "facts": {},
+            "lane_route": lane_route,
+            "lead_payload": {},
+            "lead_result": {
+                "success": False,
+                "status": "not_recorded_without_current_message_meat_evidence",
+            },
+            "sam_decision": {
+                "reply_text": "",
+                "should_reply": False,
+                "owner_gate_required": False,
+                "specialist_lane_selected": False,
+                "blockers": [],
+            },
+            "agent_decision": {
+                "used": False,
+                "status": "general_first_specialist_not_invoked",
+                "facts_patch": {},
+            },
+            "send_status": "general_first_no_meat_reply",
+            "document_sent": False,
+            "policy": sam_meat_webhook_policy(source),
+            **_authority_flags(False, False),
+        }, 200
+
+    facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
+    current_message_facts = dict(facts)
+    definitive_meat = lane_route.get("lane") == LANE_MEAT and float(lane_route.get("confidence") or 0) >= 0.9
+    live_stock_context = (
+        {"active": False, "status": "not_read_definitive_current_meat"}
+        if definitive_meat
+        else _conversation_live_stock_context(inbound.get("conversation_id"))
+    )
+    explicit_live_stock = lane_route.get("lane") == LANE_LIVE_STOCK and (
+        not lead_context.get("lead_id") or _message_explicitly_requests_live_stock(inbound.get("content"))
+    )
+    lane_decision = build_sam_sales_lane_decision_packet(
+        lane_route,
+        live_stock_context,
+        final_route=LANE_LIVE_STOCK if explicit_live_stock else LANE_MEAT,
+        cross_lane_handoff_allowed=bool(explicit_live_stock),
+    )
+    if live_stock_context.get("active") and not lead_context.get("lead_id") and not definitive_meat and not explicit_live_stock:
+        return {
+            "success": True,
+            "status": "sam_meat_lane_clarification_required",
+            "processed": False,
+            "sent": False,
+            "inbound": inbound,
+            "facts": facts,
+            "lane_route": lane_route,
+            "live_stock_context": live_stock_context,
+            "lane_decision": lane_decision,
+            "sam_decision": {
+                "reply_text": "",
+                "owner_gate_required": True,
+                "blockers": ["ambiguous_current_lane_with_live_stock_context"],
+                "lane_decision": lane_decision,
+            },
+            "send_status": "ambiguous_lane_no_automatic_reply",
+            "policy": sam_meat_webhook_policy(source),
+            **_authority_flags(False, False),
+        }, 200
+    if explicit_live_stock:
         decision = build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route, live_stock_context)
+        decision["lane_decision"] = lane_decision
         return {
             "success": True,
             "status": "sam_meat_live_stock_handoff",
@@ -180,6 +319,7 @@ def handle_sam_meat_chatwoot_inbound(
             "facts": facts,
             "lane_route": lane_route,
             "live_stock_context": live_stock_context,
+            "lane_decision": lane_decision,
             "lead_payload": {},
             "lead_result": {
                 "success": False,
@@ -209,14 +349,9 @@ def handle_sam_meat_chatwoot_inbound(
             },
             **_authority_flags(False, False),
         }, 200
-    context_errors = []
-    try:
-        lead_context = _conversation_lead_context(inbound.get("conversation_id"))
-    except Exception as exc:
-        lead_context = {}
-        context_errors.append(_integration_failure("conversation_lead_context_failed", exc))
     prior_context = _merge_inbound_attribute_context(lead_context, inbound)
     facts = _merge_prior_context(facts, prior_context)
+    prior_context = _with_fact_provenance(prior_context, current_message_facts, facts, inbound.get("content"))
     try:
         context_packet = build_sam_v3_context_packet(inbound, prior_context, environ=source)
     except Exception as exc:
@@ -252,6 +387,7 @@ def handle_sam_meat_chatwoot_inbound(
     if agent_decision.get("used"):
         facts = _merge_agent_fact_patch(facts, agent_decision)
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
+    lead_payload["canonical_customer_id"] = canonical_identity.get("canonical_customer_id", "")
     if prior_context.get("lead_id"):
         lead_payload["lead_id"] = prior_context["lead_id"]
     else:
@@ -273,6 +409,8 @@ def handle_sam_meat_chatwoot_inbound(
         prior_context=prior_context,
         agent_decision=agent_decision,
     )
+    decision["lane_decision"] = lane_decision
+
     if booking_confirmation.get("recorded"):
         deposit_instruction = _build_deposit_instruction_if_ready(booking_confirmation.get("lead_id"), source)
         if deposit_instruction.get("ready"):
@@ -335,48 +473,114 @@ def handle_sam_meat_chatwoot_inbound(
     except Exception as exc:
         chatwoot_hygiene = _integration_failure("chatwoot_hygiene_sync_failed", exc)
 
+    launch_packet, launch_evidence = _prepare_sam_meat_launch_evidence(
+        inbound,
+        decision,
+        lead_payload,
+        launch_packet_builder=launch_packet_builder,
+        launch_evidence_recorder=launch_evidence_recorder,
+        launch_truth_readers=launch_truth_readers,
+    )
+    level1_messages = list(inbound.get("recent_messages") or [])
+    if conversation_history_loader is not None:
+        try:
+            loaded_history = conversation_history_loader(
+                inbound.get("conversation_id"), source, limit=200
+            )
+            if isinstance(loaded_history, list):
+                level1_messages = loaded_history
+            elif isinstance(loaded_history, dict):
+                level1_messages = list(loaded_history.get("messages") or [])
+        except Exception:
+            level1_messages = []
+    level1_inbound = bind_authoritative_conversation_evidence(
+        inbound,
+        level1_messages,
+    )
+    level1_authority = evaluate_level1_authority(
+        lane="meat",
+        inbound=level1_inbound,
+        decision={**decision, "suggested_reply_text": decision.get("reply_text", "")},
+        review=response_review,
+        evidence={
+            "supporting_evidence_valid": supporting_claims_are_evidence_backed(
+                "meat",
+                decision,
+                review_evidence_ready=launch_evidence.get("persisted") is True,
+            ),
+            "delivery_rail_available": (
+                routine_delivery_claim is not None
+                and routine_delivery_evidence_recorder is not None
+            ),
+            "automatic_retry": False,
+            "availability": launch_packet.get("availability") or {},
+        },
+        environ=source,
+    )
+    decision["sales_autonomy_level1"] = level1_authority
     send_result = {}
+    delivery_claim = {}
+    delivery_outcome = {}
     document_send_result = {}
     sent = False
     document_sent = False
     send_status = "autoreply_not_enabled"
     document_send_status = "not_requested"
-    if decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
+    send_enabled = decision["should_reply"] and (
+        (
+            _truthy(source.get(AUTOREPLY_ENABLED_ENV))
+            and control_policy["customer_public_output_enabled"]
+        )
+        or level1_authority.get("dispatch_authorized") is True
+    )
+    if send_enabled:
         if inbound["whatsapp_window_state"] != "open":
             send_status = "whatsapp_window_not_open"
-            document_send_status = "whatsapp_window_not_open"
+        elif not launch_evidence.get("persisted"):
+            send_status = "review_evidence_not_persisted"
+        elif routine_delivery_claim is None or routine_delivery_evidence_recorder is None:
+            send_status = "delivery_truth_integration_unavailable"
         else:
-            sender = chatwoot_sender or _send_chatwoot_message
-            _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_attempted", decision["reply_text"], {
-                "conversation_id": inbound["conversation_id"],
-            })
-            try:
-                send_result = sender(inbound["conversation_id"], decision["reply_text"])
-                sent = True
-                send_status = "sent"
-                _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_sent", decision["reply_text"], send_result)
-                if decision.get("document_send_requested"):
-                    try:
-                        document_payload = {"conversation_id": inbound["conversation_id"]}
-                        if decision.get("document_force_resend_requested"):
-                            document_payload["force_resend"] = True
-                        document_send_result, document_status_code = send_meat_estimated_quote_to_chatwoot(
-                            decision.get("lead_id"),
-                            document_payload,
-                            environ=source,
-                            chatwoot_sender=document_sender,
-                        )
-                        document_sent = bool(document_send_result.get("sent"))
-                        document_send_status = document_send_result.get("status") or f"status_{document_status_code}"
-                    except Exception as exc:
-                        document_send_result = {"error_type": exc.__class__.__name__, "error": str(exc)[:180]}
-                        document_send_status = "document_send_failed"
-            except Exception as exc:
-                send_result = {"error_type": exc.__class__.__name__, "error": str(exc)[:180]}
-                send_status = "chatwoot_send_failed"
-                document_send_status = "skipped_autoreply_failed"
-                _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_failed", decision["reply_text"], send_result)
-
+            delivery_claim = routine_delivery_claim(
+                inbound,
+                {**decision, "suggested_reply_text": decision.get("reply_text", "")},
+                {
+                    "review_event_id": launch_evidence.get("review_event_id", ""),
+                    "owner_action_identity": _clean(
+                        (launch_packet.get("owner_packet") or {}).get("protected_owner_decision"),
+                        120,
+                    ),
+                },
+            )
+            if delivery_claim.get("success") and delivery_claim.get("created"):
+                sender = chatwoot_sender or _send_chatwoot_message
+                try:
+                    send_result = sender(inbound["conversation_id"], decision["reply_text"])
+                    delivery_outcome = classify_chatwoot_response(send_result)
+                except Exception as exc:
+                    delivery_outcome = classify_dispatch_exception(exc)
+                    send_result = {"error_type": exc.__class__.__name__}
+                delivery_record = routine_delivery_evidence_recorder(
+                    delivery_claim, delivery_outcome
+                )
+                delivery_outcome["evidence_recorded"] = bool(
+                    isinstance(delivery_record, dict)
+                    and delivery_record.get("success") is True
+                )
+                delivery_outcome["transition_created"] = bool(
+                    isinstance(delivery_record, dict)
+                    and delivery_record.get("created") is True
+                )
+                sent = bool(delivery_outcome.get("chatwoot_outgoing_message_id"))
+                send_status = delivery_outcome.get("delivery_state") or "delivery_outcome_unavailable"
+                if not delivery_outcome["evidence_recorded"]:
+                    send_status = "delivery_outcome_evidence_failed"
+            elif delivery_claim.get("success"):
+                send_status = "delivery_attempt_already_claimed_no_retry"
+            else:
+                send_status = delivery_claim.get("status") or "delivery_attempt_claim_failed"
+    elif decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
+        send_status = "controlled_mode_owner_review_required"
     status_code = 200 if record_status in {200, 201, 400} else record_status
     result = {
         "success": record_status in {200, 201, 400},
@@ -395,17 +599,28 @@ def handle_sam_meat_chatwoot_inbound(
         "pop_capture": pop_capture,
         "fulfillment_capture": fulfillment_capture,
         "chatwoot_hygiene": chatwoot_hygiene,
+        "lane_decision": lane_decision,
         "sam_decision": decision,
         "response_review": response_review,
         "sent": sent,
         "send_status": send_status,
         "chatwoot_send": send_result,
+        "routine_reply_delivery": {
+            "claim": delivery_claim,
+            "outcome": delivery_outcome,
+            "customer_send_confirmed": delivery_outcome.get("customer_send_confirmed") is True,
+            "handled_autonomously": delivery_outcome.get("handled_autonomously") is True,
+            "automatic_retry_prohibited": bool(delivery_claim),
+        },
+        "sales_autonomy_level1": level1_authority,
         "document_sent": document_sent,
         "document_send_status": document_send_status,
         "document_send": document_send_result,
         "policy": sam_meat_webhook_policy(source),
         **_authority_flags(sent or document_sent, sent or document_sent),
     }
+    result["sam_meat_launch_packet"] = launch_packet
+    result["sam_meat_launch_evidence"] = launch_evidence
     try:
         learning_result, learning_status = record_learning_event_from_sam_result(result)
     except Exception as exc:
@@ -524,6 +739,16 @@ def parse_chatwoot_inbound(payload):
         "conversation_id": conversation_id,
         "contact_id": _clean(payload.get("contact_id") or sender.get("id") or contact.get("id"), 100),
         "account_id": _clean(payload.get("account_id") or account.get("id"), 100),
+        "inbox_id": _clean(
+            payload.get("inbox_id")
+            or conversation.get("inbox_id")
+            or (
+                conversation.get("inbox", {}).get("id")
+                if isinstance(conversation.get("inbox"), dict)
+                else ""
+            ),
+            100,
+        ),
         "customer_name": customer_name or "Chatwoot customer",
         "customer_phone": _clean(sender.get("phone_number") or contact.get("phone_number"), 80),
         "channel": channel,
@@ -626,6 +851,7 @@ def classify_sam_meat_lead(inbound, facts):
 
 def build_sam_meat_lead_payload_from_inbound(inbound, facts):
     product_type = facts.get("product_type") or "unknown"
+    attrs = inbound.get("conversation_custom_attributes") if isinstance(inbound.get("conversation_custom_attributes"), dict) else {}
     qualification = classify_sam_meat_lead(inbound, facts)
     product_label = {
         "half_carcass": "Half Carcass",
@@ -637,6 +863,13 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "customer_name": inbound.get("customer_name") or facts.get("customer_name") or "Chatwoot customer",
         "conversation_id": inbound.get("conversation_id") or facts.get("conversation_id"),
         "contact_id": inbound.get("contact_id") or facts.get("contact_id"),
+        "account_id": inbound.get("account_id") or "",
+        "customer_language": facts.get("customer_language") or attrs.get("customer_language") or attrs.get("language") or "",
+        "campaign_id": facts.get("campaign_id") or attrs.get("meat_source_campaign_id") or attrs.get("source_campaign_id") or "",
+        "campaign_source": facts.get("campaign_source") or attrs.get("campaign_source") or "",
+        "source_context": facts.get("source_context") or attrs.get("source_context") or "",
+        "current_conversation_goal": facts.get("current_conversation_goal") or attrs.get("current_conversation_goal") or "",
+        "last_unanswered_question": facts.get("last_unanswered_question") or attrs.get("last_unanswered_question") or "",
         "channel": inbound.get("channel") or facts.get("channel") or "chatwoot_whatsapp",
         "whatsapp_window_state": inbound.get("whatsapp_window_state") or "open",
         "product": product_label,
@@ -705,6 +938,76 @@ def _fresh_lead_id(inbound, facts):
     )
     return "OSK-SALES-LEAD-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16].upper()
 
+
+def _prepare_sam_meat_launch_evidence(
+    inbound,
+    decision,
+    lead_payload,
+    *,
+    launch_packet_builder=None,
+    launch_evidence_recorder=None,
+    launch_truth_readers=None,
+):
+    try:
+        if launch_packet_builder is None:
+            from modules.sales.sam_meat_launch_readiness import build_sam_meat_launch_packet
+            launch_packet_builder = build_sam_meat_launch_packet
+        packet_messages = list(inbound.get("recent_messages") or [])
+        packet_messages.append({
+            "message_id": inbound.get("message_id"),
+            "message_type": "incoming",
+            "content": inbound.get("content"),
+        })
+        lead_id = decision.get("lead_id") or lead_payload.get("lead_id")
+        packet = launch_packet_builder(
+            packet_messages,
+            conversation_ref=inbound.get("conversation_id"),
+            inbound_event_id=inbound.get("message_id"),
+            lead_id=lead_id,
+            truth_readers=launch_truth_readers,
+        )
+        recorder = launch_evidence_recorder or record_sam_meat_launch_review_packet
+        recorded, status_code = recorder(packet, lead_id)
+        persisted = status_code == 200 and recorded.get("persisted") is True
+        packet.setdefault("review_event", {})["persisted"] = persisted
+        if packet.get("correction_event", {}).get("event_id"):
+            packet["correction_event"]["persisted"] = persisted
+        evidence = {
+            "status_code": status_code,
+            "status": recorded.get("status"),
+            "success": recorded.get("success") is True,
+            "persisted": persisted,
+            "review_event_id": packet.get("review_event", {}).get("event_id", ""),
+            "correction_event_id": packet.get("correction_event", {}).get("event_id", ""),
+            "sends_customer_message": False,
+            "creates_order": False,
+            "confirms_payment": False,
+            "reserves_meat": False,
+            "allocates_meat": False,
+            "writes_farm_truth": False,
+        }
+        return packet, evidence
+    except Exception as exc:
+        return (
+            {
+                "success": False,
+                "status": "Unavailable",
+                "operationally_testable": False,
+                "error_type": exc.__class__.__name__,
+                "authority": _authority_flags(False, False),
+            },
+            {
+                "success": False,
+                "persisted": False,
+                "status": "sam_meat_launch_packet_unavailable",
+                "sends_customer_message": False,
+                "creates_order": False,
+                "confirms_payment": False,
+                "reserves_meat": False,
+                "allocates_meat": False,
+                "writes_farm_truth": False,
+            },
+        )
 
 def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None, prior_context=None, agent_decision=None):
     source = environ if environ is not None else os.environ
@@ -1144,10 +1447,10 @@ def _agent_v3_payload(context_packet, facts, source):
             "reply_text": "natural customer-facing WhatsApp sales reply, normally 1-4 short sentences",
             "facts_patch": {
                 "product_type": "half_carcass|full_carcass|custom_cut|assisted_slaughter|unknown",
-                "cut_set": "Set A|Set B|Set C|Set D",
+                "cut_set": "Set A|Set B|Set C (Set D is historical-only)",
                 "location": "town or area",
                 "timing": "this week|next week|next available farm run|customer wording",
-                "delivery_or_collection": "delivery only for public meat sales unless owner approves an exception",
+                "delivery_or_collection": "delivery only for current meat sales; collection is not offered",
                 "delivery_address_line_1": "street address, farm name, or shared location label",
                 "delivery_town": "town",
                 "delivery_area": "area/suburb",
@@ -1237,10 +1540,10 @@ def _agent_v2_payload(inbound, facts, prior_context, source):
             "reply_text": "short customer-facing WhatsApp reply",
             "facts_patch": {
                 "product_type": "half_carcass|full_carcass|custom_cut|assisted_slaughter|unknown",
-                "cut_set": "Set A|Set B|Set C|Set D",
+                "cut_set": "Set A|Set B|Set C (Set D is historical-only)",
                 "location": "town or area",
                 "timing": "this week|next week|next available farm run|customer wording",
-                "delivery_or_collection": "delivery only for public meat sales unless owner approves an exception",
+                "delivery_or_collection": "delivery only for current meat sales; collection is not offered",
                 "delivery_address_line_1": "street address or farm name",
                 "delivery_town": "town",
                 "delivery_area": "area/suburb",
@@ -1502,6 +1805,29 @@ def _review_sam_response(decision, inbound, facts, prior_context=None, agent_dec
     }
 
 
+def build_sam_sales_lane_decision_packet(lane_route, live_stock_context, *, final_route, cross_lane_handoff_allowed):
+    lane_route = lane_route if isinstance(lane_route, dict) else {}
+    live_stock_context = live_stock_context if isinstance(live_stock_context, dict) else {}
+    return {
+        "version": "sam_sales_lane_decision_v1",
+        "current_message_classification": {
+            "lane": lane_route.get("lane"),
+            "confidence": float(lane_route.get("confidence") or 0),
+            "evidence_source": "current_message_sales_router",
+            "reasons": list(lane_route.get("reasons") or []),
+        },
+        "context_state": {
+            "livestock_status": live_stock_context.get("status"),
+            "livestock_active": bool(live_stock_context.get("active")),
+            "read_failed": live_stock_context.get("status") == "live_stock_context_read_failed",
+            "context_influenced_route": False,
+        },
+        "final_route": final_route,
+        "cross_lane_handoff_allowed": bool(cross_lane_handoff_allowed),
+        "writes_performed": False,
+    }
+
+
 def build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route=None, live_stock_context=None):
     live_stock_context = live_stock_context if isinstance(live_stock_context, dict) else {}
     return {
@@ -1650,7 +1976,8 @@ def _deterministic_extract(message):
     cut_set = ""
     match = re.search(r"\bset\s*([abcd])\b", normalized)
     if match:
-        cut_set = f"Set {match.group(1).upper()}"
+        mentioned_set = f"Set {match.group(1).upper()}"
+        cut_set = "" if mentioned_set == "Set D" else mentioned_set
     if (
         cut_set
         and product_type == "unknown"
@@ -1727,6 +2054,11 @@ def _deterministic_extract(message):
 
 def _cut_menu_reply(message, facts):
     text = str(message or "").lower()
+    if _mentioned_cut_set(text) == "Set D":
+        return (
+            "Set D is retired for new sales. The current choices are Set A Amadeus Signature, "
+            "Set B Amadeus Ember, and Set C Amadeus Grand Cut. Which of those suits you?"
+        )
     asks_cut_menu = bool(re.search(
         r"\bwhat\b.*\b(set|sets|cut|cuts)\b|"
         r"\b(set|sets|cut|cuts)\b.*\b(include|includes|mean|means|option|options|different|difference|sheet|list|explain)\b|"
@@ -1767,8 +2099,8 @@ def _set_recommendation_reply(message, facts, prior_context=None, knowledge=None
         suggestion = "Set C is the better fit if you want leaner freezer meat, mince and stew cuts with fewer fatty belly cuts."
         suggested_set = "Set C"
     elif re.search(r"\b(slow\s*cook|roast|roasting|family\s+meal|larger\s+cuts|bulk)\b", normalized):
-        suggestion = "Set D is the better fit if you want larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking and family meals."
-        suggested_set = "Set D"
+        suggestion = "Set C / Amadeus Grand Cut Collection is the whole-cut option, with a whole rib, belly, leg and shanks alongside neck and loin chops and stew meat."
+        suggested_set = "Set C"
     else:
         suggestion = (
             "For a family of 3, I would normally start with Set A. "
@@ -2021,7 +2353,7 @@ def _payment_state_reply(message, facts, prior_context, knowledge=None):
 
 def _next_fact_question(facts):
     if facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
-        return "That can work. For the cutting style, Set A is the safest family freezer pack. Should I note Set A for you, or would you like the other sets first?"
+        return "That can work. The current choices are Set A Amadeus Signature, Set B Amadeus Ember, and Set C Amadeus Grand Cut. Which collection should I note for this half?"
     if not facts.get("location"):
         return "Which town or area should I plan around so the farm run stays practical?"
     if not facts.get("delivery_or_collection"):
@@ -2092,7 +2424,7 @@ def _safe_llm_fact_patch(value):
         product_type = ""
     patch = {
         "product_type": product_type,
-        "cut_set": _normal_cut_set(value.get("cut_set")),
+        "cut_set": "" if _normal_cut_set(value.get("cut_set")) == "Set D" else _normal_cut_set(value.get("cut_set")),
         "location": _normal_location(value.get("location")),
         "timing": _clean(value.get("timing"), 120),
         "delivery_or_collection": _normal_delivery(value.get("delivery_or_collection")),
@@ -2124,6 +2456,144 @@ def _conversation_lead_context(conversation_id):
         "interest": interest,
         "latest_event": _latest_event_type(lead),
     }
+
+
+def _canonical_meat_lead_context(inbound, identity):
+    identity = identity if isinstance(identity, dict) else {}
+    if not identity.get("resolved"):
+        return {}
+    result, status_code = get_active_sales_lead_by_customer_identity(
+        identity.get("canonical_customer_id", ""),
+        identity.get("account_id", ""),
+        inbound.get("contact_id", ""),
+    )
+    if status_code != 200 or not isinstance(result, dict):
+        return {}
+    lead = result.get("lead") if isinstance(result.get("lead"), dict) else {}
+    if not lead:
+        return {}
+    return {
+        "lead_id": _clean(lead.get("lead_id"), 100),
+        "interest": lead.get("interest") if isinstance(lead.get("interest"), dict) else {},
+        "latest_event": _latest_event_type(lead),
+        "linked_preorder_id": _clean(lead.get("linked_preorder_id"), 100),
+        "linked_order_id": _clean(lead.get("linked_order_id"), 100),
+        "retained_from_conversation_id": _clean(lead.get("chatwoot_conversation_id"), 100),
+        "canonical_identity": identity,
+        "source": "supabase.oom_sakkie_sales_leads_and_events",
+    }
+
+
+def _merge_lead_contexts(current_conversation, retained):
+    """Prefer current-conversation evidence and retain explicit conflict provenance."""
+    current_conversation = dict(current_conversation or {})
+    retained = dict(retained or {})
+    if not current_conversation:
+        retained["provenance"] = {
+            "status": "retained",
+            "retained_source": retained.get("source", ""),
+            "current_source": "current_chatwoot_message",
+            "conflicts": [],
+        }
+        return retained
+    if not retained:
+        current_conversation["provenance"] = {
+            "status": "current_conversation",
+            "retained_source": "",
+            "current_source": "current_chatwoot_conversation",
+            "conflicts": [],
+        }
+        return current_conversation
+    current_interest = dict(current_conversation.get("interest") or {})
+    retained_interest = dict(retained.get("interest") or {})
+    merged_interest = dict(retained_interest)
+    conflicts = []
+    for key, value in current_interest.items():
+        current_value = _clean(value, 700)
+        retained_value = _clean(retained_interest.get(key), 700)
+        if current_value and retained_value and current_value != retained_value:
+            conflicts.append({
+                "field": key,
+                "retained_value": retained_value,
+                "current_value": current_value,
+                "resolution": "current_conversation_evidence",
+            })
+        if current_value:
+            merged_interest[key] = value
+    merged = {**retained, **current_conversation, "interest": merged_interest}
+    merged["provenance"] = {
+        "status": "supplied_and_retained" if current_interest and retained_interest else "retained",
+        "retained_source": retained.get("source", ""),
+        "current_source": "current_chatwoot_conversation",
+        "conflicts": conflicts,
+    }
+    return merged
+
+
+_MEAT_RETAINED_FACT_FIELDS = (
+    "customer_language", "product_type", "cut_set", "location", "delivery_town",
+    "delivery_or_collection", "delivery_address_line_1", "delivery_area", "delivery_notes",
+    "timing", "campaign_id", "campaign_source", "source_context", "budget_amount",
+    "target_packed_kg", "match_preference", "payment_method", "current_conversation_goal",
+    "last_unanswered_question",
+)
+
+
+def _with_fact_provenance(prior_context, current_facts, merged_facts, current_message=""):
+    """Attach field-level supplied/retained/derived/unknown evidence without changing authority."""
+    context = dict(prior_context or {})
+    retained_interest = dict(context.get("interest") or {})
+    current_facts = dict(current_facts or {})
+    merged_facts = dict(merged_facts or {})
+    provenance = dict(context.get("provenance") or {})
+    conflicts = list(provenance.get("conflicts") or [])
+    field_evidence = {}
+    message = str(current_message or "").lower()
+    for field in _MEAT_RETAINED_FACT_FIELDS:
+        current = _clean(current_facts.get(field), 700)
+        retained = _clean(retained_interest.get(field), 700)
+        resolved = _clean(merged_facts.get(field), 700)
+        if current and retained and current != retained:
+            conflict = {
+                "field": field, "retained_value": retained, "current_value": current,
+                "resolution": "current_message_evidence",
+            }
+            if conflict not in conflicts:
+                conflicts.append(conflict)
+        if current:
+            status = "supplied"
+            source = "current_message"
+            if field == "payment_method" and not re.search(r"\b(eft|cash)\b", message):
+                status, source = "derived", "current_meat_policy_default"
+        elif retained:
+            status, source = "retained", "supabase_meat_lead_chronology"
+        elif resolved:
+            status, source = "derived", "deterministic_runtime"
+        else:
+            status, source = "unknown", "none"
+        field_evidence[field] = {"status": status, "source": source}
+    context["interest"] = {**retained_interest, **{
+        key: merged_facts[key] for key in _MEAT_RETAINED_FACT_FIELDS if _clean(merged_facts.get(key), 700)
+    }}
+    context["provenance"] = {
+        **provenance,
+        "status": "current_and_retained_evidence",
+        "current_source": "current_chatwoot_message",
+        "field_evidence": field_evidence,
+        "conflicts": conflicts,
+    }
+    return context
+
+
+def _message_explicitly_requests_live_stock(message):
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return bool(re.search(
+        r"\b(live\s+pig(?:s|lets)?|piglets?|weaners?|sows?|boars?|gilts?|breeding\s+pig(?:s)?|"
+        r"female\s+pig(?:s|lets)?|male\s+pig(?:s|lets)?)\b",
+        text,
+    ))
 
 
 def _merge_inbound_attribute_context(prior_context, inbound):
@@ -2176,6 +2646,10 @@ def _latest_event_type(lead):
 
 
 def _record_booking_confirmation_if_ready(inbound, prior_context):
+    return {"recorded": False, "status": "controlled_mode_blocked"}
+
+
+def _disabled_record_booking_confirmation_if_ready(inbound, prior_context):
     prior_context = prior_context if isinstance(prior_context, dict) else {}
     lead_id = _clean(prior_context.get("lead_id"), 100)
     if not lead_id:
@@ -2237,6 +2711,12 @@ def _merge_prior_context(facts, prior_context):
         "delivery_location_longitude",
         "delivery_maps_url",
         "payment_method",
+        "customer_language",
+        "campaign_id",
+        "campaign_source",
+        "source_context",
+        "current_conversation_goal",
+        "last_unanswered_question",
         "budget_amount",
         "target_packed_kg",
         "match_preference",

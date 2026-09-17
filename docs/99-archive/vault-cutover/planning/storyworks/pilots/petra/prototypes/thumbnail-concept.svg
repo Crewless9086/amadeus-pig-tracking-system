@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Petra thumbnail concept</title>
+  <desc id="desc">A non-realistic thumbnail layout showing a sandstone gorge, a blue flow path and the words Too Much Water.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e1721"/>
+      <stop offset="1" stop-color="#263b4b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#sky)"/>
+  <path d="M0 0 H330 L470 210 L390 720 H0 Z" fill="#8c4c37"/>
+  <path d="M1280 0 H940 L810 220 L875 720 H1280 Z" fill="#9f5b42"/>
+  <path d="M390 720 C510 530 620 520 675 350 C735 525 790 590 875 720 Z" fill="#5f382e"/>
+  <path d="M660 70 C610 180 650 285 675 350 C720 470 750 565 835 695" fill="none" stroke="#58caee" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="675" cy="350" r="18" fill="#eac56e"/>
+  <path d="M675 350 L815 280" stroke="#eac56e" stroke-width="10"/>
+  <path d="M815 280 L790 260 M815 280 L785 298" stroke="#eac56e" stroke-width="10"/>
+  <rect x="55" y="450" width="715" height="185" rx="22" fill="#0b1117" opacity="0.88"/>
+  <text x="90" y="525" font-family="Arial, sans-serif" font-size="68" font-weight="800" fill="#ffffff">TOO MUCH</text>
+  <text x="90" y="605" font-family="Arial, sans-serif" font-size="90" font-weight="900" fill="#58caee">WATER</text>
+  <text x="925" y="670" font-family="Arial, sans-serif" font-size="22" fill="#f4e2d0">CONCEPT • SCHEMATIC</text>
+</svg>

@@ -27,11 +27,13 @@ from modules.orders.order_service import (
     sync_order_lines_from_request,
     create_order_with_lines,
 )
+from modules.orders.approved_order_revision import revise_approved_livestock_order
 from modules.documents.quote_service import (
     auto_generate_quote_if_ready,
     auto_generate_quote_if_ready_with_retry,
     generate_quote_for_order,
 )
+from modules.orders.order_pricing import ensure_order_line_prices
 from modules.documents.invoice_service import generate_invoice_for_order
 from modules.documents.loading_sheet_service import (
     generate_loading_sheet_for_order,
@@ -61,7 +63,14 @@ from modules.orders.order_validation import (
     validate_update_order_line_payload,
     validate_sync_order_lines_payload,
 )
+from modules.orders.livestock_quote_preview import build_livestock_quote_preview, build_already_sold_recording_preview
+from modules.orders.livestock_quotation import build_quotation_preview
+from modules.pig_weights.herdmaster_live_transfer_contract import (
+    build_live_transfer_preview_contract,
+)
+from modules.auth.owner_access import require_owner_read_access
 from modules.orders.order_shadow_read import compare_shadow_order
+from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
 
 orders_bp = Blueprint("orders", __name__)
 logger = logging.getLogger(__name__)
@@ -220,12 +229,80 @@ def order_operator_summary(order_id):
 
 @orders_bp.route("/orders/available-pigs", methods=["GET"])
 def available_pigs():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
     pigs = get_available_pigs_for_orders()
     return jsonify({
         "success": True,
         "count": len(pigs),
         "pigs": pigs,
     })
+
+
+@orders_bp.route("/orders/livestock-quote-preview", methods=["POST"])
+def livestock_quote_preview():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "errors": ["JSON body must be an object."], "writes_performed": False}), 400
+    requested_items = payload.get("requested_items", [])
+    if isinstance(requested_items, list) and len(requested_items) > 20:
+        return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
+    validation = validate_sync_order_lines_payload({"requested_items": requested_items})
+    if not validation["is_valid"]:
+        return jsonify({"success": False, "errors": validation["errors"], "writes_performed": False}), 400
+    if any(item["quantity"] > 100 for item in validation["cleaned_data"]["requested_items"]):
+        return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
+    try:
+        journey = str(payload.get("journey") or "sales_quotation").strip()
+        if journey in {"price_indication", "budgetary_quotation"}:
+            return jsonify(build_quotation_preview({
+                **payload,
+                "journey": journey,
+                "requested_items": validation["cleaned_data"]["requested_items"],
+            })), 200
+        herdmaster_packet = build_live_transfer_preview_contract()
+        if not isinstance(herdmaster_packet, dict) or not herdmaster_packet.get("packet_digest"):
+            return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
+        return jsonify(build_quotation_preview(
+            {
+                **payload,
+                "journey": "sales_quotation",
+                "quotation_basis": "current_availability",
+                "requested_items": validation["cleaned_data"]["requested_items"],
+            },
+            herdmaster_preview_builder=lambda items, packet: build_livestock_quote_preview(
+                items, packet, observed_at=packet.get("evidence_cutoff_date"),
+                evidence_source="canonical_repeatable_read",
+            ),
+            herdmaster_packet=herdmaster_packet,
+        )), 200
+    except ValueError as exc:
+        return jsonify({"success": False, "errors": [str(exc)], "writes_performed": False}), 400
+    except Exception as exc:
+        logger.exception("Livestock quote preview failed")
+        return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
+
+
+@orders_bp.route("/orders/already-sold-preview", methods=["POST"])
+def already_sold_preview():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "errors": ["JSON body must be an object."], "writes_performed": False}), 400
+    try:
+        packet = build_live_transfer_preview_contract()
+        if not isinstance(packet, dict) or not packet.get("packet_digest"):
+            raise RuntimeError("canonical packet unavailable")
+        return jsonify(build_already_sold_recording_preview(payload, packet)), 200
+    except Exception:
+        logger.exception("Already-sold recording preview failed")
+        return jsonify({"success": False, "errors": ["Protected sale evidence is currently unavailable."], "writes_performed": False}), 503
 
 
 @orders_bp.route("/orders/<order_id>/reserve", methods=["POST"])
@@ -357,6 +434,23 @@ def generate_quote(order_id):
         }), 500
 
 
+@orders_bp.route("/orders/<order_id>/pricing", methods=["POST"])
+def refresh_order_pricing(order_id):
+    payload = request.get_json(silent=True) or {}
+    reprice = bool(payload.get("reprice"))
+    try:
+        result = ensure_order_line_prices(order_id, reprice=reprice)
+        return jsonify(result), 200 if result.get("success") else 409
+    except Exception as exc:
+        logger.exception("Unexpected pricing refresh failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "status": "order_pricing_failed",
+            "order_id": order_id,
+            "error_type": exc.__class__.__name__,
+        }), 500
+
+
 @orders_bp.route("/orders/<order_id>/quote/send-latest", methods=["POST"])
 def send_latest_quote(order_id):
     payload = request.get_json(silent=True) or {}
@@ -468,6 +562,74 @@ def send_latest_quote_confirmed(order_id):
         }), 400
 
 
+@orders_bp.route("/orders/<order_id>/approved-livestock-revision", methods=["POST"])
+def approved_livestock_revision(order_id):
+    payload = request.get_json(silent=True) or {}
+    authorization_errors = _validate_approved_livestock_revision_authorization(payload)
+    if authorization_errors:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": authorization_errors,
+            "owner_authorization_required": True,
+        }), 403
+
+    sync_validation = validate_sync_order_lines_payload(payload)
+    order_updates = payload.get("order_updates") if isinstance(payload.get("order_updates"), dict) else {}
+    update_validation = {"is_valid": True, "errors": [], "cleaned_data": {}}
+    if order_updates:
+        update_validation = validate_update_order_payload(order_updates)
+
+    errors = []
+    if not sync_validation["is_valid"]:
+        errors.extend(sync_validation["errors"])
+    if not update_validation["is_valid"]:
+        errors.extend([f"order_updates.{item}" for item in update_validation["errors"]])
+
+    if errors:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": errors,
+        }), 400
+
+    cleaned_payload = dict(payload)
+    cleaned_payload["requested_items"] = sync_validation["cleaned_data"]["requested_items"]
+    cleaned_payload["changed_by"] = sync_validation["cleaned_data"]["changed_by"]
+    cleaned_payload["order_updates"] = update_validation["cleaned_data"]
+
+    try:
+        result = revise_approved_livestock_order(
+            order_id,
+            cleaned_payload,
+            quote_generator=auto_generate_quote_if_ready,
+            loading_sheet_generator=generate_loading_sheet_for_order,
+            removal_certificate_generator=generate_removal_certificate_for_order,
+            health_declaration_generator=generate_health_declaration_for_order,
+            quote_send_preparer=_prepare_latest_quote_send_context,
+            document_lookup=get_order_documents,
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": [str(exc)],
+        }), 400
+    except Exception as exc:
+        logger.exception("Unexpected approved livestock revision failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+            "message": "Approved livestock order revision failed unexpectedly.",
+        }), 500
+
+
 @orders_bp.route("/orders/<order_id>/invoice", methods=["POST"])
 def generate_invoice(order_id):
     payload = request.get_json(silent=True) or {}
@@ -506,6 +668,31 @@ def generate_loading_sheet(order_id):
             "order_id": order_id,
             "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
             "message": "Loading sheet generation failed unexpectedly.",
+        }), 500
+
+
+@orders_bp.route("/orders/<order_id>/sales-pack/prepare", methods=["POST"])
+def prepare_live_stock_order_sales_pack(order_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = prepare_live_stock_sales_pack(order_id, payload)
+        return jsonify(result), 200 if result.get("success") else 400
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "status": "sam_live_stock_sales_pack_invalid",
+            "order_id": order_id,
+            "errors": [str(exc)],
+            "customer_send_allowed": False,
+        }), 400
+    except Exception as exc:
+        logger.exception("Unexpected live-stock sales-pack preparation failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "status": "sam_live_stock_sales_pack_failed",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+            "customer_send_allowed": False,
         }), 500
 
 
@@ -1088,6 +1275,55 @@ def _ensure_order_allows_quote_send(order):
         raise ValueError(f"Quote cannot be sent because order is {order_status}.")
     if approval_status == "Rejected":
         raise ValueError("Quote cannot be sent because order approval was rejected.")
+
+
+def _validate_approved_livestock_revision_authorization(payload):
+    if not isinstance(payload, dict):
+        return ["Owner/Oom Sakkie authorization is required for approved livestock order revisions."]
+
+    confirmation = str(
+        payload.get("owner_confirmation")
+        or payload.get("revision_confirmation")
+        or ""
+    ).strip()
+    authorization = payload.get("owner_authorization")
+    if not isinstance(authorization, dict):
+        authorization = {}
+
+    authorized_flag = (
+        _truthy(payload.get("owner_authorized"))
+        or _truthy(payload.get("revision_authorized"))
+        or _truthy(authorization.get("approved"))
+        or _truthy(authorization.get("owner_authorized"))
+    )
+    exact_confirmation = confirmation == "REVISE APPROVED LIVESTOCK ORDER"
+
+    if not authorized_flag and not exact_confirmation:
+        return [
+            "Owner/Oom Sakkie authorization is required for approved livestock order revisions. "
+            "Provide owner_authorized=true or owner_confirmation='REVISE APPROVED LIVESTOCK ORDER'."
+        ]
+
+    source = str(
+        payload.get("authorization_source")
+        or authorization.get("source")
+        or payload.get("confirmation_source")
+        or ""
+    ).strip()
+    if not source:
+        return ["authorization_source is required for approved livestock order revisions."]
+
+    changed_by = str(
+        payload.get("changed_by")
+        or payload.get("requested_by")
+        or authorization.get("authorized_by")
+        or ""
+    ).strip()
+    allowed_actors = {"Charl", "Owner", "Oom Sakkie", "CHARLIE"}
+    if changed_by not in allowed_actors:
+        return ["changed_by must identify Charl, Owner, CHARLIE, or Oom Sakkie for this approved-order revision."]
+
+    return []
 
 
 def _truthy(value):

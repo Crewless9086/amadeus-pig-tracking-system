@@ -258,8 +258,9 @@ First inputs:
 First output:
 
 - Draft-only content packets requiring owner approval.
-- Current meat launch packet: `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`.
-- Full future scope: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`.
+- Current meat campaign authority: `docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md` plus the SAM Meat pack.
+- Current scope: `docs/09-vault-brain/02-agents/marketing/BEACON.md` plus its
+  focused Vault workflow and business-rule pack.
 
 Risk:
 

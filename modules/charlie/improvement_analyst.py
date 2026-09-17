@@ -1,15 +1,25 @@
+import hashlib
 from datetime import datetime, timezone
 
 from modules.charlie import mission_store, vault_store
 from modules.charlie.mission_memory import replay_packet
 from modules.charlie.mission_quality import classify_known_failures, score_mission_quality
+from modules.charlie.final_readiness import evaluate_final_readiness
+from modules.charlie.agentic_architecture import architecture_drift_signals
 
 
 PROPOSAL_ARTIFACT_TYPE = "charlie_improvement_proposal"
+OBSERVATION_ARTIFACT_TYPE = "charlie_improvement_observation"
 PROPOSAL_LABEL = "charlie_self_improvement"
 ALLOWED_PROPOSAL_DECISIONS = {"approve", "reject", "send_to_mission"}
+TERMINAL_MISSION_STATUSES = {"pr_ready", "done", "merged", "deployed", "blocked", "rejected"}
+VALIDATION_SAMPLE_MINIMUM = 3
 
 TARGET_AREAS = {
+    "agentic_architecture": {
+        "keywords": ["question-specific", "special-case handler", "reply branch", "agent bypass", "shadow truth", "business reasoning in route", "regex business logic"],
+        "recommendation": "Move domain reasoning into the owning operational agent through the shared evidence bus; retain code only for canonical reads, calculations, validation, permissions, audit, idempotency, and safe execution.",
+    },
     "tests": {
         "keywords": ["test", "tests", "failed", "failure", "regression", "qa"],
         "recommendation": "Tighten test gates and require clearer automated evidence before owner review.",
@@ -50,6 +60,22 @@ TARGET_AREAS = {
         "keywords": ["owner preference", "buttons", "messy", "overflow", "missing button", "not what i want"],
         "recommendation": "Convert owner feedback into enforced prompt rules, UI standards, and mission acceptance checks.",
     },
+    "branch_release": {
+        "keywords": ["branch_repair_required", "merge conflict", "conflicting", "stale branch", "wrong revision"],
+        "recommendation": "Improve exact-revision materialization and automatic branch repair before review stages consume evidence.",
+    },
+    "environment": {
+        "keywords": ["environment_retry_required", "browser unavailable", "tool unavailable", "timeout", "permissionerror"],
+        "recommendation": "Strengthen runner capability fallbacks and retry only the smallest environment-dependent stage.",
+    },
+    "agent_performance": {
+        "keywords": ["contract retry", "repeated backflow", "confidence", "wrong responsible stage", "agent_stage_recovery_queued"],
+        "recommendation": "Review agent instructions, evidence contracts, routing accuracy, and repeated-stage performance using measured mission outcomes.",
+    },
+    "cost_model": {
+        "keywords": ["token", "cost", "budget", "expensive", "model routing", "provider fallback"],
+        "recommendation": "Right-size model routing and context budgets while preserving deterministic verification and owner gates.",
+    },
 }
 
 
@@ -57,7 +83,7 @@ def analyze_improvement_opportunities(missions):
     missions = [mission for mission in missions if isinstance(mission, dict)]
     buckets = {area: _empty_bucket(area) for area in TARGET_AREAS}
     for mission in missions:
-        evidence_texts = _mission_evidence_texts(mission)
+        evidence_texts = _mission_improvement_evidence_texts(mission)
         combined = " ".join(evidence_texts).lower()
         if not combined:
             continue
@@ -78,6 +104,127 @@ def analyze_improvement_opportunities(missions):
     return proposals
 
 
+def run_operational_analyst(mission_id="", trigger="mission_terminal", limit=50, database_url=None, connect_factory=None):
+    limit = max(1, min(int(limit or 25), 25))
+    before, _before_status = list_improvement_proposals(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    existing_ids = {proposal.get("proposal_id") for proposal in before.get("proposals", [])} if isinstance(before, dict) else set()
+    observation = {}
+    if mission_id:
+        observation, observation_status = record_mission_observation(
+            mission_id,
+            trigger=trigger,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if observation_status >= 400:
+            return observation, observation_status
+    generated, generated_status = generate_and_store_proposals(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if generated_status >= 400:
+        return generated, generated_status
+    new_proposals = [proposal for proposal in generated.get("proposals", []) if proposal.get("proposal_id") not in existing_ids]
+    lifecycle, lifecycle_status = refresh_proposal_lifecycle(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if lifecycle_status >= 400:
+        return lifecycle, lifecycle_status
+    scorecard, scorecard_status = analyst_scorecard(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return {
+        "success": generated_status < 400 and lifecycle_status < 400 and scorecard_status < 400,
+        "status": "analyst_cycle_complete",
+        "trigger": trigger,
+        "mission_id": mission_id,
+        "observation": observation,
+        "generated": generated,
+        "new_proposals": new_proposals,
+        "lifecycle": lifecycle,
+        "scorecard": scorecard.get("scorecard", {}),
+        "execution_boundary": _execution_boundary(),
+    }, max(generated_status, lifecycle_status, scorecard_status)
+
+
+def record_mission_observation(mission_id, trigger="mission_terminal", database_url=None, connect_factory=None):
+    loaded, status_code = mission_store.get_mission(
+        mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return loaded, status_code
+    mission = loaded.get("mission") or {}
+    status = _clean(mission.get("status"), 40)
+    if status not in TERMINAL_MISSION_STATUSES:
+        return {
+            "success": True,
+            "status": "observation_skipped_non_terminal",
+            "mission_id": mission_id,
+            "mission_status": status,
+        }, 200
+    packet = (mission.get("metadata") or {}).get("review_packet") or {}
+    disposition = packet.get("block_disposition") if isinstance(packet.get("block_disposition"), dict) else {}
+    fingerprint_seed = "|".join([
+        mission_id,
+        status,
+        str(packet.get("review_status") or ""),
+        str(disposition.get("block_class") or ""),
+        str((packet.get("github_reconciliation") or {}).get("head_sha") or packet.get("tested_revision") or ""),
+    ])
+    fingerprint = hashlib.sha256(fingerprint_seed.encode("utf-8")).hexdigest()[:20]
+    ledger = packet.get("agent_execution") if isinstance(packet.get("agent_execution"), dict) else {}
+    stages = ledger.get("stages") if isinstance(ledger.get("stages"), list) else []
+    observation = {
+        "version": "charlie_analyst_observation_v1",
+        "observation_id": f"CHARLIE-OBS-{fingerprint.upper()}",
+        "fingerprint": fingerprint,
+        "mission_id": mission_id,
+        "mission_status": status,
+        "trigger": _clean(trigger, 80),
+        "title": _clean(mission.get("title") or mission.get("raw_text"), 200),
+        "mission_type": _clean(mission.get("mission_type"), 80),
+        "review_status": _clean(packet.get("review_status"), 80),
+        "block_class": _clean(disposition.get("block_class"), 80),
+        "owner_required": bool(disposition.get("owner_required")),
+        "responsible_stage": _clean(disposition.get("responsible_stage"), 80),
+        "backflow_count": len(packet.get("backflow_events") or []),
+        "contract_retry_count": len(ledger.get("contract_retries") or []),
+        "stage_count": len(stages),
+        "test_evidence_count": len(packet.get("test_evidence") or []),
+        "owner_decision": _clean(mission.get("owner_decision"), 500),
+        "evidence": _mission_evidence_texts(mission)[:20],
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "applies_automatically": False,
+        "agentic_architecture_drift": architecture_drift_signals(mission),
+    }
+    written, write_status = vault_store.write_artifact(
+        mission_id,
+        OBSERVATION_ARTIFACT_TYPE,
+        observation,
+        title=observation["observation_id"],
+        summary=f"ANALYST observed {status} outcome for {mission_id}.",
+        agent="charlie_improvement_analyst",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return {
+        "success": write_status < 400 and written.get("success", False),
+        "status": "observation_recorded" if write_status < 400 else written.get("status", "observation_write_failed"),
+        "observation": observation,
+    }, write_status
+
+
 def analyze_mission_replay(mission):
     mission = mission if isinstance(mission, dict) else {}
     replay = replay_packet(mission)
@@ -88,6 +235,15 @@ def analyze_mission_replay(mission):
     known_failures = classify_known_failures(str(review_packet), str(debug_focus), str(events))
     findings = []
     proposals = []
+    final_readiness = evaluate_final_readiness(mission)
+    if str(mission.get("status") or "").lower() == "pr_ready" and not final_readiness.get("can_authorize_release"):
+        findings.append(f"Mission entered owner review with pending readiness gates: {', '.join(final_readiness.get('pending_gate_keys') or [])}.")
+        proposals.append({
+            "target_area": "gates",
+            "problem_detected": "Owner review readiness was classified before mandatory release evidence was complete.",
+            "recommendation": "Use the deterministic final-readiness verdict and keep final approval locked until required gates pass.",
+            "applies_automatically": False,
+        })
     if debug_focus.get("blocked_reason"):
         findings.append(f"Mission blocked at {debug_focus.get('blocked_agent') or 'unknown agent'}: {debug_focus.get('blocked_reason')}")
         proposals.append({
@@ -138,7 +294,7 @@ def analyze_mission_replay(mission):
     }, 200
 
 
-def generate_and_store_proposals(limit=50, database_url=None, connect_factory=None):
+def generate_and_store_proposals(limit=50, max_proposals=5, database_url=None, connect_factory=None):
     loaded, status_code = mission_store.list_missions(
         limit=limit,
         database_url=database_url,
@@ -146,8 +302,28 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
     )
     if status_code >= 400:
         return loaded, status_code
-    proposals = analyze_improvement_opportunities(loaded.get("missions", []))
+    proposals = analyze_improvement_opportunities(loaded.get("missions", []))[:max(1, min(int(max_proposals or 5), 10))]
     existing_by_id = _existing_proposals_by_id(database_url=database_url, connect_factory=connect_factory)
+    current_ids = {proposal["proposal_id"] for proposal in proposals}
+    superseded = []
+    for proposal_id, existing in existing_by_id.items():
+        if proposal_id in current_ids or existing.get("status") not in {"pending", "pending_owner_review"}:
+            continue
+        artifact_id = existing.get("artifact_id")
+        if not artifact_id:
+            continue
+        stale = dict(existing)
+        stale["status"] = "superseded"
+        stale["superseded_reason"] = "Current structured mission evidence no longer meets the recurrence threshold."
+        stale["lifecycle_updated_at"] = datetime.now(timezone.utc).isoformat()
+        saved, saved_status = vault_store.update_artifact_content(
+            artifact_id,
+            stale,
+            summary=stale.get("recommendation", ""),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        superseded.append({"proposal_id": proposal_id, "success": saved_status < 400 and saved.get("success", False)})
     writes = []
     for proposal in proposals:
         proposal = _merge_existing_proposal_decision(proposal, existing_by_id.get(proposal["proposal_id"]))
@@ -183,6 +359,7 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
         "proposal_count": len(proposals),
         "proposals": proposals,
         "writes": writes,
+        "superseded": superseded,
         "execution_boundary": _execution_boundary(),
     }, 200
 
@@ -218,6 +395,19 @@ def create_owner_gated_improvement_missions(limit=50, max_create=3, database_url
             "mission_id": mission_result.get("mission_id", ""),
             "mission_status": mission_result.get("status", ""),
         })
+        if mission_status < 400 and mission_result.get("mission_id") and proposal.get("artifact_id"):
+            updated = dict(proposal)
+            updated["status"] = "mission_created"
+            updated["sent_to_mission_id"] = mission_result["mission_id"]
+            updated["mission_creation_status"] = mission_result.get("status", "mission_recorded")
+            updated["lifecycle_updated_at"] = datetime.now(timezone.utc).isoformat()
+            vault_store.update_artifact_content(
+                proposal["artifact_id"],
+                updated,
+                summary=updated.get("recommendation", ""),
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
     return {
         "success": True,
         "configured": True,
@@ -242,7 +432,7 @@ def _existing_proposals_by_id(database_url=None, connect_factory=None):
         proposal = _proposal_from_artifact(artifact)
         proposal_id = _clean(proposal.get("proposal_id", ""), 160)
         if proposal_id:
-            proposals[proposal_id] = proposal
+            proposals.setdefault(proposal_id, proposal)
     return proposals
 
 
@@ -258,6 +448,12 @@ def _merge_existing_proposal_decision(proposal, existing):
         "last_owner_decision",
         "mission_creation_status",
         "sent_to_mission_id",
+        "baseline",
+        "validation",
+        "problem_fingerprint",
+        "lifecycle_updated_at",
+        "record_mission_id",
+        "mission_id",
     ]:
         if existing.get(key):
             preserved[key] = existing[key]
@@ -279,8 +475,13 @@ def list_improvement_proposals(status="", limit=20, database_url=None, connect_f
         return result, status_code
     clean_status = _clean(status, 40)
     proposals = []
+    seen_proposal_ids = set()
     for artifact in result.get("artifacts", []):
         proposal = _proposal_from_artifact(artifact)
+        proposal_id = proposal.get("proposal_id")
+        if proposal_id in seen_proposal_ids:
+            continue
+        seen_proposal_ids.add(proposal_id)
         if clean_status and proposal.get("status") != clean_status:
             continue
         proposals.append(proposal)
@@ -291,6 +492,155 @@ def list_improvement_proposals(status="", limit=20, database_url=None, connect_f
         "proposals": proposals,
         "execution_boundary": _execution_boundary(),
     }, 200
+
+
+def refresh_proposal_lifecycle(limit=50, database_url=None, connect_factory=None):
+    proposals_result, proposal_status = list_improvement_proposals(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if proposal_status >= 400:
+        return proposals_result, proposal_status
+    missions_result, mission_status = mission_store.list_missions(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if mission_status >= 400:
+        return missions_result, mission_status
+    missions = missions_result.get("missions", [])
+    missions_by_id = {str(mission.get("mission_id") or ""): mission for mission in missions}
+    updates = []
+    for proposal in proposals_result.get("proposals", []):
+        artifact_id = proposal.get("artifact_id")
+        if not artifact_id:
+            continue
+        mission_id = str(proposal.get("sent_to_mission_id") or "").strip()
+        improvement_mission = missions_by_id.get(mission_id) if mission_id else None
+        old_status = proposal.get("status") or "pending_owner_review"
+        new_status = old_status
+        validation = proposal.get("validation") if isinstance(proposal.get("validation"), dict) else {}
+        if improvement_mission:
+            current = str(improvement_mission.get("status") or "").strip()
+            if current in {"new", "approved", "in_progress", "blocked", "pr_ready", "release_approved", "release_in_progress"}:
+                new_status = "implementation_in_progress"
+            elif current in {"done", "merged", "deployed"}:
+                new_status = "deployed_pending_validation"
+                validation = _validation_assessment(proposal, missions, improvement_mission)
+                if validation.get("sample_ready"):
+                    new_status = "validated_effective" if validation.get("effective") else "validated_ineffective"
+        if new_status == old_status and validation == proposal.get("validation", {}):
+            continue
+        updated = dict(proposal)
+        updated["status"] = new_status
+        updated["validation"] = validation
+        updated["lifecycle_updated_at"] = datetime.now(timezone.utc).isoformat()
+        saved, saved_status = vault_store.update_artifact_content(
+            artifact_id,
+            updated,
+            summary=updated.get("recommendation", ""),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        updates.append({
+            "proposal_id": proposal.get("proposal_id"),
+            "artifact_id": artifact_id,
+            "from": old_status,
+            "to": new_status,
+            "success": saved_status < 400 and saved.get("success", False),
+        })
+    return {
+        "success": all(item.get("success") for item in updates),
+        "status": "proposal_lifecycle_refreshed",
+        "updated_count": len(updates),
+        "updates": updates,
+    }, 200
+
+
+def analyst_scorecard(limit=50, database_url=None, connect_factory=None):
+    limit = max(1, min(int(limit or 25), 25))
+    proposals_result, proposal_status = list_improvement_proposals(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if proposal_status >= 400:
+        return proposals_result, proposal_status
+    observations_result, observation_status = vault_store.list_artifacts(
+        artifact_type=OBSERVATION_ARTIFACT_TYPE,
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    observation_source_status = "ok"
+    if observation_status >= 400:
+        observations_result = {"artifacts": []}
+        observation_source_status = "degraded_observation_read"
+    all_proposals = proposals_result.get("proposals", [])
+    proposals = [proposal for proposal in all_proposals if proposal.get("status") != "superseded"]
+    observations = observations_result.get("artifacts", [])
+    accepted = [proposal for proposal in proposals if proposal.get("status") not in {"pending", "pending_owner_review", "rejected"}]
+    validated = [proposal for proposal in proposals if str(proposal.get("status") or "").startswith("validated_")]
+    effective = [proposal for proposal in validated if proposal.get("status") == "validated_effective"]
+    pending = [proposal for proposal in proposals if proposal.get("status") in {"pending", "pending_owner_review", "approved"}]
+    return {
+        "success": True,
+        "status": "analyst_scorecard_ready",
+        "scorecard": {
+            "observations": len(observations),
+            "proposals_total": len(proposals),
+            "pending_proposals": len(pending),
+            "accepted_proposals": len(accepted),
+            "rejected_proposals": len([proposal for proposal in proposals if proposal.get("status") == "rejected"]),
+            "superseded_proposals": len([proposal for proposal in all_proposals if proposal.get("status") == "superseded"]),
+            "improvement_missions": len([proposal for proposal in proposals if proposal.get("sent_to_mission_id")]),
+            "validated_improvements": len(validated),
+            "effective_improvements": len(effective),
+            "proposal_acceptance_rate": 0.0 if not proposals else len(accepted) / len(proposals),
+            "validated_effectiveness_rate": 0.0 if not validated else len(effective) / len(validated),
+            "last_analysis_at": max(
+                [str((artifact.get("content") or {}).get("recorded_at") or artifact.get("created_at") or "") for artifact in observations] or [""]
+            ),
+            "stage": "proposal_ready" if pending else ("validation_running" if any(proposal.get("status") == "deployed_pending_validation" for proposal in proposals) else "observing"),
+            "observation_source_status": observation_source_status,
+        },
+        "execution_boundary": _execution_boundary(),
+    }, 200
+
+
+def _validation_assessment(proposal, missions, improvement_mission):
+    source_ids = set(proposal.get("source_mission_ids") or [])
+    target_area = proposal.get("target_area") or ""
+    post_missions = [
+        mission for mission in missions
+        if mission.get("mission_id") not in source_ids
+        and mission.get("mission_id") != improvement_mission.get("mission_id")
+        and mission.get("status") in TERMINAL_MISSION_STATUSES
+    ]
+    affected = [mission for mission in post_missions if _mission_matches_area(mission, target_area)]
+    baseline_sample = max(len(source_ids), 1)
+    baseline_rate = min(1.0, int(proposal.get("recurrence_count") or len(source_ids)) / baseline_sample)
+    post_rate = 0.0 if not post_missions else len(affected) / len(post_missions)
+    sample_ready = len(post_missions) >= VALIDATION_SAMPLE_MINIMUM
+    effective = sample_ready and post_rate <= baseline_rate * 0.75
+    return {
+        "version": "charlie_analyst_validation_v1",
+        "sample_ready": sample_ready,
+        "minimum_sample": VALIDATION_SAMPLE_MINIMUM,
+        "post_mission_count": len(post_missions),
+        "post_recurrence_count": len(affected),
+        "baseline_rate": round(baseline_rate, 4),
+        "post_rate": round(post_rate, 4),
+        "effective": effective,
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _mission_matches_area(mission, area):
+    config = TARGET_AREAS.get(area) or {}
+    combined = " ".join(_mission_improvement_evidence_texts(mission)).lower()
+    return any(keyword in combined for keyword in config.get("keywords", []))
 
 
 def record_proposal_decision(proposal_id, decision, comments="", database_url=None, connect_factory=None):
@@ -322,13 +672,13 @@ def record_proposal_decision(proposal_id, decision, comments="", database_url=No
     }
     proposal["decision_history"] = (proposal.get("decision_history") or [])[-19:] + [decision_record]
     proposal["status"] = {
-        "approve": "approved",
+        "approve": "mission_created",
         "reject": "rejected",
-        "send_to_mission": "sent_to_mission",
+        "send_to_mission": "mission_created",
     }[decision]
     proposal["last_owner_decision"] = decision_record
     created_mission = None
-    if decision == "send_to_mission":
+    if decision in {"approve", "send_to_mission"}:
         created_mission, mission_status = _create_improvement_mission(proposal, comments, database_url, connect_factory)
         proposal["mission_creation_status"] = created_mission.get("status")
         if created_mission.get("mission_id"):
@@ -403,12 +753,16 @@ def _create_improvement_mission(proposal, comments, database_url, connect_factor
 def _proposal(area, bucket, score):
     config = TARGET_AREAS[area]
     proposal_id = "CHARLIE-IMPROVEMENT-" + area.upper().replace("_", "-")
+    evidence_signature = "|".join(sorted(_clean(item.get("evidence"), 180).lower() for item in bucket["evidence_refs"] if item.get("evidence")))
+    problem_fingerprint = hashlib.sha256(f"{area}|{evidence_signature}".encode("utf-8")).hexdigest()[:16]
+    source_count = len(bucket["source_mission_ids"])
     return {
         "proposal_id": proposal_id,
         "label": PROPOSAL_LABEL,
         "problem_detected": f"Repeated {area.replace('_', ' ')} weakness across CHARLIE missions.",
         "evidence_refs": bucket["evidence_refs"][:8],
         "recurrence_count": len(bucket["source_mission_ids"]),
+        "problem_fingerprint": problem_fingerprint,
         "weakness_score": score,
         "recommendation": config["recommendation"],
         "target_area": area,
@@ -421,6 +775,17 @@ def _proposal(area, bucket, score):
         "created_by_agent": "charlie_improvement_analyst",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "applies_automatically": False,
+        "baseline": {
+            "source_mission_count": source_count,
+            "recurrence_count": source_count,
+            "recurrence_rate": 1.0 if source_count else 0.0,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+        },
+        "validation": {
+            "sample_ready": False,
+            "minimum_sample": VALIDATION_SAMPLE_MINIMUM,
+            "post_mission_count": 0,
+        },
     }
 
 
@@ -439,6 +804,7 @@ def _mission_evidence_texts(mission):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    disposition = review_packet.get("block_disposition") if isinstance(review_packet.get("block_disposition"), dict) else {}
     values = [
         mission.get("title", ""),
         mission.get("raw_text", ""),
@@ -448,6 +814,9 @@ def _mission_evidence_texts(mission):
         review_packet.get("summary", ""),
         review_packet.get("blocked_reason", ""),
         review_packet.get("recommended_next_action", ""),
+        disposition.get("block_class", ""),
+        disposition.get("responsible_stage", ""),
+        disposition.get("scope_relation", ""),
     ]
     for key in ["findings", "errors", "bugs", "test_evidence", "qa_evidence", "backflow_events", "unresolved_blockers"]:
         value = review_packet.get(key)
@@ -455,6 +824,28 @@ def _mission_evidence_texts(mission):
             values.extend(str(item) for item in value)
     for item in mission.get("agent_workflow", []) if isinstance(mission.get("agent_workflow"), list) else []:
         if isinstance(item, dict):
+            values.append(item.get("findings", ""))
+    return [_clean(value, 800) for value in values if _clean(value, 800)]
+
+
+def _mission_improvement_evidence_texts(mission):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    disposition = review_packet.get("block_disposition") if isinstance(review_packet.get("block_disposition"), dict) else {}
+    values = [
+        mission.get("owner_decision", ""),
+        review_packet.get("blocked_reason", ""),
+        disposition.get("block_class", ""),
+        disposition.get("responsible_stage", ""),
+    ]
+    for key in ("errors", "bugs", "unresolved_blockers", "backflow_events"):
+        value = review_packet.get(key)
+        if isinstance(value, list):
+            values.extend(str(item) for item in value)
+        elif value:
+            values.append(value)
+    for item in mission.get("agent_workflow", []) if isinstance(mission.get("agent_workflow"), list) else []:
+        if isinstance(item, dict) and str(item.get("status") or "").lower() == "blocked":
             values.append(item.get("findings", ""))
     return [_clean(value, 800) for value in values if _clean(value, 800)]
 

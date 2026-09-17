@@ -66,6 +66,9 @@ def build_sam_v3_context_packet(inbound, prior_context=None, *, environ=None, me
             "lead_id": lead_context.get("lead_id", ""),
             "interest": lead_context.get("interest") if isinstance(lead_context.get("interest"), dict) else {},
             "latest_event": lead_context.get("latest_event", ""),
+            "linked_preorder_id": lead_context.get("linked_preorder_id", ""),
+            "linked_order_id": lead_context.get("linked_order_id", ""),
+            "provenance": lead_context.get("provenance") if isinstance(lead_context.get("provenance"), dict) else {},
         },
         "source_context": campaign_context,
         "farm_knowledge": {

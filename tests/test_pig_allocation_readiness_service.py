@@ -1,9 +1,23 @@
-from datetime import date
+import os
+from datetime import date, datetime, timezone
 import unittest
 from unittest.mock import patch
 
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import pig_weights_service
+from modules.pig_weights import purpose_correction_batch_service
+
+
+def purpose_batch_envelope(decisions, effects=None, return_to=""):
+    effects = effects or []
+    return {
+        "contract_version": purpose_correction_batch_service.CONTRACT_VERSION,
+        "decisions": decisions,
+        "effects": effects,
+        "preview_digest": purpose_correction_batch_service._preview_digest(
+            decisions, effects, return_to),
+        "return_to": return_to or None,
+    }
 
 
 class PigAllocationReadinessServiceTests(unittest.TestCase):
@@ -17,6 +31,66 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
 
     def tearDown(self):
         self._supabase_available_patch.stop()
+
+    def test_preloaded_canonical_snapshot_avoids_a_second_reader_and_preserves_order(self):
+        canonical_inputs = {
+            "overview_rows": [
+                {
+                    "Pig_ID": "PIG-2", "Tag_Number": "2", "Animal_Type": "Sow",
+                    "Sex": "Female", "Status": "Active", "On_Farm": "Yes",
+                    "Purpose": "Breeding", "Current_Pen_ID": "PEN-1",
+                    "Current_Weight_Kg": 100, "Last_Weight_Date": "2026-07-27",
+                },
+                {
+                    "Pig_ID": "PIG-1", "Tag_Number": "1", "Animal_Type": "Gilt",
+                    "Sex": "Female", "Status": "Active", "On_Farm": "Yes",
+                    "Purpose": "Breeding", "Current_Pen_ID": "PEN-1",
+                    "Current_Weight_Kg": 90, "Last_Weight_Date": "2026-07-27",
+                },
+            ],
+            "pig_master_rows": [], "weight_rows": [], "sales_rows": [],
+            "litter_rows": [], "pen_lookup": {"PEN-1": {"pen_name": "Breeding"}},
+            "source": "supabase_canonical", "allocation_query_status": "known",
+            "medical_query_status": "known",
+            "read_progress": {"status": "complete", "query_count": 8, "connection_count": 1},
+        }
+        with patch.object(
+            farm_supabase_read_service,
+            "get_allocation_input_rows",
+            side_effect=AssertionError("snapshot must not be re-read"),
+        ):
+            result = pig_weights_service.get_pig_allocation_readiness(
+                today=date(2026, 7, 27),
+                allow_sheet_fallback=False,
+                canonical_inputs=canonical_inputs,
+            )
+        self.assertEqual([row["pig_id"] for row in result["pigs"]], ["PIG-1", "PIG-2"])
+        self.assertEqual(result["source_read_progress"]["query_count"], 8)
+
+    def test_malformed_or_partial_preloaded_snapshot_is_unavailable_not_zero(self):
+        cases = (
+            {},
+            {
+                "overview_rows": [], "pig_master_rows": [], "weight_rows": [],
+                "sales_rows": [], "litter_rows": [], "pen_lookup": {},
+                "allocation_query_status": "known", "medical_query_status": "known",
+                "read_progress": {"status": "partial"},
+            },
+            {
+                "overview_rows": [], "pig_master_rows": [], "weight_rows": [],
+                "sales_rows": [], "pen_lookup": {},
+                "allocation_query_status": "known", "medical_query_status": "known",
+                "read_progress": {"status": "complete"},
+            },
+        )
+        for canonical_inputs in cases:
+            with self.subTest(canonical_inputs=canonical_inputs):
+                result = pig_weights_service.get_pig_allocation_readiness(
+                    allow_sheet_fallback=False,
+                    canonical_inputs=canonical_inputs,
+                )
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], "malformed_or_partial_canonical_snapshot")
 
     def test_allocation_readiness_groups_pigs_with_explainable_buckets(self):
         overview_rows = [
@@ -177,6 +251,10 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_allocation_readiness_can_use_supabase_input_rows(self):
         supabase_inputs = {
             "source": "supabase_canonical",
+            "read_progress": {
+                "status": "complete", "shared_snapshot": True,
+                "connection_count": 1, "query_count": 6, "stages": [],
+            },
             "overview_rows": [{
                 "Pig_ID": "PIG-1",
                 "Tag_Number": "1",
@@ -221,6 +299,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["source"], "supabase_canonical")
+        self.assertTrue(result["source_read_progress"]["shared_snapshot"])
+        self.assertEqual(result["source_read_progress"]["query_count"], 6)
         self.assertEqual(result["pigs"][0]["pig_id"], "PIG-1")
         self.assertEqual(result["pigs"][0]["current_pen_name"], "Grower Pen")
         self.assertEqual(result["pigs"][0]["litter_quality"], "Good")
@@ -230,6 +310,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_sales_stock_outputs_can_use_supabase_allocation(self):
         allocation = {
             "source": "supabase_canonical",
+            "allocation_query_status": "known",
             "pigs": [
                 {
                     "pig_id": "PIG-MEAT",
@@ -293,6 +374,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_sales_availability_only_marks_purpose_sale_weaned_price_band_rows_ready_for_sam_live(self):
         allocation = {
             "source": "supabase_canonical",
+            "allocation_query_status": "known",
             "pigs": [
                 {
                     "pig_id": "PIG-WEANER",
@@ -309,13 +391,11 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "weight_band": "10_to_14_Kg",
                     "wean_date": "2026-06-01",
                     "withdrawal_clear": "Yes",
-                    "litter_id": "LIT-1",
-                    "mother_id": "SOW-1",
-                    "father_id": "BOAR-1",
-                    "sow_pig_id": "SOW-1",
-                    "sow_tag_number": "S1",
-                    "boar_pig_id": "BOAR-1",
-                    "boar_tag_number": "B1",
+                    "withdrawal_evidence_state": "not_applicable",
+                    "allocation_evidence_state": "known_unallocated",
+                    "reserved_status": "Not_Reserved",
+                    "medical_status": "Clear",
+                    "media_references": [{"type": "photo", "reference": "/pigs/pig-weaner.jpg"}],
                 },
                 {
                     "pig_id": "PIG-NEWBORN",
@@ -350,20 +430,25 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "wean_date": "2026-03-01",
                 },
                 {
-                    "pig_id": "PIG-WITHDRAWAL",
-                    "tag_number": "10",
-                    "sex": "Male",
-                    "status": "Active",
-                    "on_farm": "Yes",
-                    "purpose": "Sale",
-                    "readiness_bucket": "Growing",
-                    "calculated_stage": "Weaner",
-                    "latest_weight_kg": 12,
-                    "latest_weight_date": "2026-06-22",
-                    "days_since_weight": 2,
-                    "weight_band": "10_to_14_Kg",
-                    "wean_date": "2026-06-01",
-                    "current_withdrawal_end_date": "2099-01-01",
+                    "pig_id": "PIG-WITHDRAWAL", "status": "Active", "on_farm": "Yes",
+                    "purpose": "Sale", "calculated_stage": "Weaner", "latest_weight_kg": 15,
+                    "latest_weight_date": "2026-06-22", "days_since_weight": 2,
+                    "wean_date": "2026-06-01", "withdrawal_clear": "No",
+                    "withdrawal_evidence_state": "hold", "medical_status": "Withdrawal hold",
+                    "allocation_query_status": "known", "allocation_evidence_state": "known_unallocated",
+                    "reserved_status": "Not_Reserved", "sex": "Male",
+                },
+                {
+                    "pig_id": "PIG-STALE", "status": "Active", "on_farm": "Yes",
+                    "purpose": "Sale", "calculated_stage": "Weaner", "latest_weight_kg": 18,
+                    "latest_weight_date": "2026-05-01", "days_since_weight": 58,
+                    "wean_date": "2026-06-01", "withdrawal_clear": "Yes",
+                },
+                {
+                    "pig_id": "PIG-HEALTH-HOLD", "status": "Active", "on_farm": "Yes",
+                    "purpose": "Sale", "calculated_stage": "Weaner", "latest_weight_kg": 18,
+                    "latest_weight_date": "2026-06-22", "days_since_weight": 2,
+                    "wean_date": "2026-06-01", "health_status": "Injured - hold",
                 },
             ],
         }
@@ -375,18 +460,17 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-WEANER"]["available_for_sale"], "Yes")
         self.assertTrue(by_id["PIG-WEANER"]["live_stock_sale_eligible"])
         self.assertEqual(by_id["PIG-WEANER"]["sale_category"], "Weaner Piglets")
-        self.assertEqual(by_id["PIG-WEANER"]["withdrawal_clear"], "Yes")
-        self.assertEqual(by_id["PIG-WEANER"]["last_weight_date"], "2026-06-22")
-        self.assertEqual(by_id["PIG-WEANER"]["family_context"]["litter_id"], "LIT-1")
-        self.assertEqual(by_id["PIG-WEANER"]["media_references"], [])
-        self.assertEqual(by_id["PIG-WEANER"]["media_reference_status"], "not_configured")
+        self.assertEqual(by_id["PIG-WEANER"]["latest_weight_date"], "2026-06-22")
+        self.assertEqual(by_id["PIG-WEANER"]["media_references"][0]["type"], "photo")
         self.assertEqual(by_id["PIG-NEWBORN"]["available_for_sale"], "No")
-        self.assertIn("still with the sow", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
+        self.assertIn("allocation evidence", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
         self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
-        self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "No")
-        self.assertEqual(by_id["PIG-WITHDRAWAL"]["withdrawal_clear"], "No")
-        self.assertIn("medical withdrawal", by_id["PIG-WITHDRAWAL"]["live_stock_sale_reason"])
+        self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "Yes")
+        self.assertTrue(by_id["PIG-WITHDRAWAL"]["live_stock_sale_eligible"])
+        self.assertEqual(by_id["PIG-WITHDRAWAL"]["withdrawal_evidence_state"], "hold")
+        self.assertEqual(by_id["PIG-STALE"]["available_for_sale"], "No")
+        self.assertEqual(by_id["PIG-HEALTH-HOLD"]["available_for_sale"], "No")
 
     def test_exceptional_grower_from_good_litter_is_flagged_for_breeding_review(self):
         overview_rows = [{
@@ -704,6 +788,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "suggested_purpose": "Grow Out",
                     "suggested_purpose_reason": "Pig is active/on farm.",
                     "suggested_purpose_confidence": "Medium",
+                    "purpose_review_state": "decision_due",
                 },
                 {
                     "pig_id": "PIG-CLASSIFIED",
@@ -716,6 +801,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "suggested_purpose": "Grow Out",
                     "suggested_purpose_reason": "Keep growing.",
                     "suggested_purpose_confidence": "Medium",
+                    "purpose_review_state": "resolved",
                 },
                 {
                     "pig_id": "PIG-OTHER",
@@ -729,6 +815,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "suggested_purpose": "Needs Review",
                     "suggested_purpose_reason": "Complete missing data.",
                     "suggested_purpose_confidence": "Low",
+                    "purpose_review_state": "weight_due",
                 },
             ],
         }
@@ -737,17 +824,16 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             default_result = pig_weights_service.get_purpose_review_queue()
             litter_result = pig_weights_service.get_purpose_review_queue(litter_id="LIT-1")
 
-        self.assertEqual([row["pig_id"] for row in default_result["pigs"]], ["PIG-UNKNOWN", "PIG-OTHER"])
+        self.assertEqual([row["pig_id"] for row in default_result["pigs"]], ["PIG-UNKNOWN"])
         self.assertEqual(default_result["summary"]["needs_owner_decision"], 1)
-        self.assertEqual(default_result["summary"]["needs_data"], 1)
+        self.assertEqual(default_result["summary"]["needs_data"], 0)
         self.assertFalse(default_result["writes_to_sheets"])
         self.assertEqual(default_result["owner_agent"], "Herdmaster")
         by_id = {row["pig_id"]: row for row in litter_result["pigs"]}
-        self.assertEqual(set(by_id), {"PIG-UNKNOWN", "PIG-CLASSIFIED"})
+        self.assertEqual(set(by_id), {"PIG-UNKNOWN"})
         self.assertEqual(by_id["PIG-UNKNOWN"]["proposed_purpose"], "Grow_Out")
-        self.assertEqual(by_id["PIG-CLASSIFIED"]["review_status"], "classified")
 
-    def test_apply_purpose_review_decisions_updates_only_purpose_notes_and_timestamp(self):
+    def test_apply_purpose_review_decisions_rejects_direct_write_without_batch(self):
         pig_rows = [
             {
                 "Pig_ID": "PIG-UNKNOWN",
@@ -768,18 +854,12 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 dry_run=False,
             )
 
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertFalse(result["dry_run"])
-        self.assertEqual(result["rows_updated"], 1)
-        updates = mock_update.call_args.args[1]["PIG-UNKNOWN"]
-        self.assertEqual(updates["Purpose"], "Grow_Out")
-        self.assertIn("Updated_At", updates)
-        self.assertIn("purpose review", updates["General_Notes"])
-        self.assertIn("Unknown to Grow_Out", updates["General_Notes"])
-        self.assertEqual(set(updates), {"Purpose", "Updated_At", "General_Notes"})
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_required")
+        mock_update.assert_not_called()
 
-    def test_apply_purpose_review_decisions_prefers_supabase_validation_and_write(self):
+    def test_apply_purpose_review_decisions_rejects_direct_supabase_write_without_batch(self):
         pig_rows = [
             {
                 "Pig_ID": "PIG-UNKNOWN",
@@ -805,15 +885,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 dry_run=False,
             )
 
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertTrue(result["source"]["writes_to_supabase"])
-        self.assertFalse(result["source"]["writes_to_sheets"])
-        read_pigs.assert_called_once_with(["PIG-UNKNOWN"])
-        update_pigs.assert_called_once()
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_required")
+        read_pigs.assert_not_called()
+        update_pigs.assert_not_called()
         sheet_update.assert_not_called()
 
-    def test_apply_purpose_review_decisions_blocks_reclassify_by_default(self):
+    def test_apply_purpose_review_decisions_blocks_direct_reclassification_without_batch(self):
         pig_rows = [{
             "Pig_ID": "PIG-DONE",
             "Status": "Active",
@@ -830,8 +909,337 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
 
         self.assertEqual(status_code, 409)
         self.assertFalse(result["success"])
-        self.assertIn("already has purpose", result["errors"][0])
+        self.assertEqual(result["status"], "correction_batch_required")
         mock_update.assert_not_called()
+
+    def test_owner_approved_fresh_batch_writes_purpose_and_complete_audit_event(self):
+        """The protected path must update only inside the batch transaction."""
+        approved_at = datetime(2026, 7, 21, tzinfo=timezone.utc)
+        decisions = [{"pig_id": "PIG-1", "purpose": "Meat", "reason": "Fresh weight", "note": "Owner reviewed"}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+                self.rowcount = 1
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-1", "tag_number": "123", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Fresh weight", "note": "Owner reviewed", "status": "Active", "on_farm": True, "latest_weight_date": "2026-07-21", "latest_weight_kg": 63.0}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), approved_at, "owner-admin:test", "owner-admin:test", None)
+                return None
+
+            def fetchall(self):
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-1", "123", "Active", True, "Grow_Out", date(2026, 7, 21), 63.0)]
+                if "select pig_id,coalesce(tag_number" in self.last_sql:
+                    return [("PIG-1", "123", "Meat", "Active", True)]
+                return []
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-1", actor_id="owner-admin:test", connect_factory=lambda _url: connection, today=date(2026, 7, 22)
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "correction_batch_executed")
+        self.assertEqual(len(result["event_ids"]), 1)
+        self.assertFalse(result["writes_to_sheets"])
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertIn("update public.pigs set purpose", sql)
+        self.assertIn("insert into public.operational_events", sql)
+        self.assertIn("status='executed'", sql)
+
+    def test_draft_batch_cannot_write_before_owner_approval(self):
+        class Cursor:
+            calls = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.calls.append(sql)
+
+            def fetchone(self):
+                return ("draft", purpose_batch_envelope([]),
+                        purpose_correction_batch_service._decision_hash([]),
+                        None, None, "owner-admin:test", None)
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-DRAFT", actor_id="owner-admin:test", connect_factory=lambda _url: connection
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_not_owner_approved")
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
+    def test_owner_approved_stale_batch_fails_before_purpose_or_audit_write(self):
+        decisions = [{"pig_id": "PIG-STALE", "purpose": "Meat", "reason": "Old signal", "note": ""}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-STALE", "tag_number": "", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Old signal", "note": "", "status": "Active", "on_farm": True, "latest_weight_date": "2026-06-21", "latest_weight_kg": 63.0}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 1, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
+                return None
+
+            def fetchall(self):
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-STALE", "", "Active", True, "Grow_Out", date(2026, 6, 21), 63.0)]
+                return []
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-STALE", actor_id="owner-admin:test", connect_factory=lambda _url: connection, today=date(2026, 7, 22)
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_weight_not_fresh")
+        self.assertEqual(result["blocked_pig_ids"], ["PIG-STALE"])
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
+    def test_owner_approved_missing_weight_batch_fails_before_purpose_or_audit_write(self):
+        decisions = [{"pig_id": "PIG-MISSING-WEIGHT", "purpose": "Meat", "reason": "Incomplete signal", "note": ""}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-MISSING-WEIGHT", "tag_number": "", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Incomplete signal", "note": "", "status": "Active", "on_farm": True, "latest_weight_date": None, "latest_weight_kg": None}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
+                return None
+
+            def fetchall(self):
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-MISSING-WEIGHT", "", "Active", True, "Grow_Out", None, None)]
+                return []
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-MISSING-WEIGHT", actor_id="owner-admin:test", connect_factory=lambda _url: connection, today=date(2026, 7, 22)
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_weight_not_fresh")
+        self.assertEqual(result["blocked_pig_ids"], ["PIG-MISSING-WEIGHT"])
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
+    def test_tampered_approved_batch_cannot_write_under_prior_approval(self):
+        approved_decisions = [{"pig_id": "PIG-1", "purpose": "Meat", "reason": "Fresh", "note": ""}]
+        tampered_decisions = [{"pig_id": "PIG-1", "purpose": "Sale", "reason": "Changed", "note": ""}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status,decisions_json" in self.last_sql:
+                    return ("owner_approved", purpose_batch_envelope(tampered_decisions), purpose_correction_batch_service._decision_hash(approved_decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
+                return None
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-TAMPERED", actor_id="owner-admin:test", connect_factory=lambda _url: connection
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "correction_batch_decision_tampered")
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
+    def test_correction_batch_migration_makes_snapshot_immutable(self):
+        from pathlib import Path
+
+        sql = Path("supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql").read_text(encoding="utf-8")
+        self.assertIn("enforce_pig_purpose_correction_batch_integrity", sql)
+        self.assertIn("new.decisions_json is distinct from old.decisions_json", sql)
+        self.assertIn("new.decision_hash is distinct from old.decision_hash", sql)
+        self.assertIn("before update on public.pig_purpose_correction_batches", sql)
+
+    def test_preview_binding_is_actor_state_and_return_path_bound(self):
+        decisions = [{"pig_id": "PIG-2026-A643", "purpose": "Sale", "reason": "Owner sale review", "note": "Tag 123"}]
+        canonical = {
+            "PIG-2026-A643": ("PIG-2026-A643", "123", "Active", True, "Unknown", date(2026, 8, 11), 5.6),
+        }
+
+        class Cursor:
+            rowcount = 1
+            def __init__(self): self.last_params = None
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, _sql, params=None): self.last_params = params
+            def fetchone(self): return (self.last_params[0], "draft")
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, *_args): pass
+            def cursor(self): return Cursor()
+
+        with patch.dict(os.environ, {"OWNER_SESSION_SECRET": "purpose-preview-test-secret"}), \
+             patch.object(purpose_correction_batch_service, "_load_pigs", return_value=canonical), \
+             patch.object(purpose_correction_batch_service, "_connect", return_value=Connection()):
+            preview, preview_status = purpose_correction_batch_service.preview_correction_batch(
+                decisions, actor_id="owner-admin:session-a", return_to="/orders/ORD-2026-A6EC6D")
+            created, created_status = purpose_correction_batch_service.create_correction_batch(
+                decisions, idempotency_key="purpose-tags-123-151", actor_id="owner-admin:session-a",
+                confirmation_binding=preview["confirmation_binding"], return_to="/orders/ORD-2026-A6EC6D")
+            cross_actor, cross_status = purpose_correction_batch_service.create_correction_batch(
+                decisions, idempotency_key="purpose-tags-123-151-b", actor_id="owner-admin:session-b",
+                confirmation_binding=preview["confirmation_binding"], return_to="/orders/ORD-2026-A6EC6D")
+            altered, altered_status = purpose_correction_batch_service.create_correction_batch(
+                [{**decisions[0], "purpose": "Breeding"}], idempotency_key="purpose-tags-123-151-c",
+                actor_id="owner-admin:session-a", confirmation_binding=preview["confirmation_binding"],
+                return_to="/orders/ORD-2026-A6EC6D")
+
+        self.assertEqual(preview_status, 200)
+        self.assertFalse(preview["writes_performed"])
+        self.assertEqual(created_status, 201)
+        self.assertEqual(created["preview_digest"], preview["preview_digest"])
+        self.assertEqual(cross_status, 409)
+        self.assertEqual(cross_actor["status"], "exact_preview_confirmation_required")
+        self.assertEqual(altered_status, 409)
+        self.assertEqual(altered["status"], "exact_preview_confirmation_required")
+
+    def test_preview_rejects_external_return_and_supabase_failure_visibly(self):
+        decision = [{"pig_id": "PIG-2026-B156", "purpose": "Sale"}]
+        external, external_status = purpose_correction_batch_service.preview_correction_batch(
+            decision, actor_id="owner-admin:session", return_to="https://evil.example/orders/1")
+        with patch.object(purpose_correction_batch_service, "_connect", side_effect=RuntimeError("supabase down")):
+            failed, failed_status = purpose_correction_batch_service.preview_correction_batch(
+                decision, actor_id="owner-admin:session")
+        self.assertEqual(external_status, 400)
+        self.assertEqual(external["status"], "correction_preview_invalid")
+        self.assertEqual(failed_status, 503)
+        self.assertEqual(failed["status"], "correction_batch_store_unavailable")
 
     def test_purpose_review_recheck_returns_no_write_packet(self):
         allocation_result = {
@@ -952,6 +1360,404 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(row["valuation_status"], "pricing_not_configured")
         self.assertIsNone(row["estimated_value"])
         self.assertEqual(result["summary"]["pricing_not_configured_count"], 1)
+
+    def test_herdmaster_alerts_surface_pig_and_litter_readiness_without_writes(self):
+        allocation = {
+            "source": "supabase_canonical",
+            "thresholds": {"fresh_weight_days": 14, "stale_weight_days": 30},
+            "pigs": [
+                {
+                    "pig_id": "PIG-MISSING",
+                    "tag_number": "",
+                    "sex": "",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Unknown",
+                    "readiness_bucket": "Needs Data",
+                    "readiness_reason": "Missing tag, sex, weight before allocation can be trusted.",
+                    "suggested_purpose": "Needs Review",
+                    "suggested_purpose_reason": "Complete missing data.",
+                    "suggested_purpose_confidence": "Low",
+                    "days_since_weight": None,
+                },
+                {
+                    "pig_id": "PIG-MEAT",
+                    "tag_number": "21",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Meat Candidate",
+                    "meat_window_status": "In meat window",
+                    "latest_weight_kg": 70,
+                    "latest_weight_date": "2026-06-28",
+                    "days_since_weight": 2,
+                },
+                {
+                    "pig_id": "PIG-SLOW",
+                    "tag_number": "22",
+                    "animal_type": "Grower",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Livestock Candidate",
+                    "growth_class": "Slow",
+                    "average_daily_gain_kg": 0.18,
+                    "growth_reason": "Lifetime ADG is 0.180 kg/day.",
+                    "days_since_weight": 12,
+                },
+                {
+                    "pig_id": "PIG-CULL",
+                    "tag_number": "23",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Slaughter Candidate",
+                    "abattoir_window_status": "In abattoir window",
+                    "latest_weight_kg": 84,
+                    "days_since_weight": 4,
+                },
+                {
+                    "pig_id": "PIG-BREED",
+                    "tag_number": "24",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Breeding",
+                    "readiness_bucket": "Retain / Breeding Candidate",
+                    "suggested_purpose": "Breeding Review",
+                    "suggested_purpose_reason": "Growth and litter quality justify retention review.",
+                    "suggested_purpose_confidence": "Medium",
+                    "growth_class": "Exceptional",
+                    "litter_quality": "Good",
+                    "days_since_weight": 3,
+                },
+                {
+                    "pig_id": "PIG-CONFLICT",
+                    "tag_number": "25",
+                    "status": "Sold",
+                    "on_farm": "Yes",
+                    "readiness_bucket": "Exited",
+                    "days_since_weight": 10,
+                },
+            ],
+        }
+        litter_attention = {
+            "count": 1,
+            "items": [{
+                "litter_id": "LIT-WEAN",
+                "litter_status": "Weaned",
+                "wean_date": "2026-06-01",
+                "reason": "Post-wean weight needed",
+                "action_type": "record_post_wean_weight",
+                "recommended_action": "Record post-wean weights before purpose review.",
+                "active_pig_count": 6,
+            }],
+        }
+
+        result = pig_weights_service.get_herdmaster_pig_allocation_alerts(
+            today=date(2026, 7, 1),
+            allocation=allocation,
+            litter_attention=litter_attention,
+        )
+
+        categories = {alert["category"] for alert in result["pig_alerts"]}
+        self.assertTrue(result["success"])
+        self.assertEqual(result["owner_agent"], "Herdmaster")
+        self.assertIn("missing_data", categories)
+        self.assertIn("purpose_review_due", categories)
+        self.assertIn("stale_weight", categories)
+        self.assertIn("meat_window_candidate", categories)
+        self.assertIn("slow_grower", categories)
+        self.assertIn("slaughter_candidate", categories)
+        self.assertIn("breeding_candidate", categories)
+        self.assertIn("lifecycle_inconsistency", categories)
+        self.assertEqual(result["litter_alerts"][0]["category"], "weaning_attention")
+        self.assertEqual(result["summary"]["litter_alerts"], 1)
+        self.assertEqual(result["summary"]["by_severity"]["Critical"], 1)
+        self.assertTrue(result["business_rules"]["owner_approval_required"])
+        self.assertFalse(result["writes_to_sheets"])
+        self.assertFalse(result["writes_to_supabase"])
+        self.assertFalse(result["writes_orders"])
+        self.assertFalse(result["writes_sales"])
+        self.assertFalse(result["writes_slaughter"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["posts_publicly"])
+        for alert in result["pig_alerts"] + result["litter_alerts"]:
+            self.assertIn("send_customer_message", alert["forbidden_actions"])
+            self.assertFalse(alert["writes_to_sheets"])
+            self.assertFalse(alert["writes_to_supabase"])
+
+    def test_herdmaster_reasoning_uses_sanitized_real_herd_patterns_for_all_outcomes(self):
+        """Sanitized shapes mirror farm allocation records; tags and IDs are fictional."""
+        common = {"status": "Active", "on_farm": "Yes", "sex": "Female", "current_pen_id": "PEN-A", "latest_weight_kg": 45, "days_since_weight": 3}
+        pigs = [
+            {**common, "pig_id": "REAL-KEEP", "tag_number": "R1", "purpose": "Grow_Out", "readiness_bucket": "Livestock Candidate"},
+            {**common, "pig_id": "REAL-SELL", "tag_number": "R2", "purpose": "Grow_Out", "readiness_bucket": "Meat Candidate", "meat_window_status": "In meat window", "latest_weight_kg": 68},
+            {**common, "pig_id": "REAL-WATCH", "tag_number": "R3", "purpose": "Grow_Out", "readiness_bucket": "Livestock Candidate", "growth_class": "Slow", "growth_reason": "Lifetime ADG is below the farm threshold."},
+            {**common, "pig_id": "REAL-PURPOSE", "tag_number": "R4", "purpose": "Unknown", "readiness_bucket": "Needs Classification", "suggested_purpose": "Grow Out", "suggested_purpose_reason": "Purpose is not owner-approved.", "suggested_purpose_confidence": "Medium"},
+            {**common, "pig_id": "REAL-BREED", "tag_number": "R5", "purpose": "Breeding", "readiness_bucket": "Retain / Breeding Candidate", "suggested_purpose": "Breeding Review", "suggested_purpose_reason": "Strong litter and growth evidence.", "suggested_purpose_confidence": "High"},
+            {**common, "pig_id": "REAL-ASK", "tag_number": "", "sex": "", "latest_weight_kg": None, "days_since_weight": None, "purpose": "Unknown", "readiness_bucket": "Needs Data", "readiness_reason": "Identity and weight facts are incomplete."},
+        ]
+        breeding = {
+            "success": True,
+            "mode": "read_only",
+            "sows": [{"pig_id": "REAL-BREED", "mating_count": 2, "litter_count": 1, "pregnancy_rate": 1.0, "average_weaned": 8}],
+            "boars": [],
+        }
+
+        result = pig_weights_service.get_herdmaster_pig_allocation_alerts(
+            today=date(2026, 7, 1),
+            allocation={"source": "sanitized_real_herd_fixture", "thresholds": {"fresh_weight_days": 14, "stale_weight_days": 30}, "pigs": pigs},
+            litter_attention={"items": []},
+            breeding_analytics=breeding,
+        )
+
+        decisions = {row["pig_id"]: row for row in result["decisions"]}
+        self.assertEqual({row["outcome"] for row in decisions.values()}, {"keep", "sell", "watch", "purpose_review", "breeding_review", "ask_charl"})
+        self.assertEqual(decisions["REAL-BREED"]["breeding_analytics"]["role"], "sow")
+        self.assertTrue(decisions["REAL-ASK"]["question_for_charl"])
+        self.assertLess(decisions["REAL-ASK"]["confidence"], 0.96)
+        self.assertTrue(decisions["REAL-WATCH"]["advisory_only"])
+        self.assertTrue(all(row["owner_approval_required"] for row in decisions.values()))
+        self.assertTrue(all(not row["writes_to_sheets"] and not row["writes_to_supabase"] for row in decisions.values()))
+
+    def test_herdmaster_conflicting_deterministic_facts_force_clarification(self):
+        pig = {
+            "pig_id": "PIG-CONFLICT", "tag_number": "C1", "sex": "Female", "current_pen_id": "PEN-A",
+            "status": "Active", "on_farm": "Yes", "purpose": "Breeding", "latest_weight_kg": 82,
+            "days_since_weight": 2, "readiness_bucket": "Retain / Breeding Candidate",
+            "suggested_purpose": "Breeding Review", "meat_window_status": "Past meat window",
+        }
+        result = pig_weights_service.get_herdmaster_pig_allocation_alerts(
+            allocation={"thresholds": {"stale_weight_days": 30}, "pigs": [pig]},
+            litter_attention={"items": []}, breeding_analytics={"mode": "read_only", "sows": [], "boars": []},
+        )
+        decision = result["decisions"][0]
+        self.assertEqual(decision["outcome"], "ask_charl")
+        self.assertIn("breeding_and_meat_outcomes_conflict", decision["contradictions"])
+        self.assertTrue(decision["advisory_only"])
+
+    def test_pig_allocation_alert_route_uses_owner_read_guard(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        service_result = {"success": True, "summary": {"total_alerts": 0}, "alerts": []}
+        with patch.object(pig_weights_routes, "require_owner_read_access", return_value=None) as guard, \
+             patch.object(pig_weights_routes, "get_pig_allocation_alerts_data", return_value=service_result) as get_alerts:
+            response = app.test_client().get("/api/pig-weights/pig-allocation-alerts")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        guard.assert_called_once()
+        get_alerts.assert_called_once()
+
+    def test_sensitive_stock_truth_routes_fail_closed_at_owner_read_guard(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        denied = ({"success": False, "status": "owner_read_access_denied"}, 403)
+        with patch.object(pig_weights_routes, "require_owner_read_access", return_value=denied) as guard, \
+             patch.object(pig_weights_routes, "get_pig_allocation_readiness_data") as get_readiness, \
+             patch.object(pig_weights_routes, "list_sales_availability") as get_availability:
+            client = app.test_client()
+            readiness = client.get("/api/pig-weights/pig-allocation-readiness")
+            availability = client.get("/api/pig-weights/sales-availability")
+
+        self.assertEqual(readiness.status_code, 403)
+        self.assertEqual(availability.status_code, 403)
+        self.assertEqual(guard.call_count, 2)
+        get_readiness.assert_not_called()
+        get_availability.assert_not_called()
+
+    def test_purpose_review_apply_fails_closed_at_owner_admin_guard(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        with patch.object(pig_weights_routes, "require_correction_batch_owner_admin_access", return_value=denied) as guard, \
+             patch.object(pig_weights_routes, "apply_purpose_review_queue_decisions") as apply_decisions:
+            response = app.test_client().post(
+                "/api/pig-weights/purpose-review/apply",
+                json={"decisions": [{"pig_id": "PIG-1", "purpose": "Grow_Out"}]},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), denied[0])
+        guard.assert_called_once()
+        apply_decisions.assert_not_called()
+
+    def test_purpose_review_apply_forwards_authorized_owner_decision(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        payload = {"decisions": [{"pig_id": "PIG-1", "purpose": "Grow_Out"}], "dry_run": True}
+        service_result = {"success": True, "dry_run": True}
+        with patch.object(pig_weights_routes, "require_correction_batch_owner_admin_access", return_value=None) as guard, \
+             patch.object(pig_weights_routes, "correction_batch_owner_admin_principal", return_value="owner-admin:session"), \
+             patch.object(
+                 pig_weights_routes,
+                 "apply_purpose_review_queue_decisions",
+                 return_value=(service_result, 200),
+             ) as apply_decisions:
+            response = app.test_client().post("/api/pig-weights/purpose-review/apply", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        guard.assert_called_once()
+        apply_decisions.assert_called_once_with(payload, actor_id="owner-admin:session")
+
+    def test_correction_batch_route_forwards_server_bound_owner_principal(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        payload = {"decisions": [{"pig_id": "PIG-1", "purpose": "Meat"}], "idempotency_key": "request-1"}
+        with patch.object(pig_weights_routes, "require_correction_batch_owner_admin_access", return_value=None), \
+             patch.object(pig_weights_routes, "correction_batch_owner_admin_principal", return_value="owner-admin:opaque-session") as principal, \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch", return_value=({"success": True}, 201)) as create_batch:
+            response = app.test_client().post("/api/pig-weights/purpose-review/correction-batches", json=payload)
+
+        self.assertEqual(response.status_code, 201)
+        principal.assert_called_once()
+        create_batch.assert_called_once_with(payload, actor_id="owner-admin:opaque-session")
+
+    def test_correction_batch_routes_deny_remote_requests_when_access_is_disabled(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        env = {
+            "OWNER_ACCESS_ENABLED": "0",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+            "OWNER_SESSION_SECRET": "session-secret-for-tests",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch") as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch") as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch") as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", headers={"X-Forwarded-For": "127.0.0.1"}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+            ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.get_json()["status"], "owner_admin_access_denied")
+        create_batch.assert_not_called()
+        approve_batch.assert_not_called()
+        execute_batch.assert_not_called()
+
+    def test_correction_batch_routes_deny_remote_requests_when_local_dev_is_enabled(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        env = {
+            "OWNER_ACCESS_ENABLED": "1",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+            "OWNER_SESSION_SECRET": "session-secret-for-tests",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch") as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch") as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch") as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+            ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.get_json()["status"], "owner_admin_access_denied")
+        create_batch.assert_not_called()
+        approve_batch.assert_not_called()
+        execute_batch.assert_not_called()
+
+    def test_correction_batch_routes_allow_loopback_local_development_only(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        env = {"OWNER_ACCESS_ENABLED": "0", "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1"}
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch", return_value=({"success": True}, 201)) as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch", return_value=({"success": True}, 200)) as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch", return_value=({"success": True}, 200)) as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "127.0.0.1"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", environ_base={"REMOTE_ADDR": "::1"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "127.0.0.1"}),
+            ]
+
+        self.assertEqual([response.status_code for response in responses], [201, 200, 200])
+        create_batch.assert_called_once_with({}, actor_id="owner-admin:local-development")
+        approve_batch.assert_called_once_with("BATCH-1", actor_id="owner-admin:local-development")
+        execute_batch.assert_called_once_with("BATCH-1", actor_id="owner-admin:local-development")
+
+    def test_correction_batch_routes_allow_remote_authenticated_admin_session(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        admin_token = "a" * 32
+        env = {
+            "OWNER_ACCESS_ENABLED": "1",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": admin_token,
+            "OWNER_SESSION_SECRET": "session-secret-for-tests",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch", return_value=({"success": True}, 201)) as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch", return_value=({"success": True}, 200)) as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch", return_value=({"success": True}, 200)) as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            login = client.post(
+                "/owner/login",
+                data={"owner_token": admin_token, "next": "/"},
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+            ]
+
+        self.assertEqual(login.status_code, 302)
+        self.assertEqual([response.status_code for response in responses], [201, 200, 200])
+        principals = [
+            create_batch.call_args.kwargs["actor_id"],
+            approve_batch.call_args.kwargs["actor_id"],
+            execute_batch.call_args.kwargs["actor_id"],
+        ]
+        self.assertTrue(all(principal.startswith("owner-admin:") for principal in principals))
+        self.assertNotIn("owner-admin:local-development", principals)
+
+    def test_pig_allocation_alert_route_contract_remains_owner_guarded(self):
+        from pathlib import Path
+
+        routes = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")
+        controller = Path("modules/pig_weights/pig_weights_controller.py").read_text(encoding="utf-8")
+        service = Path("modules/pig_weights/pig_weights_service.py").read_text(encoding="utf-8")
+
+        self.assertIn('@pig_weights_bp.route("/pig-allocation-alerts", methods=["GET"])', routes)
+        self.assertIn("require_owner_read_access()", routes)
+        self.assertIn("get_pig_allocation_alerts_data", controller)
+        self.assertIn("get_herdmaster_pig_allocation_alerts", service)
+        self.assertIn('"owner_agent": "Herdmaster"', service)
+        self.assertIn('"writes_orders": False', service)
+        self.assertIn('"sends_customer_message": False', service)
 class MeatPlanningServiceTests(unittest.TestCase):
     def test_meat_planning_groups_allocation_signals_without_writes(self):
         allocation_result = {

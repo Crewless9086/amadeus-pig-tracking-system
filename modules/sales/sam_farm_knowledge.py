@@ -1,5 +1,6 @@
 import json
 import os
+import hashlib
 from pathlib import Path
 
 
@@ -13,8 +14,8 @@ DEFAULT_KNOWLEDGE = {
         "farm_name": "Amadeus Farm",
         "agent_name": "Sam",
         "short_intro": "Hi, I am Sam from Amadeus Farm.",
-        "one_line_story": "We help customers with planned farm pork preorders and related farm sales questions.",
-        "location_summary": "Riversdale area, with delivery planned per farm run.",
+        "one_line_story": "We help customers with live pig enquiries, handover questions, and practical farm information.",
+        "location_summary": "We are based in the Riversdale area. Live-pig handover is arranged in Riversdale or Albertinia after the order path is confirmed.",
         "google_maps_url": "",
         "service_areas": ["Riversdale"],
     },
@@ -23,21 +24,29 @@ DEFAULT_KNOWLEDGE = {
         "frustration_acknowledgement": "I hear you. I will keep this practical.",
     },
     "product_menu": [
-        {"key": "meat_sales", "label": "Pork meat sales", "summary": "Half carcass, full carcass, and cut-set preorder options."},
-        {"key": "live_sales", "label": "Live pig sales", "summary": "Live pig interest can be captured."},
+        {"key": "live_sales", "label": "Live pig sales", "summary": "Piglets, weaners, growers, finishers, and larger live pigs can be handled through the live-stock sales path."},
         {"key": "farm_info", "label": "Farm information", "summary": "Farm story, location, and general questions."},
+        {"key": "meat_sales_guarded", "label": "Meat sales", "summary": "Pre-booked half carcass and other pork freezer options; the farm confirms availability before anything is booked."},
     ],
     "meat_sales": {
         "positioning": "Pre-booked Amadeus Farm pork for freezer buyers.",
-        "core_options": ["half carcass", "full carcass", "custom cuts", "assisted slaughter"],
+        "core_options": ["half carcass", "full carcass"],
+        "price_per_kg_including_vat": 130,
+        "deposit_percent": 50,
+        "fulfilment_mode": "delivery only",
+        "transport_packaging": "Unresolved",
         "payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
         "pilot_payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
         "deposit_explanation": "The deposit holds the customer's place in the preorder run and helps the farm plan properly.",
         "pop_explanation": "Proof of payment is useful evidence, but the booking only moves forward once the money reflects in the farm account.",
     },
-    "cut_sets": {},
+    "cut_sets": {
+        "Set A": "Amadeus Signature Collection",
+        "Set B": "Amadeus Ember Collection",
+        "Set C": "Amadeus Grand Cut Collection",
+    },
     "faq": {},
-    "blocked_claims": [],
+    "blocked_claims": ["Never offer, imply, or disclose live-pig collection at the farm."],
 }
 
 
@@ -58,8 +67,19 @@ def load_sam_farm_knowledge(environ=None):
             **_result("fallback_default_read_failed", path, DEFAULT_KNOWLEDGE, configured=False),
             "error": str(exc)[:240],
         }
-    knowledge = _deep_merge(DEFAULT_KNOWLEDGE, loaded if isinstance(loaded, dict) else {})
-    return _result("ok", path, _sanitize_knowledge(knowledge), configured=True)
+    raw = loaded if isinstance(loaded, dict) else {}
+    knowledge = _deep_merge(DEFAULT_KNOWLEDGE, raw)
+    result = _result("ok", path, _sanitize_knowledge(knowledge), configured=True)
+    result["source_content_sha256"] = hashlib.sha256(
+        json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    result["source_top_level_keys"] = sorted(str(key) for key in raw)
+    result["source_evidence"] = _sanitize_knowledge({
+        "version": raw.get("version"), "status": raw.get("status"),
+        "public_profile": raw.get("public_profile"),
+        "product_menu": raw.get("product_menu"),
+    })
+    return result
 
 
 def public_profile(knowledge):

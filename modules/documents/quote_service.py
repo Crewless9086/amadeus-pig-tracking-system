@@ -66,6 +66,9 @@ QUOTE_FINGERPRINT_PREFIX = "Quote_Fingerprint:"
 
 
 def auto_generate_quote_if_ready(order_id, created_by="App"):
+    from modules.orders.order_pricing import ensure_order_line_prices
+
+    pricing = ensure_order_line_prices(order_id)
     readiness = get_quote_readiness(order_id)
 
     if not readiness["quote_ready"]:
@@ -77,6 +80,7 @@ def auto_generate_quote_if_ready(order_id, created_by="App"):
             "skipped": True,
             "reason": "not_quote_ready",
             "missing_fields": readiness["missing_fields"],
+            "pricing": pricing,
             "order_id": str(order_id or "").strip(),
             "message": "Quote was not generated because the draft is not quote-ready.",
         }
@@ -110,6 +114,7 @@ def auto_generate_quote_if_ready(order_id, created_by="App"):
         "reason": "generated",
         "order_id": str(order_id or "").strip(),
         "document": _result_document_summary(result),
+        "pricing": pricing,
         "message": "Quote generated automatically because the draft is quote-ready.",
     }
 
@@ -153,8 +158,8 @@ def get_quote_readiness(order_id):
     lines = _active_lines(detail["lines"])
     missing_fields = []
 
-    if str(order.get("order_status", "")).strip() != "Draft":
-        missing_fields.append("draft_status")
+    if str(order.get("order_status", "")).strip() not in {"Draft", "Approved"}:
+        missing_fields.append("active_order_status")
     if not str(order.get("customer_name", "")).strip():
         missing_fields.append("customer_name")
     if str(order.get("payment_method", "")).strip() not in ("Cash", "EFT"):

@@ -182,6 +182,37 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("tests/test_sam_meat_runtime.py", packet["required_inspection_paths"])
         self.assertIn("/api/sales/channels/chatwoot/sam-meat/inbound", packet["required_routes"])
 
+    def test_sam_general_conversation_maps_complete_journey_surfaces(self):
+        mission = {
+            "mission_type": "agent behavior",
+            "title": "SAM general conversation and progressive lane discovery",
+            "raw_text": (
+                "Prove a multi-turn ordinary conversation, unknown intent, topic change "
+                "without stale lane state, AUTO_GENERAL ownership, and no premature specialist tool."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("sam_general_conversation", keys)
+        for path in (
+            "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
+            "modules/sales/sam_sales_router.py",
+            "modules/sales/sam_shared_context.py",
+            "modules/sales/sam_meat_runtime.py",
+            "modules/sales/sam_live_stock_runtime.py",
+            "tests/test_sam_v3_replay_stress.py",
+            "tests/test_sam_live_stock_replay.py",
+        ):
+            self.assertIn(path, packet["required_inspection_paths"])
+
+        missing_paths = [
+            path for path in packet["required_inspection_paths"]
+            if not (REPO_ROOT / Path(path)).exists()
+        ]
+        self.assertEqual([], missing_paths)
+
     def test_live_pig_sales_maps_legacy_and_current_app_sources(self):
         mission = {
             "mission_type": "income stream",
@@ -228,6 +259,29 @@ class CharlieSourceMapTests(unittest.TestCase):
             "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json",
             packet["required_inspection_paths"],
         )
+
+    def test_sam_live_stock_telegram_quote_words_do_not_pull_meat_source_map(self):
+        mission = {
+            "mission_type": "feature build",
+            "title": "SAM Telegram Control Card v2",
+            "raw_text": (
+                "Build SAM Live Stock Telegram owner control cards with quote, Chatwoot, "
+                "prepared order actions, native Oom Sakkie callback buttons, and no n8n."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("sam_live_stock_sales", keys)
+        self.assertNotIn("sam_meat_sales", keys)
+        self.assertIn("modules/sales/sam_live_stock_runtime.py", packet["required_inspection_paths"])
+        self.assertIn("modules/sales/sam_live_stock_launch_control.py", packet["required_inspection_paths"])
+        self.assertIn("modules/oom_sakkie/telegram_direct.py", packet["required_inspection_paths"])
+        self.assertIn("modules/oom_sakkie/routes.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_sam_live_stock_launch_control.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_oom_sakkie_routes.py", packet["required_inspection_paths"])
+        self.assertNotIn("modules/sales/sam_meat_runtime.py", packet["required_inspection_paths"])
         self.assertIn("/api/order-intake/context", packet["required_routes"])
 
         missing_paths = [
@@ -292,6 +346,44 @@ class CharlieSourceMapTests(unittest.TestCase):
             if not (REPO_ROOT / Path(path)).exists()
         ]
         self.assertEqual([], missing_paths)
+
+    def test_herdmaster_observation_intent_recovery_maps_capture_sources_not_allocation(self):
+        mission = {
+            "mission_type": "incident repair",
+            "title": "Complete Herdmaster observations with separate management intents and actions",
+            "raw_text": (
+                "Verify append-only pig observation capture and structurally separate advisory "
+                "management intents. Preserve idempotency, owner authority and no-current-state mutation."
+            ),
+            "vault": {
+                "desired_outcome": (
+                    "Herdmaster can use human observations as evidence without treating a management "
+                    "intent as an executed livestock action."
+                )
+            },
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("pig_observation_management_intent", keys)
+        self.assertNotIn("pig_allocation_herdmaster", keys)
+        self.assertIn(
+            "modules/pig_weights/pig_observation_capture_service.py",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
+            "tests/test_pig_observation_capture_postgres.py",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
+            "supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
+            "/api/pig-weights/pigs/<pig_id>/management-intents",
+            packet["required_routes"],
+        )
 
     def test_vault_retrieval_includes_implementation_sources(self):
         mission = {

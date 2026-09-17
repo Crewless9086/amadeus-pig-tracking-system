@@ -277,7 +277,7 @@ def _get_supabase_pig_lookup(pig_ids, connect_factory=None):
                 """
                 select pig_id, status, on_farm, notes, exit_date, exit_reason,
                        exit_order_id, carcass_weight_kg
-                from public.pigs
+                from public.current_canonical_pigs
                 where pig_id = any(%s)
                 """,
                 (clean_ids,),

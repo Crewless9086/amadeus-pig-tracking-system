@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from modules.sales.meat_ops import build_meat_payment_gate
 from modules.sales.meat_template_pack import meat_whatsapp_template_pack
@@ -62,9 +63,10 @@ class MeatLaunchReadinessTests(unittest.TestCase):
         self.assertTrue(gate["sam_may_claim_money_received"])
         self.assertTrue(gate["unlocks_slaughter_or_delivery"])
 
+    @patch.dict("os.environ", {"SAM_MEAT_PUBLIC_OFFER_ENABLED": "1"})
     def test_beacon_facebook_image_launch_packet_requires_approved_image(self):
         packet = build_beacon_facebook_image_launch_packet(
-            {"pilot_cap": "2 halves"},
+            {"pilot_cap": "2"},
             approved_assets=[{
                 "asset_id": "BEACON-ASSET-APPROVED",
                 "effective_approval_status": "approved",

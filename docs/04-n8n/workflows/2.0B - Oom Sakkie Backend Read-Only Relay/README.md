@@ -63,11 +63,13 @@ Expected from `2 - The GateKeeper`:
   "user_id": "12345",
   "chat_id": "67890",
   "message_id": "123",
+  "timestamp": 1785673203,
+  "raw_update": {"message": {"message_id": 123, "date": 1785673203}},
   "user_name": "Charl"
 }
 ```
 
-The workflow also accepts `text`, `telegram_user_id`, and `telegram_chat_id` as fallback field names for smoke tests.
+The live contract requires authenticated `raw_update.message`. Text/caption, sender, chat, private-chat type, message identity and provider date all come from that raw Telegram message. Flat GateKeeper fields are cross-checks only; any mismatch fails closed. Flat-only chronology is never accepted.
 
 ## Output Contract
 

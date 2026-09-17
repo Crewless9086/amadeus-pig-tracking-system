@@ -1,0 +1,103 @@
+{
+  "fixture_version": "mission_admission_adversarial_candidate_v1",
+  "pull_request": 1306,
+  "base_sha": "087f315b15acd1e683eb4f9b3d0f7c57ceb5e65f",
+  "head_sha": "bf7ee6a160ead5fb3853662345ae57a459d8d42e",
+  "historical_ci": {
+    "conclusion": "success",
+    "checks_green": true,
+    "scope_authority_granted": false,
+    "checks": [
+      {
+        "workflow": "CHARLIE CORE Tests",
+        "name": "charlie-core",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087771/job/98248566601"
+      },
+      {
+        "workflow": "Oom Sakkie Audit Rails",
+        "name": "Unit tests with disposable Postgres audit rails",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087667/job/98248565812"
+      },
+      {
+        "workflow": "Oom Sakkie Audit Rails",
+        "name": "Closed Render migration rail with disposable Postgres",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087667/job/98248566161"
+      },
+      {
+        "workflow": "Oom Sakkie Browser Behavior",
+        "name": "Playwright real-browser behavior gate",
+        "conclusion": "SUCCESS",
+        "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/actions/runs/32991087629/job/98248565465"
+      }
+    ]
+  },
+  "candidate_files": [
+    "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+    "modules/oom_sakkie/herdmaster_burst_recovery.py",
+    "modules/oom_sakkie/herdmaster_health_loss_runtime.py",
+    "modules/oom_sakkie/herdmaster_litter_first_treatment_runtime.py",
+    "modules/oom_sakkie/herdmaster_litter_loss_runtime.py",
+    "modules/oom_sakkie/herdmaster_retained_recovery_runtime.py",
+    "modules/oom_sakkie/semantic_front_door.py",
+    "modules/pig_weights/herdmaster_first_treatment_protocol.py",
+    "modules/pig_weights/herdmaster_litter_first_treatment_action.py",
+    "modules/pig_weights/herdmaster_litter_first_treatment_intake.py",
+    "modules/pig_weights/herdmaster_litter_loss_action.py",
+    "modules/pig_weights/pig_weights_controller.py",
+    "modules/pig_weights/pig_weights_routes.py",
+    "static/assets/agents/herdmaster/agent.md",
+    "static/js/litterDetail.js",
+    "templates/litter-detail.html",
+    "tests/test_frontend_route_contracts.py",
+    "tests/test_herdmaster_first_treatment_parity.py",
+    "tests/test_herdmaster_litter_first_treatment_intake.py",
+    "tests/test_herdmaster_litter_loss_parity.py",
+    "tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py",
+    "tests/test_oom_sakkie_semantic_front_door.py"
+  ],
+  "adversarial_expectations": [
+    {
+      "case": "telegram_adapter_parity_without_existing_farm_trace",
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "existing_system_trace_incomplete",
+      "may_be_readmitted_after": "Trace the existing Farm canonical preview, authority, writer, and readback path and admit only the smallest adapter files."
+    },
+    {
+      "case": "new_protocol_store",
+      "paths": [
+        "modules/pig_weights/herdmaster_first_treatment_protocol.py"
+      ],
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "parallel_source_of_truth"
+    },
+    {
+      "case": "farm_route_controller_js_template_rewrite",
+      "paths": [
+        "modules/pig_weights/pig_weights_controller.py",
+        "modules/pig_weights/pig_weights_routes.py",
+        "static/js/litterDetail.js",
+        "templates/litter-detail.html"
+      ],
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "candidate_scope_drift"
+    },
+    {
+      "case": "unrelated_litter_loss_recovery",
+      "paths": [
+        "modules/oom_sakkie/herdmaster_litter_loss_runtime.py",
+        "modules/pig_weights/herdmaster_litter_loss_action.py",
+        "tests/test_herdmaster_litter_loss_parity.py"
+      ],
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "unrelated_effect"
+    },
+    {
+      "case": "historical_green_ci",
+      "result": "READMISSION_REQUIRED",
+      "reason_code": "green_ci_cannot_grant_scope"
+    }
+  ]
+}

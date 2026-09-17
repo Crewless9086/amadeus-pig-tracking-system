@@ -16,6 +16,13 @@ The safe approach is awareness first:
 
 ## Strict Content Rules
 
+For a litter story, public copy identifies the family only by the sow's current
+canonical human name. Internal litter IDs, pig IDs and event IDs stay inside the
+bound evidence envelope and are never rendered publicly. The story must be a
+warm, factual farm-life observation about the sow, her litter or ordinary daily
+care. It must not mention or imply stock, availability, sale, price, booking,
+reservation, urgency, messaging, contact or any invitation to buy or enquire.
+
 Beacon must not use:
 
 - `for sale`;
@@ -81,3 +88,32 @@ Owner review packet must include:
 - intended platform;
 - expected SAM handoff path;
 - pause/rollback instruction.
+
+The concise private owner card must also show unmistakable previews and exact
+identities for every selected image, plus protected Approve, Correct and Decline
+controls bound to the authenticated owner, private chat, provider card,
+campaign packet, generation, digest and expiry. Only media linked to the exact
+canonical litter event and carrying current Library Accept, Public Use, byte
+hash and storage-readback evidence may be selected. If none exists, no
+publication card is prepared: Beacon states one precise missing-media exception
+and requests the smallest governed library decision.
+
+Approval authorizes one organic Facebook publication attempt only. It grants no
+boost, spend, customer-send or retry authority. The deployed Beacon worker, not
+a development terminal or callback handler, must claim the approved generation,
+publish exactly once, obtain Meta readback and preserve ambiguity without retry.
+
+## Learning Boundary
+
+Delivery, clicks, messages and engagement may be reported as evidence, but
+they cannot reward, graduate or optimize direct or implied livestock-commerce
+copy. Every learning case must retain the awareness objective and pass the
+public livestock policy. Missing policy evidence blocks graduation; any
+policy failure blocks the candidate. Private, independently initiated SAM Live
+Stock conversations remain separate.
+
+Queued Telegram intake does not establish animal identity or permission to use
+an image publicly. Owner context remains owner-provided evidence; visual
+inference cannot replace canonical facts. Library acceptance, public-use
+approval, livestock-awareness policy passage and exact publication authority
+remain separate.

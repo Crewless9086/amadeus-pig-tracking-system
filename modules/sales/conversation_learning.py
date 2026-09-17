@@ -136,6 +136,7 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
     sam_draft = _clean(latest_review_event.get("sam_reply_excerpt"), 1800)
     customer_message = _clean(latest_review_event.get("customer_message_excerpt"), 1200)
     facts = _dict(latest_review_event.get("facts_json"))
+    decision = _dict(latest_review_event.get("decision_json"))
     review_event_id = _clean(latest_review_event.get("review_event_id"), 120)
     review_created_at = _clean(latest_review_event.get("created_at"), 80)
     outbound_created_at = _clean(outbound.get("created_at") or outbound.get("last_inbound_at"), 80)
@@ -174,6 +175,9 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
             "owner_reply_created_at": outbound_created_at,
             "review_reply_delta_seconds": age_seconds,
             "stale_review_link": stale_review_link,
+            "customer_language": _clean(facts.get("customer_language"), 40),
+            "conversation_stage": _clean(decision.get("conversation_stage") or (decision.get("conversation_plan") or {}).get("stage"), 80),
+            "reply_class": _clean(facts.get("message_intent") or "unclear", 80),
         },
         "missing_facts": _list((latest_review_event.get("decision_json") or {}).get("missing_fields") if isinstance(latest_review_event.get("decision_json"), dict) else []),
         "objections": _objections(owner_reply),
@@ -187,6 +191,70 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
     }
     return event
 
+
+def record_sam_meat_launch_review_packet(packet, lead_id, database_url=None):
+    """Persist stable prepared review/correction evidence on the existing append-only rail."""
+    packet = packet if isinstance(packet, dict) else {}
+    lead_id = _clean(lead_id, 120)
+    review = packet.get("review_event") if isinstance(packet.get("review_event"), dict) else {}
+    correction = packet.get("correction_event") if isinstance(packet.get("correction_event"), dict) else {}
+    if not lead_id or not review.get("event_id"):
+        return {"success": False, "status": "launch_review_identity_required", "persisted": False, **AUTHORITY_FLAGS}, 400
+
+    base = {
+        "lead_id": lead_id,
+        "chatwoot_conversation_id": _clean(packet.get("conversation_ref"), 120),
+        "channel": "chatwoot_whatsapp",
+        "source_agent": "sam_meat_backend",
+        "event_source": "sam_meat_launch_packet",
+        "customer_message_excerpt": "",
+        "sam_reply_excerpt": _clip(_clean(packet.get("prepared_reply"), 1800), 500),
+        "customer_wanted": _dict(packet.get("understood_request")),
+        "captured_facts": {
+            "packet_version": _clean(packet.get("packet_version"), 80),
+            "facts": _dict(packet.get("facts")),
+            "fact_evidence": _dict(packet.get("fact_evidence")),
+            "corrections": packet.get("corrections") if isinstance(packet.get("corrections"), list) else [],
+            "catalogue_match": _dict(packet.get("catalogue_match")),
+            "quantity": _dict(packet.get("quantity")),
+            "price_basis": _dict(packet.get("price_basis")),
+            "availability": _dict(packet.get("availability")),
+            "fulfilment": _dict(packet.get("fulfilment")),
+            "butcher_loop": _dict(packet.get("butcher_loop")),
+            "protected_decision": _dict(packet.get("protected_decision")),
+            "diagnostics": _dict(packet.get("diagnostics")),
+            "authority": _dict(packet.get("authority")),
+        },
+        "missing_facts": _list(packet.get("missing_facts")),
+        "objections": [],
+        "confusion_signals": [],
+        "sam_misses": [],
+        "conversion_signal": "unknown",
+        "improvement_suggestion": "Owner reviews the prepared SAM Meat launch packet; no send or protected action.",
+        "campaign_source": "sam_meat_chatwoot",
+        "recorded_by": "sam_meat_launch_review_packet",
+        **AUTHORITY_FLAGS,
+    }
+    review_payload = {**base, "learning_event_id": _clean(review.get("event_id"), 120), "event_type": "owner_review_note"}
+    review_result, review_status = record_sales_conversation_learning_event(review_payload, database_url=database_url)
+    correction_result, correction_status = {}, 200
+    if correction.get("event_id"):
+        correction_payload = {
+            **base,
+            "learning_event_id": _clean(correction.get("event_id"), 120),
+            "event_type": "owner_correction",
+            "improvement_suggestion": "Customer correction retained as a distinct append-only SAM Meat event.",
+        }
+        correction_result, correction_status = record_sales_conversation_learning_event(correction_payload, database_url=database_url)
+    success = review_status == 200 and correction_status == 200
+    return {
+        "success": success,
+        "status": "sam_meat_launch_evidence_persisted" if success else "sam_meat_launch_evidence_failed",
+        "persisted": success,
+        "review": review_result,
+        "correction": correction_result,
+        **AUTHORITY_FLAGS,
+    }, 200 if success else max(review_status, correction_status)
 
 def record_learning_event_from_sam_result(sam_result, database_url=None):
     event = build_learning_event_from_sam_result(sam_result)
@@ -326,7 +394,7 @@ def record_sales_conversation_learning_event(payload, database_url=None):
 
 def list_sales_conversation_learning_events(limit=50, lead_id="", database_url=None):
     try:
-        limit = max(1, min(int(limit), 100))
+        limit = max(1, min(int(limit), 1000))
     except (TypeError, ValueError):
         limit = 50
     lead_id = _clean(lead_id, 120)
@@ -383,13 +451,16 @@ def list_sales_conversation_learning_events(limit=50, lead_id="", database_url=N
     }, 200
 
 
-def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_url=None, customer_message=""):
+def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_url=None, customer_message="", customer_language="", conversation_stage="", reply_class=""):
     try:
         limit = max(1, min(int(limit), 10))
     except (TypeError, ValueError):
         limit = 3
     conversation_id = _clean(conversation_id, 120)
     customer_message = _clean(customer_message, 1200)
+    customer_language = _clean(customer_language, 40)
+    conversation_stage = _clean(conversation_stage, 80)
+    reply_class = _clean(reply_class, 80)
     candidate_limit = min(max(limit * 6, limit), 30)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -409,8 +480,8 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
                     select customer_message_excerpt, sam_reply_excerpt, captured_facts_json, created_at
                     from public.meat_sales_conversation_learning_events
                     where source_agent = 'sam_live_stock_backend'
-                      and captured_facts_json->>'learning_kind' = 'owner_reply_capture'
-                      and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced')
+                      and captured_facts_json->>'learning_kind' in ('owner_reply_capture', 'owner_reply_historical_example')
+                      and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced', 'owner_reply_no_sam_draft')
                       {same_conversation_where}
                     order by created_at desc
                     limit %(limit)s
@@ -424,8 +495,8 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
                         select customer_message_excerpt, sam_reply_excerpt, captured_facts_json, created_at
                         from public.meat_sales_conversation_learning_events
                         where source_agent = 'sam_live_stock_backend'
-                          and captured_facts_json->>'learning_kind' = 'owner_reply_capture'
-                          and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced')
+                          and captured_facts_json->>'learning_kind' in ('owner_reply_capture', 'owner_reply_historical_example')
+                          and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced', 'owner_reply_no_sam_draft')
                         order by created_at desc
                         limit %(limit)s
                         """,
@@ -454,6 +525,9 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
         rows,
         current_customer_message=customer_message,
         current_conversation_id=conversation_id,
+        customer_language=customer_language,
+        conversation_stage=conversation_stage,
+        reply_class=reply_class,
     )
     return {
         "success": True,
@@ -494,6 +568,20 @@ def summarize_sales_conversation_learning(events):
             suggestions.append(suggestion)
     summary["top_improvement_suggestions"] = _top_values(suggestions, limit=5)
     return summary
+
+
+def live_stock_learning_scorecard(database_url=None, limit=500):
+    from modules.sales.sam_live_stock_evaluation import owner_learning_scorecard
+
+    payload, status_code = list_sales_conversation_learning_events(limit=limit, database_url=database_url)
+    if status_code >= 400:
+        return payload, status_code
+    return {
+        "success": True,
+        "status": "sam_live_stock_learning_scorecard_ready",
+        "scorecard": owner_learning_scorecard(payload.get("learning_events") or []),
+        **AUTHORITY_FLAGS,
+    }, 200
 
 
 def _event_params(payload):
@@ -588,7 +676,7 @@ def _owner_reply_example_from_row(row):
     }
 
 
-def _rank_owner_reply_example_rows(rows, current_customer_message="", current_conversation_id=""):
+def _rank_owner_reply_example_rows(rows, current_customer_message="", current_conversation_id="", customer_language="", conversation_stage="", reply_class=""):
     current_customer_message = _normal_reply(current_customer_message)
     current_conversation_id = _clean(current_conversation_id, 120)
     ranked = []
@@ -601,6 +689,13 @@ def _rank_owner_reply_example_rows(rows, current_customer_message="", current_co
             captured = _loads(captured, {})
         row_conversation_id = _clean(captured.get("chatwoot_conversation_id") or captured.get("conversation_id"), 120)
         same_conversation = bool(current_conversation_id and row_conversation_id == current_conversation_id)
+        if customer_language and _clean(captured.get("customer_language"), 40) == customer_language:
+            score += 0.12
+        if conversation_stage and _clean(captured.get("conversation_stage"), 80) == conversation_stage:
+            score += 0.10
+        if reply_class and _clean(captured.get("reply_class"), 80) == reply_class:
+            score += 0.18
+        score = round(min(score, 1.0), 3)
         ranked.append((score, same_conversation, -index, row + (score,)))
     ranked.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
     return [item[3] for item in ranked]

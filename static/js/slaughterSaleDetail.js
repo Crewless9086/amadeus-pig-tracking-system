@@ -13,6 +13,23 @@ const exitDateInput = document.getElementById("sale_exit_date");
 const exitChangedByInput = document.getElementById("sale_exit_changed_by");
 const exitNotesInput = document.getElementById("sale_exit_notes");
 const exitConfirmButton = document.getElementById("sale_exit_confirm_button");
+const paymentForm = document.getElementById("sale_payment_form");
+const paymentAmountInput = document.getElementById("sale_payment_received_amount");
+const paymentMethodInput = document.getElementById("sale_payment_method");
+const paymentDateInput = document.getElementById("sale_payment_date");
+const paymentPreviewButton = document.getElementById("sale_payment_preview_button");
+const paymentConfirmButton = document.getElementById("sale_payment_confirm_button");
+const paymentPreviewBox = document.getElementById("sale_payment_preview");
+const charityForm = document.getElementById("sale_charity_form");
+const charityReasonInput = document.getElementById("sale_charity_reason");
+const charityCorrectionInput = document.getElementById("sale_charity_correction_reason");
+const charityPreviewButton = document.getElementById("sale_charity_preview_button");
+const charityConfirmButton = document.getElementById("sale_charity_confirm_button");
+const charityPreviewBox = document.getElementById("sale_charity_preview");
+let loadedSale = null;
+let pendingPaymentPreview = null;
+let pendingCharityPreview = null;
+let paymentPreviewGeneration = 0;
 
 function showMessage(message, type = "error") {
   messageBox.classList.remove("hidden", "message-success", "message-error");
@@ -52,6 +69,23 @@ function saleDetailFallbackPath() {
   return "/sales/slaughter";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+  })[character]);
+}
+
+function transactionLabel(sale) {
+  const channel = String(sale.sale_channel || "").trim().toLowerCase();
+  if (channel === "auction") return "Livestock — Auction";
+  const stream = String(sale.sale_stream || "Livestock").trim();
+  return `Livestock — ${stream}`;
+}
+
+function isAuction(sale) {
+  return String(sale?.sale_channel || "").trim().toLowerCase() === "auction";
+}
+
 function updateBackButtonFromQuery() {
   if (!backButton) return;
   const params = new URLSearchParams(window.location.search);
@@ -64,8 +98,8 @@ function updateBackButtonFromQuery() {
 function renderDetailList(element, rows) {
   element.innerHTML = rows.map(([label, value]) => `
     <div>
-      <dt>${label}</dt>
-      <dd>${valueOrDash(value)}</dd>
+      <dt>${escapeHtml(label)}</dt>
+      <dd>${escapeHtml(valueOrDash(value))}</dd>
     </div>
   `).join("");
 }
@@ -100,23 +134,23 @@ function renderItems(items) {
   itemsBody.innerHTML = items.map((item) => `
     <tr>
       <td>
-        <strong>${valueOrDash(item.description || item.item_type)}</strong>
-        <span class="table-subtext">${valueOrDash(item.sale_item_id)}</span>
+        <strong>${escapeHtml(valueOrDash(item.description || item.item_type))}</strong>
+        <span class="table-subtext">${escapeHtml(valueOrDash(item.sale_item_id))}</span>
       </td>
       <td>
-        <strong>${valueOrDash(item.tag_number || item.pig_id)}</strong>
-        <span class="table-subtext">${valueOrDash(item.pig_id)}</span>
+        <strong>${escapeHtml(valueOrDash(item.tag_number || item.pig_id))}</strong>
+        <span class="table-subtext">${escapeHtml(valueOrDash(item.pig_id))}</span>
       </td>
       <td>
-        <span class="table-subtext">Live: ${item.live_weight_kg ?? "-"}</span>
-        <span class="table-subtext">Carcass: ${item.carcass_weight_kg ?? "-"}</span>
-        <span class="table-subtext">Packed: ${item.packed_weight_kg ?? "-"}</span>
+        <span class="table-subtext">Live: ${escapeHtml(item.live_weight_kg ?? "-")}</span>
+        <span class="table-subtext">Carcass: ${escapeHtml(item.carcass_weight_kg ?? "-")}</span>
+        <span class="table-subtext">Packed: ${escapeHtml(item.packed_weight_kg ?? "-")}</span>
       </td>
       <td>
         <strong>${money(item.line_total)}</strong>
-        <span class="table-subtext">${valueOrDash(item.pricing_basis)}</span>
+        <span class="table-subtext">${escapeHtml(valueOrDash(item.pricing_basis))}</span>
       </td>
-      <td>${valueOrDash(item.notes)}</td>
+      <td>${escapeHtml(valueOrDash(item.notes))}</td>
     </tr>
   `).join("");
 }
@@ -130,9 +164,10 @@ async function loadSaleDetail() {
     }
 
     const sale = data.sales_transaction || {};
+    loadedSale = sale;
     const items = data.items || [];
-    title.textContent = sale.sale_id || saleId;
-    subtitle.textContent = `${valueOrDash(sale.buyer_name)} - ${dateOnly(sale.sale_date)}`;
+    title.textContent = transactionLabel(sale);
+    subtitle.textContent = `${sale.sale_id || saleId} · ${valueOrDash(sale.buyer_name)} · ${dateOnly(sale.sale_date)}`;
 
     renderDetailList(summaryList, [
       ["Sale Date", dateOnly(sale.sale_date)],
@@ -140,6 +175,7 @@ async function loadSaleDetail() {
       ["Destination", sale.destination],
       ["Stream", sale.sale_stream],
       ["Sale Status", sale.sale_status],
+      [isAuction(sale) ? "Auction completed" : "Sale completed", sale.sale_status === "Completed" ? "Yes" : "No"],
       ["Pig Count", sale.pig_count],
       ["Created By", sale.created_by],
       ["Notes", sale.notes],
@@ -149,6 +185,10 @@ async function loadSaleDetail() {
       ["Payment Status", sale.payment_status],
       ["Payment Method", sale.payment_method],
       ["Payment Date", dateOnly(sale.payment_date)],
+      ["Financial disposition", sale.financial_disposition || "Commercial"],
+      ["Amount receivable", money(sale.receivable_total ?? sale.net_settlement_payable ?? sale.net_total)],
+      ["Settlement received", sale.payment_status === "Paid" ? "Yes" : sale.payment_status === "Not_Applicable" ? "Not applicable" : "No"],
+      ["Fully reconciled", sale.sale_status === "Completed" && ["Paid", "Not_Applicable"].includes(sale.payment_status) ? "Yes" : "No"],
       ["Gross Total", money(sale.gross_total)],
       ["Deductions", money(sale.deductions_total)],
       ["Net Total", money(sale.net_total)],
@@ -158,10 +198,132 @@ async function loadSaleDetail() {
 
     renderItems(items);
     updateExitConfirmPanel(sale, items);
+    updatePaymentPanel(sale);
   } catch (error) {
     showMessage(error.message || "Could not load sale detail.");
     itemsBody.innerHTML = '<tr><td colspan="5" class="table-empty">Could not load sale items.</td></tr>';
   }
+}
+
+function updatePaymentPanel(sale) {
+  if (!paymentForm) return;
+  const canRecord = sale.sale_status !== "Cancelled" && !["Paid", "Not_Applicable"].includes(sale.payment_status);
+  paymentForm.classList.toggle("hidden", !canRecord);
+  if (charityForm) {
+    charityForm.classList.toggle("hidden", !canRecord || sale.sale_stream !== "Livestock" || sale.sale_status !== "Completed");
+  }
+  if (!canRecord) return;
+  const due = sale.net_settlement_payable ?? sale.net_total;
+  const currentReceived = Number(sale.received_total || 0);
+  if (!paymentAmountInput.value && due !== null && due !== undefined) {
+    paymentAmountInput.value = Math.max(0, Number(due) - currentReceived).toFixed(2);
+  }
+  paymentMethodInput.value = sale.payment_method === "Cash" ? "Cash" : "EFT";
+}
+
+async function previewCharity(event) {
+  event.preventDefault();
+  pendingCharityPreview = null;
+  charityConfirmButton.classList.add("hidden");
+  const payload = { reason: charityReasonInput.value.trim(),
+    correction_reason: charityCorrectionInput.value.trim() };
+  charityPreviewButton.disabled = true;
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/charitable-disposition/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error((data.errors || []).join(" ") || data.status || "Could not preview charitable disposition.");
+    charityPreviewBox.textContent = data.preview.human_readable;
+    charityPreviewBox.classList.remove("hidden");
+    pendingCharityPreview = { payload, digest: data.preview_digest, token: data.confirmation_token };
+    charityConfirmButton.classList.remove("hidden");
+  } catch (error) { showMessage(error.message); }
+  finally { charityPreviewButton.disabled = false; }
+}
+
+async function confirmCharity() {
+  if (!pendingCharityPreview) return;
+  charityConfirmButton.disabled = true;
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/charitable-disposition/confirm`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        ...pendingCharityPreview.payload, confirmed_preview_digest: pendingCharityPreview.digest,
+        confirmation_token: pendingCharityPreview.token,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error((data.errors || []).join(" ") || data.status || "Could not record charitable disposition.");
+    pendingCharityPreview = null;
+    showMessage("Charitable giveaway recorded with no payment due.", "success");
+    await loadSaleDetail();
+  } catch (error) { showMessage(error.message); }
+  finally { charityConfirmButton.disabled = false; }
+}
+
+function paymentRequestPayload() {
+  const receiptCents = Math.round(Number(paymentAmountInput.value) * 100);
+  const currentCents = Math.round(Number(loadedSale?.received_total || 0) * 100);
+  const dueCents = Math.round(Number(loadedSale?.net_settlement_payable ?? loadedSale?.net_total) * 100);
+  if (!Number.isFinite(receiptCents) || receiptCents <= 0) throw new Error("Enter the amount received in this receipt.");
+  if (!paymentDateInput.value) throw new Error("Bank receipt date is required.");
+  const cumulativeCents = currentCents + receiptCents;
+  return { payment_status: cumulativeCents === dueCents ? "Paid" : "Part_Paid",
+    received_amount: (cumulativeCents / 100).toFixed(2),
+    payment_method: paymentMethodInput.value, payment_date: paymentDateInput.value };
+}
+
+function invalidateSettlementPreview() {
+  paymentPreviewGeneration += 1;
+  pendingPaymentPreview = null;
+  paymentConfirmButton.classList.add("hidden");
+  paymentPreviewBox.classList.add("hidden");
+  paymentPreviewBox.textContent = "";
+}
+
+async function previewSettlement(event) {
+  event.preventDefault();
+  pendingPaymentPreview = null;
+  paymentConfirmButton.classList.add("hidden");
+  let payload;
+  try { payload = paymentRequestPayload(); } catch (error) { showMessage(error.message); return; }
+  const generation = ++paymentPreviewGeneration;
+  paymentPreviewButton.disabled = true;
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/payment-state/preview`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (generation !== paymentPreviewGeneration) return;
+    if (!response.ok || !data.success) throw new Error((data.errors || []).join(" ") || data.status || "Could not preview settlement.");
+    const preview = data.preview || {};
+    paymentPreviewBox.textContent = `${preview.human_readable} ${isAuction(loadedSale) ? "Auction" : "Sale"} completion remains unchanged.`;
+    paymentPreviewBox.classList.remove("hidden");
+    if (data.confirmation_required) {
+      pendingPaymentPreview = { payload, digest: data.preview_digest, token: data.confirmation_token };
+      paymentConfirmButton.classList.remove("hidden");
+    }
+  } catch (error) { showMessage(error.message || "Could not preview settlement."); }
+  finally { paymentPreviewButton.disabled = false; }
+}
+
+async function confirmSettlement() {
+  if (!pendingPaymentPreview) return;
+  paymentConfirmButton.disabled = true;
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/payment-state/confirm`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        ...pendingPaymentPreview.payload, confirmed_preview_digest: pendingPaymentPreview.digest,
+        confirmation_token: pendingPaymentPreview.token,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error((data.errors || []).join(" ") || data.status || "Could not confirm settlement.");
+    pendingPaymentPreview = null;
+    showMessage("Settlement receipt recorded once in Supabase.", "success");
+    await loadSaleDetail();
+  } catch (error) { pendingPaymentPreview = null; paymentConfirmButton.classList.add("hidden"); showMessage(error.message); }
+  finally { paymentConfirmButton.disabled = false; }
 }
 
 async function submitExitConfirmation(event) {
@@ -201,6 +363,13 @@ backButton.addEventListener("click", () => {
 if (exitConfirmForm) {
   exitConfirmForm.addEventListener("submit", submitExitConfirmation);
 }
+if (paymentForm) paymentForm.addEventListener("submit", previewSettlement);
+if (paymentConfirmButton) paymentConfirmButton.addEventListener("click", confirmSettlement);
+if (charityForm) charityForm.addEventListener("submit", previewCharity);
+if (charityConfirmButton) charityConfirmButton.addEventListener("click", confirmCharity);
+[paymentAmountInput, paymentMethodInput, paymentDateInput].forEach((element) => {
+  if (element) element.addEventListener("input", invalidateSettlementPreview);
+});
 
 updateBackButtonFromQuery();
 loadSaleDetail();

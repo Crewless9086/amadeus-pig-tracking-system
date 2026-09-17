@@ -1,0 +1,110 @@
+{
+  "event": "message_created",
+  "message_type": "outgoing",
+  "id": 760224858,
+  "created_at": "2026-07-26T06:49:28.589Z",
+  "content": "Test received.",
+  "private": false,
+  "account": {
+    "id": 147387
+  },
+  "conversation": {
+    "id": 2021,
+    "account_id": 147387,
+    "inbox_id": 96568,
+    "inbox": {
+      "id": 96568,
+      "channel_type": "Channel::Whatsapp"
+    },
+    "meta": {
+      "sender": {
+        "id": 699428938
+      }
+    }
+  },
+  "sender": {
+    "type": "User"
+  },
+  "content_attributes": {
+    "sanitized_fixture": true
+  },
+  "conversation_snapshot": {
+    "id": 2021,
+    "account_id": 147387,
+    "inbox_id": 96568,
+    "meta": {
+      "sender": {
+        "id": 699428938
+      }
+    }
+  },
+  "message_list": {
+    "payload": [
+      {
+        "id": 759868833,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 759868848,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 760211638,
+        "message_type": 0,
+        "content_type": "text",
+        "private": false,
+        "created_at": 1785044938
+      },
+      {
+        "id": 760220466,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 760220467,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 760224858,
+        "message_type": 1,
+        "content_type": "text",
+        "private": false,
+        "created_at": 1785048568
+      }
+    ]
+  },
+  "active_card": {
+    "lifecycle_card_identity": "SAM-LIVE-CARD-9AC5E2FD901D",
+    "account_id": "",
+    "conversation_id": "2021",
+    "contact_id": "699428938",
+    "inbox_id": "96568",
+    "review_event_id": "SAM-LIVE-REVIEW-85A567BA6AC1",
+    "customer_message_id": "760211638",
+    "telegram_chat_id": "sanitized-owner-chat",
+    "telegram_message_id": "2913",
+    "created_at": "2026-07-26T07:50:00+02:00",
+    "authoritative": true
+  },
+  "review_event": {
+    "review_event_id": "SAM-LIVE-REVIEW-85A567BA6AC1",
+    "chatwoot_conversation_id": "2021",
+    "chatwoot_message_id": "760211638",
+    "decision_json": {
+      "inbound": {
+        "account_id": "",
+        "conversation_id": "2021",
+        "contact_id": "699428938",
+        "inbox_id": "96568",
+        "message_id": "760211638"
+      }
+    }
+  }
+}

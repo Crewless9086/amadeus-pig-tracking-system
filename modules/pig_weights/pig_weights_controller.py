@@ -4,7 +4,14 @@ from modules.pig_weights.pig_weights_service import (
     get_sales_stock_summary,
     get_sales_stock_totals,
     get_meat_ready_stock_summary,
+    get_sales_metrics,
     get_pig_allocation_readiness,
+    get_riversdale_auction_recommendation,
+    record_riversdale_auction_decision,
+    record_riversdale_candidate_review,
+    get_riversdale_auction_list,
+    update_riversdale_auction_list,
+    get_herdmaster_pig_allocation_alerts,
     get_purpose_review_queue,
     apply_purpose_review_decisions,
     build_purpose_review_recheck,
@@ -22,6 +29,7 @@ from modules.pig_weights.pig_weights_service import (
     mark_pig_death_or_removal,
     mark_litter_piglets_dead,
     record_litter_newborn_health,
+    skip_litter_first_treatment,
     record_litter_piglet_sex_counts,
     assign_litter_piglet_tag_numbers,
     get_pig_detail,
@@ -54,6 +62,13 @@ from modules.pig_weights.pig_weights_validation import (
     validate_new_pen_payload,
     validate_new_litter_payload,
 )
+from modules.pig_weights.purpose_correction_batch_service import (
+    approve_correction_batch,
+    create_correction_batch,
+    execute_correction_batch,
+    preview_correction_batch,
+)
+from modules.pig_weights.application_grouped_preview_adapter import attach_canonical_preview
 
 
 def get_status():
@@ -74,8 +89,7 @@ def get_dashboard_data():
 def get_sales_dashboard_data():
     return {
         "success": True,
-        "totals": get_sales_stock_totals(),
-        "summary": get_sales_stock_summary(),
+        "sales_metrics": get_sales_metrics(),
         "meat_ready_stock": get_meat_ready_stock_summary(),
     }
 
@@ -84,18 +98,87 @@ def get_pig_allocation_readiness_data():
     return get_pig_allocation_readiness()
 
 
+def get_pig_allocation_alerts_data():
+    return get_herdmaster_pig_allocation_alerts()
+
+
+def get_riversdale_auction_recommendation_data():
+    return get_riversdale_auction_recommendation()
+
+
+def record_riversdale_auction_decision_data(payload: dict, *, actor_id: str):
+    return record_riversdale_auction_decision(payload, actor_id=actor_id)
+
+
+def record_riversdale_candidate_review_data(payload: dict, *, actor_id: str):
+    return record_riversdale_candidate_review(payload, actor_id=actor_id)
+
+
+def get_riversdale_auction_list_data():
+    return get_riversdale_auction_list()
+
+
+def update_riversdale_auction_list_data(payload: dict, *, actor_id: str):
+    return update_riversdale_auction_list(payload, actor_id=actor_id)
+
+
 def get_purpose_review_queue_data(litter_id: str = ""):
     return get_purpose_review_queue(litter_id=litter_id)
 
 
-def apply_purpose_review_queue_decisions(payload: dict):
+def apply_purpose_review_queue_decisions(payload: dict, *, actor_id: str):
+    # The historic direct-apply endpoint is intentionally preview-only.
     payload = payload or {}
-    return apply_purpose_review_decisions(
-        decisions=payload.get("decisions", []),
-        changed_by=payload.get("changed_by", "web_app"),
-        dry_run=payload.get("dry_run", True) is True,
-        allow_reclassify=payload.get("allow_reclassify", False) is True,
+    return preview_correction_batch(
+        payload.get("decisions", []), actor_id=actor_id,
+        return_to=payload.get("return_to", ""),
     )
+
+
+def create_purpose_correction_batch(payload: dict, *, actor_id: str):
+    payload = payload or {}
+    return create_correction_batch(
+        payload.get("decisions", []), idempotency_key=payload.get("idempotency_key", ""),
+        actor_id=actor_id, confirmation_binding=payload.get("confirmation_binding"),
+        return_to=payload.get("return_to", ""),
+    )
+
+
+def approve_purpose_correction_batch(batch_id: str, *, actor_id: str):
+    return approve_correction_batch(batch_id, actor_id=actor_id)
+
+
+def execute_purpose_correction_batch(batch_id: str, *, actor_id: str):
+    result, status_code = execute_correction_batch(batch_id, actor_id=actor_id)
+    if not result.get("success"):
+        return result, status_code
+    readback = result.get("canonical_readback") or []
+    try:
+        availability_rows = get_sales_availability()
+        by_id = {str(row.get("pig_id") or "").strip(): row for row in availability_rows
+                 if row.get("source") == "supabase_allocation_readiness"}
+    except Exception:
+        by_id = {}
+    per_pig = []
+    for row in readback:
+        eligibility = by_id.get(row["pig_id"])
+        per_pig.append({
+            **row,
+            "available": eligibility.get("live_stock_sale_eligible") if eligibility else None,
+            "remaining_blocker": (
+                None if eligibility and eligibility.get("live_stock_sale_eligible")
+                else eligibility.get("live_stock_sale_reason") if eligibility
+                else "Canonical sale-eligibility readback is unavailable."
+            ),
+            "eligibility_contract_version": eligibility.get("exact_animal_eligibility_contract_version") if eligibility else None,
+            "sale_category": eligibility.get("sale_category") if eligibility else None,
+            "weight_band": eligibility.get("weight_band") if eligibility else None,
+            "suggested_price_category": eligibility.get("suggested_price_category") if eligibility else None,
+        })
+    result["per_pig_results"] = per_pig
+    result["eligibility_recalculated_from_canonical_readback"] = all(
+        item["available"] is not None for item in per_pig)
+    return result, status_code
 
 
 def get_purpose_review_recheck_packet(payload: dict):
@@ -175,6 +258,9 @@ def mark_litter_profile_weaned(litter_id: str, payload: dict):
         changed_by=payload.get("changed_by", "web_app"),
         use_latest_weights_as_wean_weights=payload.get("use_latest_weights_as_wean_weights", False) is True,
         wean_weights=payload.get("wean_weights", {}),
+        dry_run=payload.get("dry_run", True),
+        confirmed=payload.get("confirmed", False),
+        confirmation_binding=payload.get("confirmation_binding"),
     )
 
 
@@ -184,11 +270,16 @@ def process_litter_profile_weaning_day(litter_id: str, payload: dict):
 
 def record_litter_profile_newborn_health(litter_id: str, payload: dict):
     payload = payload or {}
+    if set(payload) - {"action_date", "changed_by", "earmarked", "antiparasitic_product_id",
+            "deworming_product_id", "vaccination_product_id", "dose", "dose_unit", "route",
+            "batch_lot_number", "notes", "male_count", "female_count", "total_count", "dry_run",
+            "confirmed", "confirmation_binding"}:
+        return {"success": False, "status": "first_treatment_unsupported_facts"}, 400
     return record_litter_newborn_health(
         litter_id=litter_id,
         action_date_value=payload.get("action_date", ""),
         changed_by=payload.get("changed_by", "web_app"),
-        earmarked=payload.get("earmarked", False) is True,
+        earmarked=payload.get("earmarked"),
         antiparasitic_product_id=payload.get("antiparasitic_product_id", ""),
         deworming_product_id=payload.get("deworming_product_id", ""),
         vaccination_product_id=payload.get("vaccination_product_id", ""),
@@ -196,7 +287,23 @@ def record_litter_profile_newborn_health(litter_id: str, payload: dict):
         route=payload.get("route", ""),
         batch_lot_number=payload.get("batch_lot_number", ""),
         notes=payload.get("notes", ""),
-        dry_run=payload.get("dry_run", True) is True,
+        male_count=payload.get("male_count", None),
+        female_count=payload.get("female_count", None),
+        dry_run=payload.get("dry_run", True),
+        dose_unit=payload.get("dose_unit"),
+        total_count=payload.get("total_count"),
+        confirmed=payload.get("confirmed", False),
+        confirmation_binding=payload.get("confirmation_binding"),
+        require_supabase=True,
+    )
+
+
+def skip_litter_profile_first_treatment(litter_id: str, payload: dict):
+    payload = payload or {}
+    return skip_litter_first_treatment(
+        litter_id=litter_id,
+        changed_by=payload.get("changed_by", "web_app"),
+        reason=payload.get("reason", "Owner marked the optional first treatment as skipped."),
     )
 
 
@@ -351,9 +458,9 @@ def get_weights_by_date(weight_date: str):
     }, 200
 
 
-def get_weight_report_data(date_from: str = "", date_to: str = "", pen_id: str = ""):
+def get_weight_report_data(date_from: str = "", date_to: str = "", pen_id: str = "", batch_id: str = ""):
     try:
-        return get_weight_report(date_from=date_from, date_to=date_to, pen_id=pen_id), 200
+        return get_weight_report(date_from=date_from, date_to=date_to, pen_id=pen_id, batch_id=batch_id), 200
     except ValueError as exc:
         return {
             "success": False,
@@ -425,6 +532,8 @@ def create_weight_entry_with_optional_move(payload: dict):
 
 def preview_bulk_weight_entries(payload: dict):
     result, status_code = preflight_bulk_weight_entries(payload)
+    if status_code == 200 and result.get("success") is True and result.get("accepted_count", 0) > 0:
+        result = attach_canonical_preview(result)
     return result, status_code
 
 

@@ -61,6 +61,10 @@ def validate_relay_contract(workflow_path=WORKFLOW_PATH, readme_path=README_PATH
         errors.append("backend_gateway_path_missing")
     if "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN" not in workflow_text:
         errors.append("vars_token_reference_missing")
+    if "X-Oom-Sakkie-Telegram-Token" not in workflow_text:
+        errors.append("dedicated_gateway_auth_header_missing")
+    if "Bearer ${$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}" in workflow_text:
+        errors.append("bearer_template_must_not_own_relay_auth")
     if "$env" in workflow_text:
         errors.append("code_node_env_access_must_be_absent")
     if "$vars" not in workflow_text:

@@ -3,6 +3,7 @@
     leads: [],
     selectedLeadId: "",
     contract: null,
+    commandState: null,
     draft: null,
     messageApproved: false,
     priceEntries: [],
@@ -54,6 +55,13 @@
     commandOwnerReason: byId("sam_command_owner_reason"),
     gateStack: byId("sam_gate_stack"),
     facts: byId("meat_lead_facts"),
+    launchNoSend: byId("sam_meat_launch_no_send"),
+    launchReply: byId("sam_meat_launch_reply"),
+    launchFacts: byId("sam_meat_launch_facts"),
+    launchMissing: byId("sam_meat_launch_missing"),
+    launchTruth: byId("sam_meat_launch_truth"),
+    launchDecision: byId("sam_meat_launch_decision"),
+    launchEvidence: byId("sam_meat_launch_evidence"),
     guidedStatus: byId("meat_guided_status"),
     guidedNext: byId("meat_guided_next"),
     guidedResult: byId("meat_guided_result"),
@@ -723,6 +731,30 @@
     });
   };
 
+  const renderLaunchReview = () => {
+    if (!elements.launchReply) return;
+    const packet = state.commandState?.launch_review_packet || {};
+    const available = packet.persisted === true;
+    const facts = packet.facts && typeof packet.facts === "object" ? packet.facts : {};
+    const missing = Array.isArray(packet.missing_facts) ? packet.missing_facts : [];
+    const truthRows = [packet.catalogue_match, packet.price_basis, packet.availability, packet.fulfilment, packet.butcher_loop]
+      .filter((item) => item && typeof item === "object")
+      .map((item) => item.status || (item.usable === true ? "verified" : "Unavailable"));
+    const decision = packet.protected_decision && typeof packet.protected_decision === "object" ? packet.protected_decision : {};
+    elements.launchNoSend.textContent = "No send performed. Owner review only.";
+    elements.launchReply.textContent = available ? safe(packet.prepared_reply, "No prepared reply") : "Unavailable";
+    elements.launchFacts.textContent = available
+      ? Object.entries(facts).map(([key, value]) => `${key}: ${safe(value)}`).join("; ") || "None retained"
+      : "Unavailable";
+    elements.launchMissing.textContent = available ? (missing[0] || "None") : "Unavailable";
+    elements.launchTruth.textContent = available ? (truthRows.join(" / ") || "Unavailable") : "Unavailable";
+    elements.launchDecision.textContent = available
+      ? safe(decision.exact_owner_question, "Review prepared reply; no protected execution")
+      : "Unavailable";
+    elements.launchEvidence.textContent = available
+      ? `Persisted ${safe(packet.review_event_id)} (replay-safe)`
+      : "Not persisted";
+  };
   const renderFacts = (lead, contract) => {
     const interest = interestOf(lead);
     const missing = Array.isArray(contract?.missing_fields) ? contract.missing_fields : [];
@@ -1217,6 +1249,7 @@
     renderCommandPanel(hasLead ? lead : {}, contract);
     renderGateStack(hasLead ? lead : {}, contract);
     renderFacts(lead, contract);
+    renderLaunchReview();
     renderEvents(lead);
 
     if (!hasLoadedContract) {
@@ -1336,7 +1369,12 @@
   };
 
   async function loadLeadDetail(leadId) {
-    state.contract = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(leadId)}/contract`);
+    const [contract, commandState] = await Promise.all([
+      fetchJson(`/api/sales/meat-leads/${encodeURIComponent(leadId)}/contract`),
+      fetchJson(`/api/sales/meat-leads/${encodeURIComponent(leadId)}/command-state`),
+    ]);
+    state.contract = contract;
+    state.commandState = commandState;
     state.draft = null;
     state.messageApproved = false;
     state.pricingEstimate = null;

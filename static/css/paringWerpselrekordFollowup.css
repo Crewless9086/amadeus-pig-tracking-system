@@ -1,0 +1,73 @@
+.pwr-animal-heading {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 5mm;
+  margin-top: 2mm;
+}
+
+.pwr-birth-identity {
+  grid-template-columns: 1fr 1fr 2.3fr;
+}
+
+.pwr-animal-heading label:first-child input {
+  height: 7mm;
+  font: 700 15px Georgia, serif;
+}
+
+.pwr-animal-heading label:last-child input {
+  height: 7mm;
+  font-size: 10px;
+}
+
+.pwr-wean th:nth-child(2),
+.pwr-wean td:nth-child(2) {
+  width: 18mm;
+}
+
+.pwr-wean th:nth-child(3),
+.pwr-wean td:nth-child(3) {
+  width: auto;
+}
+
+.pwr-wean th:nth-child(4),
+.pwr-wean td:nth-child(4) {
+  width: 15mm;
+}
+
+.pwr-wean th:nth-child(5),
+.pwr-wean td:nth-child(5) {
+  width: 18mm;
+}
+
+.pwr-weaned-counts {
+  display: grid;
+  gap: 1.7mm;
+  margin-top: auto;
+}
+
+.pwr-weaned-counts input {
+  height: 6.2mm;
+  border-bottom-width: 1.4px;
+}
+
+.pwr-summary label {
+  display: grid;
+  white-space: normal;
+}
+
+.pwr-notes td {
+  height: 6.6mm;
+}
+
+@media screen and (max-width: 850px) {
+  .pwr-animal-heading {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .pwr-animal-heading label:first-child input,
+  .pwr-animal-heading label:last-child input {
+    height: 32px;
+    font-size: 14px;
+  }
+}

@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Farm Weather</title><link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}"></head>
+<body data-operations-page="weather"><div class="farm-app-shell">{% include '_farm_nav.html' %}<main class="operations-page">
+  <header class="operations-hero"><div><span class="farm-eyebrow">Farm operations</span><h1>Weather</h1><p>Observed local weather is kept separate from forecast information so farm decisions are based on the right evidence.</p></div><a class="manager-link" href="/">← Dashboard</a></header>
+  <section class="detail-grid">
+    <article class="detail-card"><span class="farm-eyebrow">Now</span><p class="detail-value" id="detail_weather_temp">Loading</p><p class="detail-muted" id="detail_weather_summary">Reading the local station…</p></article>
+    <article class="detail-card"><span class="farm-eyebrow">Rain</span><p class="detail-value" id="detail_weather_rain">--</p><p class="detail-muted">Observed today</p></article>
+    <article class="detail-card"><span class="farm-eyebrow">Wind</span><p class="detail-value" id="detail_weather_wind">--</p><p class="detail-muted">Current speed and gust</p></article>
+    <article class="detail-card detail-wide"><h2>Three-day forecast</h2><div class="detail-list" id="detail_weather_forecast"><p class="detail-muted">Loading forecast…</p></div></article>
+    <article class="detail-card"><h2>Station freshness</h2><p class="detail-value" id="detail_weather_age">--</p><p class="detail-muted" id="detail_weather_source">Local farm station</p></article>
+  </section>
+</main></div><script src="{{ url_for('static', filename='js/operationsDetail.js') }}?v=20260810-v2"></script></body></html>

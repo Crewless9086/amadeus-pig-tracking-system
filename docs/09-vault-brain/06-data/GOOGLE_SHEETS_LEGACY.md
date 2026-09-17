@@ -8,6 +8,12 @@ Formula-driven sheets and sales stock sheets must be treated carefully and shoul
 
 Google Sheets still contains important operational history and formula views. It is not garbage. It is a legacy/runtime reference layer while Supabase and backend read models finish replacing it.
 
+Normal application routes must be Supabase-first wherever their domain is
+listed as migrated in `SUPABASE_CONTRACTS.md`. A Sheets path in those domains
+is compatibility fallback, import/export or administrator tooling; it is not a
+second operational authority. A dated migration report cannot prove that a
+fallback is still needed or that a historic conflict is still unresolved.
+
 ## Sheet Classes
 
 | Class | Examples | Rule |
@@ -30,9 +36,18 @@ Google Sheets still contains important operational history and formula views. It
 
 ## Cleanup Direction
 
+Retirement test: `GS-LEGACY-RETIREMENT-V1`, defined in
+`10-source-map/TRANSITIONAL_EXIT_TEST_REGISTER.md`. Current status is
+`BLOCKED_CURRENT_RUNTIME_DEPENDENCY`; this is a bounded technical exception,
+not permission for new Sheets authority.
+
 - Do not delete legacy sheets or sheet docs until the matching Supabase/backend route is accepted and verified.
 - Once a route is fully migrated, keep the sheet docs as archive/reference until owner approves deletion.
 - When a sheet becomes read-only/archive, mark that in the source map and migration inventory.
+- Retire a fallback only after fresh route inventory, exact Supabase read/write
+  ownership, shadow equivalence, failure-path coverage, rollback proof and an
+  owner-approved stability window. Existing fallback code is not permission to
+  route new work through Sheets.
 
 ## Source References
 

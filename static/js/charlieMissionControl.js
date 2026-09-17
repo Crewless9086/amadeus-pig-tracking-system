@@ -564,7 +564,7 @@
     if (!els.improvementsList) return;
     const proposals = Array.isArray(state.improvements) ? state.improvements : [];
     if (!proposals.length) {
-      els.improvementsList.innerHTML = '<p class="charlie-empty">No CHARLIE improvement proposals are waiting.</p>';
+      els.improvementsList.innerHTML = '<p class="charlie-empty">ANALYST is observing CORE. No improvement proposals currently need review.</p>';
       return;
     }
     els.improvementsList.innerHTML = proposals.slice(0, 8).map(improvementProposalMarkup).join("");
@@ -586,7 +586,7 @@
         <div class="charlie-mission-card-header">
           <div>
             <span class="status-pill">${escapeHtml(safeText(proposal.status || "pending"))}</span>
-            <h3>${escapeHtml(safeText(proposal.problem_detected || "CHARLIE improvement proposal"))}</h3>
+            <h3>${escapeHtml(safeText(proposal.problem_detected || "ANALYST improvement proposal"))}</h3>
           </div>
           <code>${escapeHtml(shortId(proposalId))}</code>
         </div>
@@ -606,9 +606,9 @@
           <textarea rows="3" data-improvement-comments placeholder="Optional owner note"></textarea>
         </label>
         <div class="charlie-mission-actions charlie-improvement-actions">
-          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="approve">Approve</button>
+          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="approve">Approve as Mission</button>
           <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="reject">Reject</button>
-          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="send_to_mission">Send To Mission</button>
+          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="send_to_mission">Create Mission</button>
         </div>
       </article>
     `;
@@ -867,12 +867,16 @@
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
     const missionQueueClass = queueClass(mission);
+    const lifecycle = mission.mission_lifecycle || {};
+    const followUpProven = lifecycle.follow_up_proven === true;
+    const businessState = lifecycle.lifecycle_state === "BUSINESS_COMPLETE" && !followUpProven
+      ? "WORKING" : (lifecycle.lifecycle_state || "WORKING");
     const activeFlowMission = currentMissionForFlow();
     if (activeFlowMission && activeFlowMission.mission_id === missionId) card.classList.add("is-current");
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
-          <span class="status-pill">${safeText(mission.status || "unknown")}</span>
+          <span class="status-pill">Business: ${safeText(businessState)}</span>
           <h3>${escapeHtml(title)}</h3>
         </div>
         <code>${escapeHtml(shortId(missionId))}</code>
@@ -898,6 +902,8 @@
         <button type="button" data-agent-step="reviewer">Reviewer Done</button>
       </div>
       <dl class="charlie-mission-meta">
+        <div><dt>Technical stage</dt><dd>${escapeHtml(safeText(mission.technical_status || mission.status || "unknown"))}</dd></div>
+        <div><dt>Handover</dt><dd>${escapeHtml(safeText(lifecycle.handover_status || "NO_HANDOVER"))}</dd></div>
         <div><dt>Queue</dt><dd>${escapeHtml(String(queuePriority))}</dd></div>
         <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
         <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
@@ -967,6 +973,8 @@
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const blocked = mission.status === "blocked" || reviewPacket.review_status === "agent_blocked";
     const quality = reviewPacket.mission_quality || {};
+    const readiness = reviewPacket.final_readiness || {};
+    const canApprove = readiness.can_authorize_release === true;
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -976,6 +984,7 @@
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
       ${blocked ? blockedReviewBanner(reviewPacket) : ""}
+      ${finalReadinessMarkup(readiness)}
       <dl class="charlie-mission-meta">
         <div><dt>Preview / visual proof</dt><dd>${localPreviewMarkup(localPreview, links, reviewPacket.visual_review || {})}</dd></div>
         <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
@@ -1010,7 +1019,7 @@
       <div class="charlie-mission-actions charlie-review-actions">
         <button type="button" data-open-owner-review>Open Review</button>
         <button type="button" data-open-replay-debug>Replay Debug</button>
-        <button type="button" data-review-decision="approve_final_release">Approve Final</button>
+        <button type="button" data-review-decision="approve_final_release" ${canApprove ? "" : "disabled"}>${canApprove ? "Approve Release" : "Approval Locked"}</button>
         <button type="button" data-review-decision="send_back">Send Back</button>
         <button type="button" data-review-decision="pause">Pause</button>
         <button type="button" data-review-decision="reject">Reject</button>
@@ -1038,6 +1047,12 @@
     card.querySelector("[data-open-replay-debug]").addEventListener("click", () => loadReplayDebug(missionId, card));
     card.querySelector("[data-open-owner-review]").addEventListener("click", () => openOwnerReviewModal(mission));
     return card;
+  }
+
+  function finalReadinessMarkup(readiness) {
+    if (!readiness || !readiness.verdict) return "";
+    const gates = Array.isArray(readiness.gates) ? readiness.gates : [];
+    return `<div class="charlie-review-readiness"><strong>${escapeHtml(safeText(readiness.headline || "READINESS UNKNOWN"))}</strong><p>${escapeHtml(safeText(readiness.next_action || "Review required gates."))}</p><ul>${gates.filter((gate) => gate.required).map((gate) => `<li>${escapeHtml(safeText(gate.label))}: ${escapeHtml(safeText(gate.status))}</li>`).join("")}</ul></div>`;
   }
 
   function agentBadge(agent) {
@@ -1121,7 +1136,7 @@
           </label>
           <button type="button" data-review-refresh>Refresh Evidence</button>
           <div class="charlie-mission-actions charlie-review-actions">
-            <button type="button" data-review-decision="approve_final_release">Approve Final</button>
+            <button type="button" data-review-decision="approve_final_release" ${(reviewPacket.final_readiness || {}).can_authorize_release ? "" : "disabled"}>${(reviewPacket.final_readiness || {}).can_authorize_release ? "Approve Release" : "Approval Locked"}</button>
             <button type="button" data-review-decision="send_back">Send Back</button>
             <button type="button" data-review-decision="pause">Pause</button>
             <button type="button" data-review-decision="reject">Reject</button>
@@ -1553,14 +1568,14 @@
   }
 
   async function analyzeImprovements() {
-    setMessage("Analyzing CHARLIE improvement patterns...", "info");
+    setMessage("ANALYST is reviewing CORE mission evidence...", "info");
     try {
       await fetchJson("/api/charlie/core/improvements/analyze", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({limit: 50}),
       });
-      setMessage("Improvement proposals refreshed.", "success");
+      setMessage("ANALYST proposals refreshed.", "success");
       await loadMissions();
     } catch (error) {
       setMessage(error.message || "Improvement analysis was not recorded.", "error");

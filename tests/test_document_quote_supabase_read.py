@@ -49,6 +49,44 @@ class DocumentQuoteSupabaseReadTests(unittest.TestCase):
         self.assertEqual(lines[0]["unit_price"], 1250.0)
         get_records.assert_called_once_with(quote_service.ORDER_LINES_SHEET)
 
+    def test_quote_readiness_allows_approved_active_order(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "order_status": "Approved",
+                "customer_name": "Michaels",
+                "customer_phone": "0720000000",
+                "payment_method": "Cash",
+                "collection_location": "Riversdale",
+                "requested_quantity": 1,
+            },
+            "lines": [{
+                "pig_id": "PIG-104",
+                "sale_category": "Young Piglets",
+                "weight_band": "7_to_9_Kg",
+                "sex": "Any",
+                "unit_price": 700,
+                "line_status": "Reserved",
+            }],
+        }
+        master = {
+            "Order_ID": "ORD-1",
+            "Order_Status": "Approved",
+            "Customer_Name": "Michaels",
+            "Customer_Phone": "0720000000",
+            "Payment_Method": "Cash",
+            "Collection_Location": "Riversdale",
+            "Requested_Quantity": 1,
+        }
+
+        with patch.object(quote_service, "get_order_detail", return_value=detail), \
+             patch.object(quote_service, "_get_order_master_row", return_value=master):
+            readiness = quote_service.get_quote_readiness("ORD-1")
+
+        self.assertTrue(readiness["quote_ready"])
+        self.assertNotIn("draft_status", readiness["missing_fields"])
+        self.assertNotIn("active_order_status", readiness["missing_fields"])
+
 
 if __name__ == "__main__":
     unittest.main()

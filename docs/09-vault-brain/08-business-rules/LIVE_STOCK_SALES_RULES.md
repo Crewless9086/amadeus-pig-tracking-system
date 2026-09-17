@@ -4,9 +4,20 @@ Status: Current authority for SAM Live Stock Sales.
 
 ## Non-Negotiables
 
+- Claim each exact customer reply once before attempting delivery.
+- Never retry a failed or ambiguous outcome automatically.
+- Quarantine only the affected conversation and send when its provider outcome
+  is failed or ambiguous; continue unrelated exact Level 1 bindings.
+- Stop the full cohort only for a systemic provider outage, corrupted claim
+  rail, cross-binding identity/chronology collision, or authority breach.
+- Count a delivered customer only after provider delivered/read evidence.
+
 - Current stock truth must come from app/Supabase-backed backend reads.
 - Legacy n8n and Google Sheet files are reference history only.
-- SAM must classify the sales lane before any draft reply, order, or reservation path.
+- SAM may conduct ordinary general conversation before lane classification.
+  It must classify and graduate to `live_stock_sales` before making live-stock
+  claims, calling live-stock tools, preparing an order, or entering a
+  reservation path.
 - Meat sales and live-stock sales must stay separate.
 - No stock may be invented.
 - SAM may auto-create a draft order only after the live-stock lane is confirmed, required facts are present, backend availability can fully satisfy the request, and active pricing is resolved.
@@ -14,12 +25,35 @@ Status: Current authority for SAM Live Stock Sales.
 - No payment may be confirmed from POP alone.
 - Breeding/replacement animals are not part of the normal live-stock sale lane.
 - Only pigs with purpose `Sale` and source-truth sale availability may be sold through SAM Live Stock.
-- No sold, exited, reserved, terminal, off-farm, withdrawal-blocked, or source-conflicted animal may be offered.
+- No sold, exited, reserved, terminal, off-farm, health/movement-held, or
+  source-conflicted animal may be offered. A food-chain medicine withdrawal is
+  disclosed and blocks slaughter/food-chain entry for its governed period; it
+  does not by itself prove or prohibit live transfer.
 - The farm's exact live location must not be shared. Live-stock handover is arranged in Riversdale or Albertinia after the order path is confirmed.
-- Delivery is not advertised in normal live-stock stock or price replies. If the customer asks for delivery, transport, drop-off, or says they are far away, SAM may capture destination and one-way kilometres, estimate at R20/km for owner review, and must state collection is normal and delivery is not promised.
 - SAM must not debate or prove the farm's legitimacy to rude, aggressive, or already-decided scam accusations. It should close politely, log/escalate, and stop replying unless the owner reopens.
 - SAM must not negotiate pricing or use cheap/budget/discount language unless the owner creates a specific approved pricing rule.
 - SAM must not keep a conversation alive just to have the last word. Polite acknowledgement endings may be left unanswered.
+- Persisted `Any`, `Unknown`, blank, defaulted, or inferred qualification
+  values do not prove a customer preference. Only authoritative customer
+  chronology may establish an explicit `either`/no-preference answer.
+- Ask only missing facts. If size and sex are both missing, explain the
+  customer-facing weight choices and ask both together; do not expose
+  unexplained internal category names.
+- Missing or stale availability/pricing blocks only those claims. A useful
+  claim-free clarification remains eligible under the ordinary Level 1 rail.
+- Intake/category defaults must never manufacture weight, sex, or handover
+  preferences.
+- A customer display name is presentation-only. Safe Unicode, punctuation,
+  spacing and emoji may be normalized for a greeting; it never replaces or
+  modifies the exact numeric/provider identity binding. Controls, markup,
+  unreasonable length and disguised commercial claims fail closed.
+- Always-on Livestock Level 1 authority comes only from the latest current
+  append-only isolated control event and the exact current inbound evidence.
+  Missing storage, a disabled/killed/expired state, a pre-cutoff historical
+  event not explicitly carried, or any identity mismatch authorizes no send.
+- Always-on activation never grants Meat, retry, quote, negotiation, delivery
+  promise, reservation, allocation, order, payment, ownership, animal, stock
+  or farm authority.
 
 ## Product Categories
 
@@ -44,7 +78,22 @@ Current inherited price source:
 
 When the owner changes a price, a new effective-dated row is appended. Older prices remain as history. SAM resolves the latest active row whose effective date applies to the quote/order date.
 
+Direct price questions must be answered compactly from the supported category price before further qualification. When quantity is known, show quantity, unit price and subtotal/total. Category price is not current availability and never implies allocation or reservation. Funding/budget quotations use requested categories only and are prohibited from selecting animals or running HERDMASTER live allocation. Current-availability sales quotations may use HERDMASTER advisory evidence, with allocation proposal, reservation and order remaining separate.
+
 ## Availability Matching
+
+Herdmaster/Pig Allocation is SAM's authoritative live-stock stock-context read model. Each candidate must carry current source status, on-farm state, purpose, reservation state, breeding/family context, latest weight and weight date, recorded medicine/food-chain status, and canonical media references when such references exist. Sold, dead, exited, off-farm, reserved, terminal, source-conflicted, retained/breeding, or explicitly health-, welfare-, quarantine-, movement- or sale-held animals are ineligible. A recorded food-chain withdrawal is disclosed compactly and blocks slaughter/food-chain entry through the recorded date; it does not by itself block a live-animal quote or transfer. Missing or stale weight reduces recommendation confidence and may require a fresh weight before a specific commitment, but it does not prevent a requested-items draft quote with partial or `Unavailable` recommendations. If no canonical animal media source exists, the read model returns no media references; SAM must not infer them from notes or customer uploads.
+
+Live-transfer eligibility keeps separate attributable axes for any genuinely
+recorded transport-fitness restriction, quarantine, notifiable/infectious
+disease restriction, veterinary movement stop, serious health/welfare hold,
+purpose, active/on-farm state and order eligibility. Unknown is not positive
+clearance, but absence of records the farm does not ordinarily capture is not a
+manufactured blocker. Treatment disclosure and acknowledgement prove receipt
+only; they never certify movement, health or veterinary clearance. HERDMASTER
+owns this livestock projection; SAM/order/document paths consume it without
+recalculating safety. This is farm operating doctrine and medicine disclosure,
+not statutory or veterinary certification.
 
 Matching priority:
 
@@ -70,7 +119,9 @@ Draft order creation is allowed when all of these are true:
 - backend availability;
 - active order conflict check.
 - active price resolved from `public.sales_pricing`;
-- complete fulfillment, not partial match.
+- requested items may remain partial or `Unavailable`; a specific allocation,
+  reservation or customer stock promise still requires the applicable later
+  gate.
 
 Reservation, payment confirmation, quote/send, and customer-visible promises remain owner/backend-gated.
 
@@ -80,7 +131,14 @@ Live-stock sales may use cash on delivery or EFT on delivery with immediate paym
 
 The exact farm location remains private. Normal handover points are Riversdale or Albertinia. Any exception requires owner review.
 
-Delivery estimates are owner-reviewed exceptions, not a default offer. The owner may override route, fee, timing, animal suitability for transport, or whether delivery can happen at all.
+## Delivery Fee Policy
+
+- Live-stock sales are collection-first. SAM must not openly offer delivery.
+- Only when the customer asks about delivery, transport, or drop-off may SAM prepare a non-binding option for owner review.
+- The default estimate is R20.00 per one-way kilometre to the drop-off location. This one-way measure recovers the farm round trip and must not be doubled again.
+- Every estimate records destination, one-way kilometres, distance source, rate source, eligibility/status, and owner override amount/rate, reason, source, and approval.
+- Missing kilometres or distance source produces an incomplete status, never a zero fee.
+- Estimates do not authorize customer/quote send, reservation, payment, order, stock, or farm lifecycle writes. Owner review remains mandatory.
 
 ## Hostile Or Low-Trust Conversation Rule
 
@@ -104,7 +162,8 @@ This protects the farm's premium posture and avoids low-quality sales conversati
 
 ## Source References
 
-- `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
+- `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`
 - `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`

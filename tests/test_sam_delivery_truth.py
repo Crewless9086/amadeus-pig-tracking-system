@@ -1,0 +1,378 @@
+import unittest
+import json
+from pathlib import Path
+
+from modules.sales import sam_delivery_truth as truth
+
+
+def attempt():
+    return truth.build_delivery_attempt(
+        {
+            "conversation_id": "2013",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "message_id": "759446521",
+        },
+        {
+            "suggested_reply_text": "Hi Charl! How can I help you today?",
+            "response_class": "greeting",
+        },
+        {"review_event_id": "SAM-LIVE-REVIEW-A17F2169ED0F"},
+        response_class="greeting",
+    )
+
+
+class SamDeliveryTruthTests(unittest.TestCase):
+    def test_conversation_2017_production_shape_normalizes_safely(self):
+        fixture = json.loads(
+            (Path(__file__).parent / "fixtures" / "sam_chatwoot_delivery_2017_sanitized.json").read_text()
+        )
+        result = truth.normalize_chatwoot_delivery_event(fixture)
+        self.assertEqual(result["event_type"], "message_updated")
+        self.assertEqual(result["chatwoot_message_id"], "759675071")
+        self.assertEqual(result["conversation_id"], "2017")
+        self.assertEqual(result["account_id"], "147387")
+        self.assertEqual(result["inbox_id"], "96568")
+        self.assertEqual(result["normalized_status"], "delivered")
+        self.assertEqual(result["status_source_path"], "payload.message.status")
+        self.assertEqual(result["provider_identity_class"], "whatsapp_provider")
+        self.assertFalse(result["conflict"])
+        self.assertFalse(result["malformed"])
+        self.assertFalse(result["contains_raw_provider_identity"])
+
+    def test_delivery_event_conflicting_or_unknown_status_fails_closed(self):
+        conflicting = truth.normalize_chatwoot_delivery_event({
+            "event": "message_updated",
+            "message": {
+                "id": "759675071",
+                "message_type": "outgoing",
+                "conversation_id": "2017",
+                "status": "delivered",
+                "delivery_status": "failed",
+            },
+        })
+        self.assertTrue(conflicting["conflict"])
+        unknown = truth.normalize_chatwoot_delivery_event({
+            "event": "message_updated",
+            "message": {
+                "id": "759675071",
+                "message_type": "outgoing",
+                "conversation_id": "2017",
+                "status": "mystery",
+            },
+        })
+        self.assertEqual(unknown["normalized_status"], "unresolved")
+        self.assertTrue(unknown["malformed"])
+
+    def test_terminal_transition_identity_is_single_across_delivered_and_read(self):
+        attempt = truth.build_delivery_attempt(
+            {"conversation_id": "2017", "contact_id": "699428938", "inbox_id": "96568", "message_id": "759674171"},
+            {"suggested_reply_text": "Hi Charl! How can I help you today?"},
+            {"review_event_id": "SAM-LIVE-REVIEW-32BF6F531A9A"},
+            response_class="owner_approved_reply",
+        )
+        delivered = truth.build_delivery_transition_event(attempt, {
+            "delivery_state": truth.PROVIDER_DELIVERED,
+            "chatwoot_outgoing_message_id": "759675071",
+        })
+        read = truth.build_delivery_transition_event(attempt, {
+            "delivery_state": truth.PROVIDER_READ,
+            "chatwoot_outgoing_message_id": "759675071",
+        })
+        self.assertEqual(delivered["review_event_id"], read["review_event_id"])
+        self.assertTrue(delivered["review_event_id"].startswith("SAM-DELIVERY-TERMINAL-"))
+    def test_attempt_identity_is_distinct_stable_and_sanitized(self):
+        first = attempt()
+        second = attempt()
+        claim = truth.build_delivery_claim_event(first)
+        self.assertTrue(first["success"])
+        self.assertEqual(first["delivery_attempt_id"], second["delivery_attempt_id"])
+        self.assertTrue(first["delivery_attempt_id"].startswith("SAM-DELIVERY-ATTEMPT-"))
+        self.assertNotEqual(first["delivery_attempt_id"], first["review_id"])
+        self.assertEqual(first["previous_delivery_state"], truth.PREPARED)
+        self.assertEqual(first["delivery_state"], truth.ATTEMPT_CLAIMED)
+        self.assertEqual(claim["event_source"], "sam_outbound_delivery_attempt_claim")
+        serialized = str(claim)
+        self.assertNotIn("Hi Charl", serialized)
+        self.assertNotIn("wamid.", serialized)
+        self.assertNotIn("+447", serialized)
+        self.assertTrue(claim["review_json"]["automatic_retry_prohibited"])
+
+    def test_owner_action_identity_is_bound_without_replacing_review_identity(self):
+        original = attempt()
+        owner = truth.build_delivery_attempt(
+            {
+                "conversation_id": "2013",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "message_id": "759446521",
+            },
+            {"suggested_reply_text": "Safe owner reply"},
+            {
+                "review_event_id": "SAM-LIVE-REVIEW-A17F2169ED0F",
+                "owner_action_identity": "SAM-LIVE-CARD-SEND-EXACT",
+            },
+            response_class="owner_approved_reply",
+        )
+        self.assertEqual(owner["review_id"], "SAM-LIVE-REVIEW-A17F2169ED0F")
+        self.assertEqual(owner["owner_action_identity"], "SAM-LIVE-CARD-SEND-EXACT")
+        self.assertNotEqual(owner["delivery_attempt_id"], original["delivery_attempt_id"])
+
+    def test_claim_retains_only_workflow_state_projection_for_delivery_webhook(self):
+        projected = truth.build_delivery_attempt(
+            {
+                "account_id": "147387",
+                "conversation_id": "2100",
+                "contact_id": "CONTACT",
+                "inbox_id": "96568",
+                "message_id": "INBOUND",
+            },
+            {
+                "suggested_reply_text": "What area are you in?",
+                "missing_fields": ["qualification.location"],
+                "protected_owner_exception_required": True,
+            },
+            {"review_event_id": "REVIEW-EXACT"},
+        )
+        claim = truth.build_delivery_claim_event(projected)
+        self.assertEqual(
+            claim["review_json"]["missing_fields"], ["location"]
+        )
+        self.assertTrue(
+            claim["review_json"]["owner_decision_required"]
+        )
+        self.assertNotIn("What area", str(claim))
+
+    def test_attempt_requires_complete_exact_identity(self):
+        value = truth.build_delivery_attempt(
+            {"conversation_id": "2013"},
+            {"suggested_reply_text": "Hi"},
+            {},
+        )
+        self.assertFalse(value["success"])
+        self.assertIn("contact_id", value["missing_fields"])
+        self.assertIn("review_id", value["missing_fields"])
+
+    def test_http_2xx_sent_is_accepted_unverified(self):
+        outcome = truth.classify_chatwoot_response({
+            "status_code": 200,
+            "body": {"id": 10, "status": "sent"},
+        })
+        self.assertEqual(outcome["delivery_state"], truth.CHATWOOT_ACCEPTED_UNVERIFIED)
+        self.assertFalse(outcome["customer_send_confirmed"])
+        self.assertFalse(outcome["handled_autonomously"])
+        self.assertTrue(outcome["automatic_retry_prohibited"])
+
+    def test_delivered_and_read_are_confirmed(self):
+        for status, expected in (
+            ("delivered", truth.PROVIDER_DELIVERED),
+            ("read", truth.PROVIDER_READ),
+        ):
+            with self.subTest(status=status):
+                outcome = truth.classify_chatwoot_response({
+                    "status_code": 200,
+                    "body": {"id": 10, "status": status},
+                })
+                self.assertEqual(outcome["delivery_state"], expected)
+                self.assertTrue(outcome["customer_send_confirmed"])
+                self.assertTrue(outcome["handled_autonomously"])
+
+    def test_failed_missing_and_malformed_statuses(self):
+        failed = truth.classify_chatwoot_response({
+            "status_code": 200,
+            "body": {"id": 10, "status": "failed"},
+        })
+        missing = truth.classify_chatwoot_response({
+            "status_code": 200,
+            "body": {"id": 10},
+        })
+        malformed = truth.classify_chatwoot_response({
+            "status_code": 200,
+            "body": {"id": 10, "status": {"unexpected": True}},
+        })
+        identity_missing = truth.classify_chatwoot_response({
+            "status_code": 200,
+            "body": {"status": "sent"},
+        })
+        self.assertEqual(failed["delivery_state"], truth.PROVIDER_FAILED)
+        self.assertEqual(missing["delivery_state"], truth.PROVIDER_OUTCOME_AMBIGUOUS)
+        self.assertEqual(malformed["delivery_state"], truth.PROVIDER_OUTCOME_AMBIGUOUS)
+        self.assertEqual(identity_missing["delivery_state"], truth.PROVIDER_OUTCOME_AMBIGUOUS)
+        self.assertFalse(failed["customer_send_confirmed"])
+        self.assertTrue(missing["automatic_retry_prohibited"])
+
+    def test_timeout_after_dispatch_is_ambiguous_without_retry(self):
+        outcome = truth.classify_dispatch_exception(TimeoutError("timeout"))
+        self.assertEqual(outcome["delivery_state"], truth.PROVIDER_OUTCOME_AMBIGUOUS)
+        self.assertFalse(outcome["customer_send_confirmed"])
+        self.assertTrue(outcome["automatic_retry_prohibited"])
+
+    def test_provider_identity_is_classified_without_raw_value(self):
+        for value, expected in (
+            ("wamid.SECRET", "whatsapp_provider"),
+            ("sam_live_stock:abc", "application_supplied"),
+            ("other-id", "other"),
+            ("", "absent"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(truth.classify_provider_identity(value), expected)
+        outcome = truth.classify_chatwoot_response({
+            "status_code": 200,
+            "body": {"id": 10, "status": "sent", "source_id": "wamid.SECRET"},
+        })
+        self.assertEqual(outcome["provider_identity_class"], "whatsapp_provider")
+        self.assertNotIn("wamid.SECRET", str(outcome))
+
+    def test_transition_retains_exact_conversation_inbound_outgoing_and_attempt(self):
+        current = attempt()
+        outcome = truth.classify_chatwoot_response({
+            "status_code": 200,
+            "body": {"id": "759446597", "status": "sent", "source_id": "wamid.SECRET"},
+        })
+        event = truth.build_delivery_transition_event(current, outcome)
+        evidence = event["review_json"]
+        self.assertEqual(event["chatwoot_conversation_id"], "2013")
+        self.assertEqual(event["chatwoot_message_id"], "759446597")
+        self.assertEqual(evidence["inbound_message_id"], "759446521")
+        self.assertEqual(evidence["delivery_attempt_id"], current["delivery_attempt_id"])
+        self.assertEqual(evidence["provider_identity_class"], "whatsapp_provider")
+        self.assertNotIn("wamid.SECRET", str(event))
+
+    def test_reconciliation_sent_to_delivered_and_replay_is_idempotent(self):
+        current = {
+            **attempt(),
+            "chatwoot_outgoing_message_id": "759446597",
+        }
+        created_ids = set()
+
+        def record(event):
+            event_id = event["review_event_id"]
+            created = event_id not in created_ids
+            created_ids.add(event_id)
+            return {"success": True, "created": created}
+
+        def load(conversation_id, message_id):
+            return {
+                "status_code": 200,
+                "body": {
+                    "id": message_id,
+                    "conversation_id": conversation_id,
+                    "status": "delivered",
+                    "source_id": "wamid.SECRET",
+                },
+            }
+
+        first = truth.reconcile_delivery_attempt(current, load, record)
+        replay = truth.reconcile_delivery_attempt(current, load, record)
+        self.assertEqual(first["delivery_state"], truth.PROVIDER_DELIVERED)
+        self.assertTrue(first["transition_created"])
+        self.assertFalse(replay["transition_created"])
+        self.assertFalse(first["send_attempted"])
+        self.assertTrue(first["customer_send_confirmed"])
+
+    def test_reconciliation_identity_mismatch_fails_closed(self):
+        current = {
+            **attempt(),
+            "chatwoot_outgoing_message_id": "759446597",
+        }
+        result = truth.reconcile_delivery_attempt(
+            current,
+            lambda *_args: {
+                "status_code": 200,
+                "body": {
+                    "id": "different",
+                    "conversation_id": "2013",
+                    "status": "delivered",
+                },
+            },
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "delivery_reconciliation_identity_mismatch")
+        self.assertFalse(result["send_attempted"])
+
+    def test_short_unverified_latency_has_no_exception_and_aged_has_one(self):
+        self.assertFalse(truth.delivery_exception_required(
+            truth.CHATWOOT_ACCEPTED_UNVERIFIED,
+            age_seconds=299,
+        ))
+        self.assertTrue(truth.delivery_exception_required(
+            truth.CHATWOOT_ACCEPTED_UNVERIFIED,
+            age_seconds=300,
+        ))
+        self.assertTrue(truth.delivery_exception_required(truth.PROVIDER_FAILED))
+        self.assertTrue(truth.delivery_exception_required(truth.PROVIDER_OUTCOME_AMBIGUOUS))
+
+    def test_conversation_chain_recovers_attempt_and_distinct_outcomes(self):
+        current = attempt()
+        claim = truth.build_delivery_claim_event(current)
+        sent = truth.build_delivery_transition_event(
+            current,
+            truth.classify_chatwoot_response({
+                "status_code": 200,
+                "body": {"id": "759446597", "status": "sent"},
+            }),
+        )
+        delivered = truth.build_delivery_transition_event(
+            current,
+            truth.classify_chatwoot_response({
+                "status_code": 200,
+                "body": {"id": "759446597", "status": "delivered"},
+            }),
+        )
+        chain = truth.sanitized_attempt_chain(
+            [claim, sent, delivered],
+            "2013",
+            current["delivery_attempt_id"],
+        )
+        self.assertEqual(
+            [row["delivery_state"] for row in chain],
+            [
+                truth.ATTEMPT_CLAIMED,
+                truth.CHATWOOT_ACCEPTED_UNVERIFIED,
+                truth.PROVIDER_DELIVERED,
+            ],
+        )
+        self.assertEqual(len({row["review_event_id"] for row in chain}), 3)
+        self.assertTrue(chain[-1]["customer_send_confirmed"])
+
+
+    def test_meat_attempt_requires_and_binds_exact_account_identity(self):
+        inbound = {
+            "account_id": "147387",
+            "conversation_id": "2019",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "message_id": "IN-1",
+        }
+        decision = {"suggested_reply_text": "Which collection town should I note?"}
+        review = {"review_event_id": "SAM-MEAT-REVIEW-1"}
+        first = truth.build_delivery_attempt(
+            inbound, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        replay = truth.build_delivery_attempt(
+            inbound, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        changed_account = truth.build_delivery_attempt(
+            {**inbound, "account_id": "147388"}, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        missing = truth.build_delivery_attempt(
+            {**inbound, "account_id": ""}, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        self.assertTrue(first["success"])
+        self.assertEqual(first["account_id"], "147387")
+        self.assertEqual(first["delivery_attempt_id"], replay["delivery_attempt_id"])
+        self.assertNotEqual(first["delivery_attempt_id"], changed_account["delivery_attempt_id"])
+        self.assertFalse(missing["success"])
+        self.assertIn("account_id", missing["missing_fields"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -49,4 +49,4 @@ Do not start a full Supabase migration before the module map is clear. Do not bu
 ## Source References
 
 - `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md`
-- `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
+- `docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`

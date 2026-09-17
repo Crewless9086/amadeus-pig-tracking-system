@@ -1,7 +1,26 @@
 import hmac
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
+
+from modules.auth.owner_access import (
+    owner_admin_principal,
+    owner_session_is_valid,
+    require_owner_admin_access,
+    require_owner_read_access,
+    require_strict_owner_read_access,
+    require_strict_owner_admin_access,
+)
+from modules.oom_sakkie.sam_payment_owner_runtime import present_sale_payment_preview
+from modules.beacon.media_intake import (
+    canonical_media_group_owner_binding,
+    list_media_intakes,
+    private_album_review,
+    read_private_thumbnail,
+    record_media_group_review,
+    record_media_review,
+)
+from modules.beacon.protected_publication_worker import run_protected_publication_cycle
 
 from modules.oom_sakkie.access import (
     is_message_request_allowed,
@@ -103,9 +122,22 @@ from modules.oom_sakkie.sales_campaign_store import (
     send_customer_followup_to_chatwoot,
 )
 from modules.oom_sakkie.service import handle_message
+from modules.oom_sakkie.morning_scheduler import (
+    TOKEN_ENV as MORNING_SCHEDULER_TOKEN_ENV,
+    run_provider_schedule,
+    run_synthetic_acceptance,
+)
+from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
+from modules.documents.green_print_api import recover_held_standing_weekly_print
+from modules.oom_sakkie.general_manager_worker import (
+    deliver_farm_manager_case, run_general_manager_cycle,
+)
+from modules.oom_sakkie.owner_attention_projection import load_owner_attention_projection
+from modules.oom_sakkie.rootline_physical_acceptance import attach_physical_acceptance
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.telegram_gateway import (
+    handle_rootline_reassessment_trigger,
     handle_telegram_gateway_message,
     telegram_gateway_exposure_preflight,
 )
@@ -131,8 +163,35 @@ MEAT_FOLLOWUP_SEND_TOKEN_ENV = "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_TOKEN"
 MEAT_FOLLOWUP_SEND_MIN_TOKEN_CHARS = 32
 
 
+@oom_sakkie_bp.route("/oom-sakkie/owner-attention", methods=["GET"])
+def oom_sakkie_owner_attention_projection():
+    denied = require_strict_owner_read_access()
+    if denied:
+        return denied
+    try:
+        projection = load_owner_attention_projection()
+        projection.pop("lifecycle_items", None)
+        return jsonify(projection), 200
+    except Exception as exc:
+        return jsonify({
+            "success": False,
+            "status": "owner_attention_projection_unavailable",
+            "message": "The shared attention projection is temporarily unavailable.",
+            "failure_class": exc.__class__.__name__,
+            "writes_performed": 0,
+        }), 503
+
+
 def _require_review_access():
     if is_review_request_allowed(request.remote_addr):
+        return None
+    body, status_code = review_access_denied_response(request.remote_addr)
+    return jsonify(body), status_code
+
+
+def _require_runtime_review_packet_access():
+    """Allow the existing local reviewer or an authenticated owner-read session."""
+    if is_review_request_allowed(request.remote_addr) or owner_session_is_valid("read"):
         return None
     body, status_code = review_access_denied_response(request.remote_addr)
     return jsonify(body), status_code
@@ -225,6 +284,74 @@ def _env_truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+@oom_sakkie_bp.route("/oom-sakkie/management/morning-schedule", methods=["POST"])
+def oom_sakkie_morning_schedule():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "morning_scheduler_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "hardware_commands": 0, "writes_farm_data": False}), 403
+    payload = request.get_json(silent=True) or {}
+    synthetic = str(payload.get("synthetic_acceptance_identity") or "").strip()
+    result = (run_synthetic_acceptance(synthetic) if synthetic
+              else run_provider_schedule())
+    return jsonify(result), 200 if result.get("success") else 503
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/protected-payment-recovery", methods=["POST"])
+def oom_sakkie_protected_payment_recovery():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "payment_recovery_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "writes_to_supabase": False}), 403
+    result = run_payment_recovery_cycle()
+    status = 200 if result.get("success") else 503
+    return jsonify(result), status
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/green-print-recovery", methods=["POST"])
+def oom_sakkie_green_print_recovery():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success":False,"status":"green_print_recovery_auth_denied",
+            "canonical_job_created":False,"printer_calls":0}),403
+    try:
+        result = recover_held_standing_weekly_print()
+    except Exception as exc:
+        result = {"success":False,"status":"documents_green_recovery_held",
+            "error_type":type(exc).__name__,"canonical_job_created":False,
+            "printer_calls":0,"provider_message_replays":0}
+    return jsonify(result), 200 if result.get("success") else 503
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/general-manager-cycle", methods=["POST"])
+def oom_sakkie_general_manager_cycle():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "general_manager_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "customer_sends": 0, "provider_actions": 0,
+                        "hardware_commands": 0, "writes_farm_data": False}), 403
+    result = run_general_manager_cycle(deliver=deliver_farm_manager_case)
+    return jsonify(result), 200 if result.get("success") else 503
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/beacon-publication-cycle", methods=["POST"])
+def oom_sakkie_beacon_publication_cycle():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "beacon_publication_worker_auth_denied",
+                        "publishes": False, "meta_call": False}), 403
+    result = run_protected_publication_cycle()
+    return jsonify(result), 200 if result.get("success") else 503
+
+
 @oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])
 def oom_sakkie_message():
     if not is_message_request_allowed(request.remote_addr):
@@ -242,9 +369,57 @@ def oom_sakkie_telegram_message():
     return jsonify(result), status_code
 
 
+@oom_sakkie_bp.route("/oom-sakkie/sales/payment-preview", methods=["POST"])
+def oom_sakkie_sale_payment_preview():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = present_sale_payment_preview(request.get_json(silent=True) or {})
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/rootline/reassess", methods=["POST"])
+def oom_sakkie_rootline_reassess():
+    result, status_code = handle_rootline_reassessment_trigger(
+        request.get_json(silent=True) or {}, headers=request.headers)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/rootline/physical-acceptance", methods=["POST"])
+def oom_sakkie_rootline_physical_acceptance():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    from modules.auth.owner_access import strict_owner_admin_principal
+    result, status_code = attach_physical_acceptance(
+        request.get_json(silent=True) or {},
+        owner_principal=strict_owner_admin_principal(),
+    )
+    return jsonify(result), status_code
+
+
 @oom_sakkie_bp.route("/oom-sakkie/channels/telegram/direct-webhook", methods=["POST"])
 def oom_sakkie_telegram_direct_webhook():
-    payload = request.get_json(silent=True) or {}
+    if not request.is_json:
+        return jsonify({
+            "success": False,
+            "status": "telegram_json_content_type_required",
+            "expected_content_type": "application/json",
+            "download_attempted": False,
+            "persistence_attempted": False,
+            "sends_telegram": False,
+            "writes": False,
+        }), 415
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not payload:
+        return jsonify({
+            "success": False,
+            "status": "telegram_json_object_required",
+            "download_attempted": False,
+            "persistence_attempted": False,
+            "sends_telegram": False,
+            "writes": False,
+        }), 400
     result, status_code = handle_telegram_direct_webhook(payload, headers=request.headers)
     return jsonify(result), status_code
 
@@ -255,6 +430,103 @@ def oom_sakkie_telegram_direct_parity():
     if denied:
         return denied
     return jsonify(telegram_direct_parity_report()), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/beacon/media-intakes", methods=["GET"])
+def beacon_media_intakes():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = list_media_intakes(limit=request.args.get("limit", 50))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/beacon/media-intakes/groups/<intake_group_id>/review", methods=["GET"])
+def beacon_media_intake_group_review_packet(intake_group_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = private_album_review(intake_group_id)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route(
+    "/oom-sakkie/beacon/media-intakes/<binary_asset_id>/thumbnail",
+    methods=["GET"],
+)
+def beacon_media_intake_thumbnail(binary_asset_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = read_private_thumbnail(
+        binary_asset_id,
+        token=request.args.get("token", ""),
+        expires=request.args.get("expires", ""),
+    )
+    if status_code >= 400:
+        return jsonify(result), status_code
+    return Response(
+        result["body"],
+        status=200,
+        content_type=result["content_type"],
+        headers={
+            "Cache-Control": result["cache_control"],
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'",
+        },
+    )
+
+
+@oom_sakkie_bp.route(
+    "/oom-sakkie/beacon/media-intakes/<binary_asset_id>/review",
+    methods=["POST"],
+)
+def beacon_media_intake_review(binary_asset_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "publish": False,
+            "public_use_approved": False,
+        }), 403
+    result, status_code = record_media_review(
+        binary_asset_id,
+        request.get_json(silent=True) or {},
+        principal,
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route(
+    "/oom-sakkie/beacon/media-intakes/groups/<intake_group_id>/review",
+    methods=["POST"],
+)
+def beacon_media_intake_group_review(intake_group_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "publish": False,
+            "public_use_approved": False,
+        }), 403
+    binding,binding_status=canonical_media_group_owner_binding(intake_group_id)
+    if binding_status>=400 or binding.get("success") is not True:
+        return jsonify(binding),binding_status
+    decision=request.get_json(silent=True) or {}
+    decision={**decision,"subject_owner_principal":binding["owner_principal"],
+        "subject_chat_hmac":binding["chat_hmac"]}
+    result, status_code = record_media_group_review(
+        intake_group_id, decision, binding["owner_principal"]
+    )
+    return jsonify(result), status_code
 
 
 @oom_sakkie_bp.route("/oom-sakkie/channels/telegram/exposure-preflight", methods=["GET"])
@@ -606,7 +878,7 @@ def oom_sakkie_agent_dispatch_rail_blueprint():
 
 @oom_sakkie_bp.route("/oom-sakkie/agents/runtime-review-packet", methods=["GET"])
 def oom_sakkie_agent_runtime_review_packet():
-    denied = _require_review_access()
+    denied = _require_runtime_review_packet_access()
     if denied:
         return denied
     packet = get_agent_runtime_review_packet()

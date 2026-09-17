@@ -9,6 +9,8 @@ from app import app
 from modules.charlie.build_relay import (
     _reset_auth_rate_limit_for_tests,
     build_relay_action,
+    build_relay_policy,
+    handle_mission_control_callback_webhook,
 )
 from modules.charlie import routes as charlie_routes
 from modules.charlie.mission_store import _clean_media_reference
@@ -72,6 +74,157 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(data["success"])
         self.assertEqual(data["status"], "charlie_build_relay_user_not_allowed")
+
+    def test_mission_callback_claims_then_completes_refusal_without_state_write(self):
+        claims = []
+        completions = []
+
+        def claimer(update_id, callback_id):
+            claims.append((update_id, callback_id))
+            return {"success": True, "created": True, "update_key": "UPDATE-1"}, 201
+
+        def completer(update_key, **kwargs):
+            completions.append((update_key, kwargs))
+            return {"success": True}, 200
+
+        class Refused:
+            ok = False
+            action = "approvefinal"
+            reason = "stale_or_generationless_review_callback"
+            selected_title = "MISSION-1"
+
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 44, "callback_query": {"id": "callback-44", "data": "cm:approvefinal:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: Refused(), update_claimer=claimer, update_completer=completer,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["success"])
+        self.assertEqual(claims, [("44", "callback-44")])
+        self.assertEqual(completions[0][1]["status"], "refused")
+        self.assertEqual(completions[0][1]["result"]["reason"], "stale_or_generationless_review_callback")
+
+    def test_mission_callback_rejects_duplicate_before_callback_handler(self):
+        called = []
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 45, "callback_query": {"id": "callback-45", "data": "cm:open:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: called.append(True),
+            update_claimer=lambda *_args: ({"success": True, "created": False, "update_key": "UPDATE-2", "existing_status": "processed"}, 200),
+            update_completer=lambda *_args, **_kwargs: self.fail("duplicate updates must not be completed again"),
+            update_reconciler=lambda *_args, **_kwargs: self.fail("terminal duplicates must not be reconciled"),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "charlie_mission_callback_duplicate_ignored")
+        self.assertEqual(called, [])
+
+    def test_mission_callback_processing_duplicate_is_reconciled_without_replaying_action(self):
+        called = []
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 49, "callback_query": {"id": "callback-49", "data": "cm:approvefinal:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: called.append(True),
+            update_claimer=lambda *_args: ({"success": True, "created": False, "update_key": "UPDATE-5", "existing_status": "processing"}, 200),
+            update_completer=lambda *_args, **_kwargs: self.fail("incomplete duplicates must not run completion directly"),
+            update_reconciler=lambda *_args, **_kwargs: ({"success": True, "status": "incomplete_update_reconciled", "reconciled": True, "terminal_status": "failed"}, 200),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "charlie_mission_callback_incomplete_reconciled")
+        self.assertFalse(result["owner_action_replayed"])
+        self.assertEqual(called, [])
+
+    def test_mission_callback_concurrent_processing_duplicate_waits_without_replaying_action(self):
+        called = []
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 50, "callback_query": {"id": "callback-50", "data": "cm:approvefinal:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: called.append(True),
+            update_claimer=lambda *_args: ({"success": True, "created": False, "update_key": "UPDATE-6", "existing_status": "processing"}, 200),
+            update_completer=lambda *_args, **_kwargs: self.fail("processing duplicates must not complete"),
+            update_reconciler=lambda *_args, **_kwargs: ({"success": True, "status": "update_still_processing", "reconciled": False, "terminal_status": "processing"}, 202),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "charlie_mission_callback_processing")
+        self.assertFalse(result["owner_action_replayed"])
+        self.assertEqual(called, [])
+
+    def test_mission_callback_completion_exception_after_mutation_is_not_retried(self):
+        completion_calls = []
+
+        class Handled:
+            ok = True
+            action = "approvefinal"
+            reason = ""
+            selected_title = "MISSION-1"
+
+        def completer(*_args, **_kwargs):
+            completion_calls.append(True)
+            raise RuntimeError("database temporarily unavailable")
+
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 47, "callback_query": {"id": "callback-47", "data": "cm:approvefinal:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: Handled(),
+            update_claimer=lambda *_args: ({"success": True, "created": True, "update_key": "UPDATE-3"}, 201),
+            update_completer=completer,
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "charlie_mission_callback_completion_failed")
+        self.assertEqual(result["callback"]["status"], "approvefinal")
+        self.assertEqual(result["completion"]["error_type"], "RuntimeError")
+        self.assertEqual(completion_calls, [True])
+
+    def test_mission_callback_completion_exception_after_handler_failure_is_not_retried(self):
+        completion_calls = []
+
+        def completer(*_args, **_kwargs):
+            completion_calls.append(True)
+            raise RuntimeError("database temporarily unavailable")
+
+        def failing_handler(*_args, **_kwargs):
+            raise ValueError("callback failed before mission mutation")
+
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 48, "callback_query": {"id": "callback-48", "data": "cm:open:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=failing_handler,
+            update_claimer=lambda *_args: ({"success": True, "created": True, "update_key": "UPDATE-4"}, 201),
+            update_completer=completer,
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "charlie_mission_callback_completion_failed")
+        self.assertEqual(result["callback"]["error_type"], "ValueError")
+        self.assertEqual(completion_calls, [True])
+
+    @patch.dict(os.environ, {
+        "CHARLIE_BUILD_RELAY_ENABLED": "1",
+        "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN,
+        "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET,
+        "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.charlie.build_relay.handle_mission_control_callback_webhook")
+    def test_hosted_webhook_dispatches_cm_callback_before_generic_text_handler(self, mission_callback):
+        mission_callback.return_value = ({"success": True, "status": "charlie_mission_callback_handled"}, 200)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/telegram/webhook",
+            json={"update_id": 46, "callback_query": {"id": "callback-46", "data": "cm:open:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            headers={"X-Telegram-Bot-Api-Secret-Token": SECRET},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "charlie_mission_callback_handled")
+        mission_callback.assert_called_once()
 
     @patch.dict(os.environ, {
         "CHARLIE_BUILD_RELAY_ENABLED": "1",
@@ -583,6 +736,76 @@ class CharlieBuildRelayTests(unittest.TestCase):
             "/api/charlie/build-relay/review-media/MISSION-1/desktop.png",
         )
 
+    def test_dashboard_summary_reports_terminal_truth_and_memory_telemetry(self):
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "MISSION-DONE",
+            "status": "done",
+            "owner_decision": "Resolved duplicate; already merged.",
+            "agent_workflow": [{"agent": "builder", "status": "active"}, {"agent": "reviewer", "status": "pending"}],
+            "metadata": {"mission_memory": {
+                "updated_at": "2026-07-14T08:00:00+00:00",
+                "events": [
+                    {"agent": "builder", "type": "agent_backflow", "metadata": {"execution_id": "E1"}},
+                    {"agent": "builder", "type": "agent_blocked", "metadata": {"execution_id": "E2"}},
+                ],
+                "attempts": [{"agent": "builder"}, {"agent": "builder"}],
+                "recovery_notes": [{"summary": "Retry builder"}],
+                "recurring_block_patterns": {"fingerprint:x": {"count": 2}},
+            }},
+        })
+
+        telemetry = summary["metadata"]["mission_memory"]["telemetry"]
+        self.assertEqual(summary["terminal_resolution"], "resolved_duplicate_or_external")
+        self.assertEqual(telemetry["attempt_count"], 2)
+        self.assertEqual(telemetry["execution_session_count"], 2)
+        self.assertEqual(telemetry["backflow_count"], 1)
+        self.assertEqual(telemetry["highest_blocker_repeat"], 2)
+
+    def test_dashboard_recommends_rerun_when_builder_is_missing_from_stale_workflow(self):
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "MISSION-STALE",
+            "status": "blocked",
+            "agent_workflow": [
+                {"agent": "source_mapper", "status": "complete"},
+                {"agent": "business_reviewer", "status": "blocked"},
+            ],
+            "metadata": {"review_packet": {
+                "blocked_agent": "business_reviewer",
+                "recommended_next_action": "Return to Builder. Implement and package a clean mission-specific PR.",
+                "block_disposition": {"responsible_stage": "owner", "owner_required": True},
+            }},
+        })
+
+        guidance = summary["metadata"]["owner_action_guidance"]
+        self.assertEqual(guidance["recommended_action"], "approve_rerun")
+        self.assertEqual(guidance["target_stage"], "builder")
+        self.assertIn("missing from the stored workflow", guidance["reason"])
+
+    def test_dashboard_exposes_per_agent_runtime_attempt_and_files(self):
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "MISSION-RUNNING",
+            "status": "in_progress",
+            "agent_workflow": [{"agent": "builder", "status": "active"}],
+            "metadata": {
+                "agent_execution": {
+                    "execution_id": "EXEC-1",
+                    "last_progress_at": "2026-07-14T08:00:30+00:00",
+                    "stages": [{
+                        "agent": "builder", "status": "running", "attempt": 2,
+                        "started_at": "2026-07-14T08:00:00+00:00",
+                        "updated_at": "2026-07-14T08:00:30+00:00",
+                        "changed_files": ["a.py", "b.py"],
+                    }],
+                },
+                "mission_memory": {"attempts": [{"agent": "builder", "attempt": 1}, {"agent": "builder", "attempt": 2}]},
+            },
+        })
+
+        telemetry = summary["metadata"]["stage_telemetry"]
+        self.assertEqual(telemetry["execution_id"], "EXEC-1")
+        self.assertEqual(telemetry["stages"][0]["attempt"], 2)
+        self.assertEqual(telemetry["stages"][0]["changed_files_count"], 2)
+
     def test_dashboard_summary_converts_legacy_review_media_path_to_served_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             review_root = Path(tmp) / "review_media"
@@ -968,6 +1191,141 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("income_stream", data["workflow_templates"])
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status", return_value={"active": False, "status": "stopped"})
+    @patch("modules.charlie.routes.analyst_scorecard")
+    @patch("modules.charlie.routes.live_stock_learning_scorecard")
+    @patch("modules.charlie.routes.mission_status_summary")
+    def test_agent_workforce_route_combines_authoritative_sources(
+        self, mission_summary, learning_scorecard, analyst, _runner, _owner_access
+    ):
+        mission_summary.return_value = ({"success": True, "counts": {"done": 4, "blocked": 1}}, 200)
+        learning_scorecard.return_value = ({
+            "success": True,
+            "status": "sam_live_stock_learning_scorecard_ready",
+            "scorecard": {
+                "captured_owner_replies": 20,
+                "conversation_count": 5,
+                "graduation": {"classes": {}},
+            },
+        }, 200)
+        analyst.return_value = ({
+            "success": True,
+            "status": "analyst_scorecard_ready",
+            "scorecard": {"observations": 4, "proposals_total": 1, "pending_proposals": 1},
+        }, 200)
+
+        response = self.client.get("/api/charlie/agent-workforce")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["version"], "charlie_agent_workforce_v1")
+        self.assertTrue(data["sources"]["charlie_missions"]["authoritative"])
+        self.assertFalse(data["authority"]["auto_graduation"])
+        self.assertIn("sam-live-stock", {agent["id"] for agent in data["agents"]})
+        self.assertIn("analyst", {agent["id"] for agent in data["agents"]})
+        self.assertTrue(data["sources"]["charlie_improvement_analyst"]["authoritative"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.mission_control_snapshot")
+    def test_mission_control_snapshot_returns_all_compact_status_buckets(
+        self, snapshot, _owner_access
+    ):
+        charlie_routes.MISSION_CONTROL_CACHE.update({"expires_at": 0.0, "packet": None})
+        snapshot.return_value = ({"success": True, "counts": {"blocked": 1, "new": 2}, "missions": [
+            {"mission_id": "NEW-1", "status": "new"},
+            {"mission_id": "ACTIVE-1", "status": "in_progress"},
+            {"mission_id": "WAITING-1", "status": "paused"},
+            {"mission_id": "BLOCK-1", "status": "blocked"},
+        ]}, 200)
+
+        with patch("modules.charlie.routes.revision_truth", return_value={
+            "status": "revision_truth_ready",
+            "current_workspace_commit": "feature",
+            "github_accepted_commit": "accepted",
+            "promoted_commit": "promoted",
+            "runner_commit": "runner",
+            "render_deployed_commit": "render",
+        }):
+            response = self.client.get("/api/charlie/build-relay/mission-control")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["authoritative"])
+        self.assertEqual(data["source"], "supabase_charlie_missions")
+        self.assertEqual(
+            [mission["mission_id"] for mission in data["buckets"]["active"]],
+            ["ACTIVE-1", "WAITING-1"],
+        )
+        self.assertEqual(data["buckets"]["blocked"][0]["mission_id"], "BLOCK-1")
+        self.assertEqual(data["revision_truth"]["github_accepted_commit"], "accepted")
+        self.assertEqual(data["revision_truth"]["render_deployed_commit"], "render")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.mission_control_snapshot")
+    def test_mission_control_fails_closed_when_canonical_snapshot_fails(
+        self, snapshot, _owner_access
+    ):
+        charlie_routes.MISSION_CONTROL_CACHE.update({"expires_at": 0.0, "packet": None})
+        snapshot.return_value = ({"success": False, "status": "mission_control_snapshot_failed"}, 503)
+
+        response = self.client.get("/api/charlie/build-relay/mission-control?refresh=1")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["status"], "mission_control_snapshot_unavailable")
+
+    @patch("modules.charlie.routes.time.sleep")
+    def test_dashboard_read_retries_transient_server_failures(self, sleep):
+        calls = []
+
+        def loader(limit):
+            calls.append(limit)
+            if len(calls) < 3:
+                return {"success": False, "status": "mission_read_failed"}, 503
+            return {"success": True, "missions": [{"mission_id": "MISSION-1"}]}, 200
+
+        result, status_code = charlie_routes._retry_dashboard_read(loader, 100)
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(calls, [100, 100, 100])
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_mission_family_children_stay_attached_to_parent_summary(self):
+        missions = [
+            {"mission_id": "PARENT", "status": "in_progress", "metadata": {}},
+            {"mission_id": "CHILD", "title": "Input validation follow-up", "status": "new", "metadata": {
+                "mission_family": {
+                    "parent_mission_id": "PARENT",
+                    "root_mission_id": "PARENT",
+                    "sequence": 1,
+                    "finding_family": "input_validation",
+                },
+            }},
+        ]
+
+        attached = charlie_routes._attach_mission_family_children(missions)
+        parent = next(item for item in attached if item["mission_id"] == "PARENT")
+
+        self.assertEqual(parent["metadata"]["mission_family"]["children"][0]["mission_id"], "CHILD")
+        self.assertEqual(parent["metadata"]["mission_family"]["children"][0]["finding_family"], "input_validation")
+
+    def test_compact_owner_summary_preserves_supersession_relationship(self):
+        supersession = {
+            "status": "current_contract_replacement",
+            "reason": "legacy_duplicate_not_reusable",
+            "supersedes_mission_id": "LEGACY-1",
+            "replacement_mission_id": "REPLACEMENT-1",
+        }
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "REPLACEMENT-1",
+            "status": "new",
+            "metadata": {"supersession": supersession},
+        })
+        self.assertEqual(summary["metadata"]["supersession"], supersession)
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.get_mission")
     def test_core_readiness_route_returns_stage_percentages(self, get_mission, _owner_access):
         get_mission.return_value = ({
@@ -1096,6 +1454,62 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.kwargs["approval_level"], "LEVEL 3")
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner:server-derived")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    @patch("modules.charlie.routes.create_owner_execution_hold")
+    def test_execution_hold_route_uses_server_derived_owner(
+        self, create_hold, _owner_access, owner_principal
+    ):
+        create_hold.return_value = ({"success": True, "status": "owner_execution_hold_created"}, 201)
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold",
+            json={"generation_identity": "GEN-1", "reason": "owner_hold", "owner_principal": "forged"},
+            headers={"X-CHARLIE-Owner-Action": "owner_execution_hold"},
+        )
+        self.assertEqual(response.status_code, 201)
+        create_hold.assert_called_once_with(
+            "MISSION-1", "GEN-1", "owner_hold", owner_principal="owner:server-derived"
+        )
+
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner:server-derived")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    @patch("modules.charlie.routes.release_owner_execution_hold")
+    def test_execution_hold_release_is_separate_owner_action(
+        self, release_hold, _owner_access, owner_principal
+    ):
+        release_hold.return_value = ({"success": True, "status": "owner_execution_hold_released"}, 201)
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold/release",
+            json={"generation_identity": "GEN-1", "hold_id": "HOLD-1", "reason": "owner_release"},
+            headers={"X-CHARLIE-Owner-Action": "owner_execution_hold_release"},
+        )
+        self.assertEqual(response.status_code, 201)
+        release_hold.assert_called_once_with(
+            "MISSION-1", "GEN-1", "HOLD-1", "owner_release",
+            owner_principal="owner:server-derived",
+        )
+
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner-admin:local-development")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    def test_execution_hold_rejects_loopback_development_bypass(self, _owner_access, _principal):
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold",
+            json={"generation_identity": "GEN-1", "reason": "owner_hold"},
+            headers={"X-CHARLIE-Owner-Action": "owner_execution_hold"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "owner_admin_session_required")
+
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner:server-derived")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    def test_execution_hold_requires_explicit_owner_action_header(self, _owner_access, _principal):
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold",
+            json={"generation_identity": "GEN-1", "reason": "owner_hold"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "owner_action_intent_required")
+
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.list_improvement_proposals")
     def test_improvements_route_lists_owner_reviewable_proposals(self, list_improvement_proposals, _owner_access):
@@ -1120,9 +1534,9 @@ class CharlieBuildRelayTests(unittest.TestCase):
         list_improvement_proposals.assert_called_once_with(status="pending", limit=20)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
-    @patch("modules.charlie.routes.generate_and_store_proposals")
-    def test_improvements_analyze_route_generates_advisory_proposals(self, generate_and_store, _owner_access):
-        generate_and_store.return_value = ({
+    @patch("modules.charlie.routes.run_operational_analyst")
+    def test_improvements_analyze_route_generates_advisory_proposals(self, run_analyst, _owner_access):
+        run_analyst.return_value = ({
             "success": True,
             "status": "ok",
             "proposal_count": 1,
@@ -1135,7 +1549,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
         self.assertEqual(data["proposal_count"], 1)
-        generate_and_store.assert_called_once_with(limit=30)
+        run_analyst.assert_called_once_with(trigger="owner_manual", limit=30)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.create_owner_gated_improvement_missions")

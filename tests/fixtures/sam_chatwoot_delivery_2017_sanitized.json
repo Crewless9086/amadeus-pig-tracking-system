@@ -1,0 +1,17 @@
+{
+  "event": "message_updated",
+  "account": {"id": "147387"},
+  "conversation": {
+    "id": "2017",
+    "inbox_id": "96568",
+    "status": "open"
+  },
+  "message": {
+    "id": "759675071",
+    "message_type": "outgoing",
+    "conversation_id": "2017",
+    "status": "delivered",
+    "source_id": "wamid.SANITIZED_PROVIDER_FIXTURE",
+    "updated_at": "2026-07-25T17:29:28Z"
+  }
+}

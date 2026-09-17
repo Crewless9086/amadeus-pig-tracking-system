@@ -52,7 +52,7 @@ Charl approves:
 - legal/privacy policy;
 - destructive or production data-changing actions.
 
-## Source References
+## Historical Source Evidence
 
 - `docs/00-start-here/README.md`
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`

@@ -15,6 +15,7 @@ from modules.charlie.core_workflow import (
     classify_workflow_template,
     evaluate_core_readiness,
     evaluate_review_board,
+    right_sized_workflow_template,
 )
 from modules.charlie.model_registry import choose_agent_model
 
@@ -58,6 +59,109 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
             "system_improvement",
         )
 
+    def test_beacon_brand_governance_does_not_route_to_ui_workflow(self):
+        self.assertEqual(
+            classify_workflow_template(
+                "marketing governance",
+                "Define approved brand voice and visual rules, KPI definitions, owner tiers and channel boundaries.",
+            ),
+            "system_improvement",
+        )
+
+    def test_beacon_scanner_build_uses_implementation_workflow(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-BEACON-SCANNER",
+            "title": "BEACON Fulfilment-Aware Opportunity Scanner",
+            "raw_text": "Build a Supabase-first scanner that detects safe livestock and meat marketing opportunities.",
+            "mission_type": "marketing intelligence",
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+        self.assertLess(agents.index("builder"), agents.index("tester"))
+
+    def test_core_runner_fix_stays_software_build_when_ui_status_is_mentioned(self):
+        self.assertEqual(
+            classify_workflow_template(
+                "charlie core reliability",
+                "Fix final artifact ingestion and ensure UI status reflects the live supervisor.",
+                "CORE Final Artifact Consumption And Supervisor Truth",
+            ),
+            "software_build",
+        )
+
+    def test_sales_architecture_mission_uses_focused_high_risk_backend_pipeline(self):
+        mission = {
+            "mission_type": "software build",
+            "title": "Shared Livestock And Meat Sales Order Flow",
+            "raw_text": "Implement canonical order lifecycle and schema-safe sales linkage with UI navigation recommendations.",
+        }
+        template_id = classify_workflow_template(mission["mission_type"], mission["raw_text"], mission["title"])
+        template = right_sized_workflow_template(template_id, mission)
+        self.assertEqual(template_id, "software_build")
+        self.assertEqual(template["pipeline_profile"], "high_risk_backend")
+        self.assertTrue(template["right_sized"])
+        self.assertIn("builder", template["agent_order"])
+        self.assertIn("qa_red_team", template["agent_order"])
+        self.assertNotIn("creative_ui_designer", template["agent_order"])
+        self.assertLess(len(template["agent_order"]), 14)
+
+    def test_marketing_attribution_build_includes_implementation_agents(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-ATTRIBUTION",
+            "title": "BEACON Meta Insights, SAM Lead And Revenue Attribution",
+            "raw_text": "Build deterministic attribution from Beacon campaigns to SAM leads, orders and revenue.",
+            "mission_type": "marketing intelligence",
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+
+    def test_marketing_dashboard_build_uses_ui_build_with_builder(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-MARKETING-DASHBOARD",
+            "title": "BEACON Marketing Command Brief And Optimization Loop",
+            "raw_text": "Build a campaign comparison and spend, lead and revenue dashboard.",
+            "mission_type": "marketing optimization",
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "ui_product_build")
+        self.assertIn("builder", agents)
+
+    def test_generated_implementation_followup_cannot_inherit_read_only_marketing_pipeline(self):
+        mission = {
+            "mission_id": "CHARLIE-FOLLOWUP-IMPLEMENTATION",
+            "title": "Follow-up: Implementation Defect",
+            "raw_text": "Resolve the implementation defect discovered by a marketing intelligence mission.",
+            "mission_type": "marketing intelligence",
+            "metadata": {
+                "mission_family": {
+                    "finding_family": "implementation_defect",
+                    "parent_mission_id": "CHARLIE-MISSION-PARENT",
+                }
+            },
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, mission["metadata"])
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+        self.assertEqual(agents, ["builder", "tester", "reviewer"])
+        self.assertLess(agents.index("builder"), agents.index("tester"))
+
     def test_ui_product_build_routes_through_design_council(self):
         mission = {
             "mission_id": "CHARLIE-MISSION-UI",
@@ -91,10 +195,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         metadata = attach_core_plan_to_metadata(mission, {})
         agents = [item["agent"] for item in metadata["agent_workflow"]]
 
-        self.assertIn("product_architect", agents)
         self.assertIn("product_reviewer", agents)
-        self.assertIn("evidence_reviewer", agents)
-        self.assertLess(agents.index("product_architect"), agents.index("builder"))
         self.assertLess(agents.index("tester"), agents.index("product_reviewer"))
         self.assertLess(agents.index("product_reviewer"), agents.index("reviewer"))
 
@@ -112,13 +213,13 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertTrue(metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
         self.assertIn("builder", agents)
         self.assertIn("tester", agents)
-        self.assertIn("qa_red_team", agents)
         self.assertIn("reviewer", agents)
+        self.assertEqual(agents, ["builder", "tester", "reviewer"])
         self.assertNotIn("idea_expander", agents)
         self.assertNotIn("product_architect", agents)
         self.assertLess(len(agents), len(WORKFLOW_TEMPLATES["software_build"]["agent_order"]))
 
-    def test_ui_and_sensitive_work_stay_on_full_pipeline(self):
+    def test_ui_stays_full_and_sensitive_backend_keeps_focused_risk_gates(self):
         mission = {
             "mission_id": "CHARLIE-MISSION-UI",
             "title": "Dashboard rebuild",
@@ -139,8 +240,10 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
 
         self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "ui_product_build")
         self.assertIn("creative_ui_designer", ui_agents)
-        self.assertFalse(sensitive_metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
-        self.assertIn("product_architect", sensitive_agents)
+        self.assertTrue(sensitive_metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
+        self.assertEqual(sensitive_metadata["mission_vault"]["project_truth"]["pipeline_profile"], "high_risk_backend")
+        self.assertIn("business_reviewer", sensitive_agents)
+        self.assertIn("publisher", sensitive_agents)
 
     def test_design_agents_have_specific_model_assignments(self):
         visual = choose_agent_model("creative_ui_designer", mission_type="dashboard ui")
@@ -151,14 +254,13 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertEqual(implementer["registry_key"], "frontend_build")
         self.assertEqual(qa["registry_key"], "vision_design")
 
-    def test_agent_instruction_pack_requires_confidence_or_clarification(self):
+    def test_agent_instruction_pack_uses_consequence_calibrated_confidence(self):
         pack = agent_instruction_pack("builder")
         rules = " ".join(pack["vault_rules"] + pack["quality_bar"]).lower()
 
-        self.assertIn("96", rules)
-        self.assertIn("clarifying", rules)
         self.assertIn("evidence", rules)
         self.assertIn("confidence", rules)
+        self.assertIn("consequence", rules)
 
     def test_core_plan_attaches_vault_schema_workflow_and_instruction_packs(self):
         mission = {
@@ -176,10 +278,9 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertTrue(all(item["required_output"] == HANDOFF_VERSION for item in metadata["agent_workflow"]))
         self.assertTrue(all(item.get("instruction_pack") for item in metadata["agent_workflow"]))
         agents = [item["agent"] for item in metadata["agent_workflow"]]
-        self.assertIn("product_architect", agents)
         self.assertIn("source_mapper", agents)
+        self.assertIn("technical_architect", agents)
         self.assertIn("council_synthesis", agents)
-        self.assertIn("product_reviewer", agents)
         self.assertTrue(all(AGENT_DOCTRINE_PATHS.get(agent) for agent in agents))
 
     def test_handoff_report_requires_auditable_fields(self):

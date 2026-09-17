@@ -1,0 +1,73 @@
+import unittest
+from pathlib import Path
+
+
+class CharlieMissionControlFrontendTests(unittest.TestCase):
+    def test_initial_owner_page_renders_before_bounded_api_waits(self):
+        script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
+
+        initial_render = script.index("if (!state.initialized)")
+        mission_request = script.index("fetchJson(API.missionControl", initial_render)
+        api_wait = script.index("await Promise.all", initial_render)
+        self.assertLess(initial_render, mission_request)
+        self.assertLess(initial_render, api_wait)
+        self.assertIn("timeoutMs: 4000", script[initial_render:api_wait + 500])
+        self.assertIn("the page remains usable", script)
+        self.assertIn("state.loadError", script)
+        self.assertIn("el.refreshBtn.disabled = false", script)
+        self.assertIn("el.queueRefreshBtn.disabled = false", script)
+
+    def test_owner_page_uses_current_loading_recovery_asset(self):
+        template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
+
+        self.assertIn("20260824-owner-load-recovery", template)
+
+    def test_runner_strip_exposes_restarts_and_latest_failure(self):
+        script = (Path(__file__).parents[1] / "static" / "js" / "charlieMissionControlV2.js").read_text(encoding="utf-8")
+        self.assertIn('strip("Restarts"', script)
+        self.assertIn("supervisor_restart_count", script)
+        self.assertIn("supervisor_latest_failure", script)
+    def test_mission_control_uses_glanceable_full_page_contract(self):
+        template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
+        script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
+
+        for element_id in (
+            "missionSummaryStrip",
+            "queueHealthChip",
+            "activeAgentChip",
+            "queueList",
+            "workflowPanel",
+            "actionPanel",
+        ):
+            self.assertIn(f'id="{element_id}"', template)
+        self.assertIn("renderMissionSummary", script)
+        self.assertIn("firstUsefulTab", script)
+        self.assertIn("/api/charlie/build-relay/mission-control", script)
+        self.assertIn("state.initialized && allLoadedMissions().length", script)
+        self.assertIn('href="/charlie-agents"', template)
+
+    def test_send_back_requires_owner_comments_and_target_stage(self):
+        template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
+        script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
+
+        self.assertIn("openSendBackDrawer", script)
+        self.assertIn('id="sendBackComments"', script)
+        self.assertIn('id="sendBackStage"', script)
+        self.assertIn("if (!comments)", script)
+        self.assertIn("target_stage: targetStage", script)
+        self.assertIn('if (!agents.includes("builder")) agents.unshift("builder")', script)
+        self.assertIn('id="reviewDrawer"', template)
+
+    def test_live_activity_distinguishes_runner_truth_from_cloud_snapshot(self):
+        template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
+        script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
+
+        self.assertIn(".live-activity", template)
+        self.assertIn("renderLiveActivity", script)
+        self.assertIn("running_agent", script)
+        self.assertIn("between_stages", script)
+        self.assertIn("waiting_for_queue", script)
+        self.assertIn("Cloud snapshot", script)
+        self.assertIn("Latest check", script)
+        self.assertIn("missionExecutionWarning", script)
+        self.assertIn("last saved stage, not live progress", script)

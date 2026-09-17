@@ -107,3 +107,7 @@ Do not enable without review:
 ## Review Rule
 
 If a change affects a protected field, route, workflow number, sheet, backend endpoint, or Chatwoot custom attribute, update this file and test the affected path before treating the change as stable.
+
+## Reviewed native voice transport candidate — 2026-09-12
+
+The [GateKeeper native voice proposal](workflows/2%20-%20The%20GateKeeper/NATIVE_VOICE_TRANSPORT_REVIEW_20260912.md) preserves the existing authorization gate and original provider envelope, routes native private voice to the existing authenticated backend endpoint, and preserves the exact replied-to card ID in the typed 2.0B relay. Its new offline route tests must pass before review completion. This is a local patch proposal with exact inverse values; it does not authorize an n8n edit, activation, webhook change or backend deployment. Preserve the legacy exports and use the proposal's current-version and exact-field checks for any separately approved UI change.

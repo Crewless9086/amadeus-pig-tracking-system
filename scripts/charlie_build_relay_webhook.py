@@ -8,6 +8,7 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from dotenv import load_dotenv
+from modules.charlie.environment import env_value
 
 
 WEBHOOK_PATH = "/api/charlie/build-relay/telegram/webhook"
@@ -18,16 +19,16 @@ def main():
     load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
     parser = argparse.ArgumentParser(description="Set, inspect, or delete the CHARLIE Build Relay Telegram webhook.")
     parser.add_argument("action", choices=["info", "set", "delete"])
-    parser.add_argument("--base-url", default=os.getenv("CHARLIE_BUILD_RELAY_BASE_URL", ""))
+    parser.add_argument("--base-url", default=env_value("CORE_RELAY_BASE_URL", ""))
     args = parser.parse_args()
 
-    token = str(os.getenv("CHARLIE_BUILD_RELAY_BOT_TOKEN", "") or "").strip()
-    secret = str(os.getenv("CHARLIE_BUILD_RELAY_WEBHOOK_SECRET", "") or "").strip()
+    token = str(env_value("CORE_RELAY_BOT_TOKEN", "") or "").strip()
+    secret = str(env_value("CORE_RELAY_WEBHOOK_SECRET", "") or "").strip()
     if not token:
-        print("SKIP: set CHARLIE_BUILD_RELAY_BOT_TOKEN.")
+        print("SKIP: set CORE_RELAY_BOT_TOKEN (legacy alias remains supported).")
         return 2
     if args.action == "set" and not SECRET_RE.match(secret):
-        print("SKIP: CHARLIE_BUILD_RELAY_WEBHOOK_SECRET must be 32-256 chars using only A-Z, a-z, 0-9, underscore, or hyphen.")
+        print("SKIP: CORE_RELAY_WEBHOOK_SECRET must be 32-256 chars using only A-Z, a-z, 0-9, underscore, or hyphen.")
         return 2
 
     if args.action == "info":

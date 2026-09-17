@@ -10,6 +10,11 @@ const lossFlagsBody = document.getElementById("loss_flags_body");
 const penSummaryBody = document.getElementById("pen_summary_body");
 const detailBody = document.getElementById("weight_detail_body");
 const printRangeEl = document.getElementById("print_report_range");
+const intelligenceEl = document.getElementById("herdmaster_intelligence");
+const intelligenceMetricsEl = document.getElementById("herdmaster_intelligence_metrics");
+const intelligenceFindingsEl = document.getElementById("herdmaster_intelligence_findings");
+const ownerSummaryEl = document.getElementById("herdmaster_owner_summary");
+const requestedBatchId = new URLSearchParams(window.location.search).get("batch_id") || "";
 
 function todayIso() {
   const today = new Date();
@@ -118,6 +123,29 @@ function renderSummary(summary) {
   `).join("");
 }
 
+function renderBatchIntelligence(packet) {
+  if (!packet || !packet.success) {
+    intelligenceEl.classList.add("hidden");
+    return;
+  }
+  intelligenceEl.classList.remove("hidden");
+  const metrics = packet.metrics || {};
+  const items = [
+    ["Coverage", metrics.coverage_pct == null ? "Unknown" : `${metrics.coverage_pct}%`],
+    ["Supported avg change", metrics.average_supported_change_kg == null ? "Unknown" : `${metrics.average_supported_change_kg} kg`],
+    ["Reweigh", metrics.reweigh_count ?? 0],
+    ["Missing expected", metrics.missing_expected_count ?? 0],
+  ];
+  intelligenceMetricsEl.innerHTML = items.map(([label, value]) => `
+    <div class="summary-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
+  `).join("");
+  intelligenceFindingsEl.innerHTML = (packet.findings || []).map((finding) => `
+    <div class="report-finding"><strong>${escapeHtml(finding.classification)}</strong>: ${escapeHtml(finding.finding)}
+      <div><strong>Next action:</strong> ${escapeHtml(finding.next_action)}</div></div>
+  `).join("");
+  ownerSummaryEl.textContent = packet.owner_summary_af || "";
+}
+
 function renderLossFlags(rows, singleDay) {
   if (!rows.length) {
     lossFlagsBody.innerHTML = `<tr><td colspan="${singleDay ? 6 : 7}" class="table-empty">No weight-loss flags for this date range.</td></tr>`;
@@ -207,6 +235,7 @@ async function loadReport() {
   params.set("date_from", dateFromInput.value);
   params.set("date_to", dateToInput.value);
   if (penFilterSelect.value) params.set("pen_id", penFilterSelect.value);
+  if (requestedBatchId) params.set("batch_id", requestedBatchId);
 
   try {
     const response = await fetch(`/api/pig-weights/weight-report?${params.toString()}`);
@@ -224,6 +253,7 @@ async function loadReport() {
     renderLossFlags(data.loss_flags || [], singleDay);
     renderPenSummary(data.pen_summary || []);
     renderDetails(data.entries || [], singleDay);
+    renderBatchIntelligence(data.herdmaster_intelligence);
   } catch (error) {
     console.error("Weight report error:", error);
     setMessage(error.message || "Something went wrong while loading the weight report.");

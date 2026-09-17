@@ -1,0 +1,678 @@
+import tempfile
+import unittest
+import sys
+import subprocess
+import json
+import os
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from scripts import charlie_runner_supervisor as supervisor
+from modules.charlie import process_ownership, runner_control
+
+
+SUBPROCESS_TESTS_ENABLED = os.getenv("CHARLIE_SUBPROCESS_TESTS_ENABLED") == "1"
+
+
+class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_observe_only_spawn_is_explicit_and_recovery_is_unreachable(self):
+        child = Mock(pid=101)
+        child.wait.return_value = 0
+        popen = Mock(return_value=child)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            supervisor, "STOP_PATH", Path(tmp) / "stop"
+        ), patch.object(
+            supervisor, "redact_tree_in_place", return_value={"errors": []}
+        ) as scrub, patch.dict(
+            os.environ,
+            {
+                "CHARLIE_CORE_EXECUTION_MODE": "observe_only",
+                "CHARLIE_SHADOW_CONTROL_TOWER_ENABLED": "true",
+                "SUPABASE_SERVICE_ROLE_KEY": "must-not-cross",
+                "PROVIDER_KEY": "must-not-cross",
+                "DATABASE_URL": "postgresql://user:pass@aws-0.pooler.supabase.com:5432/postgres",
+            },
+            clear=False,
+        ):
+            supervisor.supervise_runner(
+                popen_factory=popen,
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: (_ for _ in ()).throw(
+                    AssertionError("recovery must be unreachable")
+                ),
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="observe-generation",
+            )
+            packet = json.loads(
+                (Path(tmp) / "supervisor.json").read_text(encoding="utf-8")
+            )
+        self.assertTrue(
+            str(popen.call_args.args[0][-1]).endswith("charlie_observe_only_runner.py")
+        )
+        self.assertEqual(
+            popen.call_args.kwargs["env"]["DATABASE_URL"],
+            "postgresql://user:pass@aws-0.pooler.supabase.com:6543/postgres",
+        )
+        self.assertEqual(
+            popen.call_args.kwargs["env"]["CHARLIE_SHADOW_CONTROL_TOWER_ENABLED"],
+            "true",
+        )
+        self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", popen.call_args.kwargs["env"])
+        self.assertNotIn("PROVIDER_KEY", popen.call_args.kwargs["env"])
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_CONTROLLER_PUBLIC_KEY"]
+        )
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_INTENDED_RUNTIME_REVISION"]
+        )
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_INTENDED_EXECUTION_REVISION"]
+        )
+        self.assertEqual(packet["execution_mode"], "observe_only")
+        scrub.assert_not_called()
+
+    def test_recovery_runs_only_after_controller_final_authorization(self):
+        observed = []
+        child = Mock(pid=101)
+        child.wait.return_value = 0
+
+        def recovery():
+            packet = json.loads(
+                supervisor.SUPERVISOR_PATH.read_text(encoding="utf-8")
+            )
+            observed.append((packet["status"], packet["runner_state"]))
+            return {"status": "recovery_complete"}, 200
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
+            supervisor.supervise_runner(
+                popen_factory=Mock(return_value=child),
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=recovery,
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="generation-1",
+            )
+        self.assertEqual(observed, [("running_authorized", "running_authorized")])
+
+    def test_runner_is_not_spawned_without_current_controller_acknowledgement(self):
+        popen = Mock()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"), patch.object(
+            supervisor, "_wait_for_controller_ack", return_value={
+                "success": False, "reason": "controller_ownership_packet_missing",
+            }
+        ):
+            supervisor.SUPERVISOR_PATH.write_text(
+                json.dumps({
+                    "version": runner_control.SUPERVISOR_PACKET_VERSION,
+                    "generation": "stale-generation",
+                }),
+                encoding="utf-8",
+            )
+            result = supervisor.supervise_runner(
+                popen_factory=popen,
+                sleep_fn=lambda _seconds: None,
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"success": True}, 200),
+                generation="generation-1",
+            )
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertEqual(
+            result["failure_status"],
+            "controller_ownership_packet_missing",
+        )
+        popen.assert_not_called()
+
+    def test_durable_starting_packet_is_reread_before_child_spawn(self):
+        observations = []
+        child = Mock(pid=101)
+        child.wait.return_value = 0
+
+        def spawn(*_args, **_kwargs):
+            packet = json.loads(supervisor.SUPERVISOR_PATH.read_text(encoding="utf-8"))
+            observations.append(packet)
+            return child
+
+        child_process = {
+            "pid": 101, "creation_time": "test-child",
+            "executable_path": str(sys.executable),
+            "command_line": "python charlie_mission_pickup.py",
+            "parent_pid": os.getpid(), "ancestry": [],
+            "current_process_ancestry": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"), patch.object(
+            supervisor, "inspect_process", return_value=child_process
+        ):
+            supervisor.supervise_runner(
+                popen_factory=spawn,
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"success": True}, 200),
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="generation-1",
+            )
+        self.assertEqual(observations[0]["runner_state"], "not_spawned")
+        self.assertEqual(observations[0]["status"], "supervisor_ready")
+        self.assertEqual(observations[0]["generation"], "generation-1")
+        self.assertTrue(observations[0]["supervisor_tree_identity"]["members"])
+        self.assertEqual(
+            observations[0]["controller_acknowledgement"]["status"],
+            "supervisor_identity_acknowledged",
+        )
+
+    def test_missing_runner_acknowledgement_fails_closed_without_running_state(self):
+        child = Mock(pid=101)
+        child.poll.return_value = None
+        child_process = {
+            "pid": 101, "creation_time": "test-child",
+            "executable_path": str(sys.executable),
+            "command_line": "python charlie_mission_pickup.py",
+            "parent_pid": os.getpid(), "ancestry": [],
+            "current_process_ancestry": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"), patch.object(
+            supervisor, "inspect_process", return_value=child_process
+        ), patch.object(
+            supervisor, "_contain_spawned_process",
+            return_value={"success": True, "reason": "tree_termination_verified"},
+        ) as contain:
+            result = supervisor.supervise_runner(
+                popen_factory=Mock(return_value=child),
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"success": True}, 200),
+                acknowledgement_fn=lambda *_args, **_kwargs: {
+                    "success": False, "reason": "runner_heartbeat_acknowledgement_missing",
+                },
+            )
+            packet = json.loads(supervisor.SUPERVISOR_PATH.read_text(encoding="utf-8"))
+            self.assertTrue(supervisor.STOP_PATH.exists())
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertEqual(packet["runner_state"], "containment_required")
+        self.assertNotEqual(packet["status"], "running")
+        self.assertTrue(result["containment"]["success"])
+        contain.assert_called_once()
+
+    def test_final_authorization_failure_contains_exact_spawn_handle(self):
+        child = Mock(pid=101)
+        child.poll.return_value = None
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            supervisor, "STOP_PATH", Path(tmp) / "stop"
+        ), patch.object(
+            supervisor,
+            "_wait_for_controller_final_authorization",
+            return_value={"success": False, "reason": "final_identity_mismatch"},
+        ), patch.object(
+            supervisor,
+            "_contain_spawned_process",
+            return_value={"success": True, "reason": "fresh_handle_verified"},
+        ) as contain:
+            result = supervisor.supervise_runner(
+                popen_factory=Mock(return_value=child),
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"success": True}, 200),
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="generation-1",
+            )
+        self.assertEqual(result["failure_status"], "final_identity_mismatch")
+        contain.assert_called_once()
+        self.assertIs(contain.call_args.args[0], child)
+
+    def test_recovery_failure_contains_exact_spawn_handle(self):
+        child = Mock(pid=101)
+        child.poll.return_value = None
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            supervisor, "STOP_PATH", Path(tmp) / "stop"
+        ), patch.object(
+            supervisor,
+            "_contain_spawned_process",
+            return_value={"success": True, "reason": "fresh_handle_verified"},
+        ) as contain:
+            result = supervisor.supervise_runner(
+                popen_factory=Mock(return_value=child),
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"status": "recovery_failed"}, 503),
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="generation-1",
+            )
+        self.assertEqual(result["status"], "final_artifact_recovery_blocked")
+        contain.assert_called_once()
+        self.assertIs(contain.call_args.args[0], child)
+
+    def test_control_runtime_and_mission_execution_roots_are_isolated(self):
+        self.assertNotEqual(supervisor.REPO_ROOT, supervisor.EXECUTION_ROOT)
+        self.assertEqual(Path(supervisor.RUNNER_COMMAND[1]).parent.parent, supervisor.EXECUTION_ROOT)
+
+    def test_runner_child_is_windowless_on_windows(self):
+        self.assertEqual(supervisor._windowless_process_kwargs("nt"), {"creationflags": 0x08000000})
+        self.assertEqual(supervisor._windowless_process_kwargs("posix"), {"start_new_session": True})
+
+    def test_windows_named_mutex_refuses_second_supervisor(self):
+        kernel32 = Mock()
+        kernel32.CreateMutexW.return_value = 123
+        kernel32.GetLastError.return_value = 183
+        acquired, handle = supervisor._acquire_windows_supervisor_mutex(Path("runner.lock"), kernel32=kernel32)
+        self.assertFalse(acquired)
+        self.assertIsNone(handle)
+        kernel32.CloseHandle.assert_called_once_with(123)
+
+    def test_supervisor_and_runner_publish_one_canonical_control_directory(self):
+        self.assertEqual(supervisor.RUNNER_DIR, runner_control.RUNNER_DIR)
+        self.assertEqual(supervisor.SUPERVISOR_PATH.parent, runner_control.HEARTBEAT_PATH.parent)
+
+    def test_duplicate_supervisor_does_not_overwrite_live_owner_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supervisor_path = root / "supervisor.json"
+            lock_path = root / "supervisor.lock"
+            live_state = {"pid": 123, "status": "runner_started", "child_pid": 456}
+            supervisor_path.write_text(json.dumps(live_state), encoding="utf-8")
+            lock_path.write_text(json.dumps({"pid": 123}), encoding="utf-8")
+            with (
+                patch.object(supervisor, "SUPERVISOR_PATH", supervisor_path),
+                patch.object(supervisor, "LOCK_PATH", lock_path),
+                patch.object(supervisor, "SupervisorInstanceLock", return_value=supervisor.SupervisorInstanceLock(lock_path)),
+                patch.object(supervisor, "_pid_alive", return_value=True),
+            ):
+                result = supervisor.main()
+
+            self.assertEqual(result["status"], "duplicate_supervisor_refused")
+            self.assertEqual(json.loads(supervisor_path.read_text(encoding="utf-8")), live_state)
+
+    def test_instance_lock_refuses_live_owner_and_recovers_stale_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "supervisor.lock"
+            path.write_text('{"pid": 123}', encoding="utf-8")
+            lock = supervisor.SupervisorInstanceLock(path)
+            with patch.object(supervisor, "_pid_alive", return_value=True):
+                self.assertEqual(lock.acquire(), (False, 123))
+            with patch.object(supervisor, "_pid_alive", return_value=False), patch.object(supervisor.os, "getpid", return_value=456):
+                self.assertEqual(lock.acquire(), (True, 456))
+                lock.release()
+            self.assertFalse(path.exists())
+
+    def test_transaction_pool_url_is_used_for_supabase_session_pool(self):
+        original = "postgresql://user:pass@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require"
+        converted = supervisor._transaction_pool_url(original)
+        self.assertIn(":6543/postgres", converted)
+        self.assertNotIn(":5432/postgres", converted)
+        self.assertEqual(supervisor._transaction_pool_url("postgresql://localhost:5432/app"), "postgresql://localhost:5432/app")
+
+    def test_pid_alive_uses_exact_tasklist_pid_on_windows(self):
+        runner = Mock(return_value=Mock(returncode=0, stdout='"python.exe","1234","Console","1","20,000 K"\n'))
+        with patch("scripts.charlie_runner_supervisor.os.name", "nt"):
+            self.assertTrue(supervisor._pid_alive(1234, runner=runner))
+            self.assertFalse(supervisor._pid_alive(123, runner=runner))
+    @patch("scripts.charlie_runner_supervisor.subprocess.run", side_effect=subprocess.TimeoutExpired(["powershell"], 5))
+    def test_windows_process_command_timeout_is_nonfatal(self, _run):
+        self.assertEqual(supervisor._windows_process_command(1234), "")
+    def test_shared_repo_venv_is_used_from_runner_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / ".charlie_runner" / "clean"
+            python = root / "venv" / "Scripts" / "python.exe"
+            python.parent.mkdir(parents=True)
+            python.touch()
+            self.assertEqual(supervisor._python_executable(worktree), str(python))
+    def test_repo_root_is_available_for_supervisor_module_imports(self):
+        self.assertIn(str(supervisor.REPO_ROOT), sys.path)
+
+    def test_repo_local_imports_follow_sys_path_bootstrap(self):
+        source = (Path(__file__).parents[1] / "scripts" / "charlie_runner_supervisor.py").read_text(encoding="utf-8")
+        self.assertLess(source.index("sys.path.insert"), source.index("from modules.charlie.repository_guard"))
+        self.assertLess(source.index("sys.path.insert"), source.index("from modules.charlie.process_policy"))
+
+    @unittest.skipUnless(SUBPROCESS_TESTS_ENABLED, "real subprocess tests require explicit opt-in")
+    def test_supervisor_script_loads_standalone_outside_repo_cwd(self):
+        script = Path(__file__).parents[1] / "scripts" / "charlie_runner_supervisor.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            completed = subprocess.run(
+                [sys.executable, "-c", f"import runpy; runpy.run_path({str(script)!r})"],
+                cwd=tmp, capture_output=True, text=True, timeout=20, check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    @patch.object(supervisor, "inspect_process")
+    @patch.object(supervisor, "_pid_alive")
+    @patch.object(supervisor.os, "kill")
+    @patch.object(supervisor.subprocess, "run")
+    @patch.object(supervisor, "process_termination_enabled", return_value=True)
+    def test_stale_owned_child_is_recovered_only_when_prior_supervisor_is_dead(
+        self, _enabled, run, kill, pid_alive, inspect_process
+    ):
+        pid_alive.side_effect = lambda pid: int(pid) == 222
+        live = {
+            "pid": 222, "creation_time": "123", "executable_path": "C:/Python/python.exe",
+            "command_line": "python runner.py", "parent_pid": 111, "name": "python.exe",
+            "ancestry": [], "current_process_ancestry": [],
+        }
+        inspect_process.return_value = live
+        record = process_ownership.make_ownership_record(
+            live, "gen-1", "charlie-control", "gen-1", "charlie_runner"
+        )
+        for platform_name in ("nt", "posix"):
+            with self.subTest(platform_name=platform_name), tempfile.TemporaryDirectory() as tmp, patch.object(
+                supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+            ), patch.object(supervisor.os, "name", platform_name):
+                run.reset_mock()
+                kill.reset_mock()
+                supervisor.SUPERVISOR_PATH.write_text(
+                    json.dumps({"pid": 111, "child_pid": 222, "child_identity": record}),
+                    encoding="utf-8",
+                )
+                self.assertTrue(supervisor._recover_stale_owned_child())
+                if platform_name == "nt":
+                    run.assert_called_once()
+                    kill.assert_not_called()
+                else:
+                    run.assert_not_called()
+                    kill.assert_called_once_with(222, supervisor.signal.SIGTERM)
+
+    @patch.object(supervisor, "inspect_process")
+    @patch.object(supervisor, "_pid_alive")
+    @patch.object(supervisor.os, "kill")
+    @patch.object(supervisor.subprocess, "run")
+    @patch.object(supervisor, "process_termination_enabled", return_value=True)
+    def test_reused_child_pid_is_not_terminated(self, _enabled, run, kill, pid_alive, inspect_process):
+        pid_alive.side_effect = lambda pid: int(pid) == 222
+        recorded = {
+            "pid": 222, "creation_time": "old-process", "executable_path": "C:/Python/python.exe",
+            "command_line": "python runner.py", "parent_pid": 111, "name": "python.exe",
+            "ancestry": [], "current_process_ancestry": [],
+        }
+        record = process_ownership.make_ownership_record(
+            recorded, "gen-1", "charlie-control", "gen-1", "charlie_runner"
+        )
+        inspect_process.return_value = {**recorded, "creation_time": "new-process"}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"):
+            supervisor.SUPERVISOR_PATH.write_text(json.dumps({"pid": 111, "child_pid": 222, "child_identity": record}), encoding="utf-8")
+            self.assertFalse(supervisor._recover_stale_owned_child())
+        run.assert_not_called()
+        kill.assert_not_called()
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_unexpected_exit_restarts_with_backoff(self, inspect_process):
+        children = [Mock(pid=101), Mock(pid=102)]
+        children[0].wait.return_value = 1
+        children[1].wait.return_value = 0
+        popen = Mock(side_effect=children)
+        sleeps = []
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
+            result = supervisor.supervise_runner(popen_factory=popen, sleep_fn=sleeps.append, max_cycles=2, prepare_fn=lambda: {"success": True})
+
+        self.assertEqual(popen.call_count, 2)
+        self.assertEqual(sleeps, [5])
+        self.assertEqual(result["restart_count"], 2)
+        child_env = popen.call_args_list[0].kwargs["env"]
+        self.assertIn("GIT_CONFIG_GLOBAL", child_env)
+        self.assertEqual(inspect_process.call_count, 0)
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_child_base_branch_aliases_override_conflicting_legacy_environment(self, inspect_process):
+        child = Mock(pid=101)
+        child.wait.return_value = 0
+        popen = Mock(return_value=child)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-core-live-base"},
+        ), patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
+            supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1, prepare_fn=lambda: {"success": True})
+
+        child_env = popen.call_args.kwargs["env"]
+        self.assertEqual(child_env["CORE_EXECUTION_BASE_BRANCH"], "charlie-core-execution-base")
+        self.assertEqual(child_env["CHARLIE_RUNNER_BASE_BRANCH"], "charlie-core-execution-base")
+        self.assertEqual(inspect_process.call_count, 0)
+
+    def test_stop_marker_prevents_child_start(self):
+        popen = Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            stop = Path(tmp) / "stop"
+            stop.write_text("stop", encoding="utf-8")
+            with patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(supervisor, "STOP_PATH", stop):
+                result = supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1, prepare_fn=lambda: {"success": True})
+
+        popen.assert_not_called()
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertEqual(result["runner_state"], "not_spawned")
+
+    def test_direct_supervisor_main_never_removes_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop = Path(tmp) / "stop"
+            stop.write_text("owner stop", encoding="utf-8")
+            with patch.object(supervisor, "STOP_PATH", stop), patch.object(
+                supervisor, "SupervisorInstanceLock"
+            ) as lock, patch.object(supervisor, "supervise_runner") as supervise:
+                lock.return_value.acquire.return_value = (True, 0)
+                result = supervisor.main()
+            self.assertEqual(stop.read_text(encoding="utf-8"), "owner stop")
+        self.assertEqual(result["status"], "governed_stop_active")
+        supervise.assert_not_called()
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_same_generation_status_preserves_signed_identity_fields(self, _inspect):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "supervisor.json"
+            state_path.write_text(json.dumps({
+                "generation": "gen-1",
+                "child_pid": 321,
+                "controller_public_key": "public-key",
+                "intended_runtime_revision": "runtime-revision",
+                "intended_execution_revision": "execution-revision",
+            }), encoding="utf-8")
+            with patch.object(supervisor, "SUPERVISOR_PATH", state_path):
+                supervisor._write_status(
+                    "operational_authorized",
+                    generation="gen-1",
+                )
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(persisted["controller_public_key"], "public-key")
+        self.assertEqual(persisted["child_pid"], 321)
+        self.assertEqual(persisted["intended_runtime_revision"], "runtime-revision")
+        self.assertEqual(persisted["intended_execution_revision"], "execution-revision")
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_terminal_supervisor_status_retains_pre_stop_ownership_evidence(self, _inspect):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "supervisor.json"
+            state_path.write_text(json.dumps({
+                "pid": 100,
+                "child_identity": {"pid": 200},
+                "process_tree_identity": {"version": "charlie_process_tree_v1"},
+                "stop_evidence": {
+                    "version": "charlie_governed_stop_evidence_v1",
+                    "status": "runner_stop_requested",
+                    "target_pids": [200],
+                },
+            }), encoding="utf-8")
+            with patch.object(supervisor, "SUPERVISOR_PATH", state_path):
+                supervisor._write_status(
+                    "supervisor_stopped",
+                    child_pid=200,
+                    generation="gen-1",
+                )
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(persisted["status"], "supervisor_stopped")
+        prior = persisted["ownership_history"][-1]
+        self.assertEqual(prior["stop_evidence"]["target_pids"], [200])
+        self.assertEqual(prior["process_tree_identity"]["version"], "charlie_process_tree_v1")
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_identical_infrastructure_failure_enters_hold_after_three_exits(self, inspect_process):
+        children = [Mock(pid=101), Mock(pid=102), Mock(pid=103)]
+        for child in children:
+            child.wait.return_value = 1
+        notifier = Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            heartbeat = root / "runner.json"
+            heartbeat.write_text('{"last_result_status":"base_branch_checkout_failed"}', encoding="utf-8")
+            with patch.object(supervisor, "RUNNER_DIR", root), patch.object(supervisor, "SUPERVISOR_PATH", root / "supervisor.json"), patch.object(supervisor, "RUNNER_HEARTBEAT_PATH", heartbeat), patch.object(supervisor, "STOP_PATH", root / "stop"):
+                result = supervisor.supervise_runner(
+                    popen_factory=Mock(side_effect=children),
+                    sleep_fn=lambda _delay: None,
+                    max_cycles=10,
+                    notifier=notifier,
+                    prepare_fn=lambda: {"success": True},
+                )
+            state = json.loads((root / "supervisor.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertEqual(result["restart_count"], 3)
+        self.assertEqual(state["identical_failure_count"], 3)
+        notifier.assert_called_once()
+        self.assertEqual(inspect_process.call_count, 0)
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_three_identical_unclassified_child_crashes_enter_hold(self, inspect_process):
+        children = [Mock(pid=201), Mock(pid=202), Mock(pid=203)]
+        for child in children:
+            child.wait.return_value = 3221225794
+        notifier = Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            heartbeat = root / "runner.json"
+            heartbeat.write_text('{"last_result_status":"executive_cycle_observed"}', encoding="utf-8")
+            with patch.object(supervisor, "RUNNER_DIR", root), patch.object(supervisor, "SUPERVISOR_PATH", root / "supervisor.json"), patch.object(supervisor, "RUNNER_HEARTBEAT_PATH", heartbeat), patch.object(supervisor, "STOP_PATH", root / "stop"):
+                result = supervisor.supervise_runner(Mock(side_effect=children), lambda _delay: None, max_cycles=10, notifier=notifier, prepare_fn=lambda: {"success": True})
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertIn("child_exit:3221225794", result["failure_status"])
+        notifier.assert_called_once()
+        self.assertEqual(inspect_process.call_count, 0)
+
+    @patch("modules.charlie.improvement_analyst.run_operational_analyst", return_value=({"success": True, "status": "analyst_cycle_complete", "lifecycle": {"updated_count": 1}}, 200))
+    def test_conveyor_repair_triggers_analyst_validation_cycle(self, analyst):
+        result = supervisor._run_analyst_repair_validation()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["lifecycle"]["updated_count"], 1)
+        analyst.assert_called_once_with(trigger="conveyor_repair_completed", limit=50)
+
+    def test_execution_bootstrap_restores_generated_state_and_uses_promoted_revision(self):
+        calls = []
+        responses = [
+            Mock(returncode=0, stdout="abc123\n", stderr=""),
+            Mock(returncode=0, stdout=" M planning/CODEX_CHAT.md\n", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="abc123\n", stderr=""),
+        ]
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs.get("cwd")))
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "REPO_ROOT", Path(tmp) / "runtime"), patch.object(
+            supervisor, "EXECUTION_ROOT", Path(tmp) / "execution"
+        ):
+            supervisor.REPO_ROOT.mkdir()
+            supervisor.EXECUTION_ROOT.mkdir()
+            result = supervisor._prepare_execution_root(run_factory=fake_run)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["promoted_revision"], "abc123")
+        self.assertIn(["git", "restore", "--staged", "--worktree", "--", "planning/CODEX_CHAT.md"], [item[0] for item in calls])
+        self.assertIn(["git", "switch", "--detach"], [item[0] for item in calls])
+        self.assertIn(["git", "branch", "--force", "charlie-core-execution-base", "abc123"], [item[0] for item in calls])
+        self.assertIn(["git", "switch", "charlie-core-execution-base"], [item[0] for item in calls])
+
+    def test_execution_bootstrap_refuses_unknown_dirty_files(self):
+        responses = [
+            Mock(returncode=0, stdout="abc123\n", stderr=""),
+            Mock(returncode=0, stdout=" M modules/charlie/execution_bridge.py\n", stderr=""),
+        ]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "REPO_ROOT", Path(tmp) / "runtime"), patch.object(
+            supervisor, "EXECUTION_ROOT", Path(tmp) / "execution"
+        ):
+            supervisor.REPO_ROOT.mkdir()
+            supervisor.EXECUTION_ROOT.mkdir()
+            result = supervisor._prepare_execution_root(run_factory=Mock(side_effect=responses))
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "execution_root_has_unpreserved_changes")
+        self.assertEqual(result["dirty_paths"], ["modules/charlie/execution_bridge.py"])
+
+    def test_supervisor_refuses_to_launch_when_execution_bootstrap_fails(self):
+        popen = Mock()
+        notifier = Mock()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
+            result = supervisor.supervise_runner(
+                popen_factory=popen,
+                sleep_fn=lambda _delay: None,
+                max_cycles=1,
+                notifier=notifier,
+                prepare_fn=lambda: {"success": False, "status": "execution_bootstrap_revision_mismatch"},
+            )
+
+        self.assertEqual(result["status"], "infrastructure_hold")
+        popen.assert_not_called()
+        notifier.assert_called_once()
+
+    def test_typed_damage_recreates_only_dedicated_runner_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            canonical = Path(tmp)
+            worktree = canonical / ".charlie_runner" / "runner"
+            worktree.mkdir(parents=True)
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                return Mock(returncode=0, stdout="", stderr="")
+
+            with patch.object(supervisor, "REPO_ROOT", worktree), patch.dict(os.environ, {
+                "CORE_EXECUTION_BASE_BRANCH": "runner-base",
+                "CHARLIE_RUNNER_BASE_BRANCH": "runner-base",
+            }):
+                result = supervisor._recreate_damaged_runner_worktree(
+                    {"status": "git_operation_marker_permission_denied"}, run_factory=fake_run
+                )
+        self.assertTrue(result["success"])
+        self.assertEqual(commands[-1], ["git", "worktree", "add", "--force", str(worktree), "runner-base"])
+
+
+if __name__ == "__main__":
+    unittest.main()

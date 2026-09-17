@@ -1,0 +1,4 @@
+interface:
+  display_name: "Amadeus Operational Acceptance"
+  short_description: "Prove genuine deployed owner outcomes end to end"
+  default_prompt: "Prove this Amadeus mission as a genuine owner outcome using exact deployment, canonical, provider, and later-cycle evidence."

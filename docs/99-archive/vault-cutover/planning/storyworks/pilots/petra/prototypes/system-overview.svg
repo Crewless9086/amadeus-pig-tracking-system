@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Petra layered water-system prototype</title>
+  <desc id="desc">A simplified original diagram showing runoff slowed in a catchment, diverted from the Siq, conveyed through channels, settled and stored.</desc>
+  <rect width="1600" height="900" fill="#111a21"/>
+  <path d="M0 360 L220 185 L390 310 L570 120 L790 340 L980 220 L1180 390 L1380 230 L1600 370 L1600 900 L0 900 Z" fill="#7e4937"/>
+  <path d="M0 420 L250 255 L430 370 L600 180 L810 405 L1000 285 L1200 455 L1390 300 L1600 430" fill="none" stroke="#bb7658" stroke-width="10"/>
+  <path d="M160 115 C280 180 330 245 420 350 C510 450 660 500 795 585" fill="none" stroke="#46b5d8" stroke-width="18" stroke-linecap="round"/>
+  <path d="M975 145 C930 260 885 365 800 585" fill="none" stroke="#46b5d8" stroke-width="18" stroke-linecap="round"/>
+  <g stroke="#e7bf77" stroke-width="14">
+    <path d="M260 225 L345 270"/>
+    <path d="M355 322 L445 350"/>
+    <path d="M505 400 L610 430"/>
+  </g>
+  <path d="M795 585 C925 600 1010 555 1095 495" fill="none" stroke="#46b5d8" stroke-width="24"/>
+  <path d="M795 585 C880 650 945 700 1050 750" fill="none" stroke="#2e7594" stroke-width="18" stroke-dasharray="22 15"/>
+  <rect x="1080" y="455" width="210" height="100" rx="18" fill="#254657" stroke="#89d1e5" stroke-width="5"/>
+  <circle cx="1230" cy="720" r="92" fill="#254657" stroke="#89d1e5" stroke-width="6"/>
+  <path d="M1290 505 C1370 510 1405 585 1375 660 C1350 720 1305 730 1290 730" fill="none" stroke="#46b5d8" stroke-width="16"/>
+  <g font-family="Arial, sans-serif" fill="#f5ead8">
+    <text x="75" y="80" font-size="58" font-weight="700">PETRA: WATER AS A LAYERED SYSTEM</text>
+    <text x="180" y="185" font-size="34" font-weight="700">1  SLOW</text>
+    <text x="610" y="520" font-size="34" font-weight="700">2  DIVERT</text>
+    <text x="1045" y="425" font-size="34" font-weight="700">3  CONVEY</text>
+    <text x="1110" y="515" font-size="28">settling</text>
+    <text x="1145" y="840" font-size="34" font-weight="700">4  STORE</text>
+    <text x="90" y="840" font-size="24" fill="#d5c5b4">SIMPLIFIED RECONSTRUCTION • NOT TO SCALE</text>
+  </g>
+</svg>

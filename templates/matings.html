@@ -1,36 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="af">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Matings / Breeding Board</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Parings · Amadeus Farm</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/farmDashboardV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/matingsRegisterV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/matingsInteractionsV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/matingsActiveExposureV1.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card">
-      <div class="page-header page-header-with-link">
-        <div>
-          <h1>Matings / Breeding Board</h1>
-          <p>Read-only view of open matings, overdue checks, farrowing dates, and pen context.</p>
-        </div>
-        <div class="detail-actions compact-actions">
-          <a href="/" class="button-link button-link-secondary">Dashboard</a>
-          <a href="/breeding-analytics" class="button-link button-link-secondary">Analytics</a>
-          <a href="/master/add-mating" class="button-link">Add Mating</a>
-        </div>
-      </div>
-
-      <div class="info-grid" id="mating_summary"></div>
-
-      <div id="mating_controls" class="matings-controls"></div>
-
+  <div class="farm-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="mating-register">
+      <header class="mating-hero">
+        <div><span class="farm-eyebrow">HERDMASTER · TEELBESTUUR</span><h1>Parings</h1><p>Van beerplasing tot jong datum—een duidelike werklys vir die volgende plaasaksie.</p></div>
+        <div class="mating-hero-actions"><a class="secondary-action" href="/api/pig-weights/breeding-attention/view">Teel-aandag</a><a class="secondary-action" href="/breeding-analytics">Teelontleding</a><a class="secondary-action" href="/verwagte-jongdatums">Verwagte Jong Datums</a><a class="primary-action" href="/master/add-mating">+ Voeg Paring By</a></div>
+      </header>
       <div id="matings_message" class="message-box hidden"></div>
-
-      <div id="matings_board" class="history-list"></div>
-    </div>
+      <section id="mating_summary" class="mating-metrics"></section>
+      <section id="active_exposure_workspace" class="mating-workspace active-exposure-workspace hidden" aria-labelledby="exposure_removal_heading" data-owner-role="{{ owner_session_role if owner_session_valid else '' }}">
+        <div class="workspace-heading"><div><span class="farm-eyebrow">HUIDIGE TEELWERK</span><h2 id="exposure_removal_heading">Sôe by beer</h2><p>Wie tans saam is, wanneer hulle ingegaan het en wanneer die beplande 17 dae eindig.</p></div></div>
+        <div id="exposure_removal_board" class="mating-board"></div>
+        <div id="exposure_removal_preview" class="message-box hidden"></div>
+      </section>
+      <section class="mating-workspace">
+        <div class="workspace-heading"><div><span class="farm-eyebrow">PARINGSREGISTER</span><h2>Huidige teelwerk</h2><p>Die belangrikste werk verskyn eerste. Maak ’n kaart oop vir die volledige rekord en beskermde aksies.</p></div><span class="record-count" id="mating_record_count">–</span></div>
+        <div id="mating_controls" class="matings-controls"></div>
+        <div id="matings_board" class="mating-board"></div>
+      </section>
+    </main>
   </div>
-
-  <script src="{{ url_for('static', filename='js/matings.js') }}"></script>
+  <script src="{{ url_for('static',filename='js/matings.js') }}"></script>
 </body>
 </html>

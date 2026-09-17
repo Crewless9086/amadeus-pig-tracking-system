@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
+from scripts.irrigation_import_dry_run import build_irrigation_dry_run_payload
 from scripts.irrigation_daily_sync import (
     apply_daily_sync,
     build_daily_sync_plan,
@@ -72,6 +73,58 @@ class IrrigationDailySyncTests(unittest.TestCase):
         self.assertEqual(len(filtered["STATE"]), 1)
         self.assertEqual(len(filtered["LOG"]), 1)
         self.assertIn("2026-05-23", filtered["LOG"][0]["reason"])
+        self.assertEqual(filtered["LOG"][0]["__source_sheet_row"], 3)
+
+    def test_row_78_event_keeps_identity_and_fingerprint_after_filtering(self):
+        records = self._records()
+        target = records["LOG"][-1]
+        records["LOG"] = [
+            {
+                "timestamp": f"2026-03-{day:02d}T00:06:00+02:00",
+                "event": "PLAN_CREATED",
+                "reason": f"Historical event {day}",
+                "zone_id": "SYSTEM",
+            }
+            for day in range(1, 32)
+        ] + [
+            {
+                "timestamp": f"2026-04-{day:02d}T00:06:00+02:00",
+                "event": "PLAN_CREATED",
+                "reason": f"Historical event {31 + day}",
+                "zone_id": "SYSTEM",
+            }
+            for day in range(1, 31)
+        ] + [
+            {
+                "timestamp": f"2026-05-{day:02d}T00:06:00+02:00",
+                "event": "PLAN_CREATED",
+                "reason": f"Historical event {61 + day}",
+                "zone_id": "SYSTEM",
+            }
+            for day in range(1, 16)
+        ] + [target]
+        self.assertEqual(len(records["LOG"]), 77)
+
+        initial_import = build_irrigation_dry_run_payload(records)
+        original = next(
+            event
+            for event in initial_import["payloads"]["irrigation_events"]
+            if event["source_sheet_row"] == 78
+        )
+        report = build_daily_sync_plan(records, "2026-05-23")
+        replay = report["payloads"]["irrigation_events"][0]
+
+        self.assertEqual(replay["source_sheet_row"], 78)
+        self.assertEqual(replay["irrigation_event_id"], original["irrigation_event_id"])
+        self.assertEqual(
+            replay["irrigation_event_id"],
+            "IRREVT-78-20260523T000614.5970200",
+        )
+        self.assertEqual(replay["event_at"], "2026-05-22T22:06:14.597000Z")
+        self.assertEqual(
+            replay["details"]["operational_fingerprint"],
+            original["details"]["operational_fingerprint"],
+        )
 
     def test_plan_only_uses_daily_scope_and_writes_nothing(self):
         report = build_daily_sync_plan(self._records(), "2026-05-23")

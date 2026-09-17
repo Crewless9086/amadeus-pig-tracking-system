@@ -6,9 +6,44 @@ from modules.orders import order_routes
 
 
 class OrderRoutesTests(unittest.TestCase):
+    @patch("modules.orders.order_routes.prepare_live_stock_sales_pack")
+    def test_prepare_sales_pack_route_returns_owner_gated_bundle(self, prepare):
+        prepare.return_value = {
+            "success": True,
+            "status": "sam_live_stock_sales_pack_ready",
+            "customer_send_allowed": False,
+        }
+        response = self.client.post("/api/orders/ORD-1/sales-pack/prepare", json={"created_by": "Owner"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["customer_send_allowed"])
+        prepare.assert_called_once_with("ORD-1", {"created_by": "Owner"})
     def setUp(self):
         app.testing = True
         self.client = app.test_client()
+
+    def test_available_pigs_is_owner_guarded_and_returns_tag_151_once(self):
+        pig = {
+            "pig_id": "PIG-2026-B156", "tag_number": "151",
+            "livestock_transfer_eligible": True, "food_chain_eligible": False,
+            "treatment_disclosure": {"withdrawal_end_date": "2026-09-08"},
+        }
+        with patch.object(order_routes, "require_owner_read_access", return_value=None) as guard, \
+             patch.object(order_routes, "get_available_pigs_for_orders", return_value=[pig]):
+            response = self.client.get("/api/orders/available-pigs")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["count"], 1)
+        self.assertEqual([row["tag_number"] for row in response.get_json()["pigs"]], ["151"])
+        guard.assert_called_once_with()
+
+    def test_available_pigs_returns_owner_guard_without_reading_inventory(self):
+        guarded = ({"success": False, "error": "owner_read_required"}, 403)
+        with patch.object(order_routes, "require_owner_read_access", return_value=guarded), \
+             patch.object(order_routes, "get_available_pigs_for_orders") as read_inventory:
+            response = self.client.get("/api/orders/available-pigs")
+
+        self.assertEqual(response.status_code, 403)
+        read_inventory.assert_not_called()
 
     def test_create_order_route_validates_payload_and_returns_created(self):
         service_result = {
@@ -23,6 +58,7 @@ class OrderRoutesTests(unittest.TestCase):
             "customer_channel": "Chatwoot",
             "customer_language": "English",
             "order_source": "WhatsApp",
+            "order_stream": "Livestock",
             "requested_category": "Grower",
             "requested_weight_range": "35_to_39_Kg",
             "requested_sex": "Female",
@@ -45,6 +81,20 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertEqual(cleaned["customer_name"], "Sam")
         self.assertEqual(cleaned["requested_quantity"], 1.0)
         self.assertEqual(cleaned["created_by"], "Tester")
+
+    def test_create_order_rejects_missing_or_invalid_explicit_stream(self):
+        base = {
+            "order_date": "2026-05-18", "customer_name": "Sam",
+            "customer_channel": "Chatwoot", "customer_language": "English",
+            "order_source": "WhatsApp",
+        }
+        for stream in (None, "Auction"):
+            payload = dict(base)
+            if stream is not None:
+                payload["order_stream"] = stream
+            response = self.client.post("/api/master/orders", json=payload)
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("Order_Stream must be Livestock, Meat, or Slaughter.", response.get_json()["errors"])
 
     def test_shadow_order_compare_route_is_read_only_boundary(self):
         service_result = {
@@ -107,6 +157,18 @@ class OrderRoutesTests(unittest.TestCase):
             "success": False,
             "errors": ["Terminal orders cannot be updated."],
         })
+
+    def test_update_order_route_accepts_saved_conversation_id(self):
+        service_result = {"success": True, "order_id": "ORD-1", "updated_fields": ["conversation_id"]}
+        with patch.object(order_routes, "update_order", return_value=service_result) as update:
+            response = self.client.patch(
+                "/api/master/orders/ORD-1",
+                json={"conversation_id": "1871", "changed_by": "Tester"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        self.assertEqual(update.call_args.args[1]["conversation_id"], "1871")
 
     def test_create_order_line_route_validates_payload_and_returns_created(self):
         service_result = {
@@ -360,6 +422,21 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertFalse(payload["success"])
         self.assertEqual(payload["action"], "generate_quote")
         self.assertIn("RuntimeError: drive offline", payload["errors"][0])
+
+    def test_refresh_order_pricing_route_returns_resolution_result(self):
+        service_result = {
+            "success": True,
+            "status": "order_prices_ready",
+            "order_id": "ORD-1",
+            "updated_count": 2,
+            "estimated_total": 1400,
+        }
+        with patch.object(order_routes, "ensure_order_line_prices", return_value=service_result) as ensure:
+            response = self.client.post("/api/orders/ORD-1/pricing", json={"reprice": True})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        ensure.assert_called_once_with("ORD-1", reprice=True)
 
     def test_order_search_route_passes_query_and_returns_400_for_validation_error(self):
         service_result = {
@@ -704,6 +781,93 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.get_json()
         self.assertFalse(payload["success"])
+        self.assertIn("requested_items is required", payload["errors"][0])
+
+    def test_approved_livestock_revision_route_validates_and_calls_service(self):
+        service_result = {
+            "success": True,
+            "action": "revise_approved_livestock_order",
+            "order_id": "ORD-2026-12BCCC",
+            "customer_quote_send": {"sent": False, "owner_instruction_required": True},
+        }
+        payload = {
+            "changed_by": "Oom Sakkie",
+            "owner_confirmation": "REVISE APPROVED LIVESTOCK ORDER",
+            "authorization_source": "telegram_owner_action",
+            "requested_items": [{
+                "request_item_key": "michaels-piglets",
+                "category": "Piglet",
+                "weight_range": "7_to_9_Kg",
+                "sex": "Any",
+                "quantity": 5,
+            }],
+            "order_updates": {
+                "requested_quantity": 5,
+                "requested_category": "Piglet",
+                "requested_weight_range": "7_to_9_Kg",
+                "requested_sex": "Any",
+            },
+            "sale_readiness_correction": {
+                "tag_number": "104",
+                "weight_kg": 8.4,
+                "purpose": "Sale",
+            },
+        }
+
+        with patch.object(order_routes, "revise_approved_livestock_order", return_value=service_result) as revise:
+            response = self.client.post(
+                "/api/orders/ORD-2026-12BCCC/approved-livestock-revision",
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        revise.assert_called_once()
+        self.assertEqual(revise.call_args.args[0], "ORD-2026-12BCCC")
+        cleaned = revise.call_args.args[1]
+        self.assertEqual(cleaned["requested_items"][0]["quantity"], 5)
+        self.assertEqual(cleaned["order_updates"]["requested_quantity"], 5.0)
+
+    def test_approved_livestock_revision_route_requires_owner_authorization_before_service_call(self):
+        payload = {
+            "changed_by": "Oom Sakkie",
+            "requested_items": [{
+                "request_item_key": "michaels-piglets",
+                "category": "Piglet",
+                "weight_range": "7_to_9_Kg",
+                "sex": "Any",
+                "quantity": 5,
+            }],
+        }
+
+        with patch.object(order_routes, "revise_approved_livestock_order") as revise:
+            response = self.client.post(
+                "/api/orders/ORD-2026-12BCCC/approved-livestock-revision",
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 403)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["owner_authorization_required"])
+        self.assertIn("Owner/Oom Sakkie authorization is required", payload["errors"][0])
+        revise.assert_not_called()
+
+    def test_approved_livestock_revision_route_returns_400_for_invalid_payload(self):
+        response = self.client.post(
+            "/api/orders/ORD-2026-12BCCC/approved-livestock-revision",
+            json={
+                "changed_by": "Oom Sakkie",
+                "owner_authorized": True,
+                "authorization_source": "telegram_owner_action",
+                "requested_items": [],
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["action"], "revise_approved_livestock_order")
         self.assertIn("requested_items is required", payload["errors"][0])
 
 

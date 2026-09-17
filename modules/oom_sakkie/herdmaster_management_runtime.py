@@ -1,0 +1,348 @@
+"""Existing-store runtime coordinator for proactive HERDMASTER evidence."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import os
+from typing import Any, Callable, Mapping, Sequence
+
+from modules.oom_sakkie.herdmaster_management_adapter import (
+    ZERO_AUTHORITY, consume_herdmaster_management_round, validate_management_authority,
+)
+import hashlib
+import json
+from modules.oom_sakkie.farm_manager_loop import SpecialistResult
+from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+
+EVENT_SOURCE = "oom_sakkie_herdmaster_management_consumer"
+OBSERVATION_SOURCE = "oom_sakkie_owner_observation"
+
+
+def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
+        now: datetime | None = None, canonical_loader=load_current_breeding_operating_loop,
+        observation_loader=None, active_loader=None, prior_loader=None, recorder=None,
+        retain_replay_result=False):
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    auth = validate_management_authority(
+        authority, str(owner_user_id), now, trusted_now=now)
+    if not auth:
+        return _contained("authenticated_manager_context_denied", now)
+    try:
+        observations = (observation_loader or _load_observations)(str(owner_user_id))
+        if active_loader is not None:
+            active = active_loader(str(owner_user_id))
+        else:
+            projected = _load_active_lifecycles(str(owner_user_id), include_terminal=True)
+            # This consumer needs canonical death closures to suppress stale
+            # mortality work. Other terminal dispositions remain retired but
+            # are not reinterpreted as mortality closure evidence.
+            active = [row for row in projected if
+                str(row.get("state") or "").strip().casefold()
+                    not in {"completed", "closed", "handled"}
+                or row.get("mortality_closed") is True]
+        prior = (prior_loader or _load_prior_consumptions)(
+            str(owner_user_id), str(auth["context"].get("digest") or ""))
+        canonical = canonical_loader()
+        observations = _bind_legacy_observation_tasks(observations, canonical)
+    except Exception:
+        return _contained("herdmaster_management_runtime_evidence_unavailable", now)
+    evidence_checked_at = now
+    try:
+        generated_at = datetime.fromisoformat(
+            str(canonical.get("generated_at") or "").replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
+        if generated_at > evidence_checked_at:
+            evidence_checked_at = generated_at
+    except (AttributeError, TypeError, ValueError):
+        # The pure adapter remains authoritative for malformed timestamps.
+        pass
+    result = consume_herdmaster_management_round(authority=authority,
+        expected_owner_user_id=str(owner_user_id), canonical_round=canonical,
+        invocation_at=now, trusted_now=evidence_checked_at, attributable_owner_observations=observations,
+        active_lifecycles=active, prior_consumptions=prior)
+    if (retain_replay_result
+            and result.get("status") == "herdmaster_management_round_replay_suppressed"):
+        replay = consume_herdmaster_management_round(authority=authority,
+            expected_owner_user_id=str(owner_user_id), canonical_round=canonical,
+            invocation_at=now, trusted_now=evidence_checked_at,
+            attributable_owner_observations=observations,
+            active_lifecycles=active, prior_consumptions=())
+        if isinstance(replay.get("specialist_result"), SpecialistResult):
+            result = {**replay, "status": "herdmaster_management_round_replay_suppressed"}
+    if result.get("status") == "herdmaster_management_round_consumed":
+        try:
+            recorded = (recorder or _record_consumption)(result)
+        except Exception:
+            return _contained("herdmaster_management_consumption_persistence_failed", now)
+        if (not isinstance(recorded, Mapping) or recorded.get("success") is not True
+                or recorded.get("created") not in {True, False}):
+            return _contained("herdmaster_management_consumption_persistence_unproven", now)
+        if recorded.get("created") is False:
+            return {**result, "status": "herdmaster_management_round_replay_suppressed",
+                "specialist_result": None, "accepted_work_item_count": 0}
+    return result
+
+
+def _bind_legacy_observation_tasks(observations, canonical):
+    """Bind older authenticated observations to their sole current pig task.
+
+    Early observation events predate ``canonical_task_id``.  Pig identity is
+    already authenticated and explicit; a binding is recoverable only when
+    the current canonical round contains exactly one task for that pig.
+    Observations with no current task are irrelevant to this round. Existing
+    task bindings are never rewritten, so mismatches still fail closed in the
+    pure evaluator.
+    """
+    task_ids = {}
+    ambiguous = set()
+    for raw in canonical.get("tasks") or () if isinstance(canonical, Mapping) else ():
+        if not isinstance(raw, Mapping):
+            continue
+        pig_id = str(raw.get("pig_id") or "").strip()
+        task_id = str(raw.get("task_id") or "").strip()
+        if not pig_id or not task_id:
+            continue
+        if pig_id in task_ids:
+            ambiguous.add(pig_id)
+        else:
+            task_ids[pig_id] = task_id
+    bound = []
+    for raw in observations:
+        if not isinstance(raw, Mapping):
+            bound.append(raw)
+            continue
+        row = dict(raw)
+        if row.get("canonical_task_id"):
+            bound.append(row)
+            continue
+        pig_id = str(row.get("pig_id") or "").strip()
+        if pig_id in ambiguous:
+            raise ValueError("legacy_owner_observation_task_ambiguous")
+        task_id = task_ids.get(pig_id)
+        if task_id:
+            row["canonical_task_id"] = task_id
+            bound.append(row)
+    return bound
+
+
+def _connect():
+    return connect_bounded_read(database_url=os.environ.get("DATABASE_URL"))
+
+
+def _load_observations(owner_user_id):
+    with _connect() as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select review_json->'owner_observation'
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s order by created_at desc,review_event_id desc limit 5001""",
+                (OBSERVATION_SOURCE,))
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
+                raise RuntimeError("herdmaster_observation_row_bound_exceeded")
+            rows = [row[0] for row in fetched if isinstance(row[0], dict)]
+            rows.reverse()
+    return [row for row in rows if row.get("authenticated_owner") is True
+            and str(row.get("owner_user_id") or "") == str(owner_user_id)
+            and row.get("provider_message_id") and row.get("provider_timestamp")]
+
+
+def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
+    with _connect() as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select h.review_json->'herdmaster_health_loss',
+                       f.review_json->'family_message_lifecycle'->>'telegram_message_id'
+                from public.sam_live_stock_conversation_review_events h
+                left join lateral (
+                    select review_json from public.sam_live_stock_conversation_review_events f
+                    where f.event_source='oom_sakkie_family_message_lifecycle'
+                      and f.review_json->'family_message_lifecycle'->>'card_mission_id'
+                          = h.review_json->'herdmaster_health_loss'->>'mission_id'
+                      and f.review_json->'family_message_lifecycle'->>'state' in ('delivered','updated')
+                    order by f.created_at desc,f.review_event_id desc limit 1
+                ) f on true
+                where h.event_source='oom_sakkie_herdmaster_health_loss_runtime'
+                  and h.review_json->'herdmaster_health_loss'->>'owner_user_id'=%s
+                order by h.created_at desc,h.review_event_id desc limit 5001""", (str(owner_user_id),))
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
+                raise RuntimeError("herdmaster_lifecycle_row_bound_exceeded")
+            rows = [(row[0], str(row[1] or "")) for row in fetched if isinstance(row[0], dict)]
+            rows.reverse()
+    terminal_pigs = _load_terminal_pig_states()
+    active = {}
+    for row, card_message_id in rows:
+        identity = ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
+        pig_id = str(identity.get("pig_id") or "")
+        if not pig_id:
+            continue
+        lifecycle_id = str(row.get("mission_id") or "")
+        observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
+        reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
+        terminal = terminal_pigs.get(pig_id)
+        if terminal:
+            if not include_terminal:
+                active.pop(pig_id, None)
+                continue
+            active[pig_id] = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
+                "state": "completed", "mortality_closed": terminal["mortality_closed"],
+                "closure_reason": "canonical_terminal_pig_state",
+                "canonical_status": terminal["status"],
+                "canonical_on_farm": terminal["on_farm"]}
+            continue
+        if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
+                                  "preview_correction_pending"} and card_message_id:
+            projected = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
+                "state": str(row.get("status")), "card_message_id": card_message_id,
+                "tag_number": str(identity.get("tag_number") or identity.get("name") or pig_id),
+                "provider_timestamp": str(row.get("provider_timestamp") or ""),
+                "current_question": str((((row.get("preview") or {}).get("evaluator") or {}).get(
+                    "smallest_missing_follow_up_question") or "")),
+                "owner_text": str(row.get("owner_text") or ""), "reported_dead": reported_dead}
+            active[pig_id] = _retain_active_mortality_context(active.get(pig_id), projected)
+        else:
+            # Chronology is ordered. A later terminal lifecycle for an animal
+            # supersedes stale earlier active projections for that animal.
+            if include_terminal:
+                active[pig_id] = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
+                                  "state": "completed", "mortality_closed": reported_dead}
+            else:
+                active.pop(pig_id, None)
+    return list(active.values())
+
+
+def _load_terminal_pig_states():
+    """Canonical terminal state retires stale open specialist projections."""
+    with _connect() as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select pig_id,status,on_farm from public.current_canonical_pig_state
+                where lower(status) in ('dead','sold') or on_farm is false
+                order by pig_id limit 5001""")
+            rows = cursor.fetchall()
+            if len(rows) > 5000:
+                raise RuntimeError("herdmaster_terminal_pig_row_bound_exceeded")
+            return {str(row[0]): {"status": str(row[1] or ""), "on_farm": row[2],
+                    "mortality_closed": str(row[1] or "").casefold() in
+                        {"dead", "died", "deceased"}}
+                    for row in rows if row and row[0]}
+
+
+def _load_terminal_pig_ids():
+    """Compatibility projection for callers/tests that need identities only."""
+    return set(_load_terminal_pig_states())
+
+
+def _retain_active_mortality_context(previous, current):
+    """A later lifecycle projection cannot erase earlier proven death context."""
+    previous_id=str(previous.get("lifecycle_id") or "") if isinstance(previous,dict) else ""
+    current_id=str(current.get("lifecycle_id") or "")
+    if (not previous_id or not current_id or previous_id != current_id
+            or previous.get("reported_dead") is not True):
+        return current
+    return {**current, "reported_dead": True, "current_question": ""}
+
+
+def _retained_owner_reported_death(row, observations, owner_user_id):
+    if str(row.get("owner_user_id") or "") != str(owner_user_id):
+        return False
+    if any(isinstance(item, dict) and item.get("fact") == "animal_reported_dead"
+           and item.get("value") is True for item in observations or ()):
+        return True
+    semantic = row.get("semantic_interpretation")
+    if not isinstance(semantic, dict):
+        return False
+    # Older health/loss evaluators retained the authenticated natural death
+    # report and its semantic binding without projecting animal_reported_dead.
+    # This supports manager coordination only; it grants no canonical write.
+    verbatim = str(row.get("owner_text_verbatim") or "").strip()
+    retained_sha = str(row.get("retained_owner_text_sha256") or "").strip().lower()
+    if retained_sha and hashlib.sha256(verbatim.encode("utf-8")).hexdigest() != retained_sha:
+        return False
+    identity = ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
+    def entity_alias(value):
+        normalized = " ".join(str(value or "").casefold().split())
+        return normalized[4:] if normalized.startswith("pig ") else normalized
+    references = {entity_alias(value) for value in semantic.get("entity_refs") or ()
+                  if entity_alias(value)}
+    identifiers = {entity_alias(identity.get(key)) for key in ("pig_id", "tag_number", "name")
+                   if entity_alias(identity.get(key))}
+    if not references.intersection(identifiers):
+        return False
+    try:
+        from modules.pig_weights.herdmaster_natural_health_loss_intake import _parse_report
+        parsed = _parse_report(verbatim, datetime.fromisoformat(
+            str(row.get("provider_timestamp") or "").replace("Z", "+00:00")))
+    except (TypeError, ValueError):
+        return False
+    deterministic_death = any(item.get("fact") == "animal_reported_dead" and item.get("value") is True
+                              for item in parsed.get("observed") or () if isinstance(item, dict))
+    return (bool(verbatim)
+        and bool(str(row.get("provider_message_id") or "").strip())
+        and bool(str(row.get("provider_timestamp") or "").strip())
+        and semantic.get("domain") == "herd_health"
+        and semantic.get("intent") == "report_death"
+        and float(semantic.get("confidence") or 0) >= 0.8
+        and semantic.get("continuation") is True
+        and semantic.get("needs_clarification") is False
+        and deterministic_death)
+
+
+def _load_prior_consumptions(owner_user_id, invocation_context_digest):
+    owner_hash = hashlib.sha256(json.dumps({"owner_user_id": str(owner_user_id)},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    with _connect() as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select review_json->'herdmaster_management_consumption'->'binding'
+                from public.sam_live_stock_conversation_review_events where event_source=%s
+                  and review_json->'herdmaster_management_consumption'->'binding'->>'authenticated_owner_identity_sha256'=%s
+                  and review_json->'herdmaster_management_consumption'->'binding'->'invocation_context'->>'digest'=%s
+                order by created_at desc,review_event_id desc limit 5001""",
+                (EVENT_SOURCE, owner_hash, invocation_context_digest))
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
+                raise RuntimeError("herdmaster_consumption_row_bound_exceeded")
+            bindings = [row[0] for row in fetched if isinstance(row[0], dict)]
+            bindings.reverse()
+    return [{"management_round_identity": row.get("management_round_identity"),
+        "deduplication_key": row.get("deduplication_key"), "result_digest": row.get("result_digest"),
+        "result_digest_version": row.get("result_digest_version"),
+        "evidence_generation": row.get("evidence_generation"),
+        "active_case_digest": (row.get("active_case_deduplication_state") or {}).get("digest"),
+        "invocation_context_digest": (row.get("invocation_context") or {}).get("digest")} for row in bindings]
+
+
+def _record_consumption(result):
+    from modules.sales.sam_live_stock_launch_control import build_sam_live_stock_review_event, record_sam_live_stock_review_event
+    binding = dict(result["binding"])
+    identity = _consumption_claim_identity(binding)
+    event = build_sam_live_stock_review_event({"conversation_id": identity}, {}, {},
+        {"score": 0, "safe_to_send": False, "recommended_action": "internal_management_consumption"}, event_source=EVENT_SOURCE)
+    event["review_event_id"] = identity; event["chatwoot_conversation_id"] = identity
+    event["review_json"] = {"herdmaster_management_consumption": {"binding": binding,
+        "accepted_work_item_ids": [item.item_id for item in result["specialist_result"].work_items],
+        "zero_authority": True}}
+    event["decision_json"]={}; event["facts_json"]={}; event["customer_message_excerpt"]=""; event["sam_reply_excerpt"]=""
+    saved, status = record_sam_live_stock_review_event(event)
+    if status >= 400 or saved.get("success") is not True:
+        raise RuntimeError("herdmaster_management_consumption_persistence_failed")
+    return saved
+
+
+def _consumption_claim_identity(binding):
+    claim_binding = {key: binding.get(key) for key in (
+        "authenticated_owner_identity_sha256", "management_round_identity",
+        "deduplication_key", "result_digest", "evidence_generation")}
+    claim_binding["active_case_digest"] = (binding.get("active_case_deduplication_state") or {}).get("digest")
+    claim_binding["invocation_context_digest"] = (binding.get("invocation_context") or {}).get("digest")
+    return "OOM-HERD-MGMT-" + hashlib.sha256(json.dumps(claim_binding, sort_keys=True,
+        separators=(",", ":"), default=str).encode()).hexdigest().upper()
+
+
+def _contained(reason, now):
+    return {"success": False, "status": "herdmaster_management_runtime_contained",
+        "systemic_exception": {"reason": reason, "observed_at": now.isoformat()},
+        "specialist_result": None, "accepted_work_item_count": 0, **ZERO_AUTHORITY}

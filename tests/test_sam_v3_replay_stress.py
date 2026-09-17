@@ -173,7 +173,7 @@ class SamV3ReplayStressTests(unittest.TestCase):
         self.assertNotIn("Would you prefer collection or delivery", reply)
         self.assertNotIn("For delivery", reply)
 
-    def test_public_sales_agent_rejects_robotic_llm_reply_and_uses_better_fallback(self):
+    def test_general_acknowledgement_stops_before_stale_meat_context(self):
         result, status_code = self._run_sam_v3_case(
             content="Ok thanks",
             active_interest={
@@ -192,12 +192,12 @@ class SamV3ReplayStressTests(unittest.TestCase):
             },
         )
 
-        reply = result["sam_decision"]["reply_text"]
         self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "sam_meat_general_first_withheld")
+        self.assertFalse(result["processed"])
         self.assertFalse(result["agent_decision"]["used"])
-        self.assertEqual(result["agent_decision"]["status"], "agent_v3_reply_blocked")
-        self.assertIn("robotic_public_reply", result["agent_decision"]["risk_flags"])
-        self.assertNotIn("I am still with you", reply)
+        self.assertEqual(result["agent_decision"]["status"], "general_first_specialist_not_invoked")
+        self.assertEqual(result["lead_result"]["status"], "not_recorded_without_current_message_meat_evidence")
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
@@ -264,14 +264,15 @@ class SamV3ReplayStressTests(unittest.TestCase):
         rewriter.assert_not_called()
         self.assertEqual(result["sam_decision"]["reply_source"], "hard_product_knowledge")
         self.assertIn("Set A", reply)
-        self.assertIn("Set D", reply)
-        self.assertIn("ribs", reply)
+        self.assertNotIn("Set D", reply)
+        self.assertIn("Amadeus Grand Cut Collection", reply)
+        self.assertIn("whole pork rib", reply.lower())
         self.assertNotIn("send the set sheet", reply.lower())
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_code_intro_is_rewritten_before_public_send(self, mock_record, mock_contract, mock_active):
+    def test_opening_hi_stops_before_meat_rewriter_or_lead(self, mock_record, mock_contract, mock_active):
         mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
         mock_record.return_value = ({
             "success": True,
@@ -284,6 +285,11 @@ class SamV3ReplayStressTests(unittest.TestCase):
             "contract": {"contract_status": "needs_owner_confirmation"},
         }, 200)
 
+        decider = Mock(return_value={})
+        rewriter = Mock(return_value={
+            "reply_text": "This must not be used.",
+            "confidence": 0.92,
+        })
         result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
             inbound_payload(content="Hi"),
             environ={
@@ -293,19 +299,16 @@ class SamV3ReplayStressTests(unittest.TestCase):
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
-            llm_agent_v3_decider=Mock(return_value={}),
-            llm_reply_rewriter=Mock(return_value={
-                "reply_text": "Hi, I am Sam from Amadeus Farm. Are you looking for pork for your freezer, or do you need farm information first?",
-                "confidence": 0.92,
-            }),
+            llm_agent_v3_decider=decider,
+            llm_reply_rewriter=rewriter,
         )
 
-        reply = result["sam_decision"]["reply_text"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["sam_decision"]["reply_source"], "llm_rewritten_code_fallback")
-        self.assertEqual(result["sam_decision"]["rewrite_status"], "rewritten")
-        self.assertNotIn("Pork meat sales: Half carcass", reply)
-        self.assertNotIn("Tell me what you are looking for", reply)
+        self.assertEqual(result["status"], "sam_meat_general_first_withheld")
+        self.assertFalse(result["processed"])
+        decider.assert_not_called()
+        rewriter.assert_not_called()
+        mock_record.assert_not_called()
 
     def test_rewriter_accepts_clean_reply_when_confidence_is_omitted(self):
         reply = sam_meat_runtime._safe_rewritten_reply({
@@ -366,7 +369,7 @@ class SamV3ReplayStressTests(unittest.TestCase):
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_opening_hi_cannot_be_suppressed_by_v3_no_reply(self, mock_record, mock_contract, mock_active):
+    def test_opening_hi_never_enters_meat_v3(self, mock_record, mock_contract, mock_active):
         mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
         mock_record.return_value = ({
             "success": True,
@@ -379,6 +382,15 @@ class SamV3ReplayStressTests(unittest.TestCase):
             "contract": {"contract_status": "needs_owner_confirmation"},
         }, 200)
 
+        decider = Mock(return_value={
+            "intent": "general",
+            "should_reply": False,
+            "reply_text": "",
+            "facts_patch": {},
+            "next_action": "no_reply",
+            "confidence": 0.93,
+            "risk_flags": [],
+        })
         result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
             inbound_payload(content="Hi"),
             environ={
@@ -388,15 +400,7 @@ class SamV3ReplayStressTests(unittest.TestCase):
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
-            llm_agent_v3_decider=Mock(return_value={
-                "intent": "general",
-                "should_reply": False,
-                "reply_text": "",
-                "facts_patch": {},
-                "next_action": "no_reply",
-                "confidence": 0.93,
-                "risk_flags": [],
-            }),
+            llm_agent_v3_decider=decider,
             llm_reply_rewriter=Mock(return_value={
                 "reply_text": "Hi, I am Sam from Amadeus Farm. Are you looking for pork for your freezer, or would you like to know more about the farm first?",
                 "confidence": 0.93,
@@ -404,14 +408,15 @@ class SamV3ReplayStressTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertTrue(result["agent_decision"]["used"])
-        self.assertTrue(result["sam_decision"]["should_reply"])
-        self.assertEqual(result["sam_decision"]["reply_source"], "llm_rewritten_code_fallback")
-        self.assertIn("Amadeus Farm", result["sam_decision"]["reply_text"])
+        self.assertEqual(result["status"], "sam_meat_general_first_withheld")
+        self.assertFalse(result["agent_decision"]["used"])
+        self.assertFalse(result["sam_decision"]["should_reply"])
+        decider.assert_not_called()
+        mock_record.assert_not_called()
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_code_sales_reply_falls_back_when_rewriter_unavailable(self, mock_record, mock_active):
+    def test_opening_hi_without_rewriter_still_avoids_meat(self, mock_record, mock_active):
         mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
         mock_record.return_value = ({
             "success": True,
@@ -431,9 +436,10 @@ class SamV3ReplayStressTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertTrue(result["sam_decision"]["should_reply"])
-        self.assertIn("pork", result["sam_decision"]["reply_text"])
-        self.assertEqual(result["sam_decision"]["reply_source"], "code_fallback_rewrite_unavailable")
+        self.assertEqual(result["status"], "sam_meat_general_first_withheld")
+        self.assertFalse(result["sam_decision"]["should_reply"])
+        self.assertEqual(result["sam_decision"]["reply_text"], "")
+        mock_record.assert_not_called()
 
     def test_replay_stress_v3_rejects_payment_booking_and_money_hallucinations(self):
         unsafe_outputs = [

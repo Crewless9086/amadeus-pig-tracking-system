@@ -79,7 +79,7 @@ Delivery-status accepted auth:
 - or `X-Amadeus-Meat-Delivery-Webhook-Key: <token>`
 - or URL token for webhook tools that cannot send custom headers: `?token=<token>`
 
-Closed-window recovery: if the service window is stale or unknown, the route returns `estimated_quote_template_required` and does not send the PDF. The template must already be approved in WhatsApp/Meta. Pilot template names and suggested wording are logged in `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`.
+Closed-window recovery: if the service window is stale or unknown, the route returns `estimated_quote_template_required` and does not send the PDF. The template must already be approved in WhatsApp/Meta; template identity and provider approval are runtime evidence, not documentation authority.
 
 Sam inbound accepted auth:
 
@@ -100,10 +100,19 @@ Runtime rules:
 
 Safe pork cut-menu replies are allowed from the documented pork model only:
 
-- Set A: Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.
-- Set B: Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.
-- Set C: Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.
-- Set D: Budget Bulk Pack: larger roasting cuts, mince, stew meat, soup bones, shoulder, mixed chops, and less detailed trimming.
+- Set A / Amadeus Signature Collection: boneless neck steaks, additional forequarter stew meat, loin chops, bone-in rib rashers, whole pork belly, two half legs, cut shanks, and standard stew meat.
+- Set B / Amadeus Ember Collection: thick rib chops, shoulder chops, loin chops, whole pork rib, whole pork belly, one half leg, leg chops, cut shanks, and standard stew meat.
+- Set C / Amadeus Grand Cut Collection: neck chops, loin chops, whole pork rib, whole pork belly, whole pork leg, whole pork shanks (Eisbein), and standard stew meat.
+
+Set D is historical-only and cannot be offered for a new pilot sale. A full
+carcass contains two independently selected half-carcass collections, which
+may be the same or different. Customer replies must follow
+`docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`.
+
+Historical search compatibility only: older evidence may say
+`Set A: Family Freezer Pack`, `Set B: Braai Pack`, `Set C: Lean Pack`, or
+`Set D: Budget Bulk Pack`. These labels are not the current offer and must
+never be copied into a new customer reply or quote.
 
 These descriptions do not grant pricing, timing, deposit, booking, order, or stock authority.
 
@@ -362,7 +371,7 @@ These fields are stored on the lead interest JSON and may also create an append-
 
 ## Cut Menu Boundary
 
-Sam may recognize and describe the approved cut sets from `docs/08-business-modules/PORK_SALES_MODEL.md` rows 246-303.
+Sam may recognize and describe only the approved collections in `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`.
 
 Sam must not invent extra cuts or treat cut-set selection as price, availability, deposit, or booking approval. Those remain owner/Ledger gated.
 

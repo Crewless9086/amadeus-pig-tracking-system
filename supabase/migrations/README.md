@@ -38,6 +38,11 @@ Current state:
 - `202606290003_add_litter_lifecycle_fields.sql` is the GS-MIG-9 litter lifecycle support migration.
 - It adds nullable litter/wean/earmark fields and related indexes to existing canonical farm tables only.
 - It is additive only and does not rewrite existing pig or litter records.
+- `202607130001_create_meat_processing_batches.sql` creates the internal/customer meat-production batch ledger.
+- It separates slaughter-to-packed stages, costs, cut outputs, and yield evidence from customer sales revenue.
+- It creates no sale, order, reservation, customer message, or automatic lifecycle update.
+- `202607210001_create_pig_lifecycle_events.sql` creates an additive, append-only lifecycle audit rail linked to canonical pigs.
+- It does not update `public.pigs`, perform lifecycle actions, change read/write flows, or expose browser access. Do not apply it without explicit owner approval.
 
 Manual run process for Phase 10.1B:
 

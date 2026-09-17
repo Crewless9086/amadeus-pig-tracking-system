@@ -1,100 +1,24 @@
-const messageBox = document.getElementById("breeding_analytics_message");
-const matingCount = document.getElementById("breeding_mating_count");
-const litterCount = document.getElementById("breeding_litter_count");
-const animalCount = document.getElementById("breeding_animal_count");
-const sowBody = document.getElementById("sow_analytics_body");
-const boarBody = document.getElementById("boar_analytics_body");
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function formatTagNumber(value) {
-  const raw = String(value || "").trim();
-  return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
-}
-
-function formatNumber(value, decimals = 0) {
-  if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  return Number(value).toFixed(decimals);
-}
-
-function formatPercent(value) {
-  if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  return `${Number(value).toFixed(1)}%`;
-}
-
-function animalLabel(row) {
-  const tag = formatTagNumber(row.tag_number || row.pig_id || "-");
-  const id = row.pig_id || "";
-  return id && id !== row.tag_number ? `${tag} (${id})` : tag;
-}
-
-function breedingDetailHref(pigId) {
-  const params = new URLSearchParams({
-    return_to: "/breeding-analytics",
-    return_label: "Back to Analytics",
-  });
-  return `/breeding-analytics/${encodeURIComponent(pigId || "")}?${params.toString()}`;
-}
-
-function setMessage(message) {
-  messageBox.classList.remove("hidden", "message-success");
-  messageBox.classList.add("message-error");
-  messageBox.textContent = message;
-}
-
-function renderRows(container, rows, animalType) {
-  if (!rows.length) {
-    container.innerHTML = `<tr><td colspan="9" class="table-empty">No ${animalType} analytics found.</td></tr>`;
-    return;
-  }
-
-  container.innerHTML = rows.map((row) => `
-    <tr>
-      <td><a class="detail-link" href="${breedingDetailHref(row.pig_id)}">${escapeHtml(animalLabel(row))}</a></td>
-      <td>${escapeHtml(row.mating_count ?? 0)}</td>
-      <td>${escapeHtml(row.confirmed_pregnant_count ?? 0)}</td>
-      <td>${escapeHtml(row.repeat_service_count ?? 0)}</td>
-      <td>${escapeHtml(row.farrowed_count ?? 0)}</td>
-      <td>${escapeHtml(row.litter_count ?? 0)}</td>
-      <td>${escapeHtml(formatNumber(row.average_born_alive, 2))}</td>
-      <td>${escapeHtml(formatNumber(row.average_weaned, 2))}</td>
-      <td>${escapeHtml(formatPercent(row.survival_pct))}</td>
-    </tr>
-  `).join("");
-}
-
-async function loadBreedingAnalytics() {
-  try {
-    const response = await fetch("/api/pig-weights/breeding-analytics");
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error("Failed to load breeding analytics.");
-    }
-
-    const summary = data.summary || {};
-    matingCount.textContent = String(summary.mating_count ?? 0);
-    litterCount.textContent = String(summary.litter_count ?? 0);
-    animalCount.textContent = `${summary.sow_count ?? 0} sows / ${summary.boar_count ?? 0} boars`;
-    renderRows(sowBody, data.sows || [], "sow");
-    renderRows(boarBody, data.boars || [], "boar");
-  } catch (error) {
-    console.error("breeding analytics error:", error);
-    setMessage(error.message || "Something went wrong while loading breeding analytics.");
-    sowBody.innerHTML = `<tr><td colspan="9" class="table-empty">Could not load sow analytics.</td></tr>`;
-    boarBody.innerHTML = `<tr><td colspan="9" class="table-empty">Could not load boar analytics.</td></tr>`;
-  }
-}
-
-document.addEventListener("DOMContentLoaded", loadBreedingAnalytics);
+const meritStatus=document.getElementById("breeding_analytics_status"),meritContent=document.getElementById("breeding_analytics_content");
+const UNKNOWN="Unknown";
+function known(v){return v!==null&&v!==undefined&&v!=="";}
+function text(v){return known(v)?String(v):UNKNOWN;}
+function number(v){return known(v)&&!Number.isNaN(Number(v))?String(v):UNKNOWN;}
+function percent(v){return known(v)&&!Number.isNaN(Number(v))?`${(Number(v)*100).toFixed(1)}%`:UNKNOWN;}
+function escapeHtml(v){return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");}
+function confidenceClass(v){return `is-${String(v||UNKNOWN).toLowerCase()}`;}
+function identityHtml(identity={}){const name=text(identity.display_name),tag=identity.tag_number,pig=identity.pig_id;return `<div class="merit-name">${escapeHtml(name)}</div><div class="merit-secondary">${tag?`Tag ${escapeHtml(tag)}`:""}${tag&&pig?" · ":""}${pig?`Pig-ID ${escapeHtml(pig)}`:""}</div>`;}
+function coverage(value){return known(value)?percent(value):UNKNOWN;}
+function safeDetailHref(value,identity={}){const href=String(value||"").trim(),pigId=String(identity.pig_id||"").trim();if(!pigId||/[\\\u0000-\u001f\u007f]/.test(href)||!/^\/breeding-analytics\/[^/?#]+$/.test(href))return "";return href===`/breeding-analytics/${encodeURIComponent(pigId)}`?href:"";}
+function metric(label,value,note=""){return `<div class="merit-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${note?`<small>${escapeHtml(note)}</small>`:""}</div>`;}
+function interpretationItem(label,value){return `<div><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value||"No supported conclusion at this cutoff")}</p></div>`;}
+function card(row){const outcomes=row.litter_outcomes||{},opp=row.breeding_opportunities||{},conf=row.confidence||{},inputs=conf.inputs||{},interpret=row.interpretation||{},growth=row.offspring_growth||{},finance=row.financial_outcomes||{},offspring=row.offspring||{};const href=safeDetailHref(row.detail_href,row.identity);return `<article class="merit-card">
+ <header>${identityHtml(row.identity)}<span class="merit-confidence ${confidenceClass(conf.label)}">${escapeHtml(text(conf.label))} confidence</span></header>
+ <div class="merit-card-metrics">${metric("Survival",percent(outcomes.rate),`${number(outcomes.weaned_numerator)} / ${number(outcomes.born_alive_denominator)}`)}${metric("Eligible litters",number(outcomes.eligible_litter_count),`${number(outcomes.observed_litter_count)} observed · ${number(outcomes.missing_litter_count)} missing`)}${metric("Complete opportunities",number(opp.eligible_complete_through_count),`${number(opp.observed_count)} observed`)}${metric("Offspring sample",number(offspring.sample_size))}</div>
+ <div class="merit-coverage"><span>Outcome coverage <b>${coverage(inputs.outcome_coverage)}</b></span><span>Context coverage <b>${coverage(inputs.context_coverage)}</b></span><span>Cohorts <b>${number(inputs.cohort_count)}</b></span></div>
+ <div class="merit-interpretation compact">${interpretationItem("Going well",interpret.going_well)}${interpretationItem("Needs attention",interpret.needs_attention)}${interpretationItem("Missing evidence",interpret.missing_evidence)}${interpretationItem("Next review",interpret.next_review)}</div>
+ <div class="merit-unsupported"><span>Comparable growth: <b>${escapeHtml(text(growth.median_weight_kg))}</b></span><small>${escapeHtml(growth.limitation||"No supported comparable-growth conclusion.")}</small><span>Exact financial attribution: <b>${escapeHtml(text(finance.gross_attributable))}</b></span><small>${escapeHtml(finance.limitation||"No supported exact financial attribution.")}</small></div>
+ ${href?`<a class="merit-open" href="${escapeHtml(href)}" aria-label="Open ${escapeHtml(text(row.identity?.display_name))} merit evidence">Open evidence profile <span aria-hidden="true">→</span></a>`:""}</article>`;}
+function renderLineage(lineage={}){const litters=lineage.litters||{},superseded=litters.superseded_event_ids||[];const observations=(lineage.observations||{}).superseded_event_ids||[],lifecycle=(lineage.lifecycle||{}).superseded_event_ids||[];const all=[...superseded,...observations,...lifecycle];return all.length?`<p>Superseded evidence remains visible and does not govern current totals.</p><div class="merit-id-list">${all.map(id=>`<code>${escapeHtml(id)}</code>`).join("")}</div>`:`<p class="merit-muted">No superseded evidence identities were returned for this scope.</p>`;}
+function setState(kind,message){meritStatus.className=`merit-status is-${kind}`;meritStatus.innerHTML=`<span>${escapeHtml(message)}</span>`;meritContent.classList.toggle("hidden",kind!=="ready");if(kind==="ready")meritStatus.classList.add("hidden");}
+async function loadBreedingAnalytics(){try{const response=await fetch("/api/pig-weights/breeding-analytics/v1/full-lifecycle",{headers:{Accept:"application/json"}});let data;try{data=await response.json();}catch(_){throw new Error("HERDMASTER returned an unreadable response.");}if(response.status===401||response.status===403){setState("auth","Owner authentication is required to view genetic-merit evidence.");return;}if(!response.ok||data.success!==true||data.contract_version!=="herdmaster_full_lifecycle_merit_v1"||data.writes_performed!==false){throw new Error(data.reason||"Canonical lifetime-merit evidence is unavailable.");}const rows=Array.isArray(data.rows)?data.rows:[];document.getElementById("merit_boundary").textContent=data.association_boundary||document.getElementById("merit_boundary").textContent;const benchmark=data.herd_benchmarks||{},quality=data.data_quality||{};document.getElementById("merit_summary").innerHTML=metric("Animals",number(data.row_count),`Evidence cutoff ${text(data.evidence_cutoff)}`)+metric("Eligible survival profiles",number(benchmark.eligible_parent_count),`${number(benchmark.missing_parent_count)} missing`)+metric("Herd median survival",percent(benchmark.survival_rate_median),"Eligible parents only")+metric("Data quality",Object.values(quality).some(v=>Number(v)>0)?"Incomplete":"Complete","Unknowns remain Unknown");const sows=rows.filter(r=>r.breeding_role==="sow"),boars=rows.filter(r=>r.breeding_role==="boar"),other=rows.filter(r=>!["sow","boar"].includes(r.breeding_role));document.getElementById("merit_sow_count").textContent=`${sows.length} animals`;document.getElementById("merit_boar_count").textContent=`${boars.length} animals`;document.getElementById("merit_sows").innerHTML=sows.length?sows.map(card).join(""):'<div class="merit-empty">No sow merit packets are available at this cutoff.</div>';document.getElementById("merit_boars").innerHTML=boars.length?boars.map(card).join(""):'<div class="merit-empty">No boar merit packets are available at this cutoff.</div>';if(other.length)document.getElementById("merit_boars").insertAdjacentHTML("beforeend",`<div class="merit-empty">${other.length} packet(s) have an Unknown or conflicting breeding role.</div>`);document.getElementById("merit_lineage").innerHTML=renderLineage(data.lineage);setState("ready","");}catch(error){setState("failure",error.message||"Lifetime-merit evidence could not be loaded.");}}
+document.addEventListener("DOMContentLoaded",loadBreedingAnalytics);

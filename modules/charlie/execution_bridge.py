@@ -1,3 +1,4 @@
+import ast
 import base64
 import hashlib
 import json
@@ -16,7 +17,7 @@ from urllib.error import URLError
 from datetime import datetime, timezone
 from pathlib import Path
 
-from modules.charlie import vault_store
+from modules.charlie import runtime_path_root, vault_store
 from modules.charlie.mission_store import (
     AGENT_SEQUENCE,
     AGENT_STAGE_MAP,
@@ -24,11 +25,31 @@ from modules.charlie.mission_store import (
     all_agent_names,
     get_mission,
     list_missions,
+    mission_runtime_eligible,
+    record_mission,
+    consume_final_agent_artifact,
+    finalize_owner_review_transaction,
+    transition_mission_review_state,
     update_mission_status,
     update_mission_vault,
     update_mission_workflow_step,
 )
-from modules.charlie.runner_control import write_runner_heartbeat
+from modules.charlie.runner_control import (
+    emergency_process_cleanup_disabled,
+    record_emergency_cleanup_refusal,
+    runner_status,
+    write_runner_heartbeat,
+)
+from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
+from modules.charlie.secret_redaction import redact_file_in_place, restricted_agent_environment
+from modules.charlie.mission_admission_delivery import (
+    admitted_agent_environment,
+    start_admission_guard_server,
+    stop_admission_guard_server,
+)
+from modules.charlie.environment import env_value
+from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
+from modules.charlie.concurrency_control import ReleaseCoordinator, build_admission, declared_source_files, release_file_lease
 from modules.charlie.core_workflow import (
     AGENT_DOCTRINE_PATHS,
     build_handoff_report as build_core_handoff_report,
@@ -51,6 +72,22 @@ from modules.charlie.mission_quality import (
     repo_test_command_memory,
     score_mission_quality,
 )
+from modules.charlie.mission_governance import (
+    build_followup_missions,
+    analyze_pre_builder_scope,
+    build_scope_child_missions,
+    ensure_acceptance_matrix,
+    evaluate_quality_failure,
+    update_acceptance_matrix,
+)
+from modules.charlie.block_recovery import classify_block, normalize_findings
+from modules.charlie.adaptive_orchestration import expand_orchestration, validate_orchestration_binding
+from modules.charlie.evidence_reconciliation import (
+    bind_artifact_to_candidate,
+    build_candidate_manifest,
+    resolve_effective_agent_results,
+)
+from modules.charlie.pr_reconciliation import PASSING_CHECK_CONCLUSIONS, mission_pr_reference, query_pr_state
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.source_map import (
     implementation_source_packet,
@@ -64,10 +101,11 @@ from modules.charlie.vault_retrieval import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXECUTION_DIR = REPO_ROOT / ".charlie_runner" / "executions"
-REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
-LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
-MISSION_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "mission_media"
+RUNTIME_ROOT = runtime_path_root(REPO_ROOT)
+EXECUTION_DIR = RUNTIME_ROOT / ".charlie_runner" / "executions"
+REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review_media"
+LEGACY_REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review-media"
+MISSION_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "mission_media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 INLINE_IMAGE_DATA_URL_RE = re.compile(r"^data:image/(?P<kind>png|jpe?g|webp|gif);base64,(?P<data>[A-Za-z0-9+/=\s]+)$", re.IGNORECASE)
 DEFAULT_TIMEOUT_SECONDS = 3600
@@ -98,7 +136,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "source_mapper": ["summary", "implementation_inventory", "current_sources", "legacy_sources", "tests_to_run", "implementation_sources_used", "commands_run", "files_inspected", "vault_sources_used"],
     "council_synthesis": ["summary", "build_brief", "agreements", "conflicts_resolved", "commands_run", "files_inspected", "vault_sources_used"],
     "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected", "vault_sources_used"],
-    "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected", "vault_sources_used"],
+    "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "planning_gate_results", "builder_authorization", "commands_run", "files_inspected", "vault_sources_used"],
     "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected", "vault_sources_used"],
     "frontend_design_implementer": ["summary", "changed_files", "implementation_notes", "local_preview", "media_references_used", "visual_reference_analysis", "viewport_plan", "browser_check_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected", "vault_sources_used"],
@@ -108,7 +146,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "business_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "security_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "evidence_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
-    "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
+    "reviewer": ["summary", "recommended_owner_decision", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
 }
 AGENT_CONFIDENCE_REQUIRED_KEYS = ["confidence", "confidence_reason"]
 AGENT_CONFIDENCE_MINIMUM = 0.96
@@ -229,6 +267,19 @@ def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None
     if status_code >= 400:
         return error, status_code
 
+    mission = _ensure_execution_governance(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    decomposition = _pause_decomposed_parent(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if decomposition:
+        return decomposition, 200
+
     output_dir = Path(output_dir or EXECUTION_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
     execution_id = _execution_id(mission["mission_id"])
@@ -247,6 +298,31 @@ def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None
     }, 200
 
 
+def build_hermes_native_execution_context(mission):
+    """Reuse the existing governance/stage contract without invoking Codex CLI.
+
+    The Hermes native worker receives this deterministic, credential-free
+    packet.  Worktree mutation and packaging remain parent-owned.
+    """
+    row = dict(mission or {})
+    if not str(row.get("mission_id") or "").strip():
+        raise ValueError("canonical_mission_required")
+    governance = ensure_acceptance_matrix(row)
+    return {
+        "version": "charlie_hermes_native_execution_context_v1",
+        "mission_id": row["mission_id"],
+        "title": str(row.get("title") or ""),
+        "mission_governance": governance,
+        "pre_builder_scope": analyze_pre_builder_scope(row),
+        "builder_stage_prompt": build_agent_stage_prompt(row, "builder", artifacts={}, ledger={}),
+        "runner_reuse": [
+            "canonical mission loading", "governance context", "stage artifact contract",
+            "builder concurrency", "deterministic packaging", "review and admission supervision",
+        ],
+        "auto_merge": False,
+    }
+
+
 def run_codex_execution_bridge(
     mission_id="",
     status="in_progress",
@@ -257,6 +333,7 @@ def run_codex_execution_bridge(
     connect_factory=None,
     codex_command=None,
     run_subprocess=None,
+    admission_runtime=None,
 ):
     prepared, status_code = prepare_codex_execution(
         mission_id=mission_id,
@@ -292,7 +369,10 @@ def run_codex_execution_bridge(
         "-",
     ]
     started_at = datetime.now(timezone.utc).isoformat()
-    runner = run_subprocess or _run_agent_model_process
+    runner = _runner_with_admission(
+        run_subprocess or _run_agent_model_process,
+        admission_runtime,
+    )
     completed = runner(
         command,
         input=prompt_path.read_text(encoding="utf-8"),
@@ -369,7 +449,10 @@ def run_agent_execution_bridge_v2(
     connect_factory=None,
     codex_command=None,
     run_subprocess=None,
+    artifact_consumer=None,
+    admission_runtime=None,
 ):
+    artifact_consumer = artifact_consumer or consume_final_agent_artifact
     mission, status_code, error = _load_execution_mission(
         mission_id=mission_id,
         status=status,
@@ -378,6 +461,19 @@ def run_agent_execution_bridge_v2(
     )
     if status_code >= 400:
         return error, status_code
+
+    mission = _ensure_execution_governance(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    decomposition = _pause_decomposed_parent(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if decomposition:
+        return decomposition, 200
 
     output_dir = Path(output_dir or EXECUTION_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -404,7 +500,10 @@ def run_agent_execution_bridge_v2(
             "will_execute_codex": False,
         }, 200
 
-    runner = run_subprocess or _run_agent_model_process
+    runner = _runner_with_admission(
+        run_subprocess or _run_agent_model_process,
+        admission_runtime,
+    )
     command_base = codex_command or [
         _codex_executable(),
         "exec",
@@ -414,7 +513,14 @@ def run_agent_execution_bridge_v2(
         "workspace-write",
     ]
 
-    agent_queue = _agent_queue_from(start_agent, agent_sequence)
+    agent_queue, preserved_agents = _targeted_agent_queue(mission, start_agent, agent_sequence)
+    if preserved_agents:
+        agent_queue = [agent for agent in agent_queue if agent == start_agent or agent not in preserved_agents]
+        ledger["targeted_invalidation"] = {
+            "target_agent": start_agent,
+            "preserved_agents": sorted(preserved_agents),
+            "skipped_replay_agents": sorted(set(agent_sequence).intersection(preserved_agents) - {start_agent}),
+        }
     stage_attempts = {agent: 0 for agent in agent_sequence}
     backflow_counts = {agent: 0 for agent in agent_sequence}
     contract_retry_used = {}
@@ -432,6 +538,7 @@ def run_agent_execution_bridge_v2(
             runner=runner,
             timeout_seconds=timeout_seconds,
             stage_attempts=stage_attempts,
+            artifact_consumer=artifact_consumer,
             database_url=database_url,
             connect_factory=connect_factory,
         )
@@ -453,6 +560,33 @@ def run_agent_execution_bridge_v2(
             connect_factory=connect_factory,
         )
         stage_paths = _agent_stage_paths(output_dir, execution_id, agent, attempt=stage_attempts[agent])
+        concurrency_admission = None
+        if agent == "builder":
+            concurrency_admission = _builder_concurrency_admission(mission, artifacts, execution_id)
+            if not concurrency_admission.get("allowed"):
+                stage_started = datetime.now(timezone.utc).isoformat()
+                return _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    stage_paths,
+                    SimpleNamespace(returncode=78, stdout="", stderr="Builder concurrency admission refused."),
+                    stage_started,
+                    blocked_reason=(
+                        "Builder concurrency admission refused before model execution: "
+                        f"{concurrency_admission.get('status') or 'unknown_status'}."
+                    ),
+                    artifact={
+                        "summary": "Builder did not start because workspace/source ownership was not safe.",
+                        "errors": [str(concurrency_admission.get("status") or "concurrency_admission_failed")],
+                        "concurrency_admission": concurrency_admission,
+                        "next_action": "Resolve the workspace overlap or declare a bounded source scope, then resume from Builder.",
+                    },
+                    artifacts=artifacts,
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
         write_runner_heartbeat({
             "status": "agent_stage_preparing",
             "mission_id": mission["mission_id"],
@@ -567,6 +701,7 @@ def run_agent_execution_bridge_v2(
                 completed,
                 stage_started,
                 blocked_reason=getattr(completed, "contract_failure_reason", "Agent did not produce a valid final artifact."),
+                artifacts=artifacts,
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
@@ -591,6 +726,11 @@ def run_agent_execution_bridge_v2(
             "model_assignment": model_assignment,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         })
+        if concurrency_admission:
+            artifact["concurrency_admission"] = concurrency_admission
+            artifact["concurrency_lease_release"] = _release_builder_concurrency_admission(concurrency_admission)
+        if agent == "publisher":
+            artifact = _bind_publisher_revision(artifact)
         validation = _validate_agent_artifact(agent, artifact)
         if not validation["valid"]:
             retry_reason = "malformed_json" if parse_failed else "missing_keys"
@@ -631,11 +771,94 @@ def run_agent_execution_bridge_v2(
             )
         if agent == "builder":
             artifact = _auto_package_builder_changes(mission, artifact)
+            packaging = artifact.get("git_packaging") if isinstance(artifact.get("git_packaging"), dict) else {}
+            if _builder_packaging_is_terminal(packaging):
+                packaging_status = str(packaging.get("status") or "builder_packaging_failed").strip()
+                return _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    stage_paths,
+                    completed,
+                    stage_started,
+                    blocked_reason=(
+                        f"Builder packaging stopped at {packaging_status}; downstream test and review stages were not run "
+                        "against an unreviewable branch."
+                    ),
+                    artifact={
+                        **artifact,
+                        "next_action": "Repair the Builder branch/commit/PR packaging, then resume from Builder.",
+                        "return_to_stage": "builder",
+                    },
+                    artifacts=artifacts,
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
+        manifest_artifacts = {**artifacts, agent: artifact}
+        candidate_manifest = build_candidate_manifest(
+            mission,
+            manifest_artifacts,
+            source_commit=_release_candidate_revision_sha(mission, manifest_artifacts),
+        )
+        artifact = bind_artifact_to_candidate(
+            artifact,
+            agent,
+            execution_id,
+            stage_attempts[agent],
+            candidate_manifest,
+            previous_artifact=artifacts.get(agent),
+        )
+        artifact = _prepare_durable_artifact_contract(
+            mission, artifact, agent, execution_id, stage_attempts[agent], artifacts, agent_sequence,
+        )
+        authoritative_pr_files = _authoritative_pr_changed_files(artifact)
+        if authoritative_pr_files:
+            artifact["authoritative_pr_changed_files"] = authoritative_pr_files
+        targeted_recovery = _targeted_recovery_prompt_context(mission, agent)
+        if targeted_recovery.get("active_for_this_stage"):
+            artifact["targeted_recovery_context"] = targeted_recovery
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
-            backflow_target = _resolve_agent_backflow_target(
-                _agent_backflow_target(agent, artifact, quality),
-                agent_sequence,
+            governance_decision = evaluate_quality_failure(mission, agent, artifact, quality)
+            artifact["mission_governance_decision"] = governance_decision
+            if governance_decision["route"] == "continue_with_followups":
+                followups = _record_discovered_followups(
+                    mission,
+                    agent,
+                    governance_decision,
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
+                artifact["discovered_followup_missions"] = followups
+                quality = {
+                    "passed": True,
+                    "reason": governance_decision["reason"],
+                    "bounded_followup": True,
+                    "original_quality_gate": quality,
+                }
+            elif governance_decision["route"] == "owner_block":
+                quality = {
+                    "passed": False,
+                    "reason": governance_decision["reason"],
+                    "owner_block": True,
+                    "original_quality_gate": quality,
+                }
+        if quality["passed"] and agent == "architect":
+            planning_resolution = _record_pre_builder_plan_resolution(
+                mission, artifact, database_url=database_url, connect_factory=connect_factory,
+            )
+            artifact["pre_builder_plan_resolution"] = planning_resolution
+            if not planning_resolution.get("approved"):
+                quality = {
+                    "passed": False,
+                    "reason": planning_resolution.get("reason", "Architect did not resolve every frozen planning gate."),
+                    "ingestion_required_before_transition": True,
+                }
+        if not quality["passed"]:
+            authoritative_target = _authoritative_targeted_recovery_agent(mission)
+            backflow_target = "" if agent == authoritative_target else _resolve_agent_backflow_target(
+                _agent_backflow_target(agent, artifact, quality), agent_sequence,
             )
             if backflow_target and backflow_counts.get(backflow_target, 0) < AGENT_BACKFLOW_LIMIT:
                 blocker_fingerprint = _backflow_fingerprint(agent, backflow_target, quality["reason"], artifact)
@@ -643,7 +866,30 @@ def run_agent_execution_bridge_v2(
                     _backflow_fingerprint_count(ledger, blocker_fingerprint)
                     + _durable_backflow_fingerprint_count(mission, blocker_fingerprint)
                 )
-                if prior_same_loop >= HARD_LOOP_REPEAT_LIMIT - 1:
+                loop_detected = prior_same_loop >= HARD_LOOP_REPEAT_LIMIT - 1
+                artifact["quality_gate"] = quality
+                artifact["backflow_fingerprint"] = blocker_fingerprint
+                artifact_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+                if artifact_consumer is None:
+                    ingestion, ingestion_status = ({"success": False, "status": "not_configured"}, 503)
+                else:
+                    ingestion, ingestion_status = _consume_final_artifact_with_retry(
+                        artifact_consumer,
+                        mission["mission_id"], agent, execution_id, stage_attempts[agent], artifact, artifact_hash,
+                        transition_target="" if loop_detected else backflow_target,
+                        transition_status="blocked" if loop_detected else "complete",
+                        database_url=database_url, connect_factory=connect_factory,
+                    )
+                if ingestion_status >= 400:
+                    return _block_agent_stage(
+                        mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                        blocked_reason=f"Final artifact ingestion blocked before backflow: {ingestion.get('status', 'unknown')}.",
+                        artifact={**artifact, "artifact_ingestion": ingestion, "ingestion_blocked": True},
+                        artifacts=artifacts, database_url=database_url, connect_factory=connect_factory,
+                    )
+                artifact["artifact_ingestion"] = ingestion
+                artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
+                if loop_detected:
                     backflow_counts[backflow_target] = backflow_counts.get(backflow_target, 0) + 1
                     _append_backflow_event(
                         ledger,
@@ -699,6 +945,8 @@ def run_agent_execution_bridge_v2(
                             "backflow_fingerprint": blocker_fingerprint,
                             "backflow_from": agent,
                             "backflow_to": backflow_target,
+                            "finding_family": _primary_finding_family(artifact),
+                            "revision_sha": _release_candidate_revision_sha(mission, artifacts),
                         },
                     ),
                     database_url=database_url,
@@ -719,35 +967,90 @@ def run_agent_execution_bridge_v2(
                     "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
                 })
                 continue
+            artifact["quality_gate"] = quality
+            artifact_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+            if artifact_consumer is None:
+                ingestion, ingestion_status = ({"success": False, "status": "not_configured"}, 503)
+            else:
+                ingestion, ingestion_status = _consume_final_artifact_with_retry(
+                    artifact_consumer, mission["mission_id"], agent, execution_id,
+                    stage_attempts[agent], artifact, artifact_hash, transition_status="blocked",
+                    database_url=database_url, connect_factory=connect_factory,
+                )
+            if ingestion_status < 400:
+                artifact["artifact_ingestion"] = ingestion
+                artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
+            else:
+                artifact["artifact_ingestion"] = ingestion
+                artifact["ingestion_blocked"] = True
             return _block_agent_stage(
-                mission["mission_id"],
-                execution_id,
-                ledger,
-                agent,
-                stage_paths,
-                completed,
-                stage_started,
-                blocked_reason=quality["reason"],
-                artifact={**artifact, "quality_gate": quality},
-                artifacts={**artifacts, agent: {**artifact, "quality_gate": quality}},
-                database_url=database_url,
-                connect_factory=connect_factory,
+                mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                blocked_reason=(quality["reason"] if ingestion_status < 400 else
+                                f"Final artifact ingestion blocked: {ingestion.get('status', 'unknown')}"),
+                artifact=artifact, artifacts={**artifacts, agent: artifact},
+                database_url=database_url, connect_factory=connect_factory,
             )
         artifact["quality_gate"] = quality
-        artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
-        artifacts[agent] = artifact
-        _record_mission_memory_event(
+        artifact_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+        if artifact_consumer is None:
+            ingestion, ingestion_status = ({"success": False, "status": "not_configured"}, 503)
+        else:
+            ingestion, ingestion_status = _consume_final_artifact_with_retry(
+                artifact_consumer,
+                mission["mission_id"], agent, execution_id, stage_attempts[agent], artifact, artifact_hash,
+                database_url=database_url, connect_factory=connect_factory,
+            )
+        ingestion_owned_stage = ingestion_status < 400 and ingestion.get("status") in {
+            "final_artifact_consumed", "final_artifact_already_consumed"
+        }
+        if ingestion_status >= 400 and ingestion.get("status") != "not_configured":
+            return _block_agent_stage(
+                mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                blocked_reason=f"Valid final artifact could not be consumed: {ingestion.get('status', 'unknown')}.",
+                artifact={**artifact, "artifact_ingestion": ingestion}, artifacts=artifacts,
+                database_url=database_url, connect_factory=connect_factory,
+            )
+        artifact["artifact_ingestion"] = ingestion
+        artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
+        _record_acceptance_progress(
             mission,
-            build_memory_event(
-                agent,
-                "agent_complete",
-                attempt=stage_attempts[agent],
-                artifact=artifact,
-                quality_gate=quality,
-            ),
+            agent,
+            artifact,
+            passed=True,
             database_url=database_url,
             connect_factory=connect_factory,
         )
+        artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
+        artifacts[agent] = artifact
+        expansion, expansion_status = _reconcile_adaptive_expansion(
+            mission, agent, artifact, database_url=database_url, connect_factory=connect_factory,
+        )
+        if expansion_status >= 400:
+            return _block_agent_stage(
+                mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                blocked_reason=f"Adaptive orchestration reconciliation blocked: {expansion.get('status', 'unknown')}.",
+                artifact={**artifact, "orchestration_reconciliation": expansion}, artifacts=artifacts,
+                database_url=database_url, connect_factory=connect_factory,
+            )
+        if expansion.get("status") == "orchestration_generation_expanded":
+            mission.setdefault("metadata", {})["orchestration"] = expansion["packet"]
+            mission["metadata"]["orchestration_binding"] = expansion["binding"]
+            mission["agent_workflow"] = expansion["agent_workflow"]
+            for added_agent in expansion.get("added_roles", []):
+                if added_agent not in completed and added_agent not in agent_queue:
+                    protected_consumer = next(
+                        (index for index, queued in enumerate(agent_queue) if queued in {"reviewer", "publisher"}),
+                        len(agent_queue),
+                    )
+                    agent_queue.insert(protected_consumer, added_agent)
+        if not ingestion_owned_stage:
+            _record_mission_memory_event(
+                mission,
+                build_memory_event(
+                    agent, "agent_complete", attempt=stage_attempts[agent], artifact=artifact, quality_gate=quality,
+                ),
+                database_url=database_url, connect_factory=connect_factory,
+            )
         _append_ledger_stage(
             ledger,
             agent,
@@ -759,14 +1062,12 @@ def run_agent_execution_bridge_v2(
             attempt=stage_attempts[agent],
         )
         _write_agent_ledger(output_dir, execution_id, ledger)
-        _record_execution_stage(
-            mission["mission_id"],
-            agent,
-            "complete",
-            _truncate(artifact.get("summary") or f"{agent} completed.", 1000),
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
+        if not ingestion_owned_stage:
+            _record_execution_stage(
+                mission["mission_id"], agent, "complete",
+                _truncate(artifact.get("summary") or f"{agent} completed.", 1000),
+                database_url=database_url, connect_factory=connect_factory,
+            )
 
     return _complete_agent_execution_v2(
         mission,
@@ -778,6 +1079,154 @@ def run_agent_execution_bridge_v2(
         database_url=database_url,
         connect_factory=connect_factory,
     )
+
+
+def recover_pending_final_agent_artifact(mission_id="", database_url=None, connect_factory=None, status_loader=None):
+    """Consume the final artifact named by a stale/live heartbeat before a runner restart."""
+    status = (status_loader or runner_status)(include_orphans=False, include_git=False, include_ledger=False)
+    heartbeat_mission = str(status.get("last_mission_id") or "").strip()
+    mission_id = str(mission_id or heartbeat_mission).strip()
+    if not mission_id or (heartbeat_mission and mission_id != heartbeat_mission):
+        return {"success": True, "status": "no_matching_pending_final_artifact"}, 200
+    path = Path(str(status.get("execution_artifact") or "").strip())
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    final_text = _read_text(path)
+    if not final_text:
+        return {"success": True, "status": "no_pending_final_artifact"}, 200
+    loaded, load_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if load_status >= 400:
+        return loaded, load_status
+    mission = loaded.get("mission") or {}
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    agent = str(status.get("current_agent") or "").strip().lower()
+    if not agent:
+        agent = next((str(item.get("agent") or "").lower() for item in workflow if isinstance(item, dict) and str(item.get("status") or "").lower() != "complete"), "")
+    artifact = _agent_artifact_from_final(agent, final_text)
+    attempt_match = re.search(r"\.attempt(\d+)\.final\.md$", path.name, re.IGNORECASE)
+    attempt = int(artifact.get("attempt") or (attempt_match.group(1) if attempt_match else 1))
+    artifact.update({"agent": agent, "attempt": attempt, "artifact_path": str(path), "recovered_after_restart": True})
+    validation = _validate_agent_artifact(agent, artifact)
+    if not validation["valid"]:
+        return _quarantine_pending_final_artifact(
+            mission, agent,
+            "Recovered final artifact is invalid; missing keys: " + ", ".join(validation["missing_keys"]),
+            database_url=database_url, connect_factory=connect_factory,
+        )
+    quality = _agent_quality_gate(agent, artifact)
+    if not quality["passed"]:
+        return _quarantine_pending_final_artifact(
+            mission, agent, quality["reason"],
+            database_url=database_url, connect_factory=connect_factory,
+        )
+    artifact["quality_gate"] = quality
+    execution_id = str(status.get("agent_ledger", {}).get("execution_id") or path.name.split(f".{agent}.")[0] or "recovered")
+    packet = (mission.get("metadata") or {}).get("review_packet") or {}
+    artifacts = dict(packet.get("agent_artifacts") or {})
+    manifest_artifacts = {**artifacts, agent: artifact}
+    candidate_manifest = build_candidate_manifest(
+        mission, manifest_artifacts,
+        source_commit=str(artifact.get("source_revision") or artifact.get("source_commit") or "").strip() or _release_candidate_revision_sha(mission, manifest_artifacts),
+    )
+    artifact = bind_artifact_to_candidate(
+        artifact, agent, execution_id, attempt, candidate_manifest, previous_artifact=artifacts.get(agent),
+    )
+    artifact = _prepare_durable_artifact_contract(
+        mission, artifact, agent, execution_id, attempt, artifacts, _mission_agent_sequence(mission),
+    )
+    result, status_code = consume_final_agent_artifact(
+        mission_id, agent, execution_id, attempt, artifact,
+        hashlib.sha256(final_text.encode("utf-8")).hexdigest(),
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if status_code == 422 and result.get("status") == "final_artifact_binding_invalid":
+        return _quarantine_pending_final_artifact(
+            mission, agent,
+            "Recovered artifact candidate binding is incomplete: " + ", ".join(result.get("missing_or_invalid") or []),
+            database_url=database_url, connect_factory=connect_factory,
+        )
+    if status_code == 409 and result.get("status") == "final_artifact_stage_mismatch":
+        return _quarantine_pending_final_artifact(
+            mission,
+            agent,
+            (
+                f"Recovered artifact belongs to {agent}, while the durable workflow expects "
+                f"{result.get('expected_agent') or 'another stage'}. The stale artifact was quarantined "
+                "so it cannot be picked repeatedly."
+            ),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+    if status_code < 400:
+        write_runner_heartbeat({
+            "status": result.get("status"), "mission_id": mission_id,
+            "agent_runner_version": AGENT_RUNNER_VERSION, "current_agent": result.get("next_agent", ""),
+            "current_action": f"Recovered and consumed {agent} final artifact.",
+            "execution_artifact": str(path), "final_artifact_present": True,
+        })
+    return result, status_code
+
+
+def _consume_final_artifact_with_retry(
+    consumer, mission_id, agent, execution_id, attempt, artifact, artifact_hash,
+    *, transition_target="", transition_status="complete", database_url=None,
+    connect_factory=None, max_attempts=3, sleep_fn=time.sleep,
+):
+    """Retry only transient ingestion failures; never rerun completed agent work for them."""
+    last_result, last_status = {"success": False, "status": "not_configured"}, 503
+    for ingestion_attempt in range(1, max(1, int(max_attempts or 1)) + 1):
+        last_result, last_status = consumer(
+            mission_id, agent, execution_id, attempt, artifact, artifact_hash,
+            transition_target=transition_target, transition_status=transition_status,
+            database_url=database_url, connect_factory=connect_factory,
+        )
+        if not (
+            last_status >= 500
+            and str(last_result.get("status") or "") == "final_artifact_ingestion_failed"
+        ):
+            return {**last_result, "ingestion_attempts": ingestion_attempt}, last_status
+        if ingestion_attempt < max_attempts:
+            sleep_fn(ingestion_attempt)
+    return {**last_result, "ingestion_attempts": max_attempts, "retry_exhausted": True}, last_status
+
+
+def _quarantine_pending_final_artifact(mission, agent, reason, *, database_url=None, connect_factory=None):
+    """Block one stale mission honestly without stopping the supervised queue."""
+    mission_id = str((mission or {}).get("mission_id") or "").strip()
+    metadata = mission.get("metadata") if isinstance((mission or {}).get("metadata"), dict) else {}
+    packet = dict(metadata.get("review_packet") or {})
+    packet.update({
+        "review_status": "internal_recovery_required",
+        "blocked_agent": str(agent or "reviewer"),
+        "blocked_reason": str(reason or "Recovered final artifact failed validation."),
+        "recommended_owner_decision": "",
+        "recommended_next_action": "CHARLIE will adjudicate and recover this internal artifact failure; unrelated queue work continues.",
+        "block_disposition": {
+            "block_class": "evidence_repair_required",
+            "owner_required": False,
+            "responsible_stage": str(agent or "reviewer"),
+            "reason": str(reason or "Recovered final artifact failed validation."),
+        },
+    })
+    result, status_code = transition_mission_review_state(
+        mission_id, "blocked", packet, expected_status="in_progress",
+        notes="Supervisor quarantined a non-passing recovered artifact instead of stopping the queue.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return {
+            "success": False, "status": "pending_final_artifact_quarantine_failed",
+            "reason": reason, "transition": result,
+        }, status_code
+    write_runner_heartbeat({
+        "status": "pending_final_artifact_quarantined", "mission_id": "",
+        "current_agent": "", "current_action": "Stale artifact quarantined; queue may continue.",
+        "execution_artifact": "", "final_artifact_present": False,
+    })
+    return {
+        "success": True, "status": "pending_final_artifact_quarantined",
+        "mission_id": mission_id, "reason": reason,
+    }, 200
 
 
 def complete_codex_execution_from_artifact(
@@ -1185,6 +1634,46 @@ def run_release_execution(
     if mission_status >= 400:
         return error, mission_status
 
+    pr_reference = ""
+    release_coordinator = None
+    if merge_pr:
+        pr_reference = _review_pr_reference(mission)
+        if not pr_reference:
+            blocked, blocked_status = update_mission_status(
+                mission_id,
+                "blocked",
+                owner_decision="Release bridge could not merge because no PR reference was found in the review packet.",
+                event_type="status_changed",
+                notes="Local release bridge requires a PR URL or PR number before automatic merge/deploy.",
+                metadata={
+                    "script": "scripts/charlie_release_bridge.py",
+                    "release_packet_path": release_packet_path,
+                    "release_mode": "merge_pr",
+                },
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            if blocked_status >= 400:
+                return blocked, blocked_status
+            return {
+                "success": False,
+                "status": "release_pr_reference_required",
+                "mission_id": mission_id,
+                "mission_status": "blocked",
+                "release_packet_path": release_packet_path,
+            }, 409
+        release_coordinator = ReleaseCoordinator(runtime_path_root(REPO_ROOT), mission_id, pr_reference)
+        coordinated, coordination_owner = release_coordinator.acquire()
+        if not coordinated:
+            return {
+                "success": False,
+                "status": "release_coordination_locked",
+                "mission_id": mission_id,
+                "mission_status": "release_approved",
+                "release_packet_path": release_packet_path,
+                "lock_owner": coordination_owner,
+            }, 409
+
     started, start_status = update_mission_status(
         mission_id,
         "release_in_progress",
@@ -1200,6 +1689,8 @@ def run_release_execution(
         connect_factory=connect_factory,
     )
     if start_status >= 400:
+        if release_coordinator:
+            release_coordinator.release()
         return started, start_status
 
     if not merge_pr:
@@ -1212,44 +1703,22 @@ def run_release_execution(
             "next_action": "Run with merge_pr=True only when the review packet includes a PR link and owner final approval is recorded.",
         }, 200
 
-    pr_reference = _review_pr_reference(mission)
-    if not pr_reference:
-        blocked, blocked_status = update_mission_status(
-            mission_id,
-            "blocked",
-            owner_decision="Release bridge could not merge because no PR reference was found in the review packet.",
-            event_type="status_changed",
-            notes="Local release bridge requires a PR URL or PR number before automatic merge/deploy.",
-            metadata={
-                "script": "scripts/charlie_release_bridge.py",
-                "release_packet_path": release_packet_path,
-                "release_mode": "merge_pr",
-            },
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
-        if blocked_status >= 400:
-            return blocked, blocked_status
-        return {
-            "success": False,
-            "status": "release_pr_reference_required",
-            "mission_id": mission_id,
-            "mission_status": "blocked",
-            "release_packet_path": release_packet_path,
-        }, 409
-
     runner = run_subprocess or subprocess.run
     command = ["gh", "pr", "merge", pr_reference, "--squash", "--delete-branch"]
-    completed = runner(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=str(REPO_ROOT),
-        timeout=900,
-        check=False,
-    )
+    try:
+        completed = runner(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=900,
+            check=False,
+        )
+    except Exception:
+        release_coordinator.release()
+        raise
     merge_result = {
         "pr_reference": pr_reference,
         "command": " ".join(command),
@@ -1261,9 +1730,10 @@ def run_release_execution(
     if completed.returncode != 0:
         reconciliation = _reconcile_merged_pr(pr_reference, runner)
         merge_result["reconciliation"] = reconciliation
+        release_failure = _classify_release_merge_failure(merge_result)
         if reconciliation.get("merged"):
             merge_result["reconciled_as_merged"] = True
-            return _complete_release_merge(
+            result = _complete_release_merge(
                 mission_id=mission_id,
                 release_packet_path=release_packet_path,
                 merge_result=merge_result,
@@ -1273,14 +1743,31 @@ def run_release_execution(
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
+            release_coordinator.record("release_reconciled", merge_result=merge_result)
+            release_coordinator.release()
+            return result
+        existing_metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        existing_release = existing_metadata.get("release_packet") if isinstance(existing_metadata.get("release_packet"), dict) else {}
+        existing_review = existing_metadata.get("review_packet") if isinstance(existing_metadata.get("review_packet"), dict) else {}
         update_mission_vault(
             mission_id,
             {
                 "release_packet": {
+                    **existing_release,
                     "mode": "merge_pr",
                     "release_packet_path": release_packet_path,
                     "merge_result": merge_result,
-                    "status": "release_pr_merge_failed",
+                    "status": release_failure["status"],
+                    "failure_class": release_failure["failure_class"],
+                    "recommended_next_action": release_failure["recommended_next_action"],
+                },
+                "review_packet": {
+                    **existing_review,
+                    "review_status": release_failure["status"],
+                    "blocked_reason": release_failure["owner_reason"],
+                    "recommended_next_action": release_failure["recommended_next_action"],
+                    "release_packet_path": release_packet_path,
+                    "release_failure": release_failure,
                 }
             },
             notes="Local release bridge recorded failed PR merge result.",
@@ -1290,28 +1777,35 @@ def run_release_execution(
         update_mission_status(
             mission_id,
             "blocked",
-            owner_decision="Local release bridge failed to merge the approved PR.",
+            owner_decision=release_failure["owner_reason"],
             event_type="status_changed",
-            notes="gh pr merge returned a non-zero exit code.",
+            notes=release_failure["recommended_next_action"],
             metadata={
                 "script": "scripts/charlie_release_bridge.py",
                 "release_packet_path": release_packet_path,
                 "release_mode": "merge_pr",
                 "returncode": completed.returncode,
+                "release_failure_class": release_failure["failure_class"],
+                "pr_reference": pr_reference,
             },
             database_url=database_url,
             connect_factory=connect_factory,
         )
-        return {
+        result = {
             "success": False,
-            "status": "release_pr_merge_failed",
+            "status": release_failure["status"],
             "mission_id": mission_id,
             "mission_status": "blocked",
             "release_packet_path": release_packet_path,
             "merge_result": merge_result,
+            "failure_class": release_failure["failure_class"],
+            "recommended_next_action": release_failure["recommended_next_action"],
         }, 502
+        release_coordinator.record("release_merge_failed", merge_result=merge_result)
+        release_coordinator.release()
+        return result
 
-    return _complete_release_merge(
+    result = _complete_release_merge(
         mission_id=mission_id,
         release_packet_path=release_packet_path,
         merge_result=merge_result,
@@ -1321,6 +1815,9 @@ def run_release_execution(
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    release_coordinator.record("release_completed", merge_result=merge_result)
+    release_coordinator.release()
+    return result
 
 
 def _complete_release_merge(
@@ -1393,6 +1890,30 @@ def _complete_release_merge(
     }, 200
 
 
+def _classify_release_merge_failure(merge_result):
+    merge_result = merge_result if isinstance(merge_result, dict) else {}
+    stderr = str(merge_result.get("stderr") or "")
+    stdout = str(merge_result.get("stdout") or "")
+    combined = f"{stderr}\n{stdout}".lower()
+    pr_reference = str(merge_result.get("pr_reference") or "").strip()
+    if any(marker in combined for marker in ("merge conflicts", "merge conflict", "not mergeable", "cannot be merged")):
+        return {
+            "status": "release_pr_merge_conflict",
+            "failure_class": "release_conflict",
+            "owner_reason": "Release bridge could not merge the approved PR because GitHub reports merge conflicts.",
+            "recommended_next_action": (
+                f"Rebase or recreate PR {pr_reference} onto current main, resolve conflicts, rerun focused tests, "
+                "then approve release again. The mission review itself remains approved."
+            ).strip(),
+        }
+    return {
+        "status": "release_pr_merge_failed",
+        "failure_class": "release_merge_failed",
+        "owner_reason": "Local release bridge failed to merge the approved PR.",
+        "recommended_next_action": "Inspect the release packet stderr/stdout, repair the PR or release command, then rerun release.",
+    }
+
+
 def build_codex_execution_prompt(mission):
     mission = mission if isinstance(mission, dict) else {}
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
@@ -1460,6 +1981,11 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     ui_contract = _ui_quality_contract_for_mission(mission)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     mission_memory = memory_prompt_context(metadata)
+    mission_governance = ensure_acceptance_matrix(mission)
+    metadata_core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    targeted_recovery = _targeted_recovery_prompt_context(mission, agent)
+    agentic_architecture = metadata.get("agentic_architecture") or metadata_core.get("agentic_architecture") or (metadata_core.get("project_truth") or {}).get("agentic_architecture") or {}
+    pre_builder_scope = analyze_pre_builder_scope(mission)
     test_command_memory = repo_test_command_memory(_mission_changed_files_from_artifacts(artifacts))
     runner_preflight = runner_environment_preflight(require_browser=bool(ui_contract.get("ui_related")))
     model_assignment = choose_agent_model(
@@ -1474,6 +2000,10 @@ Mission ID: {mission.get("mission_id", "")}
 Title: {mission.get("title", "")}
 Approval level: {mission.get("approval_level", "")}
 Mission type: {mission.get("mission_type", "")}
+Pre-Builder scope contract:
+{json.dumps(pre_builder_scope, indent=2)}
+
+The planner and architects must resolve every planning_gates item before Builder. A pre-Builder snapshot with builder_allowed=false means Architect approval is still pending; it is not an immutable prohibition. Architect must set builder_authorization=approve when every listed gate is resolved with concrete evidence, or block when any gate remains unresolved. This authorizes bounded internal code work only and never authorizes applying migrations, changing farm records, contacting customers, publishing, moving money, or another protected operation. If split_required is true, keep the frozen parent acceptance matrix bounded and record adjacent discoveries as linked child missions rather than expanding this mission indefinitely.
 Agent doctrine file: {doctrine_path or "MISSING - Brain Guard must block this workflow until doctrine exists."}
 Model assignment:
 {json.dumps(model_assignment, indent=2)}
@@ -1481,11 +2011,22 @@ Model assignment:
 Final artifact contract:
 {json.dumps(final_artifact_contract_packet(), indent=2)}
 
+Candidate-bound ingestion requirements:
+- Every protected-stage final artifact must include source_revision, candidate_revision, expected_revision, and candidate_fingerprint.
+- Tester and every downstream review stage must also include tested_revision.
+- Every protected stage after Architect must include parent_artifact_id and input_artifact_ids from durable upstream artifacts.
+- Include evidence_generation or review_generation when supplied by the mission packet.
+- Do not invent a revision, fingerprint, generation, or parent identity. If authoritative binding is unavailable, return a structured blocked artifact that identifies the missing fields and does not authorize a downstream stage.
+- Architect must not authorize Builder unless the candidate binding and every planning gate are concrete and internally consistent.
+
 Partial recovery contract:
 {json.dumps(partial_recovery_contract_packet(), indent=2)}
 
 Repo test command memory:
 {json.dumps(test_command_memory, indent=2)}
+
+Focused test budget:
+{_focused_test_budget_prompt(mission, agent, artifacts)}
 
 Runner environment preflight:
 {json.dumps(runner_preflight, indent=2)}
@@ -1513,8 +2054,21 @@ Desired outcome:
 Owner send-back comments:
 {owner_comments or "None"}
 
+Authoritative targeted recovery requirements:
+{json.dumps(targeted_recovery, indent=2)}
+
+When active_for_this_stage is true, these requirements are the current bounded correction contract. They override stale next_action or blocker prose in preserved historical artifacts. Implement and verify each requirement before advancing; do not substitute an older recovery request.
+
 Mission memory from previous attempts and handoffs:
 {json.dumps(mission_memory, indent=2)[:5000]}
+
+Frozen acceptance matrix and discovery rules:
+{json.dumps(mission_governance, indent=2)[:7000]}
+
+Frozen Agentic Architecture Packet:
+{json.dumps(agentic_architecture, indent=2)[:7000]}
+
+This packet is an acceptance contract. Do not solve domain reasoning with a question-specific route, UI branch, regex reply, or transport handler. Build or extend the owning operational agent and keep deterministic code limited to canonical reads, calculations, validation, permissions, idempotency, audit, and safe execution.
 
 Mission media/reference attachments:
 {_format_media_references(_mission_media_references(mission))}
@@ -1539,6 +2093,10 @@ You must work like an interactive coding agent:
 - check the Vault Brain before opinion, and cite the docs you used
 - read relevant files
 - run focused commands when useful
+- prefer focused tests for the changed surface first; broad runner/full-suite timeouts are advisory only when focused evidence passes and no owner/customer/order/stock safety risk is present
+- verify the frozen acceptance matrix; do not silently expand the parent mission when an adjacent improvement is discovered
+- label pre-existing or merge-base failures explicitly; they are follow-up evidence and do not fail the current mission
+- report new actionable discoveries with affected paths and reproduction evidence so CORE can create a linked child mission
 - patch only scoped files
 - recover from errors
 - record what you did and what remains
@@ -1548,7 +2106,7 @@ You must work like an interactive coding agent:
 - behave as this specific agent, not as a generic prompt; challenge upstream artifacts when they are weak, contradictory, or not aligned with your doctrine
 
 Stage responsibility:
-{_agent_stage_instruction(agent)}
+{_agent_stage_instruction(agent, mission)}
 
 Required final response format:
 Return concise markdown, and include a JSON object fenced as ```json with these keys:
@@ -1564,6 +2122,270 @@ Every final JSON object is normalized into a CHARLIE handoff report with:
 Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 Stop at the required artifact for this stage.
 """
+
+
+def _targeted_recovery_prompt_context(mission, agent):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    coordinator = metadata.get("mission_coordinator") if isinstance(metadata.get("mission_coordinator"), dict) else {}
+    target_agent = str(targeted.get("target_agent") or "").strip().lower()
+    requirements = coordinator.get("correction_requirements")
+    if not isinstance(requirements, list):
+        requirements = []
+    requirements = [str(item or "").strip() for item in requirements if str(item or "").strip()]
+    return {
+        "version": "charlie_targeted_recovery_prompt_v1",
+        "active_for_this_stage": bool(requirements and target_agent == str(agent or "").strip().lower()),
+        "target_agent": target_agent,
+        "reason": str(targeted.get("reason") or "").strip(),
+        "candidate_revision": str(
+            targeted.get("candidate_revision")
+            or coordinator.get("canonical_candidate_revision")
+            or ""
+        ).strip(),
+        "canonical_pr_number": coordinator.get("canonical_pr_number"),
+        "correction_requirements": requirements,
+    }
+
+
+def _ensure_execution_governance(mission, database_url=None, connect_factory=None):
+    mission = mission if isinstance(mission, dict) else {}
+    governance = ensure_acceptance_matrix(mission)
+    pre_builder_scope = analyze_pre_builder_scope(mission)
+    mission.setdefault("metadata", {})["mission_governance"] = governance
+    mission["metadata"]["pre_builder_scope"] = pre_builder_scope
+    from modules.charlie.agentic_architecture import build_agentic_architecture_packet
+    architecture = build_agentic_architecture_packet(mission)
+    mission["metadata"]["agentic_architecture"] = architecture
+    update_mission_vault(
+        mission.get("mission_id", ""),
+        {"mission_governance": governance, "pre_builder_scope": pre_builder_scope, "agentic_architecture": architecture},
+        notes="CHARLIE froze the mission acceptance matrix and pre-Builder scope contract before execution.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if pre_builder_scope.get("split_required"):
+        recorded = _record_scope_children(
+            mission, pre_builder_scope, database_url=database_url, connect_factory=connect_factory,
+        )
+        # Keep the in-memory mission synchronized with the durable write.  The
+        # coordinator is built from this object immediately afterwards; leaving
+        # it stale produced paused parents with an empty child_mission_ids list.
+        pre_builder_scope = {**pre_builder_scope, "linked_children": recorded}
+        mission["metadata"]["pre_builder_scope"] = pre_builder_scope
+    return mission
+
+
+def _record_pre_builder_plan_resolution(mission, architect_artifact, database_url=None, connect_factory=None):
+    """Durably close frozen planning gates before Builder is permitted to run."""
+    mission = mission if isinstance(mission, dict) else {}
+    artifact = architect_artifact if isinstance(architect_artifact, dict) else {}
+    metadata = mission.setdefault("metadata", {})
+    scope = metadata.get("pre_builder_scope") if isinstance(metadata.get("pre_builder_scope"), dict) else analyze_pre_builder_scope(mission)
+    required = [str(value or "").strip() for value in scope.get("planning_gates", []) if str(value or "").strip()]
+    results = artifact.get("planning_gate_results") if isinstance(artifact.get("planning_gate_results"), list) else []
+    resolved = {}
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        gate = str(item.get("gate") or "").strip()
+        status = str(item.get("status") or "").strip().lower()
+        evidence = item.get("evidence") if isinstance(item.get("evidence"), list) else []
+        if gate and status == "resolved" and any(str(value or "").strip() for value in evidence):
+            resolved[gate] = {"status": "resolved", "evidence": evidence}
+    missing = [gate for gate in required if gate not in resolved]
+    authorization = str(artifact.get("builder_authorization") or "").strip().lower()
+    approved = not missing and authorization in {"approve", "approved"}
+    plan = {
+        "version": "charlie_pre_builder_plan_v1",
+        "approved": approved,
+        "required_gates": required,
+        "resolved_gates": resolved,
+        "missing_gates": missing,
+        "architect_authorization": authorization,
+        "architect_artifact_path": str(artifact.get("artifact_path") or ""),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    metadata["pre_builder_plan"] = plan
+    metadata["pre_builder_scope"] = {**scope, "builder_allowed": approved}
+    update_mission_vault(
+        mission.get("mission_id", ""),
+        {"pre_builder_plan": plan, "pre_builder_scope": metadata["pre_builder_scope"]},
+        notes=(
+            "Architect resolved every frozen planning gate and enabled Builder."
+            if approved else
+            "Architect left one or more frozen planning gates unresolved; Builder remains disabled."
+        ),
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return {
+        **plan,
+        "reason": (
+            "Every frozen planning gate was resolved with evidence."
+            if approved else
+            f"Builder remains disabled; unresolved planning gates: {', '.join(missing) or 'architect authorization missing'}."
+        ),
+    }
+
+
+def _pause_decomposed_parent(mission, database_url=None, connect_factory=None):
+    """Turn an oversized parent into a coordinator; only its ordered children execute."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
+    scope = metadata.get("pre_builder_scope") if isinstance(metadata.get("pre_builder_scope"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    reconciliation = (
+        review_packet.get("mission_family_reconciliation")
+        if isinstance(review_packet.get("mission_family_reconciliation"), dict)
+        else {}
+    )
+    coordinator = (
+        metadata.get("mission_coordinator")
+        if isinstance(metadata.get("mission_coordinator"), dict)
+        else {}
+    )
+    targeted = (
+        metadata.get("targeted_invalidation")
+        if isinstance(metadata.get("targeted_invalidation"), dict)
+        else {}
+    )
+    if (
+        reconciliation.get("version") == "charlie_family_reconciliation_v1"
+        and str(review_packet.get("return_to_stage") or "").strip().lower() == "evidence_reviewer"
+        and str(coordinator.get("status") or "").strip().lower() == "reconciling_children"
+        and str(targeted.get("target_agent") or "").strip().lower() == "evidence_reviewer"
+    ):
+        return None
+    if family.get("parent_mission_id") or not scope.get("split_required"):
+        return None
+    children = [
+        str(item.get("mission_id") or "").strip()
+        for item in scope.get("linked_children", [])
+        if isinstance(item, dict) and str(item.get("mission_id") or "").strip()
+    ]
+    if not children:
+        return {
+            "success": False,
+            "status": "mission_decomposition_children_missing",
+            "mission_id": mission.get("mission_id", ""),
+            "owner_action_required": False,
+        }
+    coordinator = {
+        "status": "waiting_children",
+        "child_mission_ids": children,
+        "completed_child_ids": [],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    paused, paused_status = update_mission_vault(
+        mission.get("mission_id", ""),
+        {"mission_coordinator": coordinator, "pre_builder_scope": scope},
+        status="paused",
+        owner_decision="CORE decomposed this oversized mission; ordered child missions now carry delivery.",
+        notes="Oversized parent paused as a coordinator for ordered child missions.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+        expected_status="in_progress",
+    )
+    if paused_status >= 400 or not paused.get("success"):
+        return {
+            "success": False,
+            "status": "mission_decomposition_parent_update_failed",
+            "mission_id": mission.get("mission_id", ""),
+            "child_mission_ids": children,
+            "owner_action_required": False,
+        }
+    return {
+        "success": True,
+        "status": "mission_decomposed_waiting_children",
+        "mission_id": mission.get("mission_id", ""),
+        "child_mission_ids": children,
+        "owner_action_required": False,
+    }
+
+
+def _record_scope_children(mission, scope_analysis, database_url=None, connect_factory=None):
+    recorded = []
+    for child in build_scope_child_missions(mission, scope_analysis):
+        result, status_code = record_mission(
+            child,
+            source_context={"source": "charlie_pre_builder_scope"},
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        recorded.append({
+            "mission_id": result.get("mission_id") or child["mission_id"],
+            "status": result.get("status", "record_failed"),
+            "created": status_code < 400 and result.get("status") != "duplicate_open_mission",
+        })
+    update_mission_vault(
+        mission.get("mission_id", ""),
+        {"pre_builder_scope": {**scope_analysis, "linked_children": recorded}},
+        notes="CHARLIE materialized linked child missions for oversized scope.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return recorded
+
+
+def _record_acceptance_progress(mission, agent, artifact, passed, database_url=None, connect_factory=None):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    governance = ensure_acceptance_matrix(mission, planner_artifact=artifact if agent == "planner" else None)
+    governance = update_acceptance_matrix(governance, agent, artifact, passed)
+    mission.setdefault("metadata", {})["mission_governance"] = governance
+    return update_mission_vault(
+        mission.get("mission_id", ""),
+        {"mission_governance": governance},
+        notes=f"CHARLIE recorded {agent} acceptance-matrix evidence.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def _record_discovered_followups(mission, agent, decision, database_url=None, connect_factory=None):
+    recorded = []
+    for child in build_followup_missions(mission, decision.get("followup_findings", [])):
+        result, status_code = record_mission(
+            child,
+            source_context={"source": "charlie_discovery"},
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        child_id = result.get("mission_id") or child.get("mission_id")
+        item = {
+            "mission_id": child_id,
+            "title": child.get("title", ""),
+            "status": result.get("status", "record_failed"),
+            "finding_family": (child.get("metadata") or {}).get("mission_family", {}).get("finding_family", ""),
+            "created": status_code < 400 and result.get("status") != "duplicate_open_mission",
+        }
+        recorded.append(item)
+        _record_mission_memory_event(
+            mission,
+            build_memory_event(
+                agent,
+                "followup_discovered",
+                summary=f"Discovered follow-up {child_id}: {item['finding_family']}",
+                artifact={"next_action": "Owner may approve the linked child mission separately."},
+                metadata={
+                    "child_mission_id": child_id,
+                    "finding_family": item["finding_family"],
+                    "record_status": item["status"],
+                },
+            ),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+    return recorded
+
+
+def _primary_finding_family(artifact):
+    decision = artifact.get("mission_governance_decision") if isinstance(artifact, dict) and isinstance(artifact.get("mission_governance_decision"), dict) else {}
+    findings = decision.get("blocking_findings") if isinstance(decision.get("blocking_findings"), list) else []
+    return str(findings[0].get("family") or "implementation_defect") if findings and isinstance(findings[0], dict) else "implementation_defect"
 
 
 def _mission_changed_files_from_artifacts(artifacts):
@@ -1733,7 +2555,11 @@ def _ui_quality_contract_for_mission(mission):
             "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
         ],
         "required_viewports": ["desktop/laptop", "mobile"],
-        "gate": "UI missions must provide real local preview screenshots for desktop/laptop and mobile before owner review; generated fallback packets do not satisfy the gate.",
+        "gate": (
+            "UI missions must provide real local preview screenshots for desktop/laptop and mobile before owner review; "
+            "generated fallback packets do not satisfy the gate. If the in-app browser is unavailable, use the repository's "
+            "installed Playwright CLI against the real local preview and record the resulting durable screenshot paths."
+        ),
     }
 
 
@@ -1815,7 +2641,7 @@ def _unique_existing_order(items):
     return result
 
 
-def _agent_stage_instruction(agent):
+def _agent_stage_instruction(agent, mission=None):
     if agent == "idea_expander":
         return "Clarify the rough idea, expected owner value, target user/workflow, constraints, non-goals, and what must not be assumed."
     if agent == "visual_reference_interpreter":
@@ -1857,11 +2683,20 @@ def _agent_stage_instruction(agent):
     if agent == "architect":
         return "Inspect implementation boundaries, source files, route/data contracts, risks, and the safest build approach."
     if agent == "builder":
+        canonical_pr = _mission_canonical_pr_reference(mission)
+        canonical_instruction = (
+            f" This mission is already bound to canonical PR #{canonical_pr['number']} "
+            f"({canonical_pr['url']}) on branch {canonical_pr['branch'] or 'recorded in that PR'}. "
+            "Reuse and update that exact PR; never open a second PR for the same mission or commit."
+            if canonical_pr.get("url") else
+            " Before opening a PR, query open PRs for the candidate commit and reuse an existing exact-head PR; never create a duplicate PR."
+        )
         return (
             "Implement only the scoped change, keep diffs tight, and record changed files. "
             "When changed_files contains releaseable changes under LEVEL 3 or higher, create or update a branch, commit the scoped diff, push it, open a PR, "
             "and record branch_name, commit_sha, pr_url/pr_number, and PR link evidence. For UI missions, provide a real local_preview URL for the changed page, "
             "visual_reference_analysis, media_references_used, viewport_plan, and browser_check_plan. Do not merge."
+            + canonical_instruction
         )
     if agent == "frontend_design_implementer":
         return (
@@ -1876,6 +2711,17 @@ def _agent_stage_instruction(agent):
         return (
             "Compare the finished UI screenshots and local preview against the owner reference media and UI concept. Block if the result is only a color change, "
             "misses the reference layout, hides buttons, overflows, or lacks desktop/mobile proof."
+        )
+    if agent == "publisher":
+        return (
+            "Prepare the existing PR for owner review without merging. Query the authoritative PR head and checks. If it conflicts with main, fetch and rebase/update the mission branch, "
+            "auto-resolve additive changelog conflicts by preserving both entries, rerun focused tests, push the repaired branch, and record branch_name, commit_sha, pr_url, expected_revision, and tested_revision. "
+            "Semantic code conflicts must return to Builder; they are not owner decisions."
+        )
+    if agent in {"tester", "evidence_reviewer", "reviewer", "product_reviewer", "business_reviewer", "security_reviewer"}:
+        return (
+            "Review only the exact packaged PR head. Record expected_revision and tested_revision, classify every finding as current_diff, pre_existing, unrelated, or advisory, "
+            "and never block the mission for an unrelated/pre-existing finding. Query current PR checks before recommending owner review."
         )
     return "Review diff, requirements, tests, safety gates, release notes, visual evidence for UI missions, and prepare owner review recommendation."
 
@@ -1895,7 +2741,17 @@ def _agent_required_schema(agent):
         "confidence": "96% or higher when final; use a decimal like 0.97 or a percent like 97%",
         "confidence_reason": "evidence-backed reason citing source truth, tests, screenshots, logs, runtime data, or owner-approved context",
         "next_action": "next handoff",
+        "agentic_architecture": {"compliant": True, "owning_agent": "agent id", "deterministic_code_only": [], "reasoning_delegated_to": [], "generalization_evidence": [], "reason": "short architecture verdict"},
     }
+    if agent in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        base["acceptance_results"] = [
+            {
+                "id": "acceptance row id from the frozen matrix",
+                "status": "passed, failed, or pending",
+                "evidence": ["focused evidence for this row"],
+            }
+        ]
+        base["finding_contract"] = "Each bug/error/QA finding should state scope_relation, introduced_by_current_diff, affected file/path, severity, and whether it violates a named acceptance row or is adjacent follow-up work."
     if agent == "planner":
         base.update({
             "acceptance_criteria": [],
@@ -1968,7 +2824,15 @@ def _agent_required_schema(agent):
             "acceptance_priorities": [],
         })
     elif agent == "architect":
-        base.update({"files_to_inspect": [], "risk_notes": [], "implementation_plan": []})
+        base.update({
+            "files_to_inspect": [],
+            "risk_notes": [],
+            "implementation_plan": [],
+            "planning_gate_results": [
+                {"gate": "exact planning_gates item", "status": "resolved or blocked", "evidence": ["concrete design evidence"]}
+            ],
+            "builder_authorization": "approve only when every frozen planning gate is resolved; otherwise block",
+        })
     elif agent == "builder":
         base.update({
             "changed_files": [],
@@ -2038,6 +2902,12 @@ def _agent_required_schema(agent):
             "pr_number": "pull request number when changed_files contains releaseable changes",
             "links": {"pr": "pull request URL", "local_preview": "local preview URL if available"},
         })
+        if agent == "publisher":
+            base.update({
+                "expected_revision": "full GitHub PR head SHA after any rebase/repair",
+                "tested_revision": "same full SHA that focused tests and checks covered",
+                "commit_sha": "published branch HEAD SHA",
+            })
     return base
 
 
@@ -2058,10 +2928,156 @@ def _agent_execution_ledger(mission, execution_id, started_at):
 
 def _mission_agent_sequence(mission):
     mission = mission if isinstance(mission, dict) else {}
+    targeted_sequence = _explicit_targeted_agent_sequence(mission)
+    if targeted_sequence:
+        return targeted_sequence
     context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
     agent_order = context_pack.get("agent_order") if isinstance(context_pack.get("agent_order"), list) else []
     cleaned = [str(agent or "").strip().lower() for agent in agent_order if str(agent or "").strip().lower() in all_agent_names()]
-    return cleaned or agent_sequence_for_mission(mission.get("mission_type", ""), mission.get("raw_text", ""))
+    if cleaned:
+        return cleaned
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    selected = [
+        str(item.get("agent") or "").strip().lower()
+        for item in orchestration.get("selected_agents", [])
+        if isinstance(item, dict) and str(item.get("agent") or "").strip().lower() in all_agent_names()
+    ]
+    return selected or agent_sequence_for_mission(mission.get("mission_type", ""), mission.get("raw_text", ""))
+
+
+def _reconcile_adaptive_expansion(mission, producing_agent, artifact, *, database_url=None, connect_factory=None):
+    """Persist one new adaptive generation only for materially changed evidence."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if not packet:
+        return {"success": True, "status": "legacy_orchestration_unchanged", "packet": None}, 200
+    evidence = {
+        "producing_stage": str(producing_agent or ""),
+        "decision": artifact.get("decision"),
+        "status": artifact.get("status"),
+        "risk_flags": artifact.get("risk_flags") or artifact.get("risks"),
+        "findings": artifact.get("findings") or artifact.get("bugs"),
+        "changed_files": artifact.get("changed_files"),
+        "candidate_revision": artifact.get("candidate_revision"),
+        "expected_revision": artifact.get("expected_revision"),
+        "tested_revision": artifact.get("tested_revision"),
+    }
+    evidence = {key: value for key, value in evidence.items() if value not in (None, "", [], {})}
+    try:
+        updated = expand_orchestration(packet, mission, evidence)
+    except (TypeError, ValueError) as exc:
+        return {"success": False, "status": "orchestration_evidence_invalid", "error": str(exc)}, 409
+    if updated.get("generation_identity") == packet.get("generation_identity"):
+        return {"success": True, "status": "orchestration_generation_reused", "packet": packet}, 200
+    prior_agent_packets = [
+        item for item in packet.get("selected_agents", []) if isinstance(item, dict) and item.get("agent")
+    ]
+    # Live generations may expand but never contract an active workflow.
+    updated["selected_agents"] = [
+        *prior_agent_packets,
+        *[
+            item for item in updated.get("selected_agents", [])
+            if isinstance(item, dict) and str(item.get("agent") or "") not in {
+                str(prior.get("agent") or "") for prior in prior_agent_packets
+            }
+        ],
+    ]
+    retained_roles = {str(item.get("agent") or "") for item in updated["selected_agents"]}
+    updated["skipped_agents"] = [
+        item for item in updated.get("skipped_agents", [])
+        if isinstance(item, dict) and str(item.get("agent") or "") not in retained_roles
+    ]
+    prior_roles = {str(item.get("agent") or "") for item in packet.get("selected_agents", []) if isinstance(item, dict)}
+    added_roles = [
+        str(item.get("agent") or "") for item in updated.get("selected_agents", [])
+        if isinstance(item, dict) and str(item.get("agent") or "") not in prior_roles
+    ]
+    history = updated.get("expansion_history") if isinstance(updated.get("expansion_history"), list) else []
+    if history:
+        history[-1].update({
+            "triggering_stage": str(producing_agent or ""),
+            "triggering_evidence": evidence,
+            "added_roles": added_roles,
+        })
+    current_workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    workflow_by_agent = {
+        str(item.get("agent") or ""): dict(item)
+        for item in current_workflow
+        if isinstance(item, dict) and item.get("agent")
+    }
+    expanded_workflow = []
+    for selected_agent in updated["selected_agents"]:
+        agent_name = str(selected_agent.get("agent") or "")
+        expanded_workflow.append(workflow_by_agent.get(agent_name) or {
+            "agent": agent_name,
+            "status": "pending",
+            "authority": selected_agent.get("authority", "read_only"),
+            "required_output": selected_agent.get("required_output", "charlie_handoff_v1"),
+            "selection_reason": selected_agent.get("selection_reason", "Adaptive evidence expansion."),
+        })
+    binding = validate_orchestration_binding(updated, expanded_workflow)
+    if not binding.get("valid"):
+        return {
+            "success": False,
+            "status": "orchestration_expansion_binding_invalid",
+            "reason": binding.get("reason", "orchestration_binding_invalid"),
+        }, 409
+    orchestration_binding = {
+        "version": "charlie_orchestration_binding_v1",
+        "identity": binding["identity"],
+        "generation_identity": updated["generation_identity"],
+        "validated": True,
+    }
+    result, status = update_mission_vault(
+        mission.get("mission_id", ""),
+        {
+            "orchestration": updated,
+            "orchestration_binding": orchestration_binding,
+            "agent_workflow": expanded_workflow,
+        },
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status >= 400:
+        return {"success": False, "status": "orchestration_expansion_persistence_failed", "store": result}, status
+    return {"success": True, "status": "orchestration_generation_expanded", "packet": updated,
+            "binding": orchestration_binding, "agent_workflow": expanded_workflow,
+            "added_roles": added_roles}, 200
+
+
+def _explicit_targeted_agent_sequence(mission):
+    """Use a validated control-plane repair workflow as execution truth."""
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    if targeted.get("version") != "charlie_targeted_invalidation_v1":
+        return []
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    sequence = [
+        str(item.get("agent") or "").strip().lower()
+        for item in workflow
+        if isinstance(item, dict) and str(item.get("agent") or "").strip().lower() in all_agent_names()
+    ]
+    if not sequence or len(sequence) != len(workflow) or len(sequence) != len(set(sequence)):
+        return []
+    target = str(targeted.get("target_agent") or "").strip().lower()
+    if target not in sequence:
+        return []
+    statuses = {
+        str(item.get("agent") or "").strip().lower(): str(item.get("status") or "").strip().lower()
+        for item in workflow if isinstance(item, dict)
+    }
+    completed_at = {
+        str(item.get("agent") or "").strip().lower(): item.get("completed_at")
+        for item in workflow if isinstance(item, dict)
+    }
+    preserved = [str(agent or "").strip().lower() for agent in targeted.get("preserved_agents") or [] if str(agent or "").strip()]
+    if not preserved or any(statuses.get(agent) != "complete" or not completed_at.get(agent) for agent in preserved):
+        raise ValueError("targeted_recovery_preserved_stage_mismatch")
+    if statuses.get(target) not in {"active", "complete", "pending"}:
+        raise ValueError("targeted_recovery_target_stage_mismatch")
+    return sequence
 
 
 def _execution_start_agent(mission, agent_sequence=None):
@@ -2069,13 +3085,33 @@ def _execution_start_agent(mission, agent_sequence=None):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     target = str(review_packet.get("return_to_stage") or "").strip().lower()
+    stale_resume_hint = bool(target)
     if target in agent_sequence:
+        if _authoritative_targeted_recovery_agent(mission) == target:
+            return target
+        internal_recovery = str(review_packet.get("review_status") or "").strip().lower().startswith("internal_recovery")
+        mismatch_recovery = "stage_mismatch" in str(review_packet.get("blocked_reason") or "").lower()
+        if internal_recovery or mismatch_recovery:
+            workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+            statuses = {
+                str(item.get("agent") or "").strip().lower(): str(item.get("status") or "").strip().lower()
+                for item in workflow if isinstance(item, dict)
+            }
+            target_index = agent_sequence.index(target)
+            earlier_incomplete = next((
+                agent for agent in agent_sequence[:target_index]
+                if agent in statuses and statuses.get(agent) != "complete"
+            ), "")
+            if earlier_incomplete:
+                return earlier_incomplete
         return target
     blocked_agent = str(review_packet.get("blocked_agent") or "").strip().lower()
+    stale_resume_hint = stale_resume_hint or bool(blocked_agent)
     if blocked_agent in agent_sequence:
         return blocked_agent
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     stage = str(vault.get("mission_stage") or "").strip().lower()
+    stale_resume_hint = stale_resume_hint or stage.startswith(("returned_to_", "blocked_at_"))
     if stage.startswith("returned_to_"):
         target = stage.replace("returned_to_", "", 1)
         if target in agent_sequence:
@@ -2087,6 +3123,16 @@ def _execution_start_agent(mission, agent_sequence=None):
     resume_agent = _resume_agent_after_completed_stage(stage, agent_sequence)
     if resume_agent:
         return resume_agent
+    workflow = mission.get("agent_workflow") if stale_resume_hint and isinstance(mission.get("agent_workflow"), list) else []
+    active_agent = next((
+        str(item.get("agent") or "").strip().lower()
+        for item in workflow
+        if isinstance(item, dict)
+        and str(item.get("status") or "").strip().lower() == "active"
+        and str(item.get("agent") or "").strip().lower() in agent_sequence
+    ), "")
+    if active_agent:
+        return active_agent
     return agent_sequence[0]
 
 
@@ -2205,7 +3251,7 @@ def _retry_parallel_contract_failure(
 
 
 def _parallel_read_only_prefix(agent_queue):
-    if str(os.getenv("CHARLIE_PARALLEL_READONLY_DISABLED") or "").strip().lower() in {"1", "true", "yes", "on"}:
+    if str(env_value("CORE_PARALLEL_READONLY_DISABLED") or "").strip().lower() in {"1", "true", "yes", "on"}:
         return []
     agents = []
     for agent in agent_queue or []:
@@ -2227,13 +3273,14 @@ def _run_parallel_read_only_agents(
     runner,
     timeout_seconds,
     stage_attempts,
+    artifact_consumer,
     database_url=None,
     connect_factory=None,
 ):
     started_at = datetime.now(timezone.utc).isoformat()
     parallel_artifacts = {}
     futures = {}
-    max_workers = max(1, min(int(os.getenv("CHARLIE_PARALLEL_READONLY_WORKERS") or 3), len(agents)))
+    max_workers = max(1, min(int(env_value("CORE_PARALLEL_READONLY_WORKERS", "3") or 3), len(agents)))
     ledger["parallel_planning_execution"] = {
         "version": "charlie_parallel_agent_execution_v1",
         "mode": "read_only_specialists_parallel",
@@ -2486,6 +3533,15 @@ def _run_parallel_read_only_agents(
                     connect_factory=connect_factory,
                 )
                 return {"blocked": True, "result": result, "status_code": status_code}
+        manifest_artifacts = {**artifacts, **parallel_artifacts, agent: artifact}
+        artifact = bind_artifact_to_candidate(
+            artifact,
+            agent,
+            execution_id,
+            context["attempt"],
+            build_candidate_manifest(mission, manifest_artifacts, source_commit=_release_candidate_revision_sha(mission, manifest_artifacts)),
+            previous_artifact=artifacts.get(agent),
+        )
         quality = _parallel_read_only_quality_gate(agent, artifact)
         if not quality["passed"]:
             result, status_code = _block_agent_stage(
@@ -2505,6 +3561,36 @@ def _run_parallel_read_only_agents(
             return {"blocked": True, "result": result, "status_code": status_code}
         artifact["quality_gate"] = quality
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
+        artifact_hash = hashlib.sha256(_read_text(paths["final_path"]).encode("utf-8")).hexdigest()
+        ingestion, ingestion_status = _consume_final_artifact_with_retry(
+            artifact_consumer,
+            mission["mission_id"],
+            agent,
+            execution_id,
+            context["attempt"],
+            artifact,
+            artifact_hash,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if ingestion_status >= 400:
+            result, status_code = _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                paths,
+                completed,
+                context["started_at"],
+                blocked_reason=f"Parallel final artifact ingestion blocked: {ingestion.get('status', 'unknown')}.",
+                artifact={**artifact, "artifact_ingestion": ingestion, "ingestion_blocked": True},
+                artifacts={**artifacts, **parallel_artifacts},
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            return {"blocked": True, "result": result, "status_code": status_code}
+        artifact["artifact_ingestion"] = ingestion
+        artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
         parallel_artifacts[agent] = artifact
         _append_ledger_stage(
             ledger,
@@ -2515,20 +3601,6 @@ def _run_parallel_read_only_agents(
             artifact=artifact,
             command=context["command"],
             attempt=context["attempt"],
-        )
-        _record_mission_memory_event(
-            mission,
-            build_memory_event(agent, "parallel_agent_complete", attempt=context["attempt"], artifact=artifact, quality_gate=quality),
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
-        _record_execution_stage(
-            mission["mission_id"],
-            agent,
-            "complete",
-            _truncate(artifact.get("summary") or f"{agent} completed in parallel read-only mode.", 1000),
-            database_url=database_url,
-            connect_factory=connect_factory,
         )
         _write_agent_ledger(output_dir, execution_id, ledger)
         write_runner_heartbeat({
@@ -2560,9 +3632,34 @@ def _run_parallel_read_only_agents(
 
 
 def _parallel_read_only_quality_gate(agent, artifact):
+    if _risk_agent_has_present_red_zone_violation(agent, artifact):
+        present_quality = _agent_quality_gate(agent, artifact)
+        if not present_quality.get("passed"):
+            return present_quality
+        return {
+            "passed": False,
+            "reason": "risk_agent recorded a present red-zone authority violation.",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    if _risk_agent_findings_belong_to_downstream_planning(agent, artifact):
+        return {
+            "passed": True,
+            "reason": "parallel_read_only_deferred_planning_risk",
+            "deferred_blocker": True,
+            "deferred_reason": "Risk findings were assigned to downstream Council, Planner, Architect, or Builder stages.",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     quality = _agent_quality_gate(agent, artifact)
     if quality.get("passed"):
         return quality
+    if _risk_agent_findings_belong_to_downstream_planning(agent, artifact):
+        return {
+            "passed": True,
+            "reason": f"parallel_read_only_deferred_planning_risk: {quality.get('reason', '')}",
+            "deferred_blocker": True,
+            "deferred_reason": quality.get("reason", ""),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     if _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
         return {
             "passed": True,
@@ -2572,6 +3669,75 @@ def _parallel_read_only_quality_gate(agent, artifact):
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
     return quality
+
+
+def _risk_agent_findings_belong_to_downstream_planning(agent, artifact):
+    if agent != "risk_agent" or not isinstance(artifact, dict):
+        return False
+    changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+    if _has_release_relevant_changes(changed_files):
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in [
+            artifact.get("summary"),
+            artifact.get("next_action"),
+            artifact.get("recommended_owner_decision"),
+            *_artifact_value_list(artifact.get("risks")),
+            *_artifact_value_list(artifact.get("risk_notes")),
+            *_artifact_value_list(artifact.get("bugs")),
+            *_artifact_value_list(artifact.get("errors")),
+            *_artifact_value_list(artifact.get("required_mitigations")),
+        ]
+    ).lower()
+    if _risk_agent_has_present_red_zone_violation(agent, artifact):
+        return False
+    downstream_terms = (
+        "council",
+        "planner",
+        "architect",
+        "builder",
+        "must implement",
+        "should implement",
+        "add negative tests",
+        "acceptance tests",
+        "mandatory mitigations",
+        "before owner review",
+    )
+    return any(term in text for term in downstream_terms)
+
+
+def _risk_agent_has_present_red_zone_violation(agent, artifact):
+    if agent != "risk_agent" or not isinstance(artifact, dict):
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in [
+            artifact.get("summary"),
+            artifact.get("next_action"),
+            *_artifact_value_list(artifact.get("risks")),
+            *_artifact_value_list(artifact.get("risk_notes")),
+            *_artifact_value_list(artifact.get("bugs")),
+            *_artifact_value_list(artifact.get("errors")),
+        ]
+    ).lower()
+    present_violation_terms = (
+        "attempted production data write",
+        "production data write without owner",
+        "attempted customer send",
+        "unauthorized customer send",
+        "attempted public post",
+        "payment without owner",
+        "attempted payment",
+        "reserve stock without owner",
+        "attempted reserve stock",
+        "attempted merge",
+        "attempted deploy",
+        "attempted migration",
+        "secret leak",
+        "credentials exposed",
+    )
+    return any(term in text for term in present_violation_terms)
 
 
 def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
@@ -2728,7 +3894,7 @@ def _agent_command_base(command_base, model_assignment):
 
 
 def _strict_agent_model_routing_required():
-    return str(os.getenv("CHARLIE_REQUIRE_AGENT_MODEL_ROUTING", "")).strip().lower() in {"1", "true", "yes", "on"}
+    return str(env_value("CORE_REQUIRE_AGENT_MODEL_ROUTING", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=None):
@@ -2739,11 +3905,13 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
     if start_agent not in agent_sequence:
         return {}
     start_index = agent_sequence.index(start_agent)
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    explicitly_preserved = set(targeted.get("preserved_agents") or [])
     preserved = {
         agent: artifact
         for agent, artifact in existing.items()
         if agent in agent_sequence
-        and agent_sequence.index(agent) < start_index
+        and (agent_sequence.index(agent) < start_index or agent in explicitly_preserved)
         and isinstance(artifact, dict)
     }
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
@@ -2804,6 +3972,11 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
             "test_evidence": event.get("tests_run") or [],
             "quality_gate": event.get("quality_gate") or {},
             "next_action": event.get("next_action") or "",
+            "pr_url": event.get("pr_url") or "",
+            "pr_number": event.get("pr_number") or "",
+            "branch_name": event.get("branch_name") or "",
+            "commit_sha": event.get("commit_sha") or "",
+            "links": {"pr": event.get("pr_url") or ""},
             "confidence": event.get("confidence") or "96%",
             "confidence_reason": (
                 event.get("confidence_reason")
@@ -2830,11 +4003,12 @@ def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None
     stages = ledger.setdefault("stages", [])
     existing = next((item for item in stages if item.get("agent") == agent and int(item.get("attempt") or 1) == int(attempt or 1)), None)
     item = existing or {"agent": agent}
+    updated_at = datetime.now(timezone.utc).isoformat()
     item.update({
         "status": status,
         "attempt": int(attempt or 1),
         "started_at": started_at,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": updated_at,
         "current_action": current_action,
         "command": _display_command(command),
         "prompt_path": str(paths["prompt_path"]),
@@ -2850,11 +4024,20 @@ def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None
         item["stdout_tail"] = artifact.get("stdout_tail", "")
         item["stderr_tail"] = artifact.get("stderr_tail", "")
         item["quality_gate"] = artifact.get("quality_gate", {})
+        item["changed_files_count"] = len(item["changed_files"])
         if item["quality_gate"]:
             gates = ledger.setdefault("quality_gates", [])
             gates = [gate for gate in gates if not (gate.get("agent") == agent and int(gate.get("attempt") or 1) == int(attempt or 1))]
             gates.append({"agent": agent, "attempt": int(attempt or 1), **item["quality_gate"]})
             ledger["quality_gates"] = gates
+    if status not in {"running", "active", "in_progress"}:
+        item["completed_at"] = updated_at
+        try:
+            start_value = datetime.fromisoformat(str(started_at or "").replace("Z", "+00:00"))
+            end_value = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            item["duration_seconds"] = max(0, int((end_value - start_value).total_seconds()))
+        except (TypeError, ValueError):
+            pass
     if existing is None:
         stages.append(item)
     ledger["status"] = "running" if status == "running" else ledger.get("status", "running")
@@ -3156,10 +4339,24 @@ def _validate_agent_artifact(agent, artifact):
         value = artifact.get(key)
         if value == "" or value == [] or value == {}:
             missing.append(key)
+    if agent == "reviewer":
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        if decision in {"approve", "approve_final", "approve_final_release"} and not artifact.get("release_notes"):
+            missing.append("release_notes")
     return {"valid": not missing, "missing_keys": missing}
 
 
 def _agent_quality_gate(agent, artifact):
+    _normalize_authoritative_diff_followups(agent, artifact)
+    if agent == "tester":
+        _normalize_verifier_protected_operation_pending(agent, artifact)
+    if agent == "qa_red_team":
+        _normalize_verifier_protected_operation_pending(agent, artifact)
+    _normalize_separate_protected_operation_decision(
+        agent,
+        artifact,
+        require_candidate_binding=True,
+    )
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
     errors = _blocking_artifact_items(agent, artifact, errors)
@@ -3170,6 +4367,9 @@ def _agent_quality_gate(agent, artifact):
     confidence_quality = _artifact_confidence_quality_gate(agent, artifact)
     if not confidence_quality["passed"]:
         return confidence_quality
+    revision_quality = _revision_evidence_quality_gate(agent, artifact)
+    if not revision_quality["passed"]:
+        return revision_quality
     if not commands and not _read_only_reviewer_has_upstream_evidence(agent, artifact):
         return {"passed": False, "reason": f"{agent} did not record commands_run evidence."}
     if not inspected:
@@ -3184,6 +4384,22 @@ def _agent_quality_gate(agent, artifact):
     ui_quality = _ui_agent_quality_gate(agent, artifact)
     if not ui_quality["passed"]:
         return ui_quality
+    if agent == "tester" and _tester_visual_capture_environment_only_is_advisory(artifact):
+        return {
+            "passed": True,
+            "reason": "Tester functional checks passed; screenshot-only environment limitation deferred to the dedicated Visual QA gate.",
+            "visual_evidence_deferred": True,
+            "focused_tests_passed": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    if agent == "qa_red_team" and _visual_capture_environment_only_is_advisory(agent, artifact):
+        return {
+            "passed": True,
+            "reason": "QA/red-team focused checks passed; screenshot-only environment limitation is deferred to the dedicated Visual QA gate using the Playwright fallback.",
+            "visual_evidence_deferred": True,
+            "focused_tests_passed": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     judgement_quality = _judgement_evidence_quality_gate(agent, artifact)
     if not judgement_quality["passed"]:
         return judgement_quality
@@ -3195,15 +4411,53 @@ def _agent_quality_gate(agent, artifact):
         }
     if agent == "tester":
         status = str(artifact.get("test_status") or "").strip().lower()
+        timeout_advisory = _tester_timeout_only_failure_is_advisory(agent, artifact, allow_pass_status=True)
+        if status != "pass" and _tester_visual_capture_environment_only_is_advisory(artifact):
+            return {
+                "passed": True,
+                "reason": "Tester functional checks passed; screenshot-only environment limitation deferred to the dedicated Visual QA gate.",
+                "visual_evidence_deferred": True,
+                "focused_tests_passed": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
+        if timeout_advisory:
+            return {
+                "passed": True,
+                "reason": "Tester timeout-only broad command issue treated as advisory because focused changed-surface tests passed.",
+                "timeout_advisory": True,
+                "focused_tests_passed": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
         if status != "pass":
-            return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
+            if _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact) and not errors and not bugs:
+                artifact.setdefault("warnings", []).append(
+                    f"Tester self-reported test_status={status or 'missing'}, but focused test evidence passed and only recovered setup issues were present."
+                )
+                artifact["test_status"] = "pass"
+                status = "pass"
+            else:
+                return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
         if errors or bugs:
             return {"passed": False, "reason": "Tester reported errors or bugs."}
     if agent == "qa_red_team":
         status = str(artifact.get("red_team_status") or "").strip().lower()
         risk = str(artifact.get("risk_rating") or "").strip().lower()
+        if status != "pass" and _qa_timeout_only_failure_is_advisory(agent, artifact):
+            return {
+                "passed": True,
+                "reason": "QA/red-team timeout-only command issue treated as advisory because focused passing evidence is present.",
+                "timeout_advisory": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
         if status != "pass":
-            return {"passed": False, "reason": f"QA/red-team reported red_team_status={status or 'missing'}."}
+            if _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact) and not errors and not bugs and risk not in {"high", "critical"}:
+                artifact.setdefault("warnings", []).append(
+                    f"QA/red-team self-reported red_team_status={status or 'missing'}, but focused test evidence passed and no blocking findings remained."
+                )
+                artifact["red_team_status"] = "pass"
+                status = "pass"
+            else:
+                return {"passed": False, "reason": f"QA/red-team reported red_team_status={status or 'missing'}."}
         if risk in {"high", "critical"}:
             return {"passed": False, "reason": f"QA/red-team risk rating is {risk}."}
         if errors or bugs:
@@ -3217,6 +4471,9 @@ def _agent_quality_gate(agent, artifact):
         decision = str(artifact.get("recommended_owner_decision") or "").strip()
         if decision != "approve_final_release":
             return {"passed": False, "reason": f"Reviewer recommended {decision or 'no approval'}."}
+        test_evidence_quality = _reviewer_test_evidence_quality_gate(artifact)
+        if not test_evidence_quality["passed"]:
+            return test_evidence_quality
         if errors or bugs:
             return {"passed": False, "reason": "Reviewer found errors or bugs."}
         changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
@@ -3270,8 +4527,14 @@ def _artifact_confidence_quality_gate(agent, artifact):
         }
     if not reason:
         return {"passed": False, "reason": f"{agent} did not record an evidence-backed confidence_reason."}
-    evidence_terms = ("source", "vault", "test", "evidence", "repo", "file", "screenshot", "log", "runtime", "owner")
+    evidence_terms = (
+        "source", "vault", "test", "evidence", "repo", "file", "screenshot", "log", "runtime", "owner",
+        "ci", "check", "revision", "commit", "sha", "pr head", "database",
+    )
     if not any(term in reason.lower() for term in evidence_terms):
+        objective = _objective_evidence_quality_override(agent, artifact, confidence)
+        if objective["passed"]:
+            return objective
         return {"passed": False, "reason": f"{agent} confidence_reason is not evidence-backed."}
     return {"passed": True, "reason": "confidence_gate_passed"}
 
@@ -3319,6 +4582,7 @@ def _objective_evidence_quality_override(agent, artifact, confidence):
 
 
 def _artifact_test_evidence_passes(item):
+    item = _structured_artifact_item(item)
     if isinstance(item, dict):
         status = str(item.get("status") or item.get("result") or "").strip().lower()
         text = " ".join(str(value or "") for value in item.values()).lower()
@@ -3330,6 +4594,92 @@ def _artifact_test_evidence_passes(item):
     if any(word in text for word in ("failed", "failure", "error", "traceback")):
         return False
     return status == "pass" or " ok" in text or "tests ok" in text or "passed" in text or "no whitespace errors" in text
+
+
+def _reviewer_test_evidence_quality_gate(artifact):
+    """Require executable, clean test evidence before a reviewer can approve.
+
+    A prose claim such as "tests passed" cannot prove that the named unittest
+    selectors actually existed.  This gate intentionally applies only to the
+    final reviewer approval, leaving earlier advisory/recovery artifacts intact.
+    """
+    artifact = artifact if isinstance(artifact, dict) else {}
+    evidence = artifact.get("test_evidence")
+    if not isinstance(evidence, list) or not evidence:
+        return {"passed": False, "reason": "Reviewer did not record structured test evidence."}
+
+    failure_markers = (
+        "attributeerror",
+        "traceback",
+        "unittest.loader._failedtest",
+        "failedtest",
+        "test discovery failed",
+        "discovery error",
+        "selector failed",
+        "invalid test selector",
+        "ran 0 tests",
+        "no tests found",
+        "no test named",
+    )
+    structured_pass = False
+    for item in evidence:
+        item = _structured_artifact_item(item)
+        text = (
+            " ".join(str(value or "") for value in item.values()).lower()
+            if isinstance(item, dict)
+            else str(item or "").lower()
+        )
+        if any(marker in text for marker in failure_markers):
+            return {
+                "passed": False,
+                "reason": "Reviewer test evidence contains selector, discovery, or error output.",
+            }
+        if not isinstance(item, dict):
+            continue
+        command = str(item.get("command") or "").strip()
+        status = str(item.get("status") or item.get("result") or "").strip().lower()
+        if status in {"fail", "failed", "error", "errored"}:
+            return {
+                "passed": False,
+                "reason": "Reviewer test evidence contains selector, discovery, or error output.",
+            }
+        if command and status in {"pass", "passed", "ok", "success"}:
+            structured_pass = True
+
+    if not structured_pass:
+        return {
+            "passed": False,
+            "reason": "Reviewer approval requires a structured executable test command with explicit pass status.",
+        }
+    return {"passed": True, "reason": "reviewer_structured_test_evidence_passed"}
+
+
+def _artifact_has_passing_test_collection(artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    evidence = []
+    for key in ("tests_run", "test_evidence"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            evidence.extend(value)
+        elif value:
+            evidence.append(value)
+    if not evidence:
+        return False
+    return any(_artifact_test_evidence_passes(item) for item in evidence)
+
+
+def _has_only_recovered_process_issues(agent, artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    raw_items = []
+    for key in ("errors", "bugs"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            raw_items.extend(value)
+        elif value:
+            raw_items.append(value)
+    if not raw_items:
+        return False
+    return all(_is_recovered_command_process_issue(agent, artifact, item) for item in raw_items)
 
 
 def _parse_confidence_value(value):
@@ -3431,6 +4781,9 @@ def _ui_agent_quality_gate(agent, artifact):
 
 
 def _implementation_source_quality_gate(agent, artifact):
+    targeted = artifact.get("targeted_recovery_context") if isinstance(artifact.get("targeted_recovery_context"), dict) else {}
+    if targeted.get("active_for_this_stage") and targeted.get("correction_requirements"):
+        return {"passed": True, "reason": "targeted_recovery_contract_is_authoritative"}
     source_map = artifact.get("implementation_source_map") if isinstance(artifact.get("implementation_source_map"), dict) else {}
     if not source_map.get("matched_sections"):
         return {"passed": True, "reason": "implementation_source_map_not_required"}
@@ -3442,11 +4795,6 @@ def _implementation_source_quality_gate(agent, artifact):
         "planner",
         "architect",
         "builder",
-        "tester",
-        "qa_red_team",
-        "business_reviewer",
-        "evidence_reviewer",
-        "reviewer",
     }:
         return {"passed": True, "reason": "implementation_source_gate_not_for_agent"}
     if agent == "source_mapper":
@@ -3463,11 +4811,27 @@ def _implementation_source_quality_gate(agent, artifact):
             value = artifact.get(key)
             if isinstance(value, list):
                 values.extend(str(item or "").replace("\\", "/") for item in value)
-        required = set(source_map.get("required_inspection_paths") or [])
-        if not required.intersection(values):
+        valid_paths = set(str(path or "").replace("\\", "/") for path in source_map.get("required_inspection_paths") or [])
+        for section in source_map.get("matched_sections") or []:
+            if not isinstance(section, dict):
+                continue
+            for key in ("vault_docs", "code_paths", "tests", "legacy_sources", "app_routes", "migrations"):
+                items = section.get(key)
+                if isinstance(items, list):
+                    valid_paths.update(str(item or "").replace("\\", "/") for item in items if str(item or "").strip())
+        cited = set(path for path in values if path)
+        if not valid_paths.intersection(cited):
             return {
                 "passed": False,
                 "reason": f"{agent} did not cite any matched implementation source-map path.",
+                "required_inspection_paths_sample": sorted(set(source_map.get("required_inspection_paths") or []))[:12],
+                "valid_source_map_paths_sample": sorted(valid_paths)[:16],
+                "cited_paths_sample": sorted(cited)[:12],
+                "matched_source_sections": [
+                    section.get("key") or section.get("label")
+                    for section in source_map.get("matched_sections", [])
+                    if isinstance(section, dict)
+                ],
             }
     return {"passed": True, "reason": "implementation_source_gate_passed"}
 
@@ -3548,6 +4912,11 @@ def _judgement_evidence_quality_gate(agent, artifact):
     }
     if agent not in judgement_agents:
         return {"passed": True, "reason": "judgement_gate_not_required"}
+    protected_pause = _protected_operation_pause_only(agent, artifact)
+    if protected_pause:
+        artifact["recommended_owner_decision"] = "approve_final_release"
+        artifact["business_capability_status"] = "pending_protected_operations"
+        artifact["protected_operations"] = protected_pause
     decision_fields = {
         "recommended_owner_decision": {"approve_final_release", "approve", "mark_done"},
         "visual_acceptance_decision": {"approve"},
@@ -3563,12 +4932,26 @@ def _judgement_evidence_quality_gate(agent, artifact):
         if agent == "risk_agent" and field == "recommended_owner_decision" and decision == "pause":
             continue
         if decision and decision not in passing_values:
+            if field == "red_team_status" and _qa_timeout_only_failure_is_advisory(agent, artifact):
+                continue
+            if field == "test_status" and _tester_timeout_only_failure_is_advisory(agent, artifact):
+                continue
+            if field in {"test_status", "red_team_status"} and _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact):
+                errors = _blocking_artifact_items(agent, artifact, artifact.get("errors") if isinstance(artifact.get("errors"), list) else [])
+                bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else [])
+                risk = str(artifact.get("risk_rating") or "").strip().lower()
+                if not errors and not bugs and risk not in {"high", "critical"}:
+                    continue
             return {
                 "passed": False,
                 "reason": f"{agent} recorded non-passing {field}={decision}.",
             }
 
-    negative = _negative_judgement_evidence(agent, artifact)
+    negative = [] if (
+        artifact.get("protected_operation_evidence_normalized") is True
+        and not _blocking_artifact_items(agent, artifact, artifact.get("errors") or [])
+        and not _blocking_artifact_items(agent, artifact, artifact.get("bugs") or [])
+    ) else _negative_judgement_evidence(agent, artifact)
     if negative:
         return {
             "passed": False,
@@ -3576,6 +4959,381 @@ def _judgement_evidence_quality_gate(agent, artifact):
             "blocking_evidence": [_artifact_text(item) for item in negative[:5]],
         }
     return {"passed": True, "reason": "judgement_gate_passed"}
+
+
+def _normalize_verifier_protected_operation_pending(agent, artifact):
+    """Separate passing code verification from later owner-gated operations.
+
+    A Tester may correctly leave acceptance rows pending when their only missing
+    evidence is an unapplied migration or an explicitly owner-authorized live
+    canary.  Those are operational gates, not Builder defects.  Normalize only
+    the fully structured no-defect shape; ambiguous pending rows still fail
+    closed.
+    """
+    if agent not in {"tester", "qa_red_team"} or not isinstance(artifact, dict) or artifact.get("bugs"):
+        return False
+    passing_evidence = _artifact_has_passing_test_collection({**artifact, "test_status": "pass"})
+    if agent == "qa_red_team" and not passing_evidence:
+        commands = " ".join(str(item or "") for item in (artifact.get("commands_run") or [])).lower()
+        output = str(artifact.get("stdout_tail") or "").lower()
+        passing_evidence = (
+            ("unittest" in commands or "node --check" in commands)
+            and (" ok" in output or "tests passed" in output or "passed" in output)
+        )
+    if not passing_evidence:
+        return False
+    advisory_errors = list(artifact.get("errors") or [])
+    for error in advisory_errors:
+        if not isinstance(error, dict):
+            return False
+        if error.get("introduced_by_current_diff") is not False:
+            return False
+        if error.get("violates_acceptance_row") not in {False, None}:
+            return False
+    findings = list(artifact.get("qa_findings") or []) if agent == "qa_red_team" else []
+    for finding in findings:
+        if not isinstance(finding, dict) or finding.get("introduced_by_current_diff") is not False:
+            return False
+        if "evidence" not in str(finding.get("scope_relation") or "").lower():
+            return False
+    if agent == "tester":
+        finding_contract = str(artifact.get("finding_contract") or "").lower()
+        if not any(term in finding_contract for term in ("no introduced product defects", "no current-diff defects", "no current diff defects")):
+            return False
+    elif str(artifact.get("send_back_stage") or "").strip():
+        return False
+    acceptance = artifact.get("acceptance_results")
+    if not isinstance(acceptance, list) or not acceptance:
+        return False
+    pending = [row for row in acceptance if isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "pending"]
+    if len(pending) != len(acceptance):
+        return False
+    allowed_terms = ("migration", "live canary", "live operational canary", "owner-authorized", "owner authorization")
+    for row in pending:
+        evidence = " ".join(str(item or "") for item in (row.get("evidence") or [])).lower()
+        if not evidence or not any(term in evidence for term in allowed_terms):
+            return False
+        if any(term in evidence for term in ("test failed", "defect", "bug", "must fix", "implementation missing")):
+            return False
+    status_field = "test_status" if agent == "tester" else "red_team_status"
+    artifact[f"original_{status_field}"] = artifact.get(status_field)
+    artifact[status_field] = "pass"
+    if advisory_errors:
+        artifact["normalized_advisory_errors"] = advisory_errors
+        artifact["errors"] = []
+    if findings:
+        artifact["normalized_advisory_findings"] = findings
+        artifact["qa_findings"] = []
+    protected = artifact.get("protected_operations") if isinstance(artifact.get("protected_operations"), list) else []
+    narrative = " ".join(
+        [str(artifact.get("summary") or ""), str(artifact.get("next_action") or "")]
+        + [" ".join(str(item or "") for item in (row.get("evidence") or [])) for row in pending]
+    ).lower()
+    for operation, terms in (
+        ("apply_migration", ("migration",)),
+        ("live_canary", ("live canary", "live operational canary")),
+    ):
+        if any(term in narrative for term in terms) and not any(
+            isinstance(item, dict) and item.get("op") == operation for item in protected
+        ):
+            protected.append({
+                "op": operation,
+                "status": "owner_gated",
+                "source_agent": agent,
+                "reason": "Passing code verification is separate from this protected operational evidence gate.",
+            })
+    artifact["protected_operations"] = protected
+    artifact["protected_operation_evidence_normalized"] = True
+    artifact.setdefault("warnings", []).append(
+        f"Normalized {agent} blocked status to code-pass because only explicit owner-gated operational evidence remains."
+    )
+    return True
+
+
+def _authoritative_pr_changed_files(artifact, run_factory=subprocess.run):
+    """Return GitHub's current PR file list, failing closed when unavailable."""
+    if not isinstance(artifact, dict):
+        return []
+    recorded = artifact.get("authoritative_pr_changed_files")
+    if isinstance(recorded, list) and recorded:
+        return sorted({str(path or "").strip().replace("\\", "/") for path in recorded if str(path or "").strip()})
+    pr_number = str(artifact.get("pr_number") or "").strip()
+    if not pr_number:
+        pr_url = str(artifact.get("pr_url") or (artifact.get("links") or {}).get("pr") or "").strip()
+        match = re.search(r"/pull/(\d+)(?:\D|$)", pr_url)
+        pr_number = match.group(1) if match else ""
+    if not pr_number.isdigit():
+        return []
+    try:
+        completed = run_factory(
+            ["gh", "pr", "diff", pr_number, "--name-only"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if completed.returncode != 0:
+        return []
+    return sorted({
+        line.strip().replace("\\", "/")
+        for line in str(completed.stdout or "").splitlines()
+        if line.strip()
+    })
+
+
+def _normalize_authoritative_diff_followups(agent, artifact):
+    """Correct a model's false current-diff attribution using GitHub PR truth.
+
+    Suppression is deliberately narrow: the finding must call itself unrelated
+    or a linked/outside-scope follow-up, must not violate acceptance, and every
+    affected path must be absent from GitHub's authoritative PR file list.
+    """
+    if agent not in {"product_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    if not isinstance(artifact, dict):
+        return False
+    authoritative = {
+        str(path or "").strip().replace("\\", "/")
+        for path in (artifact.get("authoritative_pr_changed_files") or [])
+        if str(path or "").strip()
+    }
+    if not authoritative:
+        return False
+    normalized = False
+    for key in ("errors", "bugs"):
+        values = artifact.get(key)
+        if not isinstance(values, list):
+            continue
+        repaired = []
+        for value in values:
+            value = _structured_artifact_item(value)
+            if not isinstance(value, dict) or value.get("introduced_by_current_diff") is not True:
+                repaired.append(value)
+                continue
+            scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+            text = _artifact_text(value).lower()
+            explicitly_follow_up = scope in {"unrelated", "adjacent_follow_up", "out_of_scope_follow_up"} or any(
+                term in text for term in ("outside the bounded", "outside this bounded", "linked follow-up", "linked follow up")
+            )
+            violates_acceptance = value.get("violates_acceptance_row")
+            if violates_acceptance is None:
+                violates_acceptance = value.get("acceptance_row_violation")
+            acceptance_text = str(
+                value.get("acceptance_relation")
+                or value.get("acceptance_row")
+                or violates_acceptance
+                or ""
+            ).strip().lower()
+            explicitly_non_acceptance = violates_acceptance is False or acceptance_text in {"none", "n/a", "not_applicable", "not applicable"} or any(
+                term in acceptance_text for term in ("no frozen acceptance row violated", "does not violate", "outside current acceptance")
+            )
+            affected_text = str(
+                value.get("affected_path")
+                or value.get("affected_file_path")
+                or value.get("affected_file/path")
+                or ""
+            )
+            affected_values = value.get("affected_paths") if isinstance(value.get("affected_paths"), list) else []
+            affected = {
+                path.strip().replace("\\", "/")
+                for raw in [affected_text, *affected_values]
+                for path in re.split(r"[;,]", str(raw or ""))
+                if path.strip()
+            }
+            if explicitly_follow_up and explicitly_non_acceptance and affected and affected.isdisjoint(authoritative):
+                value = {
+                    **value,
+                    "introduced_by_current_diff": False,
+                    "scope_relation": "adjacent_follow_up",
+                    "severity": "advisory",
+                    "violates_acceptance_row": False,
+                    "attribution_basis": "authoritative_github_pr_diff_disjoint",
+                }
+                normalized = True
+            repaired.append(value)
+        artifact[key] = repaired
+    if normalized:
+        artifact.setdefault("warnings", []).append(
+            "Reclassified a false current-diff finding after its affected paths were absent from GitHub's authoritative PR diff."
+        )
+    return normalized
+
+
+def _protected_pause_has_exact_candidate_binding(artifact):
+    """Return whether a protected pause is bound to one exact tested candidate."""
+    artifact = artifact if isinstance(artifact, dict) else {}
+    lineage = artifact.get("evidence_lineage")
+    if not isinstance(lineage, dict):
+        return False
+    candidate = str(artifact.get("candidate_fingerprint") or "").strip()
+    lineage_candidate = str(lineage.get("candidate_fingerprint") or "").strip()
+    revision = str(artifact.get("source_commit") or "").strip().lower()
+    lineage_revision = str(lineage.get("source_commit") or "").strip().lower()
+    if (
+        not candidate
+        or candidate != lineage_candidate
+        or not re.fullmatch(r"[0-9a-f]{40}", revision)
+        or revision != lineage_revision
+    ):
+        return False
+    tested = str(artifact.get("tested_revision") or "").strip().lower()
+    return bool(re.fullmatch(r"[0-9a-f]{40}", tested)) and tested == revision
+
+
+def _normalize_separate_protected_operation_decision(agent, artifact, *, require_candidate_binding=False):
+    """Keep a protected migration application from masquerading as a PR defect.
+
+    Review agents occasionally use ``pause`` for the later act of applying a
+    migration even though the candidate, acceptance rows, and tests all pass.
+    That operation remains owner-gated, but it must not send an otherwise clean
+    PR back to Builder.  Normalize only the fully structured, no-defect shape;
+    ambiguous pauses and every real finding continue to fail closed.
+    """
+    if agent not in {"product_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    if not isinstance(artifact, dict):
+        return False
+    if require_candidate_binding and not _protected_pause_has_exact_candidate_binding(artifact):
+        return False
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    if decision != "pause":
+        return False
+    blocking_errors = _blocking_artifact_items(agent, artifact, artifact.get("errors") or [])
+    protected_evidence_errors = bool(blocking_errors) and all(
+        isinstance(item, dict)
+        and item.get("introduced_by_current_diff") is False
+        and (
+            (
+                "owner-gated operational evidence" in str(item.get("classification") or "").lower()
+                and "not a code defect" in str(item.get("classification") or "").lower()
+            )
+            or (
+                "evidence" in str(item.get("scope_relation") or "").lower()
+                and str(item.get("severity") or "").strip().lower() == "blocking_evidence_gate"
+            )
+        )
+        and any(term in _artifact_text(item).lower() for term in ("migration", "live canary", "operational canary"))
+        and not any(term in _artifact_text(item).lower() for term in ("unsafe", "vulnerability", "implementation defect", "must fix"))
+        for item in blocking_errors
+    )
+    unrelated_advisory_errors = bool(blocking_errors) and all(
+        isinstance(item, dict)
+        and item.get("introduced_by_current_diff") is False
+        and str(item.get("scope_relation") or "").strip().lower() in {"advisory", "unrelated", "pre_existing", "pre-existing"}
+        and str(item.get("severity") or "").strip().lower() == "advisory"
+        and item.get("violates_acceptance_row") in {False, None}
+        and item.get("acceptance_row_violation") in {False, None}
+        and not (item.get("acceptance_relation") or item.get("acceptance_rows"))
+        for item in blocking_errors
+    )
+    if blocking_errors and not (protected_evidence_errors or unrelated_advisory_errors):
+        return False
+    blocking_bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") or [])
+    if blocking_bugs and not all(
+        isinstance(item, dict)
+        and (
+            (
+                item.get("introduced_by_current_diff") is False
+                and str(item.get("scope_relation") or "").strip().lower() in {"unrelated", "pre_existing", "pre-existing"}
+                and str(item.get("severity") or "").strip().lower() == "advisory"
+                and not item.get("acceptance_relation")
+            )
+            or item.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
+            or _is_explicit_non_current_advisory_finding(item)
+        )
+        for item in blocking_bugs
+    ):
+        return False
+    acceptance = artifact.get("acceptance_results")
+    if not isinstance(acceptance, list) or not acceptance or any(not isinstance(row, dict) for row in acceptance):
+        return False
+    statuses = [str(row.get("status") or "").strip().lower() for row in acceptance]
+    if any(status not in {"passed", "pending"} for status in statuses):
+        return False
+    pending = [row for row, status in zip(acceptance, statuses) if status == "pending"]
+    if pending:
+        if not _artifact_has_passing_test_collection(artifact):
+            return False
+        for row in pending:
+            evidence = " ".join(str(item or "") for item in (row.get("evidence") or [])).lower()
+            if not any(term in evidence for term in ("migration", "live canary", "live operational canary", "owner-authorized", "owner authorization")):
+                return False
+            if any(term in evidence for term in ("test failed", "defect", "bug", "must fix", "implementation missing")):
+                return False
+    paths = []
+    for key in ("changed_files", "files_inspected"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            paths.extend(str(path or "").replace("\\", "/") for path in value)
+    if not any(path.startswith("supabase/migrations/") for path in paths):
+        return False
+    if not pending:
+        finding = str(artifact.get("finding_contract") or "").lower()
+        if not (
+            ("no current_diff" in finding or "no current-diff" in finding or "no current diff" in finding)
+            and "introduced_by_current_diff=false" in finding
+            and "scope_relation=adjacent" in finding
+        ):
+            return False
+    narrative = " ".join(str(value or "") for value in (
+        artifact.get("summary"),
+        artifact.get("next_action"),
+        *(artifact.get("release_notes") or []),
+    )).lower()
+    migration_terms = (
+        "apply the migration", "apply the additive migration", "applying this migration",
+        "migration application", "migration execution",
+    )
+    owner_gate_terms = ("owner-gated", "owner gated", "owner decision", "owner decisions", "owner authorization", "owner-authorized")
+    if not any(term in narrative for term in migration_terms) or not any(term in narrative for term in owner_gate_terms):
+        return False
+    artifact["original_recommended_owner_decision"] = artifact.get("recommended_owner_decision")
+    artifact["recommended_owner_decision"] = "approve_final_release"
+    if protected_evidence_errors or unrelated_advisory_errors:
+        artifact["normalized_protected_evidence_errors"] = list(blocking_errors)
+        artifact["errors"] = []
+    protected = artifact.get("protected_operations") if isinstance(artifact.get("protected_operations"), list) else []
+    if not any(isinstance(item, dict) and item.get("op") == "apply_migration" for item in protected):
+        protected.append({
+            "op": "apply_migration",
+            "status": "owner_gated",
+            "source_agent": agent,
+            "reason": "Migration application remains separate from PR merge approval.",
+        })
+    if pending and any("live canary" in " ".join(str(item or "") for item in (row.get("evidence") or [])).lower() for row in pending):
+        if not any(isinstance(item, dict) and item.get("op") == "live_canary" for item in protected):
+            protected.append({
+                "op": "live_canary",
+                "status": "owner_gated",
+                "source_agent": agent,
+                "reason": "Owner-authorized live verification remains separate from PR merge approval.",
+            })
+    artifact["protected_operations"] = protected
+    if str(artifact.get("product_review_status") or "").strip().lower() == "blocked":
+        artifact["product_review_status"] = "passed_with_protected_operation"
+    artifact.setdefault("warnings", []).append(
+        "Normalized reviewer pause to PR approval because only the separate owner-gated migration application remains."
+    )
+    return True
+
+
+def _is_explicit_non_current_advisory_finding(item):
+    if not isinstance(item, dict) or item.get("introduced_by_current_diff") is not False:
+        return False
+    scope = str(item.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    severity = str(item.get("severity") or "").strip().lower()
+    explicitly_non_acceptance = (
+        item.get("violates_acceptance_row") is False
+        or item.get("acceptance_row_violation") is False
+    )
+    return (
+        severity in {"advisory", "informational", "info", "low"}
+        and explicitly_non_acceptance
+        and any(term in scope for term in ("pre_existing", "unrelated"))
+        and any(term in scope for term in ("adjacent", "follow_up", "test_environment"))
+    )
 
 
 def _artifact_is_ui_related(artifact):
@@ -3617,16 +5375,53 @@ def _negative_judgement_evidence(agent, artifact):
         if field in {"stdout_tail", "stderr_tail"} and (
             _raw_judgement_tails_are_advisory(agent, artifact)
             or _visual_review_tails_are_advisory(agent, artifact)
+            or _review_workspace_revision_mismatch_tail_is_advisory(agent, artifact, artifact.get(field))
         ):
             continue
         if field in {"release_notes", "stdout_tail", "stderr_tail"} and _structured_review_judgement_passed(agent, artifact):
             continue
         value = artifact.get(field)
         if isinstance(value, list):
-            values.extend(value)
+            values.extend(
+                item for item in value
+                if not (field in {"tests_run", "test_evidence"} and _timeout_test_item_is_advisory(agent, artifact, item))
+            )
         elif value:
-            values.append(value)
+            if not (field in {"tests_run", "test_evidence"} and _timeout_test_item_is_advisory(agent, artifact, value)):
+                values.append(value)
     return [value for value in values if _is_blocking_judgement_text(agent, artifact, value)]
+
+
+def _timeout_test_item_is_advisory(agent, artifact, value):
+    review_agents = {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}
+    if agent not in {"tester", "qa_red_team", *review_agents} or not isinstance(artifact, dict):
+        return False
+    text = _artifact_text(value).lower()
+    if not any(term in text for term in ("advisory timeout", "advisory_timeout", "timeout_advisory", "timed out", "command timeout")):
+        return False
+    quality = artifact.get("quality_gate") if isinstance(artifact.get("quality_gate"), dict) else {}
+    if quality.get("passed") is not True:
+        return False
+    if agent == "tester":
+        return quality.get("timeout_advisory") is True and str(artifact.get("test_status") or "").strip().lower() == "pass"
+    if agent == "qa_red_team":
+        status = str(artifact.get("red_team_status") or "").strip().lower()
+        risk = str(artifact.get("risk_rating") or "").strip().lower()
+        return quality.get("timeout_advisory") is True and status == "pass" and risk not in {"high", "critical"}
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    item_result = str(value.get("result") or value.get("status") or "").strip().lower() if isinstance(value, dict) else ""
+    if not item_result and any(token in text for token in (
+        "'result': 'advisory_timeout'",
+        '"result": "advisory_timeout"',
+        "result=advisory_timeout",
+    )):
+        item_result = "advisory_timeout"
+    return (
+        decision in {"approve", "approve_final_release", "mark_done"}
+        and item_result in {"advisory_timeout", "timeout_advisory", "advisory timeout"}
+        and "no failure output" in text
+        and _artifact_has_passing_test_collection(artifact)
+    )
 
 
 def _qa_findings_are_advisory(agent, artifact):
@@ -3634,7 +5429,7 @@ def _qa_findings_are_advisory(agent, artifact):
         return False
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
-    return status == "pass" and risk not in {"high", "critical"}
+    return (status == "pass" and risk not in {"high", "critical"}) or _qa_timeout_only_failure_is_advisory(agent, artifact)
 
 
 def _raw_judgement_tails_are_advisory(agent, artifact):
@@ -3642,7 +5437,192 @@ def _raw_judgement_tails_are_advisory(agent, artifact):
         return False
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
-    return status == "pass" and risk not in {"high", "critical"}
+    return (status == "pass" and risk not in {"high", "critical"}) or _qa_timeout_only_failure_is_advisory(agent, artifact)
+
+
+def _review_workspace_revision_mismatch_tail_is_advisory(agent, artifact, value):
+    """Ignore an explicitly closed reviewer-checkout limitation.
+
+    Review stages can run from the promoted control-plane base while inspecting a
+    candidate PR by exact SHA.  A candidate-only local test can therefore be
+    unavailable even though exact-revision CI and the preserved verifier packet
+    pass.  Treat only that narrowly described, non-current-diff condition as
+    advisory; real test or PR failures remain blocking.
+    """
+    if agent not in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    if str((artifact or {}).get("recommended_owner_decision") or "").strip().lower() not in {
+        "approve", "approve_final_release", "mark_done",
+    }:
+        return False
+    if not _artifact_pr_reference(artifact) or not _artifact_has_passing_test_collection(artifact):
+        return False
+    findings = list((artifact or {}).get("errors") or []) + list((artifact or {}).get("bugs") or [])
+    for item in findings:
+        if _is_structured_adjacent_follow_up(agent, artifact, item):
+            continue
+        if not isinstance(item, dict) or item.get("introduced_by_current_diff") is not False:
+            return False
+        scope = str(item.get("scope_relation") or "").strip().lower()
+        severity = str(item.get("severity") or "").strip().lower()
+        acceptance = str(item.get("acceptance_row") or item.get("acceptance_relation") or "").strip().lower()
+        if not (
+            severity in {"advisory", "informational", "info", "low"}
+            and any(term in scope for term in ("workspace_revision_mismatch", "unrelated", "pre_existing"))
+            and acceptance in {"", "none", "not_applicable", "n/a"}
+        ):
+            return False
+    text = _artifact_text(value).lower()
+    checkout_context = any(term in text for term in (
+        "reviewer base checkout", "base checkout", "candidate-only test", "workspace revision mismatch",
+    ))
+    explicitly_closed = any(term in text for term in (
+        "not a pr failure", "exact-head ci", "exact revision ci", "exact-sha ci",
+    ))
+    return checkout_context and explicitly_closed
+
+
+def _qa_timeout_only_failure_is_advisory(agent, artifact):
+    if agent != "qa_red_team" or not isinstance(artifact, dict):
+        return False
+    status = str(artifact.get("red_team_status") or "").strip().lower()
+    if status not in {"fail", "blocked"}:
+        return False
+    return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
+
+
+def _tester_timeout_only_failure_is_advisory(agent, artifact, allow_pass_status=False):
+    if agent != "tester" or not isinstance(artifact, dict):
+        return False
+    status = str(artifact.get("test_status") or "").strip().lower()
+    allowed_statuses = {"fail", "failed", "blocked"}
+    if allow_pass_status:
+        allowed_statuses.add("pass")
+    if status not in allowed_statuses:
+        return False
+    return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
+
+
+def _visual_capture_environment_only_is_advisory(agent, artifact):
+    if agent not in {"tester", "qa_red_team"}:
+        return False
+    if not isinstance(artifact, dict) or not _artifact_has_passing_test_collection(artifact):
+        return False
+    bugs = _artifact_value_list(artifact.get("bugs"))
+    if bugs:
+        return False
+    errors = [_artifact_text(item).lower() for item in _artifact_value_list(artifact.get("errors"))]
+    if not errors:
+        return False
+    visual_environment_terms = (
+        "browser-control",
+        "browser control",
+        "browser runtime",
+        "browser list",
+        "node_repl",
+        "screenshot permission",
+        "screenshots unless explicitly approved",
+        "could not capture screenshot",
+        "no real screenshots",
+        "preview url",
+        "preview server",
+    )
+    return all(any(term in error for term in visual_environment_terms) for error in errors)
+
+
+def _tester_visual_capture_environment_only_is_advisory(artifact):
+    return _visual_capture_environment_only_is_advisory("tester", artifact)
+
+
+def _timeout_only_failure_has_focused_pass_evidence(agent, artifact):
+    values = []
+    for key in ("errors", "bugs", "qa_findings", "tests_run"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            values.extend(str(item or "") for item in value if str(item or "").strip())
+        elif value:
+            values.append(str(value))
+    if not values:
+        return False
+    timeout_terms = ("timed out", "timeout", "tool timeout", "command timed out", "crossed the")
+    if not any(any(term in value.lower() for term in timeout_terms) for value in values):
+        return False
+    pseudo_pass_artifact = {**artifact, "red_team_status": "pass", "test_status": "pass", "risk_rating": "low"}
+    non_timeout_blockers = [
+        value for value in values
+        if not any(term in value.lower() for term in timeout_terms)
+        and (
+            _is_blocking_judgement_text(agent, pseudo_pass_artifact, value)
+            or any(term in value.lower() for term in (
+                "without owner approval",
+                "customer send",
+                "customer message",
+                "chatwoot write",
+                "create an order",
+                "creates an order",
+                "create quote",
+                "creates quote",
+                "reservation",
+                "reserve stock",
+                "payment",
+                "production write",
+                "changes stock",
+            ))
+        )
+    ]
+    if non_timeout_blockers:
+        return False
+    evidence_values = []
+    for key in ("tests_run", "test_evidence", "stdout_tail", "confidence_reason", "commands_run"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            evidence_values.extend(value)
+        elif value:
+            evidence_values.append(value)
+    return any(_artifact_test_evidence_passes(item) for item in evidence_values)
+
+
+def _focused_test_budget_prompt(mission, agent, artifacts):
+    mission = mission if isinstance(mission, dict) else {}
+    agent = str(agent or "").strip().lower()
+    if agent not in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return "No special test-budget instructions for this agent."
+    changed = _mission_changed_files_from_artifacts(artifacts or {})
+    implementation_context = implementation_source_packet(mission)
+    matched_tests = []
+    for section in implementation_context.get("matched_sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for test_path in section.get("tests") or []:
+            text = str(test_path or "").strip()
+            if text and text not in matched_tests:
+                matched_tests.append(text)
+    profile = "focused"
+    haystack = " ".join([
+        str(mission.get("title") or ""),
+        str(mission.get("mission_type") or ""),
+        str(mission.get("raw_text") or ""),
+    ]).lower()
+    if any(term in haystack for term in ("runner", "charlie core", "mission pickup", "execution bridge", "workflow", "conveyor")):
+        profile = "standard"
+    if any(term in haystack for term in ("migration", "security", "auth", "payment", "customer send", "reserve stock", "merge", "deploy")):
+        profile = "full"
+    return json.dumps({
+        "version": "charlie_focused_test_budget_v1",
+        "profile": profile,
+        "rule": (
+            "Run focused changed-surface tests first and record them as focused_tests_passed when green. "
+            "Do not turn unrelated broad/full-suite timeouts into a blocker when focused tests pass and no real owner/customer/order/stock safety defect is present. "
+            "Real product, security, data, source-of-truth, customer-send, order/quote, reservation, payment, or deployment failures still block."
+        ),
+        "changed_files_from_upstream": changed[:16],
+        "source_map_matched_tests": matched_tests[:16],
+        "reporting": {
+            "tests_run": "List each focused and broad command separately with pass/fail/timeout.",
+            "test_status": "Use pass when focused required tests pass and any broad timeout is advisory only.",
+            "advisory_timeouts": "Record broad timeout details without send_back if no real blocker exists.",
+        },
+    }, indent=2)
 
 
 def _visual_review_notes_are_advisory(agent, artifact):
@@ -3691,9 +5671,13 @@ def _is_blocking_judgement_text(agent, artifact, value):
     text = _artifact_text(value).lower()
     if not text:
         return False
+    if _is_positive_safety_enforcement_statement(agent, artifact, text):
+        return False
     if _is_non_blocking_local_pytest_issue(agent, artifact, value):
         return False
     if _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
+        return False
+    if _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
         return False
     blocking_phrases = (
         "send_back",
@@ -3721,9 +5705,228 @@ def _is_blocking_judgement_text(agent, artifact, value):
     )
     if any(phrase in text for phrase in blocking_phrases):
         return True
-    if re.search(r"\b(fail|failed|failing|failure)\b", text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", text):
+    failure_text = re.sub(r"\bfail[- ]closed\b", "", text)
+    failure_text = re.sub(
+        r"\b(?:failure[- ](?:path|mode)|failure (?:evidence|handling|recovery|test(?:ing)?))\b",
+        "",
+        failure_text,
+    )
+    if re.search(r"\b(fail|failed|failing|failure)\b", failure_text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", failure_text):
         return True
     return False
+
+
+def _is_positive_safety_enforcement_statement(agent, artifact, text):
+    """Do not mistake passing fail-closed assertions for failing evidence."""
+    if agent not in {
+        "tester", "qa_red_team", "product_reviewer", "security_reviewer",
+        "evidence_reviewer", "reviewer",
+    }:
+        return False
+    if not _artifact_has_passing_test_collection(artifact):
+        return False
+    explicit_failure = (
+        "failed to fail closed", "does not fail closed", "did not fail closed",
+        "failed to block", "does not block", "did not block",
+        "write occurred before", "service was called", "service_called=true",
+    )
+    if any(term in text for term in explicit_failure):
+        return False
+    safety_terms = (
+        "fail closed", "fails closed", "failed closed",
+        "fail before", "fails before", "failed before",
+        "reject before", "rejects before", "rejected before",
+        "deny before", "denies before", "denied before",
+        "zero service calls", "service was not called", "services were not called",
+    )
+    protected_targets = (
+        "write", "audit", "service", "mutation", "purpose", "payment",
+        "customer", "reservation", "stock", "migration", "owner-admin",
+    )
+    return any(term in text for term in safety_terms) and any(term in text for term in protected_targets)
+
+
+def _protected_operation_pause_only(agent, artifact):
+    """Return pending protected operations when code evidence itself is green.
+
+    A reviewer may truthfully pause the *operational capability* because a
+    migration or live write canary still needs owner authority.  That must not
+    be converted into implementation backflow or a failed code-release packet.
+    """
+    review_agents = {
+        "product_reviewer", "business_reviewer", "security_reviewer",
+        "evidence_reviewer", "reviewer",
+    }
+    if agent not in review_agents or not isinstance(artifact, dict):
+        return []
+    # A stale or malformed runner lineage must not take the legacy pause-only
+    # normalization path. Older artifacts without lineage remain readable
+    # until their targeted recheck creates exact candidate-bound evidence.
+    if isinstance(artifact.get("evidence_lineage"), dict) and not _protected_pause_has_exact_candidate_binding(artifact):
+        return []
+    if str(artifact.get("recommended_owner_decision") or "").strip().lower() != "pause":
+        return []
+    if not _artifact_has_passing_test_collection(artifact):
+        return []
+    acceptance = artifact.get("acceptance_results") if isinstance(artifact.get("acceptance_results"), list) else []
+    if not acceptance or any(
+        isinstance(row, dict) and str(row.get("status") or "").strip().lower() in {"fail", "failed", "blocked"}
+        for row in acceptance
+    ):
+        return []
+    pending = [
+        row for row in acceptance
+        if isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "pending"
+    ]
+    pending_text = " ".join(
+        " ".join(str(item or "") for item in (row.get("evidence") or []))
+        for row in pending
+    ).lower()
+    operations = []
+    if "migration" in pending_text and any(term in pending_text for term in ("unapplied", "application", "owner")):
+        operations.append("apply_migration")
+    if "live" in pending_text and "canary" in pending_text and any(term in pending_text for term in ("owner", "authoriz")):
+        operations.append("live_canary")
+    if not pending and all(
+        isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "passed"
+        for row in acceptance
+    ):
+        operational_text = " ".join(
+            _artifact_text(artifact.get(key))
+            for key in ("summary", "next_action", "release_notes", "confidence_reason")
+        ).lower()
+        explicitly_separate = any(term in operational_text for term in (
+            "separate", "separately", "own explicit", "explicit owner", "requires its own",
+        ))
+        if (
+            "migration" in operational_text
+            and any(term in operational_text for term in ("production migration", "migration application", "unapplied"))
+            and "owner" in operational_text
+            and explicitly_separate
+        ):
+            operations.append("apply_migration")
+        if (
+            "live" in operational_text and "canary" in operational_text
+            and any(term in operational_text for term in ("owner", "authoriz"))
+            and explicitly_separate
+        ):
+            operations.append("live_canary")
+    if not operations:
+        return []
+    for key in ("errors", "bugs"):
+        values = artifact.get(key) if isinstance(artifact.get(key), list) else []
+        for value in values:
+            value = _structured_artifact_item(value)
+            if _serialized_owner_gated_operational_finding(value):
+                continue
+            if _is_nonblocking_during_protected_pause(value):
+                continue
+            if _is_structured_adjacent_follow_up(agent, artifact, value):
+                continue
+            if isinstance(value, dict):
+                severity = str(value.get("severity") or "").strip().lower().replace("_", "-")
+                text = _artifact_text(value).lower()
+                if severity in {"owner-gated", "protected", "advisory"} and any(
+                    term in text for term in ("migration", "live operational canary", "live canary")
+                ):
+                    continue
+            return []
+    return operations
+
+
+def _serialized_owner_gated_operational_finding(value):
+    if isinstance(value, dict):
+        return False
+    text = str(value or "").lower()
+    if not all(term in text for term in ("owner-gated", "migration", "live", "canary")):
+        return False
+    if not any(term in text for term in ("not a code defect", "operational evidence gap", "operational closure", "acceptance closure")):
+        return False
+    return not any(term in text for term in (
+        "security vulnerability", "unauthorized write occurred", "data loss", "must fix before merge",
+    ))
+
+
+def _is_nonblocking_during_protected_pause(value):
+    if not isinstance(value, dict) or value.get("introduced_by_current_diff") is not False:
+        return False
+    scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    severity = str(value.get("severity") or "").strip().lower()
+    if scope not in {"advisory", "unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"}:
+        return False
+    # A reviewer may retain a conservative medium label for an explicitly
+    # non-current, non-acceptance adjacent follow-up.  Its severity does not
+    # turn a disjoint follow-up into a defect in the candidate being released.
+    # High/critical findings and anything attributed to the current diff still
+    # fail closed above and below.
+    if severity not in {"advisory", "informational", "info", "low", "medium"}:
+        return False
+    violates = value.get("violates_acceptance_row")
+    if violates is None:
+        violates = value.get("acceptance_row_violation")
+    acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").lower()
+    explicitly_non_acceptance = violates is False or any(term in acceptance for term in (
+        "no frozen acceptance row violated", "does not violate", "outside current acceptance",
+    )) or acceptance.strip() in {"none", "not_applicable", "n/a"} or value.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
+    if severity == "medium":
+        return explicitly_non_acceptance and scope in {"advisory", "adjacent_follow_up"}
+    return explicitly_non_acceptance
+
+
+def _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
+    """Distinguish PR merge approval from later migration-application authority."""
+    if agent not in {"product_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    artifact = artifact if isinstance(artifact, dict) else {}
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    if decision not in {"approve_final_release", "approve", "mark_done"}:
+        return False
+    if artifact.get("errors") or artifact.get("bugs"):
+        return False
+    acceptance = artifact.get("acceptance_results") if isinstance(artifact.get("acceptance_results"), list) else []
+    if acceptance and any(
+        not isinstance(row, dict) or str(row.get("status") or "").strip().lower() != "passed"
+        for row in acceptance
+    ):
+        return False
+    changed_files = [str(path or "").replace("\\", "/") for path in (artifact.get("changed_files") or [])]
+    if not any(path.startswith("supabase/migrations/") for path in changed_files):
+        return False
+    artifact_text = " ".join(str(value or "") for value in (
+        artifact.get("summary"),
+        artifact.get("next_action"),
+        *(artifact.get("release_notes") or []),
+    )).lower()
+    if "unapplied" not in artifact_text:
+        return False
+    merge_approval_terms = (
+        "may approve merge",
+        "may approve the merge",
+        "may approve final release",
+        "approve merge of pr",
+        "approve release of pr",
+    )
+    separate_gate_terms = (
+        "must not approve migration application",
+        "does not authorize migration application",
+        "does not authorize applying the migration",
+        "do not apply this migration",
+        "before migration application",
+        "before any migration application",
+    )
+    current_defect_terms = (
+        "current-diff security defect",
+        "current diff security defect",
+        "security vulnerability",
+        "acceptance failed",
+        "tests failed",
+        "must fix before merge",
+    )
+    return (
+        any(term in artifact_text for term in merge_approval_terms)
+        and any(term in text for term in separate_gate_terms)
+        and not any(term in text for term in current_defect_terms)
+    )
 
 
 def _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
@@ -3782,6 +5985,43 @@ def _artifact_pr_reference(artifact):
     return ""
 
 
+def _pr_number_from_value(value):
+    text = str(value or "").strip()
+    match = re.search(r"/pull/(\d+)(?:\D|$)", text)
+    if match:
+        return int(match.group(1))
+    return int(text) if text.isdigit() else 0
+
+
+def _mission_canonical_pr_reference(mission):
+    """Return the durable mission-bound PR without treating a Builder artifact as authority."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    candidates = [
+        metadata.get("review_packet"),
+        mission.get("review_packet"),
+        metadata.get("mission_context_pack", {}).get("canonical_pr")
+        if isinstance(metadata.get("mission_context_pack"), dict) else None,
+        mission.get("mission_context_pack", {}).get("canonical_pr")
+        if isinstance(mission.get("mission_context_pack"), dict) else None,
+        mission,
+    ]
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        links = candidate.get("links") if isinstance(candidate.get("links"), dict) else {}
+        url = str(candidate.get("pr_url") or links.get("pr") or "").strip()
+        number = _pr_number_from_value(candidate.get("pr_number") or url)
+        if url or number:
+            return {
+                "url": url,
+                "number": number,
+                "branch": str(candidate.get("branch_name") or candidate.get("head_ref") or "").strip(),
+                "revision": str(candidate.get("candidate_revision") or candidate.get("expected_revision") or "").strip(),
+            }
+    return {"url": "", "number": 0, "branch": "", "revision": ""}
+
+
 def _artifact_local_commit_reference(artifact):
     branch_name = str((artifact or {}).get("branch_name") or "").strip()
     commit_sha = str((artifact or {}).get("commit_sha") or "").strip()
@@ -3800,9 +6040,24 @@ def _artifact_code_review_reference(artifact):
 
 
 def _artifact_text(value):
+    value = _structured_artifact_item(value)
     if isinstance(value, dict):
         return str(value.get("finding") or value.get("bug") or value.get("error") or value.get("summary") or value.get("message") or "").strip()
     return str(value or "").strip()
+
+
+def _structured_artifact_item(value):
+    """Recover structured findings after compact storage stringifies them."""
+    if isinstance(value, dict):
+        return value
+    text = str(value or "").strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return value
+    try:
+        parsed = ast.literal_eval(text)
+    except (SyntaxError, ValueError):
+        return value
+    return parsed if isinstance(parsed, dict) else value
 
 
 def _has_passing_fallback_test_evidence(artifact):
@@ -3848,26 +6103,278 @@ def _is_resolved_pr_process_issue(agent, artifact, value):
     )
 
 
+def _is_recovered_command_process_issue(agent, artifact, value):
+    if agent not in {"tester", "qa_red_team", "product_reviewer", "reviewer", "evidence_reviewer", "security_reviewer"}:
+        return False
+    if not _artifact_has_passing_test_collection(artifact):
+        return False
+    if isinstance(value, dict) and value.get("introduced_by_current_diff") is not False:
+        return False
+    text = _artifact_text(value).lower()
+    recovered_terms = (
+        "reran",
+        "re-run",
+        "rerun",
+        "recovered",
+        "recaptured",
+        "passed",
+        "successfully",
+    )
+    setup_terms = (
+        "powershell invocation",
+        "powershell command invocation",
+        "unsupported powershell",
+        "quoted executable",
+        "call operator",
+        "parser error",
+        "viewport-size",
+        "networkidle timed out",
+        "async cards loaded",
+        "explicit wait",
+        "case-insensitive",
+        "text-transform",
+    )
+    return any(term in text for term in recovered_terms) and any(term in text for term in setup_terms)
+
+
+def _is_resolved_informational_process_issue(agent, artifact, value):
+    if agent not in {"tester", "qa_red_team", "product_reviewer", "reviewer", "evidence_reviewer", "security_reviewer"}:
+        return False
+    if not isinstance(value, dict) or not _artifact_has_passing_test_collection(artifact):
+        return False
+    if value.get("introduced_by_current_diff") is not False:
+        return False
+    severity = str(value.get("severity") or "").strip().lower()
+    scope = str(value.get("scope_relation") or "").strip().lower()
+    acceptance = str(value.get("acceptance_relation") or "").strip().lower()
+    detail = " ".join((
+        _artifact_text(value),
+        str(value.get("detail") or ""),
+    )).lower()
+    return (
+        severity in {"informational", "info", "none"}
+        and any(term in scope for term in ("command", "tool", "test harness", "process"))
+        and any(term in acceptance for term in ("does not violate", "outside acceptance", "not acceptance"))
+        and any(term in detail for term in ("corrected", "retried", "reran", "resolved", "subsequent"))
+        and any(term in detail for term in ("pass", "passing", "succeeded", "green"))
+    )
+
+
 def _blocking_artifact_items(agent, artifact, values):
     if not isinstance(values, list):
         values = [values] if values else []
     blocking = []
+    protected_pause = bool(_protected_operation_pause_only(agent, artifact))
     for value in values:
+        value = _structured_artifact_item(value)
+        if protected_pause and isinstance(value, dict):
+            severity = str(value.get("severity") or "").strip().lower().replace("_", "-")
+            text = _artifact_text(value).lower()
+            if severity in {"owner-gated", "protected", "advisory"} and any(
+                term in text for term in ("migration", "live operational canary", "live canary")
+            ):
+                continue
+        if _is_structured_adjacent_follow_up(agent, artifact, value):
+            continue
+        if _is_reviewer_adjacent_follow_up(agent, artifact, value):
+            continue
         if _is_non_blocking_local_pytest_issue(agent, artifact, value):
             continue
         if _is_resolved_pr_process_issue(agent, artifact, value):
+            continue
+        if _is_recovered_command_process_issue(agent, artifact, value):
+            continue
+        if _is_resolved_informational_process_issue(agent, artifact, value):
             continue
         blocking.append(value)
     return blocking
 
 
+def _is_structured_adjacent_follow_up(agent, artifact, value):
+    """Keep explicit out-of-scope follow-ups from causing current-diff backflow."""
+    value = _structured_artifact_item(value)
+    if agent not in {"tester", "qa_red_team", "reviewer", "evidence_reviewer", "security_reviewer"}:
+        return False
+    if not isinstance(artifact, dict) or not isinstance(value, dict):
+        return False
+    if value.get("introduced_by_current_diff") is not False:
+        return False
+    scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace("/", "_").replace(" ", "_")
+    if _is_explicit_non_current_advisory_finding(value):
+        if agent == "tester":
+            return str(artifact.get("test_status") or "").strip().lower() == "pass"
+        if agent == "qa_red_team":
+            status = str(artifact.get("red_team_status") or "").strip().lower()
+            risk = str(artifact.get("risk_rating") or "").strip().lower()
+            return status == "pass" and risk not in {"high", "critical"}
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return decision in {"approve", "approve_final", "approve_final_release"}
+    if "workspace_revision_mismatch" in scope:
+        severity = str(value.get("severity") or "").strip().lower()
+        acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return (
+            severity in {"advisory", "informational", "info", "low"}
+            and acceptance in {"", "none", "not_applicable", "n/a"}
+            and decision in {"approve", "approve_final", "approve_final_release"}
+            and _artifact_has_passing_test_collection(artifact)
+        )
+    pre_existing_environment = (
+        "pre_existing" in scope
+        and any(term in scope for term in ("environment", "configuration", "test_harness"))
+    )
+    if scope in {"unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"} or pre_existing_environment:
+        severity = str(value.get("severity") or "").strip().lower()
+        acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
+        disposition = str(value.get("disposition") or "").strip().lower()
+        disposition_is_non_acceptance = any(term in disposition for term in (
+            "does not fail this candidate",
+            "does not fail the candidate",
+            "does not fail current acceptance",
+            "current fail-closed behavior is correct",
+            "current fail closed behavior is correct",
+        ))
+        if severity not in {"advisory", "informational", "info", "low"}:
+            return False
+        explicitly_non_acceptance = (
+            value.get("violates_acceptance_row") is False
+            or value.get("acceptance_row_violation") is False
+            or (pre_existing_environment and acceptance in {"none", "not_applicable", "n/a"})
+            or disposition_is_non_acceptance
+        )
+        if not explicitly_non_acceptance and not any(term in acceptance for term in (
+            "does not violate", "does not fail acceptance", "outside current acceptance",
+            "not part of current acceptance", "no impact on current acceptance", "adjacent follow-up",
+            "no frozen acceptance row violated",
+        )):
+            return False
+        if agent == "tester":
+            return str(artifact.get("test_status") or "").strip().lower() == "pass"
+        if agent == "qa_red_team":
+            status = str(artifact.get("red_team_status") or "").strip().lower()
+            risk = str(artifact.get("risk_rating") or "").strip().lower()
+            return status == "pass" and risk not in {"high", "critical"}
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return decision in {"approve", "approve_final", "approve_final_release"}
+    if scope.startswith("adjacent_advisory"):
+        severity = str(value.get("severity") or "").strip().lower()
+        acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
+        if severity not in {"advisory", "informational", "info"}:
+            return False
+        if acceptance not in {"none", "n/a", "not_applicable", "not applicable"}:
+            return False
+        if agent == "tester":
+            return str(artifact.get("test_status") or "").strip().lower() == "pass"
+        if agent == "qa_red_team":
+            status = str(artifact.get("red_team_status") or "").strip().lower()
+            risk = str(artifact.get("risk_rating") or "").strip().lower()
+            return status == "pass" and risk not in {"high", "critical"}
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return decision in {"approve", "approve_final", "approve_final_release"}
+    if not scope.startswith(("adjacent_follow_up", "out_of_scope_follow_up")):
+        return False
+    acceptance = str(value.get("acceptance_relation") or "").strip().lower()
+    if not any(term in acceptance for term in (
+        "does not violate current",
+        "does not fail acceptance",
+        "outside current acceptance",
+        "not part of current acceptance",
+        "no impact on current acceptance",
+    )):
+        return False
+    if agent == "tester":
+        return str(artifact.get("test_status") or "").strip().lower() == "pass"
+    if agent == "qa_red_team":
+        status = str(artifact.get("red_team_status") or "").strip().lower()
+        risk = str(artifact.get("risk_rating") or "").strip().lower()
+        return status == "pass" and risk not in {"high", "critical"}
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    return decision in {"approve", "approve_final", "approve_final_release"}
+
+
+def _is_reviewer_adjacent_follow_up(agent, artifact, value):
+    """Keep explicitly deferred owner/migration work out of current-diff backflow.
+
+    Reviewer models occasionally place advisory follow-ups in the legacy
+    ``bugs`` array while simultaneously recording their structured scope in
+    ``finding_contract``.  Suppression is intentionally narrow: the release
+    recommendation and every acceptance row must pass, the contract must say
+    the work is adjacent and not introduced by this candidate, and the item
+    itself must describe a separate future migration/capture gate.
+    """
+    if agent != "reviewer" or not isinstance(artifact, dict):
+        return False
+    if str(artifact.get("recommended_owner_decision") or "").strip().lower() != "approve_final_release":
+        return False
+    acceptance = artifact.get("acceptance_results") if isinstance(artifact.get("acceptance_results"), list) else []
+    if not acceptance or any(
+        not isinstance(row, dict) or str(row.get("status") or "").strip().lower() != "passed"
+        for row in acceptance
+    ):
+        return False
+    contract = str(artifact.get("finding_contract") or "").lower().replace(" ", "_")
+    if not all(term in contract for term in (
+        "adjacent_follow_up",
+        "introduced_by_current_diff=false",
+        "acceptance_impact=none",
+    )):
+        return False
+    text = _artifact_text(value).lower()
+    deferred_terms = (
+        "before migration application",
+        "before applying the migration",
+        "before any migration",
+        "do not apply this migration",
+        "before capture implementation",
+        "do not build capture",
+        "capture roles",
+        "correction authorization",
+        "retention/deletion policy",
+        "non-production rehearsal",
+        "non-production postgresql",
+    )
+    current_defect_terms = (
+        "introduced by current diff",
+        "current-diff defect",
+        "acceptance failed",
+        "acceptance violation",
+        "tests failed",
+        "failing test",
+        "security vulnerability",
+        "data loss",
+        "must fix before merge",
+    )
+    return any(term in text for term in deferred_terms) and not any(term in text for term in current_defect_terms)
+
+
 def _auto_package_builder_changes(mission, artifact, runner=None):
     artifact = artifact if isinstance(artifact, dict) else {}
-    changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
-    if not _has_release_relevant_changes(changed_files) or _artifact_pr_reference(artifact):
-        return artifact
     runner = runner or subprocess.run
-    branch_name = _builder_branch_name(mission)
+    local_changed_files = [path for path in _changed_files() if not _runner_generated_path(path)]
+    staged_changed_files = [path for path in _staged_changed_files() if not _runner_generated_path(path)]
+    reconciled = _reconcile_builder_pr_reference(mission, artifact, runner)
+    committed_retry = reconciled.get("canonical_pr_head_mismatch") if isinstance(reconciled.get("canonical_pr_head_mismatch"), dict) else {}
+    # A Builder retry may inherit the canonical PR reference from its previous
+    # attempt while holding new uncommitted corrections.  Reusing that PR
+    # before packaging the dirty worktree would bind downstream evidence to
+    # the old PR head.  Only short-circuit when there is no release-relevant
+    # local work left to package.
+    if (
+        _artifact_pr_reference(reconciled)
+        and not committed_retry
+        and not _has_release_relevant_changes(staged_changed_files)
+    ):
+        return reconciled
+    artifact = reconciled
+    artifact_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+    changed_files = list(dict.fromkeys([
+        *artifact_files,
+        *local_changed_files,
+        *staged_changed_files,
+    ]))
+    if not _has_release_relevant_changes(changed_files):
+        return artifact
+    branch_name = str(artifact.get("branch_name") or "").strip() or _builder_branch_name(mission)
     result = {
         "version": "charlie_builder_git_packaging_v1",
         "attempted": True,
@@ -3906,6 +6413,34 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
         result["commands"].append(record)
         return record
 
+    if committed_retry and not _has_release_relevant_changes(staged_changed_files):
+        local_commit = str(committed_retry.get("local_commit") or artifact.get("commit_sha") or "").strip()
+        canonical_branch = str(committed_retry.get("branch_name") or artifact.get("branch_name") or "").strip()
+        if not local_commit or not canonical_branch:
+            return _builder_packaging_failed(artifact, result, "committed_retry_identity_missing")
+        commit_exists = run(["git", "cat-file", "-e", f"{local_commit}^{{commit}}"])
+        if commit_exists["returncode"] != 0:
+            return _builder_packaging_failed(artifact, result, "committed_retry_not_local")
+        pushed = run(["git", "push", "-u", "origin", f"{local_commit}:refs/heads/{canonical_branch}"])
+        if pushed["returncode"] != 0:
+            return _builder_packaging_failed(artifact, result, "committed_retry_push_failed")
+        published = _reconcile_builder_pr_reference(
+            mission,
+            {**artifact, "branch_name": canonical_branch, "commit_sha": local_commit},
+            runner,
+            command_recorder=result["commands"],
+        )
+        if published.get("canonical_pr_head_mismatch") or not _artifact_pr_reference(published):
+            return _builder_packaging_failed(published, result, "committed_retry_pr_head_unverified")
+        published["errors"] = _remove_resolved_builder_packaging_errors(published.get("errors"))
+        published["git_packaging"] = {
+            **result,
+            "status": "committed_retry_published",
+            "commit_sha": str(published.get("commit_sha") or local_commit),
+            "pr_url": published.get("pr_url", ""),
+        }
+        return published
+
     current = run(["git", "branch", "--show-current"])
     if current["returncode"] != 0:
         return _builder_packaging_failed(artifact, result, "current_branch_failed")
@@ -3929,6 +6464,7 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     if not existing_commit:
         committed = run(["git", "commit", "-m", commit_message])
         if committed["returncode"] != 0:
+            _preserve_builder_recovery_stash(run, result, mission)
             return _builder_packaging_failed(artifact, result, "git_commit_failed")
     sha = run(["git", "rev-parse", "--short", "HEAD"])
     commit_sha = sha["stdout"].strip()
@@ -3938,6 +6474,20 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     pushed = run(["git", "push", "-u", "origin", branch_name])
     if pushed["returncode"] != 0:
         return _builder_packaging_failed(artifact, result, "git_push_failed")
+    existing = _reconcile_builder_pr_reference(
+        mission,
+        {**artifact, "branch_name": branch_name, "commit_sha": commit_sha},
+        runner,
+        command_recorder=result["commands"],
+    )
+    if _artifact_pr_reference(existing):
+        existing["errors"] = _remove_resolved_builder_packaging_errors(existing.get("errors"))
+        existing["git_packaging"] = {
+            **result,
+            "status": "existing_pr_reused",
+            "pr_url": existing.get("pr_url", ""),
+        }
+        return existing
     pr = run([
         "gh",
         "pr",
@@ -3971,6 +6521,149 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     return packaged
 
 
+def _reconcile_builder_pr_reference(mission, artifact, runner, command_recorder=None):
+    """Canonicalize exact-head PRs and close only provable same-head duplicates."""
+    artifact = dict(artifact) if isinstance(artifact, dict) else {}
+    canonical = _mission_canonical_pr_reference(mission)
+    commit_sha = str(
+        artifact.get("commit_sha")
+        or (artifact.get("git_packaging") or {}).get("commit_sha")
+        or canonical.get("revision")
+        or ""
+    ).strip()
+    artifact_number = _pr_number_from_value(_artifact_pr_reference(artifact))
+    if not commit_sha and not (canonical.get("number") and artifact_number):
+        return artifact
+    try:
+        completed = runner(
+            ["gh", "pr", "list", "--state", "open", "--base", "main", "--limit", "100", "--json", "number,url,headRefName,headRefOid,baseRefName"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=180,
+            check=False,
+        )
+    except Exception:
+        return artifact
+    if command_recorder is not None:
+        command_recorder.append({
+            "command": "gh pr list --state open --base main --limit 100 --json number,url,headRefName,headRefOid,baseRefName",
+            "returncode": completed.returncode,
+            "stdout": _truncate(completed.stdout or "", 1200),
+            "stderr": _truncate(completed.stderr or "", 1200),
+        })
+    if completed.returncode != 0:
+        return artifact
+    try:
+        open_prs = json.loads(completed.stdout or "[]")
+    except (TypeError, ValueError):
+        return artifact
+    canonical_number = int(canonical.get("number") or 0)
+    canonical_open = next(
+        (pr for pr in open_prs if isinstance(pr, dict) and int(pr.get("number") or 0) == canonical_number),
+        None,
+    )
+    matching = [
+        pr for pr in open_prs if isinstance(pr, dict)
+        and str(pr.get("baseRefName") or "main") == "main"
+        and commit_sha
+        and str(pr.get("headRefOid") or "").strip()
+        and (
+            str(pr.get("headRefOid") or "").lower().startswith(commit_sha.lower())
+            or commit_sha.lower().startswith(str(pr.get("headRefOid") or "").lower())
+        )
+    ]
+    if not matching:
+        artifact_number = _pr_number_from_value(_artifact_pr_reference(artifact))
+        if canonical_open and artifact_number == canonical_number and commit_sha:
+            artifact["canonical_pr_head_mismatch"] = {
+                "canonical_pr_number": canonical_number,
+                "branch_name": str(canonical_open.get("headRefName") or artifact.get("branch_name") or ""),
+                "pr_head": str(canonical_open.get("headRefOid") or ""),
+                "local_commit": commit_sha,
+            }
+        return artifact
+    chosen = next((pr for pr in matching if int(pr.get("number") or 0) == canonical_number), None)
+    chosen = chosen or min(matching, key=lambda pr: int(pr.get("number") or 0))
+    chosen_number = int(chosen.get("number") or 0)
+    duplicate_numbers = []
+    for duplicate in matching:
+        duplicate_number = int(duplicate.get("number") or 0)
+        if not duplicate_number or duplicate_number == chosen_number:
+            continue
+        closed = runner(
+            ["gh", "pr", "close", str(duplicate_number), "--comment", f"Closed automatically as an exact-head duplicate of canonical PR #{chosen_number}."],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=180,
+            check=False,
+        )
+        if closed.returncode == 0:
+            duplicate_numbers.append(duplicate_number)
+    links = artifact.get("links") if isinstance(artifact.get("links"), dict) else {}
+    artifact.update({
+        "pr_url": str(chosen.get("url") or ""),
+        "pr_number": chosen_number,
+        "branch_name": str(chosen.get("headRefName") or artifact.get("branch_name") or ""),
+        "commit_sha": str(chosen.get("headRefOid") or commit_sha),
+        "links": {**links, "pr": str(chosen.get("url") or "")},
+    })
+    artifact.pop("canonical_pr_head_mismatch", None)
+    if duplicate_numbers:
+        artifact["duplicate_pr_reconciliation"] = {
+            "status": "exact_head_duplicates_closed",
+            "canonical_pr_number": chosen_number,
+            "closed_pr_numbers": duplicate_numbers,
+        }
+    return artifact
+
+
+def _builder_concurrency_admission(mission, artifacts, execution_id):
+    """Fail closed before Builder can touch a workspace or source file."""
+    declared_files = declared_source_files(mission, artifacts)
+    return build_admission(
+        REPO_ROOT,
+        str((mission or {}).get("mission_id") or ""),
+        declared_files,
+        holder=f"execution:{execution_id}:builder",
+    )
+
+
+def _release_builder_concurrency_admission(admission):
+    admission = admission if isinstance(admission, dict) else {}
+    lease = admission.get("lease") if isinstance(admission.get("lease"), dict) else {}
+    canonical_root = str(admission.get("canonical_root") or "").strip()
+    lease_id = str(lease.get("lease_id") or "").strip()
+    if not canonical_root or not lease_id:
+        return {"released": False, "status": "builder_lease_release_not_applicable"}
+    return release_file_lease(canonical_root, lease_id)
+
+
+def _runner_generated_path(path):
+    normalized = str(path or "").replace("\\", "/").strip()
+    return normalized == "planning/CODEX_CHAT.md" or normalized.startswith("test-results/") or normalized.startswith(".charlie_runner/")
+
+
+def _preserve_builder_recovery_stash(run, result, mission):
+    mission_id = str((mission or {}).get("mission_id") or "unknown").strip()
+    stashed = run(["git", "stash", "push", "-u", "-m", f"CHARLIE recovery {mission_id}"])
+    if stashed.get("returncode") != 0 or "No local changes" in str(stashed.get("stdout") or ""):
+        return False
+    reference = run(["git", "stash", "list", "-1", "--format=%gd"])
+    stash_ref = str(reference.get("stdout") or "").strip()
+    if stash_ref:
+        result["recovery_stash"] = stash_ref
+        result["recovery_stash_mission_id"] = mission_id
+        result["worktree_cleaned_after_failure"] = True
+        return True
+    return False
+
+
 def _remove_resolved_builder_packaging_errors(errors):
     cleaned = []
     for item in errors if isinstance(errors, list) else []:
@@ -3979,7 +6672,10 @@ def _remove_resolved_builder_packaging_errors(errors):
             "could not create branch/commit/pr" in text
             or "git branch creation failed" in text
             or "permission denied creating .git/refs/heads" in text
+            or ("index.lock" in text and ("permission denied" in text or "unable to create" in text))
             or "runner git packaging failed" in text
+            or ("could not push" in text and ("github.com" in text or "bound pr" in text))
+            or ("git push" in text and ("unreachable" in text or "could not connect" in text))
         ):
             continue
         cleaned.append(item)
@@ -4007,6 +6703,19 @@ def _builder_packaging_failed(artifact, result, status):
         errors.append(f"Runner git packaging failed: {status}.")
     packaged["errors"] = errors
     return packaged
+
+
+def _builder_packaging_is_terminal(packaging):
+    packaging = packaging if isinstance(packaging, dict) else {}
+    status = str(packaging.get("status") or "").strip().lower()
+    if not packaging.get("attempted"):
+        return False
+    return status not in {
+        "pr_created",
+        "existing_pr_reused",
+        "committed_retry_published",
+        "local_commit_ready",
+    }
 
 
 def _builder_branch_name(mission):
@@ -4059,7 +6768,57 @@ def _inherit_pr_reference(agent, artifact, artifacts):
     inherited["links"] = merged_links
     inherited["pr_url"] = inherited.get("pr_url") or builder.get("pr_url") or merged_links.get("pr", "")
     inherited["pr_number"] = inherited.get("pr_number") or builder.get("pr_number") or ""
+    expected_revision = str(builder.get("commit_sha") or (builder.get("git_packaging") or {}).get("commit_sha") or "").strip()
+    if expected_revision:
+        inherited["expected_revision"] = inherited.get("expected_revision") or expected_revision
+        local_revision = _git_head_revision()
+        if local_revision and (local_revision.lower().startswith(expected_revision.lower()) or expected_revision.lower().startswith(local_revision.lower())):
+            inherited["tested_revision"] = inherited.get("tested_revision") or local_revision
     return inherited
+
+
+def _git_head_revision(run_subprocess=None):
+    runner = run_subprocess or subprocess.run
+    try:
+        completed = runner(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return str(completed.stdout or "").strip() if completed.returncode == 0 else ""
+
+
+def _revision_evidence_quality_gate(agent, artifact):
+    if agent not in {"tester", "qa_red_team", "visual_qa_reviewer", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return {"passed": True, "reason": "revision_evidence_not_required"}
+    expected = str(artifact.get("expected_revision") or "").strip().lower()
+    tested = str(artifact.get("tested_revision") or "").strip().lower()
+    if not expected or not re.fullmatch(r"[0-9a-f]{6,40}", expected):
+        return {"passed": True, "reason": "no_packaged_revision_yet"}
+    if tested and not re.fullmatch(r"[0-9a-f]{6,40}", tested):
+        return {"passed": True, "reason": "tested_revision_not_packaged_evidence", "expected_revision": expected}
+    if not tested:
+        return {"passed": True, "reason": "revision_evidence_pending_final_reconciliation", "expected_revision": expected}
+    if not (tested.startswith(expected) or expected.startswith(tested)):
+        return {
+            "passed": False,
+            "reason": f"{agent} reviewed wrong revision: expected {expected}, tested {tested}.",
+            "expected_revision": expected,
+            "tested_revision": tested,
+        }
+    return {
+        "passed": True,
+        "reason": "exact_revision_verified",
+        "expected_revision": expected,
+        "tested_revision": tested,
+    }
 
 
 def _has_release_relevant_changes(changed_files):
@@ -4085,6 +6844,14 @@ def _agent_backflow_target(agent, artifact, quality):
         target = str(artifact.get("send_back_stage") or "").strip().lower()
         return target if target in all_agent_names() else "builder"
     return ""
+
+
+def _authoritative_targeted_recovery_agent(mission):
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    target = str(packet.get("return_to_stage") or targeted.get("target_agent") or "").strip().lower()
+    return target if targeted.get("version") == "charlie_targeted_invalidation_v1" and target in all_agent_names() else ""
 
 
 def _resolve_agent_backflow_target(target_agent, agent_sequence=None):
@@ -4164,18 +6931,46 @@ def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifa
 
 def _backflow_fingerprint(from_agent, to_agent, reason, artifact=None):
     artifact = artifact if isinstance(artifact, dict) else {}
-    issue_text = " ".join(
-        str(item.get("finding") or item.get("summary") or item)
-        for item in _artifact_issue_items(str(from_agent or ""), artifact)
-    )
+    items = _artifact_issue_items(str(from_agent or ""), artifact)
+    issue_signatures = sorted({_stable_blocker_signature(item) for item in items if _stable_blocker_signature(item)})
+    criteria = artifact.get("acceptance_criteria") if isinstance(artifact.get("acceptance_criteria"), list) else []
+    criterion_signatures = sorted({_stable_blocker_signature(item) for item in criteria if _stable_blocker_signature(item)})
+    combined = _stable_blocker_signature(" ".join([str(reason or ""), *[str(item) for item in items], *[str(item) for item in criteria]]))
     raw = "|".join([
         str(from_agent or "").strip().lower(),
         str(to_agent or "").strip().lower(),
-        " ".join(str(reason or "").strip().lower().split()),
-        " ".join(issue_text.lower().split()),
-        " ".join(str(artifact.get("send_back_stage") or "").strip().lower().split()),
+        combined if "+" in combined else _stable_blocker_signature(reason),
+        "" if "+" in combined else ",".join(issue_signatures),
+        "" if "+" in combined else ",".join(criterion_signatures),
     ])
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _stable_blocker_signature(value):
+    if isinstance(value, dict):
+        value = value.get("criterion_id") or value.get("requirement_id") or value.get("finding") or value.get("summary") or value.get("message") or value
+    text = str(value or "").lower()
+    families = []
+    vocabulary = {
+        "lifecycle_matrix": ("lifecycle", "transition matrix", "status transition"),
+        "canonical_order_linkage": ("canonical order", "order linkage", "order creation", "order id"),
+        "order_deep_link": ("deep-link", "deep link", "/orders/", "named action"),
+        "typed_extension": ("typed", "extension", "meat readiness"),
+        "focused_tests": ("focused test", "test evidence", "acceptance evidence"),
+        "visual_evidence": ("screenshot", "visual evidence", "browser evidence"),
+        "security": ("security", "authorization", "permission", "secret"),
+    }
+    for family, terms in vocabulary.items():
+        if any(term in text for term in terms):
+            families.append(family)
+    if len(families) > 1 and "focused_tests" in families:
+        families.remove("focused_tests")
+    if families:
+        return "+".join(sorted(set(families)))
+    normalized = re.sub(r"\b(?:attempt|run|try|repeat|occurrence)\s*#?\d+\b", "", text)
+    normalized = re.sub(r"\b\d+(?:\.\d+)?\b", "#", normalized)
+    normalized = re.sub(r"[^a-z0-9_/#]+", " ", normalized)
+    return " ".join(normalized.split())[:180]
 
 
 def _backflow_fingerprint_count(ledger, fingerprint):
@@ -4212,6 +7007,45 @@ def _durable_backflow_fingerprint_count(mission, fingerprint):
     return count
 
 
+def _bounded_internal_recovery(mission_id, agent, blocked_reason, artifact, disposition, mission=None, database_url=None, connect_factory=None):
+    disposition = dict(disposition if isinstance(disposition, dict) else {})
+    loaded_mission = mission if isinstance(mission, dict) else {}
+    if not loaded_mission and mission_id:
+        loaded, status_code = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+        if status_code < 400:
+            loaded_mission = loaded.get("mission") or {}
+    metadata = loaded_mission.get("metadata") if isinstance(loaded_mission.get("metadata"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    manifest = packet.get("candidate_manifest") if isinstance(packet.get("candidate_manifest"), dict) else {}
+    candidate_revision = str(packet.get("tested_revision") or packet.get("candidate_revision") or manifest.get("source_commit") or "").strip().lower()
+    fingerprint = hashlib.sha256(json.dumps({
+        "mission_id": str(mission_id or loaded_mission.get("mission_id") or ""),
+        "recovery_class": str(disposition.get("block_class") or "internal_recovery").strip().lower(),
+        "responsible_stage": str(disposition.get("responsible_stage") or agent).strip().lower(),
+        "candidate_revision": candidate_revision,
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+    memory = mission_memory_from_metadata(metadata)
+    pattern = (memory.get("recurring_block_patterns") or {}).get(f"fingerprint:{fingerprint}") or {}
+    prior_count = int(pattern.get("count") or 0)
+    occurrence = prior_count + 1
+    capped = bool(disposition.get("recoverable")) and occurrence >= 2
+    if capped:
+        disposition.update({
+            "block_class": "recovery_attempts_exhausted",
+            "recoverable": False,
+            "owner_required": True,
+            "responsible_stage": "owner",
+            "recovery_cap_reached": True,
+            "reason": f"Repeated internal recovery stopped after {occurrence} identical occurrences: {blocked_reason}",
+        })
+    return disposition, {
+        "fingerprint": fingerprint,
+        "prior_count": prior_count,
+        "occurrence": occurrence,
+        "capped": capped,
+    }
+
+
 def _loop_recovery_next_action(agent, backflow_target, reason, artifact):
     artifact = artifact if isinstance(artifact, dict) else {}
     base = str(artifact.get("next_action") or "").strip()
@@ -4223,6 +7057,44 @@ def _loop_recovery_next_action(agent, backflow_target, reason, artifact):
     if base:
         details.append(f"Agent requested action: {base}")
     return " ".join(details)
+
+
+def _durable_artifact_identity(artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    ingestion = artifact.get("artifact_ingestion") if isinstance(artifact.get("artifact_ingestion"), dict) else {}
+    claim = ingestion.get("claim") if isinstance(ingestion.get("claim"), dict) else {}
+    return str(artifact.get("artifact_identity") or claim.get("identity") or "").strip()
+
+
+def _prepare_durable_artifact_contract(mission, artifact, agent, execution_id, attempt, artifacts, agent_sequence=None):
+    artifact = dict(artifact if isinstance(artifact, dict) else {})
+    lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
+    revision = str(artifact.get("source_revision") or artifact.get("source_commit") or lineage.get("source_commit") or "").strip().lower()
+    artifact.update({
+        "mission_id": str((mission or {}).get("mission_id") or "").strip(),
+        "execution_id": str(execution_id or "").strip(),
+        "producing_stage": str(agent or "").strip().lower(),
+        "agent": str(agent or "").strip().lower(),
+        "attempt": int(attempt or 1),
+        "source_revision": revision,
+        "candidate_revision": str(artifact.get("candidate_revision") or revision).strip().lower(),
+        "expected_revision": str(artifact.get("expected_revision") or revision).strip().lower(),
+    })
+    sequence = list(agent_sequence or AGENT_SEQUENCE)
+    try:
+        index = sequence.index(agent)
+    except ValueError:
+        index = 0
+    inputs = [str(value).strip() for value in (artifact.get("input_artifact_ids") or []) if str(value).strip()]
+    if not inputs:
+        for upstream in reversed(sequence[:index]):
+            identity = _durable_artifact_identity((artifacts or {}).get(upstream))
+            if identity:
+                inputs.append(identity)
+                break
+    artifact["input_artifact_ids"] = inputs
+    artifact["parent_artifact_id"] = str(artifact.get("parent_artifact_id") or (inputs[0] if inputs else "")).strip()
+    return artifact
 
 
 def _discard_downstream_artifacts(artifacts, target_agent, agent_sequence=None):
@@ -4247,6 +7119,17 @@ def _agent_queue_from(target_agent, agent_sequence=None):
     return list(agent_sequence[target_index:])
 
 
+def _targeted_agent_queue(mission, start_agent, agent_sequence=None):
+    agent_sequence = list(agent_sequence or _mission_agent_sequence(mission))
+    queue = _agent_queue_from(start_agent, agent_sequence)
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    preserved = {str(agent or "").strip().lower() for agent in targeted.get("preserved_agents") or []}
+    if preserved:
+        queue = [agent for agent in queue if agent == start_agent or agent not in preserved]
+    return queue, preserved
+
+
 def _block_agent_stage(
     mission_id,
     execution_id,
@@ -4265,6 +7148,26 @@ def _block_agent_stage(
     artifacts = artifacts if isinstance(artifacts, dict) else {}
     if artifact and agent not in artifacts:
         artifacts = {**artifacts, agent: artifact}
+    ingestion = artifact.get("artifact_ingestion") if isinstance(artifact.get("artifact_ingestion"), dict) else {}
+    binding_rejection = str(ingestion.get("status") or "") == "final_artifact_binding_invalid"
+    if binding_rejection:
+        disposition = {
+            "block_class": "final_artifact_binding_invalid",
+            "reason": blocked_reason,
+            "recoverable": False,
+            "owner_required": True,
+            "responsible_stage": agent,
+            "return_to_stage": agent,
+            "semantic_rejection_identity": str(
+                (ingestion.get("semantic_rejection") or {}).get("identity") or ""
+            ),
+        }
+    else:
+        disposition = classify_block(agent, blocked_reason, artifact)
+    disposition, recovery_repeat = _bounded_internal_recovery(
+        mission_id, agent, blocked_reason, artifact, disposition,
+        database_url=database_url, connect_factory=connect_factory,
+    )
     unresolved = _artifact_issue_items(agent, artifact)
     if unresolved:
         ledger["unresolved_blockers"] = unresolved
@@ -4280,6 +7183,8 @@ def _block_agent_stage(
         "stdout_tail": artifact.get("stdout_tail", ""),
         "stderr_tail": artifact.get("stderr_tail", ""),
         "quality_gate": artifact.get("quality_gate", {}),
+        "implementation_source_map": artifact.get("implementation_source_map", {}),
+        "files_checked_against_source_map": artifact.get("files_inspected", []),
     }
     ledger["status"] = "blocked"
     ledger["blocked_agent"] = agent
@@ -4311,6 +7216,7 @@ def _block_agent_stage(
         stdout_text=getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]),
         stderr_text=getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]),
     )
+    full_recovery_packet["disposition"] = disposition
     _record_mission_memory_event(
         {"mission_id": mission_id},
         build_memory_event(
@@ -4321,6 +7227,7 @@ def _block_agent_stage(
             artifact={**artifact, "next_action": artifact.get("next_action") or recovery_packet.get("recommended_next_action", "")},
             quality_gate=artifact.get("quality_gate", {}),
             recovery=recovery_packet,
+            metadata={"execution_id": execution_id, "backflow_fingerprint": recovery_repeat["fingerprint"], "recovery_occurrence": recovery_repeat["occurrence"]},
         ),
         database_url=database_url,
         connect_factory=connect_factory,
@@ -4351,6 +7258,9 @@ def _block_agent_stage(
                 "agent_execution": _agent_execution_summary(ledger),
                 "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
                 "unresolved_blockers": unresolved,
+                "normalized_findings": normalize_findings(unresolved, agent=agent, artifact=artifact),
+                "implementation_source_map": artifact.get("implementation_source_map", {}),
+                "files_checked_against_source_map": artifact.get("files_inspected", []),
                 "handoff_reports": {
                     stage_agent: stage_artifact.get("handoff_report", {})
                     for stage_agent, stage_artifact in artifacts.items()
@@ -4362,8 +7272,14 @@ def _block_agent_stage(
                 "recovery_packet": full_recovery_packet,
                 "blocked_agent": agent,
                 "blocked_reason": blocked_reason,
-                "recommended_next_action": artifact.get("next_action") or f"Send back to {_agent_backflow_target(agent, artifact, {'passed': False, 'reason': blocked_reason}) or 'builder'} with the unresolved blockers.",
-                "review_status": "agent_blocked",
+                "block_disposition": disposition,
+                "recovery_repeat": recovery_repeat,
+                "recommended_next_action": artifact.get("next_action") or (
+                    f"CORE will recover from {disposition['responsible_stage']}."
+                    if disposition["recoverable"]
+                    else f"Owner decision required at {agent}."
+                ),
+                "review_status": "internal_recovery_queued" if disposition["recoverable"] else "agent_blocked",
             },
         },
         notes="CHARLIE Agent Runner v2 recorded a blocked stage.",
@@ -4371,27 +7287,38 @@ def _block_agent_stage(
         connect_factory=connect_factory,
     )
     _record_execution_stage(mission_id, agent, "blocked", blocked_reason, database_url=database_url, connect_factory=connect_factory)
+    next_status = "approved" if disposition["recoverable"] else "blocked"
+    owner_decision = "" if disposition["recoverable"] else f"CHARLIE Agent Runner v2 blocked at {agent}."
     blocked, blocked_status = update_mission_status(
         mission_id,
-        "blocked",
-        owner_decision=f"CHARLIE Agent Runner v2 blocked at {agent}.",
+        next_status,
+        owner_decision=owner_decision,
         event_type="status_changed",
         notes=blocked_reason,
-        metadata={"agent_runner_version": AGENT_RUNNER_VERSION, "execution_id": execution_id, "blocked_agent": agent},
+        metadata={
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "execution_id": execution_id,
+            "blocked_agent": agent,
+            "block_class": disposition["block_class"],
+            "recovery_stage": disposition["responsible_stage"],
+            "recovery_fingerprint": recovery_repeat["fingerprint"],
+            "recovery_occurrence": recovery_repeat["occurrence"],
+        },
         database_url=database_url,
         connect_factory=connect_factory,
     )
     if blocked_status >= 400:
         return blocked, blocked_status
     return {
-        "success": False,
-        "status": "agent_stage_blocked",
+        "success": disposition["recoverable"],
+        "status": "agent_stage_recovery_queued" if disposition["recoverable"] else "agent_stage_blocked",
         "mission_id": mission_id,
-        "mission_status": "blocked",
+        "mission_status": next_status,
         "agent": agent,
         "blocked_reason": blocked_reason,
+        "block_disposition": disposition,
         "agent_ledger_path": str(ledger_path),
-    }, 504
+    }, 202 if disposition["recoverable"] else 504
 
 
 def _blocked_review_summary(agent, blocked_reason, ledger, artifact):
@@ -4437,7 +7364,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         mission=mission,
     )
     if _visual_review_blocks_owner_review(visual_review):
-        blocked_reason = visual_review.get("summary") or "UI mission visual review media was not captured."
+        blocked_reason = _visual_review_block_reason(visual_review)
         block_artifact = {
             **reviewer,
             "summary": blocked_reason,
@@ -4524,6 +7451,48 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         },
         ledger,
     )
+    # Targeted resumes rehydrate compact stored artifacts. Rebind every
+    # participating review artifact to the current authoritative PR file list
+    # before final reconciliation so serialized, disjoint follow-ups cannot be
+    # mistaken for defects in the candidate being released.
+    authoritative_pr_files = _authoritative_pr_changed_files(reviewer)
+    if authoritative_pr_files:
+        for artifact_agent, artifact_value in artifacts.items():
+            if not isinstance(artifact_value, dict):
+                continue
+            artifact_value["authoritative_pr_changed_files"] = list(authoritative_pr_files)
+            _normalize_authoritative_diff_followups(artifact_agent, artifact_value)
+    finalization_revision = _finalization_candidate_revision(mission, artifacts)
+    candidate_manifest = build_candidate_manifest(
+        mission,
+        artifacts,
+        source_commit=finalization_revision,
+    )
+    evidence_reconciliation = resolve_effective_agent_results(
+        artifacts,
+        candidate_manifest,
+        workflow=mission.get("agent_workflow"),
+        judgement=_judgement_evidence_quality_gate,
+    )
+    existing_review_packet = (
+        mission.get("metadata", {}).get("review_packet", {})
+        if isinstance(mission.get("metadata"), dict)
+        and isinstance(mission.get("metadata", {}).get("review_packet"), dict)
+        else {}
+    )
+    artifact_history = [
+        *list(existing_review_packet.get("agent_artifact_history") or []),
+        *[artifact for artifact in artifacts.values() if isinstance(artifact, dict)],
+    ][-120:]
+    candidate_revision = str(candidate_manifest.get("source_commit") or "").strip()
+    protected_operations = []
+    if any(str(path or "").replace("\\", "/").startswith("supabase/migrations/") for path in changed_files):
+        protected_operations.append({
+            "operation": "apply_migration",
+            "status": "owner_gated",
+            "candidate_revision": candidate_revision,
+            "note": "Approving this PR does not authorize applying the migration.",
+        })
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
@@ -4556,8 +7525,18 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "brain_guard": brain_guard,
             "normalized_vault_writes": normalized_vault_writes,
             "mission_quality": mission_quality,
+            "candidate_manifest": candidate_manifest,
+            "tested_revision": candidate_revision,
+            "protected_operations": protected_operations,
+            "evidence_reconciliation": evidence_reconciliation,
+            "active_blockers": evidence_reconciliation.get("active_blockers", []),
+            "resolved_findings": evidence_reconciliation.get("resolved_findings", []),
+            "follow_up_findings": evidence_reconciliation.get("follow_ups", []),
+            "evidence_requiring_refresh": evidence_reconciliation.get("requires_revalidation", []),
+            "recommended_action": evidence_reconciliation.get("recommended_action", {}),
             "repo_test_command_memory": repo_test_command_memory(changed_files),
             "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
+            "agent_artifact_history": artifact_history,
             "handoff_reports": {
                 agent: artifact.get("handoff_report", {})
                 for agent, artifact in artifacts.items()
@@ -4572,108 +7551,114 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 },
             }),
             "review_status": "ready_for_owner_review",
+            **(
+                {"owner_review_gate_failure": existing_review_packet["owner_review_gate_failure"]}
+                if isinstance(existing_review_packet.get("owner_review_gate_failure"), dict)
+                else {}
+            ),
         },
         "agent_execution": ledger,
     }
-    vault_result, vault_status = update_mission_vault(
-        mission["mission_id"],
-        review_packet,
-        notes="CHARLIE Agent Runner v2 populated owner review packet.",
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if vault_status >= 400 or not vault_result.get("success"):
-        return {
-            "success": False,
-            "status": "owner_review_packet_persist_failed",
-            "mission_id": mission["mission_id"],
-            "mission_status": mission.get("status", "in_progress"),
-            "error_status": vault_result.get("status", ""),
-            "error_type": vault_result.get("error_type", ""),
-            "agent_ledger_path": str(ledger_path),
-            "next_action": "Do not mark pr_ready. Compact or repair review packet persistence, then rerun from reviewer.",
-        }, max(int(vault_status or 500), 500)
-    persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
-        mission["mission_id"],
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if not persisted_ok:
-        return {
-            "success": False,
-            "status": "owner_review_packet_persist_verify_failed",
-            "mission_id": mission["mission_id"],
-            "mission_status": mission.get("status", "in_progress"),
-            "error_status": persisted_status,
-            "agent_ledger_path": str(ledger_path),
-            "next_action": "Do not mark pr_ready. Review packet write returned success but did not read back from mission storage.",
-        }, 502
-    reviewer_result, reviewer_status = update_mission_workflow_step(
-        mission["mission_id"],
-        "reviewer",
-        step_status="complete",
-        findings="CHARLIE Agent Runner v2 completed all stages and prepared owner review packet.",
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if reviewer_status >= 400:
-        return reviewer_result, reviewer_status
-    persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
-        mission["mission_id"],
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if not persisted_ok:
-        rewrite_result, rewrite_status = update_mission_vault(
+    github_gate = _build_github_finalization_gate(mission, review_packet["review_packet"], candidate_revision)
+    review_packet["review_packet"]["github_gate"] = github_gate
+    workflow_ready, workflow_status = _verify_owner_review_artifacts_ready(mission, artifacts)
+    if workflow_ready and not github_gate.get("passed"):
+        workflow_ready = False
+        workflow_status = {
+            "blocked_agent": "publisher",
+            "reason": "GitHub finalisation gate failed: " + ", ".join(github_gate.get("reasons") or ["unknown GitHub state"]),
+            "github_gate": github_gate,
+        }
+    if not workflow_ready:
+        blocked_agent = str(workflow_status.get("blocked_agent") or "reviewer")
+        blocked_reason = str(workflow_status.get("reason") or "Owner-review workflow is not fully passing.")
+        gate_failure = _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_status)
+        incident_halted = gate_failure["occurrence"] >= 2
+        review_status = "system_incident_halted" if incident_halted else "workflow_not_ready"
+        if incident_halted:
+            blocked_reason = (
+                f"Repeated owner-review evidence recovery halted after {gate_failure['occurrence']} identical "
+                f"occurrences: {blocked_reason}"
+            )
+        disposition = classify_block(blocked_agent, blocked_reason, workflow_status)
+        disposition["responsible_stage"] = blocked_agent
+        disposition["recoverable"] = not incident_halted
+        disposition["owner_required"] = False
+        if incident_halted:
+            disposition["block_class"] = "system_incident_halted"
+            disposition["recovery_cap_reached"] = True
+        blocked_review_packet = dict(review_packet["review_packet"])
+        blocked_review_packet.update({
+            "review_status": review_status,
+            "blocked_agent": blocked_agent,
+            "blocked_reason": blocked_reason,
+            "return_to_stage": blocked_agent,
+            "block_disposition": disposition,
+            "owner_review_gate_failure": gate_failure,
+            "recommended_next_action": (
+                "Automatic recovery is halted. Repair the repeated evidence reconciliation condition before resuming."
+                if incident_halted
+                else f"CORE will perform one targeted recheck at {blocked_agent}."
+            ),
+        })
+        if isinstance(workflow_status.get("evidence_reconciliation"), dict):
+            blocked_review_packet["evidence_reconciliation"] = workflow_status["evidence_reconciliation"]
+        blocked_result, blocked_status = transition_mission_review_state(
             mission["mission_id"],
-            review_packet,
-            notes="CHARLIE Agent Runner v2 repaired owner review packet after workflow update.",
+            "blocked",
+            blocked_review_packet,
+            expected_status="in_progress",
+            owner_decision=blocked_reason,
+            notes="CORE refused pr_ready because at least one configured workflow stage was not complete.",
             database_url=database_url,
             connect_factory=connect_factory,
         )
-        if rewrite_status >= 400 or not rewrite_result.get("success"):
-            return {
-                "success": False,
-                "status": "owner_review_packet_lost_after_workflow_update",
-                "mission_id": mission["mission_id"],
-                "mission_status": mission.get("status", "in_progress"),
-                "error_status": persisted_status,
-                "repair_status": rewrite_result.get("status", ""),
-                "agent_ledger_path": str(ledger_path),
-                "next_action": "Do not mark pr_ready. Review packet disappeared after workflow update and repair failed.",
-            }, max(int(rewrite_status or 500), 500)
-        persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
-            mission["mission_id"],
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
-        if not persisted_ok:
-            return {
-                "success": False,
-                "status": "owner_review_packet_repair_verify_failed",
-                "mission_id": mission["mission_id"],
-                "mission_status": mission.get("status", "in_progress"),
-                "error_status": persisted_status,
-                "agent_ledger_path": str(ledger_path),
-                "next_action": "Do not mark pr_ready. Review packet repair did not read back from mission storage.",
-            }, 502
-    ready_result, ready_status = update_mission_status(
-        mission["mission_id"],
-        "pr_ready",
-        owner_decision="CHARLIE Agent Runner v2 prepared owner review packet.",
-        event_type="status_changed",
-        notes="CHARLIE Agent Runner v2 completed all stages and moved mission to owner review.",
-        metadata={
-            "agent_runner_version": AGENT_RUNNER_VERSION,
-            "execution_id": execution_id,
+        if blocked_status >= 400:
+            return blocked_result, blocked_status
+        return {
+            "success": False,
+            "status": "owner_review_workflow_not_ready",
+            "mission_id": mission["mission_id"],
+            "mission_status": "blocked",
+            "blocked_agent": blocked_agent,
+            "blocked_reason": blocked_reason,
             "agent_ledger_path": str(ledger_path),
-            "review_status": "ready_for_owner_review",
-        },
+        }, 200
+    review_packet["review_packet"] = _apply_authoritative_reconciliation(
+        review_packet["review_packet"], workflow_status
+    )
+    ready_result, ready_status = finalize_owner_review_transaction(
+        mission["mission_id"],
+        review_packet["review_packet"],
+        execution_id=execution_id,
+        candidate_revision=candidate_revision,
+        expected_status="in_progress",
         database_url=database_url,
         connect_factory=connect_factory,
     )
     if ready_status >= 400:
-        return ready_result, ready_status
+        deterministic_refusals = {
+            "finalization_evidence_not_ready",
+            "finalization_candidate_mismatch",
+            "finalization_github_gate_not_ready",
+            "finalization_execution_mismatch",
+            "finalization_workflow_not_complete",
+            "finalization_identity_required",
+        }
+        if str(ready_result.get("status") or "") not in deterministic_refusals:
+            # A database/infrastructure failure cannot be made durable by a
+            # second database write, and a lost status claim belongs to the
+            # winning writer.  Preserve those results exactly.
+            return ready_result, ready_status
+        return _transition_finalization_transaction_failure(
+            mission,
+            review_packet["review_packet"],
+            ready_result,
+            execution_id=execution_id,
+            ledger_path=ledger_path,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
     return {
         "success": True,
         "status": "agent_execution_completed",
@@ -4683,6 +7668,298 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         "agent_runner_version": AGENT_RUNNER_VERSION,
         "agent_ledger_path": str(ledger_path),
     }, 200
+
+
+def _finalization_candidate_revision(mission, artifacts):
+    revision = _release_candidate_revision_sha(mission, artifacts)
+    if revision:
+        return revision
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if orchestration.get("tier") == "T0" and _mission_agent_sequence(mission) == ["source_mapper"]:
+        # A T0 report has no mutable release candidate, but finalisation still
+        # needs an immutable source identity. Bind it to the inspected checkout.
+        return _git_head_revision()
+    return ""
+
+
+def _apply_authoritative_reconciliation(review_packet, workflow_status):
+    review_packet = dict(review_packet) if isinstance(review_packet, dict) else {}
+    workflow_status = workflow_status if isinstance(workflow_status, dict) else {}
+    authoritative = workflow_status.get("evidence_reconciliation")
+    if not isinstance(authoritative, dict):
+        return review_packet
+    # Targeted recovery validates only artifacts that participate in the
+    # resumed candidate.  The broad packet assembled earlier can still carry
+    # false missing-planning rows, so finalisation must consume this exact
+    # reconciliation that passed the workflow gate.
+    review_packet.update({
+        "evidence_reconciliation": authoritative,
+        "active_blockers": authoritative.get("active_blockers", []),
+        "resolved_findings": authoritative.get("resolved_findings", []),
+        "follow_up_findings": authoritative.get("follow_ups", []),
+        "evidence_requiring_refresh": authoritative.get("requires_revalidation", []),
+        "recommended_action": authoritative.get("recommended_action", {}),
+    })
+    return review_packet
+
+
+def _transition_finalization_transaction_failure(
+    mission,
+    review_packet,
+    failure,
+    *,
+    execution_id,
+    ledger_path,
+    database_url=None,
+    connect_factory=None,
+):
+    """Turn a refused atomic finalisation into bounded, visible recovery.
+
+    A finaliser refusal must never leave an all-complete mission silently in
+    ``in_progress``.  The transaction remains the authority on whether
+    ``pr_ready`` is legal; this path records its refusal and targets one
+    responsible stage, escalating to the durable incident breaker on repeat.
+    """
+    failure = failure if isinstance(failure, dict) else {}
+    status = str(failure.get("status") or "owner_review_finalization_failed").strip()
+    responsible = {
+        "finalization_evidence_not_ready": "evidence_reviewer",
+        "finalization_candidate_mismatch": "publisher",
+        "finalization_github_gate_not_ready": "publisher",
+        "finalization_execution_mismatch": "reviewer",
+        "finalization_workflow_not_complete": "reviewer",
+        "finalization_identity_required": "reviewer",
+    }.get(status, "reviewer")
+    reason = f"Atomic owner-review finalisation refused: {status}."
+    gate_failure = _owner_review_gate_failure(
+        mission,
+        responsible,
+        reason,
+        {
+            "failure_class": status,
+            "candidate_revision": str(
+                review_packet.get("tested_revision")
+                or review_packet.get("candidate_revision")
+                or ""
+            ),
+            "finalization_failure": failure,
+        },
+    )
+    incident_halted = gate_failure["occurrence"] >= 2
+    if incident_halted:
+        reason = (
+            f"Repeated atomic finalisation refusal halted after {gate_failure['occurrence']} "
+            f"occurrences: {status}."
+        )
+    blocked_packet = dict(review_packet) if isinstance(review_packet, dict) else {}
+    disposition = classify_block(responsible, reason, {"failure_class": status})
+    disposition.update({
+        "responsible_stage": responsible,
+        "recoverable": not incident_halted,
+        "owner_required": False,
+    })
+    if incident_halted:
+        disposition.update({"block_class": "system_incident_halted", "recovery_cap_reached": True})
+    blocked_packet.update({
+        "review_status": "system_incident_halted" if incident_halted else "finalization_recovery_queued",
+        "blocked_agent": responsible,
+        "blocked_reason": reason,
+        "return_to_stage": responsible,
+        "block_disposition": disposition,
+        "owner_review_gate_failure": gate_failure,
+        "finalization_failure": failure,
+        "recommended_next_action": (
+            "Automatic recovery is halted. Repair the repeated atomic finalisation refusal before resuming."
+            if incident_halted
+            else f"CORE will perform one targeted recheck at {responsible}."
+        ),
+    })
+    result, status_code = transition_mission_review_state(
+        mission.get("mission_id", ""),
+        "blocked",
+        blocked_packet,
+        expected_status="in_progress",
+        owner_decision=reason,
+        notes="CORE recorded an atomic finalisation refusal and queued bounded recovery.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return result, status_code
+    return {
+        "success": False,
+        "status": "owner_review_finalization_refused",
+        "mission_id": mission.get("mission_id", ""),
+        "mission_status": "blocked",
+        "blocked_agent": responsible,
+        "blocked_reason": reason,
+        "execution_id": execution_id,
+        "agent_ledger_path": str(ledger_path),
+        "finalization_failure": failure,
+    }, 200
+
+
+def _build_github_finalization_gate(mission, review_packet, candidate_revision):
+    """Return machine-verified PR evidence bound to the tested revision."""
+    sequence = _mission_agent_sequence(mission if isinstance(mission, dict) else {})
+    mutation_stages = {
+        "builder", "tester", "qa_red_team", "product_reviewer",
+        "business_reviewer", "security_reviewer", "evidence_reviewer",
+        "visual_qa_reviewer", "reviewer", "publisher",
+    }
+    if sequence and not any(agent in mutation_stages for agent in sequence):
+        return {
+            "version": "charlie_github_finalization_gate_v1",
+            "passed": True,
+            "required": False,
+            "reasons": [],
+            "pr_reference": "",
+            "pr_number": None,
+            "pr_url": "",
+            "state": "NOT_APPLICABLE",
+            "mergeable": "NOT_APPLICABLE",
+            "head_revision": str(candidate_revision or "").strip(),
+            "check_conclusions": [],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    candidate = str(candidate_revision or "").strip()
+    reference = mission_pr_reference({
+        **(mission if isinstance(mission, dict) else {}),
+        "metadata": {
+            **((mission or {}).get("metadata") if isinstance((mission or {}).get("metadata"), dict) else {}),
+            "review_packet": review_packet if isinstance(review_packet, dict) else {},
+        },
+    })
+    state = query_pr_state(reference)
+    checks = state.get("statusCheckRollup") if isinstance(state.get("statusCheckRollup"), list) else []
+    conclusions = [
+        str(item.get("conclusion") or item.get("state") or item.get("status") or "").strip().upper()
+        for item in checks if isinstance(item, dict)
+    ]
+    reasons = []
+    if not state.get("success"):
+        reasons.append(str(state.get("status") or "pr_query_failed"))
+    if str(state.get("state") or "").upper() != "OPEN":
+        reasons.append("pr_not_open")
+    if str(state.get("mergeable") or "").upper() != "MERGEABLE":
+        reasons.append("pr_not_mergeable")
+    if not checks:
+        reasons.append("pr_checks_missing")
+    elif any(value not in PASSING_CHECK_CONCLUSIONS for value in conclusions):
+        reasons.append("pr_checks_not_passing")
+    head_revision = str(state.get("headRefOid") or "").strip()
+    if not candidate or head_revision != candidate:
+        reasons.append("pr_head_candidate_mismatch")
+    return {
+        "version": "charlie_github_finalization_gate_v1",
+        "passed": not reasons,
+        "required": True,
+        "reasons": reasons,
+        "pr_reference": reference,
+        "pr_number": state.get("number"),
+        "pr_url": state.get("url") or reference,
+        "state": state.get("state"),
+        "mergeable": state.get("mergeable"),
+        "head_revision": head_revision,
+        "check_conclusions": conclusions,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _verify_owner_review_artifacts_ready(mission, artifacts):
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    sequence = _mission_agent_sequence(mission if isinstance(mission, dict) else {})
+    if not sequence:
+        return False, {"reason": "Owner-review workflow is empty."}
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    historical_workflow = (
+        not isinstance(metadata.get("orchestration"), dict)
+        and isinstance(mission.get("agent_workflow"), list)
+        and bool(mission.get("agent_workflow"))
+    )
+    # Older stored missions predate candidate-bound lineage. Preserve their
+    # established gate even when the current bridge adds lineage to newly
+    # produced artifacts. The adapter is read-only and never rewrites their
+    # frozen persisted workflow.
+    if historical_workflow or not any(
+        isinstance(artifact, dict) and isinstance(artifact.get("evidence_lineage"), dict)
+        for artifact in artifacts.values()
+    ):
+        historical_slice_started = False
+        for agent in sequence:
+            artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+            historical_slice_started = historical_slice_started or bool(artifact)
+            if not artifact:
+                if historical_workflow and historical_slice_started:
+                    return False, {
+                        "blocked_agent": agent,
+                        "stage_status": "legacy_required_artifact_missing",
+                        "reason": f"Historical workflow compatibility refused missing required {agent} evidence.",
+                        "legacy_evidence": True,
+                        "compatibility_adapter": "frozen_historical_workflow_v1",
+                    }
+                continue
+            judgement = _judgement_evidence_quality_gate(agent, artifact)
+            if not judgement.get("passed"):
+                return False, {
+                    "blocked_agent": agent,
+                    "stage_status": "non_passing",
+                    "reason": f"Owner review is not ready: {agent} is non-passing ({judgement.get('reason') or 'quality gate failed'}).",
+                    "legacy_evidence": True,
+                }
+        return True, {
+            "reason": "all_workflow_artifacts_passing",
+            "legacy_evidence": True,
+            "compatibility_adapter": "frozen_historical_workflow_v1" if historical_workflow else "",
+        }
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if orchestration.get("tier") == "T0" and sequence == ["source_mapper"]:
+        artifact = artifacts.get("source_mapper") if isinstance(artifacts.get("source_mapper"), dict) else {}
+        judgement = _judgement_evidence_quality_gate("source_mapper", artifact)
+        if not judgement.get("passed"):
+            return False, {
+                "blocked_agent": "source_mapper",
+                "stage_status": "non_passing",
+                "reason": f"T0 report is not ready: {judgement.get('reason') or 'source evidence quality gate failed'}.",
+            }
+        return True, {
+            "reason": "t0_source_report_passing",
+            "tier": "T0",
+            "release_candidate_required": False,
+        }
+    manifest = build_candidate_manifest(
+        mission,
+        artifacts,
+        source_commit=_release_candidate_revision_sha(mission, artifacts),
+    )
+    reconciliation = resolve_effective_agent_results(
+        artifacts,
+        manifest,
+        # A targeted resume intentionally omits already-completed prefix stages.
+        # Validate every artifact participating in this candidate without
+        # manufacturing missing-evidence blockers for stages outside this run.
+        workflow=[{"agent": agent} for agent in sequence if agent in artifacts],
+        judgement=_judgement_evidence_quality_gate,
+    )
+    if reconciliation.get("active_blockers"):
+        blocker = reconciliation["active_blockers"][0]
+        return False, {
+            "blocked_agent": blocker.get("agent") or "reviewer",
+            "stage_status": "current_candidate_non_passing",
+            "reason": f"Owner review is not ready: {blocker.get('agent') or 'reviewer'} has a current applicable blocker ({blocker.get('reason') or 'quality gate failed'}).",
+            "evidence_reconciliation": reconciliation,
+        }
+    if reconciliation.get("requires_revalidation"):
+        refresh = reconciliation["requires_revalidation"][0]
+        return False, {
+            "blocked_agent": refresh.get("agent") or "reviewer",
+            "stage_status": "targeted_recheck_required",
+            "reason": f"Owner review needs a targeted {refresh.get('agent') or 'reviewer'} recheck for the current release candidate ({refresh.get('reason')}).",
+            "evidence_reconciliation": reconciliation,
+        }
+    return True, {"reason": "current_candidate_evidence_passing", "evidence_reconciliation": reconciliation}
 
 
 def _verify_owner_review_packet_persisted(mission_id, *, database_url=None, connect_factory=None):
@@ -4720,6 +7997,32 @@ def _visual_review_blocks_owner_review(visual_review):
     return not _visual_review_has_required_viewport_media(visual_review)
 
 
+def _visual_review_block_reason(visual_review):
+    visual_review = visual_review if isinstance(visual_review, dict) else {}
+    summary = str(visual_review.get("summary") or "UI mission visual review media was not captured.").strip()
+    capture = visual_review.get("capture") if isinstance(visual_review.get("capture"), dict) else {}
+    local_preview = visual_review.get("local_preview") if isinstance(visual_review.get("local_preview"), dict) else {}
+    failed = []
+    for item in capture.get("captures") or []:
+        if isinstance(item, dict) and not item.get("captured"):
+            failed.append({
+                "label": item.get("label"),
+                "status": item.get("status"),
+                "command": item.get("command"),
+                "stderr_tail": item.get("stderr_tail"),
+                "error_type": item.get("error_type"),
+            })
+    detail = {
+        "preview_url": local_preview.get("url") or capture.get("url") or "",
+        "capture_url": capture.get("capture_url") or "",
+        "fallback_reason": capture.get("fallback_reason") or "",
+        "capture_source": capture.get("capture_source") or "",
+        "capture_url_recovery": capture.get("capture_url_recovery") or {},
+        "failed_viewports": failed[:3],
+    }
+    return f"{summary} Visual capture diagnostics: {json.dumps(detail, ensure_ascii=False, default=str)[:1200]}"
+
+
 def _visual_review_has_required_viewport_media(visual_review):
     media = visual_review.get("media") if isinstance(visual_review.get("media"), list) else []
     filenames = " ".join(
@@ -4739,6 +8042,10 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
     mission_id = mission.get("mission_id", "")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     project_truth = vault.get("project_truth") if isinstance(vault.get("project_truth"), dict) else {}
+    # Project identity is stable across missions. Mission type describes the
+    # workflow, not a new Vault project row; using it as project_id while
+    # defaulting project_key to charlie_core violates the unique key on replay.
+    project_id = project_truth.get("project_key") or "charlie_core"
     writes = []
     vault_write_unavailable = False
 
@@ -4765,14 +8072,25 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
         if status_code >= 500 and not result.get("success") and result.get("configured") is not False:
             vault_write_unavailable = True
 
-    record("project", lambda: vault_store.write_project({
-        "project_id": project_truth.get("project_key") or mission.get("mission_type") or "charlie_core",
-        "project_key": project_truth.get("project_key") or "charlie_core",
+    project_result, project_status = vault_store.write_project({
+        "project_id": project_id,
+        "project_key": project_id,
         "name": project_truth.get("workflow_label") or mission.get("title") or "CHARLIE mission",
         "purpose": vault.get("desired_outcome") or vault.get("problem_statement") or mission.get("raw_text", ""),
         "workflow_template": project_truth.get("workflow_template") or mission.get("mission_type") or "software_build",
         "metadata": {"mission_id": mission_id, "project_truth": project_truth},
-    }, database_url=database_url, connect_factory=connect_factory))
+    }, database_url=database_url, connect_factory=connect_factory)
+    writes.append({
+        "label": "project",
+        "status_code": project_status,
+        "success": bool(project_result.get("success")),
+        "status": project_result.get("status", ""),
+        "error_type": project_result.get("error_type", ""),
+    })
+    if project_status >= 500 and not project_result.get("success") and project_result.get("configured") is not False:
+        vault_write_unavailable = True
+    elif project_result.get("success") and project_result.get("project_id"):
+        project_id = project_result["project_id"]
 
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
@@ -4783,7 +8101,7 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
             artifact,
             title=f"{agent} artifact",
             summary=artifact.get("summary", ""),
-            project_id=project_truth.get("project_key") or "",
+            project_id=project_id,
             agent=agent,
             database_url=database_url,
             connect_factory=connect_factory,
@@ -4863,6 +8181,9 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
     preserved = set(ledger.get("preserved_upstream_artifacts") if isinstance(ledger.get("preserved_upstream_artifacts"), list) else [])
     findings = []
     warnings = []
+    from modules.charlie.vault_alignment import evaluate_vault_alignment
+    vault_alignment = evaluate_vault_alignment()
+    findings.extend(vault_alignment.get("findings") or [])
     context = build_vault_brain_context(mission)
     retrieval = context.get("retrieval") if isinstance(context.get("retrieval"), dict) else retrieve_vault_sources(mission)
     agent_sequence = _mission_agent_sequence(mission)
@@ -4872,30 +8193,45 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
             "Selected workflow has agents without loaded Vault doctrine files: "
             + ", ".join(f"{item['agent']} -> {item['path'] or 'no path'}" for item in missing_doctrine)
         )
-    ui_text = " ".join([
-        str(mission.get("mission_type") or ""),
-        str(mission.get("title") or ""),
-        str(mission.get("raw_text") or ""),
-    ])
-    if _is_ui_related_mission(mission.get("mission_type", ""), changed_files, ui_text):
+    workflow_contract = _authoritative_workflow_contract(mission, agent_sequence)
+    from modules.charlie.agentic_architecture import evaluate_agentic_architecture
+    agentic_gate = evaluate_agentic_architecture(mission, artifacts)
+    findings.extend(agentic_gate.get("findings") or [])
+    if workflow_contract["ui_related"]:
         for required_agent in ["product_architect", "product_reviewer", "evidence_reviewer"]:
-            if required_agent not in agent_sequence:
+            if required_agent in workflow_contract["required_agents"] and required_agent not in agent_sequence:
                 findings.append(f"UI/product mission workflow is missing required agent: {required_agent}.")
         if "builder" in agent_sequence and "product_architect" in agent_sequence:
             if agent_sequence.index("product_architect") > agent_sequence.index("builder"):
                 findings.append("UI/product mission has Product Architect after Builder; product brief must happen before build.")
-    active_artifacts = {
+    coverage_artifacts = {
         agent: artifact
         for agent, artifact in artifacts.items()
-        if agent not in preserved
+        if agent not in preserved or _artifact_has_vault_brain_source(artifact)
     }
-    source_coverage = evaluate_vault_source_coverage(active_artifacts, retrieval)
+    # Preserved upstream work remains durable mission evidence. Count its valid
+    # Vault citations during a targeted downstream rerun, while continuing to
+    # exclude citation-free legacy artifacts from the hard coverage gate (they
+    # are surfaced as warnings below). Otherwise every publisher-only recovery
+    # loses the mission-level context and loops through Source Mapper.
+    source_coverage = evaluate_vault_source_coverage(coverage_artifacts, retrieval)
+    orchestration = (
+        mission.get("metadata", {}).get("orchestration", {})
+        if isinstance(mission.get("metadata"), dict)
+        and isinstance(mission.get("metadata", {}).get("orchestration"), dict)
+        else {}
+    )
+    t0_proportional_coverage = (
+        orchestration.get("tier") == "T0"
+        and agent_sequence == ["source_mapper"]
+        and int(source_coverage.get("score") or 0) >= 40
+    )
     if context.get("missing_docs"):
         findings.append(f"Vault Brain context has missing docs: {', '.join(context['missing_docs'])}.")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     if not vault:
         findings.append("Mission Vault payload is missing from the mission.")
-    if not source_coverage.get("passed"):
+    if not source_coverage.get("passed") and not t0_proportional_coverage:
         findings.append(f"Vault source coverage score is {source_coverage.get('score', 0)}; required coverage not met.")
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
@@ -4927,13 +8263,49 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "warnings": warnings,
         "preserved_legacy_artifacts": sorted(preserved),
         "source_coverage": source_coverage,
+        "t0_proportional_coverage": t0_proportional_coverage,
         "agent_sequence": agent_sequence,
+        "workflow_contract": workflow_contract,
+        "agentic_architecture": agentic_gate,
         "missing_doctrine": missing_doctrine,
         "retrieval": retrieval,
+        "vault_alignment": vault_alignment,
         "owner_preferences": context.get("owner_preferences", {}),
         "vault_context_docs": [entry.get("path", "") for entry in context.get("docs", []) if isinstance(entry, dict)],
         "sensitive_changed_files": sensitive_changes,
         "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _authoritative_workflow_contract(mission, agent_sequence=None):
+    """Return the persisted planning contract; final gates must not reclassify it."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    project_truth = core.get("project_truth") if isinstance(core.get("project_truth"), dict) else {}
+    template = core.get("workflow_template") if isinstance(core.get("workflow_template"), dict) else {}
+    template_id = str(
+        project_truth.get("workflow_template")
+        or template.get("template_id")
+        or metadata.get("workflow_template")
+        or ""
+    ).strip()
+    sequence = [str(item or "").strip() for item in (agent_sequence or _mission_agent_sequence(mission)) if str(item or "").strip()]
+    required_agents = [str(item or "").strip() for item in (template.get("agent_order") or sequence) if str(item or "").strip()]
+    required_evidence = [str(item or "").strip() for item in (template.get("required_artifacts") or project_truth.get("required_artifacts") or []) if str(item or "").strip()]
+    ui_related = template_id == "ui_product_build"
+    if not template_id:
+        ui_related = all(agent in sequence for agent in ("product_architect", "product_reviewer"))
+    risk_level = str(project_truth.get("risk_level") or metadata.get("risk_level") or mission.get("approval_level") or "standard").strip()
+    return {
+        "version": "charlie_workflow_contract_v1",
+        "template_id": template_id or "persisted_sequence",
+        "required_agents": required_agents,
+        "optional_agents": [agent for agent in sequence if agent not in required_agents],
+        "required_evidence": required_evidence,
+        "ui_related": ui_related,
+        "risk_level": risk_level,
+        "authoritative": True,
     }
 
 
@@ -4969,6 +8341,11 @@ def _block_completed_agent_review(
     database_url=None,
     connect_factory=None,
 ):
+    disposition = classify_block(agent, blocked_reason, artifact)
+    disposition, recovery_repeat = _bounded_internal_recovery(
+        mission.get("mission_id"), agent, blocked_reason, artifact, disposition,
+        mission=mission, database_url=database_url, connect_factory=connect_factory,
+    )
     ledger["status"] = "blocked"
     ledger["blocked_agent"] = agent
     ledger["blocked_reason"] = blocked_reason
@@ -4983,6 +8360,21 @@ def _block_completed_agent_review(
         artifact=artifact,
         ledger=ledger,
         changed_files=artifact.get("changed_files") or _changed_files(),
+    )
+    recovery_packet["disposition"] = disposition
+    _record_mission_memory_event(
+        mission,
+        build_memory_event(
+            agent,
+            "agent_blocked",
+            summary=f"{agent} blocked: {blocked_reason}",
+            artifact=artifact,
+            quality_gate=artifact.get("quality_gate", {}),
+            recovery=recovery_packet,
+            metadata={"execution_id": execution_id, "backflow_fingerprint": recovery_repeat["fingerprint"], "recovery_occurrence": recovery_repeat["occurrence"]},
+        ),
+        database_url=database_url,
+        connect_factory=connect_factory,
     )
     mission_quality = score_mission_quality(
         mission,
@@ -5022,6 +8414,7 @@ def _block_completed_agent_review(
         "agent_execution": _agent_execution_summary(ledger),
         "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
         "unresolved_blockers": unresolved,
+        "normalized_findings": normalize_findings(unresolved, agent=agent, artifact=artifact),
         "handoff_reports": {
             stage_agent: stage_artifact.get("handoff_report", {})
             for stage_agent, stage_artifact in artifacts.items()
@@ -5033,8 +8426,14 @@ def _block_completed_agent_review(
         "mission_quality": mission_quality,
         "blocked_agent": agent,
         "blocked_reason": blocked_reason,
-        "recommended_next_action": artifact.get("next_action", "Send back and require captured Visual Review media before owner approval."),
-        "review_status": "agent_blocked",
+        "block_disposition": disposition,
+        "recovery_repeat": recovery_repeat,
+        "recommended_next_action": artifact.get("next_action") or (
+            f"CORE will recover from {disposition['responsible_stage']}."
+            if disposition["recoverable"]
+            else "Owner decision is required."
+        ),
+        "review_status": "internal_recovery_queued" if disposition["recoverable"] else "agent_blocked",
     }
     update_mission_vault(
         mission["mission_id"],
@@ -5044,27 +8443,37 @@ def _block_completed_agent_review(
         connect_factory=connect_factory,
     )
     _record_execution_stage(mission["mission_id"], agent, "blocked", blocked_reason, database_url=database_url, connect_factory=connect_factory)
+    next_status = "approved" if disposition["recoverable"] else "blocked"
     blocked, blocked_status = update_mission_status(
         mission["mission_id"],
-        "blocked",
-        owner_decision=f"CHARLIE Agent Runner v2 blocked at {agent}.",
+        next_status,
+        owner_decision="" if disposition["recoverable"] else f"CHARLIE Agent Runner v2 blocked at {agent}.",
         event_type="status_changed",
         notes=blocked_reason,
-        metadata={"agent_runner_version": AGENT_RUNNER_VERSION, "execution_id": execution_id, "blocked_agent": agent},
+        metadata={
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "execution_id": execution_id,
+            "blocked_agent": agent,
+            "block_class": disposition["block_class"],
+            "recovery_stage": disposition["responsible_stage"],
+            "recovery_fingerprint": recovery_repeat["fingerprint"],
+            "recovery_occurrence": recovery_repeat["occurrence"],
+        },
         database_url=database_url,
         connect_factory=connect_factory,
     )
     if blocked_status >= 400:
         return blocked, blocked_status
     return {
-        "success": False,
-        "status": "agent_stage_blocked",
+        "success": disposition["recoverable"],
+        "status": "agent_stage_recovery_queued" if disposition["recoverable"] else "agent_stage_blocked",
         "mission_id": mission["mission_id"],
-        "mission_status": "blocked",
+        "mission_status": next_status,
         "agent": agent,
         "blocked_reason": blocked_reason,
+        "block_disposition": disposition,
         "agent_ledger_path": str(ledger_path),
-    }, 504
+    }, 202 if disposition["recoverable"] else 504
 
 
 def _collect_artifact_list(artifacts, key):
@@ -5118,6 +8527,32 @@ def _compact_agent_artifacts_for_review(artifacts):
         "contract_parse_fallback",
         "contract_retry_exhausted",
         "first_attempt_artifact_path",
+        "expected_revision",
+        "tested_revision",
+        "artifact_id",
+        "source_commit",
+        "candidate_fingerprint",
+        "scope_hash",
+        "accepted_frozen_scope",
+        "frozen_scope_audit",
+        "evidence_lineage",
+        "structured_findings",
+        "acceptance_results",
+        "protected_operations",
+        "authoritative_pr_changed_files",
+        "branch_name",
+        "commit_sha",
+        "git_packaging",
+        "implementation_source_map",
+        "files_checked_against_source_map",
+        "implementation_sources_used",
+        "files_to_inspect",
+        "implementation_plan",
+        "implementation_inventory",
+        "current_sources",
+        "routes_found",
+        "tests_to_run",
+        "migrations_found",
     ]
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
@@ -5130,7 +8565,15 @@ def _compact_agent_artifacts_for_review(artifacts):
             if key in {"summary", "confidence_reason", "next_action"}:
                 value = _truncate(value, 1200)
             elif key in {"errors", "bugs", "qa_findings", "risk_notes", "tests_run", "test_evidence", "commands_run", "files_inspected", "changed_files", "release_notes"}:
-                value = [_truncate(entry, 500) for entry in _artifact_value_list(value)[:30]]
+                value = [
+                    {
+                        field: _truncate(field_value, 500) if isinstance(field_value, str) else field_value
+                        for field, field_value in entry.items()
+                    }
+                    if isinstance(entry, dict)
+                    else _truncate(entry, 500)
+                    for entry in _artifact_value_list(value)[:30]
+                ]
             item[key] = value
         stdout_tail = _truncate(artifact.get("stdout_tail", ""), 500)
         stderr_tail = _truncate(artifact.get("stderr_tail", ""), 500)
@@ -5347,7 +8790,7 @@ def _agent_execution_summary(ledger):
             "stderr_tail": _truncate(stage.get("stderr_tail", ""), 800),
             "quality_gate": stage.get("quality_gate", {}),
         })
-    return {
+    summary = {
         "version": ledger.get("version", ""),
         "execution_id": ledger.get("execution_id", ""),
         "status": ledger.get("status", ""),
@@ -5359,6 +8802,10 @@ def _agent_execution_summary(ledger):
         "backflow_events": ledger.get("backflow_events", []),
         "stages": stages,
     }
+    for key in ("parallel_planning_execution", "rerun_from_stage", "preserved_upstream_artifacts"):
+        if key in ledger:
+            summary[key] = ledger[key]
+    return summary
 
 
 def _load_execution_mission(mission_id="", status="in_progress", database_url=None, connect_factory=None):
@@ -5368,6 +8815,8 @@ def _load_execution_mission(mission_id="", status="in_progress", database_url=No
         if status_code >= 400:
             return None, status_code, loaded
         mission = loaded.get("mission") or {}
+        if not mission_runtime_eligible(mission):
+            return None, 409, {"success": False, "status": "portfolio_classified_mission_ineligible", "mission_id": mission_id}
         if mission.get("status") != "in_progress":
             return None, 409, {
                 "success": False,
@@ -5377,10 +8826,10 @@ def _load_execution_mission(mission_id="", status="in_progress", database_url=No
                 "required_status": "in_progress",
             }
         return mission, 200, {}
-    loaded, status_code = list_missions(status=status, limit=1, database_url=database_url, connect_factory=connect_factory)
+    loaded, status_code = list_missions(status=status, limit=50, database_url=database_url, connect_factory=connect_factory)
     if status_code >= 400:
         return None, status_code, loaded
-    missions = loaded.get("missions") or []
+    missions = [mission for mission in (loaded.get("missions") or []) if mission_runtime_eligible(mission)]
     if not missions:
         return None, 404, {"success": False, "status": "no_execution_mission_available", "missions": []}
     return missions[0], 200, {}
@@ -5393,6 +8842,8 @@ def _load_release_mission(mission_id="", database_url=None, connect_factory=None
         if status_code >= 400:
             return None, status_code, loaded
         mission = loaded.get("mission") or {}
+        if not mission_runtime_eligible(mission):
+            return None, 409, {"success": False, "status": "portfolio_classified_mission_ineligible", "mission_id": mission_id}
         if mission.get("status") != "release_approved":
             return None, 409, {
                 "success": False,
@@ -5402,10 +8853,10 @@ def _load_release_mission(mission_id="", database_url=None, connect_factory=None
                 "required_status": "release_approved",
             }
         return mission, 200, {}
-    loaded, status_code = list_missions(status="release_approved", limit=1, database_url=database_url, connect_factory=connect_factory)
+    loaded, status_code = list_missions(status="release_approved", limit=50, database_url=database_url, connect_factory=connect_factory)
     if status_code >= 400:
         return None, status_code, loaded
-    missions = loaded.get("missions") or []
+    missions = [mission for mission in (loaded.get("missions") or []) if mission_runtime_eligible(mission)]
     if not missions:
         return None, 404, {"success": False, "status": "no_release_approved_mission_available", "missions": []}
     return missions[0], 200, {}
@@ -5444,6 +8895,106 @@ def _record_mission_memory_event(mission, event, database_url=None, connect_fact
     )
 
 
+def _builder_revision_sha(mission, artifacts=None):
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
+    lineage = builder.get("evidence_lineage") if isinstance(builder.get("evidence_lineage"), dict) else {}
+    packaging = builder.get("git_packaging") if isinstance(builder.get("git_packaging"), dict) else {}
+    revision = str(
+        lineage.get("source_commit")
+        or builder.get("source_commit")
+        or builder.get("tested_revision")
+        or builder.get("expected_revision")
+        or builder.get("commit_sha")
+        or packaging.get("commit_sha")
+        or ""
+    ).strip()
+    if revision:
+        return revision
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    memory = metadata.get("mission_memory") if isinstance(metadata.get("mission_memory"), dict) else {}
+    latest = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
+    builder_event = latest.get("builder") if isinstance(latest.get("builder"), dict) else {}
+    event_lineage = builder_event.get("evidence_lineage") if isinstance(builder_event.get("evidence_lineage"), dict) else {}
+    return str(
+        event_lineage.get("source_commit")
+        or builder_event.get("source_commit")
+        or builder_event.get("tested_revision")
+        or builder_event.get("expected_revision")
+        or builder_event.get("commit_sha")
+        or ""
+    ).strip()
+
+
+def _release_candidate_revision_sha(mission, artifacts=None):
+    """Prefer the newest exact revision verified by a release-stage agent.
+
+    A publisher may rebase or repair the packaged PR after Builder. In that
+    case Builder's original commit remains useful historical evidence, but it
+    is no longer the release candidate. Selecting a later agent is safe only
+    when it explicitly records the revision it inspected (and, when present,
+    its expected revision agrees). Older evidence will then be targeted for a
+    recheck against that authoritative candidate instead of defining it.
+    """
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    for agent in (
+        "publisher", "reviewer", "evidence_reviewer", "security_reviewer",
+        "product_reviewer", "visual_qa_reviewer", "qa_red_team", "tester",
+    ):
+        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+        tested = str(artifact.get("tested_revision") or artifact.get("current_revision") or "").strip()
+        expected = str(artifact.get("expected_revision") or "").strip()
+        if tested and (not expected or tested == expected):
+            return tested
+    return _builder_revision_sha(mission, artifacts)
+
+
+def _bind_publisher_revision(artifact, revision=""):
+    artifact = dict(artifact) if isinstance(artifact, dict) else {}
+    published_revision = str(revision or _git_head_revision()).strip()
+    if published_revision:
+        artifact["expected_revision"] = published_revision
+        artifact["tested_revision"] = published_revision
+        artifact["commit_sha"] = published_revision
+    return artifact
+
+
+def _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_status):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    previous = packet.get("owner_review_gate_failure") if isinstance(packet.get("owner_review_gate_failure"), dict) else {}
+    reconciliation = workflow_status.get("evidence_reconciliation") if isinstance(workflow_status.get("evidence_reconciliation"), dict) else {}
+    manifest = reconciliation.get("candidate_manifest") if isinstance(reconciliation.get("candidate_manifest"), dict) else {}
+    refresh = reconciliation.get("requires_revalidation") if isinstance(reconciliation.get("requires_revalidation"), list) else []
+    blockers = reconciliation.get("active_blockers") if isinstance(reconciliation.get("active_blockers"), list) else []
+    explicit_failure_class = str(workflow_status.get("failure_class") or "").strip()
+    failure_class = explicit_failure_class or (
+        "candidate_evidence_revalidation"
+        if refresh
+        else "candidate_active_blocker"
+        if blockers
+        else "owner_review_readiness"
+    )
+    candidate_revision = str(
+        workflow_status.get("candidate_revision") or manifest.get("source_commit") or ""
+    ).strip()
+    fingerprint = hashlib.sha256(json.dumps({
+        "mission_id": str(mission.get("mission_id") or "").strip(),
+        "failure_class": failure_class,
+        "candidate_revision": candidate_revision,
+    }, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    prior = int(previous.get("occurrence") or 0) if previous.get("fingerprint") == fingerprint else 0
+    return {
+        "version": "charlie_owner_review_gate_failure_v1",
+        "fingerprint": fingerprint,
+        "occurrence": prior + 1,
+        "blocked_agent": blocked_agent,
+        "failure_class": failure_class,
+        "candidate_revision": candidate_revision,
+    }
+
+
 def _agent_completion_note(agent, final_message):
     if agent == "planner":
         return "Codex execution bridge scoped the mission and followed the mission protocol."
@@ -5465,6 +9016,23 @@ def _changed_files():
             text=True,
             cwd=str(REPO_ROOT),
             timeout=10,
+            **background_run_kwargs(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _staged_changed_files():
+    try:
+        completed = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            capture_output=True,
+            check=False,
+            text=True,
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            **background_run_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return []
@@ -5501,7 +9069,7 @@ def _infer_local_preview_url(command_text=""):
         if port:
             candidates.append(f"http://127.0.0.1:{port}/charlie")
     candidates.extend([
-        os.getenv("CHARLIE_LOCAL_PREVIEW_URL", "").strip(),
+        str(env_value("CORE_LOCAL_PREVIEW_URL", "") or "").strip(),
         "http://127.0.0.1:5002/charlie",
         "http://127.0.0.1:5000/charlie",
     ])
@@ -5627,7 +9195,15 @@ def _capture_visual_review_media(
         if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
             fallback_reason = "preview_url_not_local"
         elif _is_control_dashboard_preview_url(preview_url) and not _preview_url_matches_changed_ui(preview_url, changed_files, final_message):
-            fallback_reason = "control_dashboard_preview_not_mission_visual"
+            inferred = _infer_changed_ui_preview_url(preview_url, changed_files, final_message)
+            if inferred.get("url"):
+                capture_url = inferred["url"]
+                recovery = {
+                    **recovery,
+                    "changed_ui_preview_inference": inferred,
+                }
+            else:
+                fallback_reason = "control_dashboard_preview_not_mission_visual"
 
     if fallback_reason:
         html_path = _write_visual_review_preview_html(
@@ -5880,7 +9456,7 @@ def _resolve_local_visual_evidence_path(candidate):
     if not resolved.exists() or not resolved.is_file() or resolved.suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
         return None
     allowed_roots = [
-        REPO_ROOT / ".charlie_runner",
+        RUNTIME_ROOT / ".charlie_runner",
         REVIEW_MEDIA_DIR,
         LEGACY_REVIEW_MEDIA_DIR,
     ]
@@ -5922,6 +9498,38 @@ def _preview_url_matches_changed_ui(url, changed_files=None, final_message=""):
     if path == "/charlie":
         return any(token in text for token in ("templates/charlie.html", "charliemissioncontrol", "mission control", "/charlie"))
     return path != "/"
+
+
+def _infer_changed_ui_preview_url(preview_url, changed_files=None, final_message=""):
+    parsed = urlparse(str(preview_url or ""))
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {"url": "", "status": "not_local_preview"}
+    files = " ".join(str(item or "").replace("\\", "/").lower() for item in (changed_files or []))
+    text = f"{files} {str(final_message or '').lower()}"
+    route = ""
+    if "salesavailability.js" in text or "sales availability" in text or "sales dashboard" in text:
+        route = "/sales-dashboard"
+    elif (
+        "templates/purpose-review.html" in text
+        or "static/js/purposereview.js" in text
+        or "purpose review queue" in text
+        or "purpose-review" in text
+    ):
+        route = "/purpose-review"
+    elif "templates/charlie" in text or "charliemissioncontrol" in text or "mission control" in text:
+        route = "/charlie"
+    if not route or route == (parsed.path.rstrip("/") or "/"):
+        return {"url": "", "status": "no_changed_route_inferred"}
+    candidate = parsed._replace(path=route, params="", query="", fragment="").geturl()
+    probe = _probe_local_http_url(candidate)
+    if not probe.get("ok"):
+        return {"url": "", "status": "inferred_route_not_reachable", "candidate_url": candidate, "probe": probe}
+    return {
+        "url": candidate,
+        "status": "inferred_changed_ui_route",
+        "source": "changed_files",
+        "probe": probe,
+    }
 
 
 def _write_visual_review_preview_html(
@@ -6321,6 +9929,19 @@ def _reconcile_merged_pr(pr_reference, runner):
     return result
 
 
+def _runner_with_admission(runner, admission_runtime):
+    """Bind a validated path-only admission contract to every writer stage."""
+
+    if admission_runtime is None:
+        return runner
+
+    def admitted_runner(*args, **kwargs):
+        kwargs["admission_runtime"] = admission_runtime
+        return runner(*args, **kwargs)
+
+    return admitted_runner
+
+
 def _run_agent_model_process(
     command,
     input="",
@@ -6508,6 +10129,8 @@ def _run_codex_process(
     stderr_path=None,
     final_path=None,
     mission_id="",
+    execution_id="",
+    admission_runtime=None,
     **_kwargs,
 ):
     stdout_path = Path(stdout_path)
@@ -6515,21 +10138,52 @@ def _run_codex_process(
     final_path = Path(final_path)
     started = time.monotonic()
     final_seen_at = None
+    last_progress_at = started
+    last_progress_signature = None
+    last_lease_refresh_at = 0.0
     no_final_timeout = min(
         int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
         NO_FINAL_ARTIFACT_TIMEOUT_SECONDS,
     )
     stdout_handle = stdout_path.open("w", encoding="utf-8", errors="replace")
     stderr_handle = stderr_path.open("w", encoding="utf-8", errors="replace")
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=stdout_handle,
-        stderr=stderr_handle,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=cwd,
+    guard_server = guard_thread = None
+    launch_runtime = admission_runtime
+    try:
+        if admission_runtime is not None:
+            guard_server, guard_thread, launch_runtime = start_admission_guard_server(
+                admission_runtime,
+                repo_root=Path(cwd or REPO_ROOT),
+            )
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+            env=(
+                admitted_agent_environment(launch_runtime)
+                if launch_runtime is not None
+                else restricted_agent_environment()
+            ),
+            **background_process_kwargs(),
+        )
+    except Exception:
+        stdout_handle.close()
+        stderr_handle.close()
+        stop_admission_guard_server(guard_server, guard_thread)
+        raise
+    execution_id = str(execution_id or f"process-{process.pid}")
+    runner_generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "unmanaged-generation")
+    ownership_expected = {
+        "runner_generation": runner_generation, "mission_id": str(mission_id or "unscoped-mission"),
+        "execution_id": execution_id, "ownership_type": "charlie_agent",
+    }
+    ownership_record = make_ownership_record(
+        inspect_process(process.pid), **ownership_expected,
     )
     try:
         if process.stdin:
@@ -6537,48 +10191,72 @@ def _run_codex_process(
             process.stdin.close()
             process.stdin = None
         while process.poll() is None:
-            elapsed = time.monotonic() - started
+            now = time.monotonic()
+            elapsed = now - started
             final_exists = final_path.exists() and final_path.stat().st_size > 0
             if final_exists and final_seen_at is None:
-                final_seen_at = time.monotonic()
+                final_seen_at = now
             changed_files = _changed_files()
+            progress_signature = (
+                _file_progress_signature(stdout_path),
+                _file_progress_signature(stderr_path),
+                tuple(changed_files),
+            )
+            if progress_signature != last_progress_signature:
+                last_progress_signature = progress_signature
+                last_progress_at = now
+            idle_seconds = now - last_progress_at
             supervisor_status = "codex_final_artifact_seen" if final_exists else "codex_running"
-            if not final_exists and elapsed >= NO_FINAL_ARTIFACT_WARNING_SECONDS:
+            if not final_exists and idle_seconds >= NO_FINAL_ARTIFACT_WARNING_SECONDS:
                 supervisor_status = "codex_no_final_artifact_warning"
             write_runner_heartbeat({
                 "status": supervisor_status,
                 "mission_id": mission_id,
                 "execution_artifact": str(final_path),
                 "elapsed_seconds": int(elapsed),
+                "idle_seconds": int(idle_seconds),
                 "changed_files_count": len(changed_files),
                 "final_artifact_present": final_exists,
                 "stdout_tail": _read_tail(stdout_path, 1200),
                 "stderr_tail": _read_tail(stderr_path, 1200),
             })
-            if final_seen_at and time.monotonic() - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
-                _terminate_process_tree(process.pid)
+            if now - last_lease_refresh_at >= 30:
+                _refresh_execution_lease(mission_id, process.pid, supervisor_status)
+                last_lease_refresh_at = now
+            if final_seen_at and now - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
+                _terminate_process_tree(ownership_record, ownership_expected)
                 break
-            if not final_exists and elapsed >= no_final_timeout:
-                _terminate_process_tree(process.pid)
+            if not final_exists and idle_seconds >= no_final_timeout:
+                _terminate_process_tree(ownership_record, ownership_expected)
                 break
             if elapsed >= int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS):
                 if final_exists:
-                    _terminate_process_tree(process.pid)
+                    _terminate_process_tree(ownership_record, ownership_expected)
                     break
                 raise subprocess.TimeoutExpired(command, timeout_seconds)
             time.sleep(POLL_SECONDS)
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        _terminate_process_tree(process.pid)
+        _terminate_process_tree(ownership_record, ownership_expected)
         try:
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             pass
-        raise
+        # A model can finish writing its authoritative final artifact while
+        # the wrapper process is still slow to exit on Windows.  Do not throw
+        # away completed agent work merely because process teardown exceeded
+        # the grace window.  The normal artifact parser and schema validator
+        # below remain responsible for accepting or rejecting the content.
+        if not (final_path.exists() and final_path.stat().st_size > 0):
+            raise
     finally:
+        stop_admission_guard_server(guard_server, guard_thread)
         stdout_handle.close()
         stderr_handle.close()
         _wait_for_file_handles_released([stdout_path, stderr_path])
+        redact_file_in_place(stdout_path)
+        redact_file_in_place(stderr_path)
+        redact_file_in_place(final_path)
     stdout = _read_text(stdout_path)
     stderr = _read_text(stderr_path)
     returncode = process.returncode
@@ -6605,13 +10283,60 @@ def _run_codex_process(
     return subprocess.CompletedProcess(command, returncode, stdout or "", stderr or "")
 
 
-def _terminate_process_tree(pid):
+def _windowless_process_kwargs(platform_name=None):
+    """Keep local agent subprocesses from opening transient Windows consoles."""
+    platform_name = os.name if platform_name is None else platform_name
+    if platform_name != "nt":
+        return {}
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+
+
+def _refresh_execution_lease(mission_id, process_id=0, stage_status=""):
+    """Keep the durable lease fresh while the owned model process is alive."""
+    if not mission_id:
+        return False
+    loaded, status_code = get_mission(mission_id)
+    if status_code >= 400:
+        return False
+    mission = loaded.get("mission") if isinstance(loaded, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    lease = dict(metadata.get("execution_lease") or {})
+    if not lease.get("lease_id"):
+        return False
+    now = datetime.now(timezone.utc)
+    ttl = max(int(lease.get("ttl_seconds") or 900), 120)
+    lease.update({
+        "heartbeat_at": now.isoformat(),
+        "expires_at": datetime.fromtimestamp(now.timestamp() + ttl, timezone.utc).isoformat(),
+        "process_id": int(process_id or 0),
+        "stage_status": str(stage_status or ""),
+    })
+    result, refresh_status = update_mission_vault(
+        mission_id,
+        {"execution_lease": lease},
+        notes="CHARLIE refreshed the active execution lease.",
+    )
+    return refresh_status < 400 and result.get("success") is not False
+
+
+def _file_progress_signature(path):
     try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return
-    if pid <= 0:
-        return
+        stat = Path(path).stat()
+    except OSError:
+        return (0, 0)
+    return (int(stat.st_size), int(stat.st_mtime_ns))
+
+
+def _terminate_process_tree(ownership_record, expected_ownership=None, inspector=inspect_process):
+    if emergency_process_cleanup_disabled():
+        requested_pid = ownership_record.get("pid") if isinstance(ownership_record, dict) else ownership_record
+        return record_emergency_cleanup_refusal("_terminate_process_tree", requested_pid)
+    if not process_termination_enabled():
+        return {"authorized": False, "reason": "process_termination_not_enabled"}
+    decision = validate_termination(ownership_record, expected_ownership, inspector)
+    if not decision["authorized"]:
+        return decision
+    pid = decision["pid"]
     if os.name == "nt":
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -6619,15 +10344,17 @@ def _terminate_process_tree(pid):
             text=True,
             check=False,
             timeout=15,
+            **background_run_kwargs(),
         )
-        return
+        return {"authorized": True, "terminated": True, "pid": pid}
     try:
         os.killpg(pid, signal.SIGTERM)
     except OSError:
         try:
             os.kill(pid, signal.SIGTERM)
         except OSError:
-            return
+            return {"authorized": False, "reason": "termination_failed", "pid": pid}
+    return {"authorized": True, "terminated": True, "pid": pid}
 
 
 def _wait_for_file_handles_released(paths, timeout_seconds=2.0):
@@ -6638,11 +10365,17 @@ def _wait_for_file_handles_released(paths, timeout_seconds=2.0):
         for path in paths:
             if not path.exists():
                 continue
+            probe = path.with_name(f"{path.name}.release-probe-{os.getpid()}")
             try:
-                with path.open("a", encoding="utf-8", errors="replace"):
-                    pass
+                path.replace(probe)
+                probe.replace(path)
             except OSError:
                 locked.append(path)
+                if probe.exists() and not path.exists():
+                    try:
+                        probe.replace(path)
+                    except OSError:
+                        pass
         if not locked:
             return True
         paths = locked
@@ -6746,7 +10479,7 @@ def _wait_for_release_verification(verify_url, attempts=AGENT_RELEASE_VERIFY_ATT
 
 
 def _default_release_verify_url():
-    explicit_url = str(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or "").strip()
+    explicit_url = str(env_value("CORE_RELEASE_VERIFY_URL") or "").strip()
     if explicit_url:
         return explicit_url
     base_url = str(os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")

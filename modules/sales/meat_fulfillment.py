@@ -9,6 +9,7 @@ from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_cont
 from modules.sales.meat_ops import get_meat_ops_status
 from modules.sales.meat_reconciliation import get_meat_reconciliation_status
 from services.database_service import DATABASE_URL_ENV
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
 FULFILLMENT_EVENT_TYPES = {
@@ -47,29 +48,44 @@ DRIVER_EVENT_TYPES = {
 }
 
 
-def get_meat_fulfillment_timeline(lead_id, database_url=None):
+def get_meat_fulfillment_timeline(lead_id, database_url=None, database_deadline=None):
     lead_id = _clean(lead_id, 100)
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
     database_url = _db_url(database_url)
     if not database_url:
         return _unavailable("not_configured", False), 503
-    ops_result, ops_status = get_meat_ops_status(lead_id, database_url=database_url)
+    ops_result, ops_status = get_meat_ops_status(
+        lead_id, database_url=database_url, database_deadline=database_deadline,
+    )
     if ops_status != 200:
         return ops_result, ops_status
-    contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    contract_result, contract_status = get_sales_lead_preorder_contract(
+        lead_id, database_url=database_url, database_deadline=database_deadline,
+    )
+    if database_deadline is not None and contract_status != 200:
+        return contract_result, contract_status
     lead = contract_result.get("lead") if contract_status == 200 and isinstance(contract_result.get("lead"), dict) else {}
     try:
         import psycopg
     except ImportError:
         return _unavailable("dependency_missing", True), 500
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 events = _fetch_fulfillment_events(cursor, lead_id=lead_id)
     except Exception as exc:
         return _failed("meat_fulfillment_read_failed", exc), 503
-    reconciliation_result, reconciliation_status = get_meat_reconciliation_status(lead_id, database_url=database_url)
+    reconciliation_result, reconciliation_status = get_meat_reconciliation_status(
+        lead_id, database_url=database_url, database_deadline=database_deadline,
+    )
+    if database_deadline is not None and reconciliation_status != 200:
+        return reconciliation_result, reconciliation_status
     reconciliation = (
         reconciliation_result.get("reconciliation")
         if reconciliation_status == 200 and isinstance(reconciliation_result.get("reconciliation"), dict)
@@ -132,6 +148,8 @@ def record_meat_fulfillment_event(lead_id, payload=None, database_url=None):
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     event_type = _clean(payload.get("event_type"), 100)
+    if event_type != "delivery_address_captured":
+        return controlled_mode_denial("record_fulfillment_event")
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
     if event_type not in FULFILLMENT_EVENT_TYPES:
@@ -323,6 +341,7 @@ def send_meat_journey_notification(lead_id, payload=None, database_url=None, sen
     message = _clean(payload.get("message"), 1600)
     if not _env_truthy(os.getenv(JOURNEY_NOTIFICATION_SEND_ENABLED_ENV)):
         return {"success": False, "status": "meat_journey_notification_send_disabled", "sent": False, **_authority(False)}, 503
+    return controlled_mode_denial("send_customer_journey_notification")
     if not message:
         return {"success": False, "status": "message_required", "sent": False, **_authority(False)}, 400
     database_url = _db_url(database_url)

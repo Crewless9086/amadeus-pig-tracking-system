@@ -1,7 +1,7 @@
 {
   "agent_id": "beacon",
   "display_name": "Beacon",
-  "role_label": "Posts",
+  "role_label": "Marketing Lead",
   "portrait_panel": "/assets/agents/beacon/portraits/beacon_portrait_panel_neutral_v01.png",
   "portrait_dock": "/assets/agents/beacon/portraits/beacon_portrait_dock_neutral_v01.png",
   "voice_preview_en": "/assets/agents/beacon/voice/beacon_voice_preview_en_v01.mp3",

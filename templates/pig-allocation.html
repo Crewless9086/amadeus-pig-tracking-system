@@ -24,6 +24,59 @@
 
       <div id="allocation_message" class="message-box hidden"></div>
 
+      <section id="riversdale_auction_panel" class="allocation-review-panel" aria-label="Riversdale auction outlet">
+        <div id="riversdale_auction_compact" class="auction-compact-status" aria-live="polite">
+          <strong>Auction Outlet</strong>
+          <span id="auction_compact_when">Date/location unavailable</span>
+          <span id="auction_compact_count">Candidates unavailable</span>
+          <span id="auction_compact_blockers">Evidence unavailable</span>
+        </div>
+        <div class="page-header section-header-compact no-print">
+          <div>
+            <h2>Auction Outlet</h2>
+            <p id="riversdale_auction_status">Loading owner-only Riversdale auction evidence...</p>
+          </div>
+        </div>
+        <div id="riversdale_auction_summary" class="summary-metric-grid allocation-summary"></div>
+        <div id="riversdale_auction_evidence" class="allocation-rules"></div>
+        <section aria-label="Auction details requiring owner input">
+          <h3>Auction details still requiring owner input</h3>
+          <ul>
+            <li>Fees beyond the confirmed 7% commission: <strong>Unknown</strong></li>
+            <li>Transport arrangement: <strong>not confirmed</strong>; R200 remains an estimate.</li>
+            <li>Preparation responsibilities: <strong>Unknown</strong></li>
+            <li>Customer-suitability and final auction-preparation evidence: <strong>Outstanding</strong></li>
+          </ul>
+        </section>
+        <p class="table-subtext">Candidate selection and the persisted Auction List are available in the Readiness Table Bucket filter.</p>
+        <details class="auction-settings">
+          <summary>Auction settings</summary>
+        <form id="riversdale_auction_form" class="allocation-filters">
+          <div class="form-group">
+            <label for="auction_operating">Auction operating</label>
+            <select id="auction_operating" required>
+              <option value="">Owner decision required</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          <div class="form-group"><label for="auction_confirmed_date">Confirmed date</label><input id="auction_confirmed_date" type="date"></div>
+          <div class="form-group"><label for="auction_location">Location</label><input id="auction_location" type="text" maxlength="300"></div>
+          <div class="form-group"><label for="auction_organizer">Organizer details</label><input id="auction_organizer" type="text" maxlength="1000"></div>
+          <div class="form-group"><label for="auction_entry_deadline">Entry deadline</label><input id="auction_entry_deadline" type="date"></div>
+          <div class="form-group"><label for="auction_commission">Commission %</label><input id="auction_commission" type="number" min="0" step="0.01"></div>
+          <div class="form-group"><label for="auction_fees">Auction fees (ZAR)</label><input id="auction_fees" type="number" min="0" step="0.01"></div>
+          <div class="form-group"><label for="auction_transport">Transport estimate (ZAR)</label><input id="auction_transport" type="number" min="0" step="0.01"></div>
+          <div class="form-group"><label for="auction_owner_note">Owner note</label><textarea id="auction_owner_note" rows="2" maxlength="4000"></textarea></div>
+          <div class="form-group slaughter-filter-actions">
+            <label>&nbsp;</label>
+            <button type="submit" class="btn-primary">Record owner decision</button>
+          </div>
+        </form>
+        </details>
+        <p class="table-subtext">This records an owner decision only. It does not reserve animals, book an auction, create a sale, or contact anyone.</p>
+      </section>
+
       <section class="allocation-filters">
         <div class="form-group">
           <label for="bucket_filter">Bucket</label>
@@ -68,29 +121,28 @@
       <section id="allocation_summary" class="summary-metric-grid allocation-summary"></section>
       <section id="allocation_rules" class="allocation-rules" aria-label="Active allocation rules"></section>
 
-      <section id="allocation_review_panel" class="allocation-review-panel" aria-label="Selected pig purpose review">
-        <div class="page-header section-header-compact">
-          <div>
-            <h2>Purpose Review</h2>
-            <p id="allocation_review_status">Select a pig from the table to inspect the recommendation before any purpose decision.</p>
-          </div>
-        </div>
-        <div id="allocation_review_detail" class="allocation-review-detail">
-          <div class="table-empty">No pig selected. Use Review on a table row to open a read-only recommendation packet.</div>
-        </div>
-      </section>
       <section class="allocation-table-section">
-        <div class="page-header section-header-compact">
+        <div class="page-header section-header-compact no-print">
           <div>
-            <h2>Readiness Table</h2>
+            <h2 id="allocation_table_heading">Readiness Table</h2>
             <p id="allocation_count">Loading pig allocation readiness...</p>
           </div>
         </div>
+        <div id="auction_table_actions" class="auction-table-actions hidden no-print">
+          <button type="button" id="auction_select_all" class="button-link">Select all visible</button>
+          <button type="button" id="auction_clear_selection" class="button-link button-link-secondary">Clear selection</button>
+          <strong id="auction_selected_count">0 selected</strong>
+          <button type="button" id="auction_add_selected" class="btn-primary">Add selected to Auction List</button>
+          <button type="button" id="auction_remove_selected" class="btn-secondary hidden">Remove selected</button>
+          <button type="button" id="auction_print_list" class="btn-secondary hidden">Print Auction List</button>
+        </div>
+        <div id="auction_print_heading" class="print-only"></div>
 
         <div class="simple-table-wrap allocation-table-wrap">
           <table class="simple-table allocation-table">
-            <thead>
+            <thead id="allocation_table_head">
               <tr>
+                <th class="auction-select-column">Select</th>
                 <th>Pig</th>
                 <th>Recommended Action</th>
                 <th>Weight</th>
@@ -102,9 +154,20 @@
               </tr>
             </thead>
             <tbody id="allocation_body">
-              <tr><td colspan="8" class="table-empty">Loading pig allocation readiness...</td></tr>
+              <tr><td class="auction-select-column"></td><td colspan="8" class="table-empty">Loading pig allocation readiness...</td></tr>
             </tbody>
           </table>
+        </div>
+      </section>
+      <section id="allocation_review_panel" class="allocation-review-panel" aria-label="Selected pig purpose review">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2 id="allocation_review_heading">Purpose Review</h2>
+            <p id="allocation_review_status">Select a pig from the table to inspect the recommendation before any purpose decision.</p>
+          </div>
+        </div>
+        <div id="allocation_review_detail" class="allocation-review-detail">
+          <div class="table-empty">No pig selected. Use Review on a table row to open a read-only recommendation packet.</div>
         </div>
       </section>
     </div>

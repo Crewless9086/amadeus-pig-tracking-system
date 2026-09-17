@@ -234,6 +234,7 @@ def validate_intake_update_payload(payload: dict):
         "customer_channel": to_clean_string(payload.get("customer_channel", "")),
         "customer_language": to_clean_string(payload.get("customer_language", "")),
         "updated_by": to_clean_string(payload.get("updated_by", "")) or "Sam",
+        "reset_request_context": _to_bool(payload.get("reset_request_context", False)),
     }
 
     if not cleaned["conversation_id"]:
@@ -410,6 +411,14 @@ def _create_intake_row(conversation_id: str, cleaned_data: dict, now_str: str, u
 
 def _build_state_updates(intake: dict, patch: dict, cleaned_data: dict, now_str: str, updated_by: str):
     updates = {}
+    reset_request_context = bool(cleaned_data.get("reset_request_context"))
+    resettable_fields = {
+        "collection_location",
+        "collection_time_text",
+        "collection_date",
+        "collection_time",
+        "payment_method",
+    }
     field_map = {
         "draft_order_id": "Draft_Order_ID",
         "collection_location": "Collection_Location",
@@ -439,7 +448,9 @@ def _build_state_updates(intake: dict, patch: dict, cleaned_data: dict, now_str:
         if key not in patch:
             continue
         value = patch.get(key)
-        if value == "" or value is None:
+        if (value == "" or value is None) and not (
+            reset_request_context and key in resettable_fields
+        ):
             continue
         if to_clean_string(value) != to_clean_string(intake.get(header, "")):
             updates[header] = value

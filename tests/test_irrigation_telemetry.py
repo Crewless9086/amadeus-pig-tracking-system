@@ -1,7 +1,10 @@
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
-from modules.telemetry.irrigation_service import get_irrigation_status
+from modules.telemetry.irrigation_service import (
+    _get_irrigation_status_from_supabase,
+    get_irrigation_status,
+)
 
 
 class IrrigationTelemetryTests(unittest.TestCase):
@@ -181,7 +184,7 @@ class IrrigationTelemetryTests(unittest.TestCase):
         }
 
         with patch(
-            "modules.telemetry.irrigation_service._get_irrigation_status_from_supabase",
+            "modules.telemetry.rootline_owner_status.get_rootline_owner_status",
             return_value=(supabase_result, 200),
         ) as supabase_read, patch(
             "modules.telemetry.irrigation_service.get_all_records_from_spreadsheet",
@@ -193,7 +196,7 @@ class IrrigationTelemetryTests(unittest.TestCase):
         self.assertEqual(result["source"]["source"], "supabase")
         supabase_read.assert_called_once_with("2026-05-23")
 
-    @patch.dict("os.environ", {"IRRIGATION_STATUS_SOURCE": "supabase", "DATABASE_URL": "postgresql://example"}, clear=True)
+    @patch.dict("os.environ", {"IRRIGATION_STATUS_SOURCE": "google_sheets", "DATABASE_URL": "postgresql://example"}, clear=True)
     def test_irrigation_status_can_read_today_plan_from_supabase(self):
         cursor = Mock()
         cursor.fetchall.side_effect = [
@@ -267,7 +270,7 @@ class IrrigationTelemetryTests(unittest.TestCase):
         connection.cursor.return_value.__enter__.return_value = cursor
 
         with patch.dict("sys.modules", {"psycopg": psycopg}):
-            result, status_code = get_irrigation_status(today="2026-05-23")
+            result, status_code = _get_irrigation_status_from_supabase("2026-05-23")
 
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
@@ -283,7 +286,7 @@ class IrrigationTelemetryTests(unittest.TestCase):
         self.assertTrue(result["safety"]["read_only"])
         self.assertFalse(result["safety"]["can_control"])
 
-    @patch.dict("os.environ", {"IRRIGATION_STATUS_SOURCE": "supabase", "DATABASE_URL": "postgresql://example"}, clear=True)
+    @patch.dict("os.environ", {"IRRIGATION_STATUS_SOURCE": "google_sheets", "DATABASE_URL": "postgresql://example"}, clear=True)
     def test_supabase_recent_events_are_deduplicated_for_display(self):
         cursor = Mock()
         duplicate_event = (
@@ -333,7 +336,7 @@ class IrrigationTelemetryTests(unittest.TestCase):
         connection.cursor.return_value.__enter__.return_value = cursor
 
         with patch.dict("sys.modules", {"psycopg": psycopg}):
-            result, status_code = get_irrigation_status(today="2026-05-23")
+            result, status_code = _get_irrigation_status_from_supabase("2026-05-23")
 
         self.assertEqual(status_code, 200)
         self.assertEqual(len(result["recent_events"]), 1)

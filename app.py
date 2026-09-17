@@ -1,14 +1,48 @@
 from pathlib import Path
+import os
+from urllib.parse import quote
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory
 from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
     owner_login_post,
+    telegram_farm_login_post,
+    mortality_session_identity,
+    mortality_csrf_token,
+    weaning_csrf_token,
+    weaning_session_identity,
+    treatment_session_identity,
+    treatment_csrf_token,
+    owner_session_is_valid,
     owner_logout_post,
+    owner_admin_principal,
     owner_status,
+    owner_status_payload,
+    require_owner_admin_access,
     require_owner_page_access,
+    require_owner_read_access,
+    require_strict_owner_read_access,
+)
+from modules.beacon.content_operations import (
+    build_beacon_content_candidate,
+    gather_beacon_content_evidence,
+)
+from modules.beacon.meta_ads_insights_preview import (
+    build_meta_ads_insights_preview,
+)
+from modules.beacon.meta_ads_evidence_import import (
+    execute_meta_ads_import_packet,
+    prepare_meta_ads_import_packet,
+)
+from modules.beacon.weekly_owner_review import (
+    PACKET_ID as WEEKLY_OWNER_REVIEW_PACKET_ID,
+    load_post_one_thumbnail,
+)
+from modules.beacon.weekly_owner_review_decisions import (
+    get_weekly_owner_review_decision,
+    record_weekly_owner_review_decision,
 )
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -18,6 +52,7 @@ from modules.sales.sales_transaction_routes import sales_bp
 from modules.telemetry.telemetry_routes import telemetry_bp
 from modules.oom_sakkie.routes import oom_sakkie_bp
 from modules.charlie.routes import charlie_bp
+from modules.documents.green_print_api import green_print_api_bp
 from services.database_service import (
     check_irrigation_schema,
     check_database_foundation,
@@ -42,11 +77,46 @@ app.register_blueprint(sales_bp, url_prefix="/api")
 app.register_blueprint(telemetry_bp, url_prefix="/api")
 app.register_blueprint(oom_sakkie_bp, url_prefix="/api")
 app.register_blueprint(charlie_bp, url_prefix="/api")
+app.register_blueprint(green_print_api_bp, url_prefix="/api")
+
+# Render owns the morning lifecycle. Durable database/provider claims arbitrate
+# process restarts and multiple web workers; local development remains inert.
+from modules.oom_sakkie.morning_runtime import start_production_morning_runtime
+start_production_morning_runtime()
+from modules.oom_sakkie.family_activation_runtime import start_family_access_activation
+start_family_access_activation()
+from modules.oom_sakkie.beacon_media_review_worker import start_private_media_review_worker
+start_private_media_review_worker()
+from modules.sales.sam_live_stock_operating_loop import start_sam_live_stock_operating_loop
+start_sam_live_stock_operating_loop()
+
+
+@app.context_processor
+def owner_access_navigation():
+    status = owner_status_payload()
+    return {"owner_session_valid": status["session_valid"],
+            "owner_session_role": status["session_role"]}
 
 
 @app.route("/")
 def home():
     return render_template("dashboard.html")
+
+
+@app.route("/owner-attention")
+def owner_attention_page():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    return render_template("owner-attention.html")
+
+
+@app.route("/rootline/policy-review")
+def rootline_policy_review_page():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    return render_template("rootline-policy-review.html")
 
 
 @app.route("/pigs")
@@ -98,6 +168,11 @@ def owner_login_submit():
     return owner_login_post()
 
 
+@app.route("/owner/telegram/login", methods=["POST"])
+def telegram_farm_login_submit():
+    return telegram_farm_login_post()
+
+
 @app.route("/owner/logout", methods=["POST"])
 def owner_logout_submit():
     return owner_logout_post()
@@ -110,12 +185,152 @@ def owner_status_route():
 
 @app.route("/sales/beacon-media")
 def beacon_media_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
     return render_template("beacon-media.html")
+
+
+@app.route("/api/beacon/content-operations", methods=["GET"])
+def beacon_content_operations_read():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    evidence = gather_beacon_content_evidence()
+    candidate = build_beacon_content_candidate(evidence)
+    decision, decision_state = get_weekly_owner_review_decision()
+    candidate["weekly_owner_review_decision"] = decision
+    candidate["weekly_owner_review_decision_state"] = decision_state
+    candidate["runtime_status"] = {
+        "endpoint_available": True,
+        "owner_authenticated_read_succeeded": True,
+        **candidate.pop("capability_status"),
+    }
+    return jsonify(candidate), 200
+
+
+@app.route(
+    "/api/beacon/weekly-owner-review/<packet_id>/decision",
+    methods=["POST"],
+)
+def beacon_weekly_owner_review_decision(packet_id):
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if "owner_identity" in payload:
+        return jsonify({
+            "success": False,
+            "status": "client_owner_identity_prohibited",
+            "publication_authority_status": "publication_not_authorized",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+            "business_data_mutation": False,
+        }), 400
+    if payload.get("packet_id") != packet_id:
+        return jsonify({
+            "success": False,
+            "status": "weekly_owner_review_packet_mismatch",
+            "publication_authority_status": "publication_not_authorized",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+            "business_data_mutation": False,
+        }), 409
+    result, status = record_weekly_owner_review_decision(
+        payload,
+        owner_identity=owner_admin_principal(),
+    )
+    return jsonify(result), status
+
+
+@app.route(
+    "/api/beacon/weekly-owner-review/<packet_id>/media/<asset_id>",
+    methods=["GET"],
+)
+def beacon_weekly_owner_review_media(packet_id, asset_id):
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    if packet_id != WEEKLY_OWNER_REVIEW_PACKET_ID:
+        return jsonify({
+            "success": False,
+            "status": "weekly_owner_review_packet_not_found",
+            "posts_publicly": False,
+            "calls_meta": False,
+            "writes_performed": False,
+        }), 404
+    result, status = load_post_one_thumbnail(asset_id)
+    if status != 200:
+        return jsonify(result), status
+    return Response(
+        result["data"],
+        status=200,
+        mimetype=result["mime_type"],
+        headers={
+            "Cache-Control": "no-store, private",
+            "X-Content-Type-Options": "nosniff",
+            "X-Beacon-Packet": WEEKLY_OWNER_REVIEW_PACKET_ID,
+            "X-Beacon-Dimensions": f"{result['width']}x{result['height']}",
+        },
+    )
+
+
+@app.route("/api/beacon/meta-ads-insights-preview", methods=["GET"])
+def beacon_meta_ads_insights_preview_read():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status = build_meta_ads_insights_preview(
+        start_date=request.args.get("start"),
+        end_date=request.args.get("end"),
+        level=request.args.get("level", "ad"),
+    )
+    return jsonify(result), status
+
+
+@app.route("/api/beacon/meta-ads-import-packet", methods=["GET"])
+def beacon_meta_ads_import_packet_prepare():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status = prepare_meta_ads_import_packet(
+        start_date=request.args.get("start"),
+        end_date=request.args.get("end"),
+        level=request.args.get("level", "ad"),
+    )
+    return jsonify(result), status
+
+
+@app.route("/api/beacon/meta-ads-import-packet/execute", methods=["POST"])
+def beacon_meta_ads_import_packet_execute():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status = execute_meta_ads_import_packet(
+        request.get_json(silent=True) or {}
+    )
+    return jsonify(result), status
 
 
 @app.route("/sales/meat-driver")
 def meat_driver_page():
     return render_template("meat-driver.html")
+
+
+@app.route("/sales/meat-production")
+def meat_production_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("meat-production.html")
 
 
 @app.route("/pig-allocation")
@@ -125,7 +340,9 @@ def pig_allocation_page():
 
 @app.route("/purpose-review")
 def purpose_review_page():
-    return render_template("purpose-review.html")
+    litter_id = str(request.args.get("litter_id") or "").strip()
+    suffix = f"&litter_id={quote(litter_id, safe='')}" if litter_id else ""
+    return redirect(f"/pig-allocation?mode=purpose-review{suffix}", code=302)
 
 
 @app.route("/meat-planning")
@@ -136,6 +353,21 @@ def meat_planning_page():
 @app.route("/oom-sakkie")
 def oom_sakkie_page():
     return render_template("oom-sakkie.html")
+
+
+@app.route("/weather")
+def weather_operations_page():
+    return render_template("weather.html")
+
+
+@app.route("/power")
+def power_operations_page():
+    return render_template("power.html")
+
+
+@app.route("/irrigation")
+def irrigation_operations_page():
+    return render_template("irrigation.html")
 
 
 @app.route("/charlie")
@@ -152,6 +384,14 @@ def charlie_v2_page():
     if guard:
         return guard
     return render_template("charlie-v2.html")
+
+
+@app.route("/charlie-agents")
+def charlie_agents_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("charlie-agents.html")
 
 
 @app.route("/assets/<path:filename>")
@@ -191,6 +431,9 @@ def litters_page():
 
 @app.route("/orders/new")
 def add_order_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
     return render_template("add-order.html")
 
 
@@ -236,7 +479,11 @@ def breeding_analytics_detail_page(pig_id):
 
 @app.route("/pig/<pig_id>")
 def pig_detail_page(pig_id):
-    return render_template("pig-detail.html")
+    identity = mortality_session_identity()
+    return render_template("pig-detail.html", mortality_identity=identity,
+        legacy_removal_authorized=owner_session_is_valid("admin"),
+        mortality_csrf=mortality_csrf_token(),
+        mortality_language=(identity or {}).get("language", "en"))
 
 
 @app.route("/pig/<pig_id>/family-tree")
@@ -271,7 +518,9 @@ def pig_movement_history_page(pig_id):
 
 @app.route("/litter/<litter_id>")
 def litter_detail_page(litter_id):
-    return render_template("litter-detail.html")
+    return render_template("litter-detail.html", weaning_identity=weaning_session_identity(),
+        weaning_csrf=weaning_csrf_token(), treatment_identity=treatment_session_identity(),
+        treatment_csrf=treatment_csrf_token())
 
 
 @app.route("/pig-weights")
@@ -294,9 +543,37 @@ def print_sheets_page():
     return render_template("print-sheets.html")
 
 
+@app.route("/paring-werpselrekord")
+def mating_litter_record_page():
+    return render_template("paring-werpselrekord.html")
+
+
+@app.route("/verwagte-jongdatums")
+def expected_farrowing_dates_page():
+    return render_template("verwagte-jongdatums.html")
+
+
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200
+
+
+@app.route("/health/revision")
+def revision_health():
+    """Expose only the public source revision injected by the deployment provider."""
+    revision = str(os.environ.get("RENDER_GIT_COMMIT") or "").strip().lower()
+    provider_verified = os.environ.get("RENDER") == "true"
+    revision_valid = (
+        len(revision) == 40
+        and all(character in "0123456789abcdef" for character in revision)
+    )
+    identity_complete = provider_verified and revision_valid
+    return {
+        "status": "ok" if identity_complete else "deployment_identity_unavailable",
+        "provider": "render" if provider_verified else "unknown",
+        "revision": revision if identity_complete else "",
+        "identity_complete": identity_complete,
+    }, 200 if identity_complete else 503
 
 
 @app.route("/health/database")

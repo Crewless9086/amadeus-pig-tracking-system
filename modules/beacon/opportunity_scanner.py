@@ -1,0 +1,672 @@
+"""Read-only, fail-closed BEACON fulfilment opportunity scanner."""
+
+from datetime import date, datetime, time, timedelta, timezone
+from hashlib import sha256
+from math import ceil
+import threading
+import time as time_module
+import re
+
+from modules.oom_sakkie.sales_campaign_store import list_sales_leads
+from modules.pig_weights.pig_weights_service import (
+    EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION,
+    get_sales_availability,
+)
+from modules.sales.sam_live_stock_launch_control import list_sam_live_stock_open_intakes
+from modules.sales.sam_meat_control_mode import sam_meat_control_policy
+
+
+SCANNER_VERSION = "beacon_opportunity_scanner_v1"
+FRESHNESS_HOURS = 24
+AUTHORITY = {
+    "posts_publicly": False,
+    "sends_customer_messages": False,
+    "spends_money": False,
+    "creates_orders": False,
+    "creates_reservations": False,
+    "changes_stock": False,
+    "writes_farm_lifecycle": False,
+}
+DEPENDENCY_CACHE_TTL_SECONDS = 15.0
+DEPENDENCY_COOLDOWN_SECONDS = 2.0
+_DEPENDENCY_FLIGHTS = {}
+_DEPENDENCY_FLIGHTS_LOCK = threading.Lock()
+AUTHORITATIVE_AVAILABILITY_SOURCE = "herdmaster_sales_availability"
+
+
+def _load_authoritative_sales_availability():
+    """Adapt the public versioned Herdmaster sales rail; never raw allocation."""
+    rows = get_sales_availability()
+    rows = rows if isinstance(rows, list) else None
+    observations = [
+        str(row.get("eligibility_observed_at") or "").strip()
+        for row in rows or []
+        if isinstance(row, dict) and row.get("eligibility_observed_at")
+    ]
+    contract_complete = bool(rows) and all(
+        isinstance(row, dict)
+        and row.get("exact_animal_eligibility_contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+        for row in rows
+    )
+    return {
+        "source": AUTHORITATIVE_AVAILABILITY_SOURCE,
+        "contract_version": (
+            EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+            if contract_complete else ""
+        ),
+        "generated_at": min(observations) if observations else "",
+        "pigs": rows,
+    }
+
+
+def _authoritative_available_pig(row):
+    """Require the complete affirmative versioned row, not compatibility data."""
+    if not isinstance(row, dict):
+        return False
+    normalized = lambda value: str(value or "").strip().lower().replace(" ", "_")
+    return all((
+        row.get("exact_animal_eligibility_contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION,
+        row.get("live_stock_sale_eligible") is True,
+        row.get("evidence_complete") is True,
+        normalized(row.get("purpose")) == "sale",
+        normalized(row.get("allocation_query_status")) in {"known", "success"},
+        normalized(row.get("allocation_evidence_state")) == "known_unallocated",
+        normalized(row.get("withdrawal_evidence_state"))
+        in {"not_applicable", "cleared"},
+        normalized(row.get("medical_status")) == "clear",
+        normalized(row.get("reserved_status")) == "not_reserved",
+        not str(row.get("reserved_for_order_id") or "").strip(),
+        normalized(row.get("available_for_sale")) in {"yes", "true", "1"},
+    ))
+
+
+def _utc(value, *, end_of_day=False):
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, time.max if end_of_day else time.min)
+    else:
+        text = str(value or "").strip().replace("Z", "+00:00")
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        if len(text) == 10:
+            parsed = datetime.combine(parsed.date(), time.max if end_of_day else time.min)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _quantity(row):
+    for key in ("quantity", "requested_quantity", "pig_quantity", "units"):
+        try:
+            value = int(row.get(key))
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    interest = row.get("interest") if isinstance(row.get("interest"), dict) else {}
+    try:
+        value = int(interest.get("quantity"))
+        return value if value > 0 else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalized_category(value):
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "piglet": "piglet", "piglets": "piglet",
+        "weaner": "weaner", "weaners": "weaner",
+        "grower": "grower", "growers": "grower",
+        "finisher": "finisher", "finishers": "finisher",
+        "ready_for_slaughter": "finisher", "slaughter_ready": "finisher",
+    }
+    return aliases.get(text, text)
+
+
+def _row_demand_items(row):
+    items = row.get("items") if isinstance(row.get("items"), list) else []
+    if items:
+        return [item for item in items if isinstance(item, dict)]
+    interest = row.get("interest") if isinstance(row.get("interest"), dict) else {}
+    return [{
+        "quantity": _quantity(row),
+        "category": row.get("category") or interest.get("category"),
+        "weight_range": row.get("weight_range") or interest.get("weight_range"),
+        "sex": row.get("sex") or row.get("requested_sex") or interest.get("sex") or interest.get("requested_sex"),
+    }]
+
+
+def _weight_bounds(value):
+    if value is None:
+        return None, False
+    if not isinstance(value, str):
+        return None, True
+    text = value.strip().lower().replace("_", " ")
+    if not text:
+        return None, False
+    match = re.fullmatch(
+        r"(?:about|around|approx(?:imately)?\.?)?\s*"
+        r"(\d+(?:\.\d+)?)\s*"
+        r"(?:(?:-|\u2013|\u2014|to)\s*(\d+(?:\.\d+)?)\s*)?"
+        r"(?:kg|kgs|kilograms?)",
+        text,
+    )
+    if not match:
+        return None, True
+    lower = float(match.group(1))
+    upper = float(match.group(2)) if match.group(2) is not None else lower
+    if lower > upper:
+        return None, True
+    return (lower, upper), True
+
+
+def _pig_matches_weight(pig, bounds):
+    if bounds is None:
+        return True
+    try:
+        weight = float(
+            pig.get("current_weight_kg")
+            if pig.get("current_weight_kg") is not None
+            else pig.get("latest_weight_kg")
+        )
+    except (TypeError, ValueError):
+        return False
+    return bounds[0] <= weight <= bounds[1]
+
+
+def _normalized_sex(value):
+    text = str(value or "").strip().lower()
+    aliases = {
+        "male": "male", "males": "male", "boar": "male", "boars": "male",
+        "female": "female", "females": "female", "gilt": "female", "gilts": "female",
+        "sow": "female", "sows": "female",
+        "any": "any", "any sex": "any", "no preference": "any", "either": "any",
+    }
+    return aliases.get(text, "")
+
+
+def _pig_matches_sex(pig, requested_sex):
+    pig_sex = _normalized_sex(pig.get("sex"))
+    return bool(pig_sex) and (requested_sex == "any" or pig_sex == requested_sex)
+
+
+def _deduplicated_demand(rows, lane, compatible_categories=None):
+    excluded_statuses = {"closed", "not_interested", "cancelled", "fulfilled", "expired"}
+    seen = set()
+    units = 0
+    accepted = []
+    unknown_quantity = 0
+    incompatible_records = 0
+    invalid_weight_records = 0
+    invalid_sex_records = 0
+    malformed_records = 0
+    units_by_category = {}
+    requirements = []
+    compatible_categories = {_normalized_category(value) for value in (compatible_categories or []) if value}
+    if rows is not None and not isinstance(rows, list):
+        malformed_records += 1
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            malformed_records += 1
+            continue
+        if str(row.get("status") or row.get("intake_status") or "").strip().lower() in excluded_statuses:
+            continue
+        interest = row.get("interest") if isinstance(row.get("interest"), dict) else {}
+        stated_lane = str(interest.get("sam_intake_lane") or row.get("lane") or "").lower()
+        if stated_lane and lane == "live_stock" and "meat" in stated_lane:
+            continue
+        if stated_lane and lane == "meat" and "live" in stated_lane:
+            continue
+        identity = str(
+            row.get("conversation_id") or row.get("chatwoot_conversation_id")
+            or row.get("linked_order_id") or row.get("linked_preorder_id")
+            or row.get("intake_id") or row.get("lead_id") or ""
+        ).strip()
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        demand_items = _row_demand_items(row)
+        if any(not _quantity(item) for item in demand_items):
+            unknown_quantity += 1
+            continue
+        if lane == "live_stock":
+            item_categories = {_normalized_category(item.get("category")) for item in demand_items}
+            if not item_categories or "" in item_categories or not item_categories.issubset(compatible_categories):
+                incompatible_records += 1
+                continue
+            parsed_items = []
+            for item in demand_items:
+                bounds, supplied = _weight_bounds(item.get("weight_range"))
+                if supplied and bounds is None:
+                    invalid_weight_records += 1
+                    parsed_items = []
+                    break
+                item_category = _normalized_category(item.get("category"))
+                raw_sex = item.get("sex") or item.get("requested_sex")
+                requested_sex = _normalized_sex(raw_sex) if str(raw_sex or "").strip() else "any"
+                if not requested_sex:
+                    invalid_sex_records += 1
+                    parsed_items = []
+                    break
+                parsed_items.append({"category": item_category, "quantity": _quantity(item), "weight_bounds_kg": bounds, "sex": requested_sex})
+            if not parsed_items:
+                continue
+            for parsed_item in parsed_items:
+                item_category = parsed_item["category"]
+                units_by_category[item_category] = units_by_category.get(item_category, 0) + parsed_item["quantity"]
+                requirements.append(parsed_item)
+        units += sum(_quantity(item) for item in demand_items)
+        accepted.append(identity)
+    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "invalid_weight_records": invalid_weight_records, "invalid_sex_records": invalid_sex_records, "malformed_records": malformed_records, "requirements": requirements, "source_ids": sorted(accepted)}
+
+
+def _fingerprint(lane, category, source_ids):
+    raw = "|".join([lane, category, *sorted(str(value) for value in source_ids)])
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _card(*, lane, category, now, observed_at, demand, capacity, blockers, risks, source_ids,
+          story_context=None):
+    fingerprint = _fingerprint(lane, category, source_ids)
+    expires_at = min(now + timedelta(hours=FRESHNESS_HOURS), observed_at + timedelta(hours=FRESHNESS_HOURS)) if observed_at else now
+    status = "ready_for_owner_review" if capacity["demand_cap"] > 0 and not blockers else "blocked"
+    card = {
+        "card_id": f"BEACON-{fingerprint[:16].upper()}",
+        "fingerprint": fingerprint,
+        "lane": lane,
+        "category": category,
+        "status": status,
+        "title": f"{category.replace('_', ' ').title()} opportunity",
+        "opportunity_reason": "Verified eligible supply and quantified uncommitted demand overlap." if status != "blocked" else "Evidence is insufficient for a safe marketing target.",
+        "demand_cap": capacity["demand_cap"],
+        "unit": "animals" if lane == "live_stock" else "orders",
+        "timing": {"generated_at": now.isoformat(), "expires_at": expires_at.isoformat()},
+        "demand_summary": demand,
+        "capacity_calculation": capacity,
+        "provenance": {"source_ids": sorted(source_ids), "observed_at": observed_at.isoformat() if observed_at else ""},
+        "freshness": {"maximum_age_hours": FRESHNESS_HOURS, "fresh": observed_at is not None and observed_at <= now <= observed_at + timedelta(hours=FRESHNESS_HOURS)},
+        "risks": sorted(set(risks)),
+        "blockers": sorted(set(blockers)),
+        "confidence": 0.98 if status != "blocked" else 0.0,
+        "recommended_next_gate": "owner_reviews_opportunity_before_any_campaign_draft_or_public_action",
+        "authority": dict(AUTHORITY),
+    }
+    if isinstance(story_context, dict) and story_context:
+        card["story_context"] = story_context
+    return card
+
+
+def _sale_litter_story(eligible):
+    """Select one deterministic canonical litter story from sale-eligible animals."""
+    grouped = {}
+    for pig in eligible:
+        litter_id = str(pig.get("litter_id") or "").strip()
+        pig_id = str(pig.get("pig_id") or "").strip()
+        if litter_id and pig_id:
+            grouped.setdefault(litter_id, []).append(pig)
+    if not grouped:
+        return None
+    litter_id, pigs = sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))[0]
+    pigs = sorted(pigs, key=lambda pig: str(pig["pig_id"]))
+    pig_ids = [str(pig["pig_id"]) for pig in pigs]
+    categories = sorted({str(pig.get("sale_category") or pig.get("weight_band") or "livestock")
+                         for pig in pigs})
+    evidence_identity = sha256("|".join([
+        SCANNER_VERSION, litter_id, *pig_ids,
+        *[str(pig.get("eligibility_observed_at") or "") for pig in pigs],
+    ]).encode("utf-8")).hexdigest()
+    return {"kind": "litter", "subject": f"Litter {litter_id}", "litter_id": litter_id,
+        "pig_ids": pig_ids, "sale_ready_categories": categories,
+        "event_id": f"sale-eligibility:{evidence_identity}",
+        "claim_boundary": ("This litter identity and its listed animals are current sale-eligibility "
+            "evidence only; SAM must re-read canonical stock before any offer or commitment.")}
+
+
+def build_beacon_opportunity_cards(
+    *,
+    allocation=None,
+    live_intakes=None,
+    meat_leads=None,
+    now=None,
+    dependency_timeout_seconds=8,
+    dependency_cache_ttl_seconds=DEPENDENCY_CACHE_TTL_SECONDS,
+    dependency_cooldown_seconds=DEPENDENCY_COOLDOWN_SECONDS,
+    allocation_loader=None,
+    live_intakes_loader=None,
+    meat_leads_loader=None,
+):
+    """Compose canonical reads into expiring advisory cards; never write state."""
+    now = _utc(now) or datetime.now(timezone.utc)
+    supplied = {
+        "allocation_readiness": allocation,
+        "sam_live_stock_intakes": live_intakes,
+        "meat_sales_leads": meat_leads,
+    }
+    loaders = {
+        "allocation_readiness": allocation_loader or (
+            _load_authoritative_sales_availability
+        ),
+        "sam_live_stock_intakes": live_intakes_loader or _load_live_intakes,
+        "meat_sales_leads": meat_leads_loader or _load_meat_leads,
+    }
+    loaded, dependency_diagnostics = _bounded_dependency_reads(
+        supplied,
+        loaders,
+        dependency_timeout_seconds,
+        dependency_cache_ttl_seconds,
+        dependency_cooldown_seconds,
+    )
+    allocation = loaded["allocation_readiness"]
+    live_intakes = loaded["sam_live_stock_intakes"]
+    meat_leads = loaded["meat_sales_leads"]
+    allocation = allocation if isinstance(allocation, dict) else {}
+
+    observed_at = _utc(allocation.get("generated_at"))
+    evidence_in_future = observed_at is not None and observed_at > now
+    fresh = observed_at is not None and not evidence_in_future and now <= observed_at + timedelta(hours=FRESHNESS_HOURS)
+    raw_pigs = allocation.get("pigs")
+    rows_versioned = isinstance(raw_pigs, list) and all(
+        isinstance(pig, dict)
+        and pig.get("exact_animal_eligibility_contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+        for pig in raw_pigs
+    )
+    source_ok = (
+        allocation.get("source") == AUTHORITATIVE_AVAILABILITY_SOURCE
+        and allocation.get("contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+        and rows_versioned
+    )
+    malformed_allocation_pigs = not isinstance(raw_pigs, list)
+    if isinstance(raw_pigs, list) and any(not isinstance(pig, dict) for pig in raw_pigs):
+        malformed_allocation_pigs = True
+    pigs_evidence = [pig for pig in raw_pigs if isinstance(pig, dict)] if isinstance(raw_pigs, list) else []
+    eligible = [
+        pig for pig in pigs_evidence
+        if source_ok and not malformed_allocation_pigs
+        and _authoritative_available_pig(pig)
+    ]
+
+    cards = []
+    categories = sorted({str(pig.get("sale_category") or pig.get("weight_band") or "unclassified") for pig in eligible})
+    live_demand = _deduplicated_demand(live_intakes, "live_stock", categories)
+    for category in ["live_stock"]:
+        demanded_categories = set(live_demand["qualified_units_by_category"])
+        pigs = [pig for pig in eligible if _normalized_category(pig.get("sale_category") or pig.get("weight_band")) in demanded_categories]
+        supply_by_category = {}
+        weight_mismatch_records = 0
+        for demanded_category in demanded_categories:
+            category_pigs = [pig for pig in pigs if _normalized_category(pig.get("sale_category") or pig.get("weight_band")) == demanded_category]
+            category_requirements = [item for item in live_demand["requirements"] if item["category"] == demanded_category]
+            matched_ids = set()
+            for requirement in category_requirements:
+                matches = [pig for pig in category_pigs if _pig_matches_weight(pig, requirement["weight_bounds_kg"]) and _pig_matches_sex(pig, requirement["sex"])]
+                if not matches or (len(category_requirements) > 1 and len(matches) < requirement["quantity"]):
+                    weight_mismatch_records += 1
+                for pig in matches:
+                    matched_ids.add(str(pig.get("pig_id")))
+            supply_by_category[demanded_category] = len(matched_ids)
+        capacity_by_category = {}
+        for demanded_category, demanded_units in live_demand["qualified_units_by_category"].items():
+            category_verified = supply_by_category.get(demanded_category, 0)
+            category_reserve = 1 if category_verified else 0
+            category_buffer = ceil(category_verified * 0.10) if category_verified else 0
+            category_available = max(0, category_verified - category_reserve - category_buffer)
+            capacity_by_category[demanded_category] = {
+                "qualified_demand": demanded_units,
+                "verified_available": category_verified,
+                "operational_reserve": category_reserve,
+                "safety_buffer": category_buffer,
+                "available_after_buffers": category_available,
+                "demand_cap": min(demanded_units, category_available),
+            }
+        verified = sum(item["verified_available"] for item in capacity_by_category.values())
+        operational_reserve = sum(item["operational_reserve"] for item in capacity_by_category.values())
+        safety_buffer = sum(item["safety_buffer"] for item in capacity_by_category.values())
+        available_after_buffers = sum(item["available_after_buffers"] for item in capacity_by_category.values())
+        blockers = []
+        if not source_ok:
+            blockers.append("authoritative_sales_availability_unavailable")
+        if malformed_allocation_pigs:
+            blockers.append("malformed_allocation_pigs_evidence")
+        if not fresh:
+            blockers.append("stale_or_missing_allocation_evidence")
+        if evidence_in_future:
+            blockers.append("future_dated_allocation_evidence")
+        if live_intakes is None:
+            blockers.append("sam_live_stock_demand_unavailable")
+        if live_demand["unknown_quantity_records"]:
+            blockers.append("unknown_live_stock_demand_quantity")
+        if live_demand["incompatible_records"]:
+            blockers.append("incompatible_live_stock_demand")
+        if live_demand["invalid_weight_records"]:
+            blockers.append("invalid_live_stock_weight_requirement")
+        if live_demand["invalid_sex_records"]:
+            blockers.append("invalid_live_stock_sex_requirement")
+        if live_demand["malformed_records"]:
+            blockers.append("malformed_live_stock_demand_evidence")
+        if weight_mismatch_records:
+            blockers.append("incompatible_live_stock_weight_requirement")
+        if not live_demand["qualified_units"]:
+            blockers.append("no_quantified_uncommitted_live_stock_demand")
+        cap = sum(item["demand_cap"] for item in capacity_by_category.values()) if not blockers else 0
+        capacity = {"verified_available": verified, "eligible_categories": categories, "demanded_categories": sorted(demanded_categories), "capacity_by_category": capacity_by_category, "existing_commitments": 0, "operational_reserve": operational_reserve, "safety_buffer": safety_buffer, "available_after_buffers": available_after_buffers, "demand_cap": cap, "formula": "sum_by_compatible_category(min(qualified_demand, max(0, verified_available - existing_commitments - operational_reserve - safety_buffer)))"}
+        source_ids = [str(pig.get("pig_id")) for pig in pigs if pig.get("pig_id")] + live_demand["source_ids"]
+        cards.append(_card(lane="live_stock", category=category, now=now, observed_at=observed_at,
+            demand=live_demand, capacity=capacity, blockers=blockers,
+            risks=["owner_review_required", "availability_can_change_before_reservation"],
+            source_ids=source_ids, story_context=_sale_litter_story(eligible)))
+
+    meat_demand = _deduplicated_demand(meat_leads, "meat")
+    meat_blockers = ["butcher_loop_not_proven"]
+    if meat_leads is None:
+        meat_blockers.append("sam_meat_demand_unavailable")
+    if meat_demand["malformed_records"]:
+        meat_blockers.append("malformed_meat_demand_evidence")
+    policy = sam_meat_control_policy()
+    meat_capacity = {"verified_available": 0, "existing_commitments": 0, "operational_reserve": 0, "safety_buffer": 0, "available_after_buffers": 0, "demand_cap": 0, "formula": "forced_zero_while_sam_meat_is_interest_capture_only", "control_mode": policy["mode"]}
+    cards.append(_card(lane="meat", category="meat_preorder", now=now, observed_at=observed_at, demand=meat_demand, capacity=meat_capacity, blockers=meat_blockers, risks=["butcher_capacity_unproven", "owner_review_required"], source_ids=meat_demand["source_ids"]))
+    return {
+        "success": True,
+        "scanner_version": SCANNER_VERSION,
+        "status": "owner_review_only",
+        "generated_at": now.isoformat(),
+        "cards": cards,
+        "dependency_diagnostics": dependency_diagnostics,
+        "authority": dict(AUTHORITY),
+        "writes_to_supabase": False,
+    }
+
+
+def _load_live_intakes():
+    result, status = list_sam_live_stock_open_intakes(limit=100)
+    if isinstance(result, dict) and status == 200 and result.get("success"):
+        return result.get("open_intakes", [])
+    return None
+
+
+def _load_meat_leads():
+    result, status = list_sales_leads(limit=100, status_filter="launch_test")
+    if isinstance(result, dict) and status == 200 and result.get("success"):
+        return result.get("sales_leads", [])
+    return None
+
+
+def _bounded_dependency_reads(
+    supplied,
+    loaders,
+    timeout_seconds,
+    cache_ttl_seconds=DEPENDENCY_CACHE_TTL_SECONDS,
+    cooldown_seconds=DEPENDENCY_COOLDOWN_SECONDS,
+):
+    try:
+        timeout = max(0.01, min(float(timeout_seconds), 30.0))
+    except (TypeError, ValueError):
+        timeout = 8.0
+    try:
+        cache_ttl = max(0.0, min(float(cache_ttl_seconds), 60.0))
+    except (TypeError, ValueError):
+        cache_ttl = DEPENDENCY_CACHE_TTL_SECONDS
+    try:
+        cooldown = max(0.0, min(float(cooldown_seconds), 30.0))
+    except (TypeError, ValueError):
+        cooldown = DEPENDENCY_COOLDOWN_SECONDS
+    results = dict(supplied)
+    diagnostics = {}
+    tokens = {}
+    started = time_module.monotonic()
+    for name, value in supplied.items():
+        if value is not None:
+            diagnostics[name] = {
+                "status": "injected",
+                "duration_ms": 0.0,
+                "availability": "usable",
+                "timeout_seconds": timeout,
+            }
+            continue
+        tokens[name] = _begin_dependency_flight(
+            name, loaders[name], cache_ttl, cooldown, timeout
+        )
+
+    deadline = started + timeout
+    for name, token in tokens.items():
+        value, diagnostic = _finish_dependency_flight(
+            name, token, deadline, timeout
+        )
+        results[name] = value
+        diagnostics[name] = diagnostic
+    return results, diagnostics
+
+
+def _begin_dependency_flight(name, loader, cache_ttl, cooldown, timeout):
+    now = time_module.monotonic()
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = _DEPENDENCY_FLIGHTS.setdefault(name, {
+            "generation": 0,
+            "thread": None,
+            "value": None,
+            "completed_at": 0.0,
+            "duration_ms": 0.0,
+            "error_type": "",
+            "cooldown_until": 0.0,
+        })
+        cache_age = now - state["completed_at"] if state["completed_at"] else None
+        if state["value"] is not None and cache_age is not None and cache_age <= cache_ttl:
+            return {
+                "mode": "cached",
+                "value": state["value"],
+                "cache_age_ms": round(cache_age * 1000, 2),
+                "cache_ttl_seconds": cache_ttl,
+                "timeout_seconds": timeout,
+            }
+        thread = state.get("thread")
+        if thread is not None and thread.is_alive():
+            return {"mode": "in_progress", "timeout_seconds": timeout}
+        if now < state.get("cooldown_until", 0.0):
+            return {
+                "mode": "cooling_down",
+                "cooldown_remaining_ms": round(
+                    (state["cooldown_until"] - now) * 1000, 2
+                ),
+                "timeout_seconds": timeout,
+            }
+        state["generation"] += 1
+        generation = state["generation"]
+        thread = threading.Thread(
+            target=_dependency_worker,
+            args=(name, generation, loader, cooldown),
+            daemon=True,
+            name=f"beacon-{name}",
+        )
+        state["thread"] = thread
+        thread.start()
+        return {
+            "mode": "started",
+            "generation": generation,
+            "thread": thread,
+            "timeout_seconds": timeout,
+        }
+
+
+def _dependency_worker(name, generation, loader, cooldown):
+    started = time_module.monotonic()
+    try:
+        value = loader()
+        status = "usable" if value is not None else "failed"
+        error_type = ""
+    except Exception as exc:
+        value = None
+        status = "failed"
+        error_type = exc.__class__.__name__
+    finished = time_module.monotonic()
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = _DEPENDENCY_FLIGHTS.get(name)
+        if not state or state["generation"] != generation:
+            return
+        state["thread"] = None
+        state["duration_ms"] = round((finished - started) * 1000, 2)
+        state["error_type"] = error_type
+        if status == "usable":
+            state["value"] = value
+            state["completed_at"] = finished
+            state["cooldown_until"] = 0.0
+        else:
+            state["value"] = None
+            state["completed_at"] = 0.0
+            state["cooldown_until"] = finished + cooldown
+
+
+def _finish_dependency_flight(name, token, deadline, timeout):
+    mode = token["mode"]
+    if mode == "cached":
+        return token["value"], {
+            "status": "cached",
+            "duration_ms": 0.0,
+            "cache_age_ms": token["cache_age_ms"],
+            "cache_ttl_seconds": token["cache_ttl_seconds"],
+            "availability": "usable",
+            "timeout_seconds": timeout,
+        }
+    if mode in {"in_progress", "cooling_down"}:
+        diagnostic = {
+            "status": mode,
+            "duration_ms": 0.0,
+            "availability": "inaccessible",
+            "timeout_seconds": timeout,
+        }
+        if mode == "cooling_down":
+            diagnostic["cooldown_remaining_ms"] = token["cooldown_remaining_ms"]
+        return None, diagnostic
+    thread = token["thread"]
+    thread.join(max(0.0, deadline - time_module.monotonic()))
+    if thread.is_alive():
+        return None, {
+            "status": "timed_out",
+            "duration_ms": round(timeout * 1000, 2),
+            "availability": "inaccessible",
+            "timeout_seconds": timeout,
+            "single_flight_active": True,
+        }
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = dict(_DEPENDENCY_FLIGHTS.get(name, {}))
+    value = state.get("value")
+    status = "usable" if value is not None else "failed"
+    return value, {
+        "status": status,
+        "duration_ms": state.get("duration_ms", 0.0),
+        "availability": "usable" if value is not None else "unavailable",
+        "timeout_seconds": timeout,
+        "error_type": state.get("error_type", ""),
+    }
+
+
+def _reset_dependency_singleflight_for_tests():
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        _DEPENDENCY_FLIGHTS.clear()

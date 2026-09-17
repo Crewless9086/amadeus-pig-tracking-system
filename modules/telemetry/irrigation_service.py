@@ -19,23 +19,11 @@ def get_irrigation_status(today=None, spreadsheet_name=None):
         else os.getenv(IRRIGATION_SHEET_NAME_ENV, DEFAULT_IRRIGATION_SHEET_NAME)
     ).strip()
     today = str(today or _today_za()).strip()
-    default_source = "google_sheets" if spreadsheet_name is not None else "auto"
-    source_preference = os.getenv(IRRIGATION_STATUS_SOURCE_ENV, default_source).strip().lower()
+    source_preference = "google_sheets" if spreadsheet_name is not None else "supabase"
 
-    if source_preference in {"supabase", "auto"}:
-        result, status_code = _get_irrigation_status_from_supabase(today)
-        if status_code == 200 and result.get("today", {}).get("total_plan_rows", 0) > 0:
-            return result, status_code
-        if source_preference == "supabase":
-            if status_code == 200:
-                result["operator_summary"]["notes"].append(
-                    "No Supabase plan rows were found for the requested day; sheet fallback was not used because source is locked to Supabase."
-                )
-            return result, status_code
-        if status_code == 200:
-            result["operator_summary"]["notes"].append(
-                "No Supabase plan rows were found for the requested day; falling back to the sheet bridge."
-            )
+    if source_preference != "google_sheets":
+        from modules.telemetry.rootline_owner_status import get_rootline_owner_status
+        return get_rootline_owner_status(today)
 
     try:
         state_rows = _read_sheet(sheet_name, "STATE")

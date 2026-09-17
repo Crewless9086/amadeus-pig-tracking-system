@@ -6,28 +6,38 @@
   <title>Order Detail</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
-<body>
-  <div class="page-shell">
-    <div class="page-card">
+<body class="order-detail-page">
+  <div class="page-shell order-detail-shell">
+    <main class="page-card order-detail-card">
       <div class="page-header page-header-with-link">
         <div>
-          <h1>Order Detail</h1>
-          <p>View order summary, add lines, reserve, and manage approval flow.</p>
+          <div class="order-eyebrow">Sales order workspace</div>
+          <h1 id="order_workspace_title">Order Detail</h1>
+          <p id="order_workspace_subtitle">Loading customer and fulfilment state...</p>
         </div>
         <a href="/orders" class="secondary-link">← Orders</a>
       </div>
 
       <div id="order_detail_message" class="message-box hidden"></div>
+      <section id="order_command_bar" class="order-command-bar" aria-live="polite">
+        <div>
+          <span class="order-command-label">Next action</span>
+          <strong id="order_next_action">Loading order...</strong>
+          <span id="order_readiness_note">Checking pricing and documents.</span>
+        </div>
+        <div id="order_primary_actions" class="order-primary-actions"></div>
+      </section>
 
       <div id="order_summary" class="detail-grid"></div>
 
-      <div class="operation-section">
-        <div class="section-title-row">
+      <details id="order_header_panel" class="operation-section order-advanced-panel">
+        <summary class="section-title-row">
           <div>
-            <h2>Order Header</h2>
-            <p>Update the customer request details used by Sam, approvals, quotes, and invoices.</p>
+            <h2>Order details</h2>
+            <p>Customer request, payment method and internal notes.</p>
           </div>
-        </div>
+          <span class="panel-disclosure">Edit</span>
+        </summary>
 
         <form id="editOrderForm" class="weight-form">
           <div class="form-grid">
@@ -116,9 +126,13 @@
 
           <div id="edit_order_message" class="message-box hidden"></div>
         </form>
-      </div>
+      </details>
 
-      <div class="form-actions" style="margin-top: 18px;">
+      <section id="order_actions_panel" class="operation-section order-action-panel">
+        <div class="section-title-row">
+          <div><h2>Order workflow</h2><p id="order_stage_description">Only valid actions for this order state are shown.</p></div>
+        </div>
+        <div class="form-actions order-state-actions">
         <button id="reserve_order_btn" type="button">Reserve Order Lines</button>
         <button id="release_order_btn" type="button">Release Reserved Lines</button>
         <button id="send_for_approval_btn" type="button">Send for Approval</button>
@@ -126,11 +140,12 @@
         <button id="reject_order_btn" type="button">Reject Order</button>
         <button id="cancel_order_btn" type="button">Cancel Order</button>
         <button id="complete_order_btn" type="button">Complete Order</button>
-      </div>
+        </div>
 
-      <div id="order_action_message" class="message-box hidden"></div>
+        <div id="order_action_message" class="message-box hidden"></div>
+      </section>
 
-      <div class="operation-section">
+      <section id="order_documents_panel" class="operation-section order-documents-panel">
         <div class="section-title-row">
           <div>
             <h2>Documents</h2>
@@ -141,7 +156,11 @@
         <div class="document-control-row">
           <div class="form-group document-conversation-field">
             <label for="document_conversation_id">Chatwoot Conversation ID</label>
-            <input id="document_conversation_id" name="document_conversation_id" type="text" />
+            <div class="saved-conversation-control">
+              <input id="document_conversation_id" name="document_conversation_id" type="text" placeholder="Enter once for this order" />
+              <button id="save_conversation_id_btn" type="button" class="small-action-button">Save</button>
+            </div>
+            <span class="field-helper">Saved to this order and reused for document sends.</span>
           </div>
 
           <div class="form-actions compact-actions document-actions">
@@ -155,16 +174,14 @@
 
         <div id="document_action_message" class="message-box hidden"></div>
         <div id="order_documents_list" class="history-list"></div>
-      </div>
+      </section>
 
-      <div class="page-header" style="margin-top: 28px; margin-bottom: 16px;">
-        <div>
-          <h2 style="margin: 0 0 8px 0;">Add Order Line</h2>
-          <p style="margin: 0; color: var(--text-soft);">Select an available pig and add it to this order as a draft line.</p>
-        </div>
-      </div>
-
-      <form id="addOrderLineForm" class="weight-form">
+      <details id="add_line_panel" class="operation-section order-advanced-panel">
+        <summary class="section-title-row">
+          <div><h2>Add animal</h2><p>Select an available pig. Price is applied automatically from the active price list.</p></div>
+          <span class="panel-disclosure">Add</span>
+        </summary>
+        <form id="addOrderLineForm" class="weight-form">
         <div class="form-grid">
           <div class="form-group">
             <label for="pig_id">Available Pig</label>
@@ -174,8 +191,9 @@
           </div>
 
           <div class="form-group">
-            <label for="unit_price">Unit Price</label>
-            <input id="unit_price" name="unit_price" type="number" step="0.01" />
+            <label for="unit_price">Price override</label>
+            <input id="unit_price" name="unit_price" type="number" step="0.01" placeholder="Automatic" />
+            <span class="field-helper">Leave blank to use the current price list.</span>
           </div>
         </div>
 
@@ -189,11 +207,13 @@
         </div>
 
         <div id="add_order_line_message" class="message-box hidden"></div>
-      </form>
+        </form>
+      </details>
 
       <div id="draft_lines_summary"></div>
 
-      <div class="page-header" style="margin-top: 28px; margin-bottom: 16px;">
+      <section id="order_lines_panel" class="order-lines-panel">
+      <div class="page-header section-header-compact">
         <div>
           <h2 style="margin: 0 0 8px 0;">Order Lines</h2>
           <p style="margin: 0; color: var(--text-soft);">These are the current line items on the order.</p>
@@ -201,7 +221,8 @@
       </div>
 
       <div id="order_lines_list" class="history-list"></div>
-    </div>
+      </section>
+    </main>
   </div>
 
   <script src="{{ url_for('static', filename='js/orderDetail.js') }}"></script>

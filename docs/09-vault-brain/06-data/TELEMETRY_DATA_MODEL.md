@@ -2,6 +2,13 @@
 
 Telemetry covers weather, forecast, Sunsynk/power, irrigation, alerts, and rollups.
 
+ROOTLINE's target control authority, safety state machine, staged graduation,
+hardware inventory requirements, and current no-control boundary are governed
+by
+[`ROOTLINE_CONTROL_ARCHITECTURE.md`](../04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
+Telemetry evidence supports decisions; its presence alone never grants command
+authority.
+
 ## Operating Direction
 
 - Keep working weather behavior stable while migrating the slow/high-volume paths.
@@ -36,6 +43,13 @@ Telemetry covers weather, forecast, Sunsynk/power, irrigation, alerts, and rollu
 - Irrigation and pump actions must be backend-owned with explicit audit rows before automatic control expansion.
 - n8n can call/deliver actions, but must not invent safety rules.
 - Telegram should not receive every automation event; use severity, grouping, quiet hours, and summaries.
+- Unknown, stale, missing, unavailable, or conflicting required safety evidence
+  fails closed for hardware control and must never be interpreted as zero, safe,
+  off, or completed.
+- HTTP/adapter acceptance, actuator acknowledgement, physical state, water
+  flow, and completion are separate evidence states.
+- Ambiguous commands are not automatically retried; recovery reconciles
+  physical state first.
 
 ## Source References
 

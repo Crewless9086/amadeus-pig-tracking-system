@@ -323,7 +323,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("MEAT PREORDER RULES (CRITICAL)", sales_agent_system)
         self.assertIn("Do not ask for a live-pig weight range", sales_agent_system)
         self.assertIn("Do not quote price/kg", sales_agent_system)
-        self.assertIn("Approved cut menu source: docs/08-business-modules/PORK_SALES_MODEL.md rows 246-303", sales_agent_system)
+        self.assertIn("Approved cut menu source: docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md", sales_agent_system)
         self.assertIn("Set A Family Freezer Pack", sales_agent_system)
         self.assertIn("Set B Braai Pack", sales_agent_system)
         self.assertIn("Set C Lean Pack", sales_agent_system)
@@ -462,6 +462,73 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("Call 2.4 - Approval Callback Worker", node_names)
         self.assertIn("Call 2.4.5 - Document Send Callback Worker", node_names)
         self.assertNotIn("2.0B - Oom Sakkie Backend Read-Only Relay", workflow_text)
+
+    def test_gatekeeper_relays_sam_live_callbacks_only_to_authoritative_backend(self):
+        workflow = load_workflow(GATEKEEPER_WORKFLOW)
+        nodes = {node.get("name"): node for node in workflow.get("nodes", [])}
+        normalize = nodes["Code - Normalize Telegram Callback"]["parameters"]["jsCode"]
+        switch = nodes["Switch - Route Telegram Callback Type"]
+        relay = nodes["Relay SAM Callback to Backend"]
+        normalize_targets = workflow["connections"]["Code - Normalize Telegram Callback"]["main"][0]
+        outputs = workflow["connections"]["Switch - Route Telegram Callback Type"]["main"]
+
+        self.assertIn('data.startsWith("sam_live_")', normalize)
+        self.assertIn('action = "route_sam_live_callback"', normalize)
+        self.assertIn("raw_update: $json.raw_update", normalize)
+        self.assertEqual([target["node"] for target in normalize_targets], ["Switch - Route Telegram Callback Type"])
+        self.assertEqual(switch["parameters"]["rules"]["values"][3]["outputKey"], "SAM Live Callback")
+        self.assertEqual([target["node"] for target in outputs[3]], ["Relay SAM Callback to Backend"])
+        self.assertNotIn("Call 2.4 - Approval Callback Worker", [target["node"] for target in outputs[3]])
+        self.assertNotIn("Answer Telegram Callback", [target["node"] for target in outputs[3]])
+        self.assertEqual([target["node"] for target in outputs[2]], ["Acknowledge Unsupported Callback"])
+        self.assertNotIn("Call 2.4 - Approval Callback Worker", [target["node"] for target in outputs[2]])
+        self.assertEqual(relay["parameters"]["method"], "POST")
+        self.assertTrue(relay["parameters"]["url"].endswith("/api/oom-sakkie/channels/telegram/direct-webhook"))
+        self.assertEqual(relay["parameters"]["contentType"], "json")
+        self.assertEqual(relay["parameters"]["specifyBody"], "json")
+        self.assertEqual(relay["parameters"]["jsonBody"], "={{ $json.raw_update }}")
+        self.assertNotIn("rawContent", relay["parameters"])
+        self.assertIn("$vars.OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET", json.dumps(relay))
+        self.assertNotIn("callback_data.replace", normalize)
+
+    def test_gatekeeper_relays_protected_action_callbacks_to_authoritative_backend(self):
+        workflow = load_workflow(GATEKEEPER_WORKFLOW)
+        nodes = {node.get("name"): node for node in workflow.get("nodes", [])}
+        normalize = nodes["Code - Normalize Telegram Callback"]["parameters"]["jsCode"]
+        outputs = workflow["connections"]["Switch - Route Telegram Callback Type"]["main"]
+
+        self.assertIn('data.startsWith("sam_live_") || data.startsWith("oompa:")', normalize)
+        self.assertIn('action = "route_sam_live_callback"', normalize)
+        self.assertIn("raw_update: $json.raw_update", normalize)
+        self.assertEqual([target["node"] for target in outputs[3]], ["Relay SAM Callback to Backend"])
+        self.assertNotIn("Acknowledge Unsupported Callback", [target["node"] for target in outputs[3]])
+
+    def test_gatekeeper_resolve_card_family_stays_backend_only_and_out_of_legacy_orders(self):
+        workflow = load_workflow(GATEKEEPER_WORKFLOW)
+        nodes = {node.get("name"): node for node in workflow.get("nodes", [])}
+        normalize = nodes["Code - Normalize Telegram Callback"]["parameters"]["jsCode"]
+        outputs = workflow["connections"]["Switch - Route Telegram Callback Type"]["main"]
+        callback = "sam_live_card_resolve:SAM-LIVE-RESOLVE-ABC123"
+
+        self.assertTrue(callback.startswith("sam_live_"))
+        self.assertIn('data.startsWith("sam_live_")', normalize)
+        self.assertIn('action = "route_sam_live_callback"', normalize)
+        self.assertEqual([target["node"] for target in outputs[3]], ["Relay SAM Callback to Backend"])
+        self.assertNotIn("Call 2.4 - Approval Callback Worker", [target["node"] for target in outputs[3]])
+        self.assertNotIn("Call 2.4.5 - Document Send Callback Worker", [target["node"] for target in outputs[3]])
+        self.assertNotIn("Invalid approval button data", normalize)
+
+    def test_gatekeeper_candidate_bound_send_family_stays_out_of_legacy_orders(self):
+        workflow = load_workflow(GATEKEEPER_WORKFLOW)
+        nodes = {node.get("name"): node for node in workflow.get("nodes", [])}
+        normalize = nodes["Code - Normalize Telegram Callback"]["parameters"]["jsCode"]
+        outputs = workflow["connections"]["Switch - Route Telegram Callback Type"]["main"]
+        callback = "sam_live_card_send:SAM-LIVE-CARD-SEND-ABC123"
+        self.assertTrue(callback.startswith("sam_live_"))
+        self.assertIn('data.startsWith("sam_live_")', normalize)
+        self.assertEqual([target["node"] for target in outputs[3]], ["Relay SAM Callback to Backend"])
+        self.assertNotIn("Call 2.4 - Approval Callback Worker", [target["node"] for target in outputs[3]])
+        self.assertNotIn("Call 2.4.5 - Document Send Callback Worker", [target["node"] for target in outputs[3]])
 
     def test_backend_relay_workflow_is_import_inactive_and_has_no_telegram_authority(self):
         workflow = load_workflow(OOM_SAKKIE_BACKEND_RELAY_WORKFLOW)

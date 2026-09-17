@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meat Production</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/meatProduction.css') }}">
+</head>
+<body>
+  <main class="production-app">
+    <header class="production-header">
+      <div>
+        <span class="production-kicker">AMadeus Farm</span>
+        <h1>Meat Production</h1>
+      </div>
+      <nav class="production-nav" aria-label="Meat production navigation">
+        <a href="/meat-planning">Planning</a>
+        <a href="/sales/meat-leads">Meat Leads</a>
+        <a href="/sales-dashboard">Sales</a>
+        <a href="/">Dashboard</a>
+      </nav>
+    </header>
+
+    <div id="production_message" class="production-message hidden" role="status"></div>
+
+    <section class="production-layout">
+      <aside class="batch-rail">
+        <div class="rail-heading">
+          <div>
+            <span>Production ledger</span>
+            <strong id="batch_count">0 batches</strong>
+          </div>
+          <button id="new_batch_button" class="primary-button" type="button">New batch</button>
+        </div>
+        <div id="batch_list" class="batch-list">
+          <div class="empty-state">Loading batches...</div>
+        </div>
+      </aside>
+
+      <section id="batch_workspace" class="batch-workspace">
+        <div id="batch_empty" class="workspace-empty">
+          <strong>No batch selected</strong>
+          <span>Select a batch from the production ledger.</span>
+        </div>
+
+        <div id="batch_detail" class="hidden">
+          <div class="batch-title-row">
+            <div>
+              <div class="batch-title-meta">
+                <span id="batch_kind">-</span>
+                <span id="batch_disposition">-</span>
+              </div>
+              <h2 id="batch_code">-</h2>
+              <p id="batch_context">-</p>
+            </div>
+            <span id="batch_status" class="status-chip">-</span>
+          </div>
+
+          <div id="stage_track" class="stage-track" aria-label="Production stage"></div>
+
+          <section class="metric-grid" aria-label="Batch metrics">
+            <article><span>Live weight</span><strong id="metric_live">-</strong></article>
+            <article><span>Carcass</span><strong id="metric_carcass">-</strong><small id="metric_dressing">-</small></article>
+            <article><span>Packed cuts</span><strong id="metric_packed">-</strong><small id="metric_packed_yield">-</small></article>
+            <article><span>Recorded cost</span><strong id="metric_cost">-</strong><small id="metric_cost_kg">-</small></article>
+          </section>
+
+          <div class="action-bar">
+            <div>
+              <span>Next capture</span>
+              <strong id="next_action">-</strong>
+            </div>
+            <div class="action-buttons">
+              <button id="add_event_button" type="button" class="secondary-button">Update stage</button>
+              <button id="add_cost_button" type="button" class="secondary-button">Add cost</button>
+              <button id="add_output_button" type="button" class="primary-button">Add cut</button>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <section class="detail-panel timeline-panel">
+              <div class="panel-heading">
+                <h3>Timeline</h3>
+                <span id="timeline_count">0 events</span>
+              </div>
+              <div id="timeline_list" class="timeline-list"></div>
+            </section>
+
+            <section class="detail-panel">
+              <div class="panel-heading">
+                <h3>Costs</h3>
+                <strong id="cost_total">R0.00</strong>
+              </div>
+              <div id="cost_list" class="compact-list"></div>
+            </section>
+
+            <section class="detail-panel outputs-panel">
+              <div class="panel-heading">
+                <h3>Cuts and outputs</h3>
+                <strong id="output_total">0.0 kg</strong>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Output</th><th>Packs</th><th>Weight</th><th>Use</th></tr></thead>
+                  <tbody id="output_body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="detail-panel facts-panel">
+              <div class="panel-heading"><h3>Batch facts</h3></div>
+              <dl id="batch_facts"></dl>
+            </section>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="new_batch_dialog" class="production-dialog">
+    <form id="new_batch_form" method="dialog">
+      <header><h2>New production batch</h2><button type="button" data-close-dialog aria-label="Close">×</button></header>
+      <div class="dialog-grid">
+        <label>Batch code<input name="batch_code" required placeholder="MEAT-PILOT-2026-002" /></label>
+        <label>Pig ID<input name="pig_id" required placeholder="PIG-2026-..." /></label>
+        <label>Tag number<input name="tag_number" /></label>
+        <label>Live weight (kg)<input name="live_weight_kg" type="number" min="0.001" step="0.001" /></label>
+        <label>Batch type<select name="batch_kind"><option>Internal_Pilot</option><option>Stock_Production</option><option>Customer_Order</option></select></label>
+        <label>Disposition<select name="intended_disposition"><option>Internal_Use</option><option>Stock</option><option>Customer_Sale</option></select></label>
+        <label>Abattoir<input name="abattoir_name" /></label>
+        <label>Slaughter date<input name="slaughter_date" type="date" /></label>
+        <label class="full-field">Notes<textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <footer><button type="button" class="secondary-button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Create batch</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="event_dialog" class="production-dialog">
+    <form id="event_form" method="dialog">
+      <header><h2>Update production stage</h2><button type="button" data-close-dialog aria-label="Close">×</button></header>
+      <div class="dialog-grid">
+        <label>Stage<select name="event_type" required>
+          <option value="departed_farm">Departed farm</option><option value="arrived_abattoir">Arrived abattoir</option>
+          <option value="slaughtered">Slaughtered</option><option value="carcass_weighed">Carcass weighed</option>
+          <option value="delivered_to_butcher">Delivered to butcher</option><option value="cutting_started">Cutting started</option>
+          <option value="packed">Packed</option><option value="completed">Completed</option><option value="note">Note only</option>
+        </select></label>
+        <label>Date<input name="event_date" type="date" required /></label>
+        <label>Location / provider<input name="location_label" /></label>
+        <label>Pig ID<input name="pig_id" /></label>
+        <label>Live weight (kg)<input name="live_weight_kg" type="number" min="0.001" step="0.001" /></label>
+        <label>Carcass weight (kg)<input name="carcass_weight_kg" type="number" min="0.001" step="0.001" /></label>
+        <label class="checkbox-field"><input name="head_included" type="checkbox" /> Head included</label>
+        <label class="full-field">Notes<textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <footer><button type="button" class="secondary-button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Save stage</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="cost_dialog" class="production-dialog">
+    <form id="cost_form" method="dialog">
+      <header><h2>Add production cost</h2><button type="button" data-close-dialog aria-label="Close">×</button></header>
+      <div class="dialog-grid">
+        <label>Cost type<select name="cost_type" required><option>Butchery</option><option>Transport</option><option>Packaging</option><option>Abattoir</option><option>Pig_Production</option><option>Cold_Storage</option><option>Labour</option><option>Other</option></select></label>
+        <label>Amount (R)<input name="amount" type="number" min="0" step="0.01" required /></label>
+        <label>Date<input name="cost_date" type="date" required /></label>
+        <label>Supplier<input name="supplier_name" /></label>
+        <label class="full-field">Notes<textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <footer><button type="button" class="secondary-button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Add cost</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="output_dialog" class="production-dialog">
+    <form id="output_form" method="dialog">
+      <header><h2>Add cut or output</h2><button type="button" data-close-dialog aria-label="Close">×</button></header>
+      <div class="dialog-grid">
+        <label>Output type<select name="output_type" required><option>Cut</option><option>Offal</option><option>Fat</option><option>Bone</option><option>Head</option><option>Waste</option><option>Other</option></select></label>
+        <label>Cut / output name<input name="cut_name" required placeholder="Pork chops" /></label>
+        <label>Weight (kg)<input name="weight_kg" type="number" min="0.001" step="0.001" required /></label>
+        <label>Pack count<input name="pack_count" type="number" min="0" step="1" value="1" /></label>
+        <label>Disposition<select name="disposition"><option>Internal_Use</option><option>Frozen</option><option>Sample</option><option>Sold</option><option>Waste</option><option>Other</option></select></label>
+        <label class="checkbox-field"><input name="counts_toward_packed_yield" type="checkbox" checked /> Count in packed yield</label>
+        <label class="full-field">Notes<textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <footer><button type="button" class="secondary-button" data-close-dialog>Cancel</button><button class="primary-button" type="submit">Add output</button></footer>
+    </form>
+  </dialog>
+
+  <script src="{{ url_for('static', filename='js/meatProduction.js') }}"></script>
+</body>
+</html>

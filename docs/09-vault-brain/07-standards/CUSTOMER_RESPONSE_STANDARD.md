@@ -8,7 +8,9 @@ Do not promise delivery.
 
 Preserve already-correct AI answers instead of rewriting them into weaker replies.
 
-Source reference: `docs/05-ai/RESPONSE_RULES.md`.
+Migration evidence: the original short rules are preserved at
+`docs/99-archive/vault-cutover/docs/05-ai/RESPONSE_RULES.md`. This Vault
+standard is the sole active authority.
 
 ## Customer Message Rules
 

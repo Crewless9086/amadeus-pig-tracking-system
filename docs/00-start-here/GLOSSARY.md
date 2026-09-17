@@ -1,22 +1,8 @@
-# Glossary
+# Legacy Glossary Pointer
 
-## Purpose
+Lifecycle: `POINTER_ONLY / NON_DOCTRINE`.
 
-Shared terms used across backend, n8n, Google Sheets, AI prompts, and operations.
-
-## Terms To Define
-
-- AUTO
-- CLARIFY
-- ESCALATE
-- Draft order
-- Reserved order line
-- Formula-driven sheet
-- Master sheet
-- Sales availability
-- Order steward
-- Sales agent
-
-## Migration Note
-
-Add terms as they appear during workflow, Sheets, and backend migration.
+This unfinished placeholder defines no current term. Use the focused identity,
+agent, workflow, data, standard, and business-rule files indexed by
+`../09-vault-brain/INDEX.md`. Missing or ambiguous terminology is a Brain Guard
+finding; do not infer a definition from this path.

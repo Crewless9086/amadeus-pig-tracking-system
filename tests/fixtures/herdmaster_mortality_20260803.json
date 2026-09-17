@@ -1,0 +1,53 @@
+{
+  "mortality_events": [
+    {"event_id":"LOSS-PIG-2026-0136","pig_id":"PIG-2026-0136","effective_date":"2026-06-02","event_kind":"stillbirth","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-1025","pen_id":"PEN-003"},
+    {"event_id":"LOSS-PIG-2026-24EF","pig_id":"PIG-2026-24EF","effective_date":"2026-06-02","event_kind":"stillbirth","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-1025","pen_id":"PEN-003"},
+    {"event_id":"LOSS-PIG-2026-1159","pig_id":"PIG-2026-1159","effective_date":"2026-07-02","event_kind":"piglet_later_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-1350","pen_id":"PEN-001"},
+    {"event_id":"LOSS-PIG-2026-6065","pig_id":"PIG-2026-6065","effective_date":"2026-07-05","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-75EE","pen_id":"PEN-012"},
+    {"event_id":"LOSS-PIG-2026-0632","pig_id":"PIG-2026-0632","effective_date":"2026-07-08","event_kind":"piglet_later_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-812B","pen_id":"PEN-003"},
+    {"event_id":"LOSS-PIG-2026-C124","pig_id":"PIG-2026-C124","effective_date":"2026-07-10","event_kind":"stillbirth","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-B1A8","pen_id":"PEN-006"},
+    {"event_id":"LOSS-PIG-2026-0F1F","pig_id":"PIG-2026-0F1F","effective_date":"2026-07-11","event_kind":"crushed_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-B1A8","pen_id":"PEN-006"},
+    {"event_id":"LOSS-PIG-2026-3F59","pig_id":"PIG-2026-3F59","effective_date":"2026-07-11","event_kind":"crushed_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-B1A8","pen_id":"PEN-006"},
+    {"event_id":"LOSS-PIG-2026-72B7","pig_id":"PIG-2026-72B7","effective_date":"2026-07-11","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-EB92","pen_id":"PEN-011"},
+    {"event_id":"LOSS-PIG-2026-BC94","pig_id":"PIG-2026-BC94","effective_date":"2026-07-13","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-68D1","pen_id":"PEN-011"},
+    {"event_id":"LOSS-PIG-2026-69B2","pig_id":"PIG-2026-69B2","effective_date":"2026-07-14","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-EB92","pen_id":"PEN-011"},
+    {"event_id":"LOSS-PIG-2026-44C1","pig_id":"PIG-2026-44C1","effective_date":"2026-07-15","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-9E4A","pen_id":"PEN-011"},
+    {"event_id":"LOSS-PIG-2026-6D24","pig_id":"PIG-2026-6D24","effective_date":"2026-07-23","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-741E","pen_id":"PEN-014"},
+    {"event_id":"LOSS-PIG-2026-6F78","pig_id":"PIG-2026-6F78","effective_date":"2026-07-24","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-9E4A","pen_id":"PEN-014"},
+    {"event_id":"LOSS-PIG-2026-CA66","pig_id":"PIG-2026-CA66","effective_date":"2026-07-24","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-9E4A","pen_id":"PEN-014"},
+    {"event_id":"LOSS-PIG-2026-BCEB","pig_id":"PIG-2026-BCEB","effective_date":"2026-08-02","event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current","litter_id":"LIT-2026-1025","pen_id":"PEN-012"},
+    {"event_id":"HISTORY-PIG-2026-1AC2","pig_id":"PIG-2026-1AC2","effective_date":"2026-07-10","event_kind":"stillbirth","confirmation":"confirmed","canonical_status":"superseded","litter_id":"LIT-2026-A523","pen_id":"PEN-006"}
+  ],
+  "undated_identity_accounting": [
+    {"pig_id":"PIG-2026-0D33","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-31D2","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-465B","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-63C7","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-6617","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-6711","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-8FEC","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-D5EE","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-4972","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-C60A","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-2ED8","classification":"legitimate_undated_historical_loss","effective_date":null},{"pig_id":"PIG-2026-2FE0","classification":"legitimate_undated_historical_loss","effective_date":null},
+    {"pig_id":"PIG-2026-0BDD","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-15E2","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-F870","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-CD55","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-CD56","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-2516","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-2186","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-98AE","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-AC21","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-5B63","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-5B64","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-5B65","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-3AEA","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-6E8D","classification":"conflicting","effective_date":null},{"pig_id":"PIG-2026-6E8F","classification":"conflicting","effective_date":null},
+    {"pig_id":"PIG-2026-E926","classification":"insufficient_evidence","effective_date":null},{"pig_id":"PIG-2026-8EA1","classification":"insufficient_evidence","effective_date":null},{"pig_id":"PIG-2026-C4D8","classification":"insufficient_evidence","effective_date":null}
+  ],
+  "owner_reported_events": [{"report_identity":"OOM-HERDMASTER-PIG127","pig_id":"PIG-2026-D13C","reported_at":"2026-08-03T05:53:23+02:00","reported_facts":["owner reported the pig died after an active welfare case"],"provider_message_id":"PIG127-ACTIVE-LIFECYCLE","provider_timestamp":"2026-08-03T05:53:23+02:00","authentication_receipt":{"verified_by":"oom_sakkie_authenticated_gateway","authority_scope":"private_owner_health_loss","principal_id":"OWNER-CHARL","private_chat_id":"PRIVATE-OWNER-CHAT","bound_principal_id":"OWNER-CHARL","bound_private_chat_id":"PRIVATE-OWNER-CHAT","receipt_digest":"5f6f1459ebdd83f241a4a038f3e4a10cdfbb13c82b781d559b0fef2ff081d471"}}],
+  "cohort_reconciliations": [
+    {"litter_id":"LIT-2026-6EC0","born_alive":10,"weaned_count":2,"undated_loss_rows":8,"dated_later_deaths":0,"outcome":"supported"},
+    {"litter_id":"LIT-2026-8A0F","born_alive":8,"weaned_count":6,"undated_loss_rows":2,"dated_later_deaths":0,"outcome":"supported"},
+    {"litter_id":"LIT-2026-G6R2","born_alive":11,"weaned_count":9,"undated_loss_rows":2,"dated_later_deaths":0,"outcome":"supported"},
+    {"litter_id":"LIT-2026-9E4A","born_alive":11,"weaned_count":8,"undated_loss_rows":3,"dated_later_deaths":3,"outcome":"conflicting"},
+    {"litter_id":"LIT-2026-EB92","born_alive":10,"weaned_count":8,"undated_loss_rows":2,"dated_later_deaths":2,"outcome":"conflicting"},
+    {"litter_id":"LIT-2026-1025","born_alive":7,"weaned_count":6,"undated_loss_rows":1,"dated_later_deaths":1,"outcome":"conflicting"},
+    {"litter_id":"LIT-2026-75EE","born_alive":12,"weaned_count":11,"undated_loss_rows":1,"dated_later_deaths":1,"outcome":"conflicting"},
+    {"litter_id":"LIT-2026-741E","born_alive":9,"weaned_count":8,"undated_loss_rows":1,"dated_later_deaths":1,"outcome":"conflicting"},
+    {"litter_id":"LIT-2026-68D1","born_alive":8,"weaned_count":7,"undated_loss_rows":1,"dated_later_deaths":1,"outcome":"conflicting"},
+    {"litter_id":"LIT-2026-0LBF","born_alive":11,"weaned_count":9,"undated_loss_rows":3,"dated_later_deaths":0,"outcome":"conflicting"},
+    {"litter_id":"LIT-2026-OTY0","born_alive":12,"weaned_count":10,"undated_loss_rows":3,"dated_later_deaths":0,"outcome":"conflicting"}
+  ],
+  "weights": {
+    "PIG-2026-69B2":[{"date":"2026-07-06","kg":5.8},{"date":"2026-07-13","kg":4.4}],
+    "PIG-2026-6D24":[{"date":"2026-07-06","kg":3.4},{"date":"2026-07-13","kg":3.2}],
+    "PIG-2026-6F78":[{"date":"2026-07-06","kg":4.4},{"date":"2026-07-13","kg":3.6}],
+    "PIG-2026-BCEB":[{"date":"2026-07-20","kg":6.2},{"date":"2026-07-27","kg":5.8}]
+  },
+  "rootline_observations": [
+    {"date":"2026-07-13","temperature_min_c":6,"coverage_pct":98.96},{"date":"2026-07-14","temperature_min_c":7,"coverage_pct":97.92},{"date":"2026-07-15","temperature_min_c":5,"coverage_pct":100},{"date":"2026-07-22","temperature_min_c":7,"coverage_pct":100},{"date":"2026-07-23","temperature_min_c":6,"coverage_pct":100},{"date":"2026-07-24","temperature_min_c":5,"coverage_pct":98.96},{"date":"2026-07-25","temperature_min_c":2,"coverage_pct":100},{"date":"2026-08-02","temperature_min_c":8,"coverage_pct":100}
+  ],
+  "rootline_forecasts": [],
+  "recording_quality": {"complete_from":"2026-07-21","limitations":["30 imported Dead/Died identities lack attributable exit dates","historical daily herd membership and lifecycle-stage intervals are unavailable"]},
+  "herd_at_risk_denominator": {"reconstructable":false,"granularity":null,"minimum_requirement":"immutable dated entered/on-farm, lifecycle-stage-change and exited/off-farm intervals for every canonical animal"},
+  "feed_observations": [], "water_observations": [], "surviving_controls": []
+}

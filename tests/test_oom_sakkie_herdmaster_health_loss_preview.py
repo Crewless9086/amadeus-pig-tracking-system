@@ -1,0 +1,300 @@
+import pytest
+
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.herdmaster_health_loss_preview import (
+    _owner_text_digest,
+    prepare_health_loss_owner_preview,
+)
+
+
+NOW = "2026-08-01T08:30:00+02:00"
+
+
+def envelope(text, language="en"):
+    return {
+        "gateway_authority": issue_gateway_owner_authority("42", "42"),
+        "provider_message_id": "telegram-update-700-message-9",
+        "provider_timestamp": NOW,
+        "provider_timezone": "Africa/Johannesburg",
+        "text": text,
+        "output_language": language,
+    }
+
+
+def pig(name="Maya", pig_id="PIG-2026-MAYA", tag="Maya"):
+    return {
+        "pig_id": pig_id, "name": name, "tag_number": tag,
+        "lifecycle_status": "Active", "on_farm": True,
+        "availability": "Breeding", "pen": "Farrowing 1",
+    }
+
+
+def evidence(*animals, matings=(), litters=()):
+    return {
+        "evidence_generation": "HERD-GEN-77",
+        "as_of_timestamp": "2026-08-01T08:31:00+02:00",
+        "animals": list(animals), "matings": list(matings),
+        "litters": list(litters),
+    }
+
+
+@pytest.mark.parametrize('language',['en','af'])
+def test_uncertain_welfare_card_keeps_independent_urgent_assessment(language):
+    packet={**envelope('Maya is bleeding.',language),'welfare_observation':{'drinking':'unknown'}}
+    result=prepare_health_loss_owner_preview(packet,evidence(pig()))
+    assert result['status']=='welfare_observation_uncertain' and result['question_count']==1
+    assert ('Dringend:' if language=='af' else 'Physically assess') in result['owner_text']
+    assert ('water' if language=='af' else 'drinking water') in result['owner_text']
+    assert result['evaluator']['canonical_effects']==[]
+
+
+def test_maya_compound_report_renders_one_complete_human_preview_without_writes():
+    maya = pig()
+    result = prepare_health_loss_owner_preview(envelope(
+        "Maya died yesterday after complications while farrowing. All 10 "
+        "piglets were stillborn. We believe she had a uterine infection."
+    ), evidence(maya, matings=[{
+        "mating_id": "MAT-MAYA-1", "sow_pig_id": maya["pig_id"],
+        "date": "2026-04-09", "is_open": True,
+    }]))
+    assert result["status"] == "consolidated_preview_ready"
+    text = result["owner_text"]
+    assert "Animal: Maya (tag Maya)" in text
+    assert "No diagnosis or treatment is inferred" in text
+    assert result["question_count"] == 0
+    assert result["confirmation_ready"] is True
+    assert result["writes_farm_data"] is False
+    assert result["sends_telegram"] is False
+
+
+def test_complete_injured_report_has_exact_confirmation_binding():
+    injured = pig("Teena", "PIG-2026-TEEN", "Teena")
+    result = prepare_health_loss_owner_preview(
+        envelope("Teena is injured and bleeding."), evidence(injured)
+    )
+    assert result["success"] is True
+    assert result["question_count"] == 1  # current welfare state is genuinely required first
+    binding = result["confirmation_binding"]
+    assert binding["operation_id"] == result["evaluator"]["operation_id"]
+    assert binding["preview_sha256"] == result["evaluator"]["preview_sha256"]
+    assert binding["evidence_generation"] == "HERD-GEN-77"
+    assert binding["provider_message_id"] == "telegram-update-700-message-9"
+
+
+def test_ambiguous_identity_asks_exactly_one_private_owner_question():
+    result = prepare_health_loss_owner_preview(
+        envelope("Maya looks sick."),
+        evidence(pig("Maya", "PIG-1", "M-1"), pig("Maya", "PIG-2", "M-2")),
+    )
+    assert result["status"] == "identity_required"
+    assert result["message_type"] == "single_clarification"
+    assert result["question_count"] == 1
+    assert result["owner_text"].count("?") == 1
+    assert "looks sick" not in result["owner_text"]
+    assert result["writes_farm_data"] is False
+
+
+def test_forged_missing_or_non_private_authority_is_contained():
+    canonical = evidence(pig())
+    forged = {**envelope("Maya looks sick."), "gateway_authority": object()}
+    assert prepare_health_loss_owner_preview(forged, canonical)["status"] == (
+        "authenticated_private_owner_authority_required"
+    )
+    non_private = {**envelope("Maya looks sick."), "gateway_authority":
+                   issue_gateway_owner_authority("42", "99")}
+    assert prepare_health_loss_owner_preview(non_private, canonical)["status"] == (
+        "authenticated_private_owner_authority_required"
+    )
+
+
+def test_existing_canonical_litter_conflict_is_one_clarification_not_duplicate_preview():
+    maya = pig()
+    result = prepare_health_loss_owner_preview(
+        envelope("Maya was farrowing yesterday. All 2 piglets were stillborn."),
+        evidence(maya, matings=[{
+            "mating_id": "MAT-1", "sow_pig_id": maya["pig_id"],
+            "date": "2026-04-09", "is_open": True,
+        }], litters=[{
+            "litter_id": "LIT-EXISTING", "sow_pig_id": maya["pig_id"],
+            "farrowing_date": "2026-07-31",
+        }]),
+    )
+    assert result["status"] == "chronology_conflict"
+    assert result["question_count"] == 1
+    assert result["evaluator"]["canonical_effects"] == []
+
+
+def test_same_authenticated_message_and_evidence_replays_same_preview_identity():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    packet = evidence(animal)
+    first = prepare_health_loss_owner_preview(envelope("Tag 51 is sick and not eating."), packet)
+    second = prepare_health_loss_owner_preview(envelope("Tag 51 is sick and not eating."), packet)
+    assert first["confirmation_binding"] == second["confirmation_binding"]
+    assert first["owner_text"] == second["owner_text"]
+    assert first["writes_farm_data"] is second["writes_farm_data"] is False
+    digest = first["confirmation_binding"]["owner_text_sha256"]
+    assert digest == _owner_text_digest(first["owner_text"])
+    assert digest != _owner_text_digest(first["owner_text"] + " changed")
+
+
+def test_enriched_sick_report_does_not_repeat_supplied_welfare_facts():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick and not eating. She can stand, is breathing normally, "
+        "and is drinking water."
+    ), evidence(animal))
+    assert result["question_count"] == 0
+    assert result["confirmation_ready"] is True
+    assert "not eating: Yes" in result["owner_text"]
+    assert "Treatment evidence: Unknown." in result["owner_text"]
+    assert "Confirm to record only this preview once." in result["owner_text"]
+    assert "Provider message" not in result["owner_text"]
+    assert result["evaluator"]["operation_id"] not in result["owner_text"]
+
+
+def test_pig_wording_resolves_numeric_tag_for_natural_owner_report():
+    animal = pig("", "PIG-2026-E88A", "11")
+    result = prepare_health_loss_owner_preview(
+        envelope("Pig 11 is not eating, just laying down"), evidence(animal)
+    )
+    assert result["success"] is True
+    assert result["evaluator"]["identity"]["pig_id"] == "PIG-2026-E88A"
+    assert "able to stand, breathe normally and drink water" in result["owner_text"]
+
+
+def test_ordinary_found_dead_preview_proposes_deceased_date_and_unknown_time():
+    animal = pig("Tag 22", "PIG-2026-0022", "22")
+    result = prepare_health_loss_owner_preview(
+        envelope("I found tag 22 dead this morning."), evidence(animal)
+    )
+    assert result["question_count"] == 0
+    assert "removed from the pen" not in result["owner_text"]
+    assert "DEATH PREVIEW" in result["owner_text"]
+    assert "Death date: 2026-08-01" in result["owner_text"]
+    assert "exact time remain Unknown" in result["owner_text"]
+
+
+def test_supplied_found_chronology_and_disposal_are_not_asked_again():
+    animal = pig("Maya", "PIG-2026-MAYA", "Maya")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Maya was last seen alive yesterday evening, was found dead this "
+        "morning, and was removed from the pen and buried."
+    ), evidence(animal))
+    assert result["question_count"] == 0
+    assert "Removal/disposal reported" in result["owner_text"]
+    assert "One clarification:" not in result["owner_text"]
+
+
+def test_recipient_language_controls_every_visible_preview_fragment_and_html_is_safe():
+    animal = pig("Maya <admin>", "PIG-2026-MAYA", "M&1")
+    report = "Maya <admin> was found dead this morning and removed from the pen and buried."
+    english = prepare_health_loss_owner_preview(envelope(report, "en"), evidence(animal))
+    afrikaans = prepare_health_loss_owner_preview(envelope(report, "af"), evidence(animal))
+    assert "DEATH PREVIEW" in english["owner_text"]
+    assert "AFSTERWE VOORSKOU" in afrikaans["owner_text"]
+    assert "What will be recorded" in english["owner_text"]
+    assert "Wat aangeteken sal word" in afrikaans["owner_text"]
+    assert "Treatment evidence" not in afrikaans["owner_text"]
+    assert "Behandelingsbewys" not in english["owner_text"]
+    assert "Maya &lt;admin&gt;" in english["owner_text"] and "M&amp;1" in english["owner_text"]
+
+
+def test_veterinary_diagnosis_is_not_contradicted_by_agent_diagnosis_copy():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick. The vet diagnosed pneumonia. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    text = result["owner_text"]
+    assert "No diagnosis or treatment is inferred" in text
+
+
+def test_owner_mentioned_treatment_is_preserved_without_interpretation():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick and we gave antibiotics. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert (
+        "Treatment evidence: treatment mentioned; details Unknown."
+        in result["owner_text"]
+    )
+    assert "Treatment evidence: Unknown." not in result["owner_text"]
+    assert result["writes_farm_data"] is False
+
+@pytest.mark.parametrize("ordinary", [
+    "Maya gave birth yesterday.",
+    "We gave water to Tag 51.",
+    "We gave feed to Tag 51.",
+])
+def test_ordinary_gave_language_is_not_treatment_evidence(ordinary):
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        f"Tag 51 is sick. {ordinary} She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "Treatment evidence: Unknown." in result["owner_text"]
+
+
+@pytest.mark.parametrize("explicit_none", [
+    "No treatment was given.",
+    "No medication was given.",
+    "The pig was not treated.",
+])
+def test_explicit_treatment_absence_is_preserved(explicit_none):
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        f"Tag 51 is sick. {explicit_none} She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "Treatment evidence: owner reported none; scope Unknown." in result["owner_text"]
+
+
+def test_unrecognized_treatment_wording_falls_back_to_unknown_not_absence():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick. I administered penicillin. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "Treatment evidence: Unknown." in result["owner_text"]
+    assert "none reported" not in result["owner_text"]
+
+@pytest.mark.parametrize("mixed", [
+    "No treatment was given yesterday, but antibiotics were administered today.",
+    "No medication initially; then we gave an antibiotic.",
+    "No treatment except penicillin.",
+    "Antibiotics were given earlier, but no medication was given today.",
+])
+def test_mixed_treatment_chronology_fails_closed_without_claiming_absence(mixed):
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        f"Tag 51 is sick. {mixed} She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert (
+            "Treatment evidence: mixed or contradictory report; details Unknown."
+        in result["owner_text"]
+    )
+    assert "owner reported absence wording" not in result["owner_text"]
+
+@pytest.mark.parametrize("modifier_phrase", [
+    "No treatment changes were made; continue the current medicine.",
+    "She recovered without medication changes.",
+    "There were no medication errors.",
+])
+def test_treatment_modifier_phrases_do_not_assert_absence(modifier_phrase):
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        f"Tag 51 is sick. {modifier_phrase} She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "owner reported absence wording" not in result["owner_text"]
+
+def test_narrow_medication_absence_cannot_erase_other_treatment_evidence():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick. No antibiotics; the wound was cleaned. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "owner explicitly reported none" not in result["owner_text"]
+    assert "Treatment evidence: owner reported none; scope Unknown." in result["owner_text"]
+
+
+def test_not_treated_modifier_does_not_claim_global_absence():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 was not treated differently. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "owner explicitly reported none" not in result["owner_text"]

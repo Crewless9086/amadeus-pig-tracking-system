@@ -236,6 +236,32 @@ class MatingServiceTests(unittest.TestCase):
         move.assert_called_once()
         get_sheet.assert_not_called()
 
+    def test_assume_pregnant_blocks_active_exposure_before_supabase_writes(self):
+        row = {"Mating_ID":"MAT-EXP","Mating_Status":"Open",
+               "Breeding_Cycle_State":"Exposure Active"}
+        with patch.object(mating_service.mating_supabase_write, "supabase_mating_writes_available", return_value=True), \
+             patch.object(mating_service.mating_supabase_write, "get_mating_sheet_row", return_value=row), \
+             patch.object(mating_service.mating_supabase_write, "update_mating_fields") as update_mating, \
+             patch.object(mating_service, "_write_movement_if_needed") as move:
+            with self.assertRaisesRegex(ValueError, "exposure is active"):
+                mating_service.assume_pregnant("MAT-EXP", "", "Tester")
+        update_mating.assert_not_called()
+        move.assert_not_called()
+
+    def test_assume_pregnant_blocks_active_exposure_before_sheet_writes(self):
+        headers = ["Mating_ID","Sow_Pig_ID","Pregnancy_Check_Date",
+                   "Pregnancy_Check_Result","Mating_Status","Outcome","Updated_At",
+                   "Breeding_Cycle_State"]
+        row = ["MAT-EXP","PIG-SOW","","","Open","Pending","","Exposure Active"]
+        with patch.object(mating_service.mating_supabase_write, "supabase_mating_writes_available", return_value=False), \
+             patch.object(mating_service, "get_all_values", return_value=[headers,row]), \
+             patch.object(mating_service, "update_row_by_first_column_match") as update_sheet, \
+             patch.object(mating_service, "_write_movement_if_needed") as move:
+            with self.assertRaisesRegex(ValueError, "exposure is active"):
+                mating_service.assume_pregnant("MAT-EXP", "", "Tester")
+        update_sheet.assert_not_called()
+        move.assert_not_called()
+
     def test_mark_not_pregnant_prefers_supabase_update(self):
         row = {
             "Mating_ID": "MAT-1",

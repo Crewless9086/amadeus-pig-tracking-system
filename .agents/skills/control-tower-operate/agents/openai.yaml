@@ -1,0 +1,4 @@
+interface:
+  display_name: "Amadeus Control Tower"
+  short_description: "Coordinate Amadeus lanes through genuine owner outcomes"
+  default_prompt: "Operate as Amadeus Control Tower and continue existing missions through verified owner outcomes."

@@ -2,6 +2,8 @@
 
 This standard controls CHARLIE CORE missions that build or change owner-facing UI, dashboards, pages, overlays, approval flows, or visual layouts.
 
+For a facelift, dashboard match, shared farm style, or page-by-page UI upgrade, `AMADEUS_FARM_UI_FACELIFT_STANDARD.md` is mandatory and defines the product-design foundation.
+
 ## Non-Negotiable Rule
 
 UI missions are not ready for owner review because strings exist in the DOM or routes return HTTP 200. They are ready only when the actual screen is usable, visually coherent, and checked against the owner's request and any attached reference media.
@@ -15,7 +17,8 @@ For every UI mission, agents must identify:
 - visible owner actions;
 - required responsive viewports;
 - attached screenshots, sketches, or reference images;
-- the Vault Brain UI standards used.
+- the Vault Brain UI standards used;
+- the authoritative shared farm UI assets and approved reference routes used.
 
 If the mission includes attached media, Visual Reference Interpreter, Creative UI Designer, UX Interaction Designer, Frontend Design Implementer, Builder, Tester, QA/Red-Team, Visual QA Reviewer, and Reviewer must explicitly cite the media reference path or URL and describe how it affected the implementation or review.
 

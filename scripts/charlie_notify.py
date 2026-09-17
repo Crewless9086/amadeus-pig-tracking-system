@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.build_relay import send_charlie_telegram_message
+from modules.charlie.environment import env_value
 
 
 NOTIFY_ATTEMPTS = 3
@@ -30,7 +31,7 @@ def main():
     reply_markup = _mission_status_keyboard(args.mission_id)
     chat_ids = [
         item.strip()
-        for item in str(os.getenv("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS", "") or "").split(",")
+        for item in str(env_value("CORE_RELAY_ALLOWED_USER_IDS", "") or "").split(",")
         if item.strip()
     ]
     if not chat_ids:

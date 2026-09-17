@@ -1,84 +1,74 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="af">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amadeus Litters</title>
+  <title>Werpsels · Amadeus Farm</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/littersRegisterV2.css') }}">
 </head>
 <body>
-  <div class="page-shell litters-shell">
-    <div class="page-card litters-page">
-      <div class="page-header page-header-with-link">
+  <div class="farm-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="litter-register">
+      <header class="litter-hero">
         <div>
-          <h1>Litter Operations</h1>
-          <p id="litters_subtitle">Loading litter status...</p>
+          <span class="farm-eyebrow">HERD · BREEDING</span>
+          <h1>Werpsels</h1>
+          <p id="litters_subtitle">Laai die huidige werpselrekords…</p>
         </div>
-        <div class="inline-action-group">
-          <a href="/" class="secondary-link">&larr; Dashboard</a>
-          <a href="/master/add-litter" class="button-link">Add Litter</a>
+        <div class="litter-hero-actions">
+          <a href="/verwagte-jongdatums" class="secondary-action">Verwagte Jong Datums</a>
+          <a href="/master/add-litter" class="primary-action">+ Voeg Werpsel By</a>
         </div>
-      </div>
+      </header>
 
       <div id="litters_message" class="message-box hidden"></div>
 
-      <section class="litters-summary-strip" aria-label="Litter summary">
-        <div>
-          <span>Litters</span>
-          <strong id="litters_total">-</strong>
-        </div>
-        <div>
-          <span>Need Attention</span>
-          <strong id="litters_attention">-</strong>
-        </div>
-        <div>
-          <span>Count Mismatch</span>
-          <strong id="litters_mismatch">-</strong>
-        </div>
-        <div>
-          <span>Formula Notes</span>
-          <strong id="litters_formula_conflict">-</strong>
-        </div>
+      <section class="litter-metrics" aria-label="Werpsel opsomming">
+        <button type="button" class="metric-card is-active" data-summary-filter="active">
+          <span class="metric-icon">◉</span><small>Aktiewe Werpsels</small><strong id="litters_current">–</strong><em>Voor speen afgehandel word</em>
+        </button>
+        <button type="button" class="metric-card metric-attention" data-summary-filter="attention">
+          <span class="metric-icon">!</span><small>Aandag Nodig</small><strong id="litters_attention">–</strong><em>Volgende aksie is gereed</em>
+        </button>
+        <button type="button" class="metric-card" data-summary-filter="weaned">
+          <span class="metric-icon">↗</span><small>Gespeende Werpsels</small><strong id="litters_weaning">–</strong><em>Nageslag bly naspoorbaar</em>
+        </button>
+        <button type="button" class="metric-card" data-summary-filter="completed">
+          <span class="metric-icon">✓</span><small>Afgesluit</small><strong id="litters_completed">–</strong><em>Volledige uitkomsrekords</em>
+        </button>
       </section>
 
-      <section class="litters-toolbar" aria-label="Litter filters">
-        <label>
-          <span>Search</span>
-          <input id="litters_search" type="search" placeholder="Litter, sow, pen, reason" />
-        </label>
-        <label>
-          <span>View</span>
-          <select id="litters_filter">
-            <option value="attention">Needs attention</option>
-            <option value="mismatch">Count mismatch</option>
-            <option value="all">All litters</option>
-          </select>
-        </label>
+      <section id="attention_panel" class="litter-attention-panel hidden" aria-labelledby="attention_title">
+        <div><span class="farm-eyebrow">DOEN VOLGENDE</span><h2 id="attention_title">Werpsels wat aandag nodig het</h2></div>
+        <div id="attention_cards" class="attention-cards"></div>
       </section>
 
-      <section class="litters-table-section">
-        <div class="simple-table-wrap">
-          <table class="simple-table litters-table">
-            <thead>
-              <tr>
-                <th>Litter</th>
-                <th>Status</th>
-                <th>Born Alive</th>
-                <th>Linked Records</th>
-                <th>Active / Exited</th>
-                <th>Attention</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="litters_table_body">
-              <tr><td colspan="7" class="table-empty">Loading litters...</td></tr>
-            </tbody>
-          </table>
+      <section class="litter-register-workspace">
+        <div class="workspace-heading">
+          <div><span class="farm-eyebrow">WERPSELREGISTER</span><h2 id="view_title">Aktiewe werpsels</h2></div>
+          <span id="view_count" class="record-count">–</span>
+        </div>
+
+        <div class="litter-toolbar">
+          <label class="search-field"><span>Soek</span><input id="litters_search" type="search" placeholder="Sog, beer of werpselnommer" /></label>
+          <div class="filter-tabs" role="group" aria-label="Filtreer werpsels">
+            <button type="button" class="is-active" data-filter="active">Aktief</button>
+            <button type="button" data-filter="attention">Aandag</button>
+            <button type="button" data-filter="weaned">Gespeen</button>
+            <button type="button" data-filter="completed">Afgesluit</button>
+            <button type="button" data-filter="all">Alles</button>
+          </div>
+        </div>
+
+        <div id="litters_cards" class="litter-card-grid" aria-live="polite">
+          <div class="register-empty">Laai werpsels…</div>
         </div>
       </section>
-    </div>
+    </main>
   </div>
-
   <script src="{{ url_for('static', filename='js/litters.js') }}"></script>
 </body>
 </html>

@@ -97,7 +97,6 @@ async function main() {
   assert.strictEqual(draft.expected_row_count, 1);
   assert.strictEqual(draft.actionable_row_count, 2);
   assert.strictEqual(draft.rows["PIG-1"].weight_kg, "61.2");
-
   assert.strictEqual(helpers.isCompleteUploadSuccess({ success: true, expected_count: 71, processed_count: 71, success_count: 71, failed_count: 0, blocked_count: 0 }), true);
   assert.strictEqual(helpers.isCompleteUploadSuccess({ success: false, expected_count: 71, processed_count: 71, success_count: 60, failed_count: 11 }), false);
   assert.strictEqual(helpers.isCompleteUploadSuccess({ success: true, expected_count: 71, processed_count: 60, success_count: 60, failed_count: 0 }), false);

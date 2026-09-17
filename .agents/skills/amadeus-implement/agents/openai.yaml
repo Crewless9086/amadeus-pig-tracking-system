@@ -1,0 +1,4 @@
+interface:
+  display_name: "Amadeus Implementation"
+  short_description: "Implement bounded Amadeus changes safely from current main"
+  default_prompt: "Implement this bounded Amadeus mission work and return exact evidence without claiming an owner outcome."

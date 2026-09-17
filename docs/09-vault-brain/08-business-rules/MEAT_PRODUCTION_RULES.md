@@ -1,0 +1,37 @@
+# Meat Production Rules
+
+## Source Of Truth
+
+Supabase meat processing batches are the source of truth for slaughter-to-packed production evidence. Sales transactions remain the source of truth for actual customer sales and revenue.
+
+## Required Boundaries
+
+- Internal production is not a sale.
+- Internal-use and pilot batches record zero revenue.
+- Never infer packed weight from carcass weight.
+- Never infer carcass weight from live weight when an actual measurement is expected.
+- Record whether the head is included with carcass weight.
+- Record actual provider costs; unknown cost is pending, not zero.
+- Each cut/output weight must identify whether it counts toward packed yield.
+- Waste, bones, fat, head, offal, and other outputs must remain distinguishable.
+- Stage events are append-only evidence.
+- Pig lifecycle writes require explicit owner/operator authority and must use canonical pig identity.
+- A batch does not reserve stock, create an order, create a quote, confirm payment, send a customer message, or publish content.
+- Butcher's operational truth board is a read-only recommendation projection for SAM, Oom Sakkie, and owner review. Missing or conflicting candidate, reservation, payment, batch, or reconciliation evidence blocks the recommendation.
+- POP is unverified evidence. Only an explicit `deposit_confirmed_in_bank` event clears the deposit gate for an operational next step.
+- Half/full carcass commitments and promised cut sets must remain visible, and overlapping side/full commitments must fail closed.
+
+## Canonical Batch Flow And Metrics
+
+- A production batch progresses through planned, selected, sent to abattoir, carcass received, at butcher, cutting, packed and completed stages; append-only events prove each transition.
+- Canonical batch records keep pig identity, verified live/carcass weights, provider dates, actual costs, cut/output weights, pack counts, yield inclusion and disposition distinct.
+- Dressing yield is carcass weight divided by live weight. Packed yield is included packed output divided by live or carcass weight. Cost per kilogram uses recorded cost and the matching verified denominator.
+- Head-on carcass weight must be labelled explicitly. Packed yield remains Unknown until butcher outputs are weighed.
+
+## Learning Rule
+
+Completed owner-verified batches may improve pricing assumptions, expected yield ranges, cut-set design, operating capacity, and SAM Meat context. One pilot is evidence, not a universal rule. Price-book or autonomy changes remain separately reviewed.
+
+## First Evidence Batch
+
+`MEAT-PILOT-2026-001` is the first internal production pilot. Known evidence is 63.0 kg live, 46.8 kg head-on carcass, R250 abattoir cost, Bartelsfontein slaughter on 2026-07-08, and butcher cutting beginning 2026-07-13. Remaining costs and cut outputs are pending.

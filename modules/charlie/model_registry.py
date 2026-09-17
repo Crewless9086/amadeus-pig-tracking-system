@@ -1,6 +1,8 @@
 import os
 from datetime import datetime, timezone
 
+from modules.charlie.environment import env_value
+
 
 MODEL_REGISTRY_VERSION = "charlie_model_registry_v1"
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-5"
@@ -158,22 +160,22 @@ def _runtime_model_config(agent, registry_key):
     agent_key = str(agent or "").strip().upper().replace("-", "_")
     registry_env_key = str(registry_key or "").strip().upper().replace("-", "_")
     explicit_provider = (
-        os.getenv(f"CHARLIE_AGENT_PROVIDER_{agent_key}")
-        or os.getenv(f"CHARLIE_PROVIDER_{registry_env_key}")
+        env_value(f"CORE_AGENT_PROVIDER_{agent_key}", aliases=(f"CHARLIE_AGENT_PROVIDER_{agent_key}",))
+        or env_value(f"CORE_PROVIDER_{registry_env_key}", aliases=(f"CHARLIE_PROVIDER_{registry_env_key}",))
         or ""
     ).strip()
     model_name = (
-        os.getenv(f"CHARLIE_AGENT_MODEL_{agent_key}")
-        or os.getenv(f"CHARLIE_MODEL_{registry_env_key}")
+        env_value(f"CORE_AGENT_MODEL_{agent_key}", aliases=(f"CHARLIE_AGENT_MODEL_{agent_key}",))
+        or env_value(f"CORE_MODEL_{registry_env_key}", aliases=(f"CHARLIE_MODEL_{registry_env_key}",))
         or ""
     ).strip()
     provider = explicit_provider or "codex_cli"
     anthropic_key_present = _anthropic_api_key_present()
     if not explicit_provider and not model_name and _claude_default_enabled(agent, registry_key):
         provider = "anthropic"
-        model_name = os.getenv("CHARLIE_CLAUDE_MODEL", DEFAULT_CLAUDE_MODEL).strip() or DEFAULT_CLAUDE_MODEL
-    input_cost = os.getenv(f"CHARLIE_MODEL_{registry_env_key}_INPUT_COST_PER_1K")
-    output_cost = os.getenv(f"CHARLIE_MODEL_{registry_env_key}_OUTPUT_COST_PER_1K")
+        model_name = str(env_value("CORE_CLAUDE_MODEL", DEFAULT_CLAUDE_MODEL) or DEFAULT_CLAUDE_MODEL).strip()
+    input_cost = env_value(f"CORE_MODEL_{registry_env_key}_INPUT_COST_PER_1K", aliases=(f"CHARLIE_MODEL_{registry_env_key}_INPUT_COST_PER_1K",))
+    output_cost = env_value(f"CORE_MODEL_{registry_env_key}_OUTPUT_COST_PER_1K", aliases=(f"CHARLIE_MODEL_{registry_env_key}_OUTPUT_COST_PER_1K",))
     return {
         "runtime_provider": provider,
         "runtime_model": model_name,
@@ -198,7 +200,7 @@ def _runtime_model_config(agent, registry_key):
 
 
 def _claude_default_enabled(agent, registry_key):
-    if str(os.getenv("CHARLIE_CLAUDE_REVIEW_ENABLED") or "1").strip().lower() in {"0", "false", "no", "off"}:
+    if str(env_value("CORE_CLAUDE_REVIEW_ENABLED", "1") or "1").strip().lower() in {"0", "false", "no", "off"}:
         return False
     return str(agent or "").strip().lower() in CLAUDE_REVIEW_AGENTS and registry_key in {
         "default_reasoning",

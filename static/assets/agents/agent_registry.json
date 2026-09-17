@@ -60,8 +60,8 @@
     {
       "agent_id": "beacon",
       "display_name": "Beacon",
-      "role_label": "Posts",
-      "role": "Public content, demand-generation copy, campaign wording, and public trust messaging.",
+      "role_label": "Marketing Lead",
+      "role": "Leads marketing strategy, creative, media, scheduling, performance, spend recommendations, brand control, and profitable demand generation.",
       "initials": "BC",
       "status_color_token": "agent-beacon",
       "portrait_main": "/assets/agents/beacon/portraits/beacon_portrait_panel_neutral_v01.png",
@@ -72,7 +72,7 @@
       "voice_name": "TO_BE_SELECTED",
       "voice_id": "TO_BE_SELECTED",
       "voice_approved_for_production": false,
-      "authority_boundary": "Draft-only until posting workflows are reviewed. No public post, status, ad, or customer send without owner approval."
+      "authority_boundary": "May prepare campaigns and execute an exact owner-confirmed Facebook text/image packet. Scheduling, paid spend, reusable campaign rules, customer sends, and external creative-provider execution require separate approved gates."
     },
     {
       "agent_id": "sam",

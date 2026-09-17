@@ -3,6 +3,7 @@ import hmac
 import json
 import mimetypes
 import os
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -121,6 +122,8 @@ def build_meat_estimated_quote_packet(lead_id, payload=None, environ=None, datab
     price_result, price_status = list_meat_price_book_entries(limit=100, database_url=database_url)
     if price_status != 200:
         return price_result, price_status
+    if price_result.get("source") != "supabase":
+        return {"success": False, "status": "authoritative_price_book_unavailable", "quote_safe": False, "blockers": ["authoritative_supabase_price_book_required"], **_authority(False, False)}, 503
 
     packet = build_estimated_quote_packet_from_contract(
         contract_result.get("lead") or {},
@@ -160,6 +163,7 @@ def build_estimated_quote_packet_from_contract(lead, contract, price_entries=Non
     delivery_mode = _clean(required.get("delivery_or_collection") or interest.get("delivery_or_collection"), 80)
     payment_method = _clean(payload.get("payment_method") or required.get("payment_method") or interest.get("payment_method") or "EFT", 80).upper()
     bank = bank_details(source)
+
     quote_safe, blockers = quote_safe_gate(
         {
             "product_type": product_type,
@@ -172,6 +176,15 @@ def build_estimated_quote_packet_from_contract(lead, contract, price_entries=Non
         },
         bank,
     )
+    if cut_set == "Set D" or (cut_set and cut_set not in {"Set A", "Set B", "Set C"}):
+        blockers.append("current_collection_required")
+        quote_safe = False
+    if delivery_mode.lower() != "delivery":
+        blockers.append("delivery_only_offer_required")
+        quote_safe = False
+    if price_per_kg != 130:
+        blockers.append("current_r130_vat_inclusive_rule_required")
+        quote_safe = False
     totals = calculate_estimated_quote_totals(
         price_per_kg=price_per_kg,
         estimated_weight_kg=estimated_weight_kg,
@@ -233,6 +246,9 @@ def build_estimated_quote_packet_from_contract(lead, contract, price_entries=Non
 
 
 def generate_meat_estimated_quote_pdf(lead_id, payload=None, environ=None, database_url=None):
+    denial = controlled_mode_denial("generate_estimated_quote_pdf")
+    if denial:
+        return denial
     packet, status_code = build_meat_estimated_quote_packet(lead_id, payload, environ=environ, database_url=database_url)
     if status_code >= 400:
         return packet, status_code
@@ -263,6 +279,9 @@ def generate_meat_estimated_quote_pdf(lead_id, payload=None, environ=None, datab
 
 
 def send_meat_estimated_quote_to_chatwoot(lead_id, payload=None, environ=None, database_url=None, chatwoot_sender=None):
+    denial = controlled_mode_denial("send_estimated_quote")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     source = environ if environ is not None else os.environ
     lead_id = _clean(lead_id, 100)
@@ -672,6 +691,9 @@ def normalize_meat_document_delivery_status_payload(payload):
 
 
 def generate_meat_deposit_pro_forma_pdf(lead_id, payload=None, environ=None, database_url=None):
+    denial = controlled_mode_denial("generate_deposit_pro_forma")
+    if denial:
+        return denial
     quote_packet, status_code = build_meat_estimated_quote_packet(lead_id, payload, environ=environ, database_url=database_url)
     if status_code >= 400:
         return quote_packet, status_code
@@ -759,6 +781,9 @@ def build_final_invoice_packet_from_reconciliation(lead_id, payload=None, enviro
 
 
 def generate_meat_final_invoice_pdf(lead_id, payload=None, environ=None, database_url=None):
+    denial = controlled_mode_denial("generate_final_invoice")
+    if denial:
+        return denial
     packet, status_code = build_final_invoice_packet_from_reconciliation(lead_id, payload, environ=environ, database_url=database_url)
     if status_code >= 400:
         return packet, status_code

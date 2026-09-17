@@ -78,6 +78,26 @@ class SamSalesRouterTests(unittest.TestCase):
 
         self.assertIn("answer generally", result["next_action"].lower())
 
+    def test_afrikaans_location_question_routes_to_farm_general(self):
+        result = self.assert_lane("Waar is julle plaas?", LANE_FARM_GENERAL)
+
+        self.assertIn("farm_general_question:waar is julle", result["reasons"])
+
+    def test_afrikaans_live_stock_terms_route_to_live_stock(self):
+        result = self.assert_lane("Het julle varkies of speenvarke beskikbaar?", LANE_LIVE_STOCK)
+
+        self.assertGreaterEqual(result["confidence"], 0.86)
+
+    def test_afrikaans_price_question_routes_to_live_stock(self):
+        result = self.assert_lane("Wat is die prys vir 3 varkies?", LANE_LIVE_STOCK)
+
+        self.assertIn("live_stock_sales:prys", result["reasons"])
+
+    def test_afrikaans_picture_question_routes_to_farm_general(self):
+        result = self.assert_lane("Kan jy fotos stuur?", LANE_FARM_GENERAL)
+
+        self.assertIn("farm_general_question:fotos", result["reasons"])
+
     def test_prior_context_is_low_confidence_without_fresh_signal(self):
         result = classify_sam_sales_lane("Okay thanks", prior_context={"lane": LANE_LIVE_STOCK})
 

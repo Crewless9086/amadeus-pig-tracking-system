@@ -145,7 +145,6 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/09-vault-brain/00-governance/UPDATE_RULES.md",
             "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
             "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
-            "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
         ],
         "app_routes": [
             "/charlie",
@@ -192,15 +191,68 @@ IMPLEMENTATION_SOURCE_MAP = {
         ],
         "must_inspect_before_advice": True,
     },
+    "sam_general_conversation": {
+        "label": "SAM General Conversation",
+        "status": "active_governance_domain",
+        "summary": "General-first SAM conversation, progressive specialist graduation, independent conversation ownership, context continuity, LLM review, and complete customer-journey evidence.",
+        "keywords": [
+            "sam general conversation",
+            "general sam",
+            "ordinary conversation",
+            "unknown intent",
+            "progressive lane discovery",
+            "lane graduation",
+            "auto_general",
+            "auto_specialist",
+            "stale lane",
+            "topic change",
+            "premature specialist tool",
+            "customer journey",
+        ],
+        "vault_docs": [
+            "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
+            "docs/09-vault-brain/02-agents/sales/SAM.md",
+            "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
+            "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+            "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
+            "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
+        ],
+        "app_routes": [
+            "/api/sales/channels/chatwoot/sam-meat/inbound",
+            "/api/sales/channels/chatwoot/sam-live-stock/inbound",
+        ],
+        "code_paths": [
+            "modules/sales/sam_sales_router.py",
+            "modules/sales/sam_shared_context.py",
+            "modules/sales/sam_meat_runtime.py",
+            "modules/sales/sam_live_stock_runtime.py",
+            "modules/sales/sales_transaction_routes.py",
+        ],
+        "tests": [
+            "tests/test_sam_sales_router.py",
+            "tests/test_sam_v3_shared_context.py",
+            "tests/test_sam_v3_replay_stress.py",
+            "tests/test_sam_meat_runtime.py",
+            "tests/test_sam_live_stock_runtime.py",
+            "tests/test_sam_live_stock_replay.py",
+        ],
+        "migrations": [],
+        "legacy_sources": [
+            "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
+        ],
+        "must_inspect_before_advice": True,
+    },
     "sam_meat_sales": {
         "label": "SAM Meat Sales",
         "status": "built_active_pilot",
         "summary": "Backend-native SAM meat sales intake, command room, quote, payment, reservation, fulfilment, reconciliation, and learning rails.",
-        "keywords": ["sam", "meat", "meat sales", "half carcass", "set a", "chatwoot", "whatsapp", "preorder", "quote", "deposit"],
+        "keywords": ["sam", "meat", "meat sales", "meat production", "meat batch", "butcher", "cuts", "yield", "half carcass", "set a", "chatwoot", "whatsapp", "preorder", "quote", "deposit"],
         "vault_docs": [
             "docs/09-vault-brain/03-business/MEAT_SALES.md",
             "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md",
             "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
+            "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
+            "docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md",
             "docs/09-vault-brain/02-agents/sales/SAM.md",
             "docs/09-vault-brain/02-agents/sales/MEAT_SALES_AGENT.md",
             "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
@@ -210,8 +262,10 @@ IMPLEMENTATION_SOURCE_MAP = {
         "app_routes": [
             "/sales/meat-leads",
             "/sales/meat-driver",
+            "/sales/meat-production",
             "/meat-planning",
             "/api/sales/meat-leads",
+            "/api/sales/meat-production/batches",
             "/api/sales/meat-pilot-readiness",
             "/api/sales/meat-pricing",
             "/api/sales/channels/chatwoot/sam-meat/inbound",
@@ -220,6 +274,7 @@ IMPLEMENTATION_SOURCE_MAP = {
         "code_paths": [
             "modules/sales/sam_meat_runtime.py",
             "modules/sales/meat_pilot_readiness.py",
+            "modules/sales/meat_production.py",
             "modules/sales/meat_documents.py",
             "modules/sales/meat_match_engine.py",
             "modules/sales/meat_ops.py",
@@ -229,12 +284,15 @@ IMPLEMENTATION_SOURCE_MAP = {
             "modules/sales/sales_transaction_routes.py",
             "modules/oom_sakkie/sales_campaign_store.py",
             "templates/meat-sales-leads.html",
+            "templates/meat-production.html",
             "templates/meat-driver.html",
             "templates/meat-planning.html",
             "static/js/meatSalesLeads.js",
+            "static/js/meatProduction.js",
             "static/js/meatDriver.js",
             "static/js/meatPlanning.js",
             "static/css/meatSalesLeads.css",
+            "static/css/meatProduction.css",
             "static/css/meatDriver.css",
         ],
         "tests": [
@@ -244,6 +302,7 @@ IMPLEMENTATION_SOURCE_MAP = {
             "tests/test_sam_command_state.py",
             "tests/sam_meat_command_room_playwright.spec.js",
             "tests/test_meat_launch_readiness.py",
+            "tests/test_meat_production.py",
             "tests/test_meat_price_book.py",
             "tests/test_meat_match_engine.py",
             "tests/test_meat_ops.py",
@@ -267,6 +326,7 @@ IMPLEMENTATION_SOURCE_MAP = {
             "supabase/migrations/202606170002_extend_meat_deposit_event_types.sql",
             "supabase/migrations/202606170003_create_meat_reconciliation_events.sql",
             "supabase/migrations/202606180001_create_meat_sales_conversation_learning_events.sql",
+            "supabase/migrations/202607130001_create_meat_processing_batches.sql",
         ],
         "legacy_sources": [
             "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
@@ -317,9 +377,7 @@ IMPLEMENTATION_SOURCE_MAP = {
             "supabase/migrations/202606180006_extend_beacon_facebook_post_execution_statuses.sql",
         ],
         "legacy_sources": [
-            "docs/05-ai/agents/beacon/BEACON_SCOPE.md",
-            "docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md",
-            "docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md",
+            "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
         ],
         "must_inspect_before_advice": True,
     },
@@ -405,6 +463,9 @@ IMPLEMENTATION_SOURCE_MAP = {
             "finishers",
             "sell pigs",
             "pigs ready to be sold",
+            "telegram control card",
+            "owner surface",
+            "process_sam_live_stock_owner_callback",
         ],
         "vault_docs": [
             "docs/09-vault-brain/02-agents/sales/SAM.md",
@@ -418,6 +479,7 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md",
             "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
             "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
+            "docs/02-backend/SAM_LIVESTOCK_CONTINUOUS_FOLLOWUP_CONTRACT.md",
         ],
         "app_routes": [
             "/sales-dashboard",
@@ -431,10 +493,18 @@ IMPLEMENTATION_SOURCE_MAP = {
             "/api/master/order-lines",
             "/api/pig-weights/sales-dashboard",
             "/api/pig-weights/pig-allocation-readiness",
+            "/api/sales/channels/chatwoot/sam-live-stock/inbound",
         ],
         "code_paths": [
             "modules/sales/sam_sales_router.py",
             "modules/sales/sam_live_stock_runtime.py",
+            "modules/sales/sam_live_stock_launch_control.py",
+            "modules/sales/sam_live_stock_continuous_dispatch.py",
+            "modules/sales/sam_live_stock_inbox_operator.py",
+            "modules/sales/sam_chatwoot_inbox_state.py",
+            "modules/sales/sam_chatwoot_state_writer.py",
+            "modules/oom_sakkie/telegram_direct.py",
+            "modules/oom_sakkie/routes.py",
             "modules/pig_weights/pig_weights_service.py",
             "modules/orders/order_intake_service.py",
             "modules/orders/order_service.py",
@@ -453,6 +523,14 @@ IMPLEMENTATION_SOURCE_MAP = {
         "tests": [
             "tests/test_sam_sales_router.py",
             "tests/test_sam_live_stock_runtime.py",
+            "tests/test_sam_live_stock_launch_control.py",
+            "tests/test_sam_live_stock_continuous_dispatch.py",
+            "tests/test_sam_live_stock_continuous_followup.py",
+            "tests/test_sam_live_stock_inbox_operator.py",
+            "tests/test_sam_chatwoot_inbox_state.py",
+            "tests/test_sam_chatwoot_state_writer.py",
+            "tests/test_sam_livestock_continuous_workflow.py",
+            "tests/test_oom_sakkie_routes.py",
             "tests/test_order_intake_service.py",
             "tests/test_order_routes.py",
             "tests/test_order_service_reservation.py",
@@ -471,6 +549,53 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md",
             "docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md",
         ],
+        "must_inspect_before_advice": True,
+    },
+    "pig_observation_management_intent": {
+        "label": "Herdmaster Pig Observations And Management Intents",
+        "status": "candidate_built_owner_gated_migration",
+        "summary": (
+            "Append-only factual pig observations, structurally separate advisory management "
+            "intents, owner-only capture routes, idempotency and no-current-state-mutation rails."
+        ),
+        "keywords": [
+            "pig observation",
+            "pig observations",
+            "observation event",
+            "observation events",
+            "management intent",
+            "management intents",
+            "management-intent",
+            "human observation",
+            "append-only observation",
+            "observation capture",
+        ],
+        "vault_docs": [
+            "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+            "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
+            "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
+        ],
+        "app_routes": [
+            "/api/pig-weights/pigs/<pig_id>/observations",
+            "/api/pig-weights/pigs/<pig_id>/management-intents",
+        ],
+        "code_paths": [
+            "modules/pig_weights/pig_observation_capture_service.py",
+            "modules/pig_weights/pig_weights_controller.py",
+            "modules/pig_weights/pig_weights_routes.py",
+        ],
+        "tests": [
+            "tests/test_pig_observation_capture.py",
+            "tests/test_pig_observation_capture_postgres.py",
+            "tests/test_pig_observation_event_migration.py",
+            "tests/test_pig_management_intent_event_migration.py",
+            "tests/test_owner_access.py",
+        ],
+        "migrations": [
+            "supabase/migrations/202607200001_create_pig_observation_events.sql",
+            "supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql",
+        ],
+        "legacy_sources": [],
         "must_inspect_before_advice": True,
     },
     "pig_allocation_herdmaster": {
@@ -634,7 +759,7 @@ def implementation_source_packet(mission=None, limit_sections=6):
         score, reasons = _score_entry(key, query, entry)
         if score:
             matched.append(_entry_packet(key, entry, score, reasons))
-    matched = _filter_matched_sections(sorted(matched, key=lambda item: (-item["score"], item["key"])))
+    matched = _filter_matched_sections(sorted(matched, key=lambda item: (-item["score"], item["key"])), query)
     matched = matched[: max(1, int(limit_sections or 6))]
     return {
         "version": SOURCE_MAP_VERSION,
@@ -651,10 +776,19 @@ def implementation_source_packet(mission=None, limit_sections=6):
     }
 
 
-def _filter_matched_sections(matched):
+def _filter_matched_sections(matched, query=""):
     if not matched:
         return []
-    return [section for section in matched if int(section.get("score") or 0) >= 30]
+    filtered = [section for section in matched if int(section.get("score") or 0) >= 30]
+    lower = str(query or "").lower()
+    keys = {section.get("key") for section in filtered}
+    if "sam_live_stock_sales" in keys and not _meat_context(lower):
+        filtered = [section for section in filtered if section.get("key") != "sam_meat_sales"]
+    if "sam_meat_sales" in keys and not _live_stock_context(lower):
+        filtered = [section for section in filtered if section.get("key") != "sam_live_stock_sales"]
+    if "pig_observation_management_intent" in keys and not _pig_allocation_context(lower):
+        filtered = [section for section in filtered if section.get("key") != "pig_allocation_herdmaster"]
+    return filtered
 
 
 def validate_implementation_inspection(artifact, source_packet):
@@ -739,6 +873,60 @@ def _charlie_dashboard_context(lower):
         "workflow ui",
     )
     return any(term in lower for term in dashboard_terms)
+
+
+def _live_stock_context(lower):
+    normalized = lower.replace("_", " ").replace("-", " ")
+    live_terms = (
+        "sam live stock",
+        "sam livestock",
+        "live stock",
+        "livestock",
+        "live pig",
+        "live pigs",
+        "piglet",
+        "piglets",
+        "weaner",
+        "weaners",
+        "grower pig",
+        "grower pigs",
+        "telegram control card",
+    )
+    return any(term in normalized for term in live_terms)
+
+
+def _meat_context(lower):
+    normalized = lower.replace("_", " ").replace("-", " ")
+    meat_terms = (
+        "meat",
+        "pork",
+        "carcass",
+        "half carcass",
+        "custom cut",
+        "butcher",
+        "slaughter",
+        "abattoir",
+        "set a",
+        "meat lead",
+        "meat sales",
+    )
+    return any(term in normalized for term in meat_terms)
+
+
+def _pig_allocation_context(lower):
+    normalized = lower.replace("_", " ").replace("-", " ")
+    allocation_terms = (
+        "pig allocation",
+        "allocation alert",
+        "purpose review",
+        "suggested purpose",
+        "meat window",
+        "slaughter candidate",
+        "slow grower",
+        "stale weight",
+        "sow replacement",
+    )
+    return any(term in normalized for term in allocation_terms)
 
 
 def _keyword_is_negated(lower, keyword):

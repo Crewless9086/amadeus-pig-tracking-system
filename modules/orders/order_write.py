@@ -108,34 +108,43 @@ def _available_pigs_from_sales_rows(rows):
 
     for row in rows:
         available = to_clean_string(row.get("Available_For_Sale", row.get("available_for_sale", "")))
-        if available != "Yes":
+        live_transfer_eligible = row.get("live_stock_sale_eligible")
+        if available != "Yes" and live_transfer_eligible is not True:
             continue
 
         reserved_status = to_clean_string(row.get("Reserved_Status", row.get("reserved_status", "")))
-        if reserved_status == "Reserved":
+        if reserved_status.lower() == "reserved":
             continue
+
+        withdrawal_state = to_clean_string(row.get("withdrawal_evidence_state", "")).lower()
+        withdrawal_end = to_clean_string(row.get("current_withdrawal_end_date", ""))
+        treatment_disclosure = None
+        if withdrawal_state == "hold":
+            treatment_disclosure = {
+                "product": to_clean_string(row.get("last_product_name", "")) or "Recorded treatment",
+                "withdrawal_end_date": withdrawal_end or None,
+                "food_chain_prohibition": True,
+                "safe_buyer_wording": (
+                    f"Food-chain entry and slaughter are prohibited through {withdrawal_end}."
+                    if withdrawal_end else
+                    "A recorded food-chain withdrawal is active; the end date is unavailable."
+                ),
+            }
 
         pigs.append({
             "pig_id": to_clean_string(row.get("Pig_ID", row.get("pig_id", ""))),
             "tag_number": to_clean_string(row.get("Tag_Number", row.get("tag_number", ""))),
             "sex": to_clean_string(row.get("Sex", row.get("sex", ""))),
             "current_weight_kg": to_float(row.get("Current_Weight_Kg", row.get("current_weight_kg", ""))),
-            "last_weight_date": to_clean_string(row.get("Last_Weight_Date", row.get("last_weight_date", ""))),
             "weight_band": to_clean_string(row.get("Weight_Band", row.get("weight_band", ""))),
             "sale_category": to_clean_string(row.get("Sale_Category", row.get("sale_category", ""))),
             "suggested_price_category": to_clean_string(row.get("Suggested_Price_Category", row.get("suggested_price_category", ""))),
-            "live_stock_sale_reason": to_clean_string(row.get("Live_Stock_Sale_Reason", row.get("live_stock_sale_reason", ""))),
-            "litter_id": to_clean_string(row.get("Litter_ID", row.get("litter_id", ""))),
-            "mother_pig_id": to_clean_string(row.get("Mother_Pig_ID", row.get("mother_pig_id", ""))),
-            "father_pig_id": to_clean_string(row.get("Father_Pig_ID", row.get("father_pig_id", ""))),
-            "sow_pig_id": to_clean_string(row.get("Sow_Pig_ID", row.get("sow_pig_id", ""))),
-            "sow_tag_number": to_clean_string(row.get("Sow_Tag_Number", row.get("sow_tag_number", ""))),
-            "boar_pig_id": to_clean_string(row.get("Boar_Pig_ID", row.get("boar_pig_id", ""))),
-            "boar_tag_number": to_clean_string(row.get("Boar_Tag_Number", row.get("boar_tag_number", ""))),
-            "family_context": row.get("family_context") if isinstance(row.get("family_context"), dict) else {},
-            "media_references": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
-            "media_reference_status": to_clean_string(row.get("Media_Reference_Status", row.get("media_reference_status", "not_configured"))),
             "reserved_status": reserved_status,
+            "livestock_transfer_eligible": True,
+            "food_chain_eligible": withdrawal_state in {"", "not_applicable", "cleared"},
+            "withdrawal_evidence_state": withdrawal_state or "unknown",
+            "current_withdrawal_end_date": withdrawal_end or None,
+            "treatment_disclosure": treatment_disclosure,
         })
 
     return sorted(pigs, key=lambda x: (x["tag_number"] or x["pig_id"]).lower())
@@ -246,6 +255,10 @@ def update_order(order_id: str, cleaned_data: dict):
         update_map["Notes"] = cleaned_data["notes"]
         updated_fields.append("notes")
 
+    if "conversation_id" in cleaned_data:
+        update_map["Conversation_ID"] = str(cleaned_data["conversation_id"]).strip()
+        updated_fields.append("conversation_id")
+
     if "payment_method" in cleaned_data:
         pm = str(cleaned_data["payment_method"]).strip()
         if pm not in ("Cash", "EFT"):
@@ -290,6 +303,20 @@ def create_order_line(cleaned_data: dict):
 
     if not pig:
         raise ValueError("Pig is not available for order selection.")
+
+    if cleaned_data.get("unit_price") is None:
+        from modules.sales.sam_pricing import resolve_live_stock_price_rule
+
+        price_rule = resolve_live_stock_price_rule(
+            pig.get("sale_category"),
+            pig.get("weight_band"),
+            pig.get("sex"),
+        )
+        if not price_rule.get("found") or price_rule.get("unit_price") is None:
+            raise ValueError(
+                f"No active price found for {pig.get('sale_category')} / {pig.get('weight_band')}."
+            )
+        cleaned_data = {**cleaned_data, "unit_price": float(price_rule["unit_price"])}
 
     existing_lines = (
         order_supabase_write.list_order_lines()

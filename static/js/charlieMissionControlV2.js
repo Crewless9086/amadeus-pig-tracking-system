@@ -3,6 +3,7 @@
 
   const API = {
     commandCenter: "/api/charlie/build-relay/command-center",
+    missionControl: "/api/charlie/build-relay/mission-control",
     runner: "/api/charlie/build-relay/runner/status",
     policy: "/api/charlie/build-relay/policy",
     missions: "/api/charlie/build-relay/missions",
@@ -10,7 +11,7 @@
   };
 
   const tabs = [
-    { id: "active", label: "Active", statuses: ["in_progress", "release_in_progress"] },
+    { id: "active", label: "Working", statuses: ["in_progress", "release_in_progress", "paused"] },
     { id: "new", label: "New", statuses: ["new"] },
     { id: "approved", label: "Approved", statuses: ["approved"] },
     { id: "review", label: "Review", statuses: ["pr_ready", "release_approved"] },
@@ -28,6 +29,8 @@
     lastUpdated: null,
     polling: true,
     loading: false,
+    initialized: false,
+    loadError: "",
   };
 
   const el = {
@@ -44,6 +47,9 @@
     workflowPanel: document.getElementById("workflowPanel"),
     actionPanel: document.getElementById("actionPanel"),
     systemStrip: document.getElementById("systemStrip"),
+    missionSummaryStrip: document.getElementById("missionSummaryStrip"),
+    queueHealthChip: document.getElementById("queueHealthChip"),
+    activeAgentChip: document.getElementById("activeAgentChip"),
     newMissionDrawer: document.getElementById("newMissionDrawer"),
     newMissionForm: document.getElementById("newMissionForm"),
     newMissionResult: document.getElementById("newMissionResult"),
@@ -85,7 +91,43 @@
     return metadata && typeof metadata.review_packet === "object" ? metadata.review_packet : {};
   }
 
+  function ownerDisplayStatus(mission) {
+    const status = text(mission && mission.status, "unknown").toLowerCase();
+    if (status !== "pr_ready") return statusLabel(status);
+    const readiness = missionReviewPacket(mission).final_readiness || {};
+    if (readiness.verdict === "owner_action_required") return "Owner Action Required";
+    if (readiness.verdict === "verification_required") return "Verification Required";
+    return "Ready To Approve";
+  }
+
+  function missionGovernance(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.mission_governance && typeof metadata.mission_governance === "object" ? metadata.mission_governance : {};
+  }
+
+  function missionFamily(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.mission_family && typeof metadata.mission_family === "object" ? metadata.mission_family : {};
+  }
+
+  function familyOrdered(missions) {
+    const rows = Array.from(missions || []);
+    const byId = new Map(rows.map((mission) => [mission.mission_id, mission]));
+    return rows.sort((left, right) => {
+      const leftFamily = missionFamily(left);
+      const rightFamily = missionFamily(right);
+      const leftRoot = leftFamily.root_mission_id || left.mission_id;
+      const rightRoot = rightFamily.root_mission_id || right.mission_id;
+      if (leftRoot !== rightRoot) return 0;
+      if (left.mission_id === leftRoot) return -1;
+      if (right.mission_id === rightRoot) return 1;
+      return Number(leftFamily.sequence || 999) - Number(rightFamily.sequence || 999);
+    });
+  }
+
   function progressPct(mission) {
+    const missionStatus = text(mission.status).toLowerCase();
+    if (["done", "merged", "deployed", "pr_ready", "release_approved"].includes(missionStatus)) return 100;
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     if (!workflow.length) {
       if (["done", "merged", "deployed"].includes(text(mission.status).toLowerCase())) return 100;
@@ -100,12 +142,89 @@
     return Math.max(0, Math.min(100, Math.round(((complete + activeBonus) / workflow.length) * 100)));
   }
 
+  function missionTelemetry(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    const memory = metadata.mission_memory && typeof metadata.mission_memory === "object" ? metadata.mission_memory : {};
+    return memory.telemetry && typeof memory.telemetry === "object" ? memory.telemetry : {};
+  }
+
+  function stageTelemetry(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.stage_telemetry && typeof metadata.stage_telemetry === "object" ? metadata.stage_telemetry : { stages: [] };
+  }
+
+  function ownerActionGuidance(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.owner_action_guidance && typeof metadata.owner_action_guidance === "object" ? metadata.owner_action_guidance : {};
+  }
+
+  function ownerProjection(mission) {
+    return mission && mission.owner_projection && typeof mission.owner_projection === "object"
+      ? mission.owner_projection : {};
+  }
+
+  function isOwnerWork(mission) {
+    return text(mission && mission.queue_class, "owner_work") === "owner_work";
+  }
+
+  function ownerActionRequired(mission) {
+    const action = text(ownerProjection(mission).owner_action);
+    return !action || action.toUpperCase() !== "NONE";
+  }
+
+  function ownerOperatingState(mission) {
+    if (!isOwnerWork(mission) || ownerActionRequired(mission)) return ownerDisplayStatus(mission);
+    return text(mission && mission.status).toLowerCase() === "paused" ? "EVENT WAITING" : "WORKING";
+  }
+
+  function ownerOperatingChipClass(mission) {
+    const stateLabel = ownerOperatingState(mission);
+    if (stateLabel === "WORKING") return "green";
+    if (stateLabel === "EVENT WAITING") return "amber";
+    return chipClass(mission && mission.status);
+  }
+
+  function formatDuration(seconds) {
+    const value = Math.max(0, Number(seconds || 0));
+    if (!value) return "--";
+    if (value < 60) return `${Math.round(value)}s`;
+    const minutes = Math.floor(value / 60);
+    const remainder = Math.floor(value % 60);
+    if (minutes < 60) return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+
+  function stageRuntime(row) {
+    if (Number(row && row.duration_seconds) > 0) return Number(row.duration_seconds);
+    const started = Date.parse(text(row && row.started_at));
+    if (!Number.isFinite(started)) return 0;
+    const status = text(row && row.status).toLowerCase();
+    const endpoint = ["active", "running", "in_progress"].includes(status)
+      ? Date.now()
+      : Date.parse(text(row && (row.completed_at || row.updated_at)));
+    return Number.isFinite(endpoint) ? Math.max(0, Math.round((endpoint - started) / 1000)) : 0;
+  }
+
+  function stageTelemetryRow(mission, agent) {
+    const rows = Array.isArray(stageTelemetry(mission).stages) ? stageTelemetry(mission).stages : [];
+    return rows.find((row) => text(row.agent).toLowerCase() === text(agent).toLowerCase()) || {};
+  }
+
   function stageLabel(mission) {
     const review = missionReviewPacket(mission);
     const status = text(mission.status).toLowerCase();
+    const owner = ownerProjection(mission);
+    if (isOwnerWork(mission) && !ownerActionRequired(mission) && text(owner.current_worker)) {
+      return text(owner.current_worker);
+    }
+    const metadata = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    const dependencies = Array.isArray(metadata.depends_on_mission_ids) ? metadata.depends_on_mission_ids : [];
+    const coordinator = metadata.mission_coordinator && typeof metadata.mission_coordinator === "object" ? metadata.mission_coordinator : {};
     if (status === "blocked") return text(review.blocked_agent, text(mission.vault && mission.vault.mission_stage, "blocked"));
     if (status === "pr_ready") return "owner review";
+    if (status === "approved" && dependencies.length) return "waiting dependency";
     if (status === "approved") return "waiting runner";
+    if (status === "paused" && coordinator.status === "waiting_children") return "waiting children";
     if (status === "new") return "needs approval";
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const active = workflow.find((item) => ["active", "running", "in_progress"].includes(text(item.status).toLowerCase()));
@@ -114,6 +233,15 @@
 
   function headlineReason(mission) {
     const review = missionReviewPacket(mission);
+    const readiness = review.final_readiness || {};
+    const metadata = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    const dependencies = Array.isArray(metadata.depends_on_mission_ids) ? metadata.depends_on_mission_ids : [];
+    if (text(mission.status).toLowerCase() === "approved" && dependencies.length) {
+      return `Waiting for ${dependencies.join(", ")} to complete.`;
+    }
+    if (text(mission.status).toLowerCase() === "pr_ready" && readiness.verdict && readiness.verdict !== "ready_to_approve") {
+      return text(readiness.next_action, "Complete readiness gates before approval.").slice(0, 170);
+    }
     return text(
       review.blocked_reason,
       text(review.recommended_next_action, text(mission.selected_next_step, text(mission.owner_decision, text(mission.raw_text, ""))))
@@ -146,6 +274,9 @@
     }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if ([401, 403].includes(response.status) && text(data.status).includes("owner_")) {
+        window.location.assign(`/owner/login?next=${encodeURIComponent(window.location.pathname)}`);
+      }
       const error = new Error(data.status || `HTTP ${response.status}`);
       error.data = data;
       error.status = response.status;
@@ -158,28 +289,54 @@
     if (state.loading) return;
     state.loading = true;
     try {
-      const [summary, runner, policy] = await Promise.all([
-        fetchJson(API.summary, { timeoutMs: 18000 }).catch(() => null),
-        fetchJson(API.runner, { timeoutMs: 18000 }).catch(() => state.runner || {}),
-        fetchJson(API.policy, { timeoutMs: 18000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
+      el.refreshBtn.disabled = true;
+      el.queueRefreshBtn.disabled = true;
+      if (!state.initialized) {
+        state.initialized = true;
+        state.lastUpdated = new Date();
+        render();
+      }
+      const runnerPromise = fetchJson(API.runner, { timeoutMs: 4000 }).then((runner) => {
+        state.runner = runner;
+        renderHeader();
+        renderActionPanel();
+        renderStrip();
+      }).catch(() => null);
+      const [snapshot, policy] = await Promise.all([
+        fetchJson(API.missionControl, { timeoutMs: 4000 }).catch((error) => {
+          state.loadError = error.name === "AbortError"
+            ? "Mission data is taking too long. Refresh to retry; the page remains usable."
+            : "Mission data is temporarily unavailable. Refresh to retry.";
+          return null;
+        }),
+        fetchJson(API.policy, { timeoutMs: 4000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
       ]);
-      if (summary && summary.counts) state.counts = summary.counts;
-      state.runner = runner;
+      if (snapshot) state.loadError = "";
+      if (snapshot && snapshot.counts) state.counts = snapshot.counts;
+      if (snapshot && snapshot.buckets) state.buckets = mergeBuckets(state.buckets, snapshot.buckets);
       state.policy = policy.charlie_build_relay || {};
-      await refreshTab(state.activeTab);
+      if (!state.initialized && !(state.buckets[state.activeTab] || []).length) {
+        const usefulTab = firstUsefulTab();
+        if (usefulTab !== state.activeTab) {
+          state.activeTab = usefulTab;
+        }
+      }
       state.lastUpdated = new Date();
       ensureSelection();
       render();
+      void runnerPromise;
     } catch (error) {
       renderError(error);
     } finally {
       state.loading = false;
+      el.refreshBtn.disabled = false;
+      el.queueRefreshBtn.disabled = false;
     }
   }
 
   async function loadMissionBuckets() {
     const plan = {
-      active: ["in_progress", "release_in_progress"],
+      active: ["in_progress", "release_in_progress", "paused"],
       new: ["new"],
       approved: ["approved"],
       review: ["pr_ready", "release_approved"],
@@ -223,11 +380,10 @@
   async function refreshTab(tabId) {
     const tab = tabs.find((item) => item.id === tabId);
     if (!tab) return;
-    const loaded = [];
-    for (const status of tab.statuses) {
-      const data = await fetchJson(`${API.missions}?status=${encodeURIComponent(status)}&compact=1&limit=30`, { timeoutMs: 18000 });
-      loaded.push(...(data.missions || []));
-    }
+    const results = await Promise.all(tab.statuses.map((status) => (
+      fetchJson(`${API.missions}?status=${encodeURIComponent(status)}&compact=1&limit=30`, { timeoutMs: 18000 })
+    )));
+    const loaded = results.flatMap((data) => data.missions || []);
     state.buckets[tabId] = dedupe(loaded);
   }
 
@@ -267,11 +423,40 @@
 
   function render() {
     renderHeader();
+    renderMissionSummary();
     renderTabs();
     renderQueue();
     renderWorkflow();
     renderActionPanel();
     renderStrip();
+  }
+
+  function firstUsefulTab() {
+    const preference = ["blocked", "review", "active", "new", "approved", "done"];
+    return preference.find((tabId) => countForTab(tabs.find((tab) => tab.id === tabId)) > 0) || "active";
+  }
+
+  function renderMissionSummary() {
+    const mission = selectedMission();
+    const activeCount = Number(state.counts.in_progress || 0) + Number(state.counts.release_in_progress || 0) + Number(state.counts.paused || 0);
+    const reviewCount = Number(state.counts.pr_ready || 0) + Number(state.counts.release_approved || 0);
+    const blockedCount = Number(state.counts.blocked || 0);
+    const approvedCount = Number(state.counts.approved || 0);
+    const currentAgent = mission ? stageLabel(mission) : (activeCount ? "Loading active mission" : "None");
+    const items = [
+      ["Working", activeCount, currentAgent],
+      ["Approved queue", approvedCount, approvedCount ? "waiting for runner" : "queue clear"],
+      ["Owner review", reviewCount, reviewCount ? "decision required" : "no review backlog"],
+      ["Blocked", blockedCount, blockedCount ? "attention required" : "no blocked missions"],
+      ["Selected progress", mission ? `${progressPct(mission)}%` : "--", mission ? titleOf(mission) : "no mission selected"],
+    ];
+    el.missionSummaryStrip.innerHTML = items.map(([label, value, note]) => `<div class="summary-item" title="${escapeAttr(note)}">
+      <div class="summary-label">${escapeHtml(label)}</div><div class="summary-value">${escapeHtml(value)}</div><div class="summary-note">${escapeHtml(note)}</div>
+    </div>`).join("");
+    el.queueHealthChip.className = `chip ${blockedCount ? "red" : reviewCount ? "purple" : "green"}`;
+    el.queueHealthChip.textContent = blockedCount ? `${blockedCount} blocked` : reviewCount ? `${reviewCount} review` : "Queue healthy";
+    el.activeAgentChip.className = `chip ${mission ? ownerOperatingChipClass(mission) : ""}`;
+    el.activeAgentChip.textContent = mission ? cleanAgentName(stageLabel(mission)) : "No agent";
   }
 
   function renderHeader() {
@@ -286,7 +471,7 @@
         : "Laptop runner hidden from Render";
     } else if (local.active) {
       cls = "green";
-      label = `Runner active ${text(local.age_seconds, "0")}s`;
+      label = `${operatingStateLabel(local.operating_state)} | ${text(local.age_seconds, "0")}s`;
     } else if (local.status) {
       cls = "red";
       label = "Runner stale/off";
@@ -314,31 +499,43 @@
   }
 
   function countForTab(tab) {
+    if (!tab) return 0;
     if (state.buckets[tab.id]) return state.buckets[tab.id].length;
     return tab.statuses.reduce((total, status) => total + Number(state.counts[status] || 0), 0);
   }
 
   function renderQueue() {
-    const missions = dedupe(state.buckets[state.activeTab] || []);
+    const missions = familyOrdered(dedupe(state.buckets[state.activeTab] || []));
     if (!missions.length) {
-      el.queueList.innerHTML = `<div class="notice">No ${escapeHtml(state.activeTab)} missions are visible. Use another tab or create a mission.</div>`;
+      el.queueList.innerHTML = `<div class="notice${state.loadError ? " danger" : ""}">${escapeHtml(state.loadError || `No ${state.activeTab} missions are visible. Use another tab or create a mission.`)}</div>`;
       return;
     }
     el.queueList.innerHTML = missions.map((mission) => {
       const status = text(mission.status, "unknown");
       const pct = progressPct(mission);
+      const governance = missionGovernance(mission);
+      const family = missionFamily(mission);
+      const telemetry = missionTelemetry(mission);
+      const executionWarning = missionExecutionWarning(mission);
+      const owner = ownerProjection(mission);
+      const matrixCounts = governance.acceptance_counts || {};
+      const familyLabel = family.parent_mission_id ? `Follow-up ${family.sequence || ""}` : "";
       return `<button class="mission-card ${statusClass(status)} ${mission.mission_id === state.selectedId ? "selected" : ""}" data-select="${escapeAttr(mission.mission_id)}">
-        <div class="mission-card-title">${escapeHtml(titleOf(mission))}</div>
+        <div class="mission-card-title">${familyLabel ? `<span class="family-tag">${escapeHtml(familyLabel)}</span>` : ""}${escapeHtml(titleOf(mission))}</div>
         <div class="mission-card-meta">
           <span>${escapeHtml(shortId(mission))} | ${escapeHtml(text(mission.approval_level, "LEVEL ?"))}</span>
-          <span class="chip ${chipClass(status)}">${escapeHtml(statusLabel(status))}</span>
+          <span class="chip ${ownerOperatingChipClass(mission)}">${escapeHtml(ownerOperatingState(mission))}</span>
         </div>
         <div class="bar"><span style="width:${pct}%"></span></div>
         <div class="mission-card-meta">
           <span>${pct}%</span>
           <span>${escapeHtml(stageLabel(mission))}</span>
         </div>
-        <div class="reason">${escapeHtml(headlineReason(mission) || "No reason recorded yet.")}</div>
+        <div class="mission-card-runs">Matrix ${Number(matrixCounts.passed || 0)}/${Number(matrixCounts.passed || 0) + Number(matrixCounts.failed || 0) + Number(matrixCounts.pending || 0)} · ${Number(governance.fix_count || 0)} fixes · ${Number(governance.review_runs || 0)} reviews${governance.cycling ? " · CYCLING" : ""}</div>
+        <div class="mission-card-runs">${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.recovery_count || 0)} recoveries | ${Number(telemetry.backflow_count || 0)} backflows${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? ` | repeat x${Number(telemetry.highest_blocker_repeat)}` : ""}</div>
+        <div class="reason">${escapeHtml(executionWarning || headlineReason(mission) || "No reason recorded yet.")}</div>
+        <div class="mission-card-runs">${escapeHtml(text(owner.real_life_state, "unknown"))} | ${escapeHtml(text(owner.current_worker, "no worker"))}</div>
+        <div class="reason">${escapeHtml(text(owner.outcome, "Outcome not yet reconciled."))}</div>
       </button>`;
     }).join("");
   }
@@ -354,33 +551,129 @@
     }
     const status = text(mission.status, "unknown");
     const pct = progressPct(mission);
-    el.selectedStatusChip.className = `chip ${chipClass(status)}`;
-    el.selectedStatusChip.textContent = statusLabel(status);
+    el.selectedStatusChip.className = `chip ${ownerOperatingChipClass(mission)}`;
+    el.selectedStatusChip.textContent = ownerOperatingState(mission);
     el.workflowSub.textContent = `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")} | ${pct}%`;
     const review = missionReviewPacket(mission);
+    const governance = missionGovernance(mission);
+    const telemetry = missionTelemetry(mission);
+    const execution = stageTelemetry(mission);
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const stages = workflow.length ? workflow : placeholderStages(mission);
+    const executionWarning = missionExecutionWarning(mission);
+    const owner = ownerProjection(mission);
     el.workflowPanel.innerHTML = `
       <div class="mission-hero">
         <div>
           <h2>${escapeHtml(titleOf(mission))}</h2>
           <p class="muted">${escapeHtml(text(mission.mission_type, "mission"))} | ${escapeHtml(text(mission.urgency, "P?"))}</p>
         </div>
-        <span class="chip ${chipClass(status)}">${escapeHtml(statusLabel(status))}</span>
+        <span class="chip ${ownerOperatingChipClass(mission)}">${escapeHtml(ownerOperatingState(mission))}</span>
       </div>
       <div class="mission-stats">
-        ${metric("Progress", `${pct}%`)}
+        ${metric("Acceptance", `${Number(governance.acceptance_percent || 0)}%`)}
         ${metric("Current", stageLabel(mission))}
-        ${metric("Status", statusLabel(status))}
-        ${metric("Queue", text(mission.queue_class, "owner"))}
+        ${metric("Fixes", String(Number(governance.fix_count || 0)))}
+        ${metric("Review runs", String(Number(governance.review_runs || 0)))}
+        ${metric("Attempts", String(Number(telemetry.attempt_count || 0)))}
+        ${metric("Recoveries", String(Number(telemetry.recovery_count || 0)))}
+        ${metric("Files changed", String((Array.isArray(execution.stages) ? execution.stages : []).reduce((total, row) => total + Number(row.changed_files_count || 0), 0)))}
+        ${metric("Last progress", text(execution.last_progress_at, "not recorded").replace("T", " ").slice(0, 16))}
       </div>
       <div class="bar"><span style="width:${pct}%"></span></div>
+      ${executionWarning ? `<div class="notice danger">${escapeHtml(executionWarning)}</div>` : ""}
+      ${renderLiveActivity(mission)}
+      ${renderGovernanceSummary(governance, missionFamily(mission))}
       <div class="timeline">${stages.map((stage) => renderStage(stage, mission)).join("")}</div>
       <div class="evidence">
+        ${evidenceRow("Owner outcome", text(owner.outcome, "Outcome not yet reconciled."))}
+        ${evidenceRow("Real-life state", text(owner.real_life_state, "unknown"))}
+        ${evidenceRow("First missing acceptance gate", text(owner.first_missing_acceptance_gate, "Not yet recorded."))}
+        ${evidenceRow("Current worker", text(owner.current_worker, "No current worker recorded."))}
+        ${evidenceRow("Latest finding", text(owner.latest_finding, "No finding recorded."))}
+        ${evidenceRow("Next automatic step", text(owner.next_automatic_step, "No automatic step recorded."))}
+        ${evidenceRow("Exact owner action", text(owner.owner_action, "NONE"))}
         ${evidenceRow("Why this matters", text(review.summary, text(mission.raw_text, "No mission detail loaded.")))}
         ${evidenceRow("Next action", text(review.recommended_next_action, nextActionText(mission)))}
         ${renderTestEvidence(review)}
       </div>`;
+  }
+
+  function missionExecutionWarning(mission) {
+    if (!mission || text(mission.status).toLowerCase() !== "in_progress") return "";
+    const owner = ownerProjection(mission);
+    if (isOwnerWork(mission) && !ownerActionRequired(mission)
+        && ["working", "event_waiting"].includes(text(owner.real_life_state).toLowerCase())) return "";
+    const updated = Date.parse(text(mission.updated_at));
+    if (!Number.isFinite(updated)) return "";
+    const idleMinutes = Math.max(0, Math.floor((Date.now() - updated) / 60000));
+    const runner = state.runner || {};
+    const local = runner.local_runner || {};
+    const cloudOnly = text(runner.local_runner_scope) === "render_cannot_see_laptop_runner";
+    if (!cloudOnly && !local.active) return `Execution stopped. ${progressPct(mission)}% is the last saved stage, not live progress.`;
+    if (idleMinutes >= 20) return `No durable mission progress for ${idleMinutes} minutes. ${progressPct(mission)}% is the last saved stage.`;
+    return "";
+  }
+
+  function operatingStateLabel(value) {
+    return ({
+      running_agent: "Running agent",
+      between_stages: "Between stages",
+      waiting_for_queue: "Waiting for queue",
+      stale_or_stopped: "Stale or stopped",
+    })[text(value).toLowerCase()] || "Runner active";
+  }
+
+  function renderLiveActivity(mission) {
+    const runner = state.runner || {};
+    const local = runner.local_runner || {};
+    const ledger = local.agent_ledger && typeof local.agent_ledger === "object" ? local.agent_ledger : {};
+    const latest = ledger.latest_stage && typeof ledger.latest_stage === "object" ? ledger.latest_stage : {};
+    const sameMission = text(local.last_mission_id) === text(mission.mission_id);
+    const cloudOnly = text(runner.local_runner_scope) === "render_cannot_see_laptop_runner";
+    const agent = sameMission ? text(local.current_agent, text(latest.agent, stageLabel(mission))) : stageLabel(mission);
+    const owner = ownerProjection(mission);
+    const externallyManaged = isOwnerWork(mission) && !ownerActionRequired(mission)
+      && ["working", "event_waiting"].includes(text(owner.real_life_state).toLowerCase());
+    const action = sameMission
+      ? text(local.current_action, text(latest.current_action, text(local.last_result_status, "Agent stage running")))
+      : externallyManaged ? text(owner.next_automatic_step, "Automatic work continues safely.") : nextActionText(mission);
+    const runtime = sameMission ? formatDuration(local.elapsed_seconds) : "--";
+    const heartbeat = sameMission && local.last_seen
+      ? `${text(local.age_seconds, "--")}s ago`
+      : text(mission.updated_at, "not recorded").replace("T", " ").slice(0, 19);
+    const attempts = sameMission ? Number(latest.attempt || 0) : Number(missionTelemetry(mission).attempt_count || 0);
+    const files = sameMission ? Number(local.changed_files_count || (latest.changed_files || []).length || 0) : 0;
+    const commands = Array.isArray(latest.commands_run) ? latest.commands_run : [];
+    const stateLabel = externallyManaged
+      ? ownerOperatingState(mission)
+      : cloudOnly
+      ? "Cloud snapshot"
+      : sameMission ? operatingStateLabel(local.operating_state) : statusLabel(mission.status);
+    return `<section class="live-activity ${sameMission && local.active ? "live" : cloudOnly ? "snapshot" : ""}">
+      <div class="live-head"><span><i></i>${escapeHtml(stateLabel)}</span><b>${escapeHtml(cleanAgentName(agent))}</b><small>${escapeHtml(heartbeat)}</small></div>
+      <div class="live-grid">
+        ${metric("Current action", action)}
+        ${metric("Stage runtime", runtime)}
+        ${metric("Attempt", attempts ? String(attempts) : "--")}
+        ${metric("Files changed", files ? String(files) : "--")}
+      </div>
+      ${commands.length ? `<div class="live-command"><strong>Latest check</strong><span>${escapeHtml(text(commands[commands.length - 1]))}</span></div>` : ""}
+      ${externallyManaged ? '<p>Control Tower progress is shown from the canonical owner-work projection; it does not create a CORE runner lease.</p>' : cloudOnly ? '<p>Render shows persisted Supabase progress. Open the local dashboard for second-by-second laptop heartbeat and commands.</p>' : ""}
+    </section>`;
+  }
+
+  function renderGovernanceSummary(governance, family) {
+    const matrix = Array.isArray(governance.acceptance_matrix) ? governance.acceptance_matrix : [];
+    const budget = governance.budget || {};
+    const children = family && Array.isArray(family.children) ? family.children : [];
+    if (!matrix.length) return "";
+    return `<section class="governance-block ${governance.cycling ? "cycling" : ""}">
+      <div class="governance-head"><strong>Acceptance Matrix</strong><span>${Number(governance.acceptance_counts && governance.acceptance_counts.passed || 0)}/${matrix.length} passed · ${Number(governance.backflow_count || 0)}/${Number(budget.mission_limit || 4)} correction budget · ${Number(governance.followup_count || 0)} follow-ups</span></div>
+      <div class="matrix-list">${matrix.map((row) => `<div class="matrix-row ${escapeAttr(text(row.status, "pending"))}" title="${escapeAttr(text(row.evidence_required, "Focused evidence required"))}"><span class="matrix-dot"></span><b>${escapeHtml(text(row.requirement, "Requirement"))}</b><span>${escapeHtml(statusLabel(row.status))}</span></div>`).join("")}</div>
+      ${governance.cycling ? '<div class="cycle-note">Correction budget reached. New non-red findings become linked follow-up missions instead of reopening this parent.</div>' : ""}
+      ${children.length ? `<div class="family-children"><strong>Linked follow-ups</strong>${children.map((child) => `<span>${escapeHtml(text(child.title, child.mission_id))} · ${escapeHtml(statusLabel(child.status))}</span>`).join("")}</div>` : ""}
+    </section>`;
   }
 
   function placeholderStages(mission) {
@@ -400,11 +693,16 @@
     if (["active", "running", "in_progress"].includes(raw)) cls = "active";
     if (raw === "blocked" || text(mission.status).toLowerCase() === "blocked" && text(stage.agent).toLowerCase() === text(stageLabel(mission)).toLowerCase()) cls = "blocked";
     if (text(mission.status).toLowerCase() === "pr_ready" && text(stage.agent).toLowerCase().includes("review")) cls = "review";
-    return `<div class="stage ${cls}">
+    const telemetry = stageTelemetryRow(mission, stage.agent);
+    const attempt = Number(telemetry.attempt || 0);
+    const runtime = formatDuration(stageRuntime({ ...telemetry, status: raw }));
+    const files = Number(telemetry.changed_files_count || 0);
+    return `<div class="stage ${cls}" title="${escapeAttr(text(telemetry.current_action, text(stage.findings, "No findings yet.")))}">
       <div>
         <div class="stage-name">${escapeHtml(cleanAgentName(stage.agent))}</div>
         <div class="stage-state">${escapeHtml(raw || "pending")}</div>
       </div>
+      <div class="stage-telemetry">${attempt ? `Try ${attempt}` : "Not run"} | ${runtime}${files ? ` | ${files} files` : ""}</div>
       <div class="muted">${escapeHtml(text(stage.findings, "No findings yet.").slice(0, 130))}</div>
     </div>`;
   }
@@ -417,20 +715,75 @@
     }
     const status = text(mission.status, "unknown").toLowerCase();
     const review = missionReviewPacket(mission);
+    const governance = missionGovernance(mission);
+    const family = missionFamily(mission);
+    const telemetry = missionTelemetry(mission);
+    const guidance = ownerActionGuidance(mission);
+    const executionWarning = missionExecutionWarning(mission);
     el.actionPanel.innerHTML = `
       <div class="summary-block">
         <h3 class="summary-title">${escapeHtml(titleOf(mission))}</h3>
         ${field("Mission", `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")}`)}
-        ${field("State", `${statusLabel(status)} | ${stageLabel(mission)} | ${progressPct(mission)}%`)}
+        ${field("State", `${ownerDisplayStatus(mission)} | ${stageLabel(mission)} | ${progressPct(mission)}%`)}
+        ${field("Delivery", `${Number(governance.acceptance_percent || 0)}% matrix | ${Number(governance.fix_count || 0)} fixes | ${Number(governance.review_runs || 0)} reviews`)}
+        ${field("Runtime history", `${Number(telemetry.execution_session_count || 0)} sessions | ${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.backflow_count || 0)} backflows | ${Number(telemetry.recovery_count || 0)} recoveries`)}
+        ${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? field("Repeated blocker", `x${Number(telemetry.highest_blocker_repeat)} | ${text(telemetry.last_restart_reason, "internal recovery capped")}`) : ""}
+        ${family.parent_mission_id ? field("Mission family", `Child of ${family.parent_mission_id} | ${text(family.finding_family, "follow-up")}`) : field("Discovered work", `${Number(governance.followup_count || 0)} linked follow-ups`)}
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
+        ${executionWarning ? `<div class="notice danger">${escapeHtml(executionWarning)}</div>` : ""}
+        ${renderFinalReadiness(review.final_readiness)}
+        ${renderEvidenceReconciliation(review)}
+        ${renderOwnerGuidance(mission, guidance)}
         ${actionButtons(mission)}
         ${runnerBox()}
-        ${field("Raw Brief", text(review.summary, text(mission.raw_text, "No brief loaded.")))}
+        <details class="disclosure"><summary>Mission brief and review context</summary><div>${field("Brief", text(review.summary, text(mission.raw_text, "No brief loaded.")))}</div></details>
       </div>`;
+  }
+
+  function renderFinalReadiness(readiness) {
+    if (!readiness || !readiness.verdict) return "";
+    const gates = Array.isArray(readiness.gates) ? readiness.gates : [];
+    const tone = readiness.verdict === "ready_to_approve" ? "" : " danger";
+    return `<section class="decision-guidance${tone}">
+      <span>Owner verdict</span>
+      <strong>${escapeHtml(text(readiness.headline, "READINESS UNKNOWN"))}</strong>
+      <p>${escapeHtml(text(readiness.next_action, "Review the required gates."))}</p>
+      <div class="matrix-list">${gates.map((gate) => `<div class="matrix-row ${escapeAttr(text(gate.status, "pending"))}"><span class="matrix-dot"></span><b>${escapeHtml(text(gate.label, gate.key))}</b><span>${escapeHtml(statusLabel(gate.status))}</span></div>`).join("")}</div>
+    </section>`;
+  }
+
+  function renderEvidenceReconciliation(review) {
+    const blockers = Array.isArray(review.active_blockers) ? review.active_blockers : [];
+    const refresh = Array.isArray(review.evidence_requiring_refresh) ? review.evidence_requiring_refresh : [];
+    const resolved = Array.isArray(review.resolved_findings) ? review.resolved_findings : [];
+    const followUps = Array.isArray(review.follow_up_findings) ? review.follow_up_findings : [];
+    const candidate = review.candidate_manifest || {};
+    if (!blockers.length && !refresh.length && !resolved.length && !followUps.length && !candidate.candidate_fingerprint) return "";
+    const next = blockers[0] || refresh[0] || {};
+    return `<section class="decision-guidance${blockers.length ? " danger" : ""}">
+      <span>Release evidence</span>
+      <strong>${blockers.length ? `${blockers.length} active blocker${blockers.length === 1 ? "" : "s"}` : refresh.length ? `${refresh.length} targeted recheck${refresh.length === 1 ? "" : "s"}` : "Current candidate reconciled"}</strong>
+      ${next.agent ? `<p>${escapeHtml(cleanAgentName(next.agent))}: ${escapeHtml(text(next.reason, "Review required"))}</p>` : ""}
+      <small>${escapeHtml(text(candidate.source_commit, "Unversioned legacy evidence"))} | ${resolved.length} resolved | ${followUps.length} follow-up</small>
+    </section>`;
+  }
+
+  function renderOwnerGuidance(mission, guidance) {
+    if (text(mission.status).toLowerCase() !== "blocked" || !text(guidance.recommended_action)) return "";
+    return `<section class="decision-guidance">
+      <span>Recommended action</span>
+      <strong>${escapeHtml(text(guidance.button_label, "Review mission"))}</strong>
+      ${guidance.target_stage ? `<b>Target: ${escapeHtml(cleanAgentName(guidance.target_stage))}</b>` : ""}
+      <p>${escapeHtml(text(guidance.reason, "CORE recorded no decision explanation."))}</p>
+      <small>${escapeHtml(text(guidance.what_happens, "Mission evidence is preserved."))}</small>
+    </section>`;
   }
 
   function actionButtons(mission) {
     const status = text(mission.status).toLowerCase();
+    if (isOwnerWork(mission) && !ownerActionRequired(mission)) {
+      return `<div class="notice">Automatic work continues safely. No owner action is needed.</div>`;
+    }
     if (status === "new") {
       return `<div class="button-grid">
         <button class="primary ok" data-decision="approved">Approve</button>
@@ -439,17 +792,28 @@
       </div>`;
     }
     if (status === "blocked") {
-      return `<div class="button-grid">
-        <button class="primary ok" data-decision="approved">Approve Rerun</button>
-        <button class="warn" data-review-decision="send_back">Send Back</button>
+      const guidance = ownerActionGuidance(mission);
+      const sendBack = text(guidance.recommended_action) === "send_back";
+      const primary = sendBack
+        ? `<button class="primary ok wide" data-review-decision="send_back">${escapeHtml(text(guidance.button_label, "Send Back"))}</button>`
+        : `<button class="primary ok wide" data-decision="approved">${escapeHtml(text(guidance.button_label, "Approve Rerun"))}</button>`;
+      return `${primary}<details class="disclosure alternatives"><summary>Alternative actions</summary><div class="button-grid">
+        ${sendBack ? '<button class="warn wide" data-decision="approved">Approve Rerun Instead</button>' : '<button class="warn wide" data-review-decision="send_back">Choose Agent and Send Back</button>'}
         <button class="warn" data-decision="paused">Pause</button>
         <button class="danger" data-decision="rejected">Reject</button>
-      </div>`;
+      </div></details>`;
     }
     if (status === "pr_ready") {
+      const readiness = missionReviewPacket(mission).final_readiness || {};
+      const approve = readiness.can_authorize_release
+        ? '<button class="ok" data-review-decision="approve_final_release">Approve Release</button>'
+        : '<button class="ok" disabled title="Complete the listed readiness gates first">Approval Locked</button>';
+      const openLabel = Array.isArray(readiness.pending_gate_keys) && readiness.pending_gate_keys.includes("migration_approval")
+        ? "Review Migration Requirements"
+        : "Open Review";
       return `<div class="button-grid">
-        <button class="primary wide" data-open-review>Open Review</button>
-        <button class="ok" data-review-decision="approve_final_release">Approve Final</button>
+        <button class="primary wide" data-open-review>${openLabel}</button>
+        ${approve}
         <button class="warn" data-review-decision="send_back">Send Back</button>
         <button class="danger" data-review-decision="reject">Reject</button>
       </div>`;
@@ -458,7 +822,10 @@
       return `<div class="notice">Approved and waiting for the local runner. Start the runner if it is stale.</div>`;
     }
     if (status === "in_progress" || status === "release_in_progress") {
-      return `<div class="notice">Observe only while the local runner is executing. Do not change mission state mid-run.</div>`;
+      const warning = missionExecutionWarning(mission);
+      return warning
+        ? `<div class="notice danger">${escapeHtml(warning)} The watchdog will recover the runner automatically.</div>`
+        : `<div class="notice">Observe only while the local runner is executing. Do not change mission state mid-run.</div>`;
     }
     if (status === "release_approved") {
       return `<div class="notice">Final approval is recorded. The local release bridge handles merge/release evidence.</div>`;
@@ -474,18 +841,13 @@
     const activeMission = runner.active_mission || {};
     const label = scope === "render_cannot_see_laptop_runner"
       ? (activeMission.mission_id ? `Cloud sees active mission ${shortId(activeMission)}` : "Cloud cannot see the laptop runner")
-      : (local.active ? `Active (${text(local.age_seconds, "0")}s heartbeat)` : "Stale/off");
+      : (local.active ? `${operatingStateLabel(local.operating_state)} (${text(local.age_seconds, "0")}s heartbeat)` : "Stale/off");
     const visibility = scope === "render_cannot_see_laptop_runner"
       ? "Render can read mission status from Supabase, but it cannot see the local laptop process heartbeat. Use the local status command for runner truth."
       : text(runner.local_runner_visibility_note, "Local runner heartbeat is visible here.");
-    return `<div class="field">
-      <label>Runner</label>
-      <strong>${escapeHtml(label)}</strong>
-      <span class="muted">${escapeHtml(visibility)}</span>
-      <span class="muted">${escapeHtml(text(runner.next_action, text(local.next_action, "Start local runner before expecting approved missions to run.")))}</span>
-      <code>${escapeHtml(command)}</code>
-      <button data-copy-command="${escapeAttr(command)}">Copy Runner Command</button>
-    </div>`;
+    return `<details class="disclosure"><summary>Runner · ${escapeHtml(label)}</summary><div>
+      <div class="field"><span class="muted">${escapeHtml(visibility)}</span><span class="muted">${escapeHtml(text(runner.next_action, text(local.next_action, "Start local runner before expecting approved missions to run.")))}</span><code>${escapeHtml(command)}</code><button data-copy-command="${escapeAttr(command)}">Copy Runner Command</button></div>
+    </div></details>`;
   }
 
   function renderStrip() {
@@ -494,11 +856,12 @@
     const policy = state.policy || {};
     const activeLabel = runner.local_runner_scope === "render_cannot_see_laptop_runner"
       ? (runner.active_mission ? "DB active, laptop hidden" : "Laptop hidden")
-      : (local.active ? "Active" : "Stale/off");
+      : (local.active ? operatingStateLabel(local.operating_state) : "Stale/off");
     el.systemStrip.innerHTML = [
       strip("Queue", `New ${(state.buckets.new || []).length} | Approved ${(state.buckets.approved || []).length}`),
       strip("Review", `Ready ${(state.buckets.review || []).length} | Blocked ${(state.buckets.blocked || []).length}`),
       strip("Runner", activeLabel),
+      strip("Restarts", `${Number(local.supervisor_restart_count || 0)} | ${text((local.supervisor_latest_failure || {}).status || local.last_result_status, "No failure")}`),
       strip("Telegram", policy.enabled ? "Ready" : "Check config"),
       strip("Updated", state.lastUpdated ? state.lastUpdated.toLocaleTimeString() : "--"),
     ].join("");
@@ -531,7 +894,10 @@
     if (status === "new") return "Approve, pause, or reject.";
     if (status === "approved") return "Waiting for local runner.";
     if (status === "blocked") return "Review blocked reason, then send back or approve rerun.";
-    if (status === "pr_ready") return "Open review and approve final or send back.";
+    if (status === "pr_ready") {
+      const readiness = missionReviewPacket(mission).final_readiness || {};
+      return readiness.can_authorize_release ? "Open review and approve release or send back." : text(readiness.next_action, "Complete readiness gates before approval.");
+    }
     if (status === "in_progress") return "Observe local runner.";
     return "No immediate action.";
   }
@@ -560,6 +926,11 @@
 
   function renderError(error) {
     const message = text(error && error.message, "Unable to load CHARLIE Mission Control.");
+    if (state.initialized && allLoadedMissions().length) {
+      el.lastUpdatedChip.className = "chip red";
+      el.lastUpdatedChip.textContent = `Refresh failed · ${message}`;
+      return;
+    }
     el.queueList.innerHTML = `<div class="notice">${escapeHtml(message)}</div>`;
     el.workflowPanel.innerHTML = `<div class="notice">${escapeHtml(message)}</div>`;
     el.actionPanel.innerHTML = `<div class="notice">${escapeHtml(message)}</div>`;
@@ -581,10 +952,14 @@
     await refreshAll();
   }
 
-  async function recordReviewDecision(decision) {
+  async function recordReviewDecision(decision, options = {}) {
     const mission = selectedMission();
     if (!mission) return;
-    const targetStage = text(stageLabel(mission), "builder");
+    if (decision === "send_back" && !options.confirmed) {
+      openSendBackDrawer(mission);
+      return;
+    }
+    const targetStage = text(options.targetStage, text(stageLabel(mission), "builder"));
     const confirmed = decision === "approve_final_release"
       ? window.confirm(`Approve final review for ${titleOf(mission)}? This records owner approval; it does not run shell commands from the browser.`)
       : true;
@@ -595,10 +970,27 @@
       body: JSON.stringify({
         decision,
         target_stage: targetStage,
-        comments: `Owner recorded ${decision} from CHARLIE Mission Control v2.`,
+        comments: text(options.comments, `Owner recorded ${decision} from CHARLIE Mission Control.`),
       }),
     });
     await refreshAll();
+  }
+
+  function openSendBackDrawer(mission) {
+    const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
+    const agents = Array.from(new Set(workflow.map((item) => text(item.agent)).filter(Boolean)));
+    const guidance = ownerActionGuidance(mission);
+    const fallback = text(guidance.target_stage, text(stageLabel(mission), "builder"));
+    if (!agents.includes("builder")) agents.unshift("builder");
+    if (!agents.includes(fallback)) agents.unshift(fallback);
+    el.reviewDrawerTitle.textContent = `Send Back ${shortId(mission)}`;
+    el.reviewDrawerBody.innerHTML = `<div class="notice">Return this mission with a clear reason. CHARLIE will preserve this instruction in the review packet.</div>
+      <div class="form-grid">
+        <label>Return to stage<select id="sendBackStage">${agents.map((agent) => `<option value="${escapeAttr(agent)}" ${agent === fallback ? "selected" : ""}>${escapeHtml(cleanAgentName(agent))}</option>`).join("")}</select></label>
+        <label>What must be corrected<textarea id="sendBackComments" required placeholder="State the exact issue and expected correction."></textarea></label>
+        <button class="warn" data-confirm-send-back>Send Back to Agent</button>
+      </div>`;
+    openDrawer(el.reviewDrawer);
   }
 
   async function openReviewDrawer() {
@@ -610,14 +1002,22 @@
     try {
       const data = await fetchJson(`${API.missions}/${encodeURIComponent(mission.mission_id)}/review?compact=1`, { timeoutMs: 25000 });
       const packet = data.review_packet || data.packet || data || {};
+      const tests = Array.isArray(packet.test_evidence) ? packet.test_evidence : [];
+      const readiness = packet.final_readiness || {};
+      const approve = readiness.can_authorize_release
+        ? '<button class="ok" data-review-decision="approve_final_release">Approve Release</button>'
+        : '<button class="ok" disabled title="Complete the listed readiness gates first">Approval Locked</button>';
       el.reviewDrawerBody.innerHTML = `
         ${field("Mission", `${titleOf(mission)} | ${shortId(mission)}`)}
-        ${field("Status", statusLabel(mission.status))}
+        ${field("Status", ownerDisplayStatus(mission))}
         ${field("Summary", text(packet.summary, text(packet.blocked_reason, "No review summary returned.")))}
         ${field("Recommended", text(packet.recommended_next_action, "No recommendation recorded."))}
         ${field("Blocked agent", text(packet.blocked_agent, "n/a"))}
+        ${renderFinalReadiness(readiness)}
+        ${renderEvidenceReconciliation(packet)}
+        <details class="disclosure"><summary>Test evidence (${tests.length})</summary><div>${tests.length ? tests.map((item, index) => field(`Evidence ${index + 1}`, typeof item === "string" ? item : JSON.stringify(item))).join("") : '<div class="notice">No test evidence was recorded.</div>'}</div></details>
         <div class="button-grid">
-          <button class="ok" data-review-decision="approve_final_release">Approve Final</button>
+          ${approve}
           <button class="warn" data-review-decision="send_back">Send Back</button>
           <button class="danger" data-review-decision="reject">Reject</button>
         </div>`;
@@ -687,7 +1087,23 @@
       }
       const reviewDecision = event.target.closest("[data-review-decision]");
       if (reviewDecision) {
-        await recordReviewDecision(reviewDecision.dataset.reviewDecision);
+        const decisionValue = reviewDecision.dataset.reviewDecision;
+        if (decisionValue === "send_back") {
+          openSendBackDrawer(selectedMission());
+          return;
+        }
+        await recordReviewDecision(decisionValue);
+        closeDrawers();
+        return;
+      }
+      if (event.target.closest("[data-confirm-send-back]")) {
+        const comments = text(document.getElementById("sendBackComments") && document.getElementById("sendBackComments").value);
+        const targetStage = text(document.getElementById("sendBackStage") && document.getElementById("sendBackStage").value, "builder");
+        if (!comments) {
+          document.getElementById("sendBackComments").focus();
+          return;
+        }
+        await recordReviewDecision("send_back", { confirmed: true, comments, targetStage });
         closeDrawers();
         return;
       }

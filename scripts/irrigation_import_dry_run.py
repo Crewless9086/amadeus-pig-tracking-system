@@ -1,8 +1,10 @@
 import argparse
+import hashlib
 import json
 import os
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -38,6 +40,7 @@ ZONES_SHEET = "ZONES"
 DAILY_PLAN_SHEET = "DAILY_PLAN"
 STATE_SHEET = "STATE"
 LOG_SHEET = "LOG"
+SOURCE_SHEET_ROW_KEY = "__source_sheet_row"
 
 
 def clean(value):
@@ -70,6 +73,28 @@ def optional_timestamp(value):
     if not text:
         return None
     return format_date_for_json(text) or text
+
+
+def normalize_event_instant(value):
+    text = clean(value)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return (
+        parsed.astimezone(timezone.utc)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def event_identity_timestamp(value):
+    text = clean(value)
+    return text.replace(":", "").replace("-", "").replace("+", "")
 
 
 def normalize_zone_type(row):
@@ -272,7 +297,7 @@ def map_state_snapshot(row, source_sheet_row, zone_ids, import_batch_id=PLAN_ONL
 
 
 def map_event(row, source_sheet_row, zone_ids, daily_plan_ids, import_batch_id=PLAN_ONLY_BATCH_ID):
-    event_at = optional_timestamp(row.get("timestamp"))
+    event_at = normalize_event_instant(row.get("timestamp"))
     event_type = clean(row.get("event"))
     if not event_at:
         return None, "missing_event_at"
@@ -291,7 +316,17 @@ def map_event(row, source_sheet_row, zone_ids, daily_plan_ids, import_batch_id=P
     if daily_plan_id and daily_plan_id not in daily_plan_ids:
         issues.append("missing_daily_plan_link")
 
-    event_id = f"IRREVT-{source_sheet_row}-{event_at.replace(':', '').replace('-', '').replace('+', '')}"
+    event_id = f"IRREVT-{source_sheet_row}-{event_identity_timestamp(row.get('timestamp'))}"
+    fingerprint = event_operational_fingerprint(
+        event_at=event_at,
+        event_type=event_type,
+        zone_id=None if zone_id == "SYSTEM" else zone_id or None,
+        plan_item_id=plan_id or None,
+        planned_minutes=optional_float(row.get("run_minutes_planned")),
+        actual_minutes=optional_float(row.get("run_minutes_actual")),
+        actor=clean(row.get("actor")) or None,
+        reason=clean(row.get("reason")) or None,
+    )
     payload = with_trace({
         "irrigation_event_id": event_id,
         "source_id": IRRIGATION_SOURCE_ID,
@@ -306,9 +341,40 @@ def map_event(row, source_sheet_row, zone_ids, daily_plan_ids, import_batch_id=P
         "reason": clean(row.get("reason")) or None,
         "weather_snapshot": {},
         "power_snapshot": {},
-        "details": {"link_issues": issues} if issues else {},
+        "details": {
+            "operational_fingerprint": fingerprint,
+            **({"link_issues": issues} if issues else {}),
+        },
     }, source_sheet_row, import_batch_id)
     return payload, "included_event" if not issues else ",".join(issues)
+
+
+def event_operational_fingerprint(
+    *,
+    event_at,
+    event_type,
+    zone_id,
+    plan_item_id,
+    planned_minutes,
+    actual_minutes,
+    actor,
+    reason,
+):
+    identity = {
+        "source_id": IRRIGATION_SOURCE_ID,
+        "event_at": event_at,
+        "event_type": clean(event_type),
+        "zone_id": clean(zone_id) or None,
+        "plan_item_id": clean(plan_item_id) or None,
+        "planned_minutes": planned_minutes,
+        "actual_minutes": actual_minutes,
+        "actor": clean(actor) or None,
+        "reason": " ".join(clean(reason).split()).casefold() or None,
+    }
+    encoded = json.dumps(
+        identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def build_irrigation_dry_run_payload(records, import_batch_id=PLAN_ONLY_BATCH_ID):
@@ -368,8 +434,37 @@ def build_irrigation_dry_run_payload(records, import_batch_id=PLAN_ONLY_BATCH_ID
             state_snapshots.append(payload)
 
     events = []
+    seen_event_fingerprints = {}
+    duplicate_event_fingerprints = []
+    duplicate_event_provenance = []
     for row_number, row in enumerate(log_rows, start=2):
-        payload, reason = map_event(row, row_number, zone_ids, daily_plan_ids, import_batch_id)
+        source_sheet_row = optional_int(row.get(SOURCE_SHEET_ROW_KEY)) or row_number
+        payload, reason = map_event(
+            row, source_sheet_row, zone_ids, daily_plan_ids, import_batch_id
+        )
+        if payload:
+            fingerprint = payload["details"]["operational_fingerprint"]
+            if fingerprint in seen_event_fingerprints:
+                duplicate_event_fingerprints.append(fingerprint)
+                kept = seen_event_fingerprints[fingerprint]
+                duplicate_event_provenance.append(
+                    {
+                        "operational_fingerprint": fingerprint,
+                        "kept": {
+                            "source_sheet_row": kept["source_sheet_row"],
+                            "irrigation_event_id": kept["irrigation_event_id"],
+                            "import_batch_id": kept["import_batch_id"],
+                        },
+                        "suppressed": {
+                            "source_sheet_row": payload["source_sheet_row"],
+                            "irrigation_event_id": payload["irrigation_event_id"],
+                            "import_batch_id": payload["import_batch_id"],
+                        },
+                    }
+                )
+                reason_counts["events"]["duplicate_operational_event"] += 1
+                continue
+            seen_event_fingerprints[fingerprint] = payload
         reason_counts["events"][reason] += 1
         if payload:
             events.append(payload)
@@ -394,6 +489,7 @@ def build_irrigation_dry_run_payload(records, import_batch_id=PLAN_ONLY_BATCH_ID
                 "included_plan_item",
                 "included_state_snapshot",
                 "included_event",
+                "duplicate_operational_event",
                 "empty_state_row",
             }
         }
@@ -438,6 +534,10 @@ def build_irrigation_dry_run_payload(records, import_batch_id=PLAN_ONLY_BATCH_ID
         "link_issues": link_issues,
         "duplicates": {
             "zone_ids": sorted(set(duplicate_zone_ids)),
+            "event_operational_fingerprints": sorted(
+                set(duplicate_event_fingerprints)
+            ),
+            "event_operational_replays": duplicate_event_provenance,
         },
         "writes_to_sheets": False,
         "writes_to_supabase": False,

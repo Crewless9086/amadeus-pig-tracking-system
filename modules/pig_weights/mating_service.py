@@ -748,6 +748,13 @@ def link_litter_to_mating(mating_id: str, litter_id: str, actual_farrowing_date)
 _ASSUME_PREGNANT_BLOCKED = {"Farrowed", "Cancelled", "Closed"}
 
 
+def _reject_active_exposure_transition(row, *, source_key="Breeding_Cycle_State"):
+    if to_clean_string(row.get(source_key, "")) == "Exposure Active":
+        raise ValueError(
+            "Cannot apply a pregnancy transition while the breeding exposure is active."
+        )
+
+
 def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
     mating_id = str(mating_id).strip()
     target_pen_id = to_clean_string(target_pen_id)
@@ -788,6 +795,10 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
             continue
 
         padded_row = list(row) + [""] * (len(headers) - len(row))
+        _reject_active_exposure_transition(
+            {"Breeding_Cycle_State": padded_row[header_index["Breeding_Cycle_State"]]}
+            if "Breeding_Cycle_State" in header_index else {}
+        )
         current_status = to_clean_string(padded_row[header_index["Mating_Status"]])
 
         if current_status in _ASSUME_PREGNANT_BLOCKED:
@@ -966,6 +977,8 @@ def _assume_pregnant_supabase(mating_id: str, target_pen_id: str, moved_by: str)
     row = mating_supabase_write.get_mating_sheet_row(mating_id)
     if not row:
         raise ValueError(f"Mating_ID '{mating_id}' not found in Supabase.")
+
+    _reject_active_exposure_transition(row)
 
     current_status = to_clean_string(row.get("Mating_Status", ""))
     if current_status in _ASSUME_PREGNANT_BLOCKED:

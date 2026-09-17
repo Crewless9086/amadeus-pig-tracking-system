@@ -7,6 +7,7 @@ from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_contract
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 from services.database_service import DATABASE_URL_ENV
 
 
@@ -22,7 +23,7 @@ MEAT_INSTRUCTION_WEBHOOK_URL_ENV = "MEAT_INSTRUCTION_WEBHOOK_URL"
 MEAT_INSTRUCTION_WEBHOOK_TOKEN_ENV = "MEAT_INSTRUCTION_WEBHOOK_TOKEN"
 
 
-def get_meat_ops_status(lead_id, database_url=None):
+def get_meat_ops_status(lead_id, database_url=None, database_deadline=None):
     lead_id = _clean(lead_id, 100)
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
@@ -34,7 +35,12 @@ def get_meat_ops_status(lead_id, database_url=None):
     except ImportError:
         return _unavailable("dependency_missing", True), 500
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 reservations = _decorate_reservations(cursor, _fetch_reservations(cursor, lead_id=lead_id))
                 deposits = _fetch_deposits(cursor, lead_id=lead_id)
@@ -84,7 +90,7 @@ def build_meat_payment_gate(reservations, deposits):
     ]
     latest_pop = _latest_deposit_event(active_deposits, "pop_received_unverified")
     latest_rejection = _latest_deposit_event(active_deposits, "pop_rejected")
-    latest_bank = _latest_any_deposit_event(active_deposits, {"deposit_confirmed_in_bank", "deposit_confirmed"})
+    latest_bank = _latest_any_deposit_event(active_deposits, {"deposit_confirmed_in_bank"})
     latest_balance = _latest_deposit_event(active_deposits, "balance_confirmed")
     pop_is_open = bool(latest_pop) and (
         not latest_rejection
@@ -121,6 +127,9 @@ def build_meat_payment_gate(reservations, deposits):
 
 
 def create_carcass_reservation_from_lead(lead_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("create_carcass_reservation")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
@@ -214,6 +223,8 @@ def record_meat_deposit_event(lead_id, payload=None, database_url=None):
         return {"success": False, "status": "deposit_reference_required", **_authority(False)}, 400
     if event_type == "pop_received_unverified" and not payment_reference:
         return {"success": False, "status": "pop_reference_required", **_authority(False)}, 400
+    if event_type != "pop_received_unverified":
+        return controlled_mode_denial("record_deposit_or_payment_event")
     database_url = _db_url(database_url)
     if not database_url:
         return _unavailable("not_configured", False), 503
@@ -280,6 +291,9 @@ def record_carcass_reservation_event(lead_id, payload=None, database_url=None):
         return {"success": False, "status": "invalid_reservation_event_type", **_authority(False)}, 400
     if event_type == "reservation_cancelled" and not _clean(payload.get("reason"), 500):
         return {"success": False, "status": "reservation_cancel_reason_required", **_authority(False)}, 400
+    return controlled_mode_denial("record_reservation_event")
+    if event_type == "reservation_cancelled" and not _clean(payload.get("reason"), 500):
+        return {"success": False, "status": "reservation_cancel_reason_required", **_authority(False)}, 400
     database_url = _db_url(database_url)
     if not database_url:
         return _unavailable("not_configured", False), 503
@@ -325,6 +339,9 @@ def record_carcass_reservation_event(lead_id, payload=None, database_url=None):
 
 
 def build_meat_instruction_drafts(lead_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("build_abattoir_butcher_instructions")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     database_url = _db_url(database_url)
@@ -376,6 +393,9 @@ def build_meat_instruction_drafts(lead_id, payload=None, database_url=None):
 
 
 def approve_meat_instruction_draft(lead_id, instruction_draft_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("approve_abattoir_butcher_instruction")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     instruction_draft_id = _clean(instruction_draft_id, 120)
@@ -438,6 +458,7 @@ def send_approved_meat_instruction(lead_id, instruction_draft_id, payload=None, 
     message = _clean(payload.get("message") or payload.get("approved_message"), 1200)
     if not _env_truthy(os.getenv(MEAT_INSTRUCTION_SEND_ENABLED_ENV)):
         return {"success": False, "status": "meat_instruction_send_disabled", "sent": False, **_authority(False)}, 503
+    return controlled_mode_denial("send_abattoir_butcher_instruction")
     if not message:
         return {"success": False, "status": "message_required", "sent": False, **_authority(False)}, 400
     database_url = _db_url(database_url)
@@ -600,7 +621,7 @@ def _assembly_status(reservations, deposits):
     latest_pop = _latest_deposit_event(active_deposits, "pop_received_unverified")
     latest_rejection = _latest_deposit_event(active_deposits, "pop_rejected")
     deposit_confirmed = any(
-        item.get("event_type") in {"deposit_confirmed", "deposit_confirmed_in_bank"}
+        item.get("event_type") == "deposit_confirmed_in_bank"
         for item in active_deposits
     )
     pop_received_unverified = bool(latest_pop) and (
@@ -680,7 +701,7 @@ def _instruction_draft_params(lead_id, reservation, deposits, payload):
     deposit_ref = next((
         item.get("payment_reference")
         for item in deposits
-        if item.get("event_type") in {"deposit_confirmed", "deposit_confirmed_in_bank"}
+        if item.get("event_type") == "deposit_confirmed_in_bank"
     ), "")
     base_payload = {
         "lead_id": lead_id,

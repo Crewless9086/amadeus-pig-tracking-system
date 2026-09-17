@@ -60,6 +60,28 @@ class FakeConnection:
 
 
 class CharlieVaultStoreTests(unittest.TestCase):
+    def test_write_project_upserts_by_canonical_key_and_returns_existing_identity(self):
+        columns = {
+            "project_id", "project_key", "name", "purpose", "owner_label",
+            "workflow_template", "status", "metadata_json", "created_at", "updated_at",
+        }
+        connection = FakeConnection(
+            rows=[("existing-charlie-project",)],
+            table_columns={"charlie_vault_projects": columns},
+        )
+
+        result, status = vault_store.write_project(
+            {"project_id": "charlie_core", "project_key": "charlie_core", "name": "CHARLIE"},
+            database_url="postgresql://example",
+            connect_factory=lambda _url: connection,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["project_id"], "existing-charlie-project")
+        sql, _params = connection.cursor_obj.calls[-1]
+        self.assertIn("on conflict (project_key)", sql)
+        self.assertIn("returning project_id", sql)
+
     def test_vault_tables_health_reports_all_tables_present(self):
         rows = [(name,) for name in vault_store.VAULT_TABLES]
         connection = FakeConnection(rows=rows)

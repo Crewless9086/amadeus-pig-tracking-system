@@ -307,6 +307,13 @@ The helper uses the existing service-account credentials and Drive scope already
 
 n8n should deliver documents only after backend generation succeeds.
 
+Delivery evidence is governed by
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](../09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+Generated, prepared, attempt-claimed, Chatwoot-accepted, provider-delivered,
+provider-read, failed, and ambiguous are separate states. A legacy document
+status of `Sent`, HTTP 2xx, or n8n success must not be interpreted as confirmed
+customer delivery without exact provider evidence.
+
 Allowed responsibilities:
 
 - receive document URL/file reference from backend

@@ -1,0 +1,24 @@
+{
+  "evidence_id": "PRIVATE-BKB-SETTLEMENT-SANITIZED",
+  "auction_company": "BKB",
+  "location": "Riversdal",
+  "sale_date": "2026-08-05",
+  "invoice_reference": "S-EE02-2710",
+  "pig_count": 18,
+  "lots": [
+    {"lot": "V10", "pig_count": 8, "unit_price_ex_vat": "260.00", "tag_membership": "Unknown"},
+    {"lot": "V11", "pig_count": 10, "unit_price_ex_vat": "210.00", "tag_membership": "Unknown"}
+  ],
+  "gross_revenue_ex_vat": "4180.00",
+  "output_vat": "627.00",
+  "gross_including_vat": "4807.00",
+  "commission_ex_vat": "292.60",
+  "commission_input_vat": "43.89",
+  "commission_including_vat": "336.49",
+  "other_deductions": "0.00",
+  "net_settlement_payable": "4470.51",
+  "payment_method": "EFT",
+  "payment_received": "Unknown",
+  "buyer_identity": "Unknown",
+  "private_identifiers_included": false
+}

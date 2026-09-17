@@ -102,7 +102,7 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 130.00,
         "currency": "ZAR",
         "deposit_rule": "50% deposit to confirm",
-        "balance_rule": "Balance due before delivery or collection",
+        "balance_rule": "Balance due before delivery",
         "yield_basis": "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
@@ -119,7 +119,7 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 130.00,
         "currency": "ZAR",
         "deposit_rule": "50% deposit to confirm",
-        "balance_rule": "Balance due before delivery or collection",
+        "balance_rule": "Balance due before delivery",
         "yield_basis": "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
@@ -136,8 +136,8 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 130.00,
         "currency": "ZAR",
         "deposit_rule": "50% deposit to confirm",
-        "balance_rule": "Balance due before delivery or collection",
-        "yield_basis": "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight.",
+        "balance_rule": "Balance due before delivery",
+        "yield_basis": "Estimated packed full-carcass weight from 60kg live pig: 38–42 kg; final amount uses actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
         "notes": "Code fallback standard full-carcass rule.",
@@ -153,7 +153,7 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 145.00,
         "currency": "ZAR",
         "deposit_rule": "70% deposit to confirm custom cut order",
-        "balance_rule": "Balance due before delivery or collection",
+        "balance_rule": "Balance due before delivery",
         "yield_basis": "Custom cut yield is estimated before slaughter and finalized from actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
@@ -627,7 +627,7 @@ def record_sam_meat_intake_lead(payload, database_url=None):
     return result, status_code
 
 
-def list_meat_price_book_entries(limit=50, database_url=None):
+def list_meat_price_book_entries(limit=50, database_url=None, database_deadline=None):
     parsed_limit = _bounded_limit(limit)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -648,7 +648,12 @@ def list_meat_price_book_entries(limit=50, database_url=None):
         return _price_book_unavailable("dependency_missing", configured=True), 500
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -834,7 +839,7 @@ def build_meat_pricing_estimate_from_contract(lead, contract, price_entries=None
         "deposit_rule": combined_deposit_rule,
         "payment_method": _clean_text(required.get("payment_method") or interest.get("payment_method") or "EFT", 80),
         "delivery_or_collection": _clean_text(
-            required.get("delivery_or_collection") or interest.get("delivery_or_collection") or "collection",
+            required.get("delivery_or_collection") or interest.get("delivery_or_collection") or "delivery",
             80,
         ),
         "owner_final_approval": "Yes",
@@ -947,6 +952,14 @@ def build_sam_meat_intake_lead_payload(payload):
         "notes": notes,
         "conversation_id": conversation_id,
         "contact_id": contact_id,
+        "account_id": _clean_text(payload.get("account_id"), 100),
+        "canonical_customer_id": _clean_text(payload.get("canonical_customer_id"), 100),
+        "customer_language": _clean_text(payload.get("customer_language"), 40),
+        "campaign_id": _clean_text(payload.get("campaign_id"), 100),
+        "campaign_source": _clean_text(payload.get("campaign_source"), 120),
+        "source_context": _clean_text(payload.get("source_context"), 700),
+        "current_conversation_goal": _clean_text(payload.get("current_conversation_goal"), 240),
+        "last_unanswered_question": _clean_text(payload.get("last_unanswered_question"), 500),
         "sam_intake_lane": "meat_preorder",
         "lead_qualification_status": qualification_status,
         "lead_qualification_reason": qualification_reason,
@@ -1063,7 +1076,7 @@ def list_sales_leads(limit=20, status_filter=None, database_url=None):
     }, 200
 
 
-def get_sales_lead_preorder_contract(lead_id, database_url=None):
+def get_sales_lead_preorder_contract(lead_id, database_url=None, database_deadline=None):
     lead_id = _clean_text(lead_id, 100)
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_false_flags()}, 400
@@ -1078,7 +1091,12 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
         return {"success": False, "configured": True, "status": "dependency_missing", **_false_flags()}, 500
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -1254,6 +1272,103 @@ def get_active_sales_lead_by_conversation(conversation_id, database_url=None):
         "lead_id": lead.get("lead_id", ""),
         "lead": lead,
         **_false_flags(),
+    }, 200
+
+
+def get_active_sales_lead_by_customer_identity(canonical_customer_id, account_id="", contact_id="", database_url=None):
+    """Read one active Meat lead across provider conversations; never writes."""
+    canonical_customer_id = _clean_text(canonical_customer_id, 100)
+    account_id = _clean_text(account_id, 100)
+    contact_id = _clean_text(contact_id, 100)
+    if not canonical_customer_id and not (account_id and contact_id):
+        return {"success": False, "status": "customer_identity_required", **_false_flags()}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured", **_false_flags()}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing", **_false_flags()}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select l.lead_id, l.campaign_id, l.draft_id, l.send_design_id,
+                           l.status, l.mode, l.campaign_source, l.lead_label,
+                           l.contact_label, l.channel, l.chatwoot_conversation_id,
+                           l.whatsapp_window_state, l.last_inbound_at, l.opt_in_state,
+                           l.interest_json, l.next_owner_action, l.linked_order_id,
+                           l.linked_preorder_id, l.created_by,
+                           l.sends_customer_message, l.calls_chatwoot, l.calls_n8n,
+                           l.creates_quote, l.creates_order, l.changes_stock,
+                           l.dispatch_enabled, l.changes_runtime_now, l.changes_prompt_now,
+                           l.physical_controls_enabled, l.customer_public_output_enabled,
+                           l.writes_farm_data, l.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_sales_leads l
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_sales_lead_events e
+                        where e.lead_id = l.lead_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    where l.status in ('new', 'interested', 'asked_price', 'needs_callback', 'deposit_pending', 'order_ready_for_approval')
+                      and coalesce(ev.event_type, '') <> 'closed'
+                      and (
+                        (%(canonical_customer_id)s <> '' and
+                         (coalesce(l.interest_json->>'canonical_customer_id', '') = %(canonical_customer_id)s
+                          or exists (
+                            select 1 from public.oom_sakkie_sales_lead_events identity_event
+                            where identity_event.lead_id = l.lead_id
+                              and identity_event.recorded_by = 'sam_meat_intake'
+                              and position(%(canonical_customer_id)s in coalesce(identity_event.notes, '')) > 0
+                          )))
+                        or
+                        (%(account_id)s <> '' and %(contact_id)s <> '' and
+                         coalesce(l.interest_json->>'account_id', '') = %(account_id)s and
+                         coalesce(l.interest_json->>'contact_id', '') = %(contact_id)s)
+                      )
+                    order by coalesce(ev.created_at, l.created_at) desc, l.created_at desc
+                    limit 1
+                    """,
+                    {"canonical_customer_id": canonical_customer_id, "account_id": account_id, "contact_id": contact_id},
+                )
+                row = cursor.fetchone()
+                event_rows = []
+                if row:
+                    cursor.execute(
+                        """
+                        select event_type, notes, recorded_by, status_observed, created_at
+                        from public.oom_sakkie_sales_lead_events
+                        where lead_id = %(lead_id)s
+                        order by created_at asc
+                        limit 100
+                        """,
+                        {"lead_id": row[0]},
+                    )
+                    event_rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False, "configured": True,
+            "status": "active_sales_lead_by_customer_identity_read_failed",
+            "error_type": exc.__class__.__name__, **_false_flags(),
+        }, 503
+    if not row:
+        return {
+            "success": False, "configured": True,
+            "status": "active_sales_lead_by_customer_identity_not_found", **_false_flags(),
+        }, 404
+    lead = _sales_lead_row(row)
+    lead["events"] = [_sales_lead_event_row(event_row) for event_row in event_rows]
+    lead["interest"] = _merged_sales_lead_interest(lead)
+    return {
+        "success": True, "configured": True, "status": "ok",
+        "mode": "active_sales_lead_by_customer_identity", "lead_id": lead.get("lead_id", ""),
+        "lead": lead, **_false_flags(),
     }, 200
 
 
@@ -1440,6 +1555,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
     events = lead.get("events") if isinstance(lead.get("events"), list) else []
     existing_order = _latest_draft_order_created_event({"events": events})
     if existing_order.get("order_id"):
+        owner_actions = _draft_order_owner_actions(existing_order.get("order_id"))
         return {
             "success": True,
             "configured": contract_result.get("configured", True),
@@ -1447,6 +1563,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
             "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
             "order_id": existing_order.get("order_id"),
             "order_url": f"/orders/{existing_order.get('order_id')}",
+            "owner_actions": owner_actions,
             "skipped": True,
             "creates_order": False,
             **{k: v for k, v in _false_flags().items() if k != "creates_order"},
@@ -1493,6 +1610,8 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
             **{k: v for k, v in _false_flags().items() if k != "creates_order"},
         }, 502
 
+    owner_actions = _draft_order_owner_actions(order_id)
+
     event_notes = {
         "source": "farm_app_meat_leads",
         "kind": "draft_order_created",
@@ -1521,6 +1640,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
             "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
             "order_id": order_id,
             "order_url": f"/orders/{order_id}",
+            "owner_actions": owner_actions,
             "order_result": order_result,
             "lead_event_error": event_result,
             "creates_order": True,
@@ -1536,6 +1656,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
         "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
         "order_id": order_id,
         "order_url": f"/orders/{order_id}",
+        "owner_actions": owner_actions,
         "order_result": order_result,
         "lead_event": event_result,
         "deposit_status": "Pending",
@@ -1544,6 +1665,14 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
         "writes_farm_data": True,
         **{k: v for k, v in _false_flags().items() if k not in {"creates_order", "writes_farm_data"}},
     }, 201
+
+
+def _draft_order_owner_actions(order_id):
+    href = f"/orders/{_clean_text(order_id, 100)}"
+    return [
+        {"action": "open_order", "label": "Open Order", "href": href},
+        {"action": "review_order", "label": "Review Draft Order", "href": f"{href}#order-actions"},
+    ]
 
 
 def send_customer_followup_to_chatwoot(lead_id, payload, database_url=None, chatwoot_sender=None):
@@ -1719,13 +1848,13 @@ def build_customer_followup_draft_from_contract(contract):
     buyer = summary.get("buyer_or_contact") or "there"
     product = summary.get("product") or "pork preorder"
     cut_set = summary.get("cut_set") or "selected cut set"
-    location = summary.get("location") or "your selected collection area"
+    location = summary.get("location") or "your delivery area"
     price = required.get("price_per_kg") or "the approved price/kg"
     week = required.get("available_week") or "the approved week"
     size = required.get("estimated_weight_or_size") or "final weight to be confirmed"
     deposit = required.get("deposit_amount_or_rule") or "the approved deposit rule"
     payment = required.get("payment_method") or "your selected payment method"
-    delivery = required.get("delivery_or_collection") or "collection/delivery to be confirmed"
+    delivery = required.get("delivery_or_collection") or "delivery details to be confirmed"
 
     message = (
         f"Hi {buyer}, I checked with the farm. For the {product} {cut_set} in {location}, "
@@ -1798,7 +1927,7 @@ def build_preorder_deposit_contract_from_lead(lead):
         "Which available week or slaughter window can Charl offer?",
         "What estimated half-carcass size/range should be discussed?",
         "What deposit rule should apply before any slaughter booking?",
-        "Will this be collection or delivery, and where?",
+        "Which town or area is the delivery for?",
     ]
     return {
         "contract_status": status,
@@ -2093,6 +2222,7 @@ def build_draft_order_payload_from_sales_lead(lead, contract, confirmation=None,
         "customer_channel": _normal_order_channel(overrides.get("customer_channel") or lead.get("channel")),
         "customer_language": _clean_text(overrides.get("customer_language") or "English", 40),
         "order_source": _clean_text(overrides.get("order_source") or "Sam Meat Preorder", 80),
+        "order_stream": "Meat",
         "requested_category": _clean_text(overrides.get("requested_category") or "Slaughter", 80),
         "requested_weight_range": _clean_text(
             overrides.get("requested_weight_range") or required.get("estimated_weight_or_size") or cut_set,
@@ -3262,7 +3392,7 @@ def _meat_yield_estimate(product_type, live_weight):
     elif product_type == "full_carcass":
         min_kg = full_min
         max_kg = full_max
-        display = f"estimated {min_kg:g}-{max_kg:g}kg packed full carcass"
+        display = f"estimated {min_kg:g}\u2013{max_kg:g} kg packed full carcass"
     elif product_type == "custom_cut":
         min_kg = full_min
         max_kg = full_max
@@ -3355,7 +3485,7 @@ def _meat_price_book_params(payload):
         "price_amount": round(price_amount, 2),
         "deposit_rule": _clean_text(payload.get("deposit_rule") or _default_deposit_rule(product_type), 180),
         "balance_rule": _clean_text(
-            payload.get("balance_rule") or "Balance due before delivery or collection",
+            payload.get("balance_rule") or "Balance due before delivery",
             180,
         ),
         "yield_basis": _clean_text(payload.get("yield_basis") or _default_yield_basis(product_type), 260),
@@ -3380,7 +3510,7 @@ def _default_yield_basis(product_type):
     if product_type == "half_carcass":
         return "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight."
     if product_type == "full_carcass":
-        return "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight."
+        return "Estimated packed full-carcass weight from 60kg live pig: 38–42 kg; final amount uses actual packed weight."
     if product_type == "custom_cut":
         return "Custom cut yield is estimated before slaughter and finalized from actual packed weight."
     return "No packed-weight estimate."
@@ -3390,10 +3520,10 @@ def _sam_meat_next_question(missing_core, missing_before_money_path):
     question_map = {
         "customer_name": "Who should I put this interest under?",
         "product_type": "Are you interested in a half carcass, full carcass, custom cuts, or assisted slaughter?",
-        "location": "Where would this need to be delivered or collected?",
-        "cut_set": "Which cut set are you interested in: Set A, Set B, Set C, or Set D?",
+        "location": "Which town or area is the delivery for?",
+        "cut_set": "Which collection are you interested in: Set A Amadeus Signature, Set B Amadeus Ember, or Set C Amadeus Grand Cut?",
         "timing": "When would you ideally want this pork?",
-        "delivery_or_collection": "Would you prefer collection or delivery?",
+        "delivery_or_collection": "Which town or area should we plan the delivery for?",
         "price_per_kg": "I need to confirm the current price with the farm before quoting.",
         "deposit_rule": "I need to confirm the deposit rule with the farm before booking anything.",
         "payment_method": "Would you prefer EFT or cash once the farm confirms availability?",

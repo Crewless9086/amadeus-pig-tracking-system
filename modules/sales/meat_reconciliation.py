@@ -16,14 +16,18 @@ RECONCILIATION_EVENT_TYPES = {
 }
 
 
-def get_meat_reconciliation_status(lead_id, database_url=None):
+def get_meat_reconciliation_status(lead_id, database_url=None, database_deadline=None):
     lead_id = _clean(lead_id, 100)
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
     database_url = _db_url(database_url)
     if not database_url:
         return _unavailable("not_configured", False), 503
-    ops_result, ops_status = get_meat_ops_status(lead_id, database_url=database_url)
+    ops_result, ops_status = get_meat_ops_status(
+        lead_id,
+        database_url=database_url,
+        database_deadline=database_deadline,
+    )
     if ops_status != 200:
         return ops_result, ops_status
     try:
@@ -31,7 +35,12 @@ def get_meat_reconciliation_status(lead_id, database_url=None):
     except ImportError:
         return _unavailable("dependency_missing", True), 500
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 events = _fetch_reconciliation_events(cursor, lead_id=lead_id)
     except Exception as exc:
@@ -302,7 +311,7 @@ def _confirmed_deposit_amount(deposits, reservation_id):
     for deposit in deposits or []:
         if deposit.get("reservation_id") != reservation_id:
             continue
-        if deposit.get("event_type") not in {"deposit_confirmed_in_bank", "deposit_confirmed"}:
+        if deposit.get("event_type") != "deposit_confirmed_in_bank":
             continue
         total += _number(deposit.get("amount")) or 0
     return _money(total)

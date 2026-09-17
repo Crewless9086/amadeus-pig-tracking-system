@@ -1,5 +1,9 @@
 # Agent Authority Matrix
 
+## CHARLIE Private Executive Boundary
+
+CHARLIE may automatically read operational state and issue private executive briefs. Under an active delegation policy and an explicit owner instruction, CHARLIE may create a CORE mission or apply a safe internal mission decision using current-state compare-and-set checks. CHARLIE may not send customers, publish posts, take or confirm money, reserve or move stock, write lifecycle/purpose state, access credentials, delete production data, or execute destructive migrations. Those remain Charl decisions and domain-specific gated executors.
+
 Status: active governance standard.
 
 Purpose: define the current authority boundary for the main Amadeus agents and components, including when Claude review is required or recommended. This matrix does not grant new runtime authority. It only records current source-backed limits and review triggers for CHARLIE CORE routing.
@@ -10,6 +14,9 @@ Purpose: define the current authority boundary for the main Amadeus agents and c
 - Claude review is advisory evidence only. A Claude pass cannot unlock authority unless owner approval, runtime flags, source-map evidence, tests, and the relevant backend gate also pass.
 - CHARLIE CORE must inspect the matched source-map section before planning or building authority, automation, customer/public output, payment, meat, slaughter, butcher, or agent-runtime changes.
 - Atlas, Sentinel, and Forge are currently Oom Sakkie specialist runtime components, not standalone canonical Vault agents. Registering them as independent agents requires a separate owner-reviewed mission.
+- CHARLIE executive authority is deny-by-default and comes only from an enabled, unexpired Supabase delegation policy with bounded scope, audit, rollback, and deterministic-gate requirements.
+- Internal branch, environment, implementation, evidence, stale-state, queue-continuation, and notification mechanics may be delegated after trust gates. Customer sends, public posts, payments, reservations, stock/lifecycle/purpose writes, destructive migrations, production deletion, and credentials remain Charl gates.
+- One authenticated owner request to print an allowlisted canonical document on GREEN's commissioned fixed local farm queue is itself standing authority for one governed copy. Do not add a preview/Confirm loop. Digest identity, canonical idempotency, fixed queue/options, bounded reconciliation and no automatic reprint remain mandatory; ask only for a genuine exception or physical-page result.
 
 ## Matrix
 
@@ -26,6 +33,7 @@ Purpose: define the current authority boundary for the main Amadeus agents and c
 | Atlas | `modules/oom_sakkie/agent_runtime.py`, `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md` | Specialist advisory analysis only when Oom Sakkie runtime policy allows. | Standalone agent authority, tool use, writes, dispatch, or owner-facing final decisions. | Oom Sakkie specialist dispatch gate and owner approval. | `tests/test_oom_sakkie_routes.py`, `tests/test_oom_sakkie_service.py` | Required before any move from specialist component to registered agent or broader runtime authority. |
 | Sentinel | `modules/oom_sakkie/agent_runtime.py`, `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`, `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` | Specialist advisory smoke/review evidence when explicitly owner-operated. | Autonomous dispatch, replay bypass, tool/write authority, or permanent runtime enablement. | Sentinel single-shot/dispatch gate and owner approval. | `tests/test_oom_sakkie_routes.py`, `tests/test_oom_sakkie_service.py`, `tests/test_oom_sakkie_browser_behavior_smoke.js` | Required for Sentinel runtime changes, replay policy changes, or any specialist automation increase. |
 | Forge | `modules/oom_sakkie/agent_runtime.py`, `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md` | Specialist advisory build/design recommendations under Oom Sakkie policy. | Code changes, deployments, tool writes, or authority self-approval. | Oom Sakkie specialist dispatch gate and CHARLIE CORE mission approval. | `tests/test_oom_sakkie_routes.py`, `tests/test_charlie_execution_bridge.py` | Required before any tool/write/build authority is introduced. |
+| GREEN / DOCUMENTS | `modules/oom_sakkie/documents_green_request_runtime.py`, `modules/documents/catalogue.py`, `modules/documents/green_print_api.py` | From one authenticated private owner request, authorize one allowlisted immutable PDF on the registered fixed local queue and own reconciliation/physical follow-up. | Caller-selected payload/URL/printer/queue/options, more than one copy, automatic reprint, or treating CUPS completion as physical truth. | No repeat confirmation for the bounded print; physical page result or genuine exception only. | `tests/test_documents_green_request_runtime.py`, `tests/test_green_print_api.py`, `tests/test_document_catalogue.py`, PostgreSQL print rail tests. | Required for new queues/options, automatic reprint, arbitrary documents, or any public/customer delivery. |
 
 ## CHARLIE CORE Routing Rule
 

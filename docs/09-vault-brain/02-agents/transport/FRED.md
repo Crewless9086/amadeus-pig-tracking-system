@@ -1,10 +1,10 @@
 # FRED
 
-Role: future private transfers and transport commander.
+Role: future client-facing private-transfer enquiry and booking agent.
 
 Status: planned, not built. Business concept captured for owner review.
 
-FRED owns Amadeus Private Transfers under the CHARLIE structure. FRED should not be mixed into SAM because transport clients, pricing, calendars, legal rules, and booking flows are a separate business environment.
+FRED serves Amadeus Private Transfers under the CHARLIE structure. FRED should not be mixed into SAM because transport clients, pricing, calendars, legal rules, and booking flows are a separate business environment. FRED is not a finance agent, farm-records agent, or general farm-operations agent.
 
 ## Mission
 

@@ -4,6 +4,9 @@
 
 Backend-triggered workflow that sends generated quote/invoice PDFs to a Chatwoot conversation as attachments.
 
+Delivery truth is governed by
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](../../../09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+
 This workflow is separate from `1.0 - SAM - Sales Agent - Chatwoot`. The backend owns document generation, totals, VAT, references, and `ORDER_DOCUMENTS`. n8n only downloads the already-generated PDF and sends it to Chatwoot.
 
 ## Trigger
@@ -42,7 +45,12 @@ Expected payload:
 1. Validate `event_type`, `conversation_id`, `google_drive_file_id`, `file_name`, and `message_text`.
 2. Download the PDF from Google Drive using authenticated Google Drive access.
 3. Send the file to Chatwoot as `attachments[]` with `message_type = outgoing` and `private = false`.
-4. Return `{ success: true, sent: true, document_id, conversation_id }` only after Chatwoot send succeeds.
+4. Return the exact Chatwoot acceptance result and outgoing message identity
+   after Chatwoot accepts the request. Historical `success=true`/`sent=true`
+   means accepted by Chatwoot, not provider-delivered or customer-received.
+5. Preserve application attempt identity and provider source identity
+   separately. Never replace one with the other.
+6. Do not automatically retry after acceptance or an ambiguous outcome.
 
 ## Safety Rule
 
@@ -54,7 +62,10 @@ Completed on 2026-05-10:
 
 1. Direct webhook smoke test sent quote `DOC-2026-45F259`, `Q-2026-01E18A-V3`, to Chatwoot `conversation_id = 1742` and returned `success = true`, `sent = true`.
 2. Backend endpoint test sent invoice `DOC-2026-EC0265`, `INV-2026-01E18A`, to Chatwoot `conversation_id = 1742`.
-3. Backend verified the n8n response and marked `ORDER_DOCUMENTS.Document_Status = Sent` only for the backend send.
+3. Backend verified the n8n response and marked
+   `ORDER_DOCUMENTS.Document_Status = Sent` for the backend send. This is
+   historical Chatwoot-acceptance evidence only unless an exact provider
+   delivered/read event is separately retained.
 
 ## Backend Contract
 
@@ -75,7 +86,11 @@ Example:
 }
 ```
 
-When n8n returns success, backend marks the document as `Sent` in `ORDER_DOCUMENTS`.
+When n8n returns historical success, backend marks the document as `Sent` in
+`ORDER_DOCUMENTS`. New review and reporting must present that state as
+accepted-unverified until exact provider delivered/read evidence is reconciled.
+Failure and ambiguity remain distinct, and accepted/ambiguous outcomes are not
+automatically retried.
 
 ## n8n Configuration Notes
 

@@ -26,6 +26,13 @@ Every build review must include:
 
 For dashboards and owner review surfaces:
 
+- Never infer final approval authority from `status=pr_ready` alone.
+- Use the deterministic final-readiness packet as the shared backend, CORE UI, and Telegram verdict.
+- Show the gate checklist and exact next action before presenting an approval control.
+- Lock final/release approval when tests, migration approval/application, required visual evidence, or other mandatory release evidence is pending.
+- Re-read and re-evaluate mission state on every owner action; packet snapshots are advisory and may be stale.
+- ANALYST records a review-readiness classification proposal whenever a mission reaches owner review with mandatory gates still pending.
+
 - show actual screen or local/live preview;
 - verify critical buttons are visible;
 - verify cards do not hide owner decisions;
@@ -40,7 +47,23 @@ Generated fallback screenshots must be labelled as generated packets, not live s
 
 Test evidence must include exact commands and results.
 
+For PR-backed missions it must also include the expected PR head SHA and the exact tested SHA. Tests from a base branch, stale branch, or different PR are not evidence for the current mission.
+
 "Looks good" is not evidence.
+
+For agent-behavior changes, isolated router, parser, prompt, policy, or unit
+tests are supporting evidence only. The exact-head review packet must also prove
+the complete customer journey across multiple turns: context retention,
+progressive routing, specialist tool boundaries, topic change, review/send
+gates, escalation ownership, and the final customer or owner outcome. It must
+report the defined journey metrics with their denominators; document citations
+alone do not satisfy this gate.
+
+For any customer-visible outbound path, review evidence must follow
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+HTTP 2xx, mock success, n8n success, or Chatwoot `status=sent` is acceptance
+evidence only. Exact-head tests cannot substitute for one controlled real
+provider delivered/read proof required for canary or autonomy graduation.
 
 ## Release Evidence
 
@@ -78,3 +101,5 @@ A review packet is weak if the owner cannot answer these quickly:
 - What happens if I approve it?
 
 If those answers are missing, Brain Guard should block review-ready status.
+
+Brain Guard blocking means internal evidence repair unless the packet identifies an explicit owner decision or red-zone approval. Environment failures, branch conflicts, stale revisions, missing evidence, and unrelated findings must not be presented as owner decisions.

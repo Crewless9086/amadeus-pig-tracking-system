@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime, timezone
 from urllib import request as urllib_request
 from urllib import error as urllib_error
 
@@ -8,6 +9,22 @@ from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.ledger_agent import ledger_agent_policy
 from modules.oom_sakkie.sales_campaign_store import approve_first_waiting_sales_campaign
 from modules.sales.sam_live_stock_launch_control import process_sam_live_stock_owner_callback
+from modules.oom_sakkie.owner_attention_adapter import process_owner_attention_callback
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.protected_action_claims import CALLBACK_PREFIX
+from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+from modules.oom_sakkie.family_access import FamilyRole, resolve_family_principal
+from modules.oom_sakkie.telegram_voice import is_telegram_voice_payload, prepare_telegram_voice_input
+from modules.oom_sakkie.family_runtime import handle_family_runtime_message
+from modules.oom_sakkie.family_specialist_adapters import (
+    family_replay_store, herdmaster_family_observation, load_family_question,
+    load_family_summary, retain_family_question_reply, rootline_family_handoff,
+)
+from modules.oom_sakkie.family_rootline_callback import (
+    CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
+    prepare_family_rootline_preview, handle_family_rootline_callback,
+)
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -15,6 +32,12 @@ from modules.oom_sakkie.telegram_gateway import (
     TRUTHY,
     parse_telegram_gateway_payload,
 )
+from modules.beacon.media_intake import (
+    handle_telegram_media_intake,
+    media_intake_policy,
+    telegram_media_envelope,
+)
+from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 
 
 DIRECT_ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED"
@@ -101,6 +124,7 @@ def telegram_direct_policy(environ=None):
             "dispatch_enabled": False,
             "can_trigger_outbound_llm": False,
         },
+        "beacon_media_intake": media_intake_policy(source),
     }
 
 
@@ -122,7 +146,6 @@ def telegram_direct_parity_report(environ=None):
         "telegram_commands": _telegram_command_catalog(),
         "not_carried_over_yet": [
             "Generic Telegram inline buttons and callback actions outside the SAM Live owner-review path",
-            "Telegram voice-note transcription",
             "Persistent task/reminder/project memory",
             "Write actions, dispatch, runtime changes, physical controls, or financial actions",
         ],
@@ -153,48 +176,156 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         return _direct_result(False, "telegram_direct_webhook_secret_too_short", policy, 503)
     if not policy["allowed_user_ids_configured"]:
         return _direct_result(False, "telegram_direct_allowed_user_ids_required", policy, 503)
-    if policy["auth_rate_limit"]["locked"]:
+    authenticated = _secret_matches(headers or {}, environ=environ)
+    if not authenticated and policy["auth_rate_limit"]["locked"]:
         return _direct_result(False, "telegram_direct_auth_rate_limited", policy, 429)
-    if not _secret_matches(headers or {}, environ=environ):
+    if not authenticated:
         _record_auth_failure()
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
 
+    voice_parsed = None
+    if is_telegram_voice_payload(payload):
+        voice_parsed, voice_response = prepare_telegram_voice_input(
+            payload, parse_telegram_gateway_payload(payload), environ=environ)
+        if voice_response is not None:
+            return voice_response
+
     callback = _parse_telegram_callback_payload(payload)
+    if callback["callback_data"].startswith(FAMILY_CALLBACK_PREFIX):
+        allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
+        source = environ if environ is not None else os.environ
+        parsed = {"telegram_user_id": callback["telegram_user_id"],
+            "telegram_chat_id": callback["telegram_chat_id"], "telegram_chat_type": "private",
+            "provider_message_id": callback["callback_query_id"],
+            "provider_timestamp": datetime.now(timezone.utc).isoformat(),
+            "reply_to_message_id": callback["telegram_message_id"],
+            "callback_query_id": callback["callback_query_id"],
+            "callback_data": callback["callback_data"], "text": ""}
+        principal = resolve_family_principal(parsed, source)
+        if (callback["telegram_user_id"] not in allowed_ids
+                or callback["telegram_user_id"] != callback["telegram_chat_id"]
+                or callback.get("telegram_chat_type") != "private"
+                or principal.role is not FamilyRole.FARM_MANAGER):
+            action_result, action_status = ({"success": False,
+                "status": "family_rootline_callback_unauthorized", "hardware_commands": 0,
+                "writes_farm_data": False}, 403)
+        else:
+            action_result, action_status = handle_family_rootline_callback(parsed, principal,
+                callback_data=callback["callback_data"], rootline_adapter=rootline_family_handoff,
+                replay_store=family_replay_store)
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
+            if action_result.get("suppress_family_delivery") or not action_result.get("answer")
+            else deliver_family_result(parsed, action_result, specialist="ROOTLINE"))
+        ack_result, ack_status = acknowledge_telegram_callback(callback["callback_query_id"], environ=environ)
+        body, _ = _direct_result(action_result.get("success") is True and ack_status < 400,
+            str(action_result.get("status") or "family_rootline_callback_contained"), policy,
+            action_status)
+        body.update({"message": action_result, "delivery": delivery,
+            "callback_acknowledgement": ack_result,
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": False, "hardware_commands": int(action_result.get("hardware_commands") or 0)})
+        return body, ack_status if ack_status >= 400 else action_status
+    if callback["callback_data"].startswith(CALLBACK_PREFIX):
+        allowed_ids=_allowed_user_ids(environ if environ is not None else os.environ)
+        if callback["telegram_user_id"] not in allowed_ids or callback["telegram_user_id"]!=callback["telegram_chat_id"]:
+            return _direct_result(False,"telegram_user_not_allowed",policy,403)
+        source=environ if environ is not None else os.environ
+        principal=resolve_family_principal({"telegram_user_id":callback["telegram_user_id"],
+          "telegram_chat_id":callback["telegram_chat_id"],"telegram_chat_type":"private"},source)
+        if principal.role not in {FamilyRole.OWNER, FamilyRole.FARM_MANAGER}:
+            return _direct_result(False,"telegram_protected_action_authority_required",policy,403)
+        parsed={"telegram_user_id":callback["telegram_user_id"],"telegram_chat_id":callback["telegram_chat_id"],
+          "telegram_chat_type":"private","provider_message_id":callback["callback_query_id"],
+          "provider_timestamp":datetime.now(timezone.utc).isoformat(),"reply_to_message_id":callback["telegram_message_id"],
+          "callback_query_id":callback["callback_query_id"],"callback_data":callback["callback_data"],"text":"",
+          "output_language":principal.language}
+        authority=issue_gateway_owner_authority(callback["telegram_user_id"],callback["telegram_chat_id"],
+          principal_role=principal.role.value,capabilities=principal.effective_permissions)
+        action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
+        from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
+        parsed = weaning_delivery_input(parsed, action_result)
+        from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+        parsed = first_treatment_delivery_input(parsed, action_result)
+        delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
+          if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
+          deliver_family_result(parsed,action_result,
+            specialist=str(action_result.get("specialist") or "HERDMASTER"),
+            mission_id=str(action_result.get("mission_id") or ""),
+            card_mission_id=str(action_result.get("card_mission_id") or action_result.get("mission_id") or "")))
+        ack_result,ack_status=acknowledge_telegram_callback(callback["callback_query_id"],environ=environ)
+        body,_=_direct_result(action_result.get("success") is True and delivery.get("success") is True and ack_status<400,
+          str(action_result.get("status") or "protected_callback_contained"),policy,action_status)
+        body.update({"protected_action":action_result,"delivery":delivery,"callback_acknowledgement":ack_result,
+          "sends_telegram":int(delivery.get("telegram_sends") or 0)>0,"writes":action_result.get("writes_farm_data") is True})
+        return body,(ack_status if ack_status>=400 else
+          503 if action_result.get("success") is True and delivery.get("success") is not True
+          else action_status)
     if callback["callback_data"].startswith("sam_live_"):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
-        if callback["telegram_user_id"] not in allowed_ids:
+        source = environ if environ is not None else os.environ
+        if (callback["telegram_user_id"] not in allowed_ids
+                or not _is_owner_private_principal(callback["telegram_user_id"],
+                                                    callback["telegram_chat_id"], source, allowed_ids)):
             body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
             body["telegram_user_id"] = callback["telegram_user_id"]
             return body, status_code
-        action_result, action_status = process_sam_live_stock_owner_callback({
-            "callback_data": callback["callback_data"],
-            "telegram_chat_id": callback["telegram_chat_id"],
-            "telegram_message_id": callback["telegram_message_id"],
-            "owner": "telegram_owner",
-        }, environ=environ)
-        telegram_text = _format_sam_live_callback_owner_reply(action_result)
-        send_result, send_status = send_owner_telegram_reply(
-            chat_id=callback["telegram_chat_id"],
-            text=telegram_text,
-            environ=environ,
-        )
-        status_label = send_result.get("status", "telegram_send_failed") if action_result.get("success") else action_result.get("status", "sam_live_callback_failed")
-        body, _ = _direct_result(action_result.get("success") is True and send_result.get("success") is True, status_label, policy, 200 if send_status < 400 else send_status)
+        if callback["callback_data"].startswith("sam_live_owner_decision:"):
+            action_result, action_status = process_owner_attention_callback({
+                "callback_data": callback["callback_data"], "telegram_user_id": callback["telegram_user_id"],
+                "telegram_chat_id": callback["telegram_chat_id"], "telegram_message_id": callback["telegram_message_id"],
+            }, environ=environ)
+        else:
+            action_result, action_status = process_sam_live_stock_owner_callback({
+                "callback_data": callback["callback_data"],
+                "telegram_chat_id": callback["telegram_chat_id"],
+                "telegram_message_id": callback["telegram_message_id"],
+                "owner": "telegram_owner",
+            }, environ=environ)
+        ack_result, ack_status = acknowledge_telegram_callback(callback["callback_query_id"], environ=environ)
+        status_label = action_result.get("status", "sam_live_callback_failed")
+        body, _ = _direct_result(action_result.get("success") is True and ack_status < 400, status_label, policy, action_status)
         body.update({
             "telegram_user_id": callback["telegram_user_id"],
             "telegram_chat_id": callback["telegram_chat_id"],
             "callback_data": callback["callback_data"],
             "sam_live_callback": action_result,
             "sam_live_callback_status_code": action_status,
-            "telegram_text": telegram_text,
-            "telegram_send": send_result,
-            "sends_telegram": bool(send_result.get("sends_telegram")),
+            "callback_acknowledgement": ack_result,
+            "callback_acknowledgement_status_code": ack_status,
+            "confirmation_message_created": False,
+            "sends_telegram": bool(action_result.get("calls_telegram")),
             "sends_customer_message": bool(action_result.get("sends_customer_message")),
             "calls_chatwoot": bool(action_result.get("calls_chatwoot")),
         })
-        return body, send_status if send_status >= 400 else 200
+        return body, ack_status if ack_status >= 400 else 200
 
-    parsed = parse_telegram_gateway_payload(payload)
+    media = telegram_media_envelope(payload)
+    if media is not None:
+        allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
+        source = environ if environ is not None else os.environ
+        if (media["owner_user_id"] not in allowed_ids
+                or media.get("chat_type") != "private"
+                or not _is_owner_private_principal(media["owner_user_id"], media.get("chat_id"),
+                                                    source, allowed_ids)):
+            body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
+            return body, status_code
+
+        def receipt_sender(chat_id, text):
+            result, _ = send_owner_telegram_reply(
+                chat_id=chat_id, text=text, environ=environ
+            )
+            return result
+
+        # Provider media belongs to the typed BEACON intake before any generic
+        # conversational/context rail. Letting owner-task interpretation run
+        # first can split one provider media group into unrelated handling.
+        return handle_telegram_media_intake(
+            payload,
+            environ=environ,
+            receipt_sender=receipt_sender,
+        )
+
+    parsed = voice_parsed if voice_parsed is not None else parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
         return _direct_result(False, "telegram_text_required", policy, 400)
     allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
@@ -203,15 +334,108 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         body["telegram_user_id"] = parsed["telegram_user_id"]
         return body, status_code
 
+    source = environ if environ is not None else os.environ
+    family_principal = resolve_family_principal(parsed, source)
+    is_owner_ingress = (parsed.get("telegram_chat_type") == "private"
+        and _is_owner_private_principal(parsed["telegram_user_id"],
+            parsed["telegram_chat_id"], source, allowed_ids))
+    if family_principal.role is FamilyRole.UNKNOWN_SENDER and not is_owner_ingress:
+        return _direct_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    if (family_principal.role in {FamilyRole.OWNER, FamilyRole.FARM_MANAGER}
+            and parsed.get("telegram_chat_type") == "private"
+            and parsed["telegram_user_id"] == parsed["telegram_chat_id"]):
+        # Both authenticated Telegram ingresses consume the same retained
+        # specialist operation. The direct bot must not divert a manager's
+        # mortality report into the older observation-only family adapter.
+        from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
+        from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
+        from modules.oom_sakkie.telegram_gateway import _bind_protected_preview_card
+        parsed = {**parsed, "output_language": family_principal.language}
+        authority = issue_gateway_owner_authority(parsed["telegram_user_id"], parsed["telegram_chat_id"],
+            principal_role=family_principal.role.value, capabilities=family_principal.effective_permissions)
+        health_result, health_status = handle_protected_action_input(parsed, authority)
+        if not health_result.get("handled"):
+            if semantic_front_door_policy(source).get("enabled"):
+                semantic = interpret_owner_message(parsed, environ=source)
+                if semantic is not None:
+                    parsed = {**parsed, "semantic": semantic.as_hint()}
+            from modules.oom_sakkie.herdmaster_litter_weaning_runtime import handle_litter_weaning_message
+            health_result, health_status = handle_litter_weaning_message(parsed, authority)
+            if not health_result.get("handled"):
+                from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import handle_litter_first_treatment_message
+                health_result, health_status = handle_litter_first_treatment_message(parsed, authority)
+            if not health_result.get("handled"):
+                health_result, health_status = handle_authenticated_health_loss_message(parsed, authority)
+        if health_result.get("handled"):
+            from modules.oom_sakkie.herdmaster_litter_weaning_runtime import weaning_delivery_input
+            parsed = weaning_delivery_input(parsed, health_result)
+            from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
+            parsed = first_treatment_delivery_input(parsed, health_result)
+            delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
+                if health_result.get("suppress_owner_delivery") else
+                deliver_family_result(parsed, health_result, specialist="HERDMASTER",
+                    mission_id=str(health_result.get("mission_id") or ""),
+                    card_mission_id=str(health_result.get("card_mission_id") or "")))
+            delivery = _bind_protected_preview_card(health_result, delivery)
+            body, _ = _direct_result(health_result.get("success") is True,
+                str(health_result.get("status") or "health_loss_contained"), policy, health_status)
+            body.update({"message": health_result, "answer": health_result.get("answer", ""),
+                "delivery": delivery, "family_role": family_principal.role.value,
+                "language": family_principal.language, "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                "writes": health_result.get("writes_farm_data") is True})
+            return body, health_status if delivery.get("success") else 503
+    if not is_owner_ingress and family_principal.role is not FamilyRole.OWNER:
+        family_result, family_status = handle_family_runtime_message(
+            parsed, family_principal, summary_loader=load_family_summary,
+            observation_adapter=herdmaster_family_observation,
+            contextual_loader=load_family_question,
+            contextual_adapter=retain_family_question_reply,
+            rootline_adapter=rootline_family_handoff,
+            rootline_preview_adapter=prepare_family_rootline_preview,
+            replay_store=family_replay_store)
+        delivery = (deliver_family_result(parsed, family_result, specialist="OOM_SAKKIE_FAMILY")
+                    if str(family_result.get("answer") or "").strip()
+                    else {"success": True, "status": "family_private_denial_no_delivery",
+                          "telegram_sends": 0, "telegram_edits": 0})
+        body, _ = _direct_result(family_result.get("success") is True,
+            str(family_result.get("status") or "family_request_contained"), policy, family_status)
+        body.update({"message": family_result, "answer": family_result.get("answer", ""),
+            "delivery": delivery, "family_role": family_principal.role.value,
+            "authorization_id": family_principal.authorization_id,
+            "binding_digest": family_principal.binding_digest, "language": family_principal.language,
+            "records_audit_trace": family_result.get("audit_trace_recorded") is True,
+            "reply_transport": "backend_handles_family_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": family_result.get("writes_farm_data") is True,
+            "hardware_commands": int(family_result.get("hardware_commands") or 0),
+            "physical_controls_enabled": int(family_result.get("hardware_commands") or 0) > 0})
+        if family_result.get("callback_token"):
+            body["preview_card_bound"] = bind_family_rootline_preview_card(family_result, delivery)
+        return body, family_status if delivery.get("success") else 202
+
+    owner_task, owner_task_status = handle_owner_task_input(
+        payload,
+        environ=environ,
+        telegram_sender=lambda chat_id, text, purpose: send_owner_telegram_reply(
+            chat_id, text, environ=environ, parse_mode="HTML"
+        )[0],
+    )
+    if owner_task.get("handled"):
+        return owner_task, owner_task_status
+
     command = _telegram_command_for_text(parsed["text"])
     if command["kind"] == "help":
         message_result, message_status = _help_message_result(parsed["text"]), 200
     elif command["kind"] == "approve_campaign":
-        action_result, action_status = approve_first_waiting_sales_campaign({
-            "recorded_by": "telegram_owner",
-            "notes": "Approved from owner direct Telegram command.",
-        })
-        message_result, message_status = _campaign_action_message_result(action_result), action_status
+        if parsed.get("input_provenance", {}).get("source_kind") == "telegram_voice":
+            from modules.oom_sakkie.telegram_voice import voice_confirmation_required
+            message_result, message_status = voice_confirmation_required(parsed)
+        else:
+            action_result, action_status = approve_first_waiting_sales_campaign({
+                "recorded_by": "telegram_owner",
+                "notes": "Approved from owner direct Telegram command.",
+            })
+            message_result, message_status = _campaign_action_message_result(action_result), action_status
     else:
         routed_text = command["text"] or parsed["text"]
         allow_specialist_llm = command.get("allow_specialist_llm") is True
@@ -250,6 +474,16 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     return body, send_status
 
 
+def _is_owner_private_principal(user_id, chat_id, source, allowed_ids):
+    user_id, chat_id = str(user_id or "").strip(), str(chat_id or "").strip()
+    configured_owner = str(source.get("OOM_SAKKIE_TELEGRAM_OWNER_USER_ID") or "").strip()
+    if user_id != chat_id:
+        return False
+    if configured_owner:
+        return user_id == configured_owner
+    return len(allowed_ids) == 1 and user_id in allowed_ids
+
+
 def _parse_telegram_callback_payload(payload):
     payload = payload if isinstance(payload, dict) else {}
     callback = payload.get("callback_query") if isinstance(payload.get("callback_query"), dict) else {}
@@ -257,11 +491,34 @@ def _parse_telegram_callback_payload(payload):
     from_user = callback.get("from") if isinstance(callback.get("from"), dict) else {}
     chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
     return {
+        "callback_query_id": str(callback.get("id") or payload.get("callback_query_id") or "").strip()[:120],
         "callback_data": str(callback.get("data") or payload.get("callback_data") or "").strip()[:240],
         "telegram_user_id": str(payload.get("telegram_user_id") or from_user.get("id") or "").strip()[:80],
         "telegram_chat_id": str(payload.get("telegram_chat_id") or chat.get("id") or "").strip()[:80],
         "telegram_message_id": str(payload.get("telegram_message_id") or message.get("message_id") or "").strip()[:80],
+        "telegram_chat_type": str(chat.get("type") or "").strip()[:40],
     }
+
+
+def acknowledge_telegram_callback(callback_query_id, environ=None):
+    source = environ if environ is not None else os.environ
+    callback_query_id = str(callback_query_id or "").strip()[:120]
+    if not callback_query_id:
+        return {"success": True, "status": "telegram_callback_acknowledgement_unavailable", "sends_telegram": False}, 200
+    token = str(source.get(BOT_TOKEN_ENV, "") or "").strip()
+    if not token:
+        return {"success": False, "status": "telegram_direct_bot_token_not_configured", "sends_telegram": False}, 503
+    request = urllib_request.Request(
+        f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+        data=json.dumps({"callback_query_id": callback_query_id}).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=15) as response:
+            result = json.loads(response.read().decode("utf-8") or "{}")
+        return {"success": result.get("ok") is True, "status": "telegram_callback_acknowledged", "sends_telegram": False}, 200
+    except (urllib_error.HTTPError, OSError):
+        return {"success": False, "status": "telegram_callback_acknowledgement_failed", "sends_telegram": False}, 502
 
 
 def _format_sam_live_callback_owner_reply(action_result):
@@ -395,7 +652,8 @@ def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
 
 def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
     sections = (context or {}).get("sections") or {}
-    if not sections:
+    attention = (context or {}).get("owner_attention") or {}
+    if not sections and not attention.get("items"):
         return ""
     farm = ((sections.get("farm") or {}).get("llm_context") or {}).get("sections") or {}
     business = (sections.get("business") or {}).get("llm_context") or {}
@@ -403,6 +661,41 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
     command_center = command.get("command_center") or {}
     next_actions = list((context or {}).get("next_actions") or [])[:2]
     lines = [title, "", "Daily Command Brief", ""]
+    if attention.get("success") is False:
+        lines.extend(["What needs attention", "- Shared owner attention is unavailable; no empty state was inferred.", ""])
+    groups = attention.get("groups") or {}
+    visible_primary = list(attention.get("top_items") or [])[:3]
+    needs_you = [item for item in visible_primary if item.get("attention_group") == "needs_you"]
+    farm_ready = [item for item in visible_primary if item.get("attention_group") == "farm_work_ready"]
+    attention_items = needs_you + farm_ready
+    if attention_items:
+        if needs_you:
+            lines.append("Needs you")
+        for item in needs_you:
+            lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('specialist_owner', 'specialist')}")
+            lines.append(f"  Next: {_clip(str(item.get('exact_owner_action') or 'No supported owner action.'), 220)}")
+        if farm_ready:
+            lines.append("Farm work ready")
+        for item in farm_ready:
+            lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('assigned_to', 'Farm team')}")
+            lines.append(f"  Next: {_clip(str(item.get('exact_owner_action') or 'No supported action.'), 220)}")
+        hidden = int(attention.get("hidden_count") or 0)
+        if hidden:
+            lines.append(f"- ➕ {hidden} more in What needs attention")
+            lines.append("  View all: Amadeus Farm → Owner attention")
+        lines.append("")
+    checking = list(groups.get("oom_sakkie_checking") or [])
+    if checking:
+        lines.append("Oom Sakkie is checking")
+        lines.append(f"- {len(checking)} specialist item{'s' if len(checking) != 1 else ''}; no owner action now")
+        lines.append("  Names, source references and chronology remain in collapsed details in the full view.")
+        lines.append("")
+    watch = list(groups.get("watch") or [])
+    completed = list(groups.get("recently_completed") or [])
+    if watch:
+        lines.extend(["Watch", f"- {len(watch)} useful context item{'s' if len(watch) != 1 else ''}; not owner work", ""])
+    if completed:
+        lines.extend(["Recently completed", f"- {len(completed)} recent item{'s' if len(completed) != 1 else ''}; excluded from open action count", ""])
     if farm:
         lines.extend([
             "Farm",
@@ -786,7 +1079,7 @@ def _help_message_result(text):
     }
 
 
-def send_owner_telegram_reply(chat_id, text, environ=None):
+def send_owner_telegram_reply(chat_id, text, environ=None, parse_mode=None):
     source = environ if environ is not None else os.environ
     policy = telegram_direct_policy(environ=source)
     if not policy["enabled"]:
@@ -800,11 +1093,14 @@ def send_owner_telegram_reply(chat_id, text, environ=None):
 
     token = str(source.get(BOT_TOKEN_ENV, "") or "").strip()
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    body = json.dumps({
+    packet = {
         "chat_id": chat_id,
         "text": text,
         "disable_web_page_preview": True,
-    }).encode("utf-8")
+    }
+    if parse_mode in {"HTML", "MarkdownV2"}:
+        packet["parse_mode"] = parse_mode
+    body = json.dumps(packet).encode("utf-8")
     request = urllib_request.Request(
         url,
         data=body,
@@ -948,6 +1244,7 @@ def _allowed_user_ids(source):
 
 def _carried_over_capabilities():
     return [
+        "authenticated native Telegram Ogg/Opus voice input when shared STT is enabled and configured; reported facts require the existing confirmation flow",
         "farm attention",
         "daily command brief",
         "farm operating brief",

@@ -176,6 +176,102 @@ class IrrigationImportDryRunTests(unittest.TestCase):
         self.assertEqual(result["link_issues"]["state_snapshots"]["next_zone_missing"], 1)
         self.assertEqual(result["link_issues"]["events"]["missing_zone_link"], 1)
 
+    def test_equivalent_instants_and_numeric_forms_are_one_true_replay(self):
+        records = self._records()
+        first = records["LOG"][0]
+        first["timestamp"] = "2026-05-22T22:06:14.597Z"
+        first["reason"] = "Daily plan created for 2026-05-23"
+        first["run_minutes_planned"] = "120"
+        replay = dict(first)
+        replay["timestamp"] = "2026-05-23T00:06:14.597+02:00"
+        replay["reason"] = "  DAILY   plan created for 2026-05-23 "
+        replay["run_minutes_planned"] = 120.0
+        records["LOG"].append(replay)
+
+        result = build_irrigation_dry_run_payload(records)
+        event = result["payloads"]["irrigation_events"][0]
+        provenance = result["duplicates"]["event_operational_replays"][0]
+
+        self.assertEqual(result["payload_summary"]["irrigation_events"]["rows"], 1)
+        self.assertEqual(event["event_at"], "2026-05-22T22:06:14.597000Z")
+        self.assertEqual(
+            result["reason_counts"]["events"]["duplicate_operational_event"], 1
+        )
+        self.assertEqual(provenance["kept"]["source_sheet_row"], 2)
+        self.assertEqual(provenance["suppressed"]["source_sheet_row"], 3)
+        self.assertEqual(
+            provenance["kept"]["irrigation_event_id"],
+            "IRREVT-2-20260522T220614.597Z",
+        )
+        self.assertEqual(
+            provenance["suppressed"]["irrigation_event_id"],
+            "IRREVT-3-20260523T000614.5970200",
+        )
+        self.assertEqual(provenance["kept"]["import_batch_id"], "DRY_RUN_ONLY")
+        self.assertEqual(
+            provenance["suppressed"]["import_batch_id"], "DRY_RUN_ONLY"
+        )
+
+    def test_distinct_same_date_event_times_are_both_retained(self):
+        records = self._records()
+        first = records["LOG"][0]
+        first["timestamp"] = "2026-05-22T22:06:14.597Z"
+        second = dict(first)
+        second["timestamp"] = "2026-05-22T23:59:59.000Z"
+        records["LOG"].append(second)
+
+        result = build_irrigation_dry_run_payload(records)
+        events = result["payloads"]["irrigation_events"]
+
+        self.assertEqual(len(events), 2)
+        self.assertEqual(
+            {event["event_at"] for event in events},
+            {
+                "2026-05-22T22:06:14.597000Z",
+                "2026-05-22T23:59:59.000000Z",
+            },
+        )
+        self.assertNotEqual(
+            events[0]["details"]["operational_fingerprint"],
+            events[1]["details"]["operational_fingerprint"],
+        )
+        self.assertEqual(result["duplicates"]["event_operational_replays"], [])
+
+    def test_distinct_sub_millisecond_instants_are_both_retained(self):
+        records = self._records()
+        first = records["LOG"][0]
+        first["timestamp"] = "2026-05-22T22:06:14.597020Z"
+        second = dict(first)
+        second["timestamp"] = "2026-05-22T22:06:14.597999Z"
+        records["LOG"].append(second)
+
+        result = build_irrigation_dry_run_payload(records)
+        events = result["payloads"]["irrigation_events"]
+
+        self.assertEqual(len(events), 2)
+        self.assertEqual(
+            {event["event_at"] for event in events},
+            {
+                "2026-05-22T22:06:14.597020Z",
+                "2026-05-22T22:06:14.597999Z",
+            },
+        )
+        self.assertNotEqual(
+            events[0]["details"]["operational_fingerprint"],
+            events[1]["details"]["operational_fingerprint"],
+        )
+
+    def test_material_delivery_difference_does_not_collide(self):
+        records = self._records()
+        records["LOG"][0]["run_minutes_planned"] = 120
+        changed = dict(records["LOG"][0])
+        changed["run_minutes_planned"] = 60
+        records["LOG"].append(changed)
+
+        result = build_irrigation_dry_run_payload(records)
+
+        self.assertEqual(result["payload_summary"]["irrigation_events"]["rows"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

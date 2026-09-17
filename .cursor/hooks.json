@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "node .cursor/hooks/charlie_mission_admission_guard.cjs hook",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "type": "command",
+        "command": "node .cursor/hooks/charlie_mission_admission_guard.cjs hook",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "type": "command",
+        "command": "node .cursor/hooks/charlie_mission_admission_guard.cjs hook --audit",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ]
+  }
+}
