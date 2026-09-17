@@ -1,0 +1,325 @@
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 825-829-288
+127.0.0.1 - - [13/Aug/2026 15:55:30] "GET /matings?preview=active-exposure-v1 HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /matings?preview=active-exposure-v1 HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /static/css/farmDashboardV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /static/js/matings.js HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /static/css/matingsActiveExposureV1.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /static/css/matingsRegisterV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /static/css/main.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /static/css/matingsInteractionsV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /api/pig-weights/pens HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1498, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1476, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1473, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 882, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_routes.py", line 279, in pens
+    return jsonify(list_pens())
+                   ^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_controller.py", line 345, in list_pens
+    pens = get_pens()
+           ^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_service.py", line 6270, in get_pens
+    rows = get_all_records(sheet_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 175, in get_all_records
+    worksheet = get_worksheet(sheet_name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 144, in get_worksheet
+    spreadsheet = _get_spreadsheet()
+                  ^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 105, in _get_spreadsheet
+    client = _get_client()
+             ^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 37, in _get_client
+    creds = service_account_credentials(scopes=SCOPES)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 47, in service_account_credentials
+    return Credentials.from_service_account_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\oauth2\service_account.py", line 260, in from_service_account_file
+    info, signer = _service_account_info.from_filename(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\auth\_service_account_info.py", line 78, in from_filename
+    with io.open(filename, "r", encoding="utf-8") as json_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'service_account.json'
+127.0.0.1 - - [13/Aug/2026 15:59:50] "GET /api/pig-weights/matings HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1498, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1476, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1473, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 882, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\mating_routes.py", line 238, in mating_list
+    records = get_mating_overview()
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\mating_service.py", line 200, in get_mating_overview
+    rows = get_all_records(MATING_OVERVIEW_SHEET)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 175, in get_all_records
+    worksheet = get_worksheet(sheet_name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 144, in get_worksheet
+    spreadsheet = _get_spreadsheet()
+                  ^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 105, in _get_spreadsheet
+    client = _get_client()
+             ^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 37, in _get_client
+    creds = service_account_credentials(scopes=SCOPES)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 47, in service_account_credentials
+    return Credentials.from_service_account_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\oauth2\service_account.py", line 260, in from_service_account_file
+    info, signer = _service_account_info.from_filename(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\auth\_service_account_info.py", line 78, in from_filename
+    with io.open(filename, "r", encoding="utf-8") as json_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'service_account.json'
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /matings?preview=active-exposure-v1 HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /static/css/main.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /static/js/matings.js HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /static/css/farmDashboardV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /static/css/matingsInteractionsV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /static/css/matingsActiveExposureV1.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /static/css/matingsRegisterV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /api/pig-weights/pens HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1498, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1476, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1473, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 882, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_routes.py", line 279, in pens
+    return jsonify(list_pens())
+                   ^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_controller.py", line 345, in list_pens
+    pens = get_pens()
+           ^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_service.py", line 6270, in get_pens
+    rows = get_all_records(sheet_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 175, in get_all_records
+    worksheet = get_worksheet(sheet_name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 144, in get_worksheet
+    spreadsheet = _get_spreadsheet()
+                  ^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 105, in _get_spreadsheet
+    client = _get_client()
+             ^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 37, in _get_client
+    creds = service_account_credentials(scopes=SCOPES)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 47, in service_account_credentials
+    return Credentials.from_service_account_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\oauth2\service_account.py", line 260, in from_service_account_file
+    info, signer = _service_account_info.from_filename(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\auth\_service_account_info.py", line 78, in from_filename
+    with io.open(filename, "r", encoding="utf-8") as json_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'service_account.json'
+127.0.0.1 - - [13/Aug/2026 16:00:03] "GET /api/pig-weights/matings HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1498, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1476, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1473, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 882, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\mating_routes.py", line 238, in mating_list
+    records = get_mating_overview()
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\mating_service.py", line 200, in get_mating_overview
+    rows = get_all_records(MATING_OVERVIEW_SHEET)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 175, in get_all_records
+    worksheet = get_worksheet(sheet_name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 144, in get_worksheet
+    spreadsheet = _get_spreadsheet()
+                  ^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 105, in _get_spreadsheet
+    client = _get_client()
+             ^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 37, in _get_client
+    creds = service_account_credentials(scopes=SCOPES)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 47, in service_account_credentials
+    return Credentials.from_service_account_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\oauth2\service_account.py", line 260, in from_service_account_file
+    info, signer = _service_account_info.from_filename(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\auth\_service_account_info.py", line 78, in from_filename
+    with io.open(filename, "r", encoding="utf-8") as json_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'service_account.json'
+127.0.0.1 - - [13/Aug/2026 16:00:05] "GET /matings?preview=active-exposure-empty-v1 HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /static/css/main.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /static/css/matingsActiveExposureV1.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /static/css/matingsRegisterV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /static/css/matingsInteractionsV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /static/js/matings.js HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /static/css/farmDashboardV2.css HTTP/1.1" 200 -
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /api/pig-weights/pens HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1498, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1476, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1473, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 882, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_routes.py", line 279, in pens
+    return jsonify(list_pens())
+                   ^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_controller.py", line 345, in list_pens
+    pens = get_pens()
+           ^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\pig_weights_service.py", line 6270, in get_pens
+    rows = get_all_records(sheet_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 175, in get_all_records
+    worksheet = get_worksheet(sheet_name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 144, in get_worksheet
+    spreadsheet = _get_spreadsheet()
+                  ^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 105, in _get_spreadsheet
+    client = _get_client()
+             ^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 37, in _get_client
+    creds = service_account_credentials(scopes=SCOPES)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 47, in service_account_credentials
+    return Credentials.from_service_account_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\oauth2\service_account.py", line 260, in from_service_account_file
+    info, signer = _service_account_info.from_filename(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\auth\_service_account_info.py", line 78, in from_filename
+    with io.open(filename, "r", encoding="utf-8") as json_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'service_account.json'
+127.0.0.1 - - [13/Aug/2026 16:00:06] "GET /api/pig-weights/matings HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1498, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1476, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 1473, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 882, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\flask\app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\mating_routes.py", line 238, in mating_list
+    records = get_mating_overview()
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\modules\pig_weights\mating_service.py", line 200, in get_mating_overview
+    rows = get_all_records(MATING_OVERVIEW_SHEET)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 175, in get_all_records
+    worksheet = get_worksheet(sheet_name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 144, in get_worksheet
+    spreadsheet = _get_spreadsheet()
+                  ^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 105, in _get_spreadsheet
+    client = _get_client()
+             ^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 37, in _get_client
+    creds = service_account_credentials(scopes=SCOPES)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\tmp\uiq-20260813-01-matings\services\google_sheets_service.py", line 47, in service_account_credentials
+    return Credentials.from_service_account_file(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\oauth2\service_account.py", line 260, in from_service_account_file
+    info, signer = _service_account_info.from_filename(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\venv\Lib\site-packages\google\auth\_service_account_info.py", line 78, in from_filename
+    with io.open(filename, "r", encoding="utf-8") as json_file:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'service_account.json'

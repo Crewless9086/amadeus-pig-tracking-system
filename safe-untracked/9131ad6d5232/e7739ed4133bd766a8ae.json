@@ -1,0 +1,9 @@
+{
+  "missions": [],
+  "proof": {
+    "approved": 0,
+    "in_progress": 0,
+    "release_approved": 0,
+    "note": "pr_ready canary is review evidence, not pickup-runnable or business work."
+  }
+}

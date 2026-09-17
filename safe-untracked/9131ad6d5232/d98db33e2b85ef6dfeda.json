@@ -1,0 +1,48 @@
+{
+  "schema": "charlie_many_to_one_replacement_authorization_preview_v1",
+  "preview_only": true,
+  "executable": false,
+  "authorization_state": "deliberately_absent",
+  "authorization_blockers": [
+    "PR #680 is source-only and its migration has not been applied by this preparation.",
+    "The controlling P0 real operational acceptance report is not yet bound to this contract.",
+    "A clean successor must not be created when P0 acceptance contains no failed reusable software capability.",
+    "Owner authorization must be freshly signed after all contract and predecessor guards are re-read."
+  ],
+  "successor_contract": {
+    "mission_id": "S01-OOM-DAILY-CONTROL-POST-P0-CLOSURE",
+    "status": "paused",
+    "source": "charlie_reconciliation_preview",
+    "raw_text": "After the controlling P0 operational-spine mission passes or records exact failed acceptance IDs, implement only the missing reusable Oom Sakkie manager capability. Preserve current provider-bound Telegram intake, farm-manager runtime, HERDMASTER and ROOTLINE adapters, bounded SAM and BEACON gaps, and deployed specialist authority. Never restore Operational V1 routing, terminal-driven coordination, CORE farm operations, generic protected-action execution, or replay of ambiguous provider delivery.",
+    "title": "Close only proven residual gaps after Oom Sakkie daily-control acceptance",
+    "urgency": "P1",
+    "mission_type": "system improvement",
+    "approval_level": "LEVEL 3",
+    "metadata_json": {
+      "proposal_state": "preview_only_not_created_not_authorized",
+      "controlling_p0": {"contract": "oom_sakkie_farm_manager_round_v1", "current_main": "0b620632fb225aa0ff4f845cc488746a68705b50", "acceptance_required_before_authorization": true},
+      "architecture_boundary": {"coordinator": "Oom Sakkie", "operational_agents": ["HERDMASTER", "ROOTLINE", "SAM", "BEACON"], "core_role": "software changes only for acceptance-proven missing capability", "prohibited": ["legacy Operational V1 routing", "terminal-driven coordination", "CORE ordinary farm operations", "parallel dispatcher", "generic protected-action authority"]},
+      "acceptance_criteria": [
+        "The exact post-P0 acceptance report and failed acceptance IDs are attached before approval; no failed ID means stop with no successor creation.",
+        "Current provider-bound farm-manager intake and durable round identity remain the baseline and are not rebuilt.",
+        "Only acceptance-proven residual manager lifecycle gaps may change source; SAM, BEACON, HERDMASTER and ROOTLINE capability gaps remain in their own successor families.",
+        "Every specialist result comes through the deployed typed adapter or becomes a bounded visible gap; no terminal impersonates an operational agent.",
+        "A protected effect remains inside its specialist-specific confirmation and exactly-once rail; the manager and CORE gain no generic execution authority.",
+        "Provider delivery ambiguity is never blindly retried, and exact replay causes zero additional sends, cards, specialist work or operational writes.",
+        "Fresh acceptance proves one provider-bound request and one natural follow-up complete truthfully after restart while unrelated farm, customer, publication and hardware state remains unchanged."
+      ],
+      "stop_conditions": ["The controlling P0 has not completed its real operational acceptance tests.", "The acceptance report contains no unmet reusable software capability.", "The requested change duplicates current main or an active P0 correction.", "The change would route ordinary farm work through CORE or a development terminal.", "The change would revive legacy Operational V1 routing or create a parallel queue/dispatcher."],
+      "orchestration": {"version": "charlie_adaptive_orchestration_v1", "generation_identity": "1e4a927139c1b0481f6681d4", "tier": "T4", "score": {"total_score": 20, "protected_triggers": ["customer_impact", "publication_reputation", "hardware_physical"], "reason": "Post-P0 residual can touch authenticated provider delivery and protected specialist boundaries."}, "selected_agents": [{"agent":"source_mapper","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"technical_architect","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"builder","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"tester","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"qa_red_team","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"security_reviewer","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"business_reviewer","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"reviewer","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]},{"agent":"publisher","authority":"scoped_repository","allowed_mutations":["owner-approved source files only"],"prohibited_actions":["production mutation","operational execution","merge","deploy"]}], "budgets": {"maximum_tokens": 200000, "maximum_elapsed_minutes": 1440, "maximum_attempts_per_stage": 3, "maximum_recovery_cycles": 4}, "stop_conditions": ["P0 acceptance absent", "no failed acceptance ID", "scope duplicates current main", "authority boundary conflict"]},
+      "agent_workflow": [{"agent":"source_mapper","status":"pending"},{"agent":"technical_architect","status":"pending"},{"agent":"builder","status":"pending"},{"agent":"tester","status":"pending"},{"agent":"qa_red_team","status":"pending"},{"agent":"security_reviewer","status":"pending"},{"agent":"business_reviewer","status":"pending"},{"agent":"reviewer","status":"pending"},{"agent":"publisher","status":"pending"}],
+      "orchestration_binding": {"valid": true, "validated": true, "reason": "orchestration_bound", "identity": "d12a89fa28357d2016771d61d5ab7b0ef706a32dbddb15a50937e253563e2acc", "generation_identity": "1e4a927139c1b0481f6681d4"}
+    }
+  },
+  "predecessor_allowlist": [
+    {"mission_id":"CHARLIE-FOLLOWUP-672D7917CFD7332D","expected_status":"new","expected_content_digest":"069407d389e5089f1328e43c742080ad6071df38540b2fc03cc72ba29c9472f0","expected_metadata_generation":"legacy-sha256:80ff6de769f767a4c3b6bcb51c51ef1150c091847175da3eacde1a700479df01","unfinished_value_reference":"artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-672D7917CFD7332D"},
+    {"mission_id":"CHARLIE-FOLLOWUP-TELEGRAM-CHANNEL-CONTRACT-20260722","expected_status":"new","expected_content_digest":"f87bec9cc9ec8c09dfd28e95f1eb853c82d1c733ca37dbb469d44e9cf2b958ee","expected_metadata_generation":"legacy-sha256:afa4e6f7ca6e4407f8b771811d6746e85fd69d0057f1c4ff376d9a5be3864043","unfinished_value_reference":"artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-TELEGRAM-CHANNEL-CONTRACT-20260722"},
+    {"mission_id":"CHARLIE-OUTCOME-23890E45EFE2A2C3","expected_status":"new","expected_content_digest":"04f8dd32405f7cff73e8091572b3b98fae43c97e3985e3d64fc657f067f371fa","expected_metadata_generation":"legacy-sha256:63e3338174cd64248379613d22299eb467c72a7b900a1f509b3d3e2599e2231a","unfinished_value_reference":"artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-23890E45EFE2A2C3"}
+  ],
+  "deterministic_preview": {"replacement_identity":"CHARLIE-REPLACEMENT-BATCH-2B998E6418E9247C14CC5F71","contract_digest":"148eb26a876fa3dee7597608e12c5bd8a5928b069e3f8e046727da26d4ab8499","predecessor_set_digest":"9d75704bebe74d3dceb3d6c1bf359abc11e8cbd807d98ebdc264a16e78586bca","transaction_digest":"1d5627553bd6ebc4c2d76546bd7f54a45bd9f6ef8346b3d9d0e29c8f35d840ea"},
+  "required_owner_authorization_payload_after_p0": {"version":"charlie_many_to_one_replacement_owner_authorization_v1","replacement_identity":"CHARLIE-REPLACEMENT-BATCH-2B998E6418E9247C14CC5F71","contract_digest":"148eb26a876fa3dee7597608e12c5bd8a5928b069e3f8e046727da26d4ab8499","predecessor_set_digest":"9d75704bebe74d3dceb3d6c1bf359abc11e8cbd807d98ebdc264a16e78586bca","transaction_digest":"1d5627553bd6ebc4c2d76546bd7f54a45bd9f6ef8346b3d9d0e29c8f35d840ea","owner_identity_hash":"REQUIRED_FRESH_VALUE_NOT_GENERATED","issued_at":"REQUIRED_FRESH_VALUE_NOT_GENERATED","expires_at":"REQUIRED_FRESH_VALUE_NOT_GENERATED","authorization_digest":"REQUIRED_FRESH_VALUE_NOT_GENERATED","signature":"REQUIRED_FRESH_VALUE_NOT_GENERATED"},
+  "mandatory_revalidation": "Every digest and status must be re-read after P0 acceptance. Any changed byte invalidates this preview and requires a new deterministic preview; this document is never itself authorization."
+}

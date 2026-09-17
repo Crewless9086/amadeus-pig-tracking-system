@@ -1,0 +1,35 @@
+.matings-register { max-width: none; margin: 0; color: #173b2d; }
+.matings-hero { align-items: flex-end; }
+.matings-hero p { max-width: 650px; }
+.matings-hero-actions { max-width: 680px; justify-content: flex-end; }
+.matings-hero-actions a { white-space: nowrap; }
+.mating-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin: 18px 0; }
+.mating-metrics .info-card { position: relative; min-height: 96px; padding: 18px; border: 1px solid var(--ops-border); border-radius: 16px; background: var(--ops-card); box-shadow: var(--ops-shadow-soft); }
+.mating-metrics .info-title { max-width: 75%; color: #5e7168; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.mating-metrics .info-value { margin-top: 10px; color: #173f31; font-size: 2.2rem; font-weight: 850; line-height: 1; }
+.mating-metrics .info-card::after { content: ""; position: absolute; right: 18px; top: 18px; width: 11px; height: 11px; border-radius: 50%; background: #92b897; }
+.mating-metrics .info-card:first-child::after { background: #d99167; }
+.matings-workspace { padding: 22px; }
+.workspace-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.workspace-heading h2 { margin: 3px 0 0; font-size: 1.65rem; color: #173f31; }
+.workspace-note { color: #65766d; font-size: .88rem; }
+.matings-controls { padding: 16px 18px; margin-bottom: 20px; border: 1px solid #d9e5db; border-radius: 16px; background: #fff; }
+.matings-controls .form-grid { display: grid; grid-template-columns: minmax(220px,420px) auto; align-items: end; gap: 14px; }
+.matings-controls select { width: 100%; min-height: 44px; border-color: #cddbd0; border-radius: 10px; background: #fff; }
+.matings-controls .pig-list-meta { margin-top: 10px; color: #718078; }
+.matings-board { display: grid; gap: 18px; }
+.matings-board > .history-list { margin: 0; padding: 18px; border: 1px solid #d9e5db; border-radius: 18px; background: #fff; }
+.matings-board > .history-list > .page-header { margin: 0 0 14px !important; }
+.matings-board > .history-list > .page-header h2 { color: #194635; font-size: 1.18rem; }
+.matings-board > .history-list > .page-header p { margin: 0; color: #6a7b72; font-size: .88rem; }
+.mating-card { margin: 10px 0 !important; padding: 17px 18px !important; border: 1px solid #d8e4da !important; border-left: 5px solid #86aa8b !important; border-radius: 14px !important; background: #fbfdfb !important; box-shadow: none !important; }
+.mating-card-expanded { border-left-color: #245f47 !important; background: #fff !important; }
+.mating-card .history-item-date { color: #164733; font-size: 1.1rem; font-weight: 850; }
+.mating-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.mating-toggle-button { padding: 8px 11px; border: 1px solid #c9d9cc; border-radius: 9px; background: #fff; color: #285942; font-weight: 750; cursor: pointer; }
+.mating-card-compact { grid-template-columns: 1.05fr 1fr 1fr !important; margin-top: 14px; padding-top: 14px; border-top: 1px solid #e1e9e2; }
+.mating-card-details { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #ccdacf; }
+.mating-card-details .history-item-grid { grid-template-columns: repeat(5,minmax(0,1fr)); }
+.matings-board .empty-state { padding: 22px; border: 1px dashed #ccdacf; border-radius: 12px; color: #77847e; text-align: center; background: #f8fbf8; }
+@media (max-width:1000px) { .mating-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .matings-hero { align-items: flex-start; flex-direction: column; } .matings-hero-actions { justify-content: flex-start; } .mating-card-details .history-item-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width:680px) { .matings-register { padding: 18px 14px 42px; } .matings-hero,.matings-workspace { padding: 20px; } .mating-metrics { grid-template-columns: 1fr 1fr; gap: 9px; } .mating-metrics .info-card { min-height: 98px; padding: 16px; } .matings-controls .form-grid,.mating-card-compact,.mating-card-details .history-item-grid { grid-template-columns: 1fr !important; } .workspace-heading { align-items: flex-start; flex-direction: column; } .matings-hero-actions { width: 100%; } .matings-hero-actions a { flex: 1; text-align: center; } }

@@ -1,0 +1,1014 @@
+{
+  "schema": "core_predecessor_successor_traceability_v1",
+  "generated_at": "2026-08-02T12:06:26.953920+00:00",
+  "rewrite_candidate_count": 70,
+  "mapped_count": 70,
+  "unique_predecessor_count": 70,
+  "duplicate_mappings": 0,
+  "unmapped_predecessors": [],
+  "mappings": [
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-7B2F40F621E57E5B",
+      "predecessor_status": "new",
+      "title": "Follow-up: Environment Timeout",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-7B2F40F621E57E5B",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-A0E9E3632BE2DE4C",
+      "predecessor_status": "new",
+      "title": "Follow-up: Baseline Regression",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-A0E9E3632BE2DE4C",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-ABDA2F0C741394ED",
+      "predecessor_status": "new",
+      "title": "Herdmaster Human Pig Observations and Triggered Decision Support: Frontend",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-ABDA2F0C741394ED",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-D1E48DE50E74F47E",
+      "predecessor_status": "paused",
+      "title": "Herdmaster Human Pig Observations and Triggered Decision Support: Agent Runtime",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-D1E48DE50E74F47E",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-55FDD768FB74A8C6",
+      "predecessor_status": "new",
+      "title": "Herdmaster Human Pig Observations and Triggered Decision Support: Release",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-55FDD768FB74A8C6",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-1CDD629B1C7FA8B9",
+      "predecessor_status": "new",
+      "title": "Follow-up: Access Authority",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-1CDD629B1C7FA8B9",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-ED59C3A5511A2E4F",
+      "predecessor_status": "new",
+      "title": "Follow-up: Revision Evidence",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-ED59C3A5511A2E4F",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-31C7679FA3F40543",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: BEACON Recommendation Learning Proof: Release",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-31C7679FA3F40543",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-5F381C2B629669B5",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Pig Lifecycle History, Exit Visibility, and Audit Completeness: Data Model",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-5F381C2B629669B5",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-23890E45EFE2A2C3",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Repair CHARLIE executive attention and Telegram notification reliability",
+      "consolidated_family_id": "F01_OOM_SAKKIE_MANAGER_LIFECYCLE",
+      "proposed_successor_ids": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-23890E45EFE2A2C3",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-6A0F7E954EDA38B2",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Herdmaster Human Pig Observations and Triggered Decision Support: Data Model",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-6A0F7E954EDA38B2",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-59CF1DDA1889B013",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: SAM Live Stock Single-Conversation Vertical Slice",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-59CF1DDA1889B013",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-349DBD3A0BA6F22B",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: BEACON Recommendation Learning Proof: Commercial",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-349DBD3A0BA6F22B",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-8935E974FD2A9CC6",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: BEACON Recommendation Learning Proof: Frontend",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-8935E974FD2A9CC6",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-E00E6DB0B2F16C5E",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: BEACON Recommendation Learning Proof: Data Model",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-E00E6DB0B2F16C5E",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-65420067A203BFE0",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: BEACON Lead and Sales Attribution: Data Model",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-65420067A203BFE0",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-A03C7BF264246ED3",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: BEACON Meat Launch Owner-Gated Facebook Pilot",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-A03C7BF264246ED3",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-8D009F67D1D0897D",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: BEACON Live-Stock Sales Campaign Pilot",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-8D009F67D1D0897D",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-1FFCE3DDF82A8DE3",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: CORE Final Artifact Consumption And Supervisor Truth",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-1FFCE3DDF82A8DE3",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-GATE-LEASE-HYGIENE-20260721",
+      "predecessor_status": "new",
+      "title": "Control Gate 2: terminal execution lease hygiene",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-GATE-LEASE-HYGIENE-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-GATE-OUTCOME-COMMS-20260721",
+      "predecessor_status": "new",
+      "title": "Control Gate 3: business outcome follow-up controls and communication",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-GATE-OUTCOME-COMMS-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-GATE-PORTFOLIO-VISIBILITY-20260721",
+      "predecessor_status": "new",
+      "title": "Control Gate 4: mission family, archive and queue visibility",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-GATE-PORTFOLIO-VISIBILITY-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-GATE-PORTFOLIO-RECONCILE-20260721",
+      "predecessor_status": "new",
+      "title": "Control Gate 5: reconcile, deduplicate and rank mission portfolio",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-GATE-PORTFOLIO-RECONCILE-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-PHASE0-BASELINE-20260721",
+      "predecessor_status": "new",
+      "title": "Always-On Phase 0: authoritative executive baseline",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-PHASE0-BASELINE-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-PHASE1-ATTENTION-20260721",
+      "predecessor_status": "new",
+      "title": "Always-On Phase 1: executive attention reliability",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-PHASE1-ATTENTION-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-PHASE2-CONTINUITY-20260721",
+      "predecessor_status": "new",
+      "title": "Always-On Phase 2: never-silent portfolio continuity",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-PHASE2-CONTINUITY-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-PHASE3-OBSERVERS-20260721",
+      "predecessor_status": "new",
+      "title": "Always-On Phase 3: complete domain observer registry",
+      "consolidated_family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-PHASE3-OBSERVERS-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-PHASE4-GOALS-20260721",
+      "predecessor_status": "new",
+      "title": "Always-On Phase 4: goal-to-mission intelligence",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-PHASE4-GOALS-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-PHASE5-COMMAND-CENTRE-20260721",
+      "predecessor_status": "new",
+      "title": "Always-On Phase 5: executive command centre",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-PHASE5-COMMAND-CENTRE-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-EXEC-PHASE6-UNATTENDED-CANARY-20260721",
+      "predecessor_status": "new",
+      "title": "Always-On Phase 6: unattended canary and graduated autonomy",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-EXEC-PHASE6-UNATTENDED-CANARY-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-7F294F4F84E9391E",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Pig Lifecycle History, Exit Visibility, and Audit Completeness: Lifecycle",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-7F294F4F84E9391E",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FARM-ORDER-STREAM-RECOVERY-20260721",
+      "predecessor_status": "new",
+      "title": "Restore Create Order and align the shared order-stream schema",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FARM-ORDER-STREAM-RECOVERY-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FARM-PROFITABILITY-OS-20260721",
+      "predecessor_status": "paused",
+      "title": "Farm Profitability Operating System: Orders, Herd Decisions and Auction Outlet",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FARM-PROFITABILITY-OS-20260721",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-672D7917CFD7332D",
+      "predecessor_status": "new",
+      "title": "Follow-up: Implementation Defect",
+      "consolidated_family_id": "F01_OOM_SAKKIE_MANAGER_LIFECYCLE",
+      "proposed_successor_ids": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-672D7917CFD7332D",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-TELEGRAM-CHANNEL-CONTRACT-20260722",
+      "predecessor_status": "new",
+      "title": "Harden Telegram channel routing and refused-callback audit status contract",
+      "consolidated_family_id": "F01_OOM_SAKKIE_MANAGER_LIFECYCLE",
+      "proposed_successor_ids": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-TELEGRAM-CHANNEL-CONTRACT-20260722",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-RA1DE1EFF",
+      "predecessor_status": "paused",
+      "title": "Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 1",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-RA1DE1EFF",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-BC2D2D01AD1FECCD",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Follow-up: Implementation Defect",
+      "consolidated_family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-BC2D2D01AD1FECCD",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-245AB84AF037E4B2",
+      "predecessor_status": "new",
+      "title": "Complete Herdmaster observations with separate management intents and actions: Frontend",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-245AB84AF037E4B2",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-252CBB6A34408029",
+      "predecessor_status": "new",
+      "title": "Complete Herdmaster observations with separate management intents and actions: Agent Runtime",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-252CBB6A34408029",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-93D8BFEB70EC3A70",
+      "predecessor_status": "new",
+      "title": "Complete Herdmaster observations with separate management intents and actions: Release",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-93D8BFEB70EC3A70",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-0C882C5741BC7935",
+      "predecessor_status": "new",
+      "title": "Follow-up: Input Validation",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-0C882C5741BC7935",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-45CC0A3050878124",
+      "predecessor_status": "new",
+      "title": "Follow-up: Supply Compatibility",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-45CC0A3050878124",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8",
+      "predecessor_status": "paused",
+      "title": "Complete Herdmaster observations with separate management intents and actions - recovery slice 1",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-F37DF86F60862FF5",
+      "predecessor_status": "new",
+      "title": "Complete Herdmaster observations with separate management intents and actions - recovery slice 2: Commercial",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-F37DF86F60862FF5",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-FCD5EFF094B617DC",
+      "predecessor_status": "new",
+      "title": "Complete Herdmaster observations with separate management intents and actions - recovery slice 2: Release",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-FCD5EFF094B617DC",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-854213DDE0C2FD97",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 3",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-854213DDE0C2FD97",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-HERDMASTER-STAGE-AUTH-GUARD-20260722",
+      "predecessor_status": "paused",
+      "title": "Herdmaster correction batches: fail-closed owner-session guard",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-HERDMASTER-STAGE-AUTH-GUARD-20260722",
+      "delivered_objective_removed": true,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-R7E0E8AA2-RI85DB5D10",
+      "predecessor_status": "paused",
+      "title": "Incident repair: Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 2",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-R7E0E8AA2-RI85DB5D10",
+      "delivered_objective_removed": true,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-EBA266295D917FC3",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 2",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-EBA266295D917FC3",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8-RI2D70B17E",
+      "predecessor_status": "paused",
+      "title": "Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8-RI2D70B17E",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-F6626B8F3E33C44F",
+      "predecessor_status": "new",
+      "title": "Farm profitability cross-agent operational canary and executive brief: Commercial",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-F6626B8F3E33C44F",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FARM-AUCTION-OUTLET-OPTIMIZATION-20260721-RID4AD6985",
+      "predecessor_status": "paused",
+      "title": "Incident repair: Riversdale auction outlet and one-pig/one-outlet profitability coordination",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FARM-AUCTION-OUTLET-OPTIMIZATION-20260721-RID4AD6985",
+      "delivered_objective_removed": true,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R03518FF0",
+      "predecessor_status": "paused",
+      "title": "Farm profitability cross-agent operational canary and executive brief - recovery slice 1",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R03518FF0",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R094E3C05",
+      "predecessor_status": "paused",
+      "title": "Farm profitability cross-agent operational canary and executive brief - recovery slice 2",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R094E3C05",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R6830E01D",
+      "predecessor_status": "paused",
+      "title": "Farm profitability cross-agent operational canary and executive brief - recovery slice 3",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R6830E01D",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-04FD0824EDE8CC74",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Riversdale auction outlet and one-pig/one-outlet profitability coordination",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-04FD0824EDE8CC74",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-5D9241AECABB3216",
+      "predecessor_status": "paused",
+      "title": "Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Data Model",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-5D9241AECABB3216",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-3BF10B2EA511646E",
+      "predecessor_status": "new",
+      "title": "Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Lifecycle",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-3BF10B2EA511646E",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-A302E5D4806EFA7D",
+      "predecessor_status": "new",
+      "title": "Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Frontend",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-A302E5D4806EFA7D",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-A4294E55FD754C61",
+      "predecessor_status": "new",
+      "title": "Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Release",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-A4294E55FD754C61",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-BCF1A16575967DB6",
+      "predecessor_status": "paused",
+      "title": "Farm profitability cross-agent operational canary and executive brief - recovery slice 1: Frontend",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-BCF1A16575967DB6",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-CD4CE812CE3CD8EB",
+      "predecessor_status": "new",
+      "title": "Farm profitability cross-agent operational canary and executive brief - recovery slice 1: Agent Runtime",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-CD4CE812CE3CD8EB",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-EBFDC3A3CC2045A3",
+      "predecessor_status": "new",
+      "title": "Farm profitability cross-agent operational canary and executive brief - recovery slice 1: Commercial",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-EBFDC3A3CC2045A3",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-3CC45FA8329C3F1E",
+      "predecessor_status": "new",
+      "title": "Farm profitability cross-agent operational canary and executive brief - recovery slice 1: Release",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-3CC45FA8329C3F1E",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-3BC9E9C50FC97681",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Incident repair: Herdmaster proactive breeding calendar, matching and reminders",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-3BC9E9C50FC97681",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-FOLLOWUP-0B9DFD18FD90D523",
+      "predecessor_status": "new",
+      "title": "Follow-up: Visual Evidence",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-FOLLOWUP-0B9DFD18FD90D523",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2",
+      "predecessor_status": "paused",
+      "title": "Incident repair: Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Data Model",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-DFDDF7930FC839D6",
+      "predecessor_status": "new",
+      "title": "Incident repair: Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Data Model: Agent Runtime",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-DFDDF7930FC839D6",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2-RIF7F50339",
+      "predecessor_status": "paused",
+      "title": "Incident repair: Incident repair: Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Data Model",
+      "consolidated_family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2-RIF7F50339",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    },
+    {
+      "predecessor_mission_id": "CHARLIE-OUTCOME-406519E37AB1D03D",
+      "predecessor_status": "new",
+      "title": "Activate operational outcome: Farm profitability cross-agent operational canary and executive brief - recovery slice 1: Lifecycle",
+      "consolidated_family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "unique_unfinished_value_preserved": true,
+      "preserved_value_reference": "artifacts/03_preserved_unfinished_value_manifest.json#CHARLIE-OUTCOME-406519E37AB1D03D",
+      "delivered_objective_removed": false,
+      "queue_effect": "none_during_reconciliation",
+      "future_non_runnable_binding": "Required many-to-one supersession link in the later atomic queue-governance transaction."
+    }
+  ],
+  "atomic_retirement_procedure": {
+    "state": "proposal_only",
+    "prerequisite": "Separately authorize and deploy a generalized many-to-one supersession ledger/query contract; current single-predecessor metadata is insufficient for consolidated successors.",
+    "steps": [
+      "Freeze owner-approved successor contract and exact predecessor set.",
+      "Acquire one database transaction and lock all predecessor rows in deterministic mission_id order.",
+      "Recheck every predecessor status/generation and broad-pickup-disabled invariant.",
+      "Insert exactly one successor in new/non-runnable state with current adaptive packet and immutable predecessor set.",
+      "Insert one append-only supersession link per predecessor, bound to successor and orchestration generation.",
+      "Verify authoritative runnable queries exclude every linked predecessor and the successor remains non-runnable pending separate approval.",
+      "Commit all links and successor atomically; rollback everything on any mismatch.",
+      "Append owner-review evidence; approval and pickup activation remain separate later owner actions."
+    ],
+    "required_failure_mode": "Rollback leaves no successor and no changed predecessor/queue state."
+  }
+}

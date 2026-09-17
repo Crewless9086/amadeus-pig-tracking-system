@@ -1,0 +1,1154 @@
+{
+  "proposals": [
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-001",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-EXEC-GATE-LEASE-HYGIENE-20260721",
+        "CHARLIE-EXEC-GATE-OUTCOME-COMMS-20260721",
+        "CHARLIE-EXEC-GATE-PORTFOLIO-VISIBILITY-20260721",
+        "CHARLIE-EXEC-GATE-PORTFOLIO-RECONCILE-20260721",
+        "CHARLIE-EXEC-PHASE0-BASELINE-20260721",
+        "CHARLIE-EXEC-PHASE1-ATTENTION-20260721",
+        "CHARLIE-EXEC-PHASE2-CONTINUITY-20260721",
+        "CHARLIE-EXEC-PHASE3-OBSERVERS-20260721",
+        "CHARLIE-EXEC-PHASE4-GOALS-20260721",
+        "CHARLIE-EXEC-PHASE5-COMMAND-CENTRE-20260721",
+        "CHARLIE-EXEC-PHASE6-UNATTENDED-CANARY-20260721",
+        "CHARLIE-FOLLOWUP-672D7917CFD7332D",
+        "CHARLIE-FOLLOWUP-TELEGRAM-CHANNEL-CONTRACT-20260722"
+      ],
+      "predecessor_root": "CHARLIE-ALWAYS-ON-EXECUTIVE-OS-20260720",
+      "title": "Reconcile current capability: Control Gate 2: terminal execution lease hygiene",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-002",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-23890E45EFE2A2C3"
+      ],
+      "predecessor_root": "CHARLIE-EXECUTIVE-ATTENTION-NOTIFICATION-20260720",
+      "title": "Reconcile current capability: Activate operational outcome: Repair CHARLIE executive attention and Telegram notification reliability",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-003",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-04FD0824EDE8CC74"
+      ],
+      "predecessor_root": "CHARLIE-FARM-AUCTION-OUTLET-OPTIMIZATION-20260721",
+      "title": "Reconcile current capability: Activate operational outcome: Riversdale auction outlet and one-pig/one-outlet profitability coordination",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-004",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R03518FF0",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R094E3C05",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R6830E01D"
+      ],
+      "predecessor_root": "CHARLIE-FARM-PROFITABILITY-CANARY-20260721",
+      "title": "Reconcile current capability: Farm profitability cross-agent operational canary and executive brief - recovery slice 1",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-005",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-SCOPE-BCF1A16575967DB6",
+        "CHARLIE-SCOPE-CD4CE812CE3CD8EB",
+        "CHARLIE-SCOPE-EBFDC3A3CC2045A3",
+        "CHARLIE-SCOPE-3CC45FA8329C3F1E"
+      ],
+      "predecessor_root": "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R03518FF0",
+      "title": "Reconcile current capability: Farm profitability cross-agent operational canary and executive brief - recovery slice 1: Frontend",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-006",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-FARM-ORDER-STREAM-RECOVERY-20260721",
+        "CHARLIE-FARM-PROFITABILITY-OS-20260721",
+        "CHARLIE-SCOPE-245AB84AF037E4B2",
+        "CHARLIE-SCOPE-252CBB6A34408029",
+        "CHARLIE-SCOPE-93D8BFEB70EC3A70",
+        "CHARLIE-HERDMASTER-STAGE-AUTH-GUARD-20260722",
+        "CHARLIE-SCOPE-F6626B8F3E33C44F",
+        "CHARLIE-FARM-AUCTION-OUTLET-OPTIMIZATION-20260721-RID4AD6985"
+      ],
+      "predecessor_root": "CHARLIE-FARM-PROFITABILITY-OS-20260721",
+      "title": "Reconcile current capability: Restore Create Order and align the shared order-stream schema",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-007",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-BC2D2D01AD1FECCD"
+      ],
+      "predecessor_root": "CHARLIE-FOLLOWUP-2A49A9D3E1A2CD0A",
+      "title": "Reconcile current capability: Activate operational outcome: Follow-up: Implementation Defect",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-008",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-3BC9E9C50FC97681"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-BREEDING-PLANNER-20260721-RI748BC303",
+      "title": "Reconcile current capability: Activate operational outcome: Incident repair: Herdmaster proactive breeding calendar, matching and reminders",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-009",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721",
+      "title": "Reconcile current capability: Complete Herdmaster observations with separate management intents and actions - recovery slice 1",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-010",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-SCOPE-F37DF86F60862FF5",
+        "CHARLIE-SCOPE-FCD5EFF094B617DC"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R63C034E2",
+      "title": "Reconcile current capability: Complete Herdmaster observations with separate management intents and actions - recovery slice 2: Commercial",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-011",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8-RI2D70B17E",
+        "CHARLIE-SCOPE-5D9241AECABB3216",
+        "CHARLIE-SCOPE-3BF10B2EA511646E",
+        "CHARLIE-SCOPE-A302E5D4806EFA7D",
+        "CHARLIE-SCOPE-A4294E55FD754C61",
+        "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2",
+        "CHARLIE-SCOPE-DFDDF7930FC839D6",
+        "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2-RIF7F50339"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8",
+      "title": "Reconcile current capability: Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-012",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-SCOPE-ABDA2F0C741394ED",
+        "CHARLIE-SCOPE-D1E48DE50E74F47E",
+        "CHARLIE-SCOPE-55FDD768FB74A8C6",
+        "CHARLIE-FOLLOWUP-1CDD629B1C7FA8B9",
+        "CHARLIE-FOLLOWUP-ED59C3A5511A2E4F"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-PIG-OBSERVATIONS-20260720",
+      "title": "Reconcile current capability: Herdmaster Human Pig Observations and Triggered Decision Support: Frontend",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-013",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-RA1DE1EFF"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721",
+      "title": "Reconcile current capability: Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 1",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-014",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-854213DDE0C2FD97"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-R301F3B33",
+      "title": "Reconcile current capability: Activate operational outcome: Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 3",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-015",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-R7E0E8AA2-RI85DB5D10",
+        "CHARLIE-OUTCOME-EBA266295D917FC3"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-R7E0E8AA2",
+      "title": "Reconcile current capability: Incident repair: Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 2",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-016",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-FOLLOWUP-0C882C5741BC7935",
+        "CHARLIE-FOLLOWUP-45CC0A3050878124"
+      ],
+      "predecessor_root": "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-RA1DE1EFF",
+      "title": "Reconcile current capability: Follow-up: Input Validation",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-017",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-1FFCE3DDF82A8DE3"
+      ],
+      "predecessor_root": "CHARLIE-MISSION-CORE-FINAL-ARTIFACT-INGEST",
+      "title": "Reconcile current capability: Activate operational outcome: CORE Final Artifact Consumption And Supervisor Truth",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-018",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-A03C7BF264246ED3"
+      ],
+      "predecessor_root": "CHARLIE-MISSION-EEB900E3BD27304D",
+      "title": "Reconcile current capability: Activate operational outcome: BEACON Meat Launch Owner-Gated Facebook Pilot",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-019",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-8D009F67D1D0897D"
+      ],
+      "predecessor_root": "CHARLIE-MISSION-F7F8A97750EC42A5",
+      "title": "Reconcile current capability: Activate operational outcome: BEACON Live-Stock Sales Campaign Pilot",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-020",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-FOLLOWUP-0B9DFD18FD90D523"
+      ],
+      "predecessor_root": "CHARLIE-PIG-LIFECYCLE-HISTORY-VISIBILITY-20260720",
+      "title": "Reconcile current capability: Follow-up: Visual Evidence",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-021",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-FOLLOWUP-7B2F40F621E57E5B",
+        "CHARLIE-FOLLOWUP-A0E9E3632BE2DE4C",
+        "CHARLIE-OUTCOME-59CF1DDA1889B013"
+      ],
+      "predecessor_root": "CHARLIE-SAM-LIVE-STOCK-VERTICAL-20260720",
+      "title": "Reconcile current capability: Follow-up: Environment Timeout",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-022",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-6A0F7E954EDA38B2"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-1C564A1B7E1C7681",
+      "title": "Reconcile current capability: Activate operational outcome: Herdmaster Human Pig Observations and Triggered Decision Support: Data Model",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-023",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-5F381C2B629669B5"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-2D1A6D75C0BFBD91",
+      "title": "Reconcile current capability: Activate operational outcome: Pig Lifecycle History, Exit Visibility, and Audit Completeness: Data Model",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-024",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-406519E37AB1D03D"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-40BD1F16C18050B9",
+      "title": "Reconcile current capability: Activate operational outcome: Farm profitability cross-agent operational canary and executive brief - recovery slice 1: Lifecycle",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-025",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-65420067A203BFE0"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-7035049F7E906971",
+      "title": "Reconcile current capability: Activate operational outcome: BEACON Lead and Sales Attribution: Data Model",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-026",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-7F294F4F84E9391E"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-856A3ED8C9F7F8E4",
+      "title": "Reconcile current capability: Activate operational outcome: Pig Lifecycle History, Exit Visibility, and Audit Completeness: Lifecycle",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-027",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-349DBD3A0BA6F22B"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-860ECEA5089051B2",
+      "title": "Reconcile current capability: Activate operational outcome: BEACON Recommendation Learning Proof: Commercial",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-028",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-8935E974FD2A9CC6"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-A5AC4CDC6DABFB41",
+      "title": "Reconcile current capability: Activate operational outcome: BEACON Recommendation Learning Proof: Frontend",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-029",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-31C7679FA3F40543"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-E29779C76C5C716C",
+      "title": "Reconcile current capability: Activate operational outcome: BEACON Recommendation Learning Proof: Release",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    },
+    {
+      "proposal_id": "CORE-RECON-SUCCESSOR-030",
+      "status": "proposal_only_not_activated",
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-E00E6DB0B2F16C5E"
+      ],
+      "predecessor_root": "CHARLIE-SCOPE-F31D9922592C0F40",
+      "title": "Reconcile current capability: Activate operational outcome: BEACON Recommendation Learning Proof: Data Model",
+      "business_outcome": "Reconfirm the still-needed software capability against current deployed specialist behavior, then deliver only measurable missing gaps.",
+      "source_maps": [
+        "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",
+        "docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md"
+      ],
+      "acceptance": "Current production gap is reproduced; scoped change closes it; focused and regression tests pass; deployed specialist ownership and authority remain intact.",
+      "adaptive_scoring": {
+        "required": "re-score at owner-approved intake against current main",
+        "tier": "unassigned_until_intake",
+        "minimum_agents": "source_mapper plus only evidence-triggered architect/builder/test/reviewer roles"
+      },
+      "budget": {
+        "tokens": "bounded at intake by tier",
+        "minutes": "bounded at intake by tier",
+        "attempts": "bounded at intake; no autonomous expansion"
+      },
+      "authority": {
+        "allowed": "read current production and edit only explicitly mapped repository scope after owner approval",
+        "forbidden": [
+          "ordinary farm operations through CORE",
+          "production/runtime/customer/Telegram mutation",
+          "merge",
+          "deploy",
+          "release",
+          "stock/payment/farm lifecycle action"
+        ]
+      },
+      "replacement_binding": "After owner approval, atomically record successor supersession metadata naming every predecessor and validated generation identity; predecessor remains immutable and is excluded from every runnable query."
+    }
+  ]
+}

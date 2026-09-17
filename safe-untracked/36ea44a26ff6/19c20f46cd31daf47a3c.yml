@@ -1,0 +1,147 @@
+name: Green Print 0.3.0 contained publication recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      recover:
+        description: Recover evidence for the existing immutable 0.3.0 digest only
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: green-print-0.3.0-contained-recovery
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/crewless9086/amadeus-green-print-bridge
+  VERSION: 0.3.0
+  IMAGE_SOURCE_COMMIT: b75153f274d17aa62c05cee562a961d5b8ec8027
+  EXPECTED_DIGEST: sha256:48d8d871740be4e315a1f108897da6617ce5c08cc5d20715398094140a8068f3
+  ORIGINAL_PUBLICATION_RUN: "32526725297"
+
+jobs:
+  recover:
+    name: Recover immutable arm64 evidence without image push
+    if: github.event_name == 'workflow_dispatch' && inputs.recover
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - name: Bind recovery to current main and fixed partial publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          grep -Fqx 'version: "0.3.0"' green_print_bridge/config.yaml
+          grep -Fqx 'image: ghcr.io/crewless9086/amadeus-green-print-bridge' green_print_bridge/config.yaml
+      - name: Authenticate for readback and attestation recovery only
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify fixed tag, digest, arm64 platform and original OCI source
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_ref="${IMAGE}:${VERSION}"
+          digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
+          resolved_digest="$(docker buildx imagetools inspect "${tag_ref}" | awk '$1 == "Digest:" {print $2; exit}')"
+          test "${resolved_digest}" = "${EXPECTED_DIGEST}"
+          docker buildx imagetools inspect "${digest_ref}" --format '{{json .Image}}' > pushed-image-config.json
+          jq -e '.architecture == "arm64" and .os == "linux"' pushed-image-config.json >/dev/null
+          jq -e --arg source "${IMAGE_SOURCE_COMMIT}" '.config.Labels["org.opencontainers.image.revision"] == $source' pushed-image-config.json >/dev/null
+          jq -e --arg repo "https://github.com/${GITHUB_REPOSITORY}" '.config.Labels["org.opencontainers.image.source"] == $repo' pushed-image-config.json >/dev/null
+          jq -e --arg version "${VERSION}" '.config.Labels["org.opencontainers.image.version"] == $version' pushed-image-config.json >/dev/null
+          echo "resolved_digest=${resolved_digest}" >> "${GITHUB_OUTPUT}"
+          echo "config_sha256=$(sha256sum pushed-image-config.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+      - name: Install pinned Cosign verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Verify existing original-workflow signature
+        id: signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main"
+          issuer="https://token.actions.githubusercontent.com"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${digest_ref}" > cosign-verification.json
+          echo "cosign_sha256=$(sha256sum cosign-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+      - name: Install pinned Syft scanner
+        id: syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.42.3
+      - name: Generate SPDX SBOM from exact linux arm64 digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${{ steps.syft.outputs.cmd }}" scan --platform linux/arm64 "registry:${IMAGE}@${EXPECTED_DIGEST}" --output "spdx-json=green-print-0.3.0.spdx.json"
+          jq -e '.spdxVersion == "SPDX-2.3"' green-print-0.3.0.spdx.json >/dev/null
+      - name: Attest contained recovery provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.EXPECTED_DIGEST }}
+          push-to-registry: true
+      - name: Attest recovered SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.EXPECTED_DIGEST }}
+          sbom-path: green-print-0.3.0.spdx.json
+          push-to-registry: true
+      - name: Verify recovery attestations and unchanged tag binding
+        id: attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          digest_ref="${IMAGE}@${EXPECTED_DIGEST}"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image-recovery.yml@refs/heads/main"
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://slsa.dev/provenance/v1" --cert-identity "${identity}" --source-digest "${GITHUB_SHA}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > recovery-provenance-verification.json
+          gh attestation verify "oci://${digest_ref}" --repo "${GITHUB_REPOSITORY}" --predicate-type "https://spdx.dev/Document/v2.3" --cert-identity "${identity}" --source-digest "${GITHUB_SHA}" --source-ref "refs/heads/main" --deny-self-hosted-runners --format json > sbom-attestation-verification.json
+          test "$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" | awk '$1 == "Digest:" {print $2; exit}')" = "${EXPECTED_DIGEST}"
+          echo "provenance_sha256=$(sha256sum recovery-provenance-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_attestation_sha256=$(sha256sum sbom-attestation-verification.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          echo "sbom_sha256=$(sha256sum green-print-0.3.0.spdx.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+      - name: Emit contained digest-bound recovery receipt
+        shell: bash
+        run: |
+          printf '%s\n' \
+            "image=${IMAGE}" \
+            "version=${VERSION}" \
+            "image_source_commit=${IMAGE_SOURCE_COMMIT}" \
+            "recovery_source_commit=${GITHUB_SHA}" \
+            "original_publication_run=${ORIGINAL_PUBLICATION_RUN}" \
+            "digest=${EXPECTED_DIGEST}" \
+            "tag_resolved_digest=${{ steps.image.outputs.resolved_digest }}" \
+            "platform=linux/arm64" \
+            "image_config_sha256=${{ steps.image.outputs.config_sha256 }}" \
+            "original_cosign_identity=https://github.com/${GITHUB_REPOSITORY}/.github/workflows/green-print-image.yml@refs/heads/main" \
+            "cosign_issuer=https://token.actions.githubusercontent.com" \
+            "cosign_verification_sha256=${{ steps.signature.outputs.cosign_sha256 }}" \
+            "recovery_provenance_verification_sha256=${{ steps.attestations.outputs.provenance_sha256 }}" \
+            "sbom_attestation_verification_sha256=${{ steps.attestations.outputs.sbom_attestation_sha256 }}" \
+            "sbom_sha256=${{ steps.attestations.outputs.sbom_sha256 }}" | tee green-print-0.3.0-recovery-receipt.txt
+      - name: Preserve non-secret contained recovery packet
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: green-print-0.3.0-contained-recovery-packet
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            green-print-0.3.0-recovery-receipt.txt
+            pushed-image-config.json
+            cosign-verification.json
+            recovery-provenance-verification.json
+            sbom-attestation-verification.json
+            green-print-0.3.0.spdx.json

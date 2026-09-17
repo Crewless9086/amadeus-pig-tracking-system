@@ -1,0 +1,69 @@
+{
+  "schema": "charlie_s01_post_p0_reconciliation_v1",
+  "generated_at": "2026-08-03T10:10:00+02:00",
+  "mode": "source_only_read_only_no_queue_mutation",
+  "prior_proposal": "S01_OOM_DAILY_CONTROL_CLOSURE",
+  "reconciled_disposition": "conditional_post_p0_residual_only",
+  "current_truth": {
+    "origin_main": "0b620632fb225aa0ff4f845cc488746a68705b50",
+    "deployed_production": {"service": "srv-d6sijjkhg0os73f7regg", "deploy": "dep-d9o51urm8hqs73dd3jl0", "status": "live", "commit": "0b620632fb225aa0ff4f845cc488746a68705b50"},
+    "prior_reconciliation_baseline": "70a4cf2b235e5ba441f9b5901efa45e699ad0c0b",
+    "replacement_rail_pr": 680,
+    "replacement_rail_head": "29870dcb0a1fbb39a77d601da82c6c32af028aec",
+    "controlling_p0_contract": "oom_sakkie_farm_manager_round_v1",
+    "controlling_p0_source": "modules/oom_sakkie/farm_manager_runtime.py",
+    "p0_handover": "docs/06-operations/OOM_SAKKIE_FARM_MANAGER_ROUND_HANDOVER.md",
+    "latest_p0_merges": [
+      {"pr": 681, "outcome": "provider-bound natural HERDMASTER follow-up"},
+      {"pr": 682, "outcome": "welfare preview evidence and protected boundaries"},
+      {"pr": 683, "outcome": "governed ROOTLINE commissioning decision"},
+      {"pr": 684, "outcome": "HERDMASTER proactive management consumption"},
+      {"pr": 685, "outcome": "explicit health intake precedence"},
+      {"pr": 686, "outcome": "active animal lifecycle retention"},
+      {"pr": 687, "outcome": "natural lifecycle preview correction"},
+      {"pr": 688, "outcome": "provider-bound durable daily farm-manager round"},
+      {"pr": 689, "outcome": "bounded specialist and Telegram delivery budget"}
+    ],
+    "queue_truth": {"new": 55, "paused": 27, "blocked": 3, "pr_ready": 1, "approved": 0, "in_progress": 0, "release_approved": 0, "runnable_boundary_count": 0}
+  },
+  "delivered_remove_from_s01": [
+    "provider-bound authenticated natural manager intake",
+    "deterministic durable manager-round identity and exact replay suppression",
+    "HERDMASTER proactive management and active/on-farm weighing consolidation",
+    "current ROOTLINE read-only plan and separately governed commissioning boundary",
+    "typed bounded gaps for unavailable SAM and BEACON evidence",
+    "maximum three actions and one question with zero protected authority",
+    "bounded specialist loading and escaped-length Telegram delivery budget",
+    "provider-delivery ambiguity containment without blind retry"
+  ],
+  "must_not_reintroduce": [
+    "Operational V1 as the current routing authority",
+    "terminal-driven specialist or farm coordination",
+    "CORE as ordinary farm manager",
+    "a parallel queue, dispatcher or generic protected-action executor",
+    "retry of ambiguous Telegram delivery",
+    "question-specific routing that bypasses deployed typed adapters"
+  ],
+  "post_acceptance_decision": {
+    "if_all_real_acceptance_tests_pass": "Do not create S01. Treat its software objective as absorbed by current P0 truth and prepare a separately governed history-preserving retirement path for the three obsolete predecessors.",
+    "if_specific_reusable_capability_fails": "Freeze only the failed acceptance IDs into the paused residual contract preview in artifact 14; re-run source-map, adaptive-score and digest preparation before requesting owner authorization.",
+    "if_failure_is_operational_or_data_specific": "Keep it with Oom Sakkie or the owning deployed specialist; do not create a CORE software mission unless evidence proves a reusable missing capability."
+  },
+  "unfinished_value_activation": [
+    {"value": "fresh provider-confirmed visible delivery and durable identity", "activate_when": "A fresh post-P0 owner request fails delivery/identity acceptance without ambiguous prior delivery.", "owner": "conditional CORE source correction"},
+    {"value": "natural follow-up continuity on the same manager context", "activate_when": "The real follow-up acceptance case loses context, duplicates a card, or cannot truthfully complete/except.", "owner": "conditional CORE source correction"},
+    {"value": "restart-safe completion/exception readability and zero replay effects", "activate_when": "Restart/replay acceptance demonstrates a reusable persistence defect.", "owner": "conditional CORE source correction"},
+    {"value": "specialist-specific confirmation and exactly-once action", "activate_when": "A deployed specialist adapter fails its own governed acceptance; never activate as generic manager authority.", "owner": "S02/S03 or a narrowly proven specialist successor"},
+    {"value": "SAM typed operational evidence", "activate_when": "P0 passes and SAM remains a bounded gap requiring a reusable adapter.", "owner": "S04_SAM_LIVESTOCK_CONTINUITY"},
+    {"value": "BEACON typed operational evidence", "activate_when": "P0 passes and BEACON remains a bounded gap requiring a reusable adapter.", "owner": "S05_BEACON_ORGANIC_OPERATION"},
+    {"value": "old callback/live-smoke evidence", "activate_when": "Only if current provider-bound acceptance exposes the same unresolved defect; otherwise preserve as historical evidence.", "owner": "history only by default"}
+  ],
+  "non_mutation": {
+    "production_missions_created": 0,
+    "production_missions_changed": 0,
+    "pickup_enabled": false,
+    "runtime_acquired": false,
+    "telegram_contacted": false,
+    "merge_or_deploy": false
+  }
+}

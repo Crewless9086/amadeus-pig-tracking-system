@@ -1,0 +1,466 @@
+{
+  "schema": "core_successor_programme_v1",
+  "generated_at": "2026-08-02T12:06:26.953920+00:00",
+  "production_revision": "70a4cf2b235e5ba441f9b5901efa45e699ad0c0b",
+  "successor_count": 7,
+  "activation_state": "none_created_or_activated",
+  "programme": [
+    {
+      "successor_id": "S01_OOM_DAILY_CONTROL_CLOSURE",
+      "state": "proposal_only_not_created",
+      "programme_order": 1,
+      "title": "Close Oom Sakkie's persistent daily-control lifecycle gaps",
+      "family_id": "F01_OOM_SAKKIE_MANAGER_LIFECYCLE",
+      "depends_on": [],
+      "adaptive_tier": "T4",
+      "tier_reason": "Protected customer/provider, farm, hardware, publication or production consequence requires T4.",
+      "minimum_sufficient_agents": [
+        "source_mapper",
+        "technical_architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "security_reviewer",
+        "business_reviewer",
+        "reviewer",
+        "publisher"
+      ],
+      "budget": {
+        "wall_clock_minutes": 1440,
+        "total_tokens": 200000,
+        "max_stage_attempts": 3,
+        "max_backflows": 4
+      },
+      "measurable_business_outcome": "One authenticated natural owner request is visibly acknowledged, delegated to the correct deployed specialist, followed through on one durable card, confirmed when protected action is needed, and truthfully completed or excepted without CORE becoming the operational manager.",
+      "acceptance_outcomes": [
+        "Current-main generic family lifecycle and HERDMASTER factual-welfare adapter are treated as baseline, not rebuilt.",
+        "Authenticated private-owner intake produces one provider-confirmed visible acknowledgement bound to provider/chat/message identity.",
+        "Dispatch names the responsible specialist and never claims receipt/start without target-specific acknowledgement and fresh activity.",
+        "Natural follow-up edits the same card and preserves known context.",
+        "Exact confirmation binds operation, preview and evidence generation; supported exactly-once action writes once and direct replay writes zero rows.",
+        "Unsupported or compound effects return one truthful exception and perform zero partial writes.",
+        "Interrupted attempted delivery causes no blind retry; repeated provider update causes zero duplicate sends, edits or rows.",
+        "Completion/exception state remains readable after restart and unrelated ROOTLINE, SAM, BEACON and farm-state digests remain unchanged."
+      ],
+      "authority": {
+        "allowed": "Scoped repository implementation and tests for missing lifecycle/adapters after owner approval.",
+        "forbidden": [
+          "ordinary farm task execution by CORE",
+          "Telegram contact during build",
+          "production runtime acquisition",
+          "farm/customer mutation",
+          "merge/deploy/release"
+        ]
+      },
+      "stop_conditions": [
+        "Provider identity or owner authentication is ambiguous.",
+        "A required specialist lacks a deployed adapter.",
+        "A proposed effect lacks one canonical exactly-once coordinator.",
+        "Any evidence conflict changes the family to owner_decision_required.",
+        "No merge, deploy, activation or production proof without its separate exact owner gate."
+      ],
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-23890E45EFE2A2C3",
+        "CHARLIE-FOLLOWUP-672D7917CFD7332D",
+        "CHARLIE-FOLLOWUP-TELEGRAM-CHANNEL-CONTRACT-20260722"
+      ],
+      "notes": ""
+    },
+    {
+      "successor_id": "S02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "state": "proposal_only_not_created",
+      "programme_order": 2,
+      "title": "Complete HERDMASTER governed operational adapter",
+      "family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "depends_on": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE"
+      ],
+      "adaptive_tier": "T4",
+      "tier_reason": "Protected customer/provider, farm, hardware, publication or production consequence requires T4.",
+      "minimum_sufficient_agents": [
+        "source_mapper",
+        "technical_architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "product_reviewer",
+        "evidence_reviewer",
+        "reviewer",
+        "publisher"
+      ],
+      "budget": {
+        "wall_clock_minutes": 1440,
+        "total_tokens": 200000,
+        "max_stage_attempts": 3,
+        "max_backflows": 4
+      },
+      "measurable_business_outcome": "Oom Sakkie can delegate natural health/loss and herd-priority requests to HERDMASTER, which returns current evidence, one bounded recommendation/preview, and uses only owner-confirmed exactly-once canonical updates.",
+      "acceptance_outcomes": [
+        "Natural health/loss intake separates observed fact, owner suspicion, veterinary attribution and inference.",
+        "Fresh canonical observations and separate management intents produce traceable breeding, retention, sale and welfare priorities.",
+        "Milestone reminders have positive/negative freshness tests and never silently mutate livestock.",
+        "Supported effects commit atomically once; mismatch, stale evidence or unsupported compound effect writes zero rows.",
+        "All unique lifecycle, retention/correction, migration, visual-evidence and audit requirements remain traceable to predecessors."
+      ],
+      "authority": {
+        "allowed": "Scoped HERDMASTER/Oom adapter code and tests.",
+        "forbidden": [
+          "diagnosis",
+          "unconfirmed livestock mutation",
+          "migration application",
+          "auction activation",
+          "ordinary herd management by CORE"
+        ]
+      },
+      "stop_conditions": [
+        "Observation governance choices in artifact/11 remain undecided.",
+        "Canonical evidence is stale or incomplete.",
+        "Any evidence conflict changes the family to owner_decision_required.",
+        "No merge, deploy, activation or production proof without its separate exact owner gate."
+      ],
+      "predecessor_mission_ids": [
+        "CHARLIE-SCOPE-ABDA2F0C741394ED",
+        "CHARLIE-SCOPE-D1E48DE50E74F47E",
+        "CHARLIE-SCOPE-55FDD768FB74A8C6",
+        "CHARLIE-OUTCOME-5F381C2B629669B5",
+        "CHARLIE-OUTCOME-6A0F7E954EDA38B2",
+        "CHARLIE-OUTCOME-7F294F4F84E9391E",
+        "CHARLIE-FARM-PROFITABILITY-OS-20260721",
+        "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-RA1DE1EFF",
+        "CHARLIE-SCOPE-245AB84AF037E4B2",
+        "CHARLIE-SCOPE-252CBB6A34408029",
+        "CHARLIE-SCOPE-93D8BFEB70EC3A70",
+        "CHARLIE-FOLLOWUP-0C882C5741BC7935",
+        "CHARLIE-FOLLOWUP-45CC0A3050878124",
+        "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8",
+        "CHARLIE-SCOPE-F37DF86F60862FF5",
+        "CHARLIE-SCOPE-FCD5EFF094B617DC",
+        "CHARLIE-OUTCOME-854213DDE0C2FD97",
+        "CHARLIE-HERDMASTER-STAGE-AUTH-GUARD-20260722",
+        "CHARLIE-OUTCOME-EBA266295D917FC3",
+        "CHARLIE-SCOPE-F6626B8F3E33C44F",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R03518FF0",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R6830E01D",
+        "CHARLIE-OUTCOME-04FD0824EDE8CC74",
+        "CHARLIE-SCOPE-5D9241AECABB3216",
+        "CHARLIE-SCOPE-3BF10B2EA511646E",
+        "CHARLIE-SCOPE-A302E5D4806EFA7D",
+        "CHARLIE-SCOPE-A4294E55FD754C61",
+        "CHARLIE-SCOPE-BCF1A16575967DB6",
+        "CHARLIE-SCOPE-CD4CE812CE3CD8EB",
+        "CHARLIE-SCOPE-EBFDC3A3CC2045A3",
+        "CHARLIE-SCOPE-3CC45FA8329C3F1E",
+        "CHARLIE-OUTCOME-3BC9E9C50FC97681",
+        "CHARLIE-FOLLOWUP-0B9DFD18FD90D523",
+        "CHARLIE-SCOPE-DFDDF7930FC839D6",
+        "CHARLIE-OUTCOME-406519E37AB1D03D"
+      ],
+      "notes": ""
+    },
+    {
+      "successor_id": "S03_ROOTLINE_OPERATIONAL_MANAGEMENT",
+      "state": "proposal_only_not_created",
+      "programme_order": 3,
+      "title": "Advance ROOTLINE from daily advice to supervised management",
+      "family_id": "F03_ROOTLINE_OPERATIONAL_MANAGEMENT",
+      "depends_on": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE"
+      ],
+      "adaptive_tier": "T4",
+      "tier_reason": "Protected customer/provider, farm, hardware, publication or production consequence requires T4.",
+      "minimum_sufficient_agents": [
+        "source_mapper",
+        "technical_architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "evidence_reviewer",
+        "reviewer",
+        "publisher"
+      ],
+      "budget": {
+        "wall_clock_minutes": 1440,
+        "total_tokens": 200000,
+        "max_stage_attempts": 3,
+        "max_backflows": 4
+      },
+      "measurable_business_outcome": "Oom Sakkie receives a current ROOTLINE irrigation plan and can supervise an explicitly authorized execution; autonomous control remains a later commissioned, bounded state.",
+      "acceptance_outcomes": [
+        "Daily plan uses fresh canonical weather, power, irrigation and policy evidence and distinguishes Needs Data/Hold.",
+        "Supervised command binds exact field/channel, plan, authority window and safe-OFF closure.",
+        "Replay performs zero additional hardware actions.",
+        "Loss of evidence, acknowledgement or connectivity fails safe closed.",
+        "Autonomous scheduling remains disabled until separately commissioned with bounded runtime and rollback proof."
+      ],
+      "authority": {
+        "allowed": "Scoped planning/supervised-control software after exact gates.",
+        "forbidden": [
+          "hardware use during build",
+          "uncommissioned autonomy",
+          "CORE operating irrigation",
+          "implicit IFTTT/n8n authority"
+        ]
+      },
+      "stop_conditions": [
+        "Hardware identity or OFF proof is unavailable.",
+        "Owner policy or commissioning decision is missing.",
+        "Any evidence conflict changes the family to owner_decision_required.",
+        "No merge, deploy, activation or production proof without its separate exact owner gate."
+      ],
+      "predecessor_mission_ids": [],
+      "notes": "No rewrite predecessor existed; proposal is grounded in current ROOTLINE doctrine/source map and requested programme priority."
+    },
+    {
+      "successor_id": "S04_SAM_LIVESTOCK_CONTINUITY",
+      "state": "proposal_only_not_created",
+      "programme_order": 4,
+      "title": "Prove continuous narrow SAM Livestock response and owner attention",
+      "family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "depends_on": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE",
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ],
+      "adaptive_tier": "T4",
+      "tier_reason": "Protected customer/provider, farm, hardware, publication or production consequence requires T4.",
+      "minimum_sufficient_agents": [
+        "source_mapper",
+        "technical_architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "business_reviewer",
+        "reviewer",
+        "publisher"
+      ],
+      "budget": {
+        "wall_clock_minutes": 1440,
+        "total_tokens": 200000,
+        "max_stage_attempts": 3,
+        "max_backflows": 4
+      },
+      "measurable_business_outcome": "SAM sustains one narrow livestock customer journey using current inventory evidence, surfaces only genuine owner attention through Oom Sakkie, and never invents availability or authority.",
+      "acceptance_outcomes": [
+        "One continuous conversation preserves context through clarification and topic changes.",
+        "Availability and animal facts carry current canonical provenance.",
+        "Customer delivery truth distinguishes accepted, provider-delivered/read, failed and ambiguous.",
+        "Owner-attention item is idempotent, buttonless until a genuine decision, and resolves on the original card.",
+        "No order, reservation, quote, customer send expansion or stock mutation beyond separately authorized rails."
+      ],
+      "authority": {
+        "allowed": "Scoped SAM/Oom attention software and tests.",
+        "forbidden": [
+          "unapproved customer sends",
+          "stock/order/payment authority",
+          "CORE handling ordinary sales"
+        ]
+      },
+      "stop_conditions": [
+        "Provider delivery state is ambiguous.",
+        "Canonical livestock evidence is stale.",
+        "Any evidence conflict changes the family to owner_decision_required.",
+        "No merge, deploy, activation or production proof without its separate exact owner gate."
+      ],
+      "predecessor_mission_ids": [
+        "CHARLIE-FOLLOWUP-7B2F40F621E57E5B",
+        "CHARLIE-FOLLOWUP-A0E9E3632BE2DE4C",
+        "CHARLIE-OUTCOME-59CF1DDA1889B013",
+        "CHARLIE-EXEC-PHASE1-ATTENTION-20260721",
+        "CHARLIE-FARM-ORDER-STREAM-RECOVERY-20260721",
+        "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-R7E0E8AA2-RI85DB5D10",
+        "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8-RI2D70B17E",
+        "CHARLIE-FARM-AUCTION-OUTLET-OPTIMIZATION-20260721-RID4AD6985",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R094E3C05",
+        "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2",
+        "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2-RIF7F50339"
+      ],
+      "notes": ""
+    },
+    {
+      "successor_id": "S05_BEACON_ORGANIC_OPERATION",
+      "state": "proposal_only_not_created",
+      "programme_order": 5,
+      "title": "Establish repeatable owner-gated BEACON organic operation",
+      "family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "depends_on": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE"
+      ],
+      "adaptive_tier": "T4",
+      "tier_reason": "Protected customer/provider, farm, hardware, publication or production consequence requires T4.",
+      "minimum_sufficient_agents": [
+        "source_mapper",
+        "technical_architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "business_reviewer",
+        "reviewer",
+        "publisher"
+      ],
+      "budget": {
+        "wall_clock_minutes": 1440,
+        "total_tokens": 200000,
+        "max_stage_attempts": 3,
+        "max_backflows": 4
+      },
+      "measurable_business_outcome": "BEACON repeatedly prepares, approves, publishes through existing gated rails, and measures organic content while Oom Sakkie coordinates owner attention.",
+      "acceptance_outcomes": [
+        "Private intake, library acceptance, public-use approval and publication authorization remain separate.",
+        "Every publication binds approved asset/content/account and records provider identity/outcome.",
+        "Repeat and replay do not duplicate publication.",
+        "Performance evidence links publication to analytics without inventing sales attribution.",
+        "Organic weekly operation completes twice with no authority expansion."
+      ],
+      "authority": {
+        "allowed": "Scoped BEACON organic software/tests after owner approval.",
+        "forbidden": [
+          "publication during build",
+          "paid spend",
+          "unapproved public use",
+          "fabricated attribution"
+        ]
+      },
+      "stop_conditions": [
+        "Rights/public-use approval is absent.",
+        "Provider publication identity is ambiguous.",
+        "Any evidence conflict changes the family to owner_decision_required.",
+        "No merge, deploy, activation or production proof without its separate exact owner gate."
+      ],
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-31C7679FA3F40543",
+        "CHARLIE-OUTCOME-349DBD3A0BA6F22B",
+        "CHARLIE-OUTCOME-8935E974FD2A9CC6",
+        "CHARLIE-OUTCOME-E00E6DB0B2F16C5E",
+        "CHARLIE-OUTCOME-65420067A203BFE0",
+        "CHARLIE-OUTCOME-A03C7BF264246ED3",
+        "CHARLIE-OUTCOME-8D009F67D1D0897D",
+        "CHARLIE-EXEC-PHASE3-OBSERVERS-20260721"
+      ],
+      "notes": ""
+    },
+    {
+      "successor_id": "S06_BEACON_PAID_BOOST",
+      "state": "proposal_only_not_created",
+      "programme_order": 6,
+      "title": "Add later bounded BEACON paid-boost capability",
+      "family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "depends_on": [
+        "S05_BEACON_ORGANIC_OPERATION"
+      ],
+      "adaptive_tier": "T4",
+      "tier_reason": "Protected customer/provider, farm, hardware, publication or production consequence requires T4.",
+      "minimum_sufficient_agents": [
+        "source_mapper",
+        "technical_architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "business_reviewer",
+        "reviewer",
+        "publisher"
+      ],
+      "budget": {
+        "wall_clock_minutes": 1440,
+        "total_tokens": 200000,
+        "max_stage_attempts": 3,
+        "max_backflows": 4
+      },
+      "measurable_business_outcome": "A separately approved high-performing organic item can receive a strictly bounded paid boost with exact spend, audience, duration, stop and measurement controls.",
+      "acceptance_outcomes": [
+        "Requires measured organic eligibility and explicit owner approval for asset, account, audience, budget and dates.",
+        "Hard spend ceiling and kill switch are deterministic.",
+        "No automatic rebudgeting, audience expansion or campaign creation.",
+        "Provider spend/outcome reconciliation is durable and ambiguous execution is not blindly retried."
+      ],
+      "authority": {
+        "allowed": "Design/build bounded paid-boost rail only after organic proof and exact owner approval.",
+        "forbidden": [
+          "spend during build",
+          "automatic budget changes",
+          "unapproved publication"
+        ]
+      },
+      "stop_conditions": [
+        "Organic proof is insufficient.",
+        "Any spend/account/audience parameter lacks exact owner approval.",
+        "Any evidence conflict changes the family to owner_decision_required.",
+        "No merge, deploy, activation or production proof without its separate exact owner gate."
+      ],
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-31C7679FA3F40543",
+        "CHARLIE-OUTCOME-349DBD3A0BA6F22B",
+        "CHARLIE-OUTCOME-8935E974FD2A9CC6",
+        "CHARLIE-OUTCOME-E00E6DB0B2F16C5E",
+        "CHARLIE-OUTCOME-65420067A203BFE0",
+        "CHARLIE-OUTCOME-A03C7BF264246ED3",
+        "CHARLIE-OUTCOME-8D009F67D1D0897D",
+        "CHARLIE-EXEC-PHASE3-OBSERVERS-20260721"
+      ],
+      "notes": ""
+    },
+    {
+      "successor_id": "S07_CORE_MINIMUM_RELIABILITY",
+      "state": "proposal_only_not_created",
+      "programme_order": 7,
+      "title": "Apply only CORE corrections required by the programme",
+      "family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "depends_on": [],
+      "adaptive_tier": "T3",
+      "tier_reason": "Cross-module CORE correction without business-operation authority requires T3.",
+      "minimum_sufficient_agents": [
+        "source_mapper",
+        "technical_architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "reviewer",
+        "publisher"
+      ],
+      "budget": {
+        "wall_clock_minutes": 960,
+        "total_tokens": 140000,
+        "max_stage_attempts": 3,
+        "max_backflows": 4
+      },
+      "measurable_business_outcome": "CORE safely creates and executes only owner-approved consolidated successors, with deterministic many-to-one predecessor retirement and no broad pickup.",
+      "acceptance_outcomes": [
+        "Generalized many-to-one supersession binding excludes every linked predecessor from all runnable queries.",
+        "Atomic transaction cannot leave successor created while any predecessor remains runnable.",
+        "Queue filters derive from authoritative owner queue and preserve archive/family visibility.",
+        "Lease, artifact binding, notification and portfolio fixes are implemented only when reproduced against a programme mission.",
+        "Broad pickup remains disabled before, during and after queue governance."
+      ],
+      "authority": {
+        "allowed": "Scoped CORE queue/reliability code and tests after separate authorization.",
+        "forbidden": [
+          "broad pickup",
+          "mission approval",
+          "runtime activation",
+          "business-operation implementation",
+          "self-release"
+        ]
+      },
+      "stop_conditions": [
+        "Many-to-one supersession cannot be proven atomic.",
+        "Any proposed correction is not reproduced by a consolidated successor.",
+        "Any evidence conflict changes the family to owner_decision_required.",
+        "No merge, deploy, activation or production proof without its separate exact owner gate."
+      ],
+      "predecessor_mission_ids": [
+        "CHARLIE-FOLLOWUP-1CDD629B1C7FA8B9",
+        "CHARLIE-FOLLOWUP-ED59C3A5511A2E4F",
+        "CHARLIE-OUTCOME-1FFCE3DDF82A8DE3",
+        "CHARLIE-EXEC-GATE-LEASE-HYGIENE-20260721",
+        "CHARLIE-EXEC-GATE-OUTCOME-COMMS-20260721",
+        "CHARLIE-EXEC-GATE-PORTFOLIO-VISIBILITY-20260721",
+        "CHARLIE-EXEC-GATE-PORTFOLIO-RECONCILE-20260721",
+        "CHARLIE-EXEC-PHASE0-BASELINE-20260721",
+        "CHARLIE-EXEC-PHASE2-CONTINUITY-20260721",
+        "CHARLIE-EXEC-PHASE4-GOALS-20260721",
+        "CHARLIE-EXEC-PHASE5-COMMAND-CENTRE-20260721",
+        "CHARLIE-EXEC-PHASE6-UNATTENDED-CANARY-20260721",
+        "CHARLIE-OUTCOME-BC2D2D01AD1FECCD"
+      ],
+      "notes": "This is an enabling correction set, not an always-on executive programme revival. It runs only before the dependent mission that proves the need."
+    }
+  ]
+}

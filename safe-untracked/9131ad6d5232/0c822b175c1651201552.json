@@ -1,0 +1,237 @@
+{
+  "schema": "core_consolidated_families_v1",
+  "generated_at": "2026-08-02T12:06:26.953920+00:00",
+  "input_rewrite_candidates": 70,
+  "family_count": 6,
+  "families": [
+    {
+      "family_id": "F01_OOM_SAKKIE_MANAGER_LIFECYCLE",
+      "priority": 1,
+      "label": "Oom Sakkie persistent manager lifecycle",
+      "rewrite_predecessor_count": 3,
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-23890E45EFE2A2C3",
+        "CHARLIE-FOLLOWUP-672D7917CFD7332D",
+        "CHARLIE-FOLLOWUP-TELEGRAM-CHANNEL-CONTRACT-20260722"
+      ],
+      "deduplicated_objective_examples": [
+        "Activate operational outcome: Repair CHARLIE executive attention and Telegram notification reliability",
+        "Follow-up: Implementation Defect",
+        "Harden Telegram channel routing and refused-callback audit status contract"
+      ],
+      "unique_value_source": "Full raw text, acceptance/review artifacts, tests, family dependencies and owner decisions remain in artifacts/01 and /03 and are linked by artifact/10.",
+      "operational_boundary": "Ordinary execution belongs to Oom Sakkie and the named deployed specialist. CORE may build or repair only missing software capability.",
+      "delivered_objectives_removed": [
+        "Authenticated generic family-message card lifecycle, natural follow-up editing, provider identity and first HERDMASTER factual-welfare adapter are live at current main 70a4cf2b; successor excludes rebuilding them."
+      ],
+      "conflict_policy": "If later evidence conflicts, stop this family at owner_decision_required; do not infer completion or activate work.",
+      "proposed_successor_ids": [
+        "S01_OOM_DAILY_CONTROL_CLOSURE"
+      ]
+    },
+    {
+      "family_id": "F02_HERDMASTER_OPERATIONAL_ADAPTER",
+      "priority": 2,
+      "label": "HERDMASTER operational adapter and herd intelligence",
+      "rewrite_predecessor_count": 35,
+      "predecessor_mission_ids": [
+        "CHARLIE-SCOPE-ABDA2F0C741394ED",
+        "CHARLIE-SCOPE-D1E48DE50E74F47E",
+        "CHARLIE-SCOPE-55FDD768FB74A8C6",
+        "CHARLIE-OUTCOME-5F381C2B629669B5",
+        "CHARLIE-OUTCOME-6A0F7E954EDA38B2",
+        "CHARLIE-OUTCOME-7F294F4F84E9391E",
+        "CHARLIE-FARM-PROFITABILITY-OS-20260721",
+        "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-RA1DE1EFF",
+        "CHARLIE-SCOPE-245AB84AF037E4B2",
+        "CHARLIE-SCOPE-252CBB6A34408029",
+        "CHARLIE-SCOPE-93D8BFEB70EC3A70",
+        "CHARLIE-FOLLOWUP-0C882C5741BC7935",
+        "CHARLIE-FOLLOWUP-45CC0A3050878124",
+        "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8",
+        "CHARLIE-SCOPE-F37DF86F60862FF5",
+        "CHARLIE-SCOPE-FCD5EFF094B617DC",
+        "CHARLIE-OUTCOME-854213DDE0C2FD97",
+        "CHARLIE-HERDMASTER-STAGE-AUTH-GUARD-20260722",
+        "CHARLIE-OUTCOME-EBA266295D917FC3",
+        "CHARLIE-SCOPE-F6626B8F3E33C44F",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R03518FF0",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R6830E01D",
+        "CHARLIE-OUTCOME-04FD0824EDE8CC74",
+        "CHARLIE-SCOPE-5D9241AECABB3216",
+        "CHARLIE-SCOPE-3BF10B2EA511646E",
+        "CHARLIE-SCOPE-A302E5D4806EFA7D",
+        "CHARLIE-SCOPE-A4294E55FD754C61",
+        "CHARLIE-SCOPE-BCF1A16575967DB6",
+        "CHARLIE-SCOPE-CD4CE812CE3CD8EB",
+        "CHARLIE-SCOPE-EBFDC3A3CC2045A3",
+        "CHARLIE-SCOPE-3CC45FA8329C3F1E",
+        "CHARLIE-OUTCOME-3BC9E9C50FC97681",
+        "CHARLIE-FOLLOWUP-0B9DFD18FD90D523",
+        "CHARLIE-SCOPE-DFDDF7930FC839D6",
+        "CHARLIE-OUTCOME-406519E37AB1D03D"
+      ],
+      "deduplicated_objective_examples": [
+        "Herdmaster Human Pig Observations and Triggered Decision Support: Frontend",
+        "Herdmaster Human Pig Observations and Triggered Decision Support: Agent Runtime",
+        "Herdmaster Human Pig Observations and Triggered Decision Support: Release",
+        "Activate operational outcome: Pig Lifecycle History, Exit Visibility, and Audit Completeness: Data Model",
+        "Activate operational outcome: Herdmaster Human Pig Observations and Triggered Decision Support: Data Model",
+        "Activate operational outcome: Pig Lifecycle History, Exit Visibility, and Audit Completeness: Lifecycle",
+        "Farm Profitability Operating System: Orders, Herd Decisions and Auction Outlet",
+        "Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 1",
+        "Complete Herdmaster observations with separate management intents and actions: Frontend",
+        "Complete Herdmaster observations with separate management intents and actions: Agent Runtime",
+        "Complete Herdmaster observations with separate management intents and actions: Release",
+        "Follow-up: Input Validation"
+      ],
+      "unique_value_source": "Full raw text, acceptance/review artifacts, tests, family dependencies and owner decisions remain in artifacts/01 and /03 and are linked by artifact/10.",
+      "operational_boundary": "Ordinary execution belongs to Oom Sakkie and the named deployed specialist. CORE may build or repair only missing software capability.",
+      "delivered_objectives_removed": [
+        "PR #373 owner-session guard, PR #390 control-plane incident repair, PR #397 auction implementation and current natural health/loss preview/factual writer are preserved as delivered evidence, not repeated objectives."
+      ],
+      "conflict_policy": "If later evidence conflicts, stop this family at owner_decision_required; do not infer completion or activate work.",
+      "proposed_successor_ids": [
+        "S02_HERDMASTER_OPERATIONAL_ADAPTER"
+      ]
+    },
+    {
+      "family_id": "F03_ROOTLINE_OPERATIONAL_MANAGEMENT",
+      "priority": 3,
+      "label": "ROOTLINE operational management",
+      "rewrite_predecessor_count": 0,
+      "predecessor_mission_ids": [],
+      "deduplicated_objective_examples": [],
+      "unique_value_source": "Full raw text, acceptance/review artifacts, tests, family dependencies and owner decisions remain in artifacts/01 and /03 and are linked by artifact/10.",
+      "operational_boundary": "Ordinary execution belongs to Oom Sakkie and the named deployed specialist. CORE may build or repair only missing software capability.",
+      "delivered_objectives_removed": [
+        "Deployed Level 1 Daily Brief and read-only Daily Advisor, including the single supervised C12345 safe-OFF proof, are baseline; they do not prove routine or autonomous control."
+      ],
+      "conflict_policy": "If later evidence conflicts, stop this family at owner_decision_required; do not infer completion or activate work.",
+      "proposed_successor_ids": [
+        "S03_ROOTLINE_OPERATIONAL_MANAGEMENT"
+      ]
+    },
+    {
+      "family_id": "F04_SAM_LIVESTOCK_CONTINUITY",
+      "priority": 4,
+      "label": "SAM Livestock continuous narrow response",
+      "rewrite_predecessor_count": 11,
+      "predecessor_mission_ids": [
+        "CHARLIE-FOLLOWUP-7B2F40F621E57E5B",
+        "CHARLIE-FOLLOWUP-A0E9E3632BE2DE4C",
+        "CHARLIE-OUTCOME-59CF1DDA1889B013",
+        "CHARLIE-EXEC-PHASE1-ATTENTION-20260721",
+        "CHARLIE-FARM-ORDER-STREAM-RECOVERY-20260721",
+        "CHARLIE-HERDMASTER-STAGE-RECONCILIATION-20260721-R7E0E8AA2-RI85DB5D10",
+        "CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R9EFE5DD8-RI2D70B17E",
+        "CHARLIE-FARM-AUCTION-OUTLET-OPTIMIZATION-20260721-RID4AD6985",
+        "CHARLIE-FARM-PROFITABILITY-CANARY-20260721-R094E3C05",
+        "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2",
+        "CHARLIE-SCOPE-5D9241AECABB3216-RI86AFDCB2-RIF7F50339"
+      ],
+      "deduplicated_objective_examples": [
+        "Follow-up: Environment Timeout",
+        "Follow-up: Baseline Regression",
+        "Activate operational outcome: SAM Live Stock Single-Conversation Vertical Slice",
+        "Always-On Phase 1: executive attention reliability",
+        "Restore Create Order and align the shared order-stream schema",
+        "Incident repair: Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 2",
+        "Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1",
+        "Incident repair: Riversdale auction outlet and one-pig/one-outlet profitability coordination",
+        "Farm profitability cross-agent operational canary and executive brief - recovery slice 2",
+        "Incident repair: Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Data Model",
+        "Incident repair: Incident repair: Incident repair: Complete Herdmaster observations with separate management intents and actions - recovery slice 1: Data Model"
+      ],
+      "unique_value_source": "Full raw text, acceptance/review artifacts, tests, family dependencies and owner decisions remain in artifacts/01 and /03 and are linked by artifact/10.",
+      "operational_boundary": "Ordinary execution belongs to Oom Sakkie and the named deployed specialist. CORE may build or repair only missing software capability.",
+      "delivered_objectives_removed": [
+        "Current Stage 4 SAM routing, canonical reads and env-gated order-intake surfaces are baseline; successor does not recreate legacy Sheets/n8n behavior or broaden customer authority."
+      ],
+      "conflict_policy": "If later evidence conflicts, stop this family at owner_decision_required; do not infer completion or activate work.",
+      "proposed_successor_ids": [
+        "S04_SAM_LIVESTOCK_CONTINUITY"
+      ]
+    },
+    {
+      "family_id": "F05_BEACON_REPEATABLE_OPERATION",
+      "priority": 5,
+      "label": "BEACON repeatable organic operation and later paid boost",
+      "rewrite_predecessor_count": 8,
+      "predecessor_mission_ids": [
+        "CHARLIE-OUTCOME-31C7679FA3F40543",
+        "CHARLIE-OUTCOME-349DBD3A0BA6F22B",
+        "CHARLIE-OUTCOME-8935E974FD2A9CC6",
+        "CHARLIE-OUTCOME-E00E6DB0B2F16C5E",
+        "CHARLIE-OUTCOME-65420067A203BFE0",
+        "CHARLIE-OUTCOME-A03C7BF264246ED3",
+        "CHARLIE-OUTCOME-8D009F67D1D0897D",
+        "CHARLIE-EXEC-PHASE3-OBSERVERS-20260721"
+      ],
+      "deduplicated_objective_examples": [
+        "Activate operational outcome: BEACON Recommendation Learning Proof: Release",
+        "Activate operational outcome: BEACON Recommendation Learning Proof: Commercial",
+        "Activate operational outcome: BEACON Recommendation Learning Proof: Frontend",
+        "Activate operational outcome: BEACON Recommendation Learning Proof: Data Model",
+        "Activate operational outcome: BEACON Lead and Sales Attribution: Data Model",
+        "Activate operational outcome: BEACON Meat Launch Owner-Gated Facebook Pilot",
+        "Activate operational outcome: BEACON Live-Stock Sales Campaign Pilot",
+        "Always-On Phase 3: complete domain observer registry"
+      ],
+      "unique_value_source": "Full raw text, acceptance/review artifacts, tests, family dependencies and owner decisions remain in artifacts/01 and /03 and are linked by artifact/10.",
+      "operational_boundary": "Ordinary execution belongs to Oom Sakkie and the named deployed specialist. CORE may build or repair only missing software capability.",
+      "delivered_objectives_removed": [
+        "Existing gated media library, creative studio, publication binding/authorization and performance evidence surfaces are baseline; duplicate data-model/frontend/release objectives are removed."
+      ],
+      "conflict_policy": "If later evidence conflicts, stop this family at owner_decision_required; do not infer completion or activate work.",
+      "proposed_successor_ids": [
+        "S05_BEACON_ORGANIC_OPERATION",
+        "S06_BEACON_PAID_BOOST"
+      ]
+    },
+    {
+      "family_id": "F06_CORE_MINIMUM_RELIABILITY",
+      "priority": 6,
+      "label": "CHARLIE/CORE minimum enabling reliability",
+      "rewrite_predecessor_count": 13,
+      "predecessor_mission_ids": [
+        "CHARLIE-FOLLOWUP-1CDD629B1C7FA8B9",
+        "CHARLIE-FOLLOWUP-ED59C3A5511A2E4F",
+        "CHARLIE-OUTCOME-1FFCE3DDF82A8DE3",
+        "CHARLIE-EXEC-GATE-LEASE-HYGIENE-20260721",
+        "CHARLIE-EXEC-GATE-OUTCOME-COMMS-20260721",
+        "CHARLIE-EXEC-GATE-PORTFOLIO-VISIBILITY-20260721",
+        "CHARLIE-EXEC-GATE-PORTFOLIO-RECONCILE-20260721",
+        "CHARLIE-EXEC-PHASE0-BASELINE-20260721",
+        "CHARLIE-EXEC-PHASE2-CONTINUITY-20260721",
+        "CHARLIE-EXEC-PHASE4-GOALS-20260721",
+        "CHARLIE-EXEC-PHASE5-COMMAND-CENTRE-20260721",
+        "CHARLIE-EXEC-PHASE6-UNATTENDED-CANARY-20260721",
+        "CHARLIE-OUTCOME-BC2D2D01AD1FECCD"
+      ],
+      "deduplicated_objective_examples": [
+        "Follow-up: Access Authority",
+        "Follow-up: Revision Evidence",
+        "Activate operational outcome: CORE Final Artifact Consumption And Supervisor Truth",
+        "Control Gate 2: terminal execution lease hygiene",
+        "Control Gate 3: business outcome follow-up controls and communication",
+        "Control Gate 4: mission family, archive and queue visibility",
+        "Control Gate 5: reconcile, deduplicate and rank mission portfolio",
+        "Always-On Phase 0: authoritative executive baseline",
+        "Always-On Phase 2: never-silent portfolio continuity",
+        "Always-On Phase 4: goal-to-mission intelligence",
+        "Always-On Phase 5: executive command centre",
+        "Always-On Phase 6: unattended canary and graduated autonomy"
+      ],
+      "unique_value_source": "Full raw text, acceptance/review artifacts, tests, family dependencies and owner decisions remain in artifacts/01 and /03 and are linked by artifact/10.",
+      "operational_boundary": "Ordinary execution belongs to Oom Sakkie and the named deployed specialist. CORE may build or repair only missing software capability.",
+      "delivered_objectives_removed": [
+        "Adaptive tier scoring, minimum-agent packets, generation binding and the successful T0 canary are current truth; the legacy always-on executive programme is not revived."
+      ],
+      "conflict_policy": "If later evidence conflicts, stop this family at owner_decision_required; do not infer completion or activate work.",
+      "proposed_successor_ids": [
+        "S07_CORE_MINIMUM_RELIABILITY"
+      ]
+    }
+  ]
+}
