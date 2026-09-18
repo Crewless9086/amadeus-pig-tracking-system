@@ -56,4 +56,4 @@ def entry(language):
         if(r.ok)location.assign({{ target|tojson }});else document.getElementById('error').textContent='Sign-in failed';
       };</script>''',init=urlencode(fields),target='/pig/'+fixture['pig'])
 
-app.run(host='127.0.0.1',port=55826,debug=False,use_reloader=False)
+app.run(host='127.0.0.1',port=18026,debug=False,use_reloader=False)
