@@ -110,6 +110,60 @@ def store():
     return effect
 
 
+@pytest.mark.parametrize("worker,phrase", [
+    ({}, "No ROOTLINE worker or queue record exists for this check yet"),
+    ({"rootline:rootline:daily": {"status": "exception",
+        "last_event_type": "exception", "outcome_status": "manager_specialist_processing_exception_contained"}},
+     "last worker check failed"),
+    ({"rootline:rootline:daily": {"status": "waiting_reassessment",
+        "last_event_type": "delivery_suppressed", "outcome_status": "no_owner_question_delivery_suppressed"}},
+     "checked the current records; nothing new requires a question or farm update"),
+])
+def test_morning_followthrough_wording_comes_from_durable_worker_state(worker, phrase):
+    messages = []
+    value = result(items=(item("rootline:daily", "Current irrigation watch"),))
+    outcome = run_daily_farm_manager(owner_user_id="77", chat_id="77",
+        specialist_results=[value], litter_rows=(), now=NOW, language="en",
+        store=store(), followthrough_loader=lambda _items: worker,
+        deliver=lambda _parsed, payload, **_kwargs: messages.append(payload["answer"]) or {
+            "success": True, "telegram_message_id": "worker-card"})
+    assert outcome["status"] == "daily_manager_presented"
+    assert phrase in messages[0]
+    assert "is checking the related records" not in messages[0]
+    assert "This brief did not record or complete any farm operation." in messages[0]
+
+
+def test_open_worker_case_is_described_as_queued():
+    messages = []
+    value = result(items=(item("rootline:daily", "Current irrigation watch"),))
+    outcome = run_daily_farm_manager(owner_user_id="77", chat_id="77",
+        specialist_results=[value], litter_rows=(), now=NOW, language="en",
+        store=store(), followthrough_loader=lambda _items: {
+            "rootline:rootline:daily": {"status": "open", "last_event_type": "created",
+                                         "outcome_status": ""}},
+        deliver=lambda _parsed, payload, **_kwargs: messages.append(payload["answer"]) or {
+            "success": True, "telegram_message_id": "queued-card"})
+    assert outcome["status"] == "daily_manager_presented"
+    assert "Queued for ROOTLINE" in messages[0]
+
+
+def test_worker_poll_timestamps_do_not_replace_unchanged_owner_material():
+    base = item("rootline:daily", "Current irrigation watch")
+    state = {"status": "waiting_reassessment", "last_event_type": "delivery_suppressed",
+        "outcome_status": "no_owner_question_delivery_suppressed",
+        "delivery_matches_current_evidence": False}
+    first = replace(base, metadata={"worker_followthrough": {
+        **state, "last_event_at": "2026-08-10T05:00:00+00:00",
+        "next_reassessment_at": "2026-08-10T05:05:00+00:00"}})
+    later = replace(base, metadata={"worker_followthrough": {
+        **state, "last_event_at": "2026-08-10T05:05:00+00:00",
+        "next_reassessment_at": "2026-08-10T05:10:00+00:00"}})
+    first_packet = build_daily_management_packet([result(items=(first,))], now=NOW)
+    later_packet = build_daily_management_packet([result(items=(later,))], now=NOW)
+    assert first_packet["material_digest"] == later_packet["material_digest"]
+    assert first_packet["answer"] == later_packet["answer"]
+
+
 def litter_rows():
     return [
         {"Litter_ID":"LIT-2026-1350","Sow_Pig_ID":"PIG-TEENA",
@@ -131,6 +185,16 @@ def test_teena_overdue_and_zigay_conflict_are_canonical_watchers():
     assert "4 days overdue" in teena.why and teena.authority is Authority.OWNER_DECISION
     zigay=next(row for row in value.work_items if row.title=="Current-litter conflict — Zigay")
     assert zigay.authority is Authority.READ_ONLY and not zigay.genuine_question
+
+
+def test_overdue_litter_contributes_the_one_bound_question_without_repeating_it_in_actions():
+    litter = build_litter_watch_result(litter_rows()[:1], now=NOW)
+    packet = build_daily_management_packet([litter], now=NOW)
+    assert packet["question"] == "Has Teena's litter been weaned; if so, on what date and how many?"
+    assert packet["question_binding"]["litter_id"] == "LIT-2026-1350"
+    assert packet["answer"].count("?") == 1
+    assert "Report whether Teena&#x27;s litter has been weaned" in packet["answer"]
+    assert "This brief did not record or complete any farm operation." in packet["answer"]
 
 
 def test_completed_weaning_is_not_presented():

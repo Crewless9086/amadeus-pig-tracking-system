@@ -28,7 +28,7 @@ ZERO = {"hardware_commands": 0, "writes_farm_data": False,
 def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                            litter_rows, sale_rows=(), deliver, store=None, now=None,
                            language="en", semantic_prioritizer=None,
-                           replace_brief=None):
+                           replace_brief=None, followthrough_loader=None):
     now = _aware(now or datetime.now(timezone.utc))
     local = now.astimezone(SAST)
     identity = f"OOM-DAILY-FARM-MANAGER-{local.date().isoformat()}"
@@ -46,6 +46,8 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     litter = build_litter_watch_result(litter_rows, now=now, language=language)
     sales = build_sale_watch_result(sale_rows, now=now, language=language)
     results = [row for row in specialist_results if isinstance(row, SpecialistResult)] + [litter, sales]
+    results = _bind_worker_followthrough(
+        results, followthrough_loader or load_worker_followthrough)
     answered = store("load_answered_questions", identity, {
         "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
         "daily_identity": identity}) or ()
@@ -236,15 +238,18 @@ def build_litter_watch_result(rows, *, now=None, language="en"):
             why = ((f"{sow_tag} se werpsel moes op {expected.isoformat()} gespeen word en is "
                     f"{overdue} dae laat; die huidige werpsel is steeds Aktief en geen gespeende telling bewys voltooiing nie.")
                    if af else (f"{sow_tag}'s litter was due for weaning on {expected.isoformat()} and is "
-                    f"{overdue} day{'s' if overdue != 1 else ''} overdue; the canonical litter "
+                    f"{overdue} day{'s' if overdue != 1 else ''} overdue; the saved litter record "
                     "is still Active and no weaned count proves completion."))
             items.append(SpecialistWorkItem(item_id=result_id, dedupe_key="weaning:"+litter_id,
                 domain="herd", title=(f"Speenwerk laat — {sow_tag}" if af else f"Weaning overdue — {sow_tag}"), why=why,
-                next_action=(f"Is {sow_tag} se werpsel reeds gespeen? Indien wel, gee die datum en aantal; ek sal die ontbrekende besonderhede vra en die bevestiging voorberei."
-                    if af else f"Has {sow_tag}'s litter been weaned? If so, give the date and count; I will ask for missing details and prepare the confirmation."),
+                next_action=(f"Meld of {sow_tag} se werpsel gespeen is; indien wel, sluit die datum en aantal in. Ek sal slegs ontbrekende besonderhede vra en die bevestiging voorberei."
+                    if af else f"Report whether {sow_tag}'s litter has been weaned; if yes, include the date and count. I will ask only for missing details and prepare the confirmation."),
                 assignee="charl", state=WorkState.URGENT if overdue > 1 else WorkState.DUE_TODAY,
                 authority=Authority.OWNER_DECISION, provenance=provenance,
-                business_value=130, due_at=datetime.combine(expected, datetime.min.time(), SAST)))
+                business_value=130, due_at=datetime.combine(expected, datetime.min.time(), SAST),
+                genuine_question=(f"Is {sow_tag} se werpsel reeds gespeen; indien wel, op watter datum en hoeveel?"
+                    if af else f"Has {sow_tag}'s litter been weaned; if so, on what date and how many?"),
+                question_for="charl"))
     for sow_id, active in active_by_sow.items():
         identities = {_text(row, "Litter_ID", "litter_id") for row in active}
         if len(identities) <= 1:
@@ -258,7 +263,7 @@ def build_litter_watch_result(rows, *, now=None, language="en"):
         items.append(SpecialistWorkItem(item_id=result_id, dedupe_key="litter-conflict:"+sow_id,
             domain="herd", title=(f"Huidige-werpsel-konflik — {sow_tag}" if af else f"Current-litter conflict — {sow_tag}"),
             why=(f"{sow_tag} het {len(identities)} huidige werpsels as Aktief gemerk; dit is 'n bronrekordkonflik."
-                if af else f"{sow_tag} has {len(identities)} canonical litters marked Active; this is a source-record conflict."),
+                if af else f"{sow_tag} has {len(identities)} saved litters marked Active; this is a source-record conflict."),
             next_action=("Los die duplikaat huidige-werpsel-skakel deur die beheerde datakwaliteitspad op; geen fisiese waarneming is nodig nie."
                 if af else "Resolve the duplicate current-litter linkage through the governed data-quality path; no physical observation is needed."),
             assignee="charl", state=WorkState.WAITING_EVIDENCE,
@@ -364,10 +369,16 @@ def build_daily_management_packet(results, *, now=None, language="en",
                  for value in question_item.provenance.source_refs
                  if str(value).startswith("pig:") and str(value).removeprefix("pig:")]
                 if question_item else [])
+    litter_refs = ([str(value).removeprefix("canonical_litter:")
+                    for value in question_item.provenance.source_refs
+                    if str(value).startswith("canonical_litter:")
+                    and str(value).removeprefix("canonical_litter:")]
+                   if question_item else [])
     question_binding = ({"task_id": question_item.item_id,
         "dedupe_key": question_item.dedupe_key, "domain": question_item.domain,
         "question": question,
-        **({"pig_id": pig_refs[0]} if len(set(pig_refs)) == 1 else {})}
+        **({"pig_id": pig_refs[0]} if len(set(pig_refs)) == 1 else {}),
+        **({"litter_id": litter_refs[0]} if len(set(litter_refs)) == 1 else {})}
         if question_item else {})
     return {"contract_version": CONTRACT_VERSION, "material_digest": digest,
         "priorities": priorities, "watch": watch, "all_tasks": tasks,
@@ -441,6 +452,69 @@ def _load_answered_questions(binding):
             return tuple(values)
 
 
+def load_worker_followthrough(items):
+    """Read the latest durable worker result for the exact morning work keys."""
+    if not str(os.environ.get("DATABASE_URL") or "").strip():
+        return None
+    keys = sorted({key for item in items for key in (
+        item.dedupe_key,
+        f"{item.provenance.specialist.casefold()}:{item.dedupe_key}",
+    ) if key})
+    if not keys:
+        return {}
+    try:
+        with connect_bounded_read() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select m.dedupe_key,m.status,m.next_reassessment_at,
+                        m.last_delivery_digest,m.evidence_digest,
+                        e.event_type,e.event_payload,e.occurred_at
+                    from app_private.oom_manager_cases m
+                    left join lateral (
+                        select event_type,event_payload,occurred_at
+                        from app_private.oom_manager_case_events
+                        where case_id=m.case_id
+                          and (event_type in ('created','evidence_changed',
+                               'delivery_confirmed','delivery_suppressed',
+                               'completed','contained','exception')
+                               or coalesce(event_payload->>'outcome_status','')<>'')
+                        order by occurred_at desc,event_id desc limit 1
+                    ) e on true
+                    where m.dedupe_key=any(%s)""", (keys,))
+                rows = cursor.fetchall()
+    except Exception:
+        return {"__load_status__": "unavailable"}
+    return {str(row[0]): {
+        "status": str(row[1] or ""),
+        "next_reassessment_at": row[2].isoformat() if row[2] else "",
+        "delivery_matches_current_evidence": bool(row[3] and row[3] == row[4]),
+        "last_event_type": str(row[5] or ""),
+        "outcome_status": str((row[6] or {}).get("outcome_status") or "")
+            if isinstance(row[6], dict) else "",
+        "last_event_at": row[7].isoformat() if row[7] else "",
+    } for row in rows}
+
+
+def _bind_worker_followthrough(results, loader):
+    items = tuple(item for result in results for item in result.work_items)
+    states = loader(items)
+    if states is None:
+        return results
+    unavailable = states.get("__load_status__") == "unavailable"
+    rebound = []
+    for result in results:
+        bound = []
+        for item in result.work_items:
+            prefixed = f"{item.provenance.specialist.casefold()}:{item.dedupe_key}"
+            state = states.get(prefixed) or states.get(item.dedupe_key)
+            if state is None:
+                state = {"status": "evidence_unavailable" if unavailable else "not_recorded",
+                         "last_event_type": "", "outcome_status": ""}
+            bound.append(replace(item, metadata={**dict(item.metadata),
+                                                 "worker_followthrough": dict(state)}))
+        rebound.append(replace(result, work_items=tuple(bound)))
+    return rebound
+
+
 def _render(priorities, watch, question, now, language):
     af = str(language).lower().startswith("af")
     visible = list(priorities) + list(watch)
@@ -466,6 +540,8 @@ def _render(priorities, watch, question, now, language):
                      for row in automatic_work)
     if not owner_work and not automatic_work:
         lines.append("Geen nuwe werk nie." if af else "No new work.")
+    lines.extend(("", "Hierdie opsomming het geen plaaswerk aangeteken of voltooi nie."
+                  if af else "This brief did not record or complete any farm operation."))
     if question:
         lines.extend(("", "<b>EEN VRAAG</b>" if af else "<b>ONE QUESTION</b>",
                       html.escape(question)))
@@ -485,12 +561,47 @@ def _owner_action_required(item):
 def _automatic_followup(item, af):
     # Only stable specialist follow-up belongs in this daily card. Internal
     # retry timestamps are deliberately absent from its replacement material.
+    worker = item.metadata.get("worker_followthrough")
+    if isinstance(worker, dict):
+        return _worker_followup(worker, item.provenance.specialist.upper(), af)
     followup = str(item.metadata.get("owner_followup") or "").strip()
     if followup:
         return _compact(followup, 260)
     specialist = item.provenance.specialist.upper()
-    return (f"{specialist} gaan die verwante rekords na en volg op wanneer nuwe bewyse beskikbaar is."
-            if af else f"{specialist} is checking the related records and will follow up when new evidence is available.")
+    return (f"{specialist} se werker het nog nie hierdie kontrole voltooi nie. Geen plaaswerk is aangeteken nie."
+            if af else f"{specialist}'s worker has not completed this check. No farm operation was recorded.")
+
+
+def _worker_followup(worker, specialist, af):
+    status = str(worker.get("status") or "")
+    event = str(worker.get("last_event_type") or "")
+    outcome = str(worker.get("outcome_status") or "")
+    if status == "evidence_unavailable":
+        return (f"{specialist} se werkerstatus is nie beskikbaar nie; geen voltooide opvolg of plaaswerk is bewys nie."
+                if af else f"{specialist} worker status is unavailable; no completed follow-through or farm operation is proven.")
+    if status == "not_recorded":
+        return (f"Geen {specialist}-werker- of ryrekord bestaan nog vir hierdie kontrole nie; geen plaaswerk is aangeteken nie."
+                if af else f"No {specialist} worker or queue record exists for this check yet; no farm operation was recorded.")
+    if status == "open":
+        return (f"In die ry vir {specialist}; geen werkeruitvoering of plaaswerk is nog aangeteken nie."
+                if af else f"Queued for {specialist}; no worker execution or farm operation is recorded yet.")
+    if status == "delegated" or event in {"claimed", "delegated", "heartbeat"}:
+        return (f"{specialist} se werker verwerk die huidige rekords nou; geen plaaswerk is nog voltooi nie."
+                if af else f"{specialist}'s worker is processing the current records now; no farm operation is complete yet.")
+    if status == "exception" or event == "exception":
+        return (f"{specialist} se laaste werkerkontrole het misluk en is vir die volgende poging behou; geen plaaswerk is voltooi nie."
+                if af else f"{specialist}'s last worker check failed and is retained for the next attempt; no farm operation was completed.")
+    if event == "delivery_confirmed":
+        return (f"{specialist} se jongste werkeropvolg is afgelewer; die taak bly oop totdat nuwe plaasbewyse dit afsluit."
+                if af else f"{specialist}'s latest worker follow-up was delivered; the task remains open until new farm evidence closes it.")
+    if outcome in {"no_owner_question_delivery_suppressed", "manager_delivery_duplicate_suppressed"}:
+        return (f"{specialist} se werker het die huidige rekords nagegaan; niks nuuts vereis 'n vraag of plaasopdatering nie."
+                if af else f"{specialist}'s worker checked the current records; nothing new requires a question or farm update.")
+    if outcome in {"manager_cycle_deadline_deferred", "family_message_cycle_deadline_deferred"}:
+        return (f"{specialist} se kontrole bly in die ry nadat die laaste werkerlopie nie klaar gemaak het nie; geen plaaswerk is voltooi nie."
+                if af else f"{specialist}'s check remains queued because the last worker run did not finish; no farm operation was completed.")
+    return (f"{specialist} het die laaste kontrole behou vir die volgende geskeduleerde poging; geen plaaswerk is voltooi nie."
+            if af else f"{specialist} retained the last check for its next scheduled attempt; no farm operation was completed.")
 
 
 def _task(item):
@@ -509,6 +620,16 @@ def _material(item):
         "owner_action_required": _owner_action_required(item)}
     if not _owner_action_required(item):
         material["owner_followup"] = str(item.metadata.get("owner_followup") or "")
+        if isinstance(item.metadata.get("worker_followthrough"), dict):
+            worker = item.metadata["worker_followthrough"]
+            # Scheduler timestamps are observation evidence, not a reason to
+            # replace the owner card. Only a changed execution/outcome state
+            # changes the visible morning material.
+            material["worker_followthrough"] = {
+                key: worker.get(key) for key in (
+                    "status", "last_event_type", "outcome_status",
+                    "delivery_matches_current_evidence")
+                if key in worker}
     if _owner_action_required(item):
         material.update({"next_action": item.next_action,
             "due_at": item.due_at.isoformat() if item.due_at else None})

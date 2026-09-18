@@ -132,6 +132,58 @@ EXPECTED_REPLACEMENT = {'en': "<b>TODAY'S FARM PLAN</b>\n"
        'verandering nie?'}
 
 
+def _current_brief_expected(value, language, *, molly):
+    af = language == "af"
+    value = value.replace("the canonical litter", "the saved litter record")
+    value = value.replace(
+        "Has Molly&#x27;s litter been weaned? If so, give the date and count; I will ask for missing details and prepare the confirmation.",
+        "Report whether Molly&#x27;s litter has been weaned; if yes, include the date and count. I will ask only for missing details and prepare the confirmation.")
+    value = value.replace(
+        "Is Molly se werpsel reeds gespeen? Indien wel, gee die datum en aantal; ek sal die ontbrekende besonderhede vra en die bevestiging voorberei.",
+        "Meld of Molly se werpsel gespeen is; indien wel, sluit die datum en aantal in. Ek sal slegs ontbrekende besonderhede vra en die bevestiging voorberei.")
+    combined = ("Huidige werpstatus — Mysikind en Mona" if af else
+                "Current farrowing status — Mysikind and Mona")
+    action_start = value.index(("2. " if molly else "1. ") + f"<b>{combined}</b>")
+    automatic_start = value.index("<b>OOM SAKKIE", action_start)
+    prefix = value[:action_start]
+    automatic = value[automatic_start:value.index("\n\n<b>" + ("EEN VRAAG" if af else "ONE QUESTION"))]
+    weighing = automatic.find("\n• <b>" + ("Weging:" if af else "Weighing:"))
+    if weighing >= 0:
+        automatic = automatic[:weighing]
+    first_number = 2 if molly else 1
+    if af:
+        why = ("Die verwagte tydperk 2026-08-22 tot 2026-08-26 is verby. "
+               "Die huidige rekords bevestig nie die uitkoms van hierdie paring nie.")
+        action = ("Gee die huidige uitkoms; as daar &#x27;n werpsel was, sal ek die datum en "
+                  "geboortetellings vra en die bevestiging voorberei.")
+        rows = "\n".join(
+            f"{first_number + offset}. <b>Huidige werpstatus — {name}</b>\n{why}\n{action}"
+            for offset, name in enumerate(("Mysikind", "Mona")))
+        footer = "Hierdie opsomming het geen plaaswerk aangeteken of voltooi nie."
+        question = ("Is Molly se werpsel reeds gespeen; indien wel, op watter datum en hoeveel?"
+                    if molly else "Wat is Mysikind se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike verandering nie?")
+        heading = "EEN VRAAG"
+    else:
+        why = ("The projected window 2026-08-22 to 2026-08-26 has passed. "
+               "Current records do not confirm the outcome of this mating.")
+        action = ("Tell me the current outcome; if there was a litter, I will ask for its date "
+                  "and birth counts and prepare the confirmation.")
+        rows = "\n".join(
+            f"{first_number + offset}. <b>Current farrowing status — {name}</b>\n{why}\n{action}"
+            for offset, name in enumerate(("Mysikind", "Mona")))
+        footer = "This brief did not record or complete any farm operation."
+        question = ("Has Molly&#x27;s litter been weaned; if so, on what date and how many?"
+                    if molly else "What is Mysikind&#x27;s current status: already farrowed, returned to heat, or no clear change yet?")
+        heading = "ONE QUESTION"
+    return prefix + rows + "\n\n" + automatic + "\n\n" + footer + "\n\n<b>" + heading + "</b>\n" + question
+
+
+EXPECTED = {language: _current_brief_expected(value, language, molly=True)
+            for language, value in EXPECTED.items()}
+EXPECTED_REPLACEMENT = {language: _current_brief_expected(value, language, molly=False)
+                        for language, value in EXPECTED_REPLACEMENT.items()}
+
+
 def forbidden(*_args, **_kwargs):
     pytest.fail("The morning language regression attempted external I/O")
 
@@ -319,20 +371,17 @@ def test_real_retained_shape_projects_recipient_wording_with_same_facts_and_bind
     en, af = project("en"), project("af")
     assert en.result_id == af.result_id and en.observed_at == af.observed_at
     assert [structural_item(row) for row in en.work_items] == [structural_item(row) for row in af.work_items]
-    far = next(row for row in af.work_items if row.dedupe_key.startswith("herdmaster:reproductive-status:"))
-    assert far.title == "Huidige werpstatus — Mysikind en Mona"
-    assert far.why == (
-        "Die verwagte tydperk 2026-08-22 tot 2026-08-26 is verby. Die huidige rekords bevestig nie die uitkoms van hierdie parings nie."
-    )
-    assert "Gee die huidige uitkoms" in far.next_action
-    assert "reeds gewerp" in far.genuine_question
-    assert far.authority is Authority.ADVISORY and far.state is WorkState.DUE_TODAY
-    weights = next(row for row in af.work_items if row.dedupe_key == "herdmaster:weekly-weight-evidence")
-    assert weights.title == "Weging: 0 van 74 aangeteken; 74 oormerk(e) se status moet nagegaan word"
-    assert "0/74" in weights.why and "2026-09-07 tot 2026-09-13" in weights.why
-    assert ", ".join(TAGS) in weights.next_action
-    assert "moenie hulle vir herweging aanwys voordat daardie bewyse bestaan nie" in weights.next_action
-    assert weights.authority is Authority.READ_ONLY and weights.metadata["routine_weekly_weighing"] is True
+    far = [row for row in af.work_items
+           if row.dedupe_key.startswith("herdmaster:reproductive-status:")]
+    assert [row.title for row in far] == [
+        "Huidige werpstatus — Mysikind", "Huidige werpstatus — Mona"]
+    assert all("uitkoms van hierdie paring" in row.why for row in far)
+    assert all("Gee die huidige uitkoms" in row.next_action for row in far)
+    assert all("reeds gewerp" in row.genuine_question for row in far)
+    assert all(row.authority is Authority.ADVISORY and row.state is WorkState.DUE_TODAY
+               for row in far)
+    assert not any(row.dedupe_key == "herdmaster:weekly-weight-evidence"
+                   for row in af.work_items)
     deaths = next(row for row in af.work_items if ":mortality-cluster:" in row.dedupe_key)
     assert deaths.title == "Sterfterekords — 34 sterftes vir hersiening"
     assert "2026-09-13" in deaths.why and "nie 'n verslag van nuwe sterftes vandag nie" in deaths.why
@@ -450,7 +499,7 @@ def test_reported_dead_suppresses_stale_live_question_without_changing_followup_
     text = memory.sends[0][1]
     assert "Vark Prince se sterfterekordopvolging" in text
     assert RAW_EN_QUESTION not in text and RAW_AF_QUESTION not in text
-    assert ("EEN VRAAG" not in text) if failed else ("Wat is Mysikind en Mona se huidige status" in text)
+    assert ("EEN VRAAG" not in text) if failed else ("Wat is Mysikind se huidige status" in text)
     assert "welstandsopvolging" not in text
     assert outcome["writes_farm_data"] is False and outcome["hardware_commands"] == 0
 

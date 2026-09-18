@@ -471,44 +471,45 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
     items = list(_active_welfare_result(active, now, language).work_items)
     assumed = [row for row in packet["reproductive_reviews"]
                if row["operational_status"] == "Assumed Pregnant"]
-    groups = {}
     for row in assumed:
-        groups.setdefault((row["projected_farrowing_range"]["start"], row["projected_farrowing_range"]["end"]), []).append(row)
-    for group in groups.values():
-        labels = (" en " if is_af else " and ").join(str(row["tag_number"]) for row in group)
-        window = group[0]["projected_farrowing_range"]
-        prep = group[0]["preparation_window"]
-        key = "herdmaster:farrowing-preparation:" + ":".join(sorted(row["pig_id"] for row in group))
+        label = str(row["tag_number"])
+        window = row["projected_farrowing_range"]
+        prep = row["preparation_window"]
+        key = "herdmaster:farrowing-preparation:" + row["pig_id"]
+        item_provenance = replace(
+            provenance, source_refs=(*provenance.source_refs, f"pig:{row['pig_id']}"))
         items.append(SpecialistWorkItem(
             item_id=result_id + ":" + key, dedupe_key=key,
-            domain="herd", title=f"Berei {labels} voor" if is_af else f"Prepare {labels}",
-            why=((f"{labels} word vir plaasbeplanning steeds as dragtig aanvaar, maar dit is nie klinies bevestig nie; verwagte werping is ongeveer "
+            domain="herd", title=f"Berei {label} voor" if is_af else f"Prepare {label}",
+            why=((f"{label} word vir plaasbeplanning steeds as dragtig aanvaar, maar dit is nie klinies bevestig nie; verwagte werping is ongeveer "
                   f"{window['start']} tot {window['end']}, met gepaste voorbereiding {prep['start']} tot {prep['end']}.") if is_af else
-                 (f"{labels} remain operationally Assumed Pregnant, not clinically confirmed; farrowing is approximately "
+                 (f"{label} remains operationally Assumed Pregnant, not clinically confirmed; farrowing is approximately "
                   f"{window['start']} to {window['end']}, with proportional preparation {prep['start']} to {prep['end']}.")),
-            next_action="Berei hul werpareas in gepaste mate voor." if is_af else "Prepare their farrowing areas proportionally.",
+            next_action="Berei haar werparea in gepaste mate voor." if is_af else "Prepare her farrowing area proportionally.",
             assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
-            provenance=provenance, business_value=110,
-            metadata={"owner_followup": (f"HERDMASTER volg {labels} op wanneer nuwe werp- of dragtigheidsbewyse inkom."
-                if is_af else f"HERDMASTER will follow up on {labels} when new farrowing or pregnancy evidence arrives.")}))
-    expired_groups = {}
+            provenance=item_provenance, business_value=110,
+            metadata={"owner_followup": (f"HERDMASTER volg {label} op wanneer nuwe werp- of dragtigheidsbewyse inkom."
+                if is_af else f"HERDMASTER will follow up on {label} when new farrowing or pregnancy evidence arrives.")}))
     for row in expired:
         window = row.get("historical_projected_farrowing_range") or {}
-        expired_groups.setdefault((window.get("earliest"), window.get("latest")), []).append(row)
-    for (start, end), group in expired_groups.items():
-        labels = (" en " if is_af else " and ").join(str(row["tag_number"]) for row in group)
-        key = "herdmaster:reproductive-status:" + ":".join(sorted(row["pig_id"] for row in group))
-        question = (f"Wat is {labels} se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike verandering nie?"
-                    if is_af else f"What is the current status of {labels}: already farrowed, returned to heat, or no clear change yet?")
+        start, end = window.get("earliest"), window.get("latest")
+        label = str(row["tag_number"])
+        key = "herdmaster:reproductive-status:" + row["pig_id"]
+        question = (f"Wat is {label} se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike verandering nie?"
+                    if is_af else f"What is {label}'s current status: already farrowed, returned to heat, or no clear change yet?")
+        item_provenance = replace(
+            provenance, source_refs=(*provenance.source_refs, f"pig:{row['pig_id']}"))
         items.append(SpecialistWorkItem(item_id=result_id + ":" + key, dedupe_key=key,
-            domain="herd", title=(f"Huidige werpstatus — {labels}" if is_af else f"Current farrowing status — {labels}"),
-            why=(f"Die verwagte tydperk {start} tot {end} is verby. Die huidige rekords bevestig nie die uitkoms van hierdie parings nie."
-                 if is_af else f"The projected window {start} to {end} has passed. Current records do not confirm the outcome of these matings."),
+            domain="herd", title=(f"Huidige werpstatus — {label}" if is_af else f"Current farrowing status — {label}"),
+            why=(f"Die verwagte tydperk {start} tot {end} is verby. Die huidige rekords bevestig nie die uitkoms van hierdie paring nie."
+                 if is_af else f"The projected window {start} to {end} has passed. Current records do not confirm the outcome of this mating."),
             next_action=("Gee die huidige uitkoms; as daar 'n werpsel was, sal ek die datum en geboortetellings vra en die bevestiging voorberei."
                 if is_af else "Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and prepare the confirmation."),
             assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
-            provenance=provenance, business_value=110, genuine_question=question, question_for="charl"))
-    rebound = tuple(replace(item, provenance=provenance) for item in items)
+            provenance=item_provenance, business_value=110,
+            genuine_question=question, question_for="charl"))
+    rebound = tuple(replace(item, provenance=replace(
+        item.provenance, result_id=result_id)) for item in items)
     return SpecialistResult("herdmaster", result_id, observed,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
 

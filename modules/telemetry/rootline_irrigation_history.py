@@ -263,6 +263,7 @@ def _attribute_parent_operating_dates(history, rows):
 
 def _attach_latest_zone_executions(history, rows):
     """Expose current execution truth without creating a second state rail."""
+    from modules.telemetry.rootline_irrigation_lifecycle import project_shutdown_exception
     terminal_actions = {"record_completed", "contain_zone",
                         "record_ambiguous_shutdown", "record_claim_recovery"}
     grouped = {}
@@ -271,10 +272,11 @@ def _attach_latest_zone_executions(history, rows):
         execution_id = str(item.get("execution_id") or "").strip()
         zone_id = str(item.get("zone_id") or "").strip()
         if execution_id and zone_id in ZONES:
-            grouped.setdefault(execution_id, {"zone_id": zone_id, "events": []})[
+            grouped.setdefault((zone_id, execution_id), {"zone_id": zone_id, "events": []})[
                 "events"].append((order, item))
     by_zone = {zone: [] for zone in ZONES}
-    for execution_id, grouped_execution in grouped.items():
+    exceptions_by_zone = {zone: [] for zone in ZONES}
+    for (_, execution_id), grouped_execution in grouped.items():
         events = grouped_execution["events"]
         terminal = next((entry for entry in reversed(events)
                          if str(entry[1].get("action") or "") in terminal_actions
@@ -284,11 +286,34 @@ def _attach_latest_zone_executions(history, rows):
                        if str(entry[1].get("action") or "") in {
                            "mark_active", "claim_before_on"}), None)
         selected = terminal or active
+        # Keep every unresolved execution exception, including an older one
+        # obscured by a newer display execution. Merge only this exact identity's
+        # canonical event facts; later authoritative OFF resolves only its own
+        # uncertainty and cannot erase a late-readback deadline discrepancy.
+        facts = {}
+        deadline_discrepancy = None
+        for _, event in events:
+            facts.update(event)
+            if event.get("action") in terminal_actions:
+                # Do not manufacture a later recovery from a flag on one row
+                # and a readback that appeared on a different row.
+                facts["shutdown_verified"] = event.get("shutdown_verified")
+                facts["shutdown_evidence"] = event.get("shutdown_evidence")
+            observed_exception = project_shutdown_exception(facts, evidence_cutoff=history.get("snapshot_cutoff"))
+            if observed_exception and observed_exception["kind"] == "off_readback_after_deadline":
+                deadline_discrepancy = deadline_discrepancy or observed_exception
+        exception = project_shutdown_exception(facts, evidence_cutoff=history.get("snapshot_cutoff"))
+        if exception and exception["kind"] != "off_readback_after_deadline":
+            exceptions_by_zone[grouped_execution["zone_id"]].append(exception)
+        if deadline_discrepancy:
+            exceptions_by_zone[grouped_execution["zone_id"]].append(deadline_discrepancy)
         if selected:
             by_zone[grouped_execution["zone_id"]].append({
                 "execution_id": execution_id, "order": selected[0],
                 "terminal": terminal is not None, "event": dict(selected[1])})
     for zone_id, candidates in by_zone.items():
+        history["zones"][zone_id]["execution_exceptions"] = sorted(
+            exceptions_by_zone[zone_id], key=lambda row: (row["execution_id"], row["kind"]))
         active = [candidate for candidate in candidates if not candidate["terminal"]]
         if len(active) > 1:
             history["zones"][zone_id]["latest_execution"] = {

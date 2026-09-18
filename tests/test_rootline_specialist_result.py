@@ -105,6 +105,33 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertNotIn("Lifecycle:", text)
         self.assertNotIn("59.9833 minutes", text)
 
+    def test_recent_verified_controller_boundaries_become_one_overnight_summary_without_duration(self):
+        history = {"zones": {"B12345": {"events": []}, "C12345": {
+            "events": [], "latest_execution": {
+                "action": "record_completed", "state": "Completed",
+                "zone_id": "C12345", "execution_id": "ROOTLINE-EXECUTION-C",
+                "shutdown_verified": True, "objective_satisfied": True,
+                "primary_stop_deadline": "2026-07-29T11:05:00+02:00",
+                "native_fail_stop_deadline": "2026-07-29T11:05:00+02:00",
+                "start_evidence": {"authoritative": True, "state": "ON",
+                    "observed_at": "2026-07-29T08:35:16+00:00"},
+                "shutdown_evidence": {"authoritative": True, "state": "OFF",
+                    "observed_at": "2026-07-29T09:04:24+00:00"},
+            }}}}
+        result = self.build(irrigation_history=history)
+        self.assertEqual(result["recent_irrigation_outcomes"], [{
+            "zone_id": "C12345", "execution_id": "ROOTLINE-EXECUTION-C",
+            "controller_on_at": "2026-07-29T10:35:16+02:00",
+            "controller_off_at": "2026-07-29T11:04:24+02:00",
+            "controller_on_verified": True, "controller_off_verified": True,
+            "watering_duration_supported": False,
+            "delivered_volume_supported": False,
+        }])
+        item = __import__("modules.oom_sakkie.rootline_daily_presentation", fromlist=[
+            "compose_daily_rootline_manager_item"]).compose_daily_rootline_manager_item(result)
+        self.assertIn("Overnight irrigation: C Camp 🟢 ON 10:35; ⚪ OFF 11:04", item["title"])
+        self.assertNotIn("duration", " ".join(item.values()).casefold())
+
     def test_plan_projection_retains_timing_cadence_and_recovery(self):
         plan = {
             "success": True,

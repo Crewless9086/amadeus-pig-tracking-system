@@ -40,39 +40,34 @@ def test_completion_summary_does_not_treat_planned_credit_as_measured_watering()
         "start_evidence": {"authoritative": True, "state": "ON", "observed_at": "2026-09-13T22:03:15.073429+00:00"},
         "shutdown_evidence": {"authoritative": True, "state": "OFF", "observed_at": "2026-09-13T23:32:17.253550+00:00"},
     })
-    assert "controller OFF verified at 2026-09-14 01:32:17 SAST" in text
-    assert "ON was observed at 2026-09-14 00:03:15 SAST" in text
-    assert "Actual watering duration and delivered volume are unverified" in text
-    assert "full watering job remains incomplete" in text
-    assert "ran for" not in text and "Total verified watering" not in text
-    assert "fertilizer" not in text.casefold()
+    assert text == "⚪ B Camp irrigation OFF — controller verified at 01:32:17 SAST."
+    assert "duration" not in text.casefold() and "volume" not in text.casefold()
 
 
 def test_notification_requires_authoritative_timestamped_readback():
     for evidence in ({}, {"authoritative": False, "state": "OFF", "observed_at": "2026-09-13T23:32:17Z"},
                      {"authoritative": True, "state": "OFF", "observed_at": "2026-09-13T23:32:17"}):
         text = _rootline_irrigation_completion_summary("B12345", {"shutdown_verified": True, "shutdown_evidence": evidence})
-        assert "OFF verified at" not in text
-        assert "reading is unavailable" in text
+        assert "controller verified at" not in text
+        assert text == "⚠️ B Camp irrigation completion reported; controller OFF verification is unavailable."
 
 
-def test_start_labels_configured_limit_separately_from_controller_reading():
+def test_start_notification_is_one_verified_icon_line_without_planned_duration():
     text = _rootline_irrigation_start_summary("B12345", {"planned_runtime_seconds": 3599,
         "start_evidence": {"authoritative": True, "state": "ON", "observed_at": "2026-09-13T22:03:15Z"}})
-    assert "Configured segment limit: 59m 59s" in text
-    assert "controller ON observed at 2026-09-14 00:03:15 SAST" in text
-    assert "not measured" in text and "no more than" not in text
+    assert text == "🟢 B Camp irrigation ON — controller verified at 00:03:15 SAST."
+    assert "59" not in text and "duration" not in text.casefold()
 
 
-def test_completion_summary_includes_only_commissioned_verified_fertilizer_counts():
+def test_completion_notification_stays_scoped_to_verified_controller_off():
     text = _rootline_irrigation_completion_summary("B12345", {
         "verified_runtime_seconds": 3599,
         "fertilizer_delivery_verified": True,
         "verified_fertilizer_injection_count": 3,
         "verified_fertilizer_mixing_count": 1,
     })
-    assert "Verified fertilizer injections: 3" in text
-    assert "Verified mixing cycles: 1" in text
+    assert text == "⚠️ B Camp irrigation completion reported; controller OFF verification is unavailable."
+    assert "fertilizer" not in text.casefold()
 
 
 def memory_store():

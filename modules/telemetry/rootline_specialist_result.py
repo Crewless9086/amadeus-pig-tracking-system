@@ -20,7 +20,7 @@ from modules.telemetry.rootline_water_energy_plan import (
     get_current_water_energy_plan,
     read_current_water_energy_evidence,
 )
-from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
+from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle, controller_readback_time
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -76,11 +76,16 @@ def build_rootline_specialist_result(
     owner_questions = _owner_questions(plan, evidence, recommendations)
     overall = _overall_status(recommendations)
     cutoff = _evidence_cutoff(plan, generated_at)
+    recent_irrigation_outcomes = _recent_irrigation_outcomes(
+        evidence.get("irrigation_history"), generated_at)
+    irrigation_lifecycle = _irrigation_lifecycle(recommendations, evidence.get("irrigation_history"))
     identity_material = {
         "contract": CONTRACT_VERSION,
         "operating_date": selected_date,
         "evidence_generation": plan["evidence_generation"],
         "recommendations": recommendations,
+        "recent_irrigation_outcomes": recent_irrigation_outcomes,
+        "irrigation_lifecycle": irrigation_lifecycle,
     }
     generation = sha256(
         json.dumps(identity_material, sort_keys=True, default=str).encode()
@@ -106,8 +111,8 @@ def build_rootline_specialist_result(
         "battery_policy": deepcopy(plan["battery_reserve"]),
         "water_observations": deepcopy(plan["tank_evidence"]),
         "recommendations": recommendations,
-        "irrigation_lifecycle": _irrigation_lifecycle(
-            recommendations, evidence.get("irrigation_history")),
+        "irrigation_lifecycle": irrigation_lifecycle,
+        "recent_irrigation_outcomes": recent_irrigation_outcomes,
         "next_reassessment": reassessment,
         "owner_questions": owner_questions,
         "outcome_separation": {
@@ -131,8 +136,42 @@ def _irrigation_lifecycle(recommendations, irrigation_history):
                if isinstance(row, dict)}
     return {zone: project_zone_lifecycle(zone_id=zone,
         recommendation=indexed.get(zone), history=histories.get(zone),
-        execution=(histories.get(zone) or {}).get("latest_execution"))
+        execution=(histories.get(zone) or {}).get("latest_execution"),
+        evidence_cutoff=(irrigation_history or {}).get("snapshot_cutoff"))
         for zone in ("B12345", "C12345")}
+
+
+def _recent_irrigation_outcomes(irrigation_history, generated_at):
+    """Project recent authoritative controller boundaries without a duration."""
+    histories = ((irrigation_history or {}).get("zones") or {}
+                 if isinstance(irrigation_history, dict) else {})
+    outcomes = []
+    for zone in ("B12345", "C12345"):
+        execution = (histories.get(zone) or {}).get("latest_execution") or {}
+        if not isinstance(execution, dict) or str(execution.get("zone_id") or zone) != zone:
+            continue
+        started = _verified_controller_time(execution, "start_evidence", "ON")
+        stopped = _verified_controller_time(execution, "shutdown_evidence", "OFF")
+        if not started or not stopped or stopped < started:
+            continue
+        if stopped < generated_at - timedelta(hours=12) or stopped > generated_at:
+            continue
+        outcomes.append({
+            "zone_id": zone,
+            "execution_id": str(execution.get("execution_id") or ""),
+            "controller_on_at": started.isoformat(),
+            "controller_off_at": stopped.isoformat(),
+            "controller_on_verified": True,
+            "controller_off_verified": True,
+            "watering_duration_supported": False,
+            "delivered_volume_supported": False,
+        })
+    return outcomes
+
+
+def _verified_controller_time(execution, key, state):
+    observed = controller_readback_time(execution, key, state)
+    return _as_za(observed) if observed is not None else None
 
 
 def build_current_rootline_specialist_result(
@@ -303,15 +342,21 @@ def project_water_energy_plan(plan, now=None):
 
 def _project_existing_plan(plan, now):
     recommendations = _recommendations_from_tasks(plan.get("candidate_tasks", []))
+    irrigation_lifecycle = _irrigation_lifecycle(recommendations, plan.get("recent_irrigation_history"))
+    generation = plan.get("evidence_generation") or UNAVAILABLE
+    exceptions = {zone: row.get("execution_exceptions") for zone, row in irrigation_lifecycle.items()
+                  if row.get("execution_exceptions")}
+    if exceptions:
+        generation = sha256(json.dumps([generation, exceptions], sort_keys=True).encode()).hexdigest().upper()[:16]
     result_id = (
         f"ROOTLINE-RESULT-{str(plan.get('operating_date')).replace('-', '')}-"
-        f"{str(plan.get('evidence_generation') or 'UNAVAILABLE')}"
+        f"{generation}"
     )
     result = {
         "success": True,
         "contract_version": CONTRACT_VERSION,
         "result_id": result_id,
-        "generation": plan.get("evidence_generation") or UNAVAILABLE,
+        "generation": generation,
         "operating_date": plan.get("operating_date"),
         "operating_timezone": "Africa/Johannesburg",
         "generated_at": now.isoformat(),
@@ -337,8 +382,8 @@ def _project_existing_plan(plan, now):
         "battery_policy": deepcopy(plan.get("battery_reserve") or {}),
         "water_observations": deepcopy(plan.get("tank_evidence") or {}),
         "recommendations": recommendations,
-        "irrigation_lifecycle": _irrigation_lifecycle(
-            recommendations, plan.get("recent_irrigation_history")),
+        "irrigation_lifecycle": irrigation_lifecycle,
+        "recent_irrigation_outcomes": _recent_irrigation_outcomes(plan.get("recent_irrigation_history"), now),
         "next_reassessment": (
             {
                 "trigger": "canonical_plan_reassessment",

@@ -30,10 +30,25 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
     recommendations.sort(key=lambda row: (str(row.get("subject") or ""),
                                            str(row.get("status") or row.get("recommendation") or "")))
     selected = {"recommendations": recommendations,
+        "execution_exceptions": execution_exception_material(result),
         "next_reassessment": stable_reassessment(result.get("next_reassessment")),
         "owner_question": _owner_question((result.get("owner_brief") or {}).get("family_fact_needed"))}
     return hashlib.sha256(json.dumps(selected, sort_keys=True, separators=(",", ":"),
                                      default=str).encode()).hexdigest()
+
+
+def execution_exception_material(result):
+    """Execution-bound facts, independent of polling time and prose."""
+    lifecycles = result.get("irrigation_lifecycle") or {}
+    rows = []
+    for zone in ("B12345", "C12345"):
+        lifecycle = lifecycles.get(zone) or {}
+        for row in lifecycle.get("execution_exceptions") or ():
+            if not isinstance(row, Mapping) or row.get("zone_id") != zone or not row.get("execution_id"):
+                continue
+            rows.append({key: row.get(key) for key in ("execution_id", "zone_id", "kind",
+                "stop_deadline", "controller_off_verified", "controller_off_at")})
+    return sorted(rows, key=lambda row: (row["zone_id"], row["execution_id"], row["kind"]))
 
 
 def stable_reassessment(value):

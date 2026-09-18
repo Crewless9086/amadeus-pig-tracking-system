@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from modules.oom_sakkie import general_manager_worker as worker_module
+from modules.oom_sakkie import daily_farm_manager as daily_manager
 
 from modules.oom_sakkie.manager_case_sources import _completed_bulk_batch_findings
 from modules.oom_sakkie.general_manager_worker import (
@@ -149,6 +150,30 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         again = self.cycle([changed], deliver=lambda *_args, **_kwargs: self.fail('duplicate delivery'))
         self.assertTrue(again['success'], again)
         self.assertEqual(again['candidate_replays'], 1)
+
+    def test_morning_followthrough_reads_latest_durable_worker_outcome(self):
+        item_key = 'herdmaster:morning-followthrough'
+        durable_key = 'herdmaster:' + item_key
+        current = self.value('morning-followthrough', dedupe_key=durable_key,
+            next_reassessment_at=self.now.isoformat())
+        result = self.cycle([current], refresh=lambda _case: current,
+            deliver=lambda _case: {
+                'success': True,
+                'status': 'no_owner_question_delivery_suppressed',
+                'delivery_confirmed': False,
+                'next_reassessment_at': (self.now + timedelta(minutes=5)).isoformat(),
+            })
+        self.assertTrue(result['success'], result)
+        item = SimpleNamespace(dedupe_key=item_key,
+            provenance=SimpleNamespace(specialist='HERDMASTER'))
+        with patch.dict(os.environ, {'DATABASE_URL': URL}), \
+             patch.object(daily_manager, 'connect_bounded_read', self.db):
+            states = daily_manager.load_worker_followthrough((item,))
+        self.assertEqual(states[durable_key]['status'], 'waiting_reassessment')
+        self.assertEqual(states[durable_key]['last_event_type'], 'delivery_suppressed')
+        self.assertEqual(states[durable_key]['outcome_status'],
+                         'no_owner_question_delivery_suppressed')
+        self.assertFalse(states[durable_key]['delivery_matches_current_evidence'])
 
     def test_mixed_reconciliation_keeps_custom_identity_and_terminal_event(self):
         raw = self.value('retained-litter', dedupe_key='herdmaster-litter-follow-up:LIT-MIXED')

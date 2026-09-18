@@ -42,10 +42,7 @@ def test_complete_current_snapshot_is_not_historical_completion():
         "eligible_tagged": 1, "covered": 1,
         "coverage_percentage": 100.0, "status": "complete"}
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
-    item = result.work_items[0]
-    assert "covered: 1/1" in item.title
-    assert "No further cohort weighing instruction" in item.next_action
-    assert "historical" in item.why
+    assert result.work_items == ()
 
 
 def test_partial_lists_only_missing_eligible_tagged_pigs():
@@ -54,10 +51,7 @@ def test_partial_lists_only_missing_eligible_tagged_pigs():
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
     assert packet["weight"]["current_snapshot"]["covered"] == 1
     assert [row["tag"] for row in packet["weight"]["missing_eligible_tagged"]] == ["2"]
-    assert result.work_items[0].title == "Weighing: 1 of 2 recorded; 1 tag(s) need status reconciliation"
-    assert result.work_items[0].next_action == (
-        "Reconcile sale/order or other canonical status for tags 2; "
-        "do not classify them for reweighing until that evidence exists.")
+    assert result.work_items == ()
 
 
 def test_breeding_animals_are_excluded_unless_individually_scheduled():
@@ -132,8 +126,7 @@ def test_twelve_august_weight_is_inside_governed_window_and_wording_is_derived()
     assert packet["weight"]["window"] == {
         "start": "2026-08-11", "end": "2026-08-12", "timezone": "Africa/Johannesburg"}
     assert packet["weight"]["current_snapshot"]["status"] == "complete"
-    item = consume_daily_manager_evidence(packet, observed_at=NOW).work_items[0]
-    assert "2026-08-11 to 2026-08-12" in item.why
+    assert consume_daily_manager_evidence(packet, observed_at=NOW).work_items == ()
 
 
 def test_early_current_week_bulk_upload_is_included_in_current_snapshot():
@@ -157,9 +150,7 @@ def test_monday_keeps_just_finished_weekend_upload_in_current_snapshot():
         "start": "2026-08-11", "end": "2026-08-17",
         "timezone": "Africa/Johannesburg"}
     assert snapshot["covered"] == 79 and snapshot["eligible_tagged"] == 81
-    item = consume_daily_manager_evidence(packet, observed_at=NOW).work_items[0]
-    assert "79 of 81 recorded" in item.title
-    assert "do not classify them for reweighing" in item.next_action
+    assert consume_daily_manager_evidence(packet, observed_at=NOW).work_items == ()
 
 
 def test_conflicting_same_day_values_fail_closed():
@@ -258,8 +249,9 @@ def test_changed_digest_does_not_reopen_previously_consumed_death():
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
     assert all(item.dedupe_key != "herdmaster:mortality:D1" for item in result.work_items)
     assert all("mortality" not in item.dedupe_key for item in result.work_items)
-    assert result.work_items[0].metadata["mortality_fingerprints"] == fingerprints
-    assert result.work_items[0].metadata["mortality_packet"]["evidence_digest"] == "NEW"
+    assert result.work_items == ()
+    assert packet["mortality"]["canonical_death_event_fingerprints"] == fingerprints
+    assert packet["mortality"]["evidence_digest"] == "NEW"
 
 
 def test_multiple_new_deaths_receive_one_bounded_attributable_cluster():

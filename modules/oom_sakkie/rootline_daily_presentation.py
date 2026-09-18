@@ -6,7 +6,7 @@ from datetime import datetime, time, timezone
 import html
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
-from modules.oom_sakkie.rootline_material import rootline_material_digest, owner_reason_material
+from modules.oom_sakkie.rootline_material import rootline_material_digest, owner_reason_material, execution_exception_material
 from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
 from modules.telemetry.rootline_irrigation_lifecycle import (
     project_zone_lifecycle, validate_zone_lifecycle,
@@ -39,6 +39,8 @@ def owner_window(value: Any) -> str:
 
 def owner_notification_required(result: Mapping[str, Any]) -> bool:
     """Notify only for an owner decision or a material execution transition."""
+    if execution_exception_material(result):
+        return True
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     if _owner_question(brief.get("family_fact_needed")):
         return True
@@ -50,6 +52,23 @@ def owner_notification_required(result: Mapping[str, Any]) -> bool:
     return any(str((lifecycle.get(zone) or {}).get("state") or "") in {
         "Started", "Completed", "Failed"
     } for zone in ZONES if isinstance(lifecycle.get(zone), Mapping))
+
+
+def owner_reassessment_notification_required(result: Mapping[str, Any]) -> bool:
+    """Keep routine polling silent; direct execution owns ON/OFF notices."""
+    if execution_exception_material(result):
+        return True
+    brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
+    if _owner_question(brief.get("family_fact_needed")):
+        return True
+    lifecycle = result.get("irrigation_lifecycle")
+    if not isinstance(lifecycle, Mapping):
+        # Older injected/test callers do not carry the typed lifecycle. Keep
+        # their notification contract; production specialist results always
+        # carry it and use the stricter reassessment rule below.
+        return True
+    return any(str((lifecycle.get(zone) or {}).get("state") or "") == "Failed"
+               for zone in ZONES if isinstance(lifecycle.get(zone), Mapping))
 
 
 def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
@@ -161,13 +180,18 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     question = _owner_question(brief.get("family_fact_needed"))
     next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result), now_hint=result.get("evidence_cutoff"))
+    exceptions = execution_exception_material(result) or any(
+        (row or {}).get("state") == "Failed" for row in (result.get("irrigation_lifecycle") or {}).values())
     lines.extend(["",
         f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
         f"<b>{'Wat ek van jou nodig het' if af else 'What I need from you'}:</b> " +
-        (html.escape(question) if question else ("Niks" if af else "Nothing")),
+        (html.escape(question) if question else (
+            ("ROOTLINE moet die onopgeloste uitsondering opvolg." if af else
+             "ROOTLINE must follow up the unresolved exception.") if exceptions else
+            ("Niks" if af else "Nothing"))),
         f"<b>{'Volgende outomatiese herbeoordeling' if af else 'Next automatic reassessment'}:</b> " +
         html.escape(next_check or ("Op die volgende 15-minuut siklus" if af else "On the next 15-minute cycle"))])
-    if not question:
+    if not question and not exceptions:
         lines.extend(["", "Geen aksie word van jou vereis nie." if af else "No action required from you."])
     return "\n".join(lines)
 
@@ -190,15 +214,50 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
     question = _owner_question(brief.get("family_fact_needed"))
     reassess = _human_reassessment(brief.get("reassess") or _next_reassessment(result),
         now_hint=result.get("evidence_cutoff"))
+    outcomes = [row for row in result.get("recent_irrigation_outcomes") or ()
+                if isinstance(row, Mapping)
+                and row.get("controller_on_verified") is True
+                and row.get("controller_off_verified") is True]
+    overnight = []
+    for row in outcomes:
+        label = ({"B12345": "B Kamp" if af else "B Camp",
+                  "C12345": "C Kamp" if af else "C Camp"}
+                 .get(str(row.get("zone_id") or ""), str(row.get("zone_id") or "")))
+        on_at = _owner_clock(row.get("controller_on_at"))
+        off_at = _owner_clock(row.get("controller_off_at"))
+        if on_at and off_at:
+            overnight.append(f"{label} 🟢 AAN {on_at}; ⚪ AF {off_at}" if af else
+                             f"{label} 🟢 ON {on_at}; ⚪ OFF {off_at}")
+    title = (("Oornagbesproeiing: " if af else "Overnight irrigation: ")
+             + "; ".join(overnight)) if overnight else (
+             ("Besproeiing: " if af else "Irrigation: ") + "; ".join(decisions))
+    exceptions = execution_exception_material(result) or any(
+        (row or {}).get("state") == "Failed" for row in (result.get("irrigation_lifecycle") or {}).values())
+    if exceptions:
+        title = ("Besproeiingsuitsondering: " if af else "Irrigation exception: ") + "; ".join(decisions)
+    why = _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af)
+    if overnight:
+        why = (("Huidige plan: " if af else "Current plan: ")
+               + "; ".join(decisions) + ". " + why)
     return {
-        "title": ("Besproeiing: " if af else "Irrigation: ") + "; ".join(decisions),
-        "why": _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af),
-        "next_action": (("ROOTLINE heroorweeg outomaties" if af else
-                         "ROOTLINE will reassess automatically")
-                        + (" wanneer vars lesings of veranderde toestande beskikbaar is." if af else
-                           " when fresh readings or changed conditions are available.")),
+        "title": title,
+        "why": why,
+        "next_action": (("ROOTLINE moet die onopgeloste afskakelbewyse versoen." if af else
+                         "ROOTLINE must reconcile the unresolved shutdown evidence.") if exceptions else
+                       ("ROOTLINE behou enige onvoltooide deel en meld slegs 'n wesenlike uitsondering."
+                        if af else "ROOTLINE retains any unfinished segment and reports only a material exception.")),
         "question": question,
     }
+
+
+def _owner_clock(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    if parsed.tzinfo is None:
+        return ""
+    return parsed.astimezone(SAST).strftime("%H:%M")
 
 
 def _fresh_result(result: Any, now: datetime) -> bool:
@@ -225,6 +284,11 @@ def _decision(value: Any, af: bool) -> str:
 
 def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[str, Any],
                         af: bool, *, zone: str) -> str:
+    exceptions = lifecycle.get("execution_exceptions") or []
+    if exceptions:
+        summaries = list(dict.fromkeys(shutdown_exception_summary(row, language="af" if af else "en")
+                                     for row in exceptions))
+        return "; ".join(summaries)
     state = str(lifecycle.get("state") or "Held")
     if state == "Started":
         return "Loop tans" if af else "Currently running"
@@ -252,13 +316,31 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
                     "Not running — does not need watering")
         return "Loop nie" if af else "Not running"
     if state == "Failed":
-        return ("Veilig teruggehou — probleem word outomaties nagegaan" if af else
-                "Held safely — problem under automatic review")
+        return ("Uitvoering het misluk — ROOTLINE moet die uitkoms versoen" if af else
+                "Execution failed — ROOTLINE must reconcile the outcome")
     if state == "Completed":
         if _verified_completion(lifecycle, zone):
             return "Beheerder AF geverifieer" if af else "Controller OFF verified"
         return "Loop nie" if af else "Not running"
     return "Data nodig" if af else "Needs Data"
+
+
+def shutdown_exception_summary(exception, *, language="en"):
+    af = str(language).casefold().startswith("af")
+    deadline = _owner_clock(exception.get("stop_deadline"))
+    stopped = _owner_clock(exception.get("controller_off_at"))
+    if exception.get("kind") == "off_readback_after_deadline":
+        return (f"Beheerder AF eers om {stopped} SAST geverifieer; sperdatum {deadline} SAST — tydsverskil onopgelos"
+                if af else f"Controller OFF verified at {stopped} SAST; deadline {deadline} SAST — timing discrepancy unresolved")
+    if exception.get("kind") == "shutdown_deadline_unavailable":
+        if exception.get("controller_off_verified") is True:
+            return ("Beheerder AF geverifieer; afskakelspertyd onbekend" if af else
+                    "Controller OFF verified; shutdown deadline timing is unknown")
+        return ("Afskakelsperdatum onbekend; beheerder AF is ongeverifieer" if af else
+                "Shutdown deadline unavailable; controller OFF is unverified")
+    suffix = ((f"; sperdatum {deadline} SAST" if af else f"; deadline {deadline} SAST") if deadline else "")
+    return ("Afskakeling ongeverifieer — beheerder AF is nie bevestig nie" if af else
+            "Shutdown unverified — controller OFF is not verified") + suffix
 
 
 def _verified_completion(lifecycle: Mapping[str, Any], zone: str) -> bool:
