@@ -5,15 +5,16 @@ import hashlib, json
 import re
 from typing import Any, Callable, Mapping
 from modules.oom_sakkie.rootline_daily_presentation import (
-    compose_daily_rootline_plan, owner_notification_required,
+    compose_daily_rootline_plan, owner_reassessment_notification_required,
 )
 from modules.oom_sakkie.rootline_material import (
     rootline_material_digest,
     stable_reassessment,
+    execution_exception_material,
 )
 
 
-OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v4"
+OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v5"
 
 
 def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
@@ -43,7 +44,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     observed = state_store("record_observation", observation["identity"], observation)
     if not isinstance(observed, Mapping) or observed.get("success") is not True:
         return _contained("rootline_reassessment_observation_unproven")
-    if not owner_notification_required(current):
+    if not owner_reassessment_notification_required(current):
         return {**_result("rootline_reassessment_observed_silently", material, notify=False),
                 "operating_date": operating_date,
                 "result_id": result_id,
@@ -55,8 +56,9 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     current_answer = compose_daily_rootline_plan(current, language=language)
     current_owner_plan_reassessment = _owner_plan_reassessment(
         current.get("next_reassessment"))
+    exceptions = execution_exception_material(current)
     current_owner_plan_fingerprint = _owner_plan_fingerprint(
-        current_answer, current_owner_plan_reassessment)
+        current_answer, current_owner_plan_reassessment, exceptions)
     # A fresher generation remains durable observation evidence, but is not
     # owner-notification material by itself. Daily and change rails share the
     # date + material identity and stay silent when the supported action did
@@ -80,7 +82,8 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
                 "evidence_generation": evidence_generation,
                 "next_due_at": _declared_next_due(current),
                 "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
-    if (_exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
+    if (not exceptions
+            and _exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
             and _legacy_volatile_owner_plan_matches(
                 delivered, current_answer, current_owner_plan_reassessment)):
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
@@ -107,6 +110,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
               "owner_plan_fingerprint_version": OWNER_PLAN_FINGERPRINT_VERSION,
               "owner_plan_fingerprint": current_owner_plan_fingerprint,
               "owner_plan_reassessment": current_owner_plan_reassessment,
+              "execution_exceptions": exceptions,
               "delivery_state": "pending"}
     recorded = state_store("claim_pending", identity, packet)
     if not isinstance(recorded, Mapping) or recorded.get("success") is not True:
@@ -248,7 +252,7 @@ def _stable_owner_plan(value):
     return "\n".join(lines).strip()
 
 
-def _owner_plan_fingerprint(value, reassessment=None):
+def _owner_plan_fingerprint(value, reassessment=None, exceptions=None):
     stable = _stable_owner_plan(value)
     if not stable:
         return ""
@@ -264,7 +268,7 @@ def _owner_plan_fingerprint(value, reassessment=None):
         structured = {key: structured[key] for key in (
             "automatic_command", "recovery_if_window_is_missed") if key in structured}
     material = {"version": OWNER_PLAN_FINGERPRINT_VERSION, "owner_text": stable,
-                "reassessment": structured}
+                "reassessment": structured, "execution_exceptions": exceptions or []}
     return hashlib.sha256(json.dumps(material, sort_keys=True,
         separators=(",", ":")).encode()).hexdigest()
 
@@ -283,7 +287,8 @@ def _delivered_owner_plan_fingerprint(delivered):
             "trigger": delivered.get("trigger"),
             "at": delivered.get("next_reassessment_at"),
         })
-    return _owner_plan_fingerprint(delivered.get("answer"), reassessment)
+    return _owner_plan_fingerprint(delivered.get("answer"), reassessment,
+                                  delivered.get("execution_exceptions"))
 
 
 def _owner_plan_reassessment(value):

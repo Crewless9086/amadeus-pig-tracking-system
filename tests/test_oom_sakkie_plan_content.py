@@ -33,7 +33,12 @@ def test_old_litter_does_not_suppress_unresolved_current_mating():
         task['known_evidence']['latest_litter_date'] = '2026-03-29'
     result = _whole_herd_specialist_result(value['canonical'], value['observations'], [],
         datetime(2026, 9, 14, tzinfo=timezone.utc))
-    row, = result.work_items
-    assert row.title == 'Current farrowing status — Mysikind and Mona'
-    assert '2026-08-22 to 2026-08-26 has passed' in row.why
-    assert 'already farrowed' in row.genuine_question
+    rows = result.work_items
+    assert [row.title for row in rows] == [
+        'Current farrowing status — Mysikind',
+        'Current farrowing status — Mona',
+    ]
+    assert all('2026-08-22 to 2026-08-26 has passed' in row.why for row in rows)
+    assert all('already farrowed' in row.genuine_question for row in rows)
+    assert all(sum(ref.startswith('pig:') for ref in row.provenance.source_refs) == 1
+               for row in rows)

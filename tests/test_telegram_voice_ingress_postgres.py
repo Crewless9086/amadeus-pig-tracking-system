@@ -281,7 +281,12 @@ def test_spoken_ja_replies_to_delivered_daily_question_and_keeps_prior_facts(que
         'daily_identity': question['daily_identity']})
     assert len(receipts) == 1 and len(receipts[0]['accumulated_semantic_facts']['observations']) == 2
     assert receipts[0]['accumulated_semantic_facts']['welfare_observation'] == {'eating': 'yes', 'standing': 'yes', 'drinking': 'yes'}
-    assert dialogue.questions._load_questions(j['actor'], j['actor']) == []
+    remaining = dialogue.questions._load_questions(j['actor'], j['actor'])
+    # The answered exact question retires. A separate current farm question
+    # created by the follow-through cycle remains available for continuation.
+    assert all(row['question_binding']['task_id'] != question['question_binding']['task_id']
+               or row['question_binding']['dedupe_key'] != question['question_binding']['dedupe_key']
+               for row in remaining)
     sent = len(j['provider'])
     duplicate = post(app.test_client(), 'gateway', payload, secret=j['token'])
     assert duplicate.status_code == 200 and len(provider.requests) == 3 and len(j['provider']) == sent

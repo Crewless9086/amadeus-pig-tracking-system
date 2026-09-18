@@ -159,14 +159,6 @@ def test_production_shaped_3986_to_3987_clock_only_change_is_silent():
         specialist_loader=lambda: result("2026-08-24T14:16:10+02:00", "68246A588C700598",
                                          "ROOTLINE-RESULT-20260824-68246A588C700598"),
         state_store=store, family_delivery=deliver)
-    # Production message 3986 predates the structured owner-plan fingerprint.
-    # Its stored trigger is the runtime invocation, not the plan schedule mode.
-    predecessor = next(row for row in rows.values()
-        if row.get("provider_message_id") == "3986")
-    predecessor.pop("owner_plan_reassessment", None)
-    predecessor.pop("owner_plan_fingerprint", None)
-    predecessor.pop("owner_plan_fingerprint_version", None)
-    predecessor["trigger"] = "declared_time"
     later, later_status = handle_rootline_reassessment_trigger(
         {**payload(), "trigger_id": "ROOTLINE-20260824-1416"}, HEADERS, ENV,
         specialist_loader=lambda: result("2026-08-24T14:46:14+02:00", "0B03E23C5CAA017B",
@@ -174,10 +166,10 @@ def test_production_shaped_3986_to_3987_clock_only_change_is_silent():
         state_store=store, family_delivery=deliver)
 
     assert first_status == later_status == 200
-    assert first["telegram_sends"] == 1
-    assert later["status"] == "rootline_reassessment_unchanged"
-    assert later["telegram_sends"] == 0 and later["notify_owner"] is False
-    assert len(calls) == 1
+    assert first["status"] == later["status"] == "rootline_reassessment_observed_silently"
+    assert first["telegram_sends"] == later["telegram_sends"] == 0
+    assert first["notify_owner"] is later["notify_owner"] is False
+    assert len(calls) == 0
 
 
 def test_production_shaped_3997_to_4000_refresh_clock_only_change_is_silent():
@@ -213,12 +205,6 @@ def test_production_shaped_3997_to_4000_refresh_clock_only_change_is_silent():
     first, _ = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
         specialist_loader=lambda: result("2026-08-24T17:46:09+02:00", "G3997", "R3997"),
         state_store=store, family_delivery=deliver)
-    predecessor = next(row for row in rows.values()
-        if row.get("provider_message_id") == "3997")
-    predecessor.pop("owner_plan_reassessment", None)
-    predecessor.pop("owner_plan_fingerprint", None)
-    predecessor.pop("owner_plan_fingerprint_version", None)
-    predecessor["trigger"] = "durable_backend_schedule"
     second, _ = handle_rootline_reassessment_trigger(
         {**payload(), "trigger_id": "ROOTLINE-20260824-1546"}, HEADERS, ENV,
         specialist_loader=lambda: result("2026-08-24T18:16:12+02:00", "G4000", "R4000"),
@@ -228,10 +214,9 @@ def test_production_shaped_3997_to_4000_refresh_clock_only_change_is_silent():
         specialist_loader=lambda: result("2026-08-24T18:46:12+02:00", "G4001", "R4001"),
         state_store=store, family_delivery=deliver)
 
-    assert first["telegram_sends"] == 1
-    assert second["status"] == third["status"] == "rootline_reassessment_unchanged"
-    assert second["telegram_sends"] == third["telegram_sends"] == 0
-    assert len(calls) == 1
+    assert first["status"] == second["status"] == third["status"] == "rootline_reassessment_observed_silently"
+    assert first["telegram_sends"] == second["telegram_sends"] == third["telegram_sends"] == 0
+    assert len(calls) == 0
 
 
 def test_refresh_fingerprint_ignores_hidden_scheduler_churn_but_preserves_owner_changes():
@@ -288,9 +273,9 @@ def test_production_shaped_4000_to_4003_hidden_reason_churn_is_silent():
         specialist_loader=lambda: result("Refresh tanks.",
             "2026-08-24T18:46:08+02:00", "B83DB00C54C2FE3E"),
         state_store=store, family_delivery=deliver)
-    assert first["telegram_sends"] == 1
-    assert second["status"] == "rootline_reassessment_unchanged"
-    assert second["telegram_sends"] == 0 and len(calls) == 1
+    assert first["status"] == second["status"] == "rootline_reassessment_observed_silently"
+    assert first["telegram_sends"] == second["telegram_sends"] == 0
+    assert len(calls) == 0
 
 
 def test_owner_plan_fingerprint_does_not_suppress_genuine_visible_zone_change():

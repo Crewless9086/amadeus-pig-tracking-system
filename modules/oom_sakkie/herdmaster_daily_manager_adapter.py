@@ -69,32 +69,11 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                 authority=Authority.ADVISORY, provenance=item_provenance,
                 business_value=115, metadata={"physical_work_ready": True,
                     "exceptional_weighing_due_now": True, "pig_id": pig_id}))
-        routine_missing = [row for row in missing if row not in exceptional_due]
-        if not routine_missing:
-            routine_missing = []
-        if routine_missing:
-            tags = ", ".join(str(row["tag"]) for row in routine_missing)
-            items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-missing",
-            dedupe_key="herdmaster:weekly-weight-evidence", domain="herd",
-            title=((f"Weging: {snapshot['covered']} van {snapshot['eligible_tagged']} aangeteken; "
-                    f"{len(routine_missing)} oormerk(e) se status moet nagegaan word") if is_af else
-                   (f"Weighing: {snapshot['covered']} of {snapshot['eligible_tagged']} recorded; "
-                    f"{len(routine_missing)} tag(s) need status reconciliation")),
-            why=((f"Vir {period} het {snapshot['covered']}/{snapshot['eligible_tagged']} varke in die huidige groep gewigte. "
-                  "Ontbrekende gewigte vereis eers 'n kontrole van verkoop-, bestel- en huidige plaasstatus.") if is_af else
-                 (f"For {period}, {snapshot['covered']}/{snapshot['eligible_tagged']} pigs in the current cohort have weights. "
-                  "Missing weights first require a check of sale, order and current farm status.")),
-            next_action=((f"Kontroleer die verkoop-, bestel- of ander kanonieke status vir oormerke {tags}; "
-                          "moenie hulle vir herweging aanwys voordat daardie bewyse bestaan nie.") if is_af else
-                         (f"Reconcile sale/order or other canonical status for tags {tags}; "
-                          "do not classify them for reweighing until that evidence exists.")),
-            assignee="charl", state=WorkState.WAITING_EVIDENCE,
-            authority=Authority.READ_ONLY,
-            provenance=provenance, business_value=110,
-            metadata={"routine_weekly_weighing": True,
-                "owner_followup": ("HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag."
-                    if is_af else "HERDMASTER will reconcile the cohort's current status before any new weighing instruction.")}))
-    elif snapshot["status"] == "complete":
+        # The missing rows are a current eligibility snapshot. They are not a
+        # historical weighing worklist and do not establish that every member
+        # of the snapshot is due for physical weighing. Only the explicit
+        # lifecycle signal above may create an individual weighing task.
+    elif snapshot["status"] == "complete" and findings:
         finding_text = _findings(findings, language=language)
         window = weight.get("window") or {}
         historical_window = (f"{window.get('start', 'die venster')} tot {window.get('end', 'die venster')}" if is_af else
@@ -109,7 +88,7 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                          "No further cohort weighing instruction. Review only the descriptive changes shown."),
             assignee="charl", state=WorkState.PLANNED, authority=Authority.ADVISORY,
             provenance=provenance, business_value=70))
-    else:
+    elif snapshot["status"] != "complete":
         items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-unknown",
             dedupe_key="herdmaster:weekly-weight-evidence", domain="herd",
             title="Weeklikse weegbewyse is nie beskikbaar nie" if is_af else "Weekly weighing evidence unavailable",
@@ -147,6 +126,14 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                         "preview_correction_pending", "scheduled_reassessment"}} - closed_ids
         candidates = [row for row in mortality.get("candidate_deaths") or ()
                       if str(row.get("pig_id") or "") not in closed_ids]
+        recent_start = str(((mortality.get("rolling_counts") or {}).get("7") or {}).get("start") or "")[:10]
+        if recent_start:
+            # Historical events stay in the canonical record. The morning
+            # brief shows only a current event or an individually open case;
+            # it does not repeat an unchanged archive total as today's work.
+            candidates = [row for row in candidates
+                          if str(row.get("pig_id") or "") in open_ids
+                          or str(row.get("effective_date") or "")[:10] >= recent_start]
         if candidates and not materiality_state:
             ordered = sorted(candidates, key=lambda value: (
                 str(value.get("effective_date") or ""), str(value.get("event_id") or "")))
