@@ -93,4 +93,4 @@ def entry():
         if(r.ok)location.assign('/irrigation');else document.getElementById('error').textContent='Sign-in failed';
       };</script>''',init=urlencode(fields))
 
-app.run(host='127.0.0.1',port=55836,debug=False,use_reloader=False)
+app.run(host='127.0.0.1',port=18036,debug=False,use_reloader=False)
