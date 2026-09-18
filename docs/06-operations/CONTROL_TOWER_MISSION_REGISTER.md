@@ -2,6 +2,38 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-09-18 - Repository consolidation and canonical Desktop route
+
+The existing Control Tower mission preserves session
+`01a08bfa-ca70-7a01-91df-fc3dd3922598` and prepares read-only successor
+`CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`. The original repository folder is
+the canonical Desktop entry point after it is clean on `main` and exactly
+aligned with published `origin/main`.
+
+Before cleanup, a verified 2,926-ref Git bundle, three remote recovery refs and
+complete backups of all 52 dirty worktrees preserved commits, patches and 3,383
+untracked files. The registered worktree count was reduced from 628 to 59 by
+removing 569 verified clean historical worktrees. Twenty-four ACL-protected
+residual directories were moved intact to a dated quarantine outside the repo.
+One GREEN worktree remains under an inaccessible OneDrive-evidence hold. The
+fresh remaining set contains 51 dirty and 8 clean worktrees, all present and
+classified in the current handover. Dirty work was retained under existing
+mission identities rather than inferred complete.
+
+GitHub still has 96 open PRs. None of their exact heads is already in
+`origin/main`; all remain open pending mission-level disposition. PR #1336 is
+separately merged at `3d321e4932cf205d03e759cc71a26edd411bc9d2`, and this
+documentation change does not deploy application code. Local Oom Sakkie
+candidate `86bcee2709374353b7daf8d68bda839bac69337c`, Linda's failed acceptance,
+C Camp's 01:35/02:04:24 discrepancy, incomplete plan-hash verification and all
+migration, weaning, treatment, voice, permission, physical, ROOTLINE and CHARLIE
+holds carry forward unchanged.
+
+Current handover:
+`control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/REPOSITORY_CONSOLIDATION_AND_DESKTOP_HANDOVER_20260918.md`.
+This entry grants no runtime-release, provider-publication, farm-write or
+physical authority.
+
 ## 2026-09-16 - Desktop transition reconciliation prepared
 
 Continue existing Control Tower session `01a08bfa-ca70-7a01-91df-fc3dd3922598`.

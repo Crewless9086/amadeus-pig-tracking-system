@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-09-18T03:27:22.578645+00:00",
+  "bundle": {
+    "path": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.tmp\\repository-consolidation-20260917\\AMADEUS_ALL_REFS_BEFORE_CONSOLIDATION_20260917.bundle",
+    "bytes": 277552004,
+    "sha256": "3560b842d7c29fbed0701711876b89aa205a2be12ec94bda51945f9ad7a6edd3",
+    "verified_ref_count": 2926
+  },
+  "remote_refs": {
+    "recovery/repository-consolidation-20260917": "eddffc8eb3de98f007897ad4be68c2332e2571f0",
+    "recovery/dirty-worktree-patches-20260917": "72e87beb580e6e370d0aec7eebbefc81d38c451a",
+    "recovery/safe-untracked-source-20260917": "76e5d71a2aa3293c3318f56a4a3426ee586ff990",
+    "preserve/main-workspace-reconciliation-20260812": "03750847880bf1f110da48f3c2d77f520f019ea4"
+  },
+  "dirty_worktree_backup": {
+    "count": 52,
+    "manifest": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.tmp\\repository-consolidation-20260917\\DIRTY_WORKTREE_PRESERVATION_MANIFEST_20260917.json",
+    "verified": true
+  },
+  "ignored_evidence_archive": {
+    "path": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.tmp\\repository-consolidation-20260917\\CLEAN_WORKTREE_IGNORED_EVIDENCE_20260917.zip",
+    "sha256": "bc598e17a780260704799591a81621881ca276a27f0a3746fc33bbb4f3091d5d",
+    "entry_count": 81,
+    "unavailable_entry_count": 1
+  },
+  "quarantine_manifest": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.tmp\\repository-consolidation-20260917\\WORKTREE_QUARANTINE_MANIFEST_20260918.json"
+}

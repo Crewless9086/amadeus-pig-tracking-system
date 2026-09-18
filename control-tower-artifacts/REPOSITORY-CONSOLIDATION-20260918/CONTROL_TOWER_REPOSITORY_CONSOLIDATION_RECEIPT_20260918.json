@@ -1,0 +1,56 @@
+{
+  "receipt_id": "CONTROL-TOWER-REPOSITORY-CONSOLIDATION-20260918",
+  "created_at": "2026-09-18T03:25:57.035156+00:00",
+  "coordinating_session_identity": "01a08bfa-ca70-7a01-91df-fc3dd3922598",
+  "successor_identity": "CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918",
+  "canonical_folder": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system",
+  "canonical_branch_gate": "main exactly aligned with origin/main",
+  "origin_main_at_reconciliation": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+  "application_release_changed": false,
+  "runtime_or_provider_effect": false,
+  "pre_cleanup": {
+    "registered_worktrees": 628,
+    "dirty": 52,
+    "ahead_upstream": 34,
+    "no_upstream": 186
+  },
+  "post_cleanup": {
+    "registered_worktrees": 59,
+    "existing": 59,
+    "dirty": 51,
+    "clean": 8
+  },
+  "clean_historical_candidates": 570,
+  "clean_historical_cleared": 569,
+  "preserved_inaccessible_evidence_worktrees": 1,
+  "quarantined_residual_directories": 24,
+  "open_pull_requests": 96,
+  "open_pr_heads_already_in_origin_main": 0,
+  "preservation_refs": {
+    "all_unremote_commits": "recovery/repository-consolidation-20260917@eddffc8eb3de98f007897ad4be68c2332e2571f0",
+    "tracked_dirty_patches": "recovery/dirty-worktree-patches-20260917@72e87beb580e6e370d0aec7eebbefc81d38c451a",
+    "safe_untracked_source": "recovery/safe-untracked-source-20260917@76e5d71a2aa3293c3318f56a4a3426ee586ff990",
+    "original_workspace": "preserve/main-workspace-reconciliation-20260812@03750847880bf1f110da48f3c2d77f520f019ea4"
+  },
+  "current_application_truth": {
+    "pr_1336": "MERGED",
+    "merge_revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+    "last_live_revision_verification": "2026-09-16",
+    "new_deployment_claimed": false
+  },
+  "retained_candidate": {
+    "path": "C:\\tmp\\omq-farm-brief-20260916",
+    "commit": "86bcee2709374353b7daf8d68bda839bac69337c",
+    "tree": "8582052f2cab5bf1a7abc4d26c27ebb085c6e23b",
+    "release_authority": false
+  },
+  "known_evidence_limits": [
+    "Linda record retrieval and Telegram delivery failed; no contextual continuation is proved",
+    "Anton acceptance and genuine farm-update acceptance remain unproved",
+    "C Camp 01:35 SAST deadline versus 02:04:24 OFF remains unresolved",
+    "scheduled-observer plan-hash verification remains incomplete",
+    "one ignored GREEN handover is an unreadable OneDrive placeholder",
+    "provider connections were not re-proved by this repository cleanup"
+  ],
+  "publication_gate": "docs-only PR with deployment suppression, followed by canonical folder main switch and relay continuity verification"
+}

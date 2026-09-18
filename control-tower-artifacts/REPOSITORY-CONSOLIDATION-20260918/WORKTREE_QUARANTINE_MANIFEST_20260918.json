@@ -1,0 +1,200 @@
+{
+  "created_at": "2026-09-18T03:26:54.397164+00:00",
+  "quarantine_root": "C:\\tmp\\amadeus-worktree-quarantine-20260917",
+  "entry_count": 24,
+  "note": "These directories were already unregistered after every commit and dirty worktree had been preserved. ACL-protected residue was moved intact rather than forcibly deleted.",
+  "entries": [
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\0a9c7cacea588bf4-oom-sakkie-morning-runtime-20260813",
+      "source_worktree": "C:\\tmp\\oom-sakkie-morning-runtime-20260813",
+      "source_branch": "fix/oom-durable-morning-runtime-20260813",
+      "source_head": "a8e2a1d4d56f65569194e3021b8b974200ed8879",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\14b39a05443d8c84-rootline-protected-irrigation-confirmation-20260813",
+      "source_worktree": "C:\\tmp\\rootline-protected-irrigation-confirmation-20260813",
+      "source_branch": "fix/rootline-protected-irrigation-confirmation-20260813",
+      "source_head": "7eb4297ce2e6ac63a73fb98c3821bb95d7ab04ff",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\178defdf82a68f34-worktree",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.codex-runtime\\missions\\GREEN-0.3.7\\worktree",
+      "source_branch": "fix/green-037-ca-mount-compat-20260823",
+      "source_head": "fb60078961d9c8724b981dd3f636d59ebb5e5b23",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\21481439a5b55f30-green-migration-api-release-20260821",
+      "source_worktree": "C:\\tmp\\green-migration-api-release-20260821",
+      "source_branch": "review/green-migration-api-release-20260821",
+      "source_head": "320763efe3774b9cb5584dcf589704298e68d27d",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\3363462cfe5bdb14-herdmaster-breeding-attention-truth-20260813",
+      "source_worktree": "C:\\tmp\\herdmaster-breeding-attention-truth-20260813",
+      "source_branch": "fix/herdmaster-breeding-attention-truth-20260813",
+      "source_head": "db9304bec7b1bc4394ef15752d00397b765a1c69",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\4408d6518f9636f9-rootline-morning-readiness-20260813",
+      "source_worktree": "C:\\tmp\\rootline-morning-readiness-20260813",
+      "source_branch": "audit/rootline-morning-readiness-20260813",
+      "source_head": "0886acbac1b4407bb02ff8bc3217830cf9353298",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\4ad2e8c04beafe91-agentic-farm-runtime-programme-20260813",
+      "source_worktree": "C:\\tmp\\agentic-farm-runtime-programme-20260813",
+      "source_branch": "docs/cmq-20260813-02a-proof",
+      "source_head": "7b1d7be9acb0af81b62666c5e9cccc0652706e7c",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\50407c95f0765ed1-oom-sakkie-morning-proof-20260813",
+      "source_worktree": "C:\\tmp\\oom-sakkie-morning-proof-20260813",
+      "source_branch": "fix/oom-daily-herd-evidence-20260814",
+      "source_head": "4cd7c8bac277ad5ef36a64606ba3b45a5e5e9ed5",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\748bd48695b3370a-beacon-publish-now-fix",
+      "source_worktree": "C:\\tmp\\beacon-publish-now-fix",
+      "source_branch": "beacon/publish-now-r0-authority",
+      "source_head": "ca882bc759424a93dc491197a8dd0c6060b25fd1",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\778b7a63fd500637-worktree",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.codex-runtime\\missions\\PR-1183\\independent-review\\worktree",
+      "source_branch": null,
+      "source_head": "aa035fde05443380dc65ea046b6512d55e6e0519",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\8dcad0f0a92138d7-anton-deploy-commission",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.w\\anton-deploy-commission",
+      "source_branch": "fix/anton-natural-recovery-acceptance",
+      "source_head": "7d0bd68b0176a3e6c8221c3236e197e26822d92f",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\998da2c24497926b-pr1262-review",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.w\\pr1262-review",
+      "source_branch": null,
+      "source_head": "e7af56fc343e7a3dc2617d8fcaedbf562f8ce202",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\99eafaace6c247ce-oom-sakkie-llm-semantic-front-door",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.worktrees\\oom-sakkie-llm-semantic-front-door",
+      "source_branch": "feat/oom-llm-semantic-front-door",
+      "source_head": "694e4a1866181d9cae2daec6d7cb75e778207948",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\a679957130b99b16-herdmaster-daily-first-treatment-20260911",
+      "source_worktree": "C:\\tmp\\herdmaster-daily-first-treatment-20260911",
+      "source_branch": "fix/herdmaster-daily-first-treatment-20260911",
+      "source_head": "a0865257e6e5d2382bbac5fee3d03cfed2334a2b",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\b15867fe7979a7da-rootline-bc-lifecycle-truth-20260820",
+      "source_worktree": "C:\\tmp\\rootline-bc-lifecycle-truth-20260820",
+      "source_branch": "fix/rootline-bc-lifecycle-truth-20260820",
+      "source_head": "e43c828cd1eccc9d23b7836973e852f9eed1fc4c",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\b7e47eb6d13e0adc-worktree",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.codex-runtime\\missions\\GREEN-0.3.6\\worktree",
+      "source_branch": "fix/green-036-ha-config-cert-20260822",
+      "source_head": "7468e6d6e577750580c0c170ea511cc19bcd4302",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\b911f86260ea71db-vault-cutover-batch4-20260818",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.worktrees\\vault-cutover-batch4-20260818",
+      "source_branch": "governance/vault-cutover-batch4-20260818",
+      "source_head": "fb4423f0de90dd5e660e0e25351338420d1c10b4",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\c77e4ccba74f17d6-oom-semantic-rootline-read-fix",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.worktrees\\oom-semantic-rootline-read-fix",
+      "source_branch": "fix/oom-semantic-message-kind",
+      "source_head": "6fd49a09a89aa0a9a2fc929990de32a35e50912a",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\d50dfb1465bf899a-beacon-bmq-20260813-04-current",
+      "source_worktree": "C:\\tmp\\beacon-bmq-20260813-04-current",
+      "source_branch": "beacon/bmq-20260813-04-current",
+      "source_head": "3d0bd01d46c1733d6437c8efe750627a2d965799",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\ea64ebb44504c2b9-ui-facelift-tower-20260819",
+      "source_worktree": "C:\\tmp\\ui-facelift-tower-20260819",
+      "source_branch": "chore/ui-facelift-tower-20260819",
+      "source_head": "abc084467311954c67809e4258293f3b7906da3d",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\ee8bf0683c118240-core-task-audit-provider-repair-20260818",
+      "source_worktree": "C:\\tmp\\core-task-audit-provider-repair-20260818",
+      "source_branch": "fix/core-task-audit-provider-repair-20260818",
+      "source_head": "05290e7551077fd6ae8c1762001dfdfa7615910c",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\f3e7f700ad5a6231-green-print-bridge-20260820",
+      "source_worktree": "C:\\tmp\\green-print-bridge-20260820",
+      "source_branch": "feat/green-print-bridge-20260820",
+      "source_head": "35cdb8d7ce245e9192cad9e250be44909db34a38",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\physical-worktrees\\feba6bb1b2581527-documents-catalogue-20260816",
+      "source_worktree": "C:\\tmp\\documents-catalogue-20260816",
+      "source_branch": "feat/canonical-document-catalogue-20260816",
+      "source_head": "c114c371ea5147d64ad9c76d2baa0866e4e485bd",
+      "mapping_status": "MATCHED_SOURCE_INVENTORY"
+    },
+    {
+      "category": "physical-worktrees",
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\test-hmq-bcs-auto-consumption-worktree",
+      "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.codex-runtime\\missions\\HMQ-BCS-AUTO-CONSUMPTION\\worktree",
+      "source_branch": "fix/hmq-bcs-automatic-consumption-20260825",
+      "source_head": "not_recomputed_from_inaccessible_residue",
+      "mapping_status": "MANUAL_TEST_MOVE_RECORDED"
+    }
+  ]
+}
