@@ -148,10 +148,15 @@ work remains retained.
 - The backend Telegram endpoint remains the n8n replacement direction. n8n is
   still the interim live transport owner. The reply-ID field publication is
   complete; native-voice changes are separate and held.
-- The current process inventory found one local CHARLIE Telegram relay and no
-  Linda watcher or release/deployment operator. The relay depends on this
-  Windows machine but not on the old terminal window. Production services,
-  n8n and remote schedulers continue according to their provider state.
+- The current process inventory found one legacy local CHARLIE Telegram
+  polling process, PID 3420, loaded from the preserved original-folder
+  branch. Fresh current-`main` configuration validation returns
+  `webhook_managed / local_polling_disabled`. The canonical-folder cutover
+  therefore retires PID 3420 and verifies that the current-main entry point
+  exits normally without leaving a local poller. No Linda watcher or
+  release/deployment operator was found. Production services, the existing
+  remote Telegram webhook, n8n and remote schedulers continue according to
+  their provider state.
 
 ## Current priorities and holds
 
@@ -181,9 +186,11 @@ The detailed mission identities and wake conditions remain in
 - Production, Render, Supabase and n8n read access: not re-proved by this cleanup.
   Desktop must verify each needed connector without revealing secret values.
 - No credential or secret value is stored in this handover.
-- Closing the old terminal ends this coordinating chat only. The local relay
-  continues while its process and machine remain alive. Remote services continue
-  independently. No current local Linda watcher was found to transfer.
+- Closing the old terminal ends this coordinating chat only. After the
+  canonical cutover, no local polling relay should remain because current
+  configuration delegates transport to the remote webhook. Remote services
+  continue independently. No current local Linda watcher was found to
+  transfer.
 
 Existing coordinating identity `01a08bfa-ca70-7a01-91df-fc3dd3922598` remains
 owner until Desktop verification passes and Charl explicitly transfers

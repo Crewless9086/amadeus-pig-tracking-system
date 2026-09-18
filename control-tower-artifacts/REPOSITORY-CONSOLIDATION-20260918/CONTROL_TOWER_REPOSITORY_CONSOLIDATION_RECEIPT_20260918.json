@@ -63,5 +63,14 @@
     "source_map_base_blob": "70db4bc29d17b7ec6e89be52c304668d398d245c",
     "resolution": "retain the stable source-map route to the mission register; publish the dated current handover through root AGENTS.md and the mission register",
     "gate_bypassed": false
+  },
+  "relay_transition": {
+    "observed_process_id": 3420,
+    "observed_process_lineage": "preserve/main-workspace-reconciliation-20260812",
+    "current_main_validation": "webhook_managed",
+    "current_main_reason": "local_polling_disabled",
+    "cutover_action": "stop the legacy local poller and verify the current-main entry point exits normally",
+    "expected_local_pollers_after_cutover": 0,
+    "remote_webhook_change_authorized": false
   }
 }
