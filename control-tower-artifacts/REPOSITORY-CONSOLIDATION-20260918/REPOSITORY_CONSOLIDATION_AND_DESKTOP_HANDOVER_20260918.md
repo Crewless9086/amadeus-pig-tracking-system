@@ -151,12 +151,16 @@ work remains retained.
 - The current process inventory found one legacy local CHARLIE Telegram
   polling process, PID 3420, loaded from the preserved original-folder
   branch. Fresh current-`main` configuration validation returns
-  `webhook_managed / local_polling_disabled`. The canonical-folder cutover
-  therefore retires PID 3420 and verifies that the current-main entry point
-  exits normally without leaving a local poller. No Linda watcher or
-  release/deployment operator was found. Production services, the existing
-  remote Telegram webhook, n8n and remote schedulers continue according to
-  their provider state.
+  `webhook_managed / local_polling_disabled`, but a synthetic no-send
+  `--once --dry-run` returns `poll_once_complete`: the current entry point
+  does not honor `webhook_managed` as an early exit. The canonical-folder
+  cutover therefore retires PID 3420, does not start the current local
+  entry point, and verifies zero local pollers. That precise early-exit gap
+  remains a transport-owner repair; this documentation mission grants no
+  application release authority. No Linda watcher or release/deployment
+  operator was found. Production services, the existing remote Telegram
+  webhook, n8n and remote schedulers continue according to their provider
+  state.
 
 ## Current priorities and holds
 
@@ -187,10 +191,10 @@ The detailed mission identities and wake conditions remain in
   Desktop must verify each needed connector without revealing secret values.
 - No credential or secret value is stored in this handover.
 - Closing the old terminal ends this coordinating chat only. After the
-  canonical cutover, no local polling relay should remain because current
-  configuration delegates transport to the remote webhook. Remote services
-  continue independently. No current local Linda watcher was found to
-  transfer.
+  canonical cutover, no local polling relay remains; the current local
+  entry point stays held until its webhook-managed early exit is repaired
+  and qualified. The remote webhook and other remote services continue
+  independently. No current local Linda watcher was found to transfer.
 
 Existing coordinating identity `01a08bfa-ca70-7a01-91df-fc3dd3922598` remains
 owner until Desktop verification passes and Charl explicitly transfers
