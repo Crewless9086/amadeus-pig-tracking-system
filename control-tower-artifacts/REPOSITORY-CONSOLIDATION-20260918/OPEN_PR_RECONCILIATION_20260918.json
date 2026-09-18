@@ -1,0 +1,1773 @@
+{
+  "observed_at": "2026-09-18T03:27:22.576133+00:00",
+  "open_count": 96,
+  "ancestor_of_origin_main_count": 0,
+  "tree_equals_origin_main_count": 0,
+  "missing_local_object_count": 0,
+  "pull_requests": [
+    {
+      "number": 1303,
+      "title": "Establish Cursor Cloud development continuity canary",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1303",
+      "base": "main",
+      "head_branch": "cursor/cloud-continuity-canary-b36c",
+      "head_oid": "908ab19d829a1c617c6f4ac6b39839575430cacb",
+      "draft": true,
+      "updated_at": "2026-08-26T12:59:41Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1258,
+      "title": "Control Tower: register active n8n retirement audit",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1258",
+      "base": "main",
+      "head_branch": "governance/n8n-active-retirement-audit-20260825",
+      "head_oid": "6d0bd587026c0aea914002242112770874bf636d",
+      "draft": false,
+      "updated_at": "2026-08-25T08:31:22Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1257,
+      "title": "governance(green): record live registry activation",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1257",
+      "base": "main",
+      "head_branch": "governance/green-live-activation-receipt-20260825",
+      "head_oid": "94aeba071a20fd6bafaec6661970e7ccd9496a12",
+      "draft": false,
+      "updated_at": "2026-08-25T08:03:51Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1252,
+      "title": "Control Tower: record GREEN 0.3.8 device commissioning",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1252",
+      "base": "main",
+      "head_branch": "governance/green-038-commissioned-20260825",
+      "head_oid": "9994f65a3e675545f8dfec23954661da7ccb8983",
+      "draft": false,
+      "updated_at": "2026-08-25T06:43:22Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1180,
+      "title": "docs(control-tower): record current outcome-depth state",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1180",
+      "base": "main",
+      "head_branch": "governance/control-tower-current-facts-20260822",
+      "head_oid": "9841e5eddaeccbb7f39611446c5577699622e087",
+      "draft": false,
+      "updated_at": "2026-08-22T19:05:35Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1154,
+      "title": "feat: move Riversdale auction reminders to Oom Sakkie",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1154",
+      "base": "main",
+      "head_branch": "fix/anton-riversdale-auction-addendum-20260821",
+      "head_oid": "7a7d5392ce96271187dbaaf3562d3c8161e7aac0",
+      "draft": false,
+      "updated_at": "2026-08-21T16:43:48Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1147,
+      "title": "Add protected ROOTLINE operational evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1147",
+      "base": "main",
+      "head_branch": "fix/rootline-protected-observability-20260820",
+      "head_oid": "814fac8a64b76ae9f1f20e6a10b3a7be2c8162f5",
+      "draft": false,
+      "updated_at": "2026-08-20T19:41:12Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1126,
+      "title": "governance: record four-day operational reality reset",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1126",
+      "base": "main",
+      "head_branch": "governance/control-tower-reality-20260820",
+      "head_oid": "923549f675e2860f8b37842844e20330746ab93a",
+      "draft": false,
+      "updated_at": "2026-08-22T06:25:21Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1036,
+      "title": "Record CORE activation readiness",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1036",
+      "base": "main",
+      "head_branch": "governance/core-activation-ready-20260817",
+      "head_oid": "30a2ba1977f3fbf83d1a734791f6664272ce55fe",
+      "draft": false,
+      "updated_at": "2026-08-18T07:01:07Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1032,
+      "title": "governance: authorize isolated CORE staging",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1032",
+      "base": "main",
+      "head_branch": "governance/core-staging-authority-20260817",
+      "head_oid": "a878a9880acd0a9c99a2e1bb9bec8e5d44e95d6b",
+      "draft": false,
+      "updated_at": "2026-08-17T05:11:27Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1009,
+      "title": "governance: register canonical document catalogue mission",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1009",
+      "base": "main",
+      "head_branch": "governance/log-documents-mission-20260816",
+      "head_oid": "f00237ff1e679acc8760f2780c88f39a4aa869e1",
+      "draft": false,
+      "updated_at": "2026-08-16T12:22:30Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 1000,
+      "title": "docs: queue breeding exposure interruption recovery",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1000",
+      "base": "main",
+      "head_branch": "governance/herdmaster-exposure-interruption-queue-20260816",
+      "head_oid": "a18971e72a755eed84446cb7000ec235814123b2",
+      "draft": false,
+      "updated_at": "2026-08-16T09:58:13Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 998,
+      "title": "governance: prevent duplicate owner-relayed prompts",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/998",
+      "base": "main",
+      "head_branch": "governance/prompt-display-delivery-rule-20260816",
+      "head_oid": "1678ed34a6f4d020651b3018d4cd8dca19d3a950",
+      "draft": false,
+      "updated_at": "2026-08-16T09:49:23Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 997,
+      "title": "docs: correct OP-004 withdrawal transfer policy",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/997",
+      "base": "main",
+      "head_branch": "governance/op004-live-transfer-disclosure-20260816",
+      "head_oid": "cf36e33ddb6e352abdc6235a0900d5bec79ebf49",
+      "draft": false,
+      "updated_at": "2026-08-16T09:30:37Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 996,
+      "title": "docs: close Bella private library review",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/996",
+      "base": "main",
+      "head_branch": "governance/bmq03-business-closeout-20260816",
+      "head_oid": "0a7d1c014dffd8425b5cf65a3b34a9174e64d973",
+      "draft": false,
+      "updated_at": "2026-08-16T09:23:41Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 991,
+      "title": "Governance: queue Herdmaster allocation operating loop",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/991",
+      "base": "main",
+      "head_branch": "governance/log-herdmaster-allocation-loop",
+      "head_oid": "4662465adfd59d4830082d832835c3a2e378cc26",
+      "draft": false,
+      "updated_at": "2026-08-16T08:16:23Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 984,
+      "title": "HERDMASTER: enrich lifetime merit human identities",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/984",
+      "base": "main",
+      "head_branch": "feat/herdmaster-hmq04-identity-enrichment-20260815",
+      "head_oid": "c665311d6dcc06d00c6b3120aa8f95f7f449c8f4",
+      "draft": false,
+      "updated_at": "2026-08-16T15:24:05Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 913,
+      "title": "docs: reconcile weekly weighing and mortality brief",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/913",
+      "base": "main",
+      "head_branch": "docs/control-tower-rootline-intake-20260813",
+      "head_oid": "827b5b1ef996ca15076bb0d5952d807eb3e2fa8c",
+      "draft": false,
+      "updated_at": "2026-08-14T16:11:17Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 858,
+      "title": "Document owner-facing application performance mission",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/858",
+      "base": "main",
+      "head_branch": "docs/owner-facing-performance-mission-20260812",
+      "head_oid": "e12be2e9ab29724a14691c22d9a834dbf15d9238",
+      "draft": false,
+      "updated_at": "2026-08-12T16:47:10Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 848,
+      "title": "Fix grouped breeding exposure reply recovery",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/848",
+      "base": "main",
+      "head_branch": "fix/herdmaster-grouped-exposure-reply-20260812",
+      "head_oid": "3ea1a78f1083a3274e6269c33f67c5720692c8c7",
+      "draft": false,
+      "updated_at": "2026-08-12T13:19:21Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 830,
+      "title": "Redesign canonical herd register",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/830",
+      "base": "main",
+      "head_branch": "ui/pigs-dashboard-facelift",
+      "head_oid": "d7c7038e4ec7d52704d542d306d97f77b76b48fb",
+      "draft": false,
+      "updated_at": "2026-08-11T20:18:49Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 829,
+      "title": "Oom Sakkie always-on farm command room",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/829",
+      "base": "main",
+      "head_branch": "ui/oom-sakkie-command-center",
+      "head_oid": "a88c97edde2e7fecf0b883d353d7672e46d833cd",
+      "draft": false,
+      "updated_at": "2026-08-11T19:45:46Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "FAILURE",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 823,
+      "title": "HERDMASTER: prepare lifetime genetic merit evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/823",
+      "base": "main",
+      "head_branch": "feat/herdmaster-lifetime-genetic-merit-evidence",
+      "head_oid": "c1702487ef4a372f24cf1d2a19753aa108bef0ac",
+      "draft": false,
+      "updated_at": "2026-08-11T17:04:10Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 747,
+      "title": "Add governed livestock auction sale completion",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/747",
+      "base": "main",
+      "head_branch": "feat/herdmaster-auction-sale-completion",
+      "head_oid": "277f79c92313f76a06ade799bcbd37c083c6d951",
+      "draft": false,
+      "updated_at": "2026-08-09T07:04:34Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 739,
+      "title": "Document SAM protected salesperson lifecycle outcome",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/739",
+      "base": "main",
+      "head_branch": "fix/sam-livestock-salesperson-lifecycle",
+      "head_oid": "185b311017deb513895986e0b11095ecba5d1c5a",
+      "draft": false,
+      "updated_at": "2026-08-08T15:57:13Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 732,
+      "title": "Recover canonical breeding evidence for HERDMASTER",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/732",
+      "base": "main",
+      "head_branch": "feat/herdmaster-breeding-evidence-recovery",
+      "head_oid": "497b0cf4f56a99733dfe9961fc135ee3f56c75c6",
+      "draft": false,
+      "updated_at": "2026-08-08T17:07:57Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 729,
+      "title": "Add evidence-qualified HERDMASTER breeding recommendations",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/729",
+      "base": "main",
+      "head_branch": "feat/herdmaster-breeding-evidence-qualified",
+      "head_oid": "0046b84b4339da4c31fd2c1b54dee88d6b036b67",
+      "draft": false,
+      "updated_at": "2026-08-05T21:16:09Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 713,
+      "title": "feat(core): governed development mission adapter",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/713",
+      "base": "main",
+      "head_branch": "feat/core-development-mission-adapter",
+      "head_oid": "f759664e991e33fdffc3312f1aaf2c2538d6e6ad",
+      "draft": false,
+      "updated_at": "2026-08-04T07:39:52Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 702,
+      "title": "feat(herdmaster): prepare first mortality assessment packet",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/702",
+      "base": "main",
+      "head_branch": "feat/herdmaster-mortality-assessment-packet",
+      "head_oid": "c73baa049dc5d64e67d2d1f522ecde18f01e3c6e",
+      "draft": false,
+      "updated_at": "2026-08-03T17:21:20Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 700,
+      "title": "CORE: integrate replacement rail with governed one-worker T1 proof",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/700",
+      "base": "main",
+      "head_branch": "feat/core-governed-t1-integration",
+      "head_oid": "09085dfa609008a3acbd7a6a53b46de00d066a39",
+      "draft": false,
+      "updated_at": "2026-08-04T05:52:21Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 698,
+      "title": "feat(herdmaster): add mortality intelligence contract",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/698",
+      "base": "main",
+      "head_branch": "feat/herdmaster-mortality-intelligence",
+      "head_oid": "2f847b8f898209b22e5c63faf4049fe2d8e365b0",
+      "draft": false,
+      "updated_at": "2026-08-03T14:44:59Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 693,
+      "title": "Add adaptive minimal CORE dispatch contract",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/693",
+      "base": "main",
+      "head_branch": "feat/core-adaptive-minimal-dispatch",
+      "head_oid": "e92f5ab427ad8dc44c421712ab021c58fa98094a",
+      "draft": false,
+      "updated_at": "2026-08-03T10:38:40Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 680,
+      "title": "Add atomic CORE mission replacement rail",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/680",
+      "base": "main",
+      "head_branch": "feat/core-atomic-many-to-one-replacement",
+      "head_oid": "29870dcb0a1fbb39a77d601da82c6c32af028aec",
+      "draft": false,
+      "updated_at": "2026-08-02T13:04:06Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 642,
+      "title": "Add append-only SAM review obligation resolution",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/642",
+      "base": "main",
+      "head_branch": "fix/sam-superseded-review-resolution",
+      "head_oid": "f421402a9bc334f01d494b92705a371e3c722edf",
+      "draft": false,
+      "updated_at": "2026-07-31T17:04:20Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 626,
+      "title": "feat(herdmaster): compose broader canonical herd evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/626",
+      "base": "main",
+      "head_branch": "feat/herdmaster-evidence-composition",
+      "head_oid": "926d7ea9058af88a7969d18ff49dfb39211c118b",
+      "draft": false,
+      "updated_at": "2026-07-30T11:18:06Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 603,
+      "title": "feat(herdmaster): prepare conversational fact intake contract",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/603",
+      "base": "main",
+      "head_branch": "feat/herdmaster-conversational-fact-intake",
+      "head_oid": "895e5052fcdaad782dce37beff9aaa6d08d8149b",
+      "draft": false,
+      "updated_at": "2026-07-29T18:41:46Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 571,
+      "title": "Fix SAM customer guidance and claim-scoped evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/571",
+      "base": "main",
+      "head_branch": "fix/sam-customer-guidance-contract",
+      "head_oid": "e9c499ca32aa86417a54f67c26f0adb3a8195de9",
+      "draft": false,
+      "updated_at": "2026-07-28T13:08:25Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 532,
+      "title": "docs: define SAM Live Stock P0 operating recovery",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/532",
+      "base": "main",
+      "head_branch": "docs/sam-live-stock-p0-recovery-2026-07-27",
+      "head_oid": "f7c2587111da91ae4523a7057ff06ccb1ac56f6a",
+      "draft": false,
+      "updated_at": "2026-07-27T07:59:35Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 531,
+      "title": "docs: plan Agent Workforce control room",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/531",
+      "base": "main",
+      "head_branch": "docs/agent-workforce-control-room-plan",
+      "head_oid": "d684817fa4497a0c78a2438c62885d2678e426d4",
+      "draft": false,
+      "updated_at": "2026-07-26T21:21:09Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 530,
+      "title": "docs: record 2026-07-26 agent night handover",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/530",
+      "base": "main",
+      "head_branch": "docs/vault-night-handover-2026-07-26",
+      "head_oid": "d8bebbd7455042e6f8c95a4ab7eee036d5acd67f",
+      "draft": false,
+      "updated_at": "2026-07-27T08:52:17Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 486,
+      "title": "docs: correct Petra verification boundary",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/486",
+      "base": "main",
+      "head_branch": "feat/storyworks-petra-verification-boundary",
+      "head_oid": "16898b9f11cf73306aea12a4aa58981ca1e69a13",
+      "draft": false,
+      "updated_at": "2026-07-25T21:08:32Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 455,
+      "title": "Fail closed protected pause revision binding",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/455",
+      "base": "main",
+      "head_branch": "charlie/fd380024-strict-candidate-binding",
+      "head_oid": "19444fcc0e3751c4a60ee92bb7db2fb09bbb2da8",
+      "draft": false,
+      "updated_at": "2026-07-24T23:56:57Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "FAILURE",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 454,
+      "title": "Fail closed protected pauses without tested revision",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/454",
+      "base": "main",
+      "head_branch": "charlie/fail-closed-tested-revision",
+      "head_oid": "a9c304d97bda8a54939a590dfce5f45cd3a972e4",
+      "draft": false,
+      "updated_at": "2026-07-24T21:51:01Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "FAILURE",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 453,
+      "title": "Require candidate-bound protected pause normalization",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/453",
+      "base": "charlie-scope-5d9241aecabb3216-ri86afdcb2-data-model",
+      "head_branch": "charlie/recovery-candidate-bound-pause",
+      "head_oid": "26a29ab6a96083725dd6767cda73a642e339c523",
+      "draft": false,
+      "updated_at": "2026-07-24T21:32:46Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "FAILURE",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 434,
+      "title": "Fix pig lifecycle history and archive visibility",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/434",
+      "base": "main",
+      "head_branch": "charlie/pig-lifecycle-history-visibility",
+      "head_oid": "6d24ca525f2a76a586d74fb0e1f8a722a9f15561",
+      "draft": false,
+      "updated_at": "2026-07-24T10:58:44Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 413,
+      "title": "Add safe order lifecycle canary contract",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/413",
+      "base": "main",
+      "head_branch": "charlie/farm-canary-lifecycle",
+      "head_oid": "c756e7bdcb7222bd4c188e97631390879509e1e8",
+      "draft": false,
+      "updated_at": "2026-07-23T19:46:44Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 393,
+      "title": "Harden Herdmaster capture idempotency",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/393",
+      "base": "main",
+      "head_branch": "fix/herdmaster-idempotency-collision",
+      "head_oid": "af1308a14ebd7d3c6fc0ca59c64a6c8b65ff3ab7",
+      "draft": false,
+      "updated_at": "2026-07-23T11:05:07Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 384,
+      "title": "Incident repair: Herdmaster proactive breeding calendar, matching and reminders",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/384",
+      "base": "main",
+      "head_branch": "charlie/incident-repair-herdmaster-proactive-breedin-748bc303",
+      "head_oid": "a48a68873977cf4badc513d64c3a238adb479fcd",
+      "draft": false,
+      "updated_at": "2026-07-22T17:31:47Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 383,
+      "title": "fix: require owner approval for livestock mutations",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/383",
+      "base": "main",
+      "head_branch": "fix/herdmaster-livestock-owner-guards",
+      "head_oid": "fdec42913986eb88bfa774bc108083e29fc38d7c",
+      "draft": false,
+      "updated_at": "2026-07-22T16:41:04Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 368,
+      "title": "Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 2",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/368",
+      "base": "main",
+      "head_branch": "charlie/herdmaster-weight-stage-reconciliation-and-o-7e0e8aa2",
+      "head_oid": "61c0e0cc69117864cfeae9d535afb07e240358c5",
+      "draft": false,
+      "updated_at": "2026-07-22T10:36:19Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 363,
+      "title": "Herdmaster weight-stage reconciliation and owner-approved corrections - recovery slice 1",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/363",
+      "base": "main",
+      "head_branch": "charlie/herdmaster-weight-stage-reconciliation-and-o-a1de1eff",
+      "head_oid": "131c899fe6e3d1a830c163d331fc4907855a82eb",
+      "draft": false,
+      "updated_at": "2026-07-22T06:00:38Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 361,
+      "title": "Herdmaster weight-stage reconciliation and owner-approved corrections",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/361",
+      "base": "main",
+      "head_branch": "charlie/herdmaster-weight-stage-reconciliation-and-o-20260721",
+      "head_oid": "d8ba2529719cc459cf79c13553d10dd61813c514",
+      "draft": false,
+      "updated_at": "2026-07-21T22:51:39Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 344,
+      "title": "Add append-only pig lifecycle audit rail",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/344",
+      "base": "main",
+      "head_branch": "charlie/pig-lifecycle-data-model",
+      "head_oid": "726d688e591a4e8dd89c307d4d366219d13e09ac",
+      "draft": false,
+      "updated_at": "2026-07-21T10:47:26Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 315,
+      "title": "Harden SAM live-stock replay eligibility evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/315",
+      "base": "main",
+      "head_branch": "charlie/sam-live-stock-eligibility-trace-20260720",
+      "head_oid": "95f279fbf8c9fc70fffe21e178aa87a6d406a4a5",
+      "draft": false,
+      "updated_at": "2026-07-20T13:19:20Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 307,
+      "title": "Add SAM Live Stock replay trace evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/307",
+      "base": "main",
+      "head_branch": "charlie/sam-live-stock-vertical-slice-20260720",
+      "head_oid": "ad8dc555fa3039e8ca32649984da5205cee3586f",
+      "draft": false,
+      "updated_at": "2026-07-20T05:59:01Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 306,
+      "title": "Beacon lead and sales attribution frontend",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/306",
+      "base": "main",
+      "head_branch": "charlie/beacon-attribution-frontend",
+      "head_oid": "b713912b4f5f0895357dfc14434ed7470bad6a9e",
+      "draft": false,
+      "updated_at": "2026-07-19T22:38:30Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 278,
+      "title": "charlie/beacon autonomy numeric policy gate",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/278",
+      "base": "main",
+      "head_branch": "charlie/beacon-autonomy-numeric-policy-gate",
+      "head_oid": "6c9325f066ec6bf7da8f5e9c0e3d31bab035f706",
+      "draft": false,
+      "updated_at": "2026-07-18T19:17:27Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 276,
+      "title": "Fail closed malformed Beacon autonomy thresholds",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/276",
+      "base": "main",
+      "head_branch": "charlie/mission-2777a4d0be2565f8-recovery-slice-1",
+      "head_oid": "3f379f443dbc550c2a0e507d58f8d29024b44736",
+      "draft": false,
+      "updated_at": "2026-07-18T12:26:47Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 271,
+      "title": "Fail closed invalid Beacon budget evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/271",
+      "base": "main",
+      "head_branch": "charlie/beacon-readiness-negative-budget-validation",
+      "head_oid": "6e0c401787c00552fad57c13f73043d0b781127c",
+      "draft": false,
+      "updated_at": "2026-07-18T10:30:49Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 262,
+      "title": "Add BEACON autonomy readiness gates",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/262",
+      "base": "main",
+      "head_branch": "charlie/beacon-autonomy-readiness-r5a296d3f",
+      "head_oid": "f222d2f1a72a3993251c2bde75c21ea19c484d38",
+      "draft": false,
+      "updated_at": "2026-07-18T05:05:20Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 244,
+      "title": "Beacon advisory autonomy readiness gates",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/244",
+      "base": "main",
+      "head_branch": "mission/beacon-advisory-readiness-v1",
+      "head_oid": "1c8518868a591db3a4fa33b5b8773a078cb7b8ac",
+      "draft": false,
+      "updated_at": "2026-07-17T06:25:33Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 240,
+      "title": "Beacon analyst follow-up mission generation",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/240",
+      "base": "main",
+      "head_branch": "feature/beacon-follow-up-missions",
+      "head_oid": "3a67adf8b35009b36cb00efcf8c2a9da91517ac0",
+      "draft": false,
+      "updated_at": "2026-07-18T09:08:34Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 234,
+      "title": "BEACON recommendation learning: validate correction evidence",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/234",
+      "base": "main",
+      "head_branch": "charlie/beacon-data-model-f31d9922",
+      "head_oid": "be520166b4701441be6bdb88355c920e688788f7",
+      "draft": false,
+      "updated_at": "2026-07-16T18:28:29Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 227,
+      "title": "Beacon lead and sales attribution data model",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/227",
+      "base": "main",
+      "head_branch": "mission/charlie-scope-7035049f-beacon-attribution",
+      "head_oid": "292cd7d3bd135757510f223a5ed89fdcc7c2b7b7",
+      "draft": false,
+      "updated_at": "2026-07-16T14:31:12Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 223,
+      "title": "Automate Beacon outcome evidence capture",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/223",
+      "base": "main",
+      "head_branch": "feature/beacon-outcome-evidence",
+      "head_oid": "b33c204e1cbdcf33e7e377ca354ebe936e1625a3",
+      "draft": false,
+      "updated_at": "2026-07-16T09:20:02Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 218,
+      "title": "Beacon lead and sales attribution frontend",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/218",
+      "base": "main",
+      "head_branch": "charlie/beacon-attribution-frontend-a02dd569",
+      "head_oid": "c8715020cf03a635db1088afdf69575b13d5b4f5",
+      "draft": false,
+      "updated_at": "2026-07-15T23:05:38Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 217,
+      "title": "BEACON Recommendation Learning Proof",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/217",
+      "base": "main",
+      "head_branch": "charlie/beacon-recommendation-learning-proof",
+      "head_oid": "1e7e2d07694c49bf9f3d87ce5c9f9ed874971aea",
+      "draft": false,
+      "updated_at": "2026-07-15T19:22:16Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 197,
+      "title": "Shared sales flow for livestock and meat orders",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/197",
+      "base": "main",
+      "head_branch": "mission/shared-sales-flow-d05dde3c-clean",
+      "head_oid": "198a1ec8e23713d5d81600489e9df4d6dcbd934b",
+      "draft": false,
+      "updated_at": "2026-07-15T01:57:41Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 195,
+      "title": "Add owner-capped Meta boost execution gate",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/195",
+      "base": "main",
+      "head_branch": "feature/beacon-meta-boost-gate",
+      "head_oid": "85a1ea66d8276189d73cccfb5be9ecc50542a956",
+      "draft": false,
+      "updated_at": "2026-07-15T11:12:13Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 189,
+      "title": "BEACON Meta Insights, SAM Lead And Revenue Attribution",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/189",
+      "base": "main",
+      "head_branch": "charlie/beacon-meta-insights-sam-lead-and-revenue-at-afef7728",
+      "head_oid": "48904cd457391ca1a3b37bbd297066501e4ec197",
+      "draft": false,
+      "updated_at": "2026-07-14T12:29:44Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 188,
+      "title": "Repair Beacon weekly decision loop",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/188",
+      "base": "feature/beacon-weekly-command-brief",
+      "head_branch": "feature/beacon-weekly-command-brief-builder-fix",
+      "head_oid": "a4b90df3b78335520882c643723d3bb8afc60840",
+      "draft": false,
+      "updated_at": "2026-07-14T10:36:54Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 186,
+      "title": "Beacon weekly marketing command brief",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/186",
+      "base": "main",
+      "head_branch": "feature/beacon-weekly-command-brief",
+      "head_oid": "50ae3239564db555e0ce72a4f8c84df12842c7da",
+      "draft": false,
+      "updated_at": "2026-07-14T08:50:41Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 160,
+      "title": "Herdmaster stock feed for SAM sales truth",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/160",
+      "base": "main",
+      "head_branch": "feature/herdmaster-sam-sales-truth",
+      "head_oid": "1ef6e919d50045604c1b80865e3ebf5009b1aa4b",
+      "draft": false,
+      "updated_at": "2026-07-12T11:08:00Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 141,
+      "title": "Add approved livestock order revision action",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/141",
+      "base": "main",
+      "head_branch": "oom-sakkie-approved-livestock-revision",
+      "head_oid": "96b5b9d6410e3dddb8141120e3bb90c1cfedf212",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 140,
+      "title": "Herdmaster Stock Feed for SAM Sales Truth",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/140",
+      "base": "main",
+      "head_branch": "charlie/herdmaster-stock-feed-for-sam-sales-truth-acc0a5b0",
+      "head_oid": "eda6fe973bae7d9051f88991b7aea7fc707f2264",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 139,
+      "title": "Add Herdmaster stock truth for SAM sales",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/139",
+      "base": "main",
+      "head_branch": "charlie/herdmaster-sam-stock-feed-clean-410b5df0",
+      "head_oid": "52832506bc3885ce1e9dbf0b9610e77f56acae61",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 137,
+      "title": "Add Herdmaster litter attention alerts",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/137",
+      "base": "charlie-runner-clean-base",
+      "head_branch": "herdmaster-alert-litter-automation",
+      "head_oid": "baeae183eef2098012c60faefaecf501eb87422f",
+      "draft": false,
+      "updated_at": "2026-07-11T01:42:05Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 135,
+      "title": "Add SAM meat review cards to owner inbox",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/135",
+      "base": "main",
+      "head_branch": "sam-sales-review-inbox",
+      "head_oid": "1a18fdd0061b333d1198ea3469ec0421e8678315",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 134,
+      "title": "Herdmaster Pig Allocation Alert Engine v1",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/134",
+      "base": "main",
+      "head_branch": "charlie/herdmaster-pig-allocation-alert-engine-v1-75569d9d",
+      "head_oid": "bf0c5803736baffa417d438f6d685823c5c11bd1",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 132,
+      "title": "Implement Herdmaster stock feed for SAM",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/132",
+      "base": "main",
+      "head_branch": "charlie/herdmaster-sam-stock-feed",
+      "head_oid": "0ddd890c7ea16f4febf215280ff5f00cef48be95",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 130,
+      "title": "Enhance family tree breeding decision view",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/130",
+      "base": "charlie-runner-clean-base",
+      "head_branch": "family-tree-breeding-decision-view",
+      "head_oid": "9fa5f5807af4e20a854ecd9258d58e057d25b47d",
+      "draft": false,
+      "updated_at": "2026-07-10T06:18:49Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 129,
+      "title": "Add Herdmaster stock truth for SAM live sales",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/129",
+      "base": "charlie-runner-clean-base",
+      "head_branch": "sam-herdmaster-stock-feed",
+      "head_oid": "5ae85f04290f26ebfa533de53a9ee5e38465e348",
+      "draft": false,
+      "updated_at": "2026-07-10T05:40:25Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 125,
+      "title": "Harden CHARLIE UI visual evidence capture",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/125",
+      "base": "main",
+      "head_branch": "charlie-ui-visual-evidence-reliability",
+      "head_oid": "a6666c1fa5b2782a7ca087d5ee7a2e021e43e3f4",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 124,
+      "title": "Enhance family tree breeding context",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/124",
+      "base": "main",
+      "head_branch": "feature/family-tree-breeding-context",
+      "head_oid": "04115249b7eed327ee9c887a7d6ceae4f704a749",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 121,
+      "title": "Defer pre-wean tagless piglets from allocation",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/121",
+      "base": "main",
+      "head_branch": "mission/0b099c-pig-allocation-not-piglets",
+      "head_oid": "6ace7dacce0b532ed77e4d91af6ec6432d20469e",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 120,
+      "title": "Defer pre-wean tagless piglets from allocation",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/120",
+      "base": "main",
+      "head_branch": "charlie-pig-allocation-no-prewean-piglets",
+      "head_oid": "de71a7cdb57ec0f744909442b58faeeaa8f15cb8",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 119,
+      "title": "Defer pre-wean tagless piglets from allocation",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/119",
+      "base": "main",
+      "head_branch": "charlie-mission-0b099c660ab47492-piglet-allocation",
+      "head_oid": "5e3c4d3e077f32245792008e8b4a5aca2b246897",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 118,
+      "title": "Highlight missing data in purpose review",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/118",
+      "base": "main",
+      "head_branch": "purpose-review-needs-data-emphasis",
+      "head_oid": "af2ce56c7f06a24c97e5587807e56c2aae55deea",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 117,
+      "title": "Highlight missing data in purpose review",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/117",
+      "base": "main",
+      "head_branch": "charlie-mission-20c3bc66-purpose-review-missing-data",
+      "head_oid": "ec46536201e3cee58e638c8380f382d53467ec78",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 115,
+      "title": "Improve pig allocation table layout",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/115",
+      "base": "main",
+      "head_branch": "charlie-mission-809d1e9e-pif-allocation-table",
+      "head_oid": "77f0f6eba3e8d0da1e275a02caaf804ff79e47e6",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 114,
+      "title": "Exclude pre-wean piglets from allocation readiness",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/114",
+      "base": "main",
+      "head_branch": "charlie-mission-0b099c660ab47492-pig-allocation-piglets",
+      "head_oid": "f8427701f2829b8be2eddec7d2acb6b2e216be36",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 96,
+      "title": "CHARLIE Brain & Memory v2 - Stage 1: Memory Architecture and Vault Doctrine",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/96",
+      "base": "main",
+      "head_branch": "charlie/charlie-brain-memory-v2-stage-1-memory-archi-7178d762",
+      "head_oid": "32333b6bf6dcce61bdd427dadff5516430e1c9b2",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 94,
+      "title": "Make CHARLIE new missions reviewable",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/94",
+      "base": "fix-litter-attention-sold-piglets",
+      "head_branch": "charlie-mission-new-review-ui",
+      "head_oid": "4b7f1008fca7ba103fd5cda9eaa7e29f99b18b0e",
+      "draft": false,
+      "updated_at": "2026-07-05T22:08:25Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 92,
+      "title": "Fix litter attention for accounted terminal piglets",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/92",
+      "base": "main",
+      "head_branch": "fix-litter-attention-terminal-piglets-clean",
+      "head_oid": "fd1e8b773d7c64d6f74ef3a59525a25b6897e13c",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 83,
+      "title": "Rebuild CHARLIE CORE command center",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/83",
+      "base": "main",
+      "head_branch": "charlie-core-command-center-c6cae8",
+      "head_oid": "9c6f970e0060c01f0d400b0ff308c4628dc0698e",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    },
+    {
+      "number": 82,
+      "title": "Rebuild CHARLIE CORE command center UI",
+      "url": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/82",
+      "base": "main",
+      "head_branch": "charlie-core-command-center-rebuild",
+      "head_oid": "26784daa9e2432c73bc1bef52ae5f35156f953b5",
+      "draft": false,
+      "updated_at": "2026-07-12T08:56:15Z",
+      "head_object_local": true,
+      "head_ancestor_of_origin_main": false,
+      "head_tree_equals_origin_main": false,
+      "check_conclusions": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "disposition": "PRESERVE_OPEN_PENDING_MISSION_REVIEW"
+    }
+  ]
+}

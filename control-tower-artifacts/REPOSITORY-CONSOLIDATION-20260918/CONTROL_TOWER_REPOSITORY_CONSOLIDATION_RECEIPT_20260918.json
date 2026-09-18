@@ -1,0 +1,116 @@
+{
+  "receipt_id": "CONTROL-TOWER-REPOSITORY-CONSOLIDATION-20260918",
+  "created_at": "2026-09-18T03:25:57.035156+00:00",
+  "coordinating_session_identity": "01a08bfa-ca70-7a01-91df-fc3dd3922598",
+  "successor_identity": "CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918",
+  "canonical_folder": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system",
+  "canonical_branch_gate": "main exactly aligned with origin/main",
+  "origin_main_at_reconciliation": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+  "origin_main_after_fixture_compatibility": "b6625deb97d6c325ae9ecf683f73df29c3668e4b",
+  "application_release_changed": false,
+  "runtime_or_provider_effect": false,
+  "pre_cleanup": {
+    "registered_worktrees": 628,
+    "dirty": 52,
+    "ahead_upstream": 34,
+    "no_upstream": 186
+  },
+  "post_cleanup": {
+    "registered_worktrees": 59,
+    "existing": 59,
+    "dirty": 51,
+    "clean": 8
+  },
+  "clean_historical_candidates": 570,
+  "clean_historical_cleared": 569,
+  "preserved_inaccessible_evidence_worktrees": 1,
+  "quarantined_residual_directories": 24,
+  "pre_publication_open_pull_requests": 96,
+  "publication_pull_request": 1337,
+  "current_open_pull_requests_with_publication_pr": 97,
+  "open_pr_heads_already_in_origin_main": 0,
+  "preservation_refs": {
+    "all_unremote_commits": "recovery/repository-consolidation-20260917@eddffc8eb3de98f007897ad4be68c2332e2571f0",
+    "tracked_dirty_patches": "recovery/dirty-worktree-patches-20260917@72e87beb580e6e370d0aec7eebbefc81d38c451a",
+    "safe_untracked_source": "recovery/safe-untracked-source-20260917@76e5d71a2aa3293c3318f56a4a3426ee586ff990",
+    "original_workspace": "preserve/main-workspace-reconciliation-20260812@03750847880bf1f110da48f3c2d77f520f019ea4"
+  },
+  "current_application_truth": {
+    "pr_1336": "MERGED",
+    "merge_revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+    "last_live_revision_verification": "2026-09-16",
+    "new_deployment_claimed": false
+  },
+  "retained_candidate": {
+    "path": "C:\\tmp\\omq-farm-brief-20260916",
+    "commit": "86bcee2709374353b7daf8d68bda839bac69337c",
+    "tree": "8582052f2cab5bf1a7abc4d26c27ebb085c6e23b",
+    "release_authority": false
+  },
+  "known_evidence_limits": [
+    "Linda record retrieval and Telegram delivery failed; no contextual continuation is proved",
+    "Anton acceptance and genuine farm-update acceptance remain unproved",
+    "C Camp 01:35 SAST deadline versus 02:04:24 OFF remains unresolved",
+    "scheduled-observer plan-hash verification remains incomplete",
+    "one ignored GREEN handover is an unreadable OneDrive placeholder",
+    "provider connections were not re-proved by this repository cleanup"
+  ],
+  "publication_gate": "docs-only PR with deployment suppression, followed by canonical folder main switch",
+  "fixture_compatibility": {
+    "pull_request": 1338,
+    "exact_successor": "219601440818150fc0296b9e0cc29f6782545b00",
+    "merge_revision": "b6625deb97d6c325ae9ecf683f73df29c3668e4b",
+    "changed_files": [
+      "tests/irrigation_dialogue_playwright.config.js",
+      "tests/irrigation_dialogue_qualification_server.py",
+      "tests/plan_dialogue_playwright.config.js",
+      "tests/plan_dialogue_qualification_server.py"
+    ],
+    "plan_port_change": "127.0.0.1:55826 -> 127.0.0.1:18026",
+    "irrigation_port_change": "127.0.0.1:55836 -> 127.0.0.1:18036",
+    "failed_attempts_preserved": true,
+    "hosted_run": 35334643798,
+    "herd_tests": 272,
+    "node_subtests": 27,
+    "plan_dialogue_tests": 32,
+    "english_afrikaans_browser_cases": 2,
+    "irrigation_dialogue_tests": 42,
+    "irrigation_application_browser_cases": 1,
+    "runtime_release": false,
+    "deployment_suppressed": true
+  },
+  "documentation_publication": {
+    "pull_request": 1337,
+    "first_candidate_head": "e96718c225fcb64fbab2612c06e30c11a756df6d",
+    "first_admission_receipt": "MAR-83C40F97437ADEA672BFF4F7EA60B2AFF007E15332197EFB3DAA4FB5E82FEBB1",
+    "protected_issuer_run": 35303901921,
+    "first_candidate_result": "rejected",
+    "reason_code": "admission_governance_changed",
+    "source_map_base_blob": "70db4bc29d17b7ec6e89be52c304668d398d245c",
+    "resolution": "retain the stable source-map route to the mission register; publish the dated current handover through root AGENTS.md and the mission register",
+    "gate_bypassed": false
+  },
+  "relay_transition": {
+    "observed_process_ids": [3420, 18408],
+    "logical_process_tree": "3420 launcher -> 18408 child interpreter",
+    "observed_creation_time": "2026-09-15T05:28:58+02:00",
+    "observed_process_lineage": "preserve/main-workspace-reconciliation-20260812",
+    "watchdog_task": "CHARLIE Telegram Relay Watchdog",
+    "watchdog_repetition": "PT2M",
+    "watchdog_before_cutover": "enabled_ready",
+    "watchdog_after_cutover": "disabled",
+    "cutover_completed_at": "2026-09-18T12:37:07+02:00",
+    "immediate_local_poller_count_after_cutover": 0,
+    "delayed_verification_at": "2026-09-18T12:45:39+02:00",
+    "delayed_verification_interval_seconds": 512,
+    "delayed_local_poller_count": 0,
+    "current_main_validation": "webhook_managed",
+    "current_main_reason": "local_polling_disabled",
+    "cutover_action": "watchdog disabled; legacy relay process tree stopped; current local entry point not started",
+    "expected_local_pollers_after_cutover": 0,
+    "remote_webhook_change_authorized": false,
+    "current_main_entrypoint_dry_run": "poll_once_complete",
+    "entrypoint_honors_webhook_managed": false,
+    "transport_dependency": "current relay main/poll loop must return webhook_managed before any local restart"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "mission_id": "OMQ-20260813-03",
+  "observed_at": "2026-09-16T14:38:00Z",
+  "read_only_inspection": true,
+  "provider_execution": {
+    "gatekeeper_execution_id": "71008",
+    "relay_execution_id": "71009",
+    "gatekeeper_status": "success",
+    "relay_status": "success",
+    "started_at": "2026-09-16T14:27:22.427Z",
+    "stopped_at": "2026-09-16T14:27:49.195Z"
+  },
+  "incoming_question": "Oom Sakkie, what do our saved records currently say about Linda's latest litter?",
+  "incoming_question_sha256": "ddd27a968c8edc216fa8efa4b4f985208b3792b8adc36474a776b3631c26e302",
+  "backend_result": {
+    "success": true,
+    "status": "answered",
+    "message_status": "owner_context_clarification_required",
+    "tool_used": "owner_context_front_door",
+    "answer": "<b>OOM SAKKIE - ONE DETAIL NEEDED</b>\n\nWhich current farm item is this about: an animal or tag, water/irrigation, a customer or sale, or marketing?",
+    "answer_sha256": "a0b847214e613ff2db0dcf1e3b75f33f92b88c2c93f59c6d971c03532992ad45",
+    "writes_farm_data": false,
+    "protected_actions_performed": false
+  },
+  "expected_canonical_answer": {
+    "litter_date": "2026-08-22",
+    "total_born": 9,
+    "born_alive": 8,
+    "stillborn": 0,
+    "mummified": 1,
+    "active_on_farm_piglets": 8
+  },
+  "acceptance": {
+    "canonical_record_retrieval_passed": false,
+    "answer_matched_saved_record": false,
+    "telegram_delivery_proved": false,
+    "natural_followup_observed": false,
+    "context_retention_proved": false,
+    "business_acceptance": false
+  },
+  "delivery_diagnosis": {
+    "relay_send_allowed": false,
+    "gatekeeper_last_node": "Call '2.0B - Oom Sakkie Backend Read-Only Relay'",
+    "relay_last_node": "Code - Validate Caller-Send Reply",
+    "gatekeeper_send_node_executed": false,
+    "finding": "The question reached the deployed backend, but name-specific Linda routing failed. The backend produced a generic clarification and the currently published GateKeeper path provides no provider delivery evidence after the subworkflow result. Workflow success is therefore transport execution success, not a delivered owner answer."
+  },
+  "next_repair_boundary": "Diagnose and qualify Linda name/entity routing and one safe owner-reply transport owner. No production transport change is authorized by the desktop transition.",
+  "message_contents_retained_for_owner_acceptance_only": true,
+  "chat_ids_user_ids_usernames_tokens_credentials_retained": false
+}
