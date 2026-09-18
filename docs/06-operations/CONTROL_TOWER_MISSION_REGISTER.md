@@ -20,8 +20,10 @@ fresh remaining set contains 51 dirty and 8 clean worktrees, all present and
 classified in the current handover. Dirty work was retained under existing
 mission identities rather than inferred complete.
 
-GitHub still has 96 open PRs. None of their exact heads is already in
-`origin/main`; all remain open pending mission-level disposition. PR #1336 is
+The preserved pre-publication inventory contains 96 open PRs. Documentation PR
+#1337 is the 97th open PR while this reconciliation is being published. None of
+the 96 inventoried exact heads is already in `origin/main`; all remain open
+pending mission-level disposition. PR #1336 is
 separately merged at `3d321e4932cf205d03e759cc71a26edd411bc9d2`, and this
 documentation change does not deploy application code. Local Oom Sakkie
 candidate `86bcee2709374353b7daf8d68bda839bac69337c`, Linda's failed acceptance,

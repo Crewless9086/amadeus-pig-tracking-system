@@ -114,9 +114,11 @@ through the recovery anchor. A clean publisher worktree was created on
 `consolidation/docs-governance-20260917` from exact `origin/main`
 `3d321e4932cf205d03e759cc71a26edd411bc9d2`.
 
-GitHub still reports 96 open pull requests. All 96 head objects are present
-locally; none is an ancestor of current `origin/main`, and none has the same tree
-as current `origin/main`. They were not closed merely because they are old.
+The preserved pre-publication inventory contains 96 open pull requests. All 96
+head objects are present locally; none is an ancestor of current `origin/main`,
+and none has the same tree as current `origin/main`. Documentation PR #1337 is
+the 97th open PR while this reconciliation is being published. The inventoried
+PRs were not closed merely because they are old.
 `OPEN_PR_RECONCILIATION_20260918.json` records every exact head and the required
 mission-review disposition. The first PR #1337 candidate, exact head
 `e96718c225fcb64fbab2612c06e30c11a756df6d`, was admitted as receipt
@@ -185,7 +187,8 @@ The detailed mission identities and wake conditions remain in
 ## Tools and continuity
 
 - Filesystem and Git access: verified.
-- GitHub CLI read access: verified; 96 open PRs read on 2026-09-18.
+- GitHub CLI read access: verified; 96 open PRs were inventoried before
+  publication, and PR #1337 is the 97th while open.
 - Local Windows process readback: verified; one Telegram relay found.
 - Production, Render, Supabase and n8n read access: not re-proved by this cleanup.
   Desktop must verify each needed connector without revealing secret values.
@@ -216,7 +219,8 @@ release lane before that transfer, so two coordinators cannot act concurrently.
 > Runtime Programme, `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`, and
 > `control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/REPOSITORY_CONSOLIDATION_AND_DESKTOP_HANDOVER_20260918.md`.
 > Verify the preservation refs, 59-worktree disposition, quarantine mapping,
-> 96-PR reconciliation, exact Oom candidate, Linda failure, C Camp discrepancy,
+> 96-PR pre-publication reconciliation plus publication PR #1337, exact Oom
+> candidate, Linda failure, C Camp discrepancy,
 > incomplete plan-hash evidence, approvals and holds. Check read-only access to
 > GitHub and only the provider connections needed for continuation; reveal no
 > secrets and make no external change. Return `DESKTOP VERIFICATION PASS` or

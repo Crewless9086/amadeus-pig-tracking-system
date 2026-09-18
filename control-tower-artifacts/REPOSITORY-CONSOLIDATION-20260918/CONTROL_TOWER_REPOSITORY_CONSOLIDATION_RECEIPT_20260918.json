@@ -24,7 +24,9 @@
   "clean_historical_cleared": 569,
   "preserved_inaccessible_evidence_worktrees": 1,
   "quarantined_residual_directories": 24,
-  "open_pull_requests": 96,
+  "pre_publication_open_pull_requests": 96,
+  "publication_pull_request": 1337,
+  "current_open_pull_requests_with_publication_pr": 97,
   "open_pr_heads_already_in_origin_main": 0,
   "preservation_refs": {
     "all_unremote_commits": "recovery/repository-consolidation-20260917@eddffc8eb3de98f007897ad4be68c2332e2571f0",
