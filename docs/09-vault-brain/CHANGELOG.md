@@ -2,6 +2,14 @@
 
 ## 2026-09-18 - Repository consolidation and Desktop handover
 
+- Reconciled the first Desktop read-only verification: corrected one quarantine
+  mapping to `fix/hmq-bcs-auto-consumption-20260825` at exact HEAD `10a5e8f2`
+  from retained inventory and Git refs, while leaving all 24 directories and
+  every preserved worktree unchanged.
+- Recorded Supabase REST HTTP 402 `exceed_egress_quota` as an access limitation;
+  the configured SQL path is verified read-only and can retrieve the relevant
+  mission rows. No billing, quota, configuration, permission, schema or data
+  change was made or authorized.
 - Preserved all refs and every dirty worktree before reducing the registered
   worktree set from 628 to 59 and routing Desktop through the original clean
   repository folder, root `AGENTS.md`, the active source map, mission register

@@ -1,9 +1,9 @@
 # Repository Consolidation And Desktop Handover — 2026-09-18
 
-Status: reviewed documentation candidate for the existing Control Tower mission.
-It becomes the current repository handover only when this documentation-only
-change reaches `main`. It grants no application release, deployment, provider,
-database, farm-write, permission or physical-operation authority.
+Status: current reviewed handover for the existing Control Tower mission. A
+bounded correction becomes authoritative only when its documentation-only
+change reaches `main`. This handover grants no application release, deployment,
+provider, database, farm-write, permission or physical-operation authority.
 
 ## Result and canonical route
 
@@ -77,8 +77,13 @@ their HEAD, remote preservation and fresh tracked status passed. ACL-protected
 residue from 24 worktrees was moved intact to
 `C:\tmp\amadeus-worktree-quarantine-20260917`; no quarantine directory is a Git
 worktree. The mapping back to original path, branch and HEAD is in
-`WORKTREE_QUARANTINE_MANIFEST_20260918.json`. No dirty or current worktree was
-deleted to make the graph look tidy.
+`WORKTREE_QUARANTINE_MANIFEST_20260918.json`. The first Desktop audit found and
+preserved one metadata defect in its final entry. Retained inventories and both
+local and origin refs prove the corrected branch
+`fix/hmq-bcs-auto-consumption-20260825` at exact HEAD
+`10a5e8f24641f23d28b5d79900f696fea594b232`; the directory itself and the other
+23 mappings are unchanged. No dirty or current worktree was deleted to make the
+graph look tidy.
 
 The fresh post-cleanup inventory at 2026-09-18T01:41:09Z contains 59 registered
 worktrees, all present: 51 dirty and 8 clean. `REMAINING_WORKTREE_DISPOSITION_20260918.json`
@@ -119,9 +124,10 @@ fixture-only successor described below merged.
 
 The preserved pre-publication inventory contains 96 open pull requests. All 96
 head objects are present locally; none is an ancestor of current `origin/main`,
-and none has the same tree as current `origin/main`. Documentation PR #1337 is
-the 97th open PR while this reconciliation is being published. The inventoried
-PRs were not closed merely because they are old.
+and none has the same tree as current `origin/main`. Documentation PR #1337
+merged as `39fca0234cb892bb2bce8a77d872409f21ef3a0d`, leaving the original 96
+inventoried PRs open at their recorded heads. The inventoried PRs were not
+closed merely because they are old.
 `OPEN_PR_RECONCILIATION_20260918.json` records every exact head and the required
 mission-review disposition. The first PR #1337 candidate, exact head
 `e96718c225fcb64fbab2612c06e30c11a756df6d`, was admitted as receipt
@@ -150,9 +156,9 @@ application deployment.
 
 ## Operational reality carried forward
 
-- Production was last freshly proved on 2026-09-16 at exact PR #1336 merge
-  `3d321e4932cf205d03e759cc71a26edd411bc9d2`. This repository cleanup does not
-  claim a newer deployment.
+- Production was freshly read back by Desktop on 2026-09-18 at exact PR #1336
+  merge `3d321e4932cf205d03e759cc71a26edd411bc9d2`. This repository cleanup does
+  not claim a newer deployment.
 - Charl received the morning brief. That proves delivery and improved wording;
   it does not prove Anton acceptance or a farm update.
 - Linda's genuine question reached executions 71008/71009, but the backend asked
@@ -207,14 +213,21 @@ The detailed mission identities and wake conditions remain in
 ## Tools and continuity
 
 - Filesystem and Git access: verified.
-- GitHub CLI read access: verified; 96 open PRs were inventoried before
-  publication, and PR #1337 is the 97th while open.
+- GitHub CLI read access: verified; the 96 inventoried PRs remain open after
+  documentation PR #1337 merged.
 - Local Windows process readback: verified; the one logical two-process
   Telegram relay tree was stopped after its watchdog was disabled. Zero local
   pollers were observed both immediately and more than eight minutes after
   cutover.
-- Production, Render, Supabase and n8n read access: not re-proved by this cleanup.
-  Desktop must verify each needed connector without revealing secret values.
+- GitHub, Render, production-revision and both required n8n workflow reads were
+  freshly verified by Desktop at 2026-09-18 18:48 SAST. Production still serves
+  `3d321e4932cf205d03e759cc71a26edd411bc9d2`.
+- Supabase REST returned HTTP 402 `exceed_egress_quota`. The already configured
+  SQL connection succeeded, proved `transaction_read_only=on`, and read the
+  relevant mission rows. Read-only SQL is the verified continuation evidence
+  path. REST-only work remains limited until quota is restored through the
+  account-owner route; this handover authorizes no billing, quota, configuration,
+  permission, schema or data change and requires no repeated REST retry.
 - No credential or secret value is stored in this handover.
 - Closing the old terminal ends this coordinating chat only. No local polling
   relay remains after the completed local cutover; the current local
@@ -241,21 +254,29 @@ release lane before that transfer, so two coordinators cannot act concurrently.
 > Mission Standard, Control Tower Assessment and Dispatch Protocol, Agentic Farm
 > Runtime Programme, `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`, and
 > `control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/REPOSITORY_CONSOLIDATION_AND_DESKTOP_HANDOVER_20260918.md`.
+> Also read
+> `control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/DESKTOP_READ_ONLY_VERIFICATION_RECONCILIATION_20260918.md`.
 > Verify the preservation refs, 59-worktree disposition, quarantine mapping,
-> 96-PR pre-publication reconciliation plus publication PR #1337, fixture-only
+> including `fix/hmq-bcs-auto-consumption-20260825` at exact HEAD
+> `10a5e8f24641f23d28b5d79900f696fea594b232`, the 96-PR pre-publication
+> reconciliation plus merged publication PR #1337, fixture-only
 > PR #1338 merge `b6625deb97d6c325ae9ecf683f73df29c3668e4b`, exact Oom
 > candidate, Linda failure, C Camp discrepancy,
 > incomplete plan-hash evidence, approvals and holds. Check read-only access to
 > GitHub and only the provider connections needed for continuation; reveal no
-> secrets and make no external change. Return `DESKTOP VERIFICATION PASS` or
+> secrets and make no external change. For Supabase, verify the configured SQL
+> connection in a read-only transaction and the required mission-row reads.
+> Record REST HTTP 402 `exceed_egress_quota` as the known access limitation; it
+> is not itself a handover failure when read-only SQL succeeds, and do not retry
+> REST or change billing/configuration. Return `DESKTOP VERIFICATION PASS` or
 > `DESKTOP VERIFICATION FAIL` with exact mismatches. State that coordinating
 > ownership has not transferred and do no continuation work.
 
 ## Control Tower receipt
 
-- Decision: `RECONCILIATION COMPLETE`, subject only to the mechanical canonical
-  folder switch and documentation publication gate recorded in the machine
-  receipt.
+- Decision: `RECONCILIATION COMPLETE` after the bounded Desktop finding
+  correction reaches `main`; coordinating ownership remains untransferred until
+  the corrected read-only verification passes and Charl explicitly transfers it.
 - Repository result: every pre-cleanup commit and dirty worktree is preserved;
   the active registry is reduced from 628 to 59 without deleting unfinished
   dirty work; the original folder is the designated canonical Desktop route.

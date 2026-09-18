@@ -10,6 +10,18 @@ The existing Control Tower mission preserves session
 the canonical Desktop entry point after it is clean on `main` and exactly
 aligned with published `origin/main`.
 
+The first Desktop read-only verification at 2026-09-18 18:48 SAST correctly
+failed the transfer gate on one quarantine-manifest typo and missing exact HEAD.
+The retained inventories and local/fetched refs all identify
+`fix/hmq-bcs-auto-consumption-20260825` at
+`10a5e8f24641f23d28b5d79900f696fea594b232`; the manifest correction preserves
+the same quarantine directory and changes no worktree contents. Supabase REST
+returned HTTP 402 `exceed_egress_quota`, while the configured SQL connection
+proved `transaction_read_only=on` and read the relevant mission rows. Read-only
+SQL is the verified continuation evidence path; REST-only work remains limited
+until quota is restored through the account-owner route. No billing,
+configuration, permission, schema or data change is authorized.
+
 Before cleanup, a verified 2,926-ref Git bundle, three remote recovery refs and
 complete backups of all 52 dirty worktrees preserved commits, patches and 3,383
 untracked files. The registered worktree count was reduced from 628 to 59 by
@@ -21,9 +33,9 @@ classified in the current handover. Dirty work was retained under existing
 mission identities rather than inferred complete.
 
 The preserved pre-publication inventory contains 96 open PRs. Documentation PR
-#1337 is the 97th open PR while this reconciliation is being published. None of
-the 96 inventoried exact heads is already in `origin/main`; all remain open
-pending mission-level disposition. PR #1336 is
+#1337 merged as `39fca0234cb892bb2bce8a77d872409f21ef3a0d`; the original 96
+inventoried PRs remain open at their recorded heads. None of those exact heads
+is already in `origin/main`. PR #1336 is
 separately merged at `3d321e4932cf205d03e759cc71a26edd411bc9d2`, and this
 documentation change does not deploy application code. Local Oom Sakkie
 candidate `86bcee2709374353b7daf8d68bda839bac69337c`, Linda's failed acceptance,
