@@ -1,5 +1,6 @@
 {
   "created_at": "2026-09-18T03:26:54.397164+00:00",
+  "corrected_at": "2026-09-18T18:55:41+02:00",
   "quarantine_root": "C:\\tmp\\amadeus-worktree-quarantine-20260917",
   "entry_count": 24,
   "note": "These directories were already unregistered after every commit and dirty worktree had been preserved. ACL-protected residue was moved intact rather than forcibly deleted.",
@@ -192,9 +193,9 @@
       "category": "physical-worktrees",
       "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\test-hmq-bcs-auto-consumption-worktree",
       "source_worktree": "C:\\Users\\charl\\OneDrive\\1. Amadeus\\AGENTS\\amadeus-pig-tracking-system\\.codex-runtime\\missions\\HMQ-BCS-AUTO-CONSUMPTION\\worktree",
-      "source_branch": "fix/hmq-bcs-automatic-consumption-20260825",
-      "source_head": "not_recomputed_from_inaccessible_residue",
-      "mapping_status": "MANUAL_TEST_MOVE_RECORDED"
+      "source_branch": "fix/hmq-bcs-auto-consumption-20260825",
+      "source_head": "10a5e8f24641f23d28b5d79900f696fea594b232",
+      "mapping_status": "CORRECTED_MATCHED_SOURCE_INVENTORY_AND_PRESERVED_REF"
     }
   ]
 }

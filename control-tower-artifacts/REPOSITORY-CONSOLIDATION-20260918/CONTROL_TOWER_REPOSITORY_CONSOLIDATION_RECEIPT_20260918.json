@@ -7,6 +7,7 @@
   "canonical_branch_gate": "main exactly aligned with origin/main",
   "origin_main_at_reconciliation": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
   "origin_main_after_fixture_compatibility": "b6625deb97d6c325ae9ecf683f73df29c3668e4b",
+  "origin_main_after_documentation_publication": "39fca0234cb892bb2bce8a77d872409f21ef3a0d",
   "application_release_changed": false,
   "runtime_or_provider_effect": false,
   "pre_cleanup": {
@@ -28,6 +29,7 @@
   "pre_publication_open_pull_requests": 96,
   "publication_pull_request": 1337,
   "current_open_pull_requests_with_publication_pr": 97,
+  "current_open_pull_requests_after_publication_merge": 96,
   "open_pr_heads_already_in_origin_main": 0,
   "preservation_refs": {
     "all_unremote_commits": "recovery/repository-consolidation-20260917@eddffc8eb3de98f007897ad4be68c2332e2571f0",
@@ -38,7 +40,7 @@
   "current_application_truth": {
     "pr_1336": "MERGED",
     "merge_revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
-    "last_live_revision_verification": "2026-09-16",
+    "last_live_revision_verification": "2026-09-18",
     "new_deployment_claimed": false
   },
   "retained_candidate": {
@@ -53,9 +55,9 @@
     "C Camp 01:35 SAST deadline versus 02:04:24 OFF remains unresolved",
     "scheduled-observer plan-hash verification remains incomplete",
     "one ignored GREEN handover is an unreadable OneDrive placeholder",
-    "provider connections were not re-proved by this repository cleanup"
+    "Supabase REST is unavailable with HTTP 402 exceed_egress_quota; read-only SQL is the verified canonical evidence path"
   ],
-  "publication_gate": "docs-only PR with deployment suppression, followed by canonical folder main switch",
+  "publication_gate": "completed by PR #1337 merge; this bounded correction uses a docs-only PR with deployment suppression",
   "fixture_compatibility": {
     "pull_request": 1338,
     "exact_successor": "219601440818150fc0296b9e0cc29f6782545b00",
@@ -88,7 +90,33 @@
     "reason_code": "admission_governance_changed",
     "source_map_base_blob": "70db4bc29d17b7ec6e89be52c304668d398d245c",
     "resolution": "retain the stable source-map route to the mission register; publish the dated current handover through root AGENTS.md and the mission register",
+    "status": "merged",
+    "merge_revision": "39fca0234cb892bb2bce8a77d872409f21ef3a0d",
     "gate_bypassed": false
+  },
+  "desktop_read_only_verification": {
+    "observed_at": "2026-09-18T18:48:00+02:00",
+    "first_result": "FAIL",
+    "coordinating_ownership_transferred": false,
+    "repository_checks": "passed",
+    "quarantine_mapping_correction": {
+      "quarantine_path": "C:\\tmp\\amadeus-worktree-quarantine-20260917\\test-hmq-bcs-auto-consumption-worktree",
+      "source_branch": "fix/hmq-bcs-auto-consumption-20260825",
+      "source_head": "10a5e8f24641f23d28b5d79900f696fea594b232",
+      "source_tree": "47f1fbe9f63deb50b0271f7546b097199811cf7e",
+      "directory_or_worktree_changed": false,
+      "other_manifest_entries_changed": 0
+    },
+    "provider_access": {
+      "github": "verified_read_only",
+      "render": "verified_read_only",
+      "production_revision": "3d321e4932cf205d03e759cc71a26edd411bc9d2",
+      "n8n_required_workflow_reads": "verified_read_only",
+      "supabase_rest": "HTTP_402_exceed_egress_quota",
+      "supabase_sql": "verified_transaction_read_only_and_relevant_mission_rows",
+      "billing_or_configuration_changed": false
+    },
+    "continuation_gate": "repeat read-only Desktop verification after this correction is published; explicit owner transfer remains required"
   },
   "relay_transition": {
     "observed_process_ids": [3420, 18408],
