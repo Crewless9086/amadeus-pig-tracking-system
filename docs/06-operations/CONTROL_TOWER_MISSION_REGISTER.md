@@ -31,6 +31,21 @@ C Camp's 01:35/02:04:24 discrepancy, incomplete plan-hash verification and all
 migration, weaning, treatment, voice, permission, physical, ROOTLINE and CHARLIE
 holds carry forward unchanged.
 
+The hosted qualification blocker was resolved through separately governed,
+test-fixture-only PR #1338, merged as
+`b6625deb97d6c325ae9ecf683f73df29c3668e4b`. It changes only the plan and
+irrigation loopback fixture ports, preserves every selector, assertion,
+workflow, database boundary and failed attempt, and passed the fresh 272 herd
+tests, 27 subtests and all later dialogue/browser gates. Deployment was
+suppressed; the last verified application revision remains `3d321e49`.
+
+The legacy local Telegram poller was one logical process tree (PIDs 3420 and
+18408) guarded by scheduled task `CHARLIE Telegram Relay Watchdog` every two
+minutes. The watchdog was disabled before both processes were stopped, and
+immediate readback showed zero local pollers. The remote webhook, n8n and
+production schedulers were not changed. The current local relay entry point
+remains held because its no-send dry-run does not exit on `webhook_managed`.
+
 Current handover:
 `control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/REPOSITORY_CONSOLIDATION_AND_DESKTOP_HANDOVER_20260918.md`.
 This entry grants no runtime-release, provider-publication, farm-write or

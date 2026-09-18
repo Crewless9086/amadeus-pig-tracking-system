@@ -1,5 +1,23 @@
 # Vault Brain Changelog
 
+## 2026-09-18 - Repository consolidation and Desktop handover
+
+- Preserved all refs and every dirty worktree before reducing the registered
+  worktree set from 628 to 59 and routing Desktop through the original clean
+  repository folder, root `AGENTS.md`, the active source map, mission register
+  and one dated handover.
+- Qualified and merged fixture-only PR #1338 as `b6625deb`, replacing two
+  occupied hosted-runner loopback ports while leaving application code,
+  workflows, migrations, selectors, assertions, isolation and coverage
+  unchanged. Fresh hosted execution passed 272 herd tests, 27 subtests and all
+  later dialogue, language, browser and irrigation gates.
+- Disabled the two-minute local Telegram relay watchdog before stopping its
+  launcher/child process tree. The local entry point remains held pending a
+  qualified `webhook_managed` early exit; the remote webhook, n8n and production
+  schedulers were unchanged.
+- Added no application deployment, farm/database write, provider send,
+  permission, migration, workflow publication or physical operation.
+
 ## 2026-09-16 - Control Tower desktop transition route
 
 Added a pointer-only root `AGENTS.md`, an authoritative source-map pointer and a

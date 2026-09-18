@@ -112,7 +112,10 @@ The former divergent local `main` was renamed, without deleting its history, to
 `archive/local-main-diverged-20260917`. Its unique commits are also reachable
 through the recovery anchor. A clean publisher worktree was created on
 `consolidation/docs-governance-20260917` from exact `origin/main`
-`3d321e4932cf205d03e759cc71a26edd411bc9d2`.
+`3d321e4932cf205d03e759cc71a26edd411bc9d2`. It was subsequently refreshed
+without conflict onto current `origin/main`
+`b6625deb97d6c325ae9ecf683f73df29c3668e4b` after the separately governed
+fixture-only successor described below merged.
 
 The preserved pre-publication inventory contains 96 open pull requests. All 96
 head objects are present locally; none is an ancestor of current `origin/main`,
@@ -132,6 +135,19 @@ separately confirmed merged at
 merged at `cd2ff4acc398eb134050b843c012e3bebb662989` while its later dirty local
 work remains retained.
 
+PR #1338 is separately merged at
+`b6625deb97d6c325ae9ecf683f73df29c3668e4b`. It changes only four hosted
+dialogue test-fixture files, moving the plan fixture from loopback port 55826
+to 18026 and the later irrigation fixture from 55836 to 18036. The preserved
+failed attempts show both original ports occupied on current hosted runners.
+At exact successor `219601440818150fc0296b9e0cc29f6782545b00`, fresh hosted
+qualification passed 272 herd tests and 27 subtests, 32 plan-dialogue tests,
+two English/Afrikaans browser cases, 42 irrigation-dialogue tests and the final
+irrigation application browser case. No selector, assertion, workflow,
+application, migration, database isolation or expected outcome changed. Both
+commits and the merge use deployment suppression; this is not a newer
+application deployment.
+
 ## Operational reality carried forward
 
 - Production was last freshly proved on 2026-09-16 at exact PR #1336 merge
@@ -150,19 +166,23 @@ work remains retained.
 - The backend Telegram endpoint remains the n8n replacement direction. n8n is
   still the interim live transport owner. The reply-ID field publication is
   complete; native-voice changes are separate and held.
-- The current process inventory found one legacy local CHARLIE Telegram
-  polling process, PID 3420, loaded from the preserved original-folder
-  branch. Fresh current-`main` configuration validation returns
+- The process inventory found one logical legacy CHARLIE Telegram polling
+  tree: launcher PID 3420 and child interpreter PID 18408, both created at
+  2026-09-15 05:28:58 from the preserved original-folder branch. Scheduled
+  task `CHARLIE Telegram Relay Watchdog` was enabled and ready on a two-minute
+  repetition. At 2026-09-18T12:37+02:00 the task was disabled first, then both
+  exact relay processes were stopped; immediate readback found zero local
+  pollers. A delayed readback at 12:45:39+02:00, more than four watchdog
+  intervals later, again found the task disabled and zero local pollers. Fresh
+  current-`main` configuration validation returns
   `webhook_managed / local_polling_disabled`, but a synthetic no-send
   `--once --dry-run` returns `poll_once_complete`: the current entry point
-  does not honor `webhook_managed` as an early exit. The canonical-folder
-  cutover therefore retires PID 3420, does not start the current local
-  entry point, and verifies zero local pollers. That precise early-exit gap
-  remains a transport-owner repair; this documentation mission grants no
-  application release authority. No Linda watcher or release/deployment
-  operator was found. Production services, the existing remote Telegram
-  webhook, n8n and remote schedulers continue according to their provider
-  state.
+  does not honor `webhook_managed` as an early exit. The local entry point
+  therefore remains stopped and the watchdog remains disabled. That precise
+  early-exit gap remains a transport-owner repair; this documentation mission
+  grants no application release authority. No Linda watcher or
+  release/deployment operator was found. Production services, the existing
+  remote Telegram webhook, n8n and remote schedulers were not changed.
 
 ## Current priorities and holds
 
@@ -189,12 +209,15 @@ The detailed mission identities and wake conditions remain in
 - Filesystem and Git access: verified.
 - GitHub CLI read access: verified; 96 open PRs were inventoried before
   publication, and PR #1337 is the 97th while open.
-- Local Windows process readback: verified; one Telegram relay found.
+- Local Windows process readback: verified; the one logical two-process
+  Telegram relay tree was stopped after its watchdog was disabled. Zero local
+  pollers were observed both immediately and more than eight minutes after
+  cutover.
 - Production, Render, Supabase and n8n read access: not re-proved by this cleanup.
   Desktop must verify each needed connector without revealing secret values.
 - No credential or secret value is stored in this handover.
-- Closing the old terminal ends this coordinating chat only. After the
-  canonical cutover, no local polling relay remains; the current local
+- Closing the old terminal ends this coordinating chat only. No local polling
+  relay remains after the completed local cutover; the current local
   entry point stays held until its webhook-managed early exit is repaired
   and qualified. The remote webhook and other remote services continue
   independently. No current local Linda watcher was found to transfer.
@@ -219,7 +242,8 @@ release lane before that transfer, so two coordinators cannot act concurrently.
 > Runtime Programme, `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`, and
 > `control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/REPOSITORY_CONSOLIDATION_AND_DESKTOP_HANDOVER_20260918.md`.
 > Verify the preservation refs, 59-worktree disposition, quarantine mapping,
-> 96-PR pre-publication reconciliation plus publication PR #1337, exact Oom
+> 96-PR pre-publication reconciliation plus publication PR #1337, fixture-only
+> PR #1338 merge `b6625deb97d6c325ae9ecf683f73df29c3668e4b`, exact Oom
 > candidate, Linda failure, C Camp discrepancy,
 > incomplete plan-hash evidence, approvals and holds. Check read-only access to
 > GitHub and only the provider connections needed for continuation; reveal no
