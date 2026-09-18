@@ -52,5 +52,16 @@
     "one ignored GREEN handover is an unreadable OneDrive placeholder",
     "provider connections were not re-proved by this repository cleanup"
   ],
-  "publication_gate": "docs-only PR with deployment suppression, followed by canonical folder main switch and relay continuity verification"
+  "publication_gate": "docs-only PR with deployment suppression, followed by canonical folder main switch and relay continuity verification",
+  "documentation_publication": {
+    "pull_request": 1337,
+    "first_candidate_head": "e96718c225fcb64fbab2612c06e30c11a756df6d",
+    "first_admission_receipt": "MAR-83C40F97437ADEA672BFF4F7EA60B2AFF007E15332197EFB3DAA4FB5E82FEBB1",
+    "protected_issuer_run": 35303901921,
+    "first_candidate_result": "rejected",
+    "reason_code": "admission_governance_changed",
+    "source_map_base_blob": "70db4bc29d17b7ec6e89be52c304668d398d245c",
+    "resolution": "retain the stable source-map route to the mission register; publish the dated current handover through root AGENTS.md and the mission register",
+    "gate_bypassed": false
+  }
 }

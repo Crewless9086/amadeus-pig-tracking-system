@@ -18,6 +18,12 @@ Control Tower folder `C:\tmp\amadeus-herd-control-20260910` remains retained as
 historical evidence until Desktop verification passes; it is no longer the
 intended desktop entry point.
 
+The active source map remains byte-identical to the protected base revision,
+where it already names the mission register as the current-state route. The
+root `AGENTS.md` points to that map and register, and the register points to
+this dated handover. This keeps transient mission state out of the doctrine
+map while preserving a complete, deterministic route from Desktop startup.
+
 The repository was fragmented because Git worktrees are complete working
 directories attached to one shared repository. The original folder did not
 automatically contain dirty files, uncommitted evidence or branch commits held
@@ -112,7 +118,14 @@ GitHub still reports 96 open pull requests. All 96 head objects are present
 locally; none is an ancestor of current `origin/main`, and none has the same tree
 as current `origin/main`. They were not closed merely because they are old.
 `OPEN_PR_RECONCILIATION_20260918.json` records every exact head and the required
-mission-review disposition. PR #1336 is separately confirmed merged at
+mission-review disposition. The first PR #1337 candidate, exact head
+`e96718c225fcb64fbab2612c06e30c11a756df6d`, was admitted as receipt
+`MAR-83C40F97437ADEA672BFF4F7EA60B2AFF007E15332197EFB3DAA4FB5E82FEBB1` but
+the protected App verifier correctly rejected its direct source-map edit as
+`admission_governance_changed`. That exact failed attempt and delivery history
+remain preserved. The successor restores the protected source-map blob
+`70db4bc29d17b7ec6e89be52c304668d398d245c`; no gate is bypassed. PR #1336 is
+separately confirmed merged at
 `3d321e4932cf205d03e759cc71a26edd411bc9d2`; PR #1331 is separately confirmed
 merged at `cd2ff4acc398eb134050b843c012e3bebb662989` while its later dirty local
 work remains retained.

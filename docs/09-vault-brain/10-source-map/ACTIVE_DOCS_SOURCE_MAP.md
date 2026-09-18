@@ -12,42 +12,6 @@ Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readine
 
 Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md`.
 
-Latest repository-consolidation and Desktop handover:
-
-- Canonical folder:
-  `C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system`
-- Published branch: `main`
-- Path:
-  `control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/REPOSITORY_CONSOLIDATION_AND_DESKTOP_HANDOVER_20260918.md`
-- Receipt:
-  `control-tower-artifacts/REPOSITORY-CONSOLIDATION-20260918/CONTROL_TOWER_REPOSITORY_CONSOLIDATION_RECEIPT_20260918.json`
-- Scope: preservation checkpoints, worktree reduction and classification, open-PR
-  reconciliation, the canonical Desktop route and an exclusive read-only
-  successor gate. This route adds no runtime, provider, database, farm or
-  release authority.
-- Detailed JSON evidence beside the handover records all remaining worktrees,
-  quarantined ACL-protected residue, preservation refs and open PRs.
-- Previous desktop-transition handover:
-  `control-tower-artifacts/CONTROL-TOWER-DESKTOP-TRANSITION-20260916/CONTROL_TOWER_DESKTOP_TRANSITION_HANDOVER_20260916.md`.
-
-Latest Oom Sakkie mission handover:
-
-- Branch: `control-tower/herd-operations-20260910`
-- Path: `control-tower-artifacts/OMQ-20260813-03/OOM_SCHEDULED_OBSERVER_AND_FARM_BRIEF_CORRECTION_HANDOVER_20260916.md`
-- Exact local candidate decision:
-  `control-tower-artifacts/OMQ-20260813-03/OOM_FARM_BRIEF_RUNTIME_CANDIDATE_DECISION_20260916.md`
-- Scheduled evidence:
-  `control-tower-artifacts/OMQ-20260813-03/PR1336_SCHEDULED_OBSERVER_RESULT_20260916.json`
-- Previous handover:
-  `control-tower-artifacts/OMQ-20260813-03/OOM_PR1336_DEPLOYED_AND_TELEGRAM_ACCEPTANCE_HANDOVER_20260916.md`
-- Scope: deployed PR #1336 revision, bounded scheduled evidence, reconciled
-  weighing/mortality/irrigation findings, and the qualified but unpublished
-  actionable-brief runtime correction. This is current-state evidence, not
-  reusable doctrine.
-- Dependency baseline: the preserved 2026-08-13 Phase 0 register at
-  `docs/99-archive/vault-cutover/docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`;
-  its Oom Sakkie Telegram rows are refreshed by the handover above.
-
 ## Common Mandatory Governance Pack
 
 - `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
