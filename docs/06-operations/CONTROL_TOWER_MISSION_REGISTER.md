@@ -1,115 +1,103 @@
 # Control Tower Mission Register
 
 Status: current-state evidence; non-doctrine.
-Updated: 2026-09-19, after-exit timeout verified; fresh bounded retry prepared.
+Updated: 2026-09-19 22:41 SAST, Windows-owned handoff verified and waiting.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `REPOSITORY-CONSOLIDATION-20260918`.
-Migration: HELD — one original checkout remains; Codex descendant watchers must exit.
-The first after-exit helper expired at **19:07:51 UTC / 21:07:51 SAST**, status
-`HELD`, reason `app_exit_wait_expired_no_move`, `renamed:false`. It never reached
-the audit/move stage. Its PID 380 has exited; the same original Codex PID 27472
-is still running. The result popup did not mean completion. Current source is
-present and destination absent. The new workspace remains clean; all three
-Docker containers are running and n8n health is 200.
+Migration: HELD — one original checkout remains; no final move is recorded.
 
-Fresh one-shot attempt: `retain-original-after-exit-retry1.ps1`, separate
-`original-after-exit-retry1-apply*` receipts. Existing authority and all reviewed
-preservation gates remain unchanged; prior timeout evidence is preserved.
-Check `after-exit-retry1-launch.json` and its journal before treating it as armed.
-Use **Ctrl+Q** to fully quit Codex after the parent confirms WAITING; stay out
-until a result window appears. The new caption explicitly distinguishes
-**Amadeus cleanup completed** from **Amadeus cleanup NOT completed**. Installed
-app menu source and the official Windows shortcut reference confirm Ctrl+Q.
-The fresh attempt also expires after thirty minutes; no automatic retry loop.
+The everyday source at `C:\Amadeus\repo` is clean and ready. The owner did
+exit/reopen Codex. The first after-exit helper timed out; the second disappeared
+without an audit/move/final result. No active retry is inferred from a stale
+WAITING journal. Docker was stopped again at the 22:24 SAST follow-up.
+The reviewed Windows-owned one-shot helper is now running and waiting for Codex
+to quit. Independent readback at 22:41:49 SAST verified helper PID27160 with
+Windows Schedule service PID2576 as its parent. Docker and n8n remain healthy
+after both bootstrap and Docker starter exited. The final move has not started.
+The app-exit wait expires around 23:10 SAST; read current external receipts
+before acting after that deadline.
 
-The daily source workspace is ready at `C:\Amadeus\repo`. Docker's same three
-recorded containers are running with unchanged identities/images/mounts/restart
-policies; local n8n health returned HTTP 200 at 18:25:30 UTC. Full cleanup is
-not yet complete. Do not repeat the old instruction to quit and immediately
-reopen Codex: it recreates watchers inside the original `.git` directories.
-
-Latest handover: [restart cleanup status](receipts/20260919/AFTER_RESTART_CLEANUP_STATUS.md).
-Previous phase: [maintenance cleanup status](receipts/20260919/MAINTENANCE_CLEANUP_STATUS.md).
-Earlier phases: [final local cleanup](receipts/20260919/FINAL_LOCAL_CLEANUP_STATUS.md)
-and [preserved checkpoint](receipts/20260919/WORKSPACE_CONSOLIDATION_CHECKPOINT.md).
-Those dated failure/approval/restart records remain evidence; this fresh result
-supersedes their current-action instructions. The
-[active source map](../09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md)
-selects doctrine. This register grants no business/provider/release authority.
+Latest handover: [Windows-owned cleanup handoff](receipts/20260919/WINDOWS_OWNED_CLEANUP_HANDOFF.md).
+Prior attempts: [restart cleanup status](receipts/20260919/AFTER_RESTART_CLEANUP_STATUS.md),
+[maintenance cleanup](receipts/20260919/MAINTENANCE_CLEANUP_STATUS.md),
+[final local cleanup](receipts/20260919/FINAL_LOCAL_CLEANUP_STATUS.md) and
+[preserved checkpoint](receipts/20260919/WORKSPACE_CONSOLIDATION_CHECKPOINT.md).
+Their old process IDs/deadlines/current-action instructions are superseded;
+failures, source history, approvals and exact evidence remain preserved.
+The [active source map](../09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md)
+selects doctrine; this current-state projection grants no release authority.
 
 ## Current work and authority
 
 Charl transferred sole coordination from task
-`01a08bfa-ca70-7a01-91df-fc3dd3922598` on 2026-09-18 after verification PASS.
-The former coordinator and source task `01a0b55a-6896-7643-b267-25cd4bcce5d7`
-remain frozen for dispatch/release. The same current task owns local completion;
-no mission identity, history, approval or existing hold has been discarded.
+`01a08bfa-ca70-7a01-91df-fc3dd3922598` after verification PASS. That former
+coordinator and source task `01a0b55a-6896-7643-b267-25cd4bcce5d7` remain frozen
+for dispatch/release. This same task continues the local consolidation lineage.
 
-Charl approved consolidation, moving away from OneDrive, preservation before
-obsolete-file deletion, and later **"Approve clean up."** for the six remaining
-roots and bounded application/Docker/access maintenance. **"Approved do it so
-I can get the window prompt"** renewed the native UAC attempt after its earlier
-cancellation. No repeated cleanup/takeover approval is needed. No forced handle
-closure, blanket ACL change, service retirement or application release is assigned.
+The owner's approved cleanup/relocation/preservation and later bounded
+application/Docker/access maintenance remain in force. No repeated cleanup or
+takeover approval is needed. No blanket ACL change, forced handle closure,
+service retirement, business operation or application release is assigned.
+The temporary Windows registrations are finite local maintenance helpers;
+they do not start recurring business observers or alter the CHARLIE tasks.
 
 | Workspace | Use | Current qualification |
 | --- | --- | --- |
-| `C:\Amadeus\repo` | Sole everyday source checkout | One registered worktree on the continuing local cleanup branch; saved project/current task route here |
-| `C:\Amadeus\.runtime` | Temporary work, tests and evidence | Current phase `consolidation\maintenance-20260919\original-final-retention` |
-| `C:\Amadeus\recovery\20260919` | Consolidated recovery | Bundles, encrypted snapshots, restore proofs and 556 intact retained roots preserved |
+| `C:\Amadeus\repo` | Sole daily source checkout | Saved project/current task; one continuing local branch/worktree |
+| `C:\Amadeus\.runtime` | Temporary work and evidence | Active phase `consolidation\maintenance-20260919\original-final-retention` |
+| `C:\Amadeus\recovery\20260919` | Consolidated recovery | 556 source roots retained; prior bundles/snapshots/keys/restore proofs preserved |
 
-Prior removal remains **250,321 files and 12,741 empty directories**, totaling
-15,537,781,090 logical bytes; physical savings are unmeasured. Earlier intact
-retention preserved 543 roots, then eight noncurrent AGENTS roots and five tmp
-roots: **556 retained roots**. This continuation deleted zero source objects.
-The four pytest ownership classifications remain unverified; retain intact.
-`C:\tmp` is empty. The original checkout is the sole old AGENTS entry.
-The ignored private `.env` remains intact in the new checkout; its earlier
-same-object, unchanged-content/security relocation proof remains authoritative
-for that single file. No secret was printed, loaded or added to Git.
+Prior removal remains 250,321 files and 12,741 empty directories,
+15,537,781,090 logical bytes; physical savings unmeasured. This continuation
+deletes zero source objects. Four pytest ownership classifications stay
+unverified. Private `.env` remains intact and ignored/untracked in the new
+checkout. Incomplete-snapshot truth, dirty history, failed findings and all
+mission identities/holds are preserved; intact retention is not disposal authority.
 
-After the owner's restart, the original DELETE-open probe succeeded. An
-independently reviewed UAC operation at 18:20:41 UTC performed a fresh full
-audit matching the earlier proof, then its one handle-bound rename failed with
-Win32 5 at 18:25:23 UTC. Source remains present; destination is absent.
-The provider stripped Cloud metadata before rejecting the move. This was not
-an unchanged-metadata failure: a new full read-only administrator audit at
-18:31:10 UTC proved 172,892 objects, every stream/security/native identity and
-one opaque junction unchanged under the defined Cloud-normalized digest;
-zero Cloud entries remain. Exact root volume `17629920732283616668`, inode
-`47850746040959140`, attributes 49, tag 0. No target traversal or ACL change.
+The original remains the sole old AGENTS entry:
+`C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system`.
+Intended destination is recovery `retained-originals\agents\amadeus-pig-tracking-system`.
+The earlier native rename failed with Win32 5 after Cloud conversion. The
+18:31 UTC full follow-up audit proved 172,892 objects, all identities/streams/
+security/non-Cloud attributes and one opaque junction preserved; zero Cloud
+entries. Its target was not followed. The expected root is native volume
+`17629920732283616668`, inode `47850746040959140`, attributes49/tag0.
+Original source remains present and recovery destination absent.
 
-Native readback identifies current `ChatGPT.exe` PID 27472, created
-18:04:49.3122677 UTC, holding the root, `.git` and `.git\refs`. Eight isolated
-synthetic cases show a second root handle permits the rename, while open
-descendant directory/file handles cause the same Win32 5; the result holds
-with the original readonly/deny-delete-child pattern. Changing ACLs is unnecessary.
+The app's old `.git`/`.git\refs` descendant handles explained the earlier native
+rename failure in eight isolated fixture cases. The owner has since reopened
+Codex: current PID29356, created20:21:05.8337865UTC. Prior helper27100 is gone,
+last durable stage WAITING and no result. Exit cause is unknown; app-lifetime
+coupling is an inference, not proven. Do not reuse old PIDs or assume a timer
+or task-registration success proves an actual move.
 
-A separately reviewed one-shot administrator helper is prepared to wait at
-most 30 minutes for that exact app process to exit, require no Codex process
-before auditing and immediately before rename, enforce ordinary native metadata,
-repeat full baseline qualification, and perform one no-overwrite intact move
-with full post-move verification. It never stops an app, changes permissions,
-follows the embedded link, retries automatically, or starts operational work.
-Its completion dialog is shown only after durable result writing and handle
-release. Check its external launch receipt/journal to distinguish PREPARED,
-WAITING, HELD, MOVED_UNCONFIRMED and RETAINED_VERIFIED; preparation is not success.
+New reviewed bootstrap `register-windows-handoff.ps1` creates two exact
+triggerless, non-recurring demand tasks under the owner interactive token.
+`Amadeus-DockerRestore-Once-20260919` runs Limited, restores the same three
+containers with exact configuration and n8n health checks, then its registration
+is removed and starter exit verified. `Amadeus-LocalCleanup-Once-20260919`
+runs Highest after UAC, waits for the exact current app to quit, repeats full
+preservation proof, attempts one same-object no-overwrite move and full readback,
+then removes its registration and shows the explicit result. Existing CHARLIE
+tasks remain disabled and untouched. No automatic restart/recurrence or
+permanent new service. Readback must prove the actual action/owner/settings,
+live PID/start, Running state and Schedule-service ancestry before user exit.
 
-Docker restart initially failed on two inaccessible zero-byte runtime sockets.
-After its verified error window closed gracefully and all Docker processes
-exited, the exact two-entry runtime directory was retained intact in mission
-runtime, same native identity. Docker regenerated its runtime sockets and
-started. No image, volume, n8n data or configuration was removed or reset.
-All four CHARLIE scheduled tasks remain disabled. No operational writer restart.
+Two regenerated broken Docker IPC sockets were retained intact again as
+`docker-run-retained-after-reopen`; exact native directory ID preserved,
+no child traversal/deletion/configuration/volume mutation. Their artifact count
+is separate from the 556 retained source roots. Local service restoration
+passed after both bootstrap and Docker starter exited: all three original
+containers running, exact configuration equality, n8n health HTTP200. The Docker
+starter task was removed. This proves no business/provider acceptance or
+operational writer dispatch. Evidence: `windows-handoff-live-verification.json`.
 
-Startup canonical Git/common-directory guard passed at
-`b0657ad6c7ac6b94b1c7255e858874568207401c`, tree
-`ba60566d30cca1da84f3149921e5fa71690bef25`, one worktree, no upstream,
-14 ahead/zero behind freshly fetched main
-`e46743cb3e8d224b60d17eb5920acb113f613a52`. Governance/CORE pack is unchanged.
-Current closeout commit/clean guard/bundle are recorded externally in
-`after-restart-workspace-verification.json`; do not infer them from startup.
+Startup canonical guard passed at `8d99bf8bc606b8826ce649ab075f98d8e0251c67`,
+one worktree, no upstream,16ahead/0behind fresh unchanged main
+`e46743cb3e8d224b60d17eb5920acb113f613a52`; loaded governance/CORE pack unchanged.
+Closing source/backup/guard/runtime observations belong to recovery
+`windows-handoff-workspace-verification.json`, not the startup values.
 
 ## Preservation and source checkpoints
 
@@ -222,14 +210,13 @@ None is discarded, renamed, closed or automatically runnable by this summary.
 | `DMQ-20260816-01` | Preserve Green print/migration/held-request evidence without assuming delivery |
 
 **Current mission:** finish the last approved intact retention.
-**Next gate:** after retry1 is confirmed WAITING, press Ctrl+Q to quit Codex and keep
-it closed until the **Amadeus cleanup completed** or **NOT completed** window appears. Reopen this same
-task in `C:\Amadeus\repo` and read the exact helper result, independently verify
-source absence/destination identity and preservation, then update the final
-source/evidence closeout. If the helper expires or fails, preserve the result;
-there is no automatic retry. No new cleanup permission is required.
+**Next gate:** Windows-owned WAITING and restored-service survival are
+confirmed. Press Ctrl+Q and keep Codex closed through the explicit completed/
+NOT completed result window. Reopen this same task for independent full-result,
+source-absence/destination-identity and temporary-task-retirement readback.
+A missing result, HELD or MOVED_UNCONFIRMED remains incomplete; no blind retry.
 
 **Later pipeline:** keep the continuing cleanup branch for local work. Govern
 review/integration before operational continuation. Existing mission priority,
 collision, canonical binding, terminal and authority gates still apply.
-No release or deployed business outcome follows from workspace cleanup.
+Local cleanup grants no application release or deployed business outcome.
