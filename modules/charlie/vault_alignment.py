@@ -146,13 +146,12 @@ def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
         findings.extend(projection_issues)
         checked.extend(projection_files)
 
-    current_map = active_map.split("## Archived After Migration", 1)[0]
-    for relative in re.findall(r"`((?:docs|modules|scripts|static|templates|tests|config)/[^`]+)`", current_map):
+    for relative, evidence_only in _current_map_references(active_map):
         checked.append(relative)
         exists = any(root.glob(relative)) if any(token in relative for token in "*?[") else (root / relative).exists()
         if not exists:
             findings.append(f"active source map target missing: {relative}")
-        if relative.startswith("docs/99-archive/"):
+        if relative.startswith("docs/99-archive/") and not evidence_only:
             findings.append(f"archived document exposed as current authority: {relative}")
 
     return {
@@ -161,6 +160,28 @@ def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
         "findings": findings,
         "checked_files": sorted(set(checked)),
     }
+
+
+def _current_map_references(active_map: str):
+    """Keep explicit evidence routing separate from current authority references.
+
+    The map's named current-state section is non-doctrine by contract. Its
+    history links remain existence-checked, but cannot promote archived files
+    into doctrine. Any new heading or section label ends that classification;
+    merely mentioning evidence beside an authority link is not an exclusion.
+    """
+    evidence_only = False
+    for line in active_map.splitlines():
+        stripped = line.strip()
+        heading = re.match(r"^#{1,6}\s+(.+)$", stripped)
+        label = stripped.endswith(":") and not stripped.startswith(("-", "|"))
+        if heading or label:
+            section = (heading.group(1) if heading else stripped).rstrip(":").strip()
+            if section == "Archived After Migration":
+                break
+            evidence_only = section == "Current-state evidence, never reusable doctrine"
+        for relative in re.findall(r"`((?:docs|modules|scripts|static|templates|tests|config)/[^`]+)`", line):
+            yield relative, evidence_only
 
 
 def _read(path: Path) -> str:

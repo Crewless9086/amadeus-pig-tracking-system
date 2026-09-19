@@ -97,6 +97,55 @@ class VaultAlignmentTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertTrue(any("required current document missing or unreadable" in issue for issue in result["findings"]))
 
+    def test_archive_links_require_an_explicit_non_doctrine_evidence_section(self):
+        relative = "docs/99-archive/control-tower/20260919/retained.md"
+        cases = (
+            ("labelled evidence", "Current-state evidence, never reusable doctrine:\n"
+             f"The register preserves older state under `{relative}`.\n"
+             "Neither history nor receipts can revive old priorities or clear holds.", True),
+            ("evidence heading", "## Current-state evidence, never reusable doctrine\n"
+             f"- `{relative}`", True),
+            ("current authority", "## Common Mandatory Governance Pack\n"
+             f"- `{relative}`", False),
+            ("unclassified history claim", f"Historical evidence only: `{relative}`", False),
+            ("next heading resets evidence", "Current-state evidence, never reusable doctrine:\n"
+             "History is retained.\n## Current authority\n"
+             f"- `{relative}`", False),
+            ("next label resets evidence", "Current-state evidence, never reusable doctrine:\n"
+             "History is retained.\nRegistered cross-system controlling exceptions:\n"
+             f"- `{relative}`", False),
+            ("duplicate authority remains invalid", "Current-state evidence, never reusable doctrine:\n"
+             f"- `{relative}`\n## Common Mandatory Governance Pack\n- `{relative}`", False),
+        )
+        for name, references, allowed in cases:
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._current_contract_fixture(root)
+                archived = root / relative
+                archived.parent.mkdir(parents=True, exist_ok=True)
+                archived.write_text("Status: historical evidence; non-doctrine\n", encoding="utf-8")
+                active = root / "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+                active.write_text(active.read_text(encoding="utf-8") + "\n" + references, encoding="utf-8")
+                result = evaluate_vault_alignment(root)
+                self.assertEqual(result["passed"], allowed, result["findings"])
+                self.assertIn(relative, result["checked_files"])
+                if not allowed:
+                    self.assertIn(f"archived document exposed as current authority: {relative}", result["findings"])
+
+    def test_explicit_history_link_still_requires_preserved_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._current_contract_fixture(root)
+            relative = "docs/99-archive/missing-history.md"
+            active = root / "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md"
+            active.write_text(active.read_text(encoding="utf-8") +
+                              "\nCurrent-state evidence, never reusable doctrine:\n" +
+                              f"- `{relative}`\n", encoding="utf-8")
+            result = evaluate_vault_alignment(root)
+        self.assertFalse(result["passed"])
+        self.assertIn(f"active source map target missing: {relative}", result["findings"])
+        self.assertNotIn(f"archived document exposed as current authority: {relative}", result["findings"])
+
 
 if __name__ == "__main__":
     unittest.main()
