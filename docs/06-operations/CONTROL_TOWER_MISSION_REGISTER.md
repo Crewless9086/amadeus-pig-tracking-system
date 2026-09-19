@@ -76,9 +76,15 @@ Cloud guard was not weakened. Cursor's verified old-project window closed
 gracefully. Thirteen remaining handle users belong to this Codex app and its
 children. This task must preserve continuity before that app can release them.
 The separate original-only opaque-link auditor passed parent source review,
-compilation and seven synthetic safety checks. Windows reported its live audit
-elevation canceled; it was not launched or retried. The latest handover records
-this uncompleted native-consent gate and the remaining current-app restart gate.
+compilation and seven synthetic safety checks. Its first elevation was canceled
+by Windows and not automatically retried. Charl then explicitly requested
+"Approved do it so I can get the window prompt". Native consent succeeded on
+the new attempt at 17:28:05 UTC. The read-only audit passed at 17:32:05 UTC:
+172,892 objects, 154,225 ordinary/Cloud files, 14,457,397,151 hashed stream
+bytes and one opaque junction. Its target was not traversed. The audit process
+exited. Fresh native readback still finds the same original root and 13 users
+in this Codex app's process tree; DELETE access remains a sharing violation.
+The current-app restart gate remains. The latest handover preserves both attempts.
 
 Saved project `1f002eab-d286-4062-999d-1857485c2e9b` points to
 `C:\Amadeus\repo`, freshly verified by the final task. Charl explicitly answered
@@ -224,9 +230,9 @@ None is discarded, renamed, closed or automatically runnable by this summary.
 
 **Current mission:** finish owner-approved local consolidation.
 **Next gate:** resume this same task after a full Codex quit/reopen against the
-new checkout, then complete the exact original-root administrator audit and
-reviewed intact move. Windows canceled the last audit's elevation prompt.
-Overall maintenance remains approved; its native Windows consent did not complete.
+new checkout, refresh handles/identity/content proof, then perform a reviewed
+original-only intact move and readback. The administrator audit has passed.
+Overall maintenance remains approved; no new cleanup permission is needed.
 No generic Cloud exception or forced handle closure is permitted.
 Then govern review/integration of
 the cleanup branch **before operational continuation**.

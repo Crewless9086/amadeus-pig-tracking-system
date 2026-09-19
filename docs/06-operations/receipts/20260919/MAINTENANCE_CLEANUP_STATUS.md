@@ -97,9 +97,28 @@ alternative privilege or permission route was attempted. This was a Windows
 consent cancellation, not an automatic approval-review rejection. Synthetic
 tests do not qualify the live original; the previous HELD result remains.
 
+Charl subsequently requested **"Approved do it so I can get the window
+prompt"**. The exact pinned audit was relaunched after clean canonical
+checkpoint verification. Windows consent succeeded at 17:28:05 UTC,
+administrator audit PID 38636. This is a new explicitly requested attempt;
+the canceled attempt remains preserved. The audit **passed at 17:32:05 UTC**:
+172,892 objects, 154,225 ordinary/Cloud files, 14,457,397,151 hashed stream bytes
+and one opaque junction. That link is
+`.review_core_evidence_reconciliation\venv`; its raw reparse bytes and own
+security were recorded without following its target. Exact receipt
+`original-opaque-admin-qualification.json` is 133,155,933 bytes, SHA-256
+`9858766a56dcf9ed8a6a5f8d60e46f5b3efd14afdef3d19c8ad88c74f0ba58a4`.
+
+The administrator audit process exited. Fresh native readback afterward
+confirmed the same original volume/file ID and 13 users belonging to this
+Codex app and its descendants. DELETE still returns STATUS_SHARING_VIOLATION
+`0xc0000043`. No move or additional process stop occurred. The audit PASS is
+content/link qualification at that observation, not a completed migration;
+fresh pre-move proof and exact post-move readback remain required.
+
 Before moving this last root, fully quit and reopen Codex so the old inherited
-handles are released. Resume this same task against `C:\Amadeus\repo`, complete
-the administrator audit with native Windows consent, refresh identities/handles and content
+handles are released. Resume this same task against `C:\Amadeus\repo`, refresh
+identities/handles and content
 proof, then use a reviewed no-overwrite intact-retention operation. Preserve
 the original if any check fails. This is an execution gate under existing
 approval, not another request for cleanup permission.
@@ -117,13 +136,21 @@ The prepared original-only check and canceled launch are recorded in
 `OriginalOpaqueQualify.cs`, `audit-original-opaque-parent.ps1`,
 `original-opaque-parent-tests.json`, `original-opaque-parent-review.md`,
 `original-opaque-uac-canceled.json` and `original-retention-intent.json`.
-Reviewers are now frozen; no background audit or retry remains active.
+The successful follow-up is in `original-opaque-admin-launch.json`,
+`original-opaque-admin-qualification.json`, its dated relaunch intent and
+`original-post-audit-native.json`. Reviewers are frozen; the audit has exited
+and no background retry remains active.
 
 This phase's evidence copies and manifest are preserved separately in recovery
 `maintenance-evidence` and `maintenance-evidence-manifest.json`. The exact final
 source commit, fresh clean guard, complete-ref source bundle and one-root
 inventory belong to `maintenance-workspace-verification.json` and
 `maintenance-consolidation.bundle`. Earlier receipts/bundles remain immutable.
+The successful original audit is preserved separately in recovery
+`original-audit-evidence`. Its follow-up source/evidence verification is
+`original-audit-workspace-verification.json`; the incremental
+`original-audit-update.bundle` requires the preserved `maintenance-consolidation.bundle`
+at base `ea9975b3ce48c099159d19ebb65d3a24866138ae`.
 
 Total intact retained roots: **556** (543 earlier, eight qualified old AGENTS
 entries, five maintenance tmp roots). This phase deleted zero source objects.
@@ -153,12 +180,11 @@ operational lanes remain at the recorded holds/Unknown. Dirty history, mission
 identities, approvals and observers preserved. Owner workload reduced to one
 daily checkout; manual-step reduction unmeasured. One original-root hold remains.
 
-Decision: WAIT at current-app handle release and native Windows consent.
-Why: the current Codex app itself retains the old source, and a failed Cloud
-audit cannot authorize a move.
+Decision: WAIT at current-app handle release.
+Why: the original-only audit passed, but the current Codex app itself still
+holds the original source open and prevents its intact move.
 Send to exact terminal: CONTINUE—SEND NOTHING; retain this task's lineage.
 Expected business result: one recoverable local entrypoint; no deployed business
 outcome asserted.
-ACTION REQUIRED NOW: Fully quit and reopen Codex, resume this same task in
-`C:\Amadeus\repo`, and accept the native Windows administrator prompt when the
-remaining read-only audit is relaunched. Cleanup itself is already approved.
+ACTION REQUIRED NOW: Fully quit and reopen Codex, then resume this same task
+in `C:\Amadeus\repo`. The administrator check passed; cleanup is already approved.
