@@ -1,3 +1,4 @@
+import hashlib
 import re
 from pathlib import Path
 
@@ -253,7 +254,7 @@ OWNER_PREFERENCES = [
 ]
 
 
-def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
+def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent="", include_full_text=False):
     mission = mission if isinstance(mission, dict) else {}
     limit = max(1, min(int(limit or 14), 30))
     agent = str(agent or "").strip().lower()
@@ -314,12 +315,35 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
         if overlap:
             candidates[path] = {"path": path, "reasons": [f"token_overlap:{overlap}"], "score": min(25, overlap * 3)}
 
-    effective_limit = min(30, max(limit, len(_unique(mandatory_pack_docs + agent_docs))))
-    ranked = sorted(candidates.values(), key=lambda item: (-item["score"], item["path"]))[:effective_limit]
+    # Limits apply only to supplementary context. Every common/mission/agent
+    # requirement is selected even when additive packs exceed the usual cap.
+    full_text_required_docs = _unique(mandatory_pack_docs + agent_docs)
+    pinned = set(full_text_required_docs)
+    ordered = sorted(candidates.values(), key=lambda item: (-item["score"], item["path"]))
+    optional_slots = max(0, limit - len(pinned))
+    selected_paths = pinned | {
+        item["path"] for item in [row for row in ordered if row["path"] not in pinned][:optional_slots]
+    }
+    ranked = [item for item in ordered if item["path"] in selected_paths]
+    excerpt_limit = max(0, int(excerpt_chars or 0))
+    invalid_mandatory = []
     for item in ranked:
         text = _read_repo_text(item["path"])
-        item["status"] = "loaded" if text else "missing"
-        item["excerpt"] = text[:excerpt_chars].strip() if text else ""
+        available = bool(text.strip())
+        if available and item["path"] in mandatory_pack_docs and not _eligible_current_vault_text(item["path"], text):
+            invalid_mandatory.append(item["path"])
+        item["status"] = "loaded" if available else "missing"
+        item["read_status"] = "complete_file_read" if available else "unavailable"
+        item["full_text_required"] = item["path"] in pinned
+        item["content_chars"] = len(text)
+        item["content_sha256"] = hashlib.sha256(text.encode("utf-8")).hexdigest() if available else ""
+        item["excerpt"] = text[:excerpt_limit] if available else ""
+        item["excerpt_truncated"] = available and len(item["excerpt"]) < len(text)
+        item["delivery"] = "excerpt" if item["excerpt"] else "metadata_only"
+        if include_full_text and item["full_text_required"] and available:
+            item["full_text"] = text
+            item["delivery"] = "full_text"
+    missing_full_text = [item["path"] for item in ranked if item["full_text_required"] and item["status"] != "loaded"]
     return {
         "version": VAULT_RETRIEVAL_VERSION,
         "query": query,
@@ -334,11 +358,11 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
         "sources": ranked,
         "implementation_sources": implementation_source_packet(mission),
         "missing_docs": [item["path"] for item in ranked if item["status"] != "loaded"],
-        "missing_mandatory_docs": [
-            item["path"]
-            for item in ranked
-            if item["path"] in mandatory_pack_docs and item["status"] != "loaded"
-        ],
+        "missing_mandatory_docs": [path for path in mandatory_pack_docs if path in missing_full_text],
+        "invalid_mandatory_docs": invalid_mandatory,
+        "full_text_required_docs": full_text_required_docs,
+        "missing_full_text_required_docs": missing_full_text,
+        "read_evidence_scope": "Complete file reads and supplied text prove content availability, not model reading or comprehension.",
         "selection_rule": "mandatory mission packs + workflow template + keyword mapping + local token overlap",
     }
 
@@ -420,6 +444,11 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
         if isinstance(retrieval_packet.get("missing_mandatory_docs"), list)
         else []
     ))
+    mandatory = set(retrieval_packet.get("mandatory_pack_docs") or [])
+    available = {item.get("path") for item in retrieval_packet.get("sources", [])
+                 if isinstance(item, dict) and item.get("status") == "loaded"}
+    missing_mandatory = sorted(set(missing_mandatory) | (mandatory - available))
+    invalid_mandatory = retrieval_packet.get("invalid_mandatory_docs") or []
     pack_blockers = retrieval_packet.get("pack_blockers") if isinstance(retrieval_packet.get("pack_blockers"), list) else []
     cited = set()
     uncited_agents = []
@@ -443,7 +472,7 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
         score -= min(35, len(missing_required) * 4)
     if selected_not_cited:
         score -= min(20, len(selected_not_cited) * 2)
-    if missing_mandatory or pack_blockers or forbidden_doctrine_sources:
+    if missing_mandatory or invalid_mandatory or pack_blockers or forbidden_doctrine_sources:
         score = 0
     score = max(0, score)
     return {
@@ -453,6 +482,7 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
             score >= 45
             and not uncited_agents
             and not missing_mandatory
+            and not invalid_mandatory
             and not pack_blockers
             and not forbidden_doctrine_sources
             and bool(cited.intersection(selected or required))
@@ -462,6 +492,8 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
         "missing_required_docs": missing_required,
         "selected_not_cited": selected_not_cited,
         "missing_mandatory_docs": missing_mandatory,
+        "invalid_mandatory_docs": invalid_mandatory,
+        "evidence_scope": "Citation coverage and file availability only; not proof of complete model reading or comprehension.",
         "pack_blockers": pack_blockers,
         "forbidden_doctrine_sources": sorted(forbidden_doctrine_sources),
     }
@@ -483,13 +515,13 @@ def _artifact_declared_vault_sources(artifact):
 
 def _is_forbidden_doctrine_source(source):
     normalized = str(source or "").strip().replace(chr(92), "/")
-    if normalized in ALLOWED_OUTSIDE_VAULT_DOCTRINE:
+    if normalized.casefold() in {path.casefold() for path in ALLOWED_OUTSIDE_VAULT_DOCTRINE}:
         return False
     lower = normalized.lower()
     name = lower.rsplit("/", 1)[-1]
     return (
-        normalized in FORBIDDEN_DOCTRINE_EXACT
-        or normalized.startswith(FORBIDDEN_DOCTRINE_PREFIXES)
+        lower in {path.casefold() for path in FORBIDDEN_DOCTRINE_EXACT}
+        or lower.startswith(FORBIDDEN_DOCTRINE_PREFIXES)
         or "handover" in name
         or "/09-examples/" in lower
         or name == "changelog.md"
@@ -618,8 +650,8 @@ def _read_repo_text(relative_path):
     if not path.exists() or not path.is_file():
         return ""
     try:
-        return path.read_text(encoding="utf-8", errors="replace").strip()
-    except OSError:
+        return path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeError):
         return ""
 
 

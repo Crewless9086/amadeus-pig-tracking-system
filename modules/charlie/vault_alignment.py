@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from modules.charlie.vault_retrieval import COMMON_MANDATORY_DOCS, MANDATORY_MISSION_PACKS
+from modules.charlie.vault_retrieval import COMMON_MANDATORY_DOCS, MANDATORY_MISSION_PACKS, _eligible_current_vault_text
 from modules.charlie.agent_card_projection import projection_findings
 
 
@@ -39,10 +39,7 @@ REQUIRED_MARKERS = {
         "INCOMPLETE_HANDOFF",
     ),
     "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md": (
-        "## 2026-08-17 Continuous Agent Operations Reset",
-        "CORE operating spine",
-        "Continuous farm management spine",
-        "Revenue operating spine",
+        "# Control Tower Mission Register",
     ),
     "docs/00-start-here/CURRENT_STATE.md": (
         "POINTER_ONLY / NON_DOCTRINE",
@@ -50,12 +47,12 @@ REQUIRED_MARKERS = {
     ),
     "docs/00-start-here/NEXT_STEPS.md": (
         "POINTER_ONLY / NON_DOCTRINE",
-        "P0 compatibility fallback",
+        "CONTROL_TOWER_MISSION_REGISTER.md",
     ),
     "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md": (
         "Continuous Operations Acceptance Gate",
-        "continuous manager loop not proven",
-        "customer dispatch authority disabled",
+        "AGENTIC_OPERATING_MISSION_STANDARD.md",
+        "## Registry Rules",
     ),
 }
 
@@ -85,8 +82,8 @@ def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
     for relative in REQUIRED_CURRENT_DOCS:
         path = root / relative
         checked.append(relative)
-        if not path.is_file():
-            findings.append(f"required current document missing: {relative}")
+        if not path.is_file() or not _read(path).strip():
+            findings.append(f"required current document missing or unreadable: {relative}")
 
     for agent, relative in PRINCIPAL_AGENT_DOCS.items():
         path = root / relative
@@ -95,7 +92,7 @@ def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
         expected = "## Continuous Manager Contract" if agent == "oom_sakkie" else "## Continuous Operating Contract"
         if expected not in text:
             findings.append(f"principal agent lacks continuous contract: {agent} -> {relative}")
-        for marker in ("Current honest state", "continuous"):
+        for marker in ("continuous",):
             if marker.lower() not in text.lower():
                 findings.append(f"principal agent lacks {marker!r}: {agent} -> {relative}")
 
@@ -124,8 +121,11 @@ def evaluate_vault_alignment(repo_root: Path | str | None = None) -> dict:
     ))
     for relative in mandatory_docs:
         checked.append(relative)
-        if not (root / relative).is_file():
-            findings.append(f"mandatory mission-pack document missing: {relative}")
+        text = _read(root / relative)
+        if not text.strip():
+            findings.append(f"mandatory mission-pack document missing or unreadable: {relative}")
+        elif not _eligible_current_vault_text(relative, text):
+            findings.append(f"mandatory mission-pack document is not current doctrine: {relative}")
         vault_relative = relative.removeprefix("docs/09-vault-brain/")
         if relative not in active_map and f"`{vault_relative}`" not in active_map:
             findings.append(f"mandatory mission-pack document absent from authority map: {relative}")

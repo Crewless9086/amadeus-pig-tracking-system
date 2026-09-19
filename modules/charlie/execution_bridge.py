@@ -1930,12 +1930,11 @@ Urgency: {mission.get("urgency", "")}
 Mission type: {mission.get("mission_type", "")}
 
 Follow these documents before changing anything:
-- docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md
-- docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md
-- docs/00-start-here/CURRENT_STATE.md
-- docs/00-start-here/NEXT_STEPS.md
-- docs/00-start-here/WORKFLOW.md
-- docs/00-start-here/DEPLOYMENT_SOP.md
+- docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md
+- the complete mandatory and active-stage doctrine supplied below
+Current-state evidence: docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md.
+Legacy start-here documents are compatibility pointers, never doctrine.
+Read the complete supplied authority before acting; delivery and citations do not prove comprehension.
 
 CHARLIE Vault Brain context:
 {_format_vault_context(vault_context)}
@@ -2035,12 +2034,11 @@ Mission:
 {mission.get("raw_text", "")}
 
 Required CHARLIE docs to follow:
-- docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md
-- docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md
-- docs/00-start-here/CURRENT_STATE.md
-- docs/00-start-here/NEXT_STEPS.md
-- docs/00-start-here/WORKFLOW.md
-- docs/00-start-here/DEPLOYMENT_SOP.md
+- docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md
+- the complete mandatory and active-stage doctrine supplied below
+Current-state evidence: docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md.
+Legacy start-here documents are compatibility pointers, never doctrine.
+Read the complete supplied authority before acting; delivery and citations do not prove comprehension.
 
 CHARLIE Vault Brain context:
 {_format_vault_context(vault_context)}
@@ -2402,29 +2400,37 @@ def _mission_changed_files_from_artifacts(artifacts):
 
 def build_vault_brain_context(mission, agent=""):
     mission = mission if isinstance(mission, dict) else {}
-    retrieval = retrieve_vault_sources(mission, limit=16, excerpt_chars=900, agent=agent)
+    retrieval = retrieve_vault_sources(mission, limit=16, excerpt_chars=900, agent=agent, include_full_text=True)
+    required = set(retrieval.get("full_text_required_docs", []))
+    supplied = {source["path"] for source in retrieval.get("sources", [])}
+    unavailable = sorted(required - supplied) + retrieval.get("missing_full_text_required_docs", []) + retrieval.get("invalid_mandatory_docs", [])
+    if unavailable or retrieval.get("pack_blockers"):
+        raise ValueError("vault_required_context_unavailable: " + ", ".join(unavailable or [row["pack"] for row in retrieval["pack_blockers"]]))
     entries = []
     remaining = VAULT_CONTEXT_CHAR_BUDGET
     for source in retrieval.get("sources", []):
-        relative_path = source.get("path", "") if isinstance(source, dict) else ""
-        text = source.get("excerpt", "") if isinstance(source, dict) else ""
-        status = source.get("status", "missing") if isinstance(source, dict) else "missing"
-        excerpt = text
-        if excerpt and remaining > 0:
-            excerpt = _truncate(excerpt, min(remaining, 1600))
-            remaining -= len(excerpt)
-        entries.append({
-            "path": relative_path,
-            "status": status,
-            "score": source.get("score", 0) if isinstance(source, dict) else 0,
-            "reasons": source.get("reasons", []) if isinstance(source, dict) else [],
-            "excerpt": excerpt,
-        })
+        entry = dict(source)
+        if source.get("path") in required:
+            text = source.get("full_text")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("vault_required_context_unavailable: " + source.get("path", ""))
+            entry["content"] = text
+            entry["delivery"] = "full_text"
+            entry["content_truncated"] = False
+        else:
+            text = source.get("excerpt", "")[:max(0, remaining)]
+            remaining -= len(text)
+            entry["content"] = text
+            entry["excerpt"] = text
+            entry["delivery"] = "excerpt" if text else "metadata_only"
+            entry["content_truncated"] = len(text) < source.get("content_chars", 0)
+        entries.append(entry)
     return {
         "version": "charlie_vault_brain_context_v1",
         "agent": str(agent or "").strip().lower(),
         "root": "docs/09-vault-brain",
-        "rule": "Vault Brain is canonical project truth for CHARLIE identity, agents, workflows, business rules, data rules, standards, and playbooks.",
+        "rule": "Focused Vault doctrine and its registered exceptions govern behavior. Current-state records, examples and pointers are evidence only.",
+        "read_evidence_scope": retrieval["read_evidence_scope"],
         "retrieval": retrieval,
         "owner_preferences": owner_preference_packet(),
         "docs": entries,
@@ -2590,6 +2596,7 @@ def _format_vault_context(context):
     lines = [
         f"- Version: {context.get('version', '')}",
         f"- Rule: {context.get('rule', '')}",
+        f"- Read evidence: {context.get('read_evidence_scope', 'Availability does not prove model reading or comprehension.')}",
     ]
     missing = context.get("missing_docs") if isinstance(context.get("missing_docs"), list) else []
     if missing:
@@ -2610,8 +2617,10 @@ def _format_vault_context(context):
         lines.append(f"\n### {entry.get('path', '')} ({entry.get('status', '')}, score {entry.get('score', 0)})")
         if reasons:
             lines.append(f"Selected because: {reasons}")
-        excerpt = str(entry.get("excerpt") or "").strip()
-        lines.append(excerpt if excerpt else "No excerpt loaded.")
+        delivery = entry.get("delivery", "excerpt")
+        lines.append(f"Delivery: {delivery}; source SHA-256: {entry.get('content_sha256', 'unavailable')}")
+        content = entry.get("content", entry.get("excerpt", ""))
+        lines.append(content if content else "No content supplied; metadata only.")
     return "\n".join(lines)
 
 
