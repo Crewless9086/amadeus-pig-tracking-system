@@ -11,8 +11,9 @@ Follow [AGENTS.md](AGENTS.md), the
 and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md).
 The register names the sole coordinator, current work, holds and next gate.
 
-The source workspace and task routing are ready. Migration has **six Windows
-holds remaining**. The [latest cleanup receipt](docs/06-operations/receipts/20260919/FINAL_LOCAL_CLEANUP_STATUS.md)
+The source workspace and task routing are ready. Approved maintenance cleared
+five more folders; **the original OneDrive checkout remains held**.
+The [latest cleanup receipt](docs/06-operations/receipts/20260919/MAINTENANCE_CLEANUP_STATUS.md)
 records verified recovery, completed removals and exact remaining blockers.
 Temporary work and output belong in `C:\Amadeus\.runtime`; recovery belongs in
 `C:\Amadeus\recovery\20260919`.

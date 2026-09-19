@@ -11,6 +11,18 @@ migration is not complete. No deployed business outcome is claimed.**
 
 ## Authority, continuity and governance preflight
 
+Maintenance continuation, 2026-09-19: following this receipt's explicit six-root
+maintenance/access decision, Charl replied **"Approve clean up."** in the same
+coordinating task. The permission hold is superseded for bounded maintenance of
+those six roots, including required application/Docker downtime and access
+resolution while preserving n8n state and recovery copies. The earlier findings
+below remain evidence. Process identities and access must be refreshed before
+action; unrelated operations and application release remain outside scope.
+Continuation startup verified clean HEAD
+`99d6e2dbafd3363107f2cf433feb5b517842d51d`, one worktree, no upstream,
+12 ahead/zero behind freshly fetched unchanged `origin/main`, and workspace
+guard PASS. New evidence: `C:\Amadeus\.runtime\consolidation\maintenance-20260919`.
+
 Charl's explicit "Approved, please finish this" authorized this final local
 task. Source task `01a0b55a-6896-7643-b267-25cd4bcce5d7` confirmed it was
 frozen, and its final response was observed through `wait_threads`. The former
