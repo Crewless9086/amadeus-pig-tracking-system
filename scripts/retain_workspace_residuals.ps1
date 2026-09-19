@@ -126,7 +126,7 @@ try{
   $sources=@{agents=(Join-Path $fixture 'agents');tmp=(Join-Path $fixture 'tmp')}
   $recovery=Join-Path $fixture 'recovery';$original=Join-Path $sources.agents 'amadeus-pig-tracking-system'
  }
- foreach($p in @($sources.Values)+@($recovery)){[RetainNative]::NoReparse($p);[RetainNative]::Ntfs($p)}
+ [RetainNative]::NoReparse($recovery);[RetainNative]::Ntfs($recovery)
  foreach($p in $sources.Values){if(Inside $OutcomeLog $p){throw 'outcome_inside_sources'}}
  if(Inside $OutcomeLog (Join-Path $recovery 'retained-originals')){throw 'outcome_inside_retained_roots'}
  [RetainNative]::NoReparse([IO.Path]::GetDirectoryName($OutcomeLog))
@@ -190,6 +190,10 @@ try{
   $handle=$null;$renamed=$false
   $out=@{source=$op.source;destination=$op.destination;disposition=$op.disposition}
   try{
+   # A held source must not block an independent approved root. Check ancestors
+   # before resolving the leaf; do not enter an ancestor reparse point.
+   $sourceParent=[IO.Path]::GetDirectoryName($op.source)
+   [RetainNative]::NoReparse($sourceParent);[RetainNative]::Ntfs($sourceParent)
    if(-not [RetainNative]::Exists($op.source)){
     if($op.disposition -eq 'retain-ownership-unverified'){throw 'unverified_source_absent_unresolved'}
     $out.action='absent';$out.reason='source_already_absent'

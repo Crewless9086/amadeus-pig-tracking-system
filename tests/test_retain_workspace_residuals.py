@@ -298,6 +298,37 @@ class RetentionTests(unittest.TestCase):
             self.assertTrue(self.source.exists())
             self.config[field] = True
 
+    def test_reparse_source_ancestor_holds_only_that_root(self):
+        outside = self.base / "opaque-source-container"
+        outside.mkdir()
+        opaque = outside / "ownership-unverified-copy"
+        opaque.mkdir()
+        marker = opaque / "keep.txt"
+        marker.write_bytes(b"must not traverse or move")
+        opaque_identity = opaque.stat().st_ino
+        self.agents.rmdir()
+        self.junction(self.agents, outside)
+        uncertain_source = self.agents / opaque.name
+        self.classified["held_entries"] = [
+            {"path": str(uncertain_source), "disposition": "hold-ownership-unverified"}]
+        self.write(self.classification, self.classified)
+        self.config["classification_sha256"] = digest(self.classification)
+        self.config["roots"].insert(0, {
+            "path": str(uncertain_source), "disposition": "retain-ownership-unverified",
+            "ownership_evidence": "synthetic exact intact-retention scope"})
+        result, rows = self.invoke(apply=True)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        outcomes = [row for row in rows if row.get("action")]
+        self.assertEqual([row["action"] for row in outcomes], ["held", "retained"])
+        self.assertEqual(outcomes[0]["reason"], "reparse_root_or_ancestor")
+        self.assertNotIn("before", outcomes[0])
+        self.assertEqual(opaque.stat().st_ino, opaque_identity)
+        self.assertEqual(marker.read_bytes(), b"must not traverse or move")
+        self.assertFalse((self.recovery / "retained-originals" / "agents").exists())
+        self.assertFalse(self.source.exists())
+        self.assertEqual((self.destination / "nested" / "private.txt").read_bytes(),
+                         b"synthetic opaque bytes")
+
     def open_native(self, path, access, sharing):
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
