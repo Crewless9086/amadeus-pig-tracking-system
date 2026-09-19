@@ -11,7 +11,8 @@ Use after implementation or release review. This is an evidence workflow, not a 
 
 Read the complete mission standard, mission record, selected active doctrine, implementation handover, independent review, and release approval. Derive each explicit acceptance requirement and the authoritative evidence source that can prove it.
 
-Use the mission's assigned `control-tower-artifacts/<mission-or-pr>/acceptance/` for working evidence and `.codex-runtime/missions/<mission-or-pr>/` for disposable browser/test output. Canonical receipts and formal durable handovers remain at their governed repository paths. Do not invent external output directories.
+Resolve sibling paths from the canonical checkout, never from a nested worktree.
+Use the mission's assigned `../.runtime/<mission-or-pr>/evidence/acceptance/` for working evidence and `../.runtime/<mission-or-pr>/` for disposable browser/test output. Canonical receipts and formal durable handovers remain at their governed repository paths. Do not invent external output directories.
 
 Choose only the tools relevant to the journey:
 
@@ -42,3 +43,13 @@ For every requirement classify evidence as proven, contradicted, incomplete, ind
 Call an owner outcome only when the owner can genuinely use the result and all promised canonical, provider, and physical effects are verified at the correct scope. A merge, deploy, health check, heartbeat, screenshot, or test suite alone is never sufficient.
 
 Return the tracked full handover and Control Tower Check Receipt, including exact revisions, timestamps, identities, redacted evidence locations, replay/rollback results, later-cycle proof, remaining unknowns, and one owner action only if unavoidable.
+
+## Workspace closeout
+
+Resolve the canonical independent checkout from Git common-directory metadata.
+Run its `python scripts/check_workspace.py --root <canonical-checkout>` from
+that checkout; also inspect the assigned linked worktree status separately.
+At closeout use `--require-clean`; preserve and classify any remaining changes.
+Reuse the continuing mission workspace. Retire temporary working copies after
+verified integration and evidence preservation; keep at most three registered
+working copies unless the owner explicitly approves a larger bound.

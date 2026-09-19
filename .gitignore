@@ -27,3 +27,11 @@ instance/*.sqlite3
 # Durable doctrine, registers, receipts and formal handovers use governed paths.
 /control-tower-artifacts/
 /.codex-runtime/
+
+# Legacy working copies are never portable source. Workspace check reports them.
+/.worktrees/
+/.w/
+/.tmp/
+/.tmp-*/
+/.codex-worktrees/
+/.git-local-config/

@@ -24,13 +24,16 @@ Before acting, read the complete tracked `docs/09-vault-brain/00-governance/AGEN
 
 ## Workspace autonomy and artifact routing
 
-Keep routine development writes inside the approved repository workspace. Before any file write, classify it and route it as follows:
+Use the owner-approved workspace layout in the document lifecycle standard.
+Keep durable source and documentation in the checkout; place temporary worktrees,
+working evidence and caches in the explicitly approved sibling runtime directory. Resolve sibling paths from the canonical checkout, never from a nested worktree. Before any file write, classify it and route it as follows:
 
 1. **Canonical durable documentation:** use its existing governed repository path and update rules. This includes doctrine, the durable mission register, formal canonical handovers, standards, and Control Tower receipts. Commit it only when the mission authorizes that durable change.
-2. **Mission-working evidence:** use `control-tower-artifacts/<mission-or-pr>/`, with stable subdirectories such as `handovers/`, `acceptance/`, and `screenshots/`. Reuse a more specific existing authoritative workspace path when one is already governed. This tree is intentionally untracked.
-3. **Disposable runtime/test output:** use `.codex-runtime/missions/<mission-or-pr>/`. Configure test, browser, render, and comparison tools to use this workspace-local path where supported. This tree is intentionally untracked.
+2. **Mission-working evidence:** use `../.runtime/<mission-or-pr>/evidence/`, with stable subdirectories such as `handovers/`, `acceptance/`, and `screenshots/`. Reuse a more specific existing authoritative workspace path when one is already governed. This directory is outside the source checkout and must be named in the dispatch.
+3. **Disposable runtime/test output:** use `../.runtime/<mission-or-pr>/`. Configure test, browser, render, and comparison tools to use this approved sibling path where supported. This directory is outside the source checkout and must be named in the dispatch.
 
-Do not use `%TEMP%`, AppData, Desktop, Documents, `C:\\tmp`, or dynamically invented external directories for routine artifacts. Do not repurpose system `TEMP`, `HOME`, or similar environment variables. If a tool unavoidably requires external temporary storage, first try a workspace-local option; otherwise request one narrowly scoped reusable permission with the exact reason. Never request unrestricted filesystem access merely to suppress prompts.
+Use only the declared sibling runtime directory for routine artifacts.
+Do not invent more external directories. Do not repurpose system `TEMP`, `HOME`, or similar environment variables. If a tool unavoidably requires external temporary storage, first try the declared sibling runtime option; otherwise request one narrowly scoped reusable permission with the exact reason. Never request unrestricted filesystem access merely to suppress prompts.
 
 Every child dispatch must provide:
 
@@ -57,7 +60,7 @@ If a child response is withheld by a safety safeguard:
 
 1. Classify only that attempt as `SAFETY_BLOCKED`; do not classify the mission as complete or blocked.
 2. Preserve the business objective, priority, evidence, authorization, and safety boundaries.
-3. Record the timestamp, child identity, exact preceding prompt, named scope, and defensive authorization in workspace-local mission evidence. Never record secrets.
+3. Record the timestamp, child identity, exact preceding prompt, named scope, and defensive authorization in the assigned mission evidence directory. Never record secrets.
 4. Do not resend the same prompt or wait indefinitely. Remove unrelated sensitive concepts and dispatch a fresh, narrowly bounded defensive task against named Amadeus files or a disposable repository test environment.
 5. Continue all independent lanes automatically.
 6. Escalate to the owner only if repeated safeguards prevent the legitimate bounded task after fresh narrowing and no safe alternative remains. Do not direct the owner to seek expanded cybersecurity access for ordinary Amadeus development.
@@ -73,3 +76,13 @@ End Control Tower handovers with:
 - `Send to exact terminal:` use `CONTINUE—SEND NOTHING` when already running
 - `Expected business result:`
 - exactly one owner-status line using the mutually exclusive rule above
+
+## Workspace closeout
+
+Resolve the canonical independent checkout from Git common-directory metadata.
+Run its `python scripts/check_workspace.py --root <canonical-checkout>` from
+that checkout; also inspect the assigned linked worktree status separately.
+At closeout use `--require-clean`; preserve and classify any remaining changes.
+Reuse the continuing mission workspace. Retire temporary working copies after
+verified integration and evidence preservation; keep at most three registered
+working copies unless the owner explicitly approves a larger bound.

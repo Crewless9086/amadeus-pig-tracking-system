@@ -2,6 +2,14 @@
 
 Lifecycle: `POINTER_ONLY / NON_DOCTRINE`.
 
+Start with `README.md` and the current mission register. The owner-approved
+workspace layout and retirement rules are in
+`docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`.
+Resolve the canonical checkout from Git common-directory metadata. Run its
+`python scripts/check_workspace.py --root <canonical-checkout>` before work
+and add `--require-clean` at closeout. Run from the canonical checkout; a
+linked worktree is never the canonical entry. A clean Git status alone does not prove a clean working folder.
+
 Before changing or dispatching work, verify the current worktree, branch, HEAD,
 upstream, current `origin/main`, and local changes. Then read
 `docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md` and load the
