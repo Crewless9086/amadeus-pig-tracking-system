@@ -11,10 +11,10 @@ Follow [AGENTS.md](AGENTS.md), the
 and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md).
 The register names the sole coordinator, current work, holds and next gate.
 
-The source workspace and task routing are ready. Approved maintenance cleared
-five more folders; **the original OneDrive checkout remains held**.
-The [latest cleanup receipt](docs/06-operations/receipts/20260919/MAINTENANCE_CLEANUP_STATUS.md)
-records verified recovery, completed removals and exact remaining blockers.
+The source workspace and task routing are ready. Docker and n8n are restored.
+**One old checkout still needs its final move while Codex stays closed.**
+The [latest cleanup receipt](docs/06-operations/receipts/20260919/AFTER_RESTART_CLEANUP_STATUS.md)
+records the verified preservation, precise watcher block and prepared handoff.
 Temporary work and output belong in `C:\Amadeus\.runtime`; recovery belongs in
 `C:\Amadeus\recovery\20260919`.
 
