@@ -2618,7 +2618,10 @@ def _format_vault_context(context):
         if reasons:
             lines.append(f"Selected because: {reasons}")
         delivery = entry.get("delivery", "excerpt")
-        lines.append(f"Delivery: {delivery}; source SHA-256: {entry.get('content_sha256', 'unavailable')}")
+        source_class = entry.get("source_class", "unclassified_reference")
+        lines.append(f"Source class: {source_class}; delivery: {delivery}; source SHA-256: {entry.get('content_sha256', 'unavailable')}")
+        if source_class == "current_state_evidence":
+            lines.append("Current approvals, holds and handover navigation only; never reusable doctrine or fresh provider/runtime proof.")
         content = entry.get("content", entry.get("excerpt", ""))
         lines.append(content if content else "No content supplied; metadata only.")
     return "\n".join(lines)

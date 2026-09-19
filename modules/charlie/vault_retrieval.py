@@ -31,6 +31,11 @@ BASE_REQUIRED_DOCS = [
     "docs/09-vault-brain/09-examples/README.md",
 ]
 
+CURRENT_CONTEXT_DOCS = [
+    "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
+    "docs/09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md",
+]
+
 COMMON_MANDATORY_DOCS = [
     "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
     "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md",
@@ -277,6 +282,7 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent="", inclu
         + agent_docs
         + TEMPLATE_REQUIRED_DOCS.get(template, [])
         + mandatory_pack_docs
+        + CURRENT_CONTEXT_DOCS
     )
     candidates = {path: {"path": path, "reasons": ["required_base_or_template"], "score": 40} for path in required}
     for path in mandatory_pack_docs:
@@ -316,8 +322,8 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent="", inclu
             candidates[path] = {"path": path, "reasons": [f"token_overlap:{overlap}"], "score": min(25, overlap * 3)}
 
     # Limits apply only to supplementary context. Every common/mission/agent
-    # requirement is selected even when additive packs exceed the usual cap.
-    full_text_required_docs = _unique(mandatory_pack_docs + agent_docs)
+    # requirement and current-state/routing input survives additive pack caps.
+    full_text_required_docs = _unique(mandatory_pack_docs + agent_docs + CURRENT_CONTEXT_DOCS)
     pinned = set(full_text_required_docs)
     ordered = sorted(candidates.values(), key=lambda item: (-item["score"], item["path"]))
     optional_slots = max(0, limit - len(pinned))
@@ -332,6 +338,16 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent="", inclu
         available = bool(text.strip())
         if available and item["path"] in mandatory_pack_docs and not _eligible_current_vault_text(item["path"], text):
             invalid_mandatory.append(item["path"])
+        if item["path"] == CURRENT_CONTEXT_DOCS[0]:
+            item["source_class"] = "current_state_evidence"
+        elif item["path"] == CURRENT_CONTEXT_DOCS[1]:
+            item["source_class"] = "authority_routing"
+        elif item["path"] in ALLOWED_OUTSIDE_VAULT_DOCTRINE:
+            item["source_class"] = "controlling_exception"
+        elif _is_forbidden_doctrine_source(item["path"]):
+            item["source_class"] = "reference_evidence"
+        else:
+            item["source_class"] = "vault_doctrine"
         item["status"] = "loaded" if available else "missing"
         item["read_status"] = "complete_file_read" if available else "unavailable"
         item["full_text_required"] = item["path"] in pinned
@@ -361,6 +377,7 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent="", inclu
         "missing_mandatory_docs": [path for path in mandatory_pack_docs if path in missing_full_text],
         "invalid_mandatory_docs": invalid_mandatory,
         "full_text_required_docs": full_text_required_docs,
+        "current_context_docs": list(CURRENT_CONTEXT_DOCS),
         "missing_full_text_required_docs": missing_full_text,
         "read_evidence_scope": "Complete file reads and supplied text prove content availability, not model reading or comprehension.",
         "selection_rule": "mandatory mission packs + workflow template + keyword mapping + local token overlap",

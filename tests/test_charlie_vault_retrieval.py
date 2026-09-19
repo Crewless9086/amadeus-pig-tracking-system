@@ -200,7 +200,7 @@ class VaultRequiredContextTests(unittest.TestCase):
 
     def test_additive_packs_and_agent_survive_tiny_limit_and_thirty_doc_cap(self):
         packet = retrieve_vault_sources(self.MISSION, agent="product_architect", limit=1, excerpt_chars=0)
-        required = set(packet["mandatory_pack_docs"] + packet["agent_doctrine_docs"])
+        required = set(packet["mandatory_pack_docs"] + packet["agent_doctrine_docs"] + packet["current_context_docs"])
         self.assertGreater(len(required), 30)
         self.assertEqual({row["path"] for row in packet["sources"]}, required)
         self.assertFalse(packet["missing_mandatory_docs"])
@@ -301,6 +301,34 @@ class VaultRequiredContextTests(unittest.TestCase):
         with patch.object(execution_bridge, "retrieve_vault_sources", return_value=packet):
             with self.assertRaisesRegex(ValueError, "vault_required_context_unavailable"):
                 execution_bridge.build_vault_brain_context({})
+
+    def test_current_state_and_routing_survive_pack_cap_without_becoming_doctrine(self):
+        from modules.charlie import execution_bridge
+        register, source_map = vault_retrieval.CURRENT_CONTEXT_DOCS
+        content = "# Control Tower Mission Register\nStatus: current-state evidence; non-doctrine\n" + "evidence " * 1000 + "FINAL APPROVAL AND HOLD\n"
+        original = vault_retrieval._read_repo_text
+        with patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: content if path == register else original(path)):
+            packet = retrieve_vault_sources(self.MISSION, limit=1, excerpt_chars=0, include_full_text=True)
+            context = execution_bridge.build_vault_brain_context(self.MISSION)
+            prompt = execution_bridge._format_vault_context(context)
+        by_path = {row["path"]: row for row in packet["sources"]}
+        self.assertEqual(by_path[register]["source_class"], "current_state_evidence")
+        self.assertEqual(by_path[source_map]["source_class"], "authority_routing")
+        self.assertEqual(by_path[register]["full_text"], content)
+        self.assertEqual(by_path[source_map]["full_text"], original(source_map))
+        self.assertIn(content, prompt)
+        self.assertIn("never reusable doctrine", prompt)
+        coverage = evaluate_vault_source_coverage({"planner": {"vault_sources_used": packet["mandatory_pack_docs"] + [register]}}, packet)
+        self.assertFalse(coverage["passed"])
+        self.assertIn(register, coverage["forbidden_doctrine_sources"])
+
+    def test_missing_current_state_or_routing_blocks_stage_prompt(self):
+        from modules.charlie import execution_bridge
+        original = vault_retrieval._read_repo_text
+        for target in vault_retrieval.CURRENT_CONTEXT_DOCS:
+            with self.subTest(path=target), patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: "" if path == target else original(path)):
+                with self.assertRaisesRegex(ValueError, "vault_required_context_unavailable"):
+                    execution_bridge.build_agent_stage_prompt(self.MISSION, "planner")
 
     def test_runner_prompt_blocks_missing_or_incomplete_pack_before_execution(self):
         from modules.charlie import execution_bridge
