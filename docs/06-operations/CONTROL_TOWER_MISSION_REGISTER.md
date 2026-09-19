@@ -1,11 +1,11 @@
 # Control Tower Mission Register
 
 Status: current-state evidence; non-doctrine.
-Updated: 2026-09-19, checkpoint through 09:44:36 SAST; migration in progress.
+Updated: 2026-09-19, 17:17 SAST inventory; approved final-task takeover verified.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
-Coordinating task: `01a0b55a-6896-7643-b267-25cd4bcce5d7`.
+Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `REPOSITORY-CONSOLIDATION-20260918`.
-Migration: IN PROGRESS.
+Migration: EXTERNAL HOLD — six exact Windows-protected roots remain.
 
 This is the single compact current coordination view. Canonical mission records
 and attributable events retain runtime authority; this file creates no second
@@ -30,22 +30,49 @@ it creates no new farm mission and does not expand application release authority
 | `C:\Amadeus\.runtime` | Temporary work, tests and evidence | Integrated temporary docs/guard worktrees retired; no deployed-worker claim |
 | `C:\Amadeus\recovery\20260919` | Consolidated recovery | Bundle and stored objects verified; restore probes passed; original whole-root holds retained |
 
-Latest handover: [workspace consolidation checkpoint](receipts/20260919/WORKSPACE_CONSOLIDATION_CHECKPOINT.md).
-Detailed evidence: `C:\Amadeus\recovery\20260919\phase1-disposition-summary.json`.
+Latest handover: [final local cleanup status](receipts/20260919/FINAL_LOCAL_CLEANUP_STATUS.md).
+Earlier checkpoint: [preserved handover](receipts/20260919/WORKSPACE_CONSOLIDATION_CHECKPOINT.md).
+Detailed evidence: `C:\Amadeus\recovery\20260919\final-cleanup-evidence` and
+`final-successor-workspace-verification.json` in its parent recovery directory.
 
 Main/supplemental APPLY completed: **250,321 files and 12,741 empty directories
 removed**, 15,537,781,090 logical bytes (physical savings unmeasured), zero
-pending disposition. Intact retention completed: **543 roots retained intact**,
-2,502 already absent, 13 held, zero moved-unconfirmed. Including the separately
-protected original checkout, **14 top-level entries remain**: eight noncurrent
-old AGENTS entries held by native Cloud ancestor flags; `C:\tmp\omq-farm-brief-20260916`
-in use; four `pytest-green-*` directories access denied; and the original checkout.
-Do not infer `C:\tmp` is empty or all old folders are deleted.
+pending disposition. Earlier intact retention preserved 543 roots. The final
+task independently qualified and retained all eight noncurrent AGENTS entries:
+207 objects (127 files, 80 directories), 181,478,104 stream bytes, same NTFS
+identities, contents, alternate streams and owner/group/DACL, old paths absent,
+no remaining Cloud tags and zero unconfirmed moves. **551 roots are now retained
+intact.** No additional files were deleted by the final task.
 
-Saved project `1f002eab-d286-4062-999d-1857485c2e9b` now points to
-`C:\Amadeus\repo`. The current coordinating task still uses the old OneDrive cwd,
-freshly confirmed at 09:23 SAST. The explicit final-task creation question remains
-unanswered; no new task or coordinating handoff occurred.
+**Six top-level entries remain**, freshly inventoried at 17:17 SAST:
+`C:\tmp\omq-farm-brief-20260916`; `C:\tmp\pytest-green-api`,
+`pytest-green-correction`, `pytest-green-final`, `pytest-green-identity`; and
+the original `amadeus-pig-tracking-system` beneath the old AGENTS container.
+Native handle queries identify Docker/WSL users of OMQ and 34 application users
+of the original checkout. Docker also runs `charl-n8n-1`; no shutdown occurred.
+The four pytest roots deny DELETE, READ_CONTROL and SYNCHRONIZE, with native
+STATUS_ACCESS_DENIED rather than delete-pending. The original checkout also
+contains an unreadable `.worktrees\vault-cutover-batch7-20260818\.pytest_cache`.
+Closing/rebinding a task did not release these OS handles. No ACL change,
+forced removal or broad process kill is authorized. These are concrete external
+holds, not another pending approval for the already-completed task takeover.
+
+Saved project `1f002eab-d286-4062-999d-1857485c2e9b` points to
+`C:\Amadeus\repo`, freshly verified by the final task. Charl explicitly answered
+"Approved, please finish this" in source task
+`01a0b55a-6896-7643-b267-25cd4bcce5d7`. Task
+`01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6` is now the sole local cleanup
+coordinator/writer under the same coordinator and mission identities. Its cwd,
+Git common directory, HEAD `487a8b4104baa9d45fbd036edac0d2d2ad1218fb`,
+tree `76518a011e2c3a878811c46059efd5d3453dacb7`, clean guard, one worktree,
+11 ahead/zero behind, no upstream and freshly fetched unchanged main passed.
+The prior final-workspace receipt SHA-256 matches
+`0979b3c740851a5b243e0f33fed1ad8778a91d848aba78dfb3db62620c551bc6`.
+The source task and its workers are frozen; the former coordinator remains
+prohibited from dispatch/release. Earlier pending-approval statements remain
+historical evidence and are superseded by this explicit approval. This
+continuity gate does not establish released Windows handles or qualify Cloud
+directory migration; those checks remain in this task's local scope.
 
 Configuration relocation: initial generated copies inherited broader access and
 were removed; that failed approach remains recorded. The separately qualified
@@ -54,21 +81,23 @@ bytes, no alternate streams and identical owner/group/DACL; destination `.env`
 is Git-ignored, old source absent. No permissions changed or provider calls.
 See `C:\Amadeus\recovery\20260919\local-configuration-move-verification.json`.
 This qualifies only the configuration file, not generic Cloud migration.
-The original-root/task and other residual holds remain: 14 top-level entries.
+The original configuration remains safely in the new checkout. Six residual
+holds remain after qualified Cloud retention; task continuity is resolved.
 No guard weakening, ACL change or broad process kill is authorized.
 
-Only consolidation is active under cleanup authority. Other writers were
-owner-stopped; named operational terminal/runtime states are Unknown.
+Only consolidation is assigned under cleanup authority, now at external hold.
+Other writers were owner-stopped; named operational terminal/runtime states are Unknown.
 No operational dispatch, provider action or release was assigned.
 
 ## Preservation and source checkpoints
 
-- Source before this documentation update:
-  `5d77c362e30ff1f5fdf95b33dc4b550a14c4ccf3` on
+- Source at final-task takeover:
+  `487a8b4104baa9d45fbd036edac0d2d2ad1218fb` on
   `codex/workspace-consolidation-20260919`, clean, one worktree, no upstream,
-  ten ahead/zero behind `origin/main`. Startup/cleanliness guard passed.
+  eleven ahead/zero behind `origin/main`. Startup/cleanliness guard passed.
   Final delivered commit/status belongs in external
-  `C:\Amadeus\recovery\20260919\final-workspace-verification.json`.
+  `C:\Amadeus\recovery\20260919\final-successor-workspace-verification.json`.
+  The earlier `final-workspace-verification.json` remains unchanged.
 - Main `e46743cb3e8d224b60d17eb5920acb113f613a52` was freshly confirmed
   at 09:35:56 SAST September 19. All cleanup changes remain local/unreleased.
   Keep the cleanup branch current until governed review/integration; worktrees
@@ -80,6 +109,9 @@ No operational dispatch, provider action or release was assigned.
 - Bounded local suites passed: 61 guards, 26 archive, 6 workspace, 26 retirement,
   19 retention and 5 configuration-fallback tests. Broader initial result:
   302/332, with 30 offline-boundary failures retained; no full-suite green claim.
+  Final-task native qualification: eight focused synthetic cases PASS plus
+  independent exact-byte review and eight verified live intact moves. Existing
+  retirement/retention guards were not weakened or changed.
 - `preserved/desktop-record-20260918` at
   `c4b846cc86a63c98c0b83c2a1a1ad73a03afa5a0` retains complete coordination
   history in the [4,016-line register archive](../99-archive/control-tower/20260919/MISSION_REGISTER_THROUGH_20260918.md).
@@ -168,13 +200,16 @@ None is discarded, renamed, closed or automatically runnable by this summary.
 | `DMQ-20260816-01` | Preserve Green print/migration/held-request evidence without assuming delivery |
 
 **Current mission:** finish owner-approved local consolidation.
-**Next gate:** qualified residual disposition, task continuity and
-parent final source/recovery verification. Then govern review/integration of
+**Next gate:** a separately scoped Windows maintenance/access resolution for
+the six held roots, then fresh handle/permission and preservation qualification.
+No generic Cloud exception or forced permission bypass is permitted.
+Then govern review/integration of
 the cleanup branch **before operational continuation**.
 **Later pipeline:** qualify the existing mission only with fresh priority,
 collision, canonical binding, terminal and authority evidence. Cleanup is no
 application release trigger.
 
-The already-pending final-task creation decision remains unanswered. Approved
-independent local work may continue. Retain dated evidence in its existing
-location and update this one projection; do not grow another live board.
+The approved final task has exhausted safe residual disposition under the
+current restrictions. It owns continuation after the documented OS holds clear;
+no autonomous watcher or scheduled retry is claimed. Preserve evidence and this
+single projection; do not reopen operational work or repeat the prior approval.
