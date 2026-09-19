@@ -1,11 +1,27 @@
 # Control Tower Mission Register
 
 Status: current-state evidence; non-doctrine.
-Updated: 2026-09-19 18:31 UTC, restart follow-up and preservation verified.
+Updated: 2026-09-19, after-exit timeout verified; fresh bounded retry prepared.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `REPOSITORY-CONSOLIDATION-20260918`.
 Migration: HELD — one original checkout remains; Codex descendant watchers must exit.
+The first after-exit helper expired at **19:07:51 UTC / 21:07:51 SAST**, status
+`HELD`, reason `app_exit_wait_expired_no_move`, `renamed:false`. It never reached
+the audit/move stage. Its PID 380 has exited; the same original Codex PID 27472
+is still running. The result popup did not mean completion. Current source is
+present and destination absent. The new workspace remains clean; all three
+Docker containers are running and n8n health is 200.
+
+Fresh one-shot attempt: `retain-original-after-exit-retry1.ps1`, separate
+`original-after-exit-retry1-apply*` receipts. Existing authority and all reviewed
+preservation gates remain unchanged; prior timeout evidence is preserved.
+Check `after-exit-retry1-launch.json` and its journal before treating it as armed.
+Use **Ctrl+Q** to fully quit Codex after the parent confirms WAITING; stay out
+until a result window appears. The new caption explicitly distinguishes
+**Amadeus cleanup completed** from **Amadeus cleanup NOT completed**. Installed
+app menu source and the official Windows shortcut reference confirm Ctrl+Q.
+The fresh attempt also expires after thirty minutes; no automatic retry loop.
 
 The daily source workspace is ready at `C:\Amadeus\repo`. Docker's same three
 recorded containers are running with unchanged identities/images/mounts/restart
@@ -206,8 +222,8 @@ None is discarded, renamed, closed or automatically runnable by this summary.
 | `DMQ-20260816-01` | Preserve Green print/migration/held-request evidence without assuming delivery |
 
 **Current mission:** finish the last approved intact retention.
-**Next gate:** after the helper is confirmed WAITING, fully quit Codex and keep
-it closed until the **Amadeus cleanup result** window appears. Reopen this same
+**Next gate:** after retry1 is confirmed WAITING, press Ctrl+Q to quit Codex and keep
+it closed until the **Amadeus cleanup completed** or **NOT completed** window appears. Reopen this same
 task in `C:\Amadeus\repo` and read the exact helper result, independently verify
 source absence/destination identity and preservation, then update the final
 source/evidence closeout. If the helper expires or fails, preserve the result;

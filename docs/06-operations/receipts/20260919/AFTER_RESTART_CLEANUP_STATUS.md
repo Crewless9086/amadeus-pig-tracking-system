@@ -1,4 +1,43 @@
 # Cleanup after restart — 2026-09-19
+## Timeout follow-up and fresh attempt
+
+The first after-exit process finished at 19:07:51 UTC / 21:07:51 SAST with
+`HELD`, `app_exit_wait_expired_no_move`, `renamed:false`. No fresh audit or
+rename occurred. The popup was a failure/timeout notification, not completion.
+A 21:30 SAST follow-up found that process exited and the exact original Codex
+process PID 27472/start 18:04:49.3122677 UTC still running. Source remains
+present, destination absent; the new source workspace is clean. Docker's three
+recorded containers remain running; local n8n health returned HTTP 200 again.
+
+The following new attempt is separately recorded; prior files are immutable.
+Wrapper `retain-original-after-exit-retry1.ps1`, SHA-256
+`203b03514c847c86b1931e4617e255822247f3b392ca93bef762b3d16468aa02`.
+Only output names and completion-dialog caption differ from reviewed
+`6777623b...`: outputs use `original-after-exit-retry1-apply*`; caption is
+**Amadeus cleanup completed** only for `RETAINED_VERIFIED`, otherwise
+**Amadeus cleanup NOT completed**. Exact identities, finite wait, no-app checks,
+full fresh audits, same-object/no-overwrite rename and no-retry rules remain.
+Check the separate `after-exit-retry1-launch.json` and live journal for actual
+launch/WAITING state. Source preparation alone is not launch or success.
+
+Use **Ctrl+Q** while Codex is focused to quit fully; stay out until the new
+result window. The installed app's main menu defines `role:quit` with `Ctrl+Q`,
+and its tray Quit action calls the app's graceful quit function. This is also
+the [official Windows Quit shortcut](https://learn.chatgpt.com/docs/reference/commands).
+No application code/settings were edited or private IPC called. Earlier wording
+that treated any result popup as sufficient to reopen was ambiguous; read the
+explicit result status. Reopen this same task for independent final readback.
+
+The earlier after-exit launch and deadline below are historical. The fresh
+attempt is under the same already-granted cleanup/maintenance authority; no
+new approval or expanded scope. The launch starts a new thirty-minute limit.
+This timeout outcome and retry setup are preserved separately under recovery
+`after-exit-timeout-evidence`; the new source checkpoint is backed up by
+`after-exit-timeout-update.bundle`, requiring prior source
+`75b3c0a4d3558819d212664c0844eb96179b2018`. Exact guard and launch observations
+belong in `after-exit-timeout-workspace-verification.json`.
+
+## Preserved prior handoff
 
 Current mission evidence; NON_DOCTRINE. Mission
 `REPOSITORY-CONSOLIDATION-20260918`, coordinator
@@ -161,6 +200,6 @@ must remain absent through the one-shot move and verification.
 Send to exact terminal: CONTINUE—SEND NOTHING; preserve this task's lineage.
 Expected business result: one recoverable local development entrypoint;
 no deployed business outcome asserted.
-ACTION REQUIRED NOW: Once the helper is confirmed WAITING, fully quit Codex and
-keep it closed until the Amadeus cleanup result window appears; then reopen
+ACTION REQUIRED NOW: Once retry1 is confirmed WAITING, press Ctrl+Q to quit Codex and
+keep it closed until the explicit completed/NOT completed result window appears; then reopen
 this same task in `C:\Amadeus\repo` for final readback.
