@@ -1,3 +1,14 @@
+# Brain Guard before 2026-09-19 simplification
+
+Status: historical evidence; non-doctrine.
+Lifecycle: historical.
+
+Preserved on 2026-09-19 from commit `e46743cb3e8d224b60d17eb5920acb113f613a52`, path `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`.
+Original tracked payload SHA-256: `9e132c90fee0e82ac330bea0bc96e5fde828e51fae9ea6872964b0617328ea07`.
+All original bytes follow the marker unchanged. Dated instructions below do not
+resume work, transfer authority, clear holds or prove current runtime state.
+
+<!-- ORIGINAL TRACKED BYTES FOLLOW -->
 # Brain Guard
 
 ## Purpose
@@ -24,23 +35,26 @@ leakage, absent continuous-agent contracts and unsupported operational claims.
 It opens one durable knowledge-reconciliation finding owned through correction,
 verification and the next audit.
 
-Current state evidence: `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`.
-A current deployed worker, heartbeat, periodic audit and later independent cycle
-require fresh attributable evidence. The conflicting dated Batch 3 and Batch 29
-observations, including exact revisions and cycle results, are preserved intact
-in [history](../../99-archive/control-tower/20260919/BRAIN_GUARD_BEFORE_SIMPLIFICATION.md).
-Neither observation alone is today's runtime state.
+Current honest state: the deterministic full-repository audit is attached to
+the existing provider-owned Oom Sakkie five-minute manager schedule. Each cycle
+commits the exact source revision, heartbeat, next audit, checked-file set,
+findings and stable evidence digest before manager case work. A failed audit
+blocks case queries and delivery. Batch 29 proved two terminal-independent
+cycles on revision `5d27e4af` with 118 files checked, zero findings and identical
+digest `a15295c1cb713ccbbe870460c1909426c9ea1713a06104cc37706ea198e6dd24`.
+Brain Guard is operational as a scheduled knowledge-integrity guard. It is not
+an independent release agent and has no business, provider or farm authority.
 
-An alignment pass proves the implemented checks at the tested revision. It does
-not itself prove semantic consistency, complete model reading, comprehension,
-deployed stewardship, a manager-case outcome or business completion.
-
-For the existing scheduled manager integration, each audit cycle must retain
-the exact source revision, heartbeat, next audit, checked-file set, findings and
-stable evidence digest before manager case work. A failed audit blocks case
-queries and delivery. Brain Guard remains a prerequisite gate; a pass does not
-prove any individual manager case or business outcome. It is not an independent
-release agent and has no business, provider or farm authority.
+The surrounding manager-case timeout was repaired on 18 August 2026 without
+weakening the audit. The manager now uses a separate post-audit database
+connection, retains the registered cycle-status vocabulary, records bounded
+failure classifications, collects independent read-only specialist evidence in
+parallel and refreshes only the owner-card specialists immediately before
+delivery. Two later provider-origin cycles on revision `181543e7` completed
+after Brain Guard at 22:20 and 22:25 UTC. Both checked 118 governed inputs; the
+later cycle claimed 15 cases, confirmed one material delivery and suppressed 14
+duplicates. Brain Guard remains a prerequisite gate; a pass still does not by
+itself prove any individual manager case or business outcome.
 
 ## Authority
 
@@ -175,9 +189,9 @@ pack registration checks. It excludes current-state projections, handovers,
 scorecards, examples, changelogs, planning, archives, legacy AI/business docs,
 external sources and static agent cards from doctrine authority.
 
-The dated Batch 3 source-tested/runtime-unproven observation is retained in
-history. Source completion must not be reported as an autonomous steward;
-current qualification requires the evidence route above.
+Current honest state: source enforcement is tested; deployed Brain Guard worker,
+heartbeat, periodic audit and terminal-independent runtime acceptance remain
+unproven. Source completion must not be reported as an autonomous steward.
 
 ## Batch 4 Manifest State
 
@@ -188,8 +202,9 @@ when the manifest is stale, incomplete, authorizes physical change by itself,
 removes a transitional source before its exit test, or deletes a referenced
 source without an exact accepted replacement.
 
-The dated source-validation observation is retained in history. Physical
-execution and deployed periodic acceptance remain separate owner-reviewed gates.
+Current honest state: manifest generation and validation are source-tested;
+physical execution and deployed periodic Brain Guard acceptance remain separate
+owner-reviewed missions.
 
 ## Batch 5 Physical Slice State
 
@@ -234,9 +249,8 @@ The second runtime pass adds stronger operating rails:
 
 Brain Guard still cannot self-approve. It can only prove whether Vault discipline is strong enough for owner review.
 
-For agent-behavior missions, citation coverage records declared sources and
-file availability; it does not prove complete reading, comprehension or behavior.
-Brain Guard must block review-ready status
+For agent-behavior missions, Vault citation coverage proves doctrine was
+consulted; it does not prove behavior. Brain Guard must block review-ready status
 until an end-to-end journey replay or equivalent integration evidence exercises
 the full customer path and reports the applicable outcome and interruption
 metrics.
