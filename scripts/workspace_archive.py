@@ -108,9 +108,18 @@ def relative_parts(value, allow_empty=False):
 
 
 def identity(info):
-    # On Windows Python 3.12 lstat/fstat legacy ctime values can disagree.
-    # Stable size, mtime, file identity, type and attributes remain mandatory.
-    return (info.st_dev, info.st_ino, info.st_mode, info.st_size,
+    # Windows infers regular-file execute bits from the pathname (.exe etc.)
+    # for lstat, but not from an open handle for fstat. Directory allocation
+    # size can also change merely on enumeration. Neither is content identity.
+    # Keep type, read/write bits, file size, mtime, inode/device and attributes.
+    mode, size = info.st_mode, info.st_size
+    if os.name == "nt":
+        if stat.S_ISREG(mode):
+            mode &= ~(stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        elif stat.S_ISDIR(mode):
+            size = None
+    # Python 3.12 Windows lstat/fstat legacy ctime values can disagree too.
+    return (info.st_dev, info.st_ino, mode, size,
             info.st_mtime_ns, (info.st_ctime_ns if os.name != "nt" else None),
             getattr(info, "st_file_attributes", 0),
             getattr(info, "st_reparse_tag", 0))
@@ -284,8 +293,50 @@ def decode_object(stream, info, key, expected_sha, expected_size, sink=None):
     return count
 
 
-def snapshot(roots, output, progress=2000):
-    """Read all explicit roots; each hold makes preservation incomplete."""
+def snapshot_selections(roots, selections):
+    """Validate explicit supplementary scope before creating archive output."""
+    roots_by_label = dict(roots)
+    wanted = []
+    ancestor_spellings = {}
+    for selection in selections or []:
+        label, separator, relative = selection.partition(":")
+        if not separator or label not in roots_by_label:
+            raise ArchiveError("snapshot_selection_invalid")
+        parts = relative_parts(relative)
+        if any(any(character in '<>"|?*' or ord(character) < 32 for character in part)
+               for part in parts):
+            raise ArchiveError("unsafe_relative_path")
+        folded = relative.casefold()
+        if any(label == other_label and
+               (folded == other.casefold() or folded.startswith(other.casefold() + "/") or
+                other.casefold().startswith(folded + "/")) for other_label, other in wanted):
+            raise ArchiveError("snapshot_selections_overlap")
+        for depth in range(1, len(parts)):
+            ancestor = "/".join(parts[:depth])
+            key = (label, ancestor.casefold())
+            if ancestor_spellings.setdefault(key, ancestor) != ancestor:
+                raise ArchiveError("snapshot_selection_case_alias")
+        path = os.path.join(roots_by_label[label], *parts)
+        no_link_ancestors(path)
+        info = os.lstat(native(path))
+        if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+            raise ArchiveError("snapshot_selection_unsupported_type")
+        # Unknown name-surrogate reparse points must not redirect selection.
+        for depth in range(len(parts) + 1):
+            ancestor = os.path.join(roots_by_label[label], *parts[:depth])
+            if getattr(os.lstat(native(ancestor)), "st_reparse_tag", 0) & 0x20000000:
+                raise ArchiveError("snapshot_selection_reparse_ancestor")
+        wanted.append((label, relative))
+    return wanted
+
+
+def directory_members(path):
+    with os.scandir(native(path)) as scan:
+        return sorted((entry.name for entry in scan), key=lambda name: (name.casefold(), name))
+
+
+def snapshot(roots, output, progress=2000, selections=None):
+    """Read roots or explicit selected scope; any hold makes that scope incomplete."""
     started = utc_now()
     output = os.path.abspath(os.fspath(output))
     if not roots or len({label.lower() for label, _ in roots}) != len(roots):
@@ -301,6 +352,7 @@ def snapshot(roots, output, progress=2000):
     for index, (_, root) in enumerate(roots):
         if any(within(root, other) or within(other, root) for _, other in roots[:index]):
             raise ArchiveError("source_roots_overlap")
+    wanted = snapshot_selections(roots, selections)
     no_link_ancestors(output)
     os.makedirs(native(output), exist_ok=True)
     if os.listdir(native(output)):
@@ -348,11 +400,24 @@ def snapshot(roots, output, progress=2000):
                     streams = alternate_streams(path)
                     if streams:
                         hold(label, relative, "alternate_streams_not_archived", streams=streams)
-                    with os.scandir(native(path)) as scan:
-                        children = sorted((entry.name for entry in scan), key=lambda name: (name.casefold(), name))
+                    included = not wanted or any(label == chosen_label and
+                        (relative == chosen or relative.startswith(chosen + "/"))
+                        for chosen_label, chosen in wanted)
+                    if included:
+                        children = directory_members(path)
+                    else:
+                        # Preserve only the necessary ancestor topology. Do not
+                        # scan/capture unselected siblings of selected paths.
+                        prefix = relative + "/" if relative else ""
+                        children = sorted({chosen[len(prefix):].split("/", 1)[0]
+                            for chosen_label, chosen in wanted
+                            if label == chosen_label and chosen.startswith(prefix)},
+                            key=lambda name: (name.casefold(), name))
                     for name in children:
                         child_relative = relative + "/" + name if relative else name
                         walk(label, root, child_relative)
+                    if included and children != directory_members(path):
+                        hold(label, relative, "directory_membership_changed_during_scan")
                     if identity(info) != identity(os.lstat(native(path))):
                         hold(label, relative, "directory_changed_during_scan")
                     return
@@ -382,7 +447,8 @@ def snapshot(roots, output, progress=2000):
                     os.unlink(native(spool))
 
         for label, root in roots:
-            walk(label, root)
+            if not wanted or any(label == chosen_label for chosen_label, _ in wanted):
+                walk(label, root)
 
     summary = {"format": FORMAT, "started_at": started, "finished_at": utc_now(),
                "roots": [{"label": label, "path": root} for label, root in roots],
@@ -393,6 +459,9 @@ def snapshot(roots, output, progress=2000):
                "preservation_complete": counts["holds"] == 0,
                "deletion_authorized": False,
                "metadata_scope": "file bytes, directories, size, mtime, mode, identity; no ACL restore"}
+    if wanted:
+        summary["scope"] = "selected_paths_only"
+        summary["selections"] = [{"label": label, "relative": relative} for label, relative in wanted]
     summary["summary_hmac_sha256"] = hmac.new(key, json_bytes(summary), hashlib.sha256).hexdigest()
     with open(native(os.path.join(output, "summary.json")), "xb") as handle:
         handle.write(json_bytes(summary) + b"\n")
@@ -495,6 +564,8 @@ def verify(directory, progress=2000):
             "verified_objects": objects, "verified_bytes": total,
             "holds": summary["counts"]["holds"],
             "preservation_complete": summary["preservation_complete"],
+            "scope": summary.get("scope", "whole_roots"),
+            "selections": summary.get("selections", []),
             "deletion_authorized": False}
 
 
@@ -576,6 +647,7 @@ def main(argv=None):
     create.add_argument("--root", action="append", required=True, help="LABEL=absolute source directory")
     create.add_argument("--output", required=True, help="new or empty archive directory, outside sources")
     create.add_argument("--progress", type=int, default=2000)
+    create.add_argument("--select", action="append", help="LABEL:relative/path (repeatable); supplementary selected scope only; default whole roots")
     check = commands.add_parser("verify")
     check.add_argument("--archive", required=True)
     check.add_argument("--progress", type=int, default=2000)
@@ -592,7 +664,7 @@ def main(argv=None):
                 if not separator or not os.path.isabs(path):
                     raise ArchiveError("root_requires_label_and_absolute_path")
                 roots.append((label, path))
-            result = snapshot(roots, args.output, args.progress)
+            result = snapshot(roots, args.output, args.progress, args.select)
         elif args.command == "verify":
             result = verify(args.archive, args.progress)
         else:

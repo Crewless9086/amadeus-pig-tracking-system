@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import stat
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 import uuid
@@ -22,7 +23,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "workspace_archi
 SPEC = importlib.util.spec_from_file_location("workspace_archive", MODULE_PATH)
 archive = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(archive)
-TEST_ROOT = Path(r"C:\Amadeus\.runtime\archive-tests")
+TEST_ROOT = Path(r"C:\Amadeus\.runtime\archive-repair-tests")
 
 
 @unittest.skipUnless(os.name == "nt", "DPAPI preservation tool targets Windows")
@@ -303,6 +304,200 @@ class WorkspaceArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(archive.ArchiveError, "output_must_be_empty"):
             self.snapshot()
         self.assertEqual((self.output / "retain").read_bytes(), b"retained")
+
+    def altered_stat(self, info, **changes):
+        values = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+        return SimpleNamespace(**(values | changes))
+
+    def test_real_executable_lstat_fstat_identity_and_round_trip(self):
+        path = self.source / "synthetic.exe"
+        path.write_bytes(b"fixture bytes; never executed")
+        initial = os.lstat(path)
+        with path.open("rb") as handle:
+            opened = os.fstat(handle.fileno())
+        self.assertEqual(archive.identity(initial), archive.identity(opened))
+        self.assertTrue(self.snapshot()["preservation_complete"])
+        archive.verify(self.output, 0)
+        archive.restore(self.output, self.destination)
+        self.assertEqual((self.destination / "source" / path.name).read_bytes(), path.read_bytes())
+
+    def test_directory_allocation_size_change_on_enumeration_is_normalized(self):
+        (self.source / "file").write_bytes(b"preserve me")
+        original = archive.os.lstat
+        target = archive.native(self.source)
+        calls = 0
+
+        def allocation_change(path, *args, **kwargs):
+            nonlocal calls
+            info = original(path, *args, **kwargs)
+            if str(path) == target:
+                calls += 1
+                return self.altered_stat(info, st_size=0 if calls == 1 else 4096)
+            return info
+
+        with mock.patch.object(archive.os, "lstat", side_effect=allocation_change):
+            summary = self.snapshot()
+        self.assertGreaterEqual(calls, 2)
+        self.assertTrue(summary["preservation_complete"], self.read_rows())
+        self.assertEqual(archive.verify(self.output, 0)["verification"], "PASS")
+
+    def test_identity_keeps_file_size_type_permissions_and_other_stable_fields(self):
+        path = self.source / "file.exe"
+        path.write_bytes(b"same bytes")
+        info = os.lstat(path)
+        for field, value in {
+            "st_size": info.st_size + 1,
+            "st_mtime_ns": info.st_mtime_ns + 1,
+            "st_ino": info.st_ino + 1,
+            "st_dev": info.st_dev + 1,
+            "st_mode": info.st_mode & ~stat.S_IWUSR,
+            "st_file_attributes": info.st_file_attributes ^ 1,
+            "st_reparse_tag": info.st_reparse_tag ^ 1,
+        }.items():
+            with self.subTest(field=field):
+                self.assertNotEqual(archive.identity(info), archive.identity(self.altered_stat(info, **{field: value})))
+        changed_type = stat.S_IFDIR | stat.S_IMODE(info.st_mode)
+        self.assertNotEqual(archive.identity(info), archive.identity(self.altered_stat(info, st_mode=changed_type)))
+
+    def test_real_file_mtime_drift_is_held_even_when_bytes_and_size_match(self):
+        path = self.source / "changing"
+        path.write_bytes(b"same content")
+        original = archive.os.fstat
+        calls = 0
+
+        def mutate(descriptor):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                info = path.stat()
+                os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 10_000_000_000))
+            return original(descriptor)
+
+        with mock.patch.object(archive.os, "fstat", side_effect=mutate):
+            self.assertFalse(self.snapshot()["preservation_complete"])
+        self.assertTrue(any(row.get("detail", {}).get("reason") == "source_changed_during_read" for row in self.read_rows()))
+
+    def test_real_path_replacement_is_held_even_when_bytes_size_and_mtime_match(self):
+        path = self.source / "changing"
+        path.write_bytes(b"same content")
+        original = archive.os.lstat
+        target = archive.native(path)
+        calls = 0
+
+        def replace_after_close(name, *args, **kwargs):
+            nonlocal calls
+            if str(name) == target:
+                calls += 1
+                if calls == 2:
+                    before = path.stat()
+                    path.rename(path.with_name("retained-original"))
+                    path.write_bytes(b"same content")
+                    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+            return original(name, *args, **kwargs)
+
+        with mock.patch.object(archive.os, "lstat", side_effect=replace_after_close):
+            self.assertFalse(self.snapshot()["preservation_complete"])
+        self.assertTrue(any(row.get("detail", {}).get("reason") == "source_changed_during_read" for row in self.read_rows()))
+
+    def test_directory_membership_drift_is_held_even_if_mtime_restored(self):
+        (self.source / "first").write_bytes(b"first")
+        original = archive.encrypt_file
+
+        def add_after_read(path, *args):
+            info = self.source.stat()
+            result = original(path, *args)
+            (self.source / "appeared-late").write_bytes(b"not in original enumeration")
+            os.utime(self.source, ns=(info.st_atime_ns, info.st_mtime_ns))
+            return result
+
+        with mock.patch.object(archive, "encrypt_file", side_effect=add_after_read):
+            self.assertFalse(self.snapshot()["preservation_complete"])
+        self.assertTrue(any(row.get("reason") == "directory_membership_changed_during_scan" for row in self.read_rows()))
+
+    def test_directory_mtime_drift_still_held(self):
+        (self.source / "first").write_bytes(b"first")
+        original = archive.encrypt_file
+
+        def change_mtime(path, *args):
+            result = original(path, *args)
+            info = self.source.stat()
+            os.utime(self.source, ns=(info.st_atime_ns, info.st_mtime_ns + 10_000_000_000))
+            return result
+
+        with mock.patch.object(archive, "encrypt_file", side_effect=change_mtime):
+            self.assertFalse(self.snapshot()["preservation_complete"])
+        self.assertTrue(any(row.get("reason") == "directory_changed_during_scan" for row in self.read_rows()))
+
+    def test_selected_snapshot_and_restore_exclude_unselected_siblings(self):
+        nested = self.source / "nested"
+        nested.mkdir()
+        (nested / "selected.exe").write_bytes(b"selected file")
+        (nested / "second").write_bytes(b"another selected file")
+        (nested / "ignored").write_bytes(b"unselected sibling")
+        subtree = self.source / "selected-tree"
+        subtree.mkdir()
+        (subtree / "empty").mkdir()
+        (subtree / "child").write_bytes(b"subtree child")
+        (self.source / "ignored-root").write_bytes(b"unselected root sibling")
+        selections = ["source:nested/selected.exe", "source:nested/second", "source:selected-tree"]
+        summary = archive.snapshot([("source", self.source)], self.output, 0, selections)
+        self.assertTrue(summary["preservation_complete"], self.read_rows())
+        self.assertEqual(summary["scope"], "selected_paths_only")
+        rows = self.read_rows()
+        self.assertEqual({row["relative"] for row in rows},
+                         {"", "nested", "nested/selected.exe", "nested/second", "selected-tree", "selected-tree/empty", "selected-tree/child"})
+        self.assertEqual(archive.verify(self.output, 0)["selections"], summary["selections"])
+        archive.restore(self.output, self.destination)
+        self.assertEqual((self.destination / "source" / "nested" / "selected.exe").read_bytes(), b"selected file")
+        self.assertEqual((self.destination / "source" / "selected-tree" / "child").read_bytes(), b"subtree child")
+        self.assertFalse((self.destination / "source" / "nested" / "ignored").exists())
+        self.assertFalse((self.destination / "source" / "ignored-root").exists())
+        # Selection is covered by the same HMAC as all other summary fields.
+        summary["selections"][0]["relative"] = "nested/ignored"
+        (self.output / "summary.json").write_bytes(archive.json_bytes(summary))
+        with self.assertRaisesRegex(archive.ArchiveError, "summary_authentication_failed"):
+            archive.verify(self.output, 0)
+
+    def test_snapshot_rejects_unsafe_missing_or_overlapping_selections_before_output(self):
+        nested = self.source / "nested"
+        nested.mkdir()
+        (nested / "file").write_bytes(b"file")
+        (nested / "other").write_bytes(b"another file")
+        selections = (["source:nested", "source:nested/file"],
+                      ["source:nested/file", "source:NESTED/FILE"],
+                      ["source:nested/file", "source:NESTED/other"],
+                      ["unknown:nested"], ["source:"], ["source:../outside"],
+                      ["source:nested/../file"], ["source:nested/*"], ["source:nested/file:stream"],
+                      ["source:C:/absolute"], ["source:nested\\file"], ["source:missing"])
+        for selection in selections:
+            with self.subTest(selection=selection):
+                with self.assertRaises((archive.ArchiveError, FileNotFoundError)):
+                    archive.snapshot([("source", self.source)], self.output, 0, selection)
+                self.assertFalse(self.output.exists())
+
+    def test_selected_link_ancestor_is_rejected_before_output(self):
+        folder = self.source / "linked"
+        folder.mkdir()
+        (folder / "file").write_bytes(b"never read")
+        original = archive.os.lstat
+        target = archive.native(folder)
+
+        def mark_link(path, *args, **kwargs):
+            info = original(path, *args, **kwargs)
+            return self.altered_stat(info, st_reparse_tag=0xA000000C) if str(path) == target else info
+
+        with mock.patch.object(archive.os, "lstat", side_effect=mark_link):
+            with self.assertRaisesRegex(archive.ArchiveError, "link_or_junction_ancestor"):
+                archive.snapshot([("source", self.source)], self.output, 0, ["source:linked/file"])
+        self.assertFalse(self.output.exists())
+
+    def test_snapshot_cli_passes_explicit_selection(self):
+        with mock.patch.object(archive, "snapshot", return_value={"preservation_complete": True}) as snapshot, \
+                mock.patch("builtins.print"):
+            result = archive.main(["snapshot", "--root", f"source={self.source}",
+                                   "--output", str(self.output), "--select", "source:nested/file", "--progress", "0"])
+        self.assertEqual(result, 0)
+        snapshot.assert_called_once_with([("source", str(self.source))], str(self.output), 0, ["source:nested/file"])
 
 
 if __name__ == "__main__":
