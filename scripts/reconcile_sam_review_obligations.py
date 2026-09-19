@@ -77,11 +77,6 @@ def bound_evidence(source: dict, prefix: str) -> dict:
 class ProductionEvidenceSource:
     def __init__(self):
         load_dotenv(ROOT / ".env", override=False)
-        fallback = Path(
-            r"C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\.env"
-        )
-        if fallback.exists():
-            load_dotenv(fallback, override=False)
         self.database_url = os.getenv("SUPABASE_DB_URL") or os.environ["DATABASE_URL"]
         self.chatwoot_base = os.environ["CHATWOOT_BASE_URL"].rstrip("/")
         self.account_id = str(os.environ["CHATWOOT_ACCOUNT_ID"])
