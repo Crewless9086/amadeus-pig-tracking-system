@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Status: current-state evidence; non-doctrine.
-Updated: 2026-09-19 22:41 SAST, Windows-owned handoff verified and waiting.
+Updated: 2026-09-20 07:57 SAST, helper timed out; manual continuation available.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `REPOSITORY-CONSOLIDATION-20260918`.
@@ -11,15 +11,17 @@ The everyday source at `C:\Amadeus\repo` is clean and ready. The owner did
 exit/reopen Codex. The first after-exit helper timed out; the second disappeared
 without an audit/move/final result. No active retry is inferred from a stale
 WAITING journal. Docker was stopped again at the 22:24 SAST follow-up.
-The reviewed Windows-owned one-shot helper is now running and waiting for Codex
-to quit. Independent readback at 22:41:49 SAST verified helper PID27160 with
-Windows Schedule service PID2576 as its parent. Docker and n8n remain healthy
-after both bootstrap and Docker starter exited. The final move has not started.
-The app-exit wait expires around 23:10 SAST; read current external receipts
-before acting after that deadline.
+The Windows-owned helper returned HELD at 23:10:18 SAST September 19:
+`app_exit_wait_expired_no_move`, renamed=false. It never reached the source
+audit or rename. Both temporary task registrations are absent. The same Codex
+PID29356/start remains present at 07:57 SAST September 20. No helper is running
+and the old timer/quit instructions are expired. Docker's three containers are
+still running and n8n health is HTTP200. Local development in the canonical
+checkout need not wait for this old-copy retention; release holds still apply.
 
-Latest handover: [Windows-owned cleanup handoff](receipts/20260919/WINDOWS_OWNED_CLEANUP_HANDOFF.md).
-Prior attempts: [restart cleanup status](receipts/20260919/AFTER_RESTART_CLEANUP_STATUS.md),
+Latest handover: [manual retention handoff](receipts/20260920/MANUAL_RETENTION_HANDOFF.md).
+Prior attempts: [Windows-owned cleanup handoff](receipts/20260919/WINDOWS_OWNED_CLEANUP_HANDOFF.md),
+[restart cleanup status](receipts/20260919/AFTER_RESTART_CLEANUP_STATUS.md),
 [maintenance cleanup](receipts/20260919/MAINTENANCE_CLEANUP_STATUS.md),
 [final local cleanup](receipts/20260919/FINAL_LOCAL_CLEANUP_STATUS.md) and
 [preserved checkpoint](receipts/20260919/WORKSPACE_CONSOLIDATION_CHECKPOINT.md).
@@ -72,7 +74,7 @@ last durable stage WAITING and no result. Exit cause is unknown; app-lifetime
 coupling is an inference, not proven. Do not reuse old PIDs or assume a timer
 or task-registration success proves an actual move.
 
-New reviewed bootstrap `register-windows-handoff.ps1` creates two exact
+The prior reviewed bootstrap `register-windows-handoff.ps1` created two exact
 triggerless, non-recurring demand tasks under the owner interactive token.
 `Amadeus-DockerRestore-Once-20260919` runs Limited, restores the same three
 containers with exact configuration and n8n health checks, then its registration
@@ -210,11 +212,12 @@ None is discarded, renamed, closed or automatically runnable by this summary.
 | `DMQ-20260816-01` | Preserve Green print/migration/held-request evidence without assuming delivery |
 
 **Current mission:** finish the last approved intact retention.
-**Next gate:** Windows-owned WAITING and restored-service survival are
-confirmed. Press Ctrl+Q and keep Codex closed through the explicit completed/
-NOT completed result window. Reopen this same task for independent full-result,
-source-absence/destination-identity and temporary-task-retirement readback.
-A missing result, HELD or MOVED_UNCONFIRMED remains incomplete; no blind retry.
+**Next gate:** the owner requested a practical manual option. Use the exact
+same-volume, no-overwrite move in the latest handover with Codex closed after
+a Windows restart. It has no expiry and starts no background task. Reopen this
+same task afterward for source absence, native destination identity and full
+content/stream/security/opaque-link verification. A move command returning
+success alone does not close preservation. No new helper or timer is armed.
 
 **Later pipeline:** keep the continuing cleanup branch for local work. Govern
 review/integration before operational continuation. Existing mission priority,

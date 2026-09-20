@@ -13,8 +13,9 @@ The register names the sole coordinator, current work, holds and next gate.
 
 The source workspace and task routing are ready. Docker and n8n are healthy.
 **One old checkout still needs its final move while Codex stays closed.**
-The [latest cleanup receipt](docs/06-operations/receipts/20260919/WINDOWS_OWNED_CLEANUP_HANDOFF.md)
-records preserved evidence and the Windows-owned handoff after the earlier helper stopped.
+The [latest cleanup receipt](docs/06-operations/receipts/20260920/MANUAL_RETENTION_HANDOFF.md)
+records the expired helper and an exact manual move instruction. No cleanup helper
+is running. Local development can continue in this checkout while retention is pending.
 Temporary work and output belong in `C:\Amadeus\.runtime`; recovery belongs in
 `C:\Amadeus\recovery\20260919`.
 
