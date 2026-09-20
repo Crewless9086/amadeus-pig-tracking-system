@@ -1,105 +1,64 @@
 # Control Tower Mission Register
 
 Status: current-state evidence; non-doctrine.
-Updated: 2026-09-20 07:57 SAST, helper timed out; manual continuation available.
+Updated: 2026-09-20 12:54 SAST retention verification; integration held.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `REPOSITORY-CONSOLIDATION-20260918`.
-Migration: HELD — one original checkout remains; no final move is recorded.
+Migration: physical retention VERIFIED; original 18 commits not integrated.
 
-The everyday source at `C:\Amadeus\repo` is clean and ready. The owner did
-exit/reopen Codex. The first after-exit helper timed out; the second disappeared
-without an audit/move/final result. No active retry is inferred from a stale
-WAITING journal. Docker was stopped again at the 22:24 SAST follow-up.
-The Windows-owned helper returned HELD at 23:10:18 SAST September 19:
-`app_exit_wait_expired_no_move`, renamed=false. It never reached the source
-audit or rename. Both temporary task registrations are absent. The same Codex
-PID29356/start remains present at 07:57 SAST September 20. No helper is running
-and the old timer/quit instructions are expired. Docker's three containers are
-still running and n8n health is HTTP200. Local development in the canonical
-checkout need not wait for this old-copy retention; release holds still apply.
-
-Latest handover: [manual retention handoff](receipts/20260920/MANUAL_RETENTION_HANDOFF.md).
-Prior attempts: [Windows-owned cleanup handoff](receipts/20260919/WINDOWS_OWNED_CLEANUP_HANDOFF.md),
-[restart cleanup status](receipts/20260919/AFTER_RESTART_CLEANUP_STATUS.md),
-[maintenance cleanup](receipts/20260919/MAINTENANCE_CLEANUP_STATUS.md),
-[final local cleanup](receipts/20260919/FINAL_LOCAL_CLEANUP_STATUS.md) and
-[preserved checkpoint](receipts/20260919/WORKSPACE_CONSOLIDATION_CHECKPOINT.md).
-Their old process IDs/deadlines/current-action instructions are superseded;
-failures, source history, approvals and exact evidence remain preserved.
-The [active source map](../09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md)
-selects doctrine; this current-state projection grants no release authority.
+Latest handover: [consolidation integration status](receipts/20260920/CONSOLIDATION_INTEGRATION_STATUS.md).
+The owner's manual move is verified by the full native preservation audit:
+172,892 objects match the baseline, old source absent, same retained root
+identity, zero Cloud dependencies. Total retained source roots: 557.
+The previous [manual handoff](receipts/20260920/MANUAL_RETENTION_HANDOFF.md)
+and its linked attempts remain history. Their move/restart/timer instructions
+are superseded; do not repeat them.
 
 ## Current work and authority
 
 Charl transferred sole coordination from task
 `01a08bfa-ca70-7a01-91df-fc3dd3922598` after verification PASS. That former
 coordinator and source task `01a0b55a-6896-7643-b267-25cd4bcce5d7` remain frozen
-for dispatch/release. This same task continues the local consolidation lineage.
+for dispatch/release. This task continues the same consolidation lineage.
 
-The owner's approved cleanup/relocation/preservation and later bounded
-application/Docker/access maintenance remain in force. No repeated cleanup or
-takeover approval is needed. No blanket ACL change, forced handle closure,
-service retirement, business operation or application release is assigned.
-The temporary Windows registrations are finite local maintenance helpers;
-they do not start recurring business observers or alter the CHARLIE tasks.
+Charl now approved sorting the original 18 commits first, then repairing the
+general-manager worker and reconciling stale architecture, canonical data
+fallbacks, CORE output paths, fleet status and SAM shadow-mode reporting.
+The target remains a genuine Oom Sakkie/HERDMASTER journey with independent
+follow-up and less engineering relay through Charl. These are implementation
+and acceptance objectives; no operational success is inferred from this approval.
+Protected sales/provider/farm/payment/hardware and production-data boundaries
+remain unchanged. No release protection may be bypassed or identity fabricated.
 
 | Workspace | Use | Current qualification |
 | --- | --- | --- |
-| `C:\Amadeus\repo` | Sole daily source checkout | Saved project/current task; one continuing local branch/worktree |
-| `C:\Amadeus\.runtime` | Temporary work and evidence | Active phase `consolidation\maintenance-20260919\original-final-retention` |
-| `C:\Amadeus\recovery\20260919` | Consolidated recovery | 556 source roots retained; prior bundles/snapshots/keys/restore proofs preserved |
+| `C:\Amadeus\repo` | Sole daily source checkout | Continuing consolidation branch; one isolated admission-repair worktree |
+| `C:\Amadeus\.runtime` | Temporary work and evidence | Active phase `consolidation\integration-20260920` |
+| `C:\Amadeus\recovery\20260919` | Consolidated recovery | 557 retained source roots; prior bundles and restore proofs preserved |
 
-Prior removal remains 250,321 files and 12,741 empty directories,
-15,537,781,090 logical bytes; physical savings unmeasured. This continuation
-deletes zero source objects. Four pytest ownership classifications stay
-unverified. Private `.env` remains intact and ignored/untracked in the new
-checkout. Incomplete-snapshot truth, dirty history, failed findings and all
-mission identities/holds are preserved; intact retention is not disposal authority.
+The original 18-commit candidate is `013a9ebe23c3fedeedb285a88ad5103aad1d6a97`,
+18 ahead/0 behind fresh main `e46743cb3e8d224b60d17eb5920acb113f613a52`.
+119 focused tests passed; independent source review found no actionable P1/P2.
+Admission remains blocked: the exact consolidation mission is absent from the
+canonical mission table, and the issuer's base-governance identities disagree
+with the verifier's candidate-governance requirement. Protected workflows use
+main/base code, so a candidate cannot authorize its own bootstrap. Details and
+reproduction evidence are in the current receipt. Hosted CI and integration
+remain unproved. The second worktree prepares only the admission prerequisite
+from current main; no general-manager or farm runtime change has begun.
 
-The original remains the sole old AGENTS entry:
-`C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system`.
-Intended destination is recovery `retained-originals\agents\amadeus-pig-tracking-system`.
-The earlier native rename failed with Win32 5 after Cloud conversion. The
-18:31 UTC full follow-up audit proved 172,892 objects, all identities/streams/
-security/non-Cloud attributes and one opaque junction preserved; zero Cloud
-entries. Its target was not followed. The expected root is native volume
-`17629920732283616668`, inode `47850746040959140`, attributes49/tag0.
-Original source remains present and recovery destination absent.
+At 08:39 SAST, production web served `3d321e4932cf205d03e759cc71a26edd411bc9d2`;
+Docker was absent and local n8n unavailable after restart. Four CHARLIE tasks
+remained Disabled. Historical Docker/n8n health is not current service truth.
+No cleanup/audit helper remains active after the full audit completed.
 
-The app's old `.git`/`.git\refs` descendant handles explained the earlier native
-rename failure in eight isolated fixture cases. The owner has since reopened
-Codex: current PID29356, created20:21:05.8337865UTC. Prior helper27100 is gone,
-last durable stage WAITING and no result. Exit cause is unknown; app-lifetime
-coupling is an inference, not proven. Do not reuse old PIDs or assume a timer
-or task-registration success proves an actual move.
-
-The prior reviewed bootstrap `register-windows-handoff.ps1` created two exact
-triggerless, non-recurring demand tasks under the owner interactive token.
-`Amadeus-DockerRestore-Once-20260919` runs Limited, restores the same three
-containers with exact configuration and n8n health checks, then its registration
-is removed and starter exit verified. `Amadeus-LocalCleanup-Once-20260919`
-runs Highest after UAC, waits for the exact current app to quit, repeats full
-preservation proof, attempts one same-object no-overwrite move and full readback,
-then removes its registration and shows the explicit result. Existing CHARLIE
-tasks remain disabled and untouched. No automatic restart/recurrence or
-permanent new service. Readback must prove the actual action/owner/settings,
-live PID/start, Running state and Schedule-service ancestry before user exit.
-
-Two regenerated broken Docker IPC sockets were retained intact again as
-`docker-run-retained-after-reopen`; exact native directory ID preserved,
-no child traversal/deletion/configuration/volume mutation. Their artifact count
-is separate from the 556 retained source roots. Local service restoration
-passed after both bootstrap and Docker starter exited: all three original
-containers running, exact configuration equality, n8n health HTTP200. The Docker
-starter task was removed. This proves no business/provider acceptance or
-operational writer dispatch. Evidence: `windows-handoff-live-verification.json`.
-
-Startup canonical guard passed at `8d99bf8bc606b8826ce649ab075f98d8e0251c67`,
-one worktree, no upstream,16ahead/0behind fresh unchanged main
-`e46743cb3e8d224b60d17eb5920acb113f613a52`; loaded governance/CORE pack unchanged.
-Closing source/backup/guard/runtime observations belong to recovery
-`windows-handoff-workspace-verification.json`, not the startup values.
+Prior deletion counts, incomplete-snapshot truth, dirty history, opaque links,
+four unverified pytest ownership classifications, identities, holds and failures
+remain preserved in the linked historical receipts. Intact retention grants no
+disposal or runtime-start authority. Private `.env` stays ignored and untracked.
+The [active source map](../09-vault-brain/10-source-map/ACTIVE_DOCS_SOURCE_MAP.md)
+selects doctrine; this register is current-state evidence only.
 
 ## Preservation and source checkpoints
 
@@ -119,7 +78,8 @@ Closing source/backup/guard/runtime observations belong to recovery
   objects and selected restore probes passed. Whole-root archive holds remain;
   archive PASS and intact retention are not blanket disposal/run authority.
 - Bounded local suites passed: 61 guards, 26 archive, 6 workspace, 26 retirement,
-  19 retention and 5 configuration-fallback tests. Broader initial result:
+  19 retention and 5 SAM capture-regression tests; credential fallback
+  removal was source-reviewed, not covered by those five tests. Broader initial result:
   302/332, with 30 offline-boundary failures retained; no full-suite green claim.
   Final-task native qualification: eight focused synthetic cases PASS plus
   independent exact-byte review and eight verified live intact moves. Existing
@@ -211,15 +171,22 @@ None is discarded, renamed, closed or automatically runnable by this summary.
 | `UIQ-20260813-01/02/03` | Preserve completed/unfinished work; fresh role/actionability/preview evidence |
 | `DMQ-20260816-01` | Preserve Green print/migration/held-request evidence without assuming delivery |
 
-**Current mission:** finish the last approved intact retention.
-**Next gate:** the owner requested a practical manual option. Use the exact
-same-volume, no-overwrite move in the latest handover with Codex closed after
-a Windows restart. It has no expiry and starts no background task. Reopen this
-same task afterward for source absence, native destination identity and full
-content/stream/security/opaque-link verification. A move command returning
-success alone does not close preservation. No new helper or timer is armed.
+**Current mission:** integrate the qualified consolidation lineage through the
+supported admission/release process. Preserve the original 18 commits and record
+subsequent reconciliation separately.
 
-**Later pipeline:** keep the continuing cleanup branch for local work. Govern
-review/integration before operational continuation. Existing mission priority,
-collision, canonical binding, terminal and authority gates still apply.
-Local cleanup grants no application release or deployed business outcome.
+**Public qualification hold:** automatic approval review rejected the branch
+push/draft PR because the destination is public and explicit payload/destination
+authorization was missing. Nothing was published. The owner-facing review names
+the exact candidate; local admission repair continues independently.
+
+**Next gate:** establish truthful canonical first registration and resolve the
+reproduced base/head governance mismatch through a reviewed protected-base
+repair. Continue safe qualification; do not falsify admission or weaken branch
+protection. Check actual deployment behavior before any merge.
+
+**Later pipeline:** general-manager and the five approved reconciliation items,
+then genuine deployed Oom Sakkie/HERDMASTER acceptance and a later independent
+cycle. Reuse existing mission identities and services. SAM's shadow restriction
+must remain explicit; changing its status is not customer-send authority.
+NO BUSINESS OUTCOME has been proven by repository consolidation.
