@@ -58,6 +58,7 @@ from scripts.charlie_mission_admission_guard import (
     _tool_target_path,
     _validate_external_receipt_envelope,
     _validate_paths_and_effects,
+    _verify_governance_reads,
     ci_external_main,
     ci_main,
     hook_main,
@@ -1443,6 +1444,12 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                 _compare_current_authority(receipt, changed, contract)
 
     def test_issuer_uses_exact_canonical_linkage_preserves_body_and_is_idempotent(self):
+        self._assert_issuer_binds_candidate_governance(record_via_callback=False)
+
+    def test_issuer_callback_binds_candidate_governance_and_replay_is_idempotent(self):
+        self._assert_issuer_binds_candidate_governance(record_via_callback=True)
+
+    def _assert_issuer_binds_candidate_governance(self, *, record_via_callback):
         seed = hashlib.sha256(b"issuer-test-seed").digest()
         public = base64.b64encode(
             Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
@@ -1483,7 +1490,41 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
                 "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
             },
         }
-        governance = [_governance_row()]
+        governance_path = "docs/09-vault-brain/00-governance/BRAIN_GUARD.md"
+        self.assertIn(governance_path, ALLOWED_FILES)
+        contents = {
+            BASE: b"# Base governance\nPrevious policy.\n",
+            HEAD: b"# Candidate governance\nUpdated owner policy.\n$(must_remain_inert)\n",
+        }
+        blobs = {
+            revision: hashlib.sha1(
+                f"blob {len(content)}\0".encode() + content
+            ).hexdigest()
+            for revision, content in contents.items()
+        }
+        governance = [{
+            "path": governance_path,
+            "git_blob": blobs[HEAD],
+            "filesystem_sha256": hashlib.sha256(contents[HEAD]).hexdigest(),
+            "byte_count": len(contents[HEAD]),
+            "physical_line_count": contents[HEAD].count(b"\n"),
+            "complete_byte_read": True,
+        }]
+        git_reads = []
+        def git_bytes(*args):
+            git_reads.append(args)
+            if args == ("diff", "--no-ext-diff", "--no-textconv", "--binary", "--full-index", BASE, HEAD, "--"):
+                return b"external patch"
+            for revision, content in contents.items():
+                if args == ("show", f"{revision}:{governance_path}"):
+                    return content
+            raise AssertionError(args)
+        def git_text(*args):
+            git_reads.append(args)
+            for revision, blob in blobs.items():
+                if args == ("rev-parse", f"{revision}:{governance_path}"):
+                    return blob
+            raise AssertionError(args)
         canonical_payload = _build_exact_candidate_payload(
             mission=mission, family=family, authority=authority, contract=contract,
             base=BASE, head=HEAD, branch=contract["branch"],
@@ -1497,6 +1538,39 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             "content_sha256": canonical_receipt["content_sha256"],
             "signed_receipt": canonical_receipt,
         })
+        canonical_projection = copy.deepcopy(authority["admission"])
+        if record_via_callback:
+            authority["admission"] = {}
+        callbacks = []
+        class CallbackResponse:
+            status = 201
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+        def record_callback(request, *, timeout):
+            self.assertTrue(record_via_callback)
+            self.assertEqual(request.get_method(), "POST")
+            self.assertEqual(request.full_url, "https://canonical.invalid" + PROTECTED_ADMISSION_ROUTE_PREFIX + mission["mission_id"] + "/protected-admission")
+            self.assertEqual(timeout, 15)
+            data = json.loads(request.data)
+            self.assertEqual(data["pr_number"], 1312)
+            receipt, _ = _validate_external_receipt_envelope(
+                data["envelope"], expected_repository="Crewless9086/amadeus-pig-tracking-system",
+                expected_base_sha=BASE, expected_head_sha=HEAD,
+                expected_changed_files=ALLOWED_FILES,
+            )
+            validate_mission_admission_receipt(
+                receipt, KEY,
+                expected_repository="Crewless9086/amadeus-pig-tracking-system",
+                expected_base_sha=BASE, expected_head_sha=HEAD,
+                expected_generation=GENERATION, expected_mission_id=mission["mission_id"],
+                expected_root_mission_id=mission["mission_id"],
+                expected_changed_files=ALLOWED_FILES,
+            )
+            _verify_governance_reads(receipt, HEAD)
+            callbacks.append(receipt)
+            authority["admission"] = dict(canonical_projection, receipt_id=receipt["receipt_id"],
+                content_sha256=receipt["content_sha256"], signed_receipt=receipt)
+            return CallbackResponse()
         pull = {
             "state": "open", "merged_at": None, "body": "Preserve this text.\n",
             "base": {"ref": "main", "sha": BASE},
@@ -1511,6 +1585,7 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             return copy.deepcopy(pull)
         environ = {
             "GITHUB_TOKEN": "not-logged",
+            "CHARLIE_CANONICAL_API_URL": "https://canonical.invalid",
             "CHARLIE_VALIDATION_RECEIPT_KEY_B64": base64.b64encode(KEY).decode(),
             "CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64": base64.b64encode(seed).decode(),
         }
@@ -1521,19 +1596,41 @@ class MissionAdmissionExternalCiTests(unittest.TestCase):
             with (
                 patch("scripts.charlie_mission_admission_guard._protected_database_url", return_value="postgres://readonly?sslmode=require"),
                 patch("scripts.charlie_mission_admission_guard._github_pull_request", side_effect=github),
-                patch("scripts.charlie_mission_admission_guard.subprocess.run"),
+                patch("scripts.charlie_mission_admission_guard.subprocess.run") as process,
                 patch("scripts.charlie_mission_admission_guard._commit", side_effect=[BASE, HEAD]),
                 patch("scripts.charlie_mission_admission_guard._changed_files", return_value=ALLOWED_FILES),
-                patch("scripts.charlie_mission_admission_guard._git_bytes", return_value=b"external patch"),
+                patch("scripts.charlie_mission_admission_guard._git_bytes", side_effect=git_bytes),
+                patch("scripts.charlie_mission_admission_guard._git_text", side_effect=git_text),
                 patch("scripts.charlie_mission_admission_guard._canonical_contract_for_pull", return_value=(mission, {}, contract, family)),
                 patch("scripts.charlie_mission_admission_guard.read_current_mission_admission_authority", return_value=(authority, 200)),
-                patch("scripts.charlie_mission_admission_guard._governance_read_identities", return_value=governance),
+                patch("scripts.charlie_mission_admission_guard.BOOTSTRAP_GOVERNANCE_PATHS", [governance_path]),
+                patch("scripts.charlie_mission_admission_guard.url_request.urlopen", side_effect=record_callback),
                 patch("scripts.charlie_mission_admission_guard._repository_identity", return_value="Crewless9086/amadeus-pig-tracking-system"),
                 patch("scripts.charlie_mission_admission_guard.EXTERNAL_ADMISSION_PUBLIC_KEY_B64", public),
                 contextlib.redirect_stdout(output),
             ):
                 self.assertEqual(issue_pr_main(args, environ=environ), 0, output.getvalue())
+                # The issuer never checks out or executes candidate code.
+                self.assertEqual(process.call_count, 1)
+                self.assertEqual(process.call_args.args[0], [
+                    "git", "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=never",
+                    "fetch", "--no-tags", "--no-recurse-submodules", "origin", HEAD,
+                ])
+                marker = pull["body"].split("Mission-Admission-Receipt-B64: ")[1].strip()
+                issued, _ = _validate_external_receipt_envelope(
+                    json.loads(base64.b64decode(marker)),
+                    expected_repository="Crewless9086/amadeus-pig-tracking-system",
+                    expected_base_sha=BASE, expected_head_sha=HEAD,
+                    expected_changed_files=ALLOWED_FILES,
+                )
+                self.assertEqual(issued["governance_reads"], governance)
+                _verify_governance_reads(issued, HEAD)
+                with self.assertRaisesRegex(MissionAdmissionError, "admission_governance_changed"):
+                    _verify_governance_reads(issued, BASE)
             self.assertEqual(len(calls), expected_writes)
+            self.assertEqual(len(callbacks), 1 if record_via_callback else 0)
+            self.assertEqual(json.loads(output.getvalue())["receipt_id"], authority["admission"]["receipt_id"])
+        self.assertTrue(all(args[0] in {"diff", "show", "rev-parse"} for args in git_reads))
         self.assertTrue(calls[0].startswith("Preserve this text."))
         self.assertEqual(calls[0].count("Mission-Admission-Receipt-B64:"), 1)
         self.assertNotIn("not-logged", output.getvalue())

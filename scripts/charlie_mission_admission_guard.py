@@ -1262,11 +1262,14 @@ def issue_pr_main(args, *, environ=None):
         collision_time, active_claims = authority["collision_observed_at"], list(authority["active_claims"])
         if collision_snapshot_digest(collision_time, active_claims) != authority.get("collision_snapshot_sha256"):
             raise MissionAdmissionError("canonical_collision_snapshot_invalid")
+        # Protected-main code reads candidate governance only as inert Git blobs;
+        # both verifiers bind these identities to the exact candidate head.
+        governance_reads = _governance_read_identities(head)
         payload = _build_exact_candidate_payload(
             mission=mission, family=family, authority=authority, contract=contract,
             base=base, head=head, branch=branch, diff_sha256=diff_sha256,
             changed_files=changed_files,
-            governance_reads=_governance_read_identities(base),
+            governance_reads=governance_reads,
             repository=_repository_identity(),
         )
         try:
@@ -1295,7 +1298,7 @@ def issue_pr_main(args, *, environ=None):
             payload = _build_exact_candidate_payload(
                 mission=mission, family=family, authority=projected, contract=contract,
                 base=base, head=head, branch=branch, diff_sha256=diff_sha256,
-                changed_files=changed_files, governance_reads=_governance_read_identities(base),
+                changed_files=changed_files, governance_reads=governance_reads,
                 repository=_repository_identity())
             protected_receipt = sign_mission_admission_receipt(payload, hmac_key)
             envelope = {"version": "mission_admission_ci_envelope_v1", "receipt": protected_receipt,
