@@ -186,10 +186,12 @@ None is discarded, renamed, closed or automatically runnable by this summary.
 supported admission/release process. Preserve the original 18 commits and record
 subsequent reconciliation separately.
 
-**Public qualification hold:** automatic approval review rejected the branch
-push/draft PR because the destination is public and explicit payload/destination
-authorization was missing. Nothing was published. The owner-facing review names
-the exact candidate; local admission repair continues independently.
+**Publication history:** automatic approval review initially rejected public
+publication without exact payload/destination authorization. Charl subsequently
+approved both exact heads, now published as draft PR1341 and PR1342. That earlier
+publication hold is superseded. New revisions still require truthful qualification
+and applicable publication authority; registration, issuance, merge and deployment
+remain separate protected effects.
 
 **Next gate:** establish truthful canonical first registration and resolve the
 reproduced base/head governance mismatch through a reviewed protected-base
