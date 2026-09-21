@@ -375,7 +375,7 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         lookups, initial_lookup_counts, initial_statement_counts, sends = [], [], [], []
         original = _IsolatedCursor.execute
         def counted(cursor, sql, params=None):
-            if 'with eligible as materialized' in sql:
+            if 'for update of m skip locked limit' in ' '.join(sql.casefold().split()):
                 initial_lookup_counts.append(len(lookups))
                 initial_statement_counts.append(self.statements)
             if ('select dedupe_key,evidence_digest,generation,status' in sql
@@ -392,6 +392,8 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                 deliver=lambda row, **_kwargs: sends.append(row['case_id']) or {
                     'success': True, 'status': 'delivery_confirmed', 'delivery_confirmed': True,
                     'next_reassessment_at': (self.now + timedelta(minutes=5)).isoformat()})
+        self.assertEqual(len(initial_lookup_counts), 1, result)
+        self.assertEqual(len(initial_statement_counts), 1, result)
         self.benchmark = {'candidates': 314, 'present': 282, 'absent_terminal': 32,
             'statements': self.statements, 'reconciliation_lookup_statements': initial_lookup_counts[0],
             'statements_through_initial_reconciliation': initial_statement_counts[0],
