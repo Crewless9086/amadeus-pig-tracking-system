@@ -1,13 +1,13 @@
 # Control Tower Mission Register
 
 Status: current-state evidence; non-doctrine.
-Updated: 2026-09-20 12:54 SAST retention verification; integration held.
+Updated: 2026-09-21 publication qualified; admission transition repair active.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `REPOSITORY-CONSOLIDATION-20260918`.
 Migration: physical retention VERIFIED; original 18 commits not integrated.
 
-Latest handover: [consolidation integration status](receipts/20260920/CONSOLIDATION_INTEGRATION_STATUS.md).
+Latest handover: [publication and active admission repair](receipts/20260921/CONSOLIDATION_ADMISSION_REPAIR.md).
 The owner's manual move is verified by the full native preservation audit:
 172,892 objects match the baseline, old source absent, same retained root
 identity, zero Cloud dependencies. Total retained source roots: 557.
@@ -37,20 +37,31 @@ remain unchanged. No release protection may be bypassed or identity fabricated.
 | `C:\Amadeus\.runtime` | Temporary work and evidence | Active phase `consolidation\integration-20260920` |
 | `C:\Amadeus\recovery\20260919` | Consolidated recovery | 557 retained source roots; prior bundles and restore proofs preserved |
 
-The original 18-commit candidate is `013a9ebe23c3fedeedb285a88ad5103aad1d6a97`,
-18 ahead/0 behind fresh main `e46743cb3e8d224b60d17eb5920acb113f613a52`.
-119 focused tests passed; independent source review found no actionable P1/P2.
-Admission remains blocked: the exact consolidation mission is absent from the
-canonical mission table, and the issuer's base-governance identities disagree
-with the verifier's candidate-governance requirement. Protected workflows use
-main/base code, so a candidate cannot authorize its own bootstrap. Details and
-reproduction evidence are in the current receipt. Hosted CI and integration
-remain unproved. The second worktree prepares only the admission prerequisite
-from current main; no general-manager or farm runtime change has begun.
+The original 18-commit candidate `013a9ebe23c3fedeedb285a88ad5103aad1d6a97`
+remains intact. Its documentation successor `eff2ea1e8a1b4130e5c3febde7f608aff6b6f990`
+was published with exact owner approval as draft PR1341. Reviewed repair
+`66d5ec824b8a01f2e8e71fbcd931732fdc226288` was separately approved and published
+as draft PR1342. All application checks passed on both published heads; the
+repair's two real PostgreSQL registration tests also passed. Admission remains
+red: the exact mission and external admission receipt are absent. Neither PR
+is merged. Current main is `e46743cb3e8d224b60d17eb5920acb113f613a52`.
 
-At 08:39 SAST, production web served `3d321e4932cf205d03e759cc71a26edd411bc9d2`;
-Docker was absent and local n8n unavailable after restart. Four CHARLIE tasks
-remained Disabled. Historical Docker/n8n health is not current service truth.
+Charl explicitly directed continuation after publication. The existing repair
+worktree now implements the missing paused Desktop candidate transition from
+PR1342 to PR1341, including retained predecessor evidence, receipt retirement,
+exact replay and transactional rollback. First registration alone cannot
+complete that sequence. This is active engineering work, not an owner wait.
+Publication approval for the existing heads does not authorize production
+registration, signed issuance, merge or deployment. Prepare the exact qualified
+operation before requesting any genuinely missing protected authority. No
+general-manager or farm runtime change has begun.
+
+At 05:37 UTC September 21, provider and web health readbacks agreed on
+`3d321e4932cf205d03e759cc71a26edd411bc9d2`. Web and native-worker automatic
+deployment are off; seven repository cron services use commit-triggered
+deployment, one of them suspended. Merge preparation must contain incidental
+deployments and verify provider state. September 20 observations of Docker
+absence, n8n unavailability and four Disabled CHARLIE tasks remain dated evidence.
 No cleanup/audit helper remains active after the full audit completed.
 
 Prior deletion counts, incomplete-snapshot truth, dirty history, opaque links,

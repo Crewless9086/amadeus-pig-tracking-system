@@ -12,9 +12,10 @@ and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md)
 The register names the sole coordinator, current work, holds and next gate.
 
 The final old checkout has been moved to recovery and its full preservation
-audit passed. **Local cleanup is verified; branch integration remains held.**
-The [current integration receipt](docs/06-operations/receipts/20260920/CONSOLIDATION_INTEGRATION_STATUS.md)
-records the preservation result, tested source revision and admission defects.
+audit passed. **Local cleanup is verified; admission repair is active.**
+The [current integration receipt](docs/06-operations/receipts/20260921/CONSOLIDATION_ADMISSION_REPAIR.md)
+records published drafts, passing application checks and the remaining mission
+transition required before integration.
 Docker/n8n were unavailable at the September 20 post-restart check; historical
 health results must not be treated as current service health.
 Temporary work and output belong in `C:\Amadeus\.runtime`; recovery belongs in
