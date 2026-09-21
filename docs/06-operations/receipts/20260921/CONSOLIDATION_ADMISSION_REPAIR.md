@@ -40,12 +40,24 @@ provenance. Keeping a consumed receipt in the current projection prevents
 reissuance. Do not manufacture a different transport identity or change checks.
 
 Charl directed active repair of this gap. One writer owns the existing Desktop
-registration module, preparation CLI and tests in the continuing PR1342 worktree.
+registration module, preparation CLI, callback/store boundary and tests in the
+continuing PR1342 worktree.
 Prove the sequence through registration, issuance, predecessor merge evidence,
 successor binding and reissuance, with replay, stale-state and rollback cases.
 Preserve the original eighteen commits and all predecessor admission history.
 Independent review and exact-head qualification precede publication/release.
 Owner approval is not needed for this bounded local engineering work.
+
+Further review reproduced a delayed-callback defect in the existing store: an
+old receipt could be restored after succession had cleared it, and the route
+could invalidate the successor before rejecting the old candidate. The repair
+therefore also checks candidate linkage under the mission row lock and rejects
+mismatched Desktop callbacks before invalidation. The new callback/store must be
+loaded in the web service before any successor transition. Initial registration
+and issuance can use the existing live path; that does not prove succession safe.
+Actual signed callback and stale-authority regression cases are part of the
+repair qualification. The prerequisite now spans eight bounded source/test/CI
+files, retaining the original published repair in its ancestry.
 
 Provider readback at 05:37 UTC confirmed web revision
 `3d321e4932cf205d03e759cc71a26edd411bc9d2`. Web/native-worker auto-deploy is off.

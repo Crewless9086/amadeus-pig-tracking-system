@@ -50,7 +50,10 @@ Charl explicitly directed continuation after publication. The existing repair
 worktree now implements the missing paused Desktop candidate transition from
 PR1342 to PR1341, including retained predecessor evidence, receipt retirement,
 exact replay and transactional rollback. First registration alone cannot
-complete that sequence. This is active engineering work, not an owner wait.
+complete that sequence. Review also reproduced a delayed callback restoring the
+retired admission. The callback/store repair and exact web deployment must precede
+succession; registration alone does not contain that race. This is active
+engineering work, not an owner wait.
 Publication approval for the existing heads does not authorize production
 registration, signed issuance, merge or deployment. Prepare the exact qualified
 operation before requesting any genuinely missing protected authority. No
