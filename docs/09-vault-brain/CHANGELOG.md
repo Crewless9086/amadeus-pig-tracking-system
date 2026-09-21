@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-09-19 - Approved workspace and documentation consolidation (in progress)
+
+- Replaced the accumulated live register with one compact current view under
+  existing mission `REPOSITORY-CONSOLIDATION-20260918`; preserved the complete
+  latest local register and original Standard/Brain Guard payloads as history.
+- Recorded actual Desktop coordination, the approved `C:\Amadeus\repo` move,
+  preservation-before-deletion and outstanding final migration verification.
+- Retained latest PR #1340 qualification/admission evidence, inherited identities,
+  approvals, holds and acceptance gaps without release.
+- Extracted obsolete dated priority/progress assertions while retaining SAM
+  acceptance requirements and all reporting, lifecycle and release gates.
+  Protocol/template controls remain unchanged. Brain Guard status now requires
+  current evidence rather than conflicting dated observations.
+
 ## 2026-09-18 - Repository consolidation and Desktop handover
 
 - Reconciled the first Desktop read-only verification: corrected one quarantine

@@ -1,3 +1,14 @@
+# Mission Standard before 2026-09-19 simplification
+
+Status: historical evidence; non-doctrine.
+Lifecycle: historical.
+
+Preserved on 2026-09-19 from commit `e46743cb3e8d224b60d17eb5920acb113f613a52`, path `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`.
+Original tracked payload SHA-256: `06b05b95468fe76cda759ed6e815fbc9f575d609472248fd2c4becc0fd7ca0f0`.
+All original bytes follow the marker unchanged. Dated instructions below do not
+resume work, transfer authority, clear holds or prove current runtime state.
+
+<!-- ORIGINAL TRACKED BYTES FOLLOW -->
 # Agentic Operating Mission Standard
 
 Status: owner-directed operating standard
@@ -822,14 +833,9 @@ If a materially better in-scope method is found, recommend it with the trade-off
 
 Repeat the check only when material evidence, scope, risk, or owner intent changes. Record durable new farm truth or reusable lessons in the smallest authoritative document; keep temporary reasoning in the mission handover.
 
-## Programme Roles And Current-State Route
+## Current Program Direction
 
-Current priorities, occupied work slots and exact continuation gates are recorded
-in `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` with attributable
-evidence. Dated priorities and snapshots formerly here are retained intact in
-[pre-simplification history](../../99-archive/control-tower/20260919/MISSION_STANDARD_BEFORE_SIMPLIFICATION.md).
-They cannot revive an old dispatch, deployment, approval or incident replay.
-The operating requirements below remain unchanged by that historical extraction.
+The immediate program is to make the Oom Sakkie specialist team genuinely useful before returning to broad CORE/CHARLIE autonomy work.
 
 The controlling Oom Sakkie operating-spine outcome is defined by `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md` and `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`. No isolated specialist capability, source-ready PR, deployment, healthy endpoint, internal packet, or safe containment closes this goal. One genuine natural Telegram case must complete visible acknowledgement, deployed specialist dispatch, retained follow-up, consolidated preview, governed confirmation/write, replay proof, specialist reassessment and manager status without Charl copying prompts between terminals. A dated incident may provide acceptance evidence but never becomes current doctrine or a replay instruction.
 
@@ -842,12 +848,11 @@ The target roles are:
 - **HERDMASTER:** the herd manager and bloodline-improvement specialist. It identifies inspections and breeding readiness, brings together mating, weight, medical, withdrawal, family, litter, and performance evidence, recommends the best-supported pairing, records approved actions once, and schedules follow-up through Oom Sakkie.
 - **ROOTLINE:** the integrated water-and-energy manager. It produces and follows adaptive plans for water continuity, irrigation, borehole use, weather, solar, battery reserve, grid minimization, and controllable devices within proven policy and hardware boundaries.
 - **BEACON:** the marketing department. It requests useful private media, ingests and classifies it, prepares campaigns and promotion work, and performs public or paid actions only within explicit authority.
-- **CORE/CHARLIE:** retain their governed execution and coordination roles. Current assignment and containment come from the mission register and fresh authority evidence, not the former dated priority statement.
+- **CORE/CHARLIE:** remain contained or deferred while the Oom Sakkie operating system is made useful. They return when specialist loops and shared coordination are stable enough to benefit from broader orchestration.
 
-## Reusable Acceptance Patterns
+## Current Control-Tower Milestone
 
-The former milestone's acceptance patterns remain useful requirements when
-applicable to an assigned mission. This list is not a current release queue:
+The first milestone is not “all infrastructure complete.” It is a small set of proven end-to-end operating loops:
 
 1. HERDMASTER accepts one genuine farm fact through Oom Sakkie, previews it, records it once after required confirmation, and changes the next herd recommendation or follow-up.
 2. SAM Livestock operates a narrow always-on ordinary-sales lane whose next genuine unanswered customer receives a commercially useful response and advances without Charl writing it.
@@ -855,20 +860,21 @@ applicable to an assigned mission. This list is not a current release queue:
 4. BEACON ingests one newly requested private photo exactly once and presents it for owner review.
 5. ROOTLINE produces one reusable read-only water-and-energy specialist result containing current evidence, recommendations, reasons, next reassessment, and only genuine owner questions, with zero hardware authority.
 6. Oom Sakkie produces one consolidated daily family brief containing prioritized sales, herd, water/energy, and marketing work, with only genuine owner questions.
-7. Oom Sakkie's generic operational spine completes a genuine assigned herd lifecycle case end to end without a development-terminal handoff after deployment; containment or an internal packet alone does not pass. The dated acceptance case is preserved as history and must not be replayed.
+7. Oom Sakkie's generic operational spine completes the genuine Pig 125 found-dead case end to end without a development-terminal handoff after deployment; containment or an internal packet alone does not pass.
 
-The previous serialized release sequence is retained in history. Current lane ownership and every unexpired hold must be reconciled from the mission register before work; this extraction authorizes no release or shared-runtime mutation.
+For the current serialized release sequence, SAM Livestock owns production priority until the always-on inbox and follow-up loop is genuinely operating. SAM Customer Front Door may proceed in a separate disjoint source-only worktree but must not acquire or mutate shared runtime. Green HERDMASTER, ROOTLINE, BEACON, and Oom Sakkie PRs remain source-ready and wait for explicit later release windows. SAM Meat, CORE, and CHARLIE may perform read-only or disjoint source work only when specifically placed on an active goal card.
 
-When an assigned milestone is operationally proven, mark it closed in authoritative shared knowledge and replace it with the next measurable milestone. Do not leave completed infrastructure or historical test cases as permanent active goals.
+When this milestone is operationally proven, mark it closed in authoritative shared knowledge and replace it with the next measurable milestone. Do not leave completed infrastructure or historical test cases as permanent active goals.
 
-## SAM Salesperson Operating Requirements
+## Urgent Goal For 2026-07-30: SAM Autonomous Salesperson
 
-The 2026-07-30 owner decision required SAM automatic sending to remain disabled
-until the complete evidence-to-offer loop below was operationally proven.
-That approval boundary is preserved; cleanup cannot clear it. Current authority
-and any later qualifying evidence must be reconciled from the mission register.
-The dated manual-reply mode is retained in history, not asserted as today's
-runtime state. No ordinary customer reply requires a Telegram approval button.
+Owner decision: SAM Livestock automatic customer sending must remain disabled
+until the complete evidence-to-offer salesperson loop below is operationally
+proven. During containment, Charl and the Control Tower will answer live
+customers manually with read-only assistance from the same authoritative
+conversation, inventory, pricing, policy, and customer-history evidence that
+SAM must ultimately use. Telegram and Chatwoot intake may remain available,
+but no ordinary customer reply requires a Telegram approval button.
 
 Business mission:
 
@@ -947,14 +953,19 @@ Success measurement:
 - SAM remains continuously enabled and healthy after the proof; and
 - Charl writes none of those five customer responses.
 
-The dated contained/0%/manual-reply snapshot is retained in history. No current
-runtime state or sending authority is inferred from its removal.
+Current state: contained / not operational.
 
-## Progress Representation
+Current progress: `░░░░░░░░░░ 0%`. Existing components and earlier bounded
+replies are reusable implementation evidence, but they do not satisfy a stage
+of this replacement end-to-end salesperson goal.
 
-Current progress belongs in the mission register and cannot substitute for live
-evidence, specialist handovers, claim ledgers or production verification.
-The existing stage and percentage rules below remain unchanged.
+Immediate safe operating mode: SAM automatic customer sending off; manual
+Control Tower-assisted replies on; read-only reconciliation and source work
+allowed; no replay of ambiguous or quarantined sends.
+
+## Control Tower Goal Board
+
+This board provides a quick visual view of movement toward the current milestone. It is a control-tower summary, not a substitute for live evidence, specialist handovers, claim ledgers, or production verification.
 
 ### Percentage Rule
 
@@ -970,14 +981,30 @@ Do not award partial points for repeated attempts, additional tests, more infras
 
 Progress bars use ten positions. Each filled block represents 10%.
 
-The overall percentage is the arithmetic mean of the active goal percentages, rounded down to the nearest 5%. A specialist goal reaching 100% does not imply the whole milestone is closed.
+### Current Milestone Progress
 
-The complete 2026-07-29 milestone board, PR identities and observations are
-retained in pre-simplification history. Its percentages are not current progress.
+Snapshot date: 2026-07-29  
+Milestone: First proven Oom Sakkie specialist operating loops
+
+| Goal | Current state | Progress | Evidence-based next transition |
+|---|---|---:|---|
+| HERDMASTER: accept Shupe’s genuine fact through Oom Sakkie, preview it, preserve it exactly once after confirmation, and change the herd recommendation | Closed | `██████████ 100%` | Retain the completed route as regression evidence and continue with the separate ordinary herd-question quality goal |
+| HERDMASTER: answer ordinary pig questions through Oom Sakkie with consistent canonical facts, evidence gaps and one next recommendation | Operational | `██████░░░░ 60%` | Preserve PR #597’s corrected live semantics and prove the next genuine owner-visible herd answer without farm mutation |
+| HERDMASTER: accept an ordinary pig fact conversationally, preview the exact canonical effect, record only after confirmation, and return the updated recommendation | Prepared | `██░░░░░░░░ 20%` | Preserve green PR #603 source-ready; integrate and prove one confirmed conversational fact only in a later explicitly assigned HERDMASTER window |
+| SAM Livestock: narrow always-on ordinary-sales lane gives the next genuine unanswered customer a useful provider-confirmed response | Business-complete | `████████░░ 80%` | Keep the narrow lane healthy for customer follow-ups, reconcile durable doctrine and activate the next sales goal without retrying quarantined sends |
+| SAM Livestock: continuously operate the Livestock inbox, clear every eligible live backlog item, process each new follow-up automatically, and escalate only protected exceptions | Integrated | `████░░░░░░ 40%` | Deploy the smallest-question correction, recover every eligible open-window backlog item, keep the direct webhook lane persistently enabled, and operate without terminal-started cohorts |
+| SAM Customer Front Door: handle greetings, small talk, public farm information, and unclear first contact before transferring retained context to Livestock, Meat, or owner review | Prepared | `██░░░░░░░░ 20%` | Preserve green PR #608 and integrate it through SAM’s existing authenticated inbound adapter after the current Livestock correction is safely deployed |
+| BEACON: ingest one newly requested private photo exactly once and present it for owner review | Closed | `██████████ 100%` | Preserve the completed private intake as regression evidence; treat Library Accept and any public-use decision as separate bounded owner actions |
+| BEACON: prepare one evidence-backed marketing proposal or precise media request through Oom Sakkie with one consolidated owner decision | Prepared | `██░░░░░░░░ 20%` | Complete PR #602 exact-head CI and preserve it source-ready for a later explicitly assigned BEACON integration window |
+| ROOTLINE: produce one reusable read-only water-and-energy specialist result for Oom Sakkie with evidence, recommendations, reasons, next reassessment and genuine owner questions | Operational | `██████░░░░ 60%` | Preserve the authenticated zero-write live answer and produce the next genuine family-visible recommendation when asked |
+| Oom Sakkie: deliver one consolidated daily family brief covering sales, herd, water/energy, and marketing with only genuine owner questions | Prepared | `██░░░░░░░░ 20%` | Preserve reviewed PR #598 source-ready; integrate specialist adapters and prove one supervised family brief only after the current sales and serialized production queue releases |
+| **Overall milestone** | Active | `█████░░░░░ 50%` | SAM Livestock uses ROOTLINE’s explicit release to correct smallest-question planning, clear eligible customer work, and remain continuously enabled |
+
+The overall percentage is the arithmetic mean of the active goal percentages, rounded down to the nearest 5%. A specialist goal reaching 100% does not imply the whole milestone is closed.
 
 ### Board Maintenance
 
-- The Control Tower updates the current register view only from authoritative terminal feedback and live operational evidence.
+- The Control Tower updates this board only from authoritative terminal feedback and live operational evidence.
 - Every percentage change must name the stage gained or lost and its evidence in the relevant specialist handover, workflow, `NEXT_STEPS.md`, or Vault Brain changelog.
 - Terminals may propose a board change, but they must not mark their own goal operational, business-complete, or closed without the required external or production proof.
 - Waiting on another terminal does not reduce completed stages, but waiting itself earns no progress.

@@ -13,7 +13,7 @@ Implement the requested mission outcome without creating a competing product sys
 2. Read the complete mission standard and only the active authority documents selected for this scope. Read the existing mission, lineage, and relevant handover completely.
 3. State the bounded outcome, explicit non-scope, protected effects, failure containment, and acceptance evidence.
 4. Use a fresh isolated worktree from current main unless continuing the explicitly assigned PR lineage.
-5. Require the dispatch to name a workspace-local artifact directory and runtime directory. Default to `control-tower-artifacts/<mission-or-pr>/` and `.codex-runtime/missions/<mission-or-pr>/`; do not invent an external output path.
+5. Require the dispatch to name an approved sibling artifact directory and runtime directory. Resolve from the canonical checkout, never from a nested worktree: `../.runtime/<mission-or-pr>/evidence/` and `../.runtime/<mission-or-pr>/`; do not invent an external output path.
 
 ## Implementation invariants
 
@@ -30,4 +30,14 @@ Run focused domain, security, data-integrity, adversarial, and relevant wider re
 
 Return the exact base/head, files changed, tests and adversarial cases, PR/CI state, collisions, unknowns, protected effects, rollback state, and next acceptance action using the tracked feedback handover template. Say `NO BUSINESS OUTCOME` unless genuine operational acceptance has already occurred. Do not merge, deploy, or claim loaded revision unless assigned that separate authority.
 
-Write working handovers, evidence summaries, screenshots, and comparisons only under the assigned mission artifact directory. Write generated payloads, test databases, caches, and disposable outputs only under the assigned runtime directory. Canonical durable documents still use their governed repository paths. Do not use `%TEMP%`, AppData, Desktop, Documents, `C:\\tmp`, or broad environment-variable overrides for routine work.
+Write working handovers, evidence summaries, screenshots, and comparisons only under the assigned sibling runtime evidence directory. Write generated payloads, test databases, caches, and disposable outputs only under the assigned runtime directory. Canonical durable documents still use their governed repository paths. Do not use `%TEMP%`, AppData, Desktop, Documents, `C:\\tmp`, or broad environment-variable overrides for routine work.
+
+## Workspace closeout
+
+Resolve the canonical independent checkout from Git common-directory metadata.
+Run its `python scripts/check_workspace.py --root <canonical-checkout>` from
+that checkout; also inspect the assigned linked worktree status separately.
+At closeout use `--require-clean`; preserve and classify any remaining changes.
+Reuse the continuing mission workspace. Retire temporary working copies after
+verified integration and evidence preservation; keep at most three registered
+working copies unless the owner explicitly approves a larger bound.

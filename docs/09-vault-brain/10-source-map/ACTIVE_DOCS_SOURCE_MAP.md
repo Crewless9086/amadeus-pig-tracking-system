@@ -31,6 +31,12 @@ Current-state evidence, never reusable doctrine:
 - `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
 - `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`
 
+The register links qualified evidence and preserves older state under
+`docs/99-archive/control-tower/20260919/`. Dated receipts under
+`docs/06-operations/receipts/` are evidence only, excluded from ordinary doctrine
+selection. Neither history nor receipts can revive old priorities or clear holds.
+The common-pack lifecycle standard owns the approved local workspace layout.
+
 Technical scratchpads, never durable state or doctrine:
 
 - `planning/CODEX_CHAT.md`
@@ -75,7 +81,7 @@ repository-root path.
 | --- | --- | --- |
 | Focused Vault doctrine | Yes, subject to conflict order | Keep normative; audit agent by agent |
 | Two registered controlling exceptions | Only within their named architecture/evidence scope | Retain and bind explicitly |
-| Mission register/current-state projection | No reusable doctrine | Keep current-state only; later split history |
+| Mission register/current-state projection | No reusable doctrine | One compact current view; dated register snapshots are history |
 | Code/tests/schema/provider records | No; implementation/runtime truth only | Keep near implementation |
 | Technical runbooks | No; procedure only under Vault rules | Keep active technical reference |
 | n8n/Sheets documents | No; transitional evidence only | Retain until named exit test, then archive review |

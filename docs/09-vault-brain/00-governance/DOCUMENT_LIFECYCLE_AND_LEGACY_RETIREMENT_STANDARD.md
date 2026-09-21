@@ -94,6 +94,39 @@ Cleanup is evidence-led and reversible:
 Dirty worktrees, unique screenshots, provider evidence and unmerged branches are
 not cleanup candidates merely because they are old.
 
+## Approved Local Workspace Layout
+
+The owner-approved Windows layout is:
+
+- `C:\Amadeus\repo`: the single everyday source and durable-document checkout;
+- `C:\Amadeus\.runtime`: assigned temporary worktrees, working evidence, tests,
+  caches and disposable outputs, outside the project checkout;
+- `C:\Amadeus\recovery\20260919`: the single consolidated recovery location for
+  preserved old work, manifests and restore material.
+
+Do not create nested repository copies, working reports or caches inside the
+everyday checkout, OneDrive, generic `C:\tmp`, AppData or user document folders.
+Durable reviewed doctrine, the current-state projection and selected necessary
+receipts remain in their governed tracked paths. Working evidence becomes a
+durable receipt only by explicit selection, not by copying entire output trees.
+These paths are workspace policy, not proof that migration has completed.
+
+Bound runtime growth to explicitly assigned active worktrees and output
+directories. Do not create speculative spare checkouts or repeated full copies.
+Before adding one, close out or classify its predecessor and record why another
+copy is necessary. At closeout, preserve unique commits/evidence in recovery,
+verify the manifest and a restore path, then remove only exact approved inactive
+temporary directories. Unknown contents or ownership block deletion. Any
+separately agreed storage cap must be checked before new bulk output.
+
+The approved consolidation may retire preserved old worktrees and folders only
+after verified backup and exact obsolete-path classification. Unmerged commits,
+dirty work and failed attempts remain recoverable. Archiving a working copy does
+not complete its mission, establish admission, authorize release, prove deployed
+operation or clear a hold. The original project root also remains until supported
+application project routing is changed and verified. Never edit an application's
+internal database to force that transition.
+
 ## Periodic audit
 
 CORE must run a documentation/runtime drift audit at each programme phase exit

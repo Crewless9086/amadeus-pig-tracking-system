@@ -20,3 +20,16 @@ node_modules/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local recovery material and obsolete development workspaces.
+service_account.json
+control-tower-artifacts/
+.codex-runtime/
+.codex-worktrees/
+.worktrees/
+.w/
+.tmp/
+.tmp-*/
+.review_*/
+venv/
+.venv/

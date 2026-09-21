@@ -1,4 +1,10 @@
+import hashlib
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from modules.charlie import vault_retrieval
 
 from modules.charlie.vault_retrieval import (
     _eligible_current_vault_text,
@@ -187,6 +193,152 @@ class CharlieVaultRetrievalTests(unittest.TestCase):
         self.assertFalse(packet["checks"]["self_approval"])
         self.assertFalse(packet["checks"]["autonomous_release"])
         self.assertEqual(packet["safe_mode"], "supervised_missions_only")
+
+
+class VaultRequiredContextTests(unittest.TestCase):
+    MISSION = {"title": "CHARLIE CORE Oom Sakkie ROOTLINE HERDMASTER SAM meat BEACON livestock dashboard"}
+
+    def test_additive_packs_and_agent_survive_tiny_limit_and_thirty_doc_cap(self):
+        packet = retrieve_vault_sources(self.MISSION, agent="product_architect", limit=1, excerpt_chars=0)
+        required = set(packet["mandatory_pack_docs"] + packet["agent_doctrine_docs"] + packet["current_context_docs"])
+        self.assertGreater(len(required), 30)
+        self.assertEqual({row["path"] for row in packet["sources"]}, required)
+        self.assertFalse(packet["missing_mandatory_docs"])
+        self.assertTrue(all(row["delivery"] == "metadata_only" for row in packet["sources"]))
+
+    def test_missing_mandatory_doc_beyond_old_cap_blocks_even_with_citations(self):
+        target = vault_retrieval.MANDATORY_MISSION_PACKS["sam_meat"][-1]
+        original = vault_retrieval._read_repo_text
+        with patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: "" if path == target else original(path)):
+            packet = retrieve_vault_sources(self.MISSION, limit=1)
+        self.assertIn(target, packet["missing_mandatory_docs"])
+        result = evaluate_vault_source_coverage({"planner": {"vault_sources_used": packet["mandatory_pack_docs"]}}, packet)
+        self.assertFalse(result["passed"])
+
+    def test_coverage_does_not_trust_missing_list_when_mandatory_source_omitted(self):
+        packet = retrieve_vault_sources({"title": "ROOTLINE irrigation"}, limit=1)
+        omitted = packet["mandatory_pack_docs"][-1]
+        packet["sources"] = [row for row in packet["sources"] if row["path"] != omitted]
+        packet["missing_mandatory_docs"] = []
+        result = evaluate_vault_source_coverage({"planner": {"vault_sources_used": packet["mandatory_pack_docs"]}}, packet)
+        self.assertFalse(result["passed"])
+        self.assertIn(omitted, result["missing_mandatory_docs"])
+
+    def test_excerpt_is_not_complete_delivery_and_full_text_preserves_utf8_bytes(self):
+        target = vault_retrieval.COMMON_MANDATORY_DOCS[0]
+        content = "Status: authoritative\r\n" + "Afrikaans: môre. " * 100 + "TAIL REQUIREMENT\r\n"
+        original = vault_retrieval._read_repo_text
+        with patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: content if path == target else original(path)):
+            short = retrieve_vault_sources({}, limit=1, excerpt_chars=12)
+            full = retrieve_vault_sources({}, limit=1, excerpt_chars=12, include_full_text=True)
+        excerpt = next(row for row in short["sources"] if row["path"] == target)
+        supplied = next(row for row in full["sources"] if row["path"] == target)
+        self.assertEqual(excerpt["delivery"], "excerpt")
+        self.assertTrue(excerpt["excerpt_truncated"])
+        self.assertNotIn("full_text", excerpt)
+        self.assertEqual(supplied["full_text"].encode("utf-8"), content.encode("utf-8"))
+        self.assertEqual(supplied["content_sha256"], hashlib.sha256(content.encode("utf-8")).hexdigest())
+        self.assertIn("not model reading or comprehension", full["read_evidence_scope"])
+
+    def test_historical_required_doctrine_fails_closed(self):
+        target = vault_retrieval.COMMON_MANDATORY_DOCS[0]
+        original = vault_retrieval._read_repo_text
+        with patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: "Status: historical\nOld authority" if path == target else original(path)):
+            packet = retrieve_vault_sources({}, limit=1)
+        self.assertEqual(packet["invalid_mandatory_docs"], [target])
+        self.assertFalse(evaluate_vault_source_coverage({"planner": {"vault_sources_used": packet["mandatory_pack_docs"]}}, packet)["passed"])
+
+    def test_file_reader_preserves_bytes_and_rejects_invalid_utf8(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "authority.md"
+            content = "  môre\r\nEND\r\n".encode("utf-8")
+            path.write_bytes(content)
+            with patch.object(vault_retrieval, "REPO_ROOT", root):
+                self.assertEqual(vault_retrieval._read_repo_text("authority.md").encode("utf-8"), content)
+                path.write_bytes(b"authority\xff")
+                self.assertEqual(vault_retrieval._read_repo_text("authority.md"), "")
+                self.assertEqual(vault_retrieval._read_repo_text("../outside.md"), "")
+
+    def test_runner_prompt_supplies_complete_required_text_after_budget_exhaustion(self):
+        from modules.charlie import execution_bridge
+        target = vault_retrieval.COMMON_MANDATORY_DOCS[0]
+        content = "Status: authoritative\n" + ("môre " * 9000) + "TAIL AUTHORITY REQUIREMENT\n"
+        original = vault_retrieval._read_repo_text
+        with patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: content if path == target else original(path)), patch.object(execution_bridge, "VAULT_CONTEXT_CHAR_BUDGET", 1):
+            context = execution_bridge.build_vault_brain_context(self.MISSION, "planner")
+            prompt = execution_bridge._format_vault_context(context)
+            execution_prompt = execution_bridge.build_codex_execution_prompt(self.MISSION)
+            with patch.object(execution_bridge, "runner_environment_preflight", return_value={"status": "synthetic_no_execution"}):
+                stage_prompt = execution_bridge.build_agent_stage_prompt(self.MISSION, "planner")
+        self.assertIn(content, prompt)
+        self.assertIn(content, execution_prompt)
+        self.assertIn(content, stage_prompt)
+        self.assertNotIn("Follow these documents before changing anything:\n- docs/00-start-here", execution_prompt)
+        required = set(context["retrieval"]["full_text_required_docs"])
+        self.assertEqual({row["path"] for row in context["docs"] if row["delivery"] == "full_text"}, required)
+        for row in context["docs"]:
+            if row["path"] in required:
+                self.assertIn(row["content"], prompt)
+        self.assertLessEqual(sum(len(row["content"]) for row in context["docs"] if not row["full_text_required"]), 1)
+
+    def test_optional_excerpt_budget_stops_at_zero_without_capping_required_text(self):
+        from modules.charlie import execution_bridge
+        with patch.object(execution_bridge, "VAULT_CONTEXT_CHAR_BUDGET", 10):
+            context = execution_bridge.build_vault_brain_context({})
+        optional = [row for row in context["docs"] if not row["full_text_required"]]
+        self.assertGreater(len(optional), 1)
+        self.assertEqual(sum(len(row["content"]) for row in optional), 10)
+        self.assertTrue(any(row["delivery"] == "metadata_only" for row in optional))
+        self.assertTrue(all(row["delivery"] == "full_text" for row in context["docs"] if row["full_text_required"]))
+
+    def test_runner_context_rejects_omitted_required_source_even_when_missing_list_empty(self):
+        from modules.charlie import execution_bridge
+        packet = retrieve_vault_sources({}, include_full_text=True)
+        target = packet["full_text_required_docs"][-1]
+        packet["sources"] = [row for row in packet["sources"] if row["path"] != target]
+        packet["missing_full_text_required_docs"] = []
+        with patch.object(execution_bridge, "retrieve_vault_sources", return_value=packet):
+            with self.assertRaisesRegex(ValueError, "vault_required_context_unavailable"):
+                execution_bridge.build_vault_brain_context({})
+
+    def test_current_state_and_routing_survive_pack_cap_without_becoming_doctrine(self):
+        from modules.charlie import execution_bridge
+        register, source_map = vault_retrieval.CURRENT_CONTEXT_DOCS
+        content = "# Control Tower Mission Register\nStatus: current-state evidence; non-doctrine\n" + "evidence " * 1000 + "FINAL APPROVAL AND HOLD\n"
+        original = vault_retrieval._read_repo_text
+        with patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: content if path == register else original(path)):
+            packet = retrieve_vault_sources(self.MISSION, limit=1, excerpt_chars=0, include_full_text=True)
+            context = execution_bridge.build_vault_brain_context(self.MISSION)
+            prompt = execution_bridge._format_vault_context(context)
+        by_path = {row["path"]: row for row in packet["sources"]}
+        self.assertEqual(by_path[register]["source_class"], "current_state_evidence")
+        self.assertEqual(by_path[source_map]["source_class"], "authority_routing")
+        self.assertEqual(by_path[register]["full_text"], content)
+        self.assertEqual(by_path[source_map]["full_text"], original(source_map))
+        self.assertIn(content, prompt)
+        self.assertIn("never reusable doctrine", prompt)
+        coverage = evaluate_vault_source_coverage({"planner": {"vault_sources_used": packet["mandatory_pack_docs"] + [register]}}, packet)
+        self.assertFalse(coverage["passed"])
+        self.assertIn(register, coverage["forbidden_doctrine_sources"])
+
+    def test_missing_current_state_or_routing_blocks_stage_prompt(self):
+        from modules.charlie import execution_bridge
+        original = vault_retrieval._read_repo_text
+        for target in vault_retrieval.CURRENT_CONTEXT_DOCS:
+            with self.subTest(path=target), patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: "" if path == target else original(path)):
+                with self.assertRaisesRegex(ValueError, "vault_required_context_unavailable"):
+                    execution_bridge.build_agent_stage_prompt(self.MISSION, "planner")
+
+    def test_runner_prompt_blocks_missing_or_incomplete_pack_before_execution(self):
+        from modules.charlie import execution_bridge
+        target = vault_retrieval.COMMON_MANDATORY_DOCS[-1]
+        original = vault_retrieval._read_repo_text
+        with patch.object(vault_retrieval, "_read_repo_text", side_effect=lambda path: "" if path == target else original(path)):
+            with self.assertRaisesRegex(ValueError, "vault_required_context_unavailable"):
+                execution_bridge.build_codex_execution_prompt(self.MISSION)
+        with self.assertRaisesRegex(ValueError, "vault_required_context_unavailable: documents"):
+            execution_bridge.build_codex_execution_prompt({"title": "Generate PDF document delivery"})
 
 
 if __name__ == "__main__":
