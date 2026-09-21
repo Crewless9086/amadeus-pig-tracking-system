@@ -384,13 +384,18 @@ class PostgresManagerCaseStore:
                 elif specialist_failure is not None:
                     outcome = {"success": False,
                         "status": "manager_specialist_processing_exception_contained",
-                        "failure_kind": specialist_failure.__class__.__name__,
+                        "failure_kind": getattr(specialist_failure,
+                            "collector_failure_kind", specialist_failure.__class__.__name__),
                         "delivery_confirmed": False, "telegram_sends": 0,
                         "next_reassessment_at": (now + CADENCE).isoformat()}
                 elif current_case is None:
                     current_case = case
                     outcome = {"success": False,
                         "status": "manager_delivery_refresh_unavailable",
+                        "delivery_confirmed": False, "telegram_sends": 0}
+                elif current_case.get("status") == "completed":
+                    outcome = {"success": True,
+                        "status": "manager_case_completed_from_current_evidence",
                         "delivery_confirmed": False, "telegram_sends": 0}
                 elif current_case.pop("_refreshed_generation", False):
                     outcome = {"success": True,
@@ -440,6 +445,10 @@ class PostgresManagerCaseStore:
                 if provider_confirmed and not persisted:
                     outcome = {**outcome, "success": False,
                         "status": "manager_delivery_confirmation_persistence_unproven"}
+                elif (not persisted and outcome.get("status")
+                        == "manager_case_completed_from_current_evidence"):
+                    outcome = {**outcome, "success": False,
+                        "status": "manager_case_completion_persistence_unproven"}
                 delivered += confirmed
                 suppressed += not confirmed
                 exceptions += outcome.get("success") is False
@@ -584,6 +593,18 @@ class PostgresManagerCaseStore:
                 return "replayed"
             if prior[2] == "completed" and prior[0] == candidate["evidence_digest"]:
                 return "replayed"
+            if (prior[4] and prior[4] >= now
+                    and str(prior[3] or "") != str(lease_owner or "")):
+                return "deferred"
+            if _candidate_evidence_is_stale(candidate, prior[5]):
+                return "stale"
+            # A different delegated owner may still resume at the provider
+            # boundary after lease expiry. A reclaimed delegated claim must
+            # finish first; only a fresh owning refresh can replace its evidence.
+            if (prior[2] == "delegated" and (
+                    str(prior[3] or "") != str(lease_owner or "")
+                    or not replace_delegated_owner)):
+                return "replayed"
             generation = int(prior[1]) + 1
             cur.execute("""update app_private.oom_manager_cases set status='completed',
                 evidence_digest=%s,evidence_refs=%s::jsonb,unknowns='[]'::jsonb,
@@ -621,9 +642,7 @@ class PostgresManagerCaseStore:
                         set evidence_refs=%s::jsonb,updated_at=%s where dedupe_key=%s""",
                         (json.dumps(candidate["evidence_refs"]), now, candidate["dedupe_key"]))
             return "replayed"
-        if (prior and _evidence_epoch(candidate["evidence_refs"])
-                and _evidence_epoch(prior[5])
-                and _evidence_epoch(candidate["evidence_refs"]) < _evidence_epoch(prior[5])):
+        if prior and _candidate_evidence_is_stale(candidate, prior[5]):
             return "stale"
         # A delegated generation owns immutable evidence until its delivery
         # lifecycle finishes.  An expired lease may be reclaimed only for that
@@ -731,6 +750,13 @@ class PostgresManagerCaseStore:
                     from app_private.oom_manager_cases where case_id=%s for update""",
                             (case["case_id"],))
                 current = cur.fetchone()
+                # The refresh transaction already committed terminal evidence.
+                # Verify that exact state without reacquiring its cleared lease.
+                if outcome.get("status") == "manager_case_completed_from_current_evidence":
+                    return bool(current and current[3] == "completed"
+                        and int(current[0]) == int(case["generation"])
+                        and current[1] == case["evidence_digest"]
+                        and current[4] is None and current[5] is None)
                 if (not current or int(current[0]) != int(case["generation"])
                         or current[1] != case["evidence_digest"]
                         or str(current[4] or "") != cycle_id
@@ -850,6 +876,8 @@ class PostgresManagerCaseStore:
                     from app_private.oom_manager_cases where dedupe_key=%s for update""",
                     (candidate["dedupe_key"],))
                 current = _case_row(cur.fetchone())
+                if current["status"] == "completed":
+                    return current
                 cur.execute("""update app_private.oom_manager_cases set
                     assigned_worker_id=%s,lease_until=%s,last_heartbeat_at=%s,
                     status='delegated',updated_at=%s where case_id=%s""",
@@ -1118,6 +1146,63 @@ def _aware(value):
 
 def _digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+
+def _candidate_evidence_is_stale(candidate, prior_refs):
+    """Compare canonical fact order without treating a backdated correction as old."""
+    refs = candidate["evidence_refs"]
+    def values(items, prefix):
+        return {str(ref)[len(prefix):] for ref in items or ()
+                if str(ref).startswith(prefix)}
+
+    def value(items, prefix):
+        found = values(items, prefix)
+        return next(iter(found)) if len(found) == 1 else None
+
+    def timestamp(items, prefix):
+        text = value(items, prefix)
+        try:
+            return _time(text, "evidence_order") if text else None
+        except ManagerCaseError:
+            return None
+
+    key = candidate["dedupe_key"]
+    current_epoch, prior_epoch = _evidence_epoch(refs), _evidence_epoch(prior_refs)
+    if key.startswith("herdmaster:bulk-condition:"):
+        current_id = value(refs, "observation:")
+        prior_id = value(prior_refs, "observation:")
+        current_recorded = timestamp(refs, "observation_recorded:")
+        prior_recorded = timestamp(prior_refs, "observation_recorded:")
+        if current_id and prior_id:
+            if current_id in values(prior_refs, "supersedes_observation:"):
+                return True
+            if prior_id in values(refs, "supersedes_observation:"):
+                return bool(current_recorded and prior_recorded
+                            and current_recorded < prior_recorded)
+    elif key.startswith("herdmaster:bulk-weight-change:"):
+        def weight_date(items):
+            text = value(items, "weight_date:")
+            try:
+                return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc) if text else None
+            except ValueError:
+                return None
+        current_epoch, prior_epoch = weight_date(refs), weight_date(prior_refs)
+        current_id, prior_id = value(refs, "weight_event:"), value(prior_refs, "weight_event:")
+        current_recorded = timestamp(refs, "weight_recorded:")
+        prior_recorded = timestamp(prior_refs, "weight_recorded:")
+    else:
+        return bool(current_epoch and prior_epoch and current_epoch < prior_epoch)
+    if not current_epoch or not prior_epoch:
+        return False
+    if current_epoch != prior_epoch:
+        return current_epoch < prior_epoch
+    # Older stored cases lack the new tie-break refs. Do not invent their rank.
+    if not current_recorded or not prior_recorded:
+        return False
+    if current_recorded != prior_recorded:
+        return current_recorded < prior_recorded
+    return bool(current_id and prior_id and current_id < prior_id)
 
 
 def _evidence_epoch(refs):

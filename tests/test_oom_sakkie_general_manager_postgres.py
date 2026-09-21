@@ -121,6 +121,215 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         return self.store.run_cycle(values, now=self.now, source_revision='local-regression',
             brain_guard_audit={'passed': True}, **kwargs)
 
+    def test_bulk_followups_survive_intake_window_only_for_exact_active_cases(self):
+        # Run production collector SQL against actual source-table definitions in
+        # the same isolated schema as this test's canonical manager cases.
+        class SourceCursor(_IsolatedCursor):
+            def execute(inner, sql, params=None):
+                return super().execute(sql.replace('public.', inner.owner.schema + '.'), params)
+        class SourceConnection(_IsolatedConnection):
+            def cursor(inner):
+                return SourceCursor(inner.connection.cursor(), inner.owner)
+        def source_db():
+            return SourceConnection(psycopg.connect(URL, options='-c statement_timeout=10000'), self)
+
+        migrations = Path(__file__).parents[1] / 'supabase' / 'migrations'
+        with source_db() as db:
+            for migration, tables in (
+                ('202606280001_create_bulk_weight_batch_tables.sql',
+                 ('bulk_weight_batches', 'bulk_weight_batch_rows')),
+                ('202606290001_create_farm_canonical_tables.sql', ('pigs', 'pig_weight_events')),
+                ('202607200001_create_pig_observation_events.sql', ('pig_observation_events',)),
+            ):
+                text = (migrations / migration).read_text(encoding='utf-8')
+                for table in tables:
+                    prefix = 'create table if not exists public.' + table + ' ('
+                    definition = text.split(prefix, 1)[1].split('\n);', 1)[0]
+                    db.execute(prefix + definition + '\n);')
+
+        active = ('open', 'delegated', 'waiting_reassessment', 'exception')
+        inactive = ('completed', 'contained')
+        pigs = active + inactive + ('untracked', 'condition-only')
+        initial_time = self.now
+        def key(kind, pig):
+            return 'herdmaster:bulk-' + kind + ':LOCAL-' + pig
+        def insert_batch(label, observed_at, weight, score, selected=pigs):
+            batch_id = str(uuid.uuid4())
+            draft_id = 'LOCAL-DRAFT-' + label
+            with source_db() as db:
+                db.execute("""insert into public.bulk_weight_batches(
+                    batch_id,client_draft_id,weight_date,status,updated_at,completed_at)
+                    values(%s,%s,%s,'complete',%s,%s)""",
+                    (batch_id, draft_id, observed_at.date(), observed_at, observed_at))
+                for pig in selected:
+                    pig_id = 'LOCAL-' + pig
+                    db.execute("""insert into public.pigs(pig_id,tag_number,pig_name,status,on_farm)
+                        values(%s,%s,%s,'Active',true) on conflict(pig_id) do nothing""",
+                        (pig_id, 'TAG-' + pig, 'Local ' + pig))
+                    db.execute("""insert into public.pig_weight_events(
+                        weight_event_id,pig_id,weight_date,weight_kg,source,source_sheet_row,
+                        bulk_batch_id,created_at) values(%s,%s,%s,%s,'app_bulk_weight',1,%s,%s)""",
+                        ('WEIGHT-' + label + '-' + pig, pig_id, observed_at.date(),
+                         weight, batch_id, observed_at))
+                    db.execute("""insert into public.pig_observation_events(
+                        observation_event_id,pig_id,observed_at,recorded_at,observer_reference,
+                        observation_category,severity,factual_note,measurements_json,
+                        source_system,source_reference,idempotency_key)
+                        values(%s,%s,%s,%s,'local-test','body_condition','attention',
+                        'Canonical test observation',%s::jsonb,'owner','local-test',%s)""",
+                        ('OBS-' + label + '-' + pig, pig_id, observed_at, observed_at,
+                         json.dumps({'body_condition_score': score}), 'bulk-bcs:' + draft_id + ':' + pig_id))
+
+        insert_batch('prior', initial_time - timedelta(days=9), 40, 3)
+        insert_batch('material', initial_time - timedelta(days=2), 50, 2)
+        recent = _completed_bulk_batch_findings(initial_time, connect=source_db)
+        recent_by_key = {row['dedupe_key']: row for row in recent}
+        self.assertEqual(set(recent_by_key), {key(kind, pig) for pig in pigs
+            for kind in ('condition', 'weight-change')})
+        self.assertTrue(all(row.get('terminal_state') is None for row in recent))
+        tracked_keys = {key(kind, pig) for pig in active + inactive
+            for kind in ('condition', 'weight-change')} | {key('condition', 'condition-only')}
+        self.seed([recent_by_key[identity] for identity in tracked_keys])
+        delegated_owner = 'LOCAL-OWNING-REFRESH'
+        delegated_keys = {key(kind, 'delegated') for kind in ('condition', 'weight-change')}
+        with self.db() as db:
+            self.assertEqual(db.execute('select count(*) from app_private.oom_manager_cases').fetchone()[0], 13)
+            for status in active + inactive:
+                db.execute('update app_private.oom_manager_cases set status=%s where dedupe_key in (%s,%s)',
+                    (status, key('condition', status), key('weight-change', status)))
+            db.execute("""update app_private.oom_manager_cases
+                set assigned_worker_id=%s,lease_until=%s where status='delegated'""",
+                (delegated_owner, initial_time + worker_module.LEASE))
+
+        # The intake window expires without manufacturing any new animal fact.
+        self.now = initial_time + timedelta(days=36)
+        retained = _completed_bulk_batch_findings(self.now, connect=source_db)
+        retained_by_key = {row['dedupe_key']: row for row in retained}
+        expected_active = {key(kind, pig) for pig in active
+            for kind in ('condition', 'weight-change')} | {key('condition', 'condition-only')}
+        self.assertEqual(set(retained_by_key), expected_active)
+        for identity, row in retained_by_key.items():
+            self.assertEqual(row['evidence_refs'], recent_by_key[identity]['evidence_refs'])
+            self.assertEqual(normalize_candidate(row, now=self.now)['evidence_digest'],
+                normalize_candidate(recent_by_key[identity], now=initial_time)['evidence_digest'])
+            self.assertIsNone(row.get('terminal_state'))
+        with self.db() as db:
+            states = dict(db.execute('select dedupe_key,status from app_private.oom_manager_cases').fetchall())
+        for status in inactive:
+            for kind in ('condition', 'weight-change'):
+                self.assertEqual(states[key(kind, status)], status)
+
+        # Both new complete batches and manual canonical observations/weights
+        # can resolve the same retained cases. The latter need no bulk identity.
+        insert_batch('recovered', self.now, 53, 3, selected=active[:2])
+        with source_db() as db:
+            for pig in active[2:]:
+                pig_id = 'LOCAL-' + pig
+                db.execute("""insert into public.pig_weight_events(
+                    weight_event_id,pig_id,weight_date,weight_kg,source,source_sheet_row,created_at)
+                    values(%s,%s,%s,53,'local-manual',1,%s)""",
+                    ('WEIGHT-manual-' + pig, pig_id, self.now.date(), self.now))
+                supersedes = 'OBS-material-' + pig
+                observed_at = self.now
+                if pig == 'waiting_reassessment':
+                    # The final correction is backdated before the original
+                    # material fact, and reaches it through an intermediate.
+                    intermediate = 'OBS-intermediate-' + pig
+                    db.execute("""insert into public.pig_observation_events(
+                        observation_event_id,pig_id,observed_at,recorded_at,observer_reference,
+                        observation_category,severity,factual_note,measurements_json,
+                        source_system,source_reference,idempotency_key,supersedes_observation_event_id)
+                        values(%s,%s,%s,%s,'local-test','body_condition','attention',
+                        'Intermediate correction','{"body_condition_score":2.2}'::jsonb,
+                        'owner','local-manual',%s,%s)""",
+                        (intermediate, pig_id, self.now, self.now,
+                         'manual-intermediate:' + pig_id, supersedes))
+                    supersedes = intermediate
+                    observed_at = initial_time - timedelta(days=3)
+                db.execute("""insert into public.pig_observation_events(
+                    observation_event_id,pig_id,observed_at,recorded_at,observer_reference,
+                    observation_category,severity,factual_note,measurements_json,
+                    source_system,source_reference,idempotency_key,supersedes_observation_event_id)
+                    values(%s,%s,%s,%s,'local-test','body_condition','informational',
+                    'Current in-range observation','{"body_condition_score":3}'::jsonb,
+                    'owner','local-manual',%s,%s)""",
+                    ('OBS-manual-' + pig, pig_id, observed_at, self.now,
+                     'manual-bcs:' + pig_id, supersedes))
+        current = _completed_bulk_batch_findings(self.now, connect=source_db)
+        resolved = [row for row in current if row.get('terminal_state') == 'completed']
+        self.assertEqual({row['dedupe_key'] for row in resolved},
+            {key(kind, pig) for pig in active for kind in ('condition', 'weight-change')})
+        by_key = {row['dedupe_key']: row for row in resolved}
+        corrected_refs = by_key[key('condition', 'waiting_reassessment')]['evidence_refs']
+        self.assertEqual({ref for ref in corrected_refs if ref.startswith('supersedes_observation:')}, {
+            'supersedes_observation:OBS-material-waiting_reassessment',
+            'supersedes_observation:OBS-intermediate-waiting_reassessment'})
+        self.assertIn('observed:' + (initial_time - timedelta(days=3)).isoformat(), corrected_refs)
+        for pig in active[2:]:
+            self.assertIn('observation:OBS-manual-' + pig, by_key[key('condition', pig)]['evidence_refs'])
+            self.assertIn('weight_event:WEIGHT-manual-' + pig, by_key[key('weight-change', pig)]['evidence_refs'])
+            self.assertTrue(all(not ref.startswith(('batch:', 'draft:'))
+                for kind in ('condition', 'weight-change') for ref in by_key[key(kind, pig)]['evidence_refs']))
+        with self.db() as db, db.cursor() as cur:
+            # The same owning worker refreshes its expired lease before binding
+            # current evidence; an unrelated reconciliation cannot complete it.
+            cur.execute("""update app_private.oom_manager_cases set lease_until=%s
+                where status='delegated' and assigned_worker_id=%s""",
+                (self.now + worker_module.LEASE, delegated_owner))
+            for raw in resolved:
+                canonical = normalize_candidate(raw, now=self.now)
+                ownership = {}
+                if raw['dedupe_key'] in delegated_keys:
+                    self.assertEqual(self.store._reconcile(cur, canonical, self.now), 'deferred')
+                    ownership = {'lease_owner': delegated_owner, 'replace_delegated_owner': True}
+                self.assertEqual(self.store._reconcile(cur, canonical, self.now, **ownership), 'changed')
+                self.assertEqual(self.store._reconcile(cur, canonical, self.now, **ownership), 'replayed')
+        with self.db() as db:
+            rows = db.execute("""select dedupe_key,status,generation,assigned_worker_id,lease_until
+                from app_private.oom_manager_cases where generation=2""").fetchall()
+            self.assertEqual({row[0] for row in rows}, {row['dedupe_key'] for row in resolved})
+            self.assertTrue(all(row[1:] == ('completed', 2, None, None) for row in rows))
+            completed = db.execute("""select case_id,count(*) from app_private.oom_manager_case_events
+                where event_type='completed' group by case_id""").fetchall()
+            self.assertEqual(len(completed), 8)
+            self.assertTrue(all(count == 1 for _case_id, count in completed))
+
+    def test_terminal_canonical_refresh_is_not_redelegated_or_sent(self):
+        initial = self.value('terminal-during-refresh', next_reassessment_at=self.now.isoformat())
+        terminal = {**initial, 'terminal_state': 'completed',
+            'summary': 'New exact canonical evidence resolves the retained case',
+            'evidence_refs': ['observation:LOCAL-RECOVERED', 'observed:' + self.now.isoformat()]}
+        provider_calls = []
+        refreshes = []
+        def refresh(claimed):
+            refreshes.append((claimed['dedupe_key'], claimed['generation']))
+            return terminal
+        def provider(case):
+            provider_calls.append(case)
+            return {'success': True, 'delivery_confirmed': True}
+        first = self.cycle([initial], refresh=refresh, deliver=provider)
+        self.assertTrue(first['success'], first)
+        self.assertEqual(first['exceptions'], 0)
+        self.assertEqual(first['deliveries_confirmed'], 0)
+        self.assertEqual(first['cases_claimed'], 1)
+        self.assertEqual(refreshes, [(initial['dedupe_key'], 1)])
+        self.assertEqual(provider_calls, [])
+        self.now += timedelta(minutes=6)
+        repeated = self.cycle([terminal], refresh=refresh, deliver=provider)
+        self.assertTrue(repeated['success'], repeated)
+        self.assertEqual(repeated['exceptions'], 0)
+        self.assertEqual(repeated['candidate_replays'], 1)
+        self.assertEqual(repeated['cases_claimed'], 0)
+        self.assertEqual(provider_calls, [])
+        with self.db() as db:
+            row = db.execute("""select status,generation,evidence_digest,assigned_worker_id,lease_until
+                from app_private.oom_manager_cases""").fetchone()
+            self.assertEqual(row, ('completed', 2,
+                normalize_candidate(terminal, now=self.now)['evidence_digest'], None, None))
+            events = db.execute("""select event_type from app_private.oom_manager_case_events
+                where generation=2""").fetchall()
+            self.assertEqual(events, [('completed',)])
+
     def test_farm_round_retains_active_mortality_without_new_superseded_history(self):
         from copy import deepcopy
         from modules.oom_sakkie import farm_manager_runtime as runtime

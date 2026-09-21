@@ -15,6 +15,35 @@ from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 COLLECTOR_DEADLINE_SECONDS = 20
 
 
+class ManagerCollectorRefreshError(RuntimeError):
+    """A failed owning read is not evidence that a retained case disappeared."""
+    def __init__(self, collector, failure_kind):
+        self.collector_failure_kind = f"collector:{collector}:{failure_kind}"
+        super().__init__(self.collector_failure_kind)
+
+
+def _project_refresh_rows(rows, requested):
+    result = {(str(row.get("dedupe_key") or ""),
+               str(row.get("specialist") or "").upper()): row for row in rows
+              if (str(row.get("dedupe_key") or ""),
+                  str(row.get("specialist") or "").upper()) in requested}
+    failures = {}
+    for row in rows:
+        if row.get("specialist") != "RUNTIME":
+            continue
+        for ref in row.get("evidence_refs") or ():
+            match = re.fullmatch(r"collector:([a-z_]+):([A-Za-z][A-Za-z0-9_]*)", str(ref))
+            if match and row.get("dedupe_key") == "runtime:collector:" + match[1]:
+                failures[match[1]] = ManagerCollectorRefreshError(*match.groups())
+    for identity in requested:
+        prefix = identity[0].split(":", 1)[0].casefold()
+        owner = {"herdmaster-litter-follow-up": "herdmaster",
+                 "delivery": "delivery_gaps"}.get(prefix, prefix)
+        if owner in failures:
+            result[identity] = failures[owner]
+    return result
+
+
 def collect_manager_candidates(*, now: datetime, collectors=None):
     selected = collectors or (_rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime)
     selected = tuple(selected)
@@ -89,9 +118,11 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
         if collector is None:
             return None
     rows = collect_manager_candidates(now=now, collectors=(collector,))
-    return next((row for row in rows
-                 if str(row.get("dedupe_key") or "") == str(dedupe_key)
-                 and str(row.get("specialist") or "").upper() == claimed_specialist), None)
+    identity = (str(dedupe_key), claimed_specialist)
+    result = _project_refresh_rows(rows, {identity}).get(identity)
+    if isinstance(result, ManagerCollectorRefreshError):
+        raise result
+    return result
 
 
 def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
@@ -124,12 +155,7 @@ def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
     selected = tuple(collector for collector in available
         if (getattr(collector, "__name__", "").strip("_").casefold() in wanted))
     rows = collect_manager_candidates(now=now, collectors=selected) if selected else []
-    return {
-        (str(row.get("dedupe_key") or ""), str(row.get("specialist") or "").upper()): row
-        for row in rows
-        if (str(row.get("dedupe_key") or ""),
-            str(row.get("specialist") or "").upper()) in requested
-    }
+    return _project_refresh_rows(rows, requested)
 
 
 def _rootline(now):
@@ -550,29 +576,57 @@ def _completed_bulk_batch_findings(now, *, connect=None):
     The manager case dedupe key is the durable consumption receipt. Repeated
     five-minute collection is a replay; a newer exact observation/event changes
     the evidence digest and advances the same pig-scoped case generation.
+    The intake window limits new work, not retained open follow-ups. Eligible
+    pigs use their latest canonical evidence, including non-bulk observations.
+    Age is not recovery; closed/contained cases do not extend intake eligibility.
     """
     connector = connect or connect_bounded_read
     with connector() as connection:
         with connection.cursor() as cur:
-            cur.execute("""with completed as (
-                    select batch_id,client_draft_id,weight_date,updated_at
-                    from public.bulk_weight_batches
-                    where status='complete' and updated_at >= %s
+            cur.execute("""with eligible_pigs as (
+                    select o.pig_id from public.bulk_weight_batches b
+                    join public.pig_observation_events o
+                      on o.idempotency_key=('bulk-bcs:'||b.client_draft_id||':'||o.pig_id)
+                    where b.status='complete' and b.updated_at >= %s
+                    union
+                    select p.pig_id from public.pigs p
+                    join app_private.oom_manager_cases retained
+                      on retained.dedupe_key=('herdmaster:bulk-condition:'||p.pig_id)
+                    where retained.specialist='HERDMASTER'
+                      and retained.status in ('open','delegated','waiting_reassessment','exception')
                 ), current_bcs as (
                     select o.observation_event_id,o.pig_id,o.observed_at,o.recorded_at,
-                           o.measurements_json,o.idempotency_key,b.batch_id,b.client_draft_id,
+                           o.measurements_json,o.idempotency_key,o.supersedes_observation_event_id,b.batch_id,b.client_draft_id,
                            p.tag_number,p.pig_name
-                    from completed b join public.pig_observation_events o
-                      on o.idempotency_key=('bulk-bcs:'||b.client_draft_id||':'||o.pig_id)
+                    from eligible_pigs eligible
+                    join public.pig_observation_events o on o.pig_id=eligible.pig_id
                     join public.pigs p on p.pig_id=o.pig_id
-                    where not exists(select 1 from public.pig_observation_events newer
+                    left join public.bulk_weight_batches b
+                      on o.idempotency_key=('bulk-bcs:'||b.client_draft_id||':'||o.pig_id)
+                    where o.measurements_json ? 'body_condition_score'
+                      and (b.batch_id is null or b.status='complete')
+                      and not exists(select 1 from public.pig_observation_events newer
                         where newer.supersedes_observation_event_id=o.observation_event_id)
                 ), latest_bcs as (
                     select current_bcs.*,row_number() over(partition by pig_id
                         order by observed_at desc,recorded_at desc,observation_event_id desc) as position
                     from current_bcs
                 ) select observation_event_id,pig_id,observed_at,recorded_at,
-                    measurements_json,batch_id,client_draft_id,tag_number,pig_name
+                    measurements_json,batch_id,client_draft_id,tag_number,pig_name,
+                    array(with recursive lineage as (
+                        select o.observation_event_id,o.supersedes_observation_event_id,
+                               array[o.observation_event_id] as visited
+                        from public.pig_observation_events o
+                        where o.observation_event_id=latest_bcs.supersedes_observation_event_id
+                          and o.pig_id=latest_bcs.pig_id
+                        union all
+                        select older.observation_event_id,older.supersedes_observation_event_id,
+                               lineage.visited||older.observation_event_id
+                        from public.pig_observation_events older join lineage
+                          on older.observation_event_id=lineage.supersedes_observation_event_id
+                        where older.pig_id=latest_bcs.pig_id
+                          and not older.observation_event_id=any(lineage.visited)
+                    ) select observation_event_id from lineage) as superseded_observations
                     from latest_bcs where position=1 order by pig_id""",
                 (_aware(now) - timedelta(days=35),))
             bcs_rows = cur.fetchall()
@@ -581,19 +635,30 @@ def _completed_bulk_batch_findings(now, *, connect=None):
                            lag(w.weight_kg) over(partition by w.pig_id order by w.weight_date,w.created_at,w.weight_event_id) prior_kg,
                            lag(w.weight_date) over(partition by w.pig_id order by w.weight_date,w.created_at,w.weight_event_id) prior_date
                     from public.pig_weight_events w
+                    left join public.bulk_weight_batches b on b.batch_id=w.bulk_batch_id
+                    where w.bulk_batch_id is null or b.status='complete'
+                ), eligible_pigs as (
+                    select h.pig_id from history h
+                    join public.bulk_weight_batches b on b.batch_id=h.bulk_batch_id
+                    where b.status='complete' and b.updated_at >= %s
+                    union
+                    select p.pig_id from public.pigs p
+                    join app_private.oom_manager_cases retained
+                      on retained.dedupe_key=('herdmaster:bulk-weight-change:'||p.pig_id)
+                    where retained.specialist='HERDMASTER'
+                      and retained.status in ('open','delegated','waiting_reassessment','exception')
                 ), completed_history as (
                     select h.*,p.tag_number,p.pig_name,row_number() over(partition by h.pig_id
                         order by h.weight_date desc,h.created_at desc,h.weight_event_id desc) as position
-                    from history h join public.bulk_weight_batches b on b.batch_id=h.bulk_batch_id
+                    from history h join eligible_pigs eligible on eligible.pig_id=h.pig_id
                     join public.pigs p on p.pig_id=h.pig_id
-                    where b.status='complete' and b.updated_at >= %s and h.prior_kg is not null
                 ) select weight_event_id,pig_id,weight_date,weight_kg,prior_kg,prior_date,
-                    h.bulk_batch_id,h.tag_number,h.pig_name
-                    from completed_history h where position=1 order by pig_id""",
+                    h.bulk_batch_id,h.tag_number,h.pig_name,h.created_at
+                    from completed_history h where position=1 and prior_kg is not null order by pig_id""",
                 (_aware(now) - timedelta(days=35),))
             weight_rows = cur.fetchall()
     findings = []
-    for event_id,pig_id,observed_at,recorded_at,measurements,batch_id,draft_id,tag,name in bcs_rows:
+    for event_id,pig_id,observed_at,recorded_at,measurements,batch_id,draft_id,tag,name,supersedes in bcs_rows:
         score = (measurements or {}).get("body_condition_score")
         try: score = float(score)
         except (TypeError, ValueError): continue
@@ -601,9 +666,10 @@ def _completed_bulk_batch_findings(now, *, connect=None):
         in_range = 2.5 <= score <= 4.0
         findings.append(_candidate(
             f"herdmaster:bulk-condition:{pig_id}", "HERDMASTER", "urgent",
-            [f"pig:{pig_id}", f"batch:{batch_id}", f"draft:{draft_id}",
+            [f"pig:{pig_id}", *([f"batch:{batch_id}", f"draft:{draft_id}"] if batch_id else []),
              f"observation:{event_id}", f"observed:{_aware(observed_at).isoformat()}",
-             f"bcs:{score:g}"], [],
+             f"bcs:{score:g}", f"observation_recorded:{_aware(recorded_at).isoformat()}",
+             *[f"supersedes_observation:{ancestor}" for ancestor in (supersedes or [])]], [],
             (f"{label}'s latest body-condition score is back in range at {score:g}."
              if in_range else f"{label} has a material recorded body-condition score of {score:g}."),
             ("The exact pig-scoped BCS follow-up is resolved by newer in-range canonical evidence."
@@ -614,15 +680,16 @@ def _completed_bulk_batch_findings(now, *, connect=None):
             message_family="body_condition_follow_up",
             presentation_identity={"human_name": label, "stable_reference": str(tag or pig_id)},
             terminal_state="completed" if in_range else None))
-    for event_id,pig_id,weight_date,weight,prior,prior_date,batch_id,tag,name in weight_rows:
+    for event_id,pig_id,weight_date,weight,prior,prior_date,batch_id,tag,name,created_at in weight_rows:
         label = str(name or tag or "Animal name unavailable")
         change = 100 * (float(weight) - float(prior)) / float(prior)
         material = abs(change) >= 10
         findings.append(_candidate(
             f"herdmaster:bulk-weight-change:{pig_id}", "HERDMASTER", "due",
-            [f"pig:{pig_id}", f"batch:{batch_id}", f"weight_event:{event_id}",
+            [f"pig:{pig_id}", *([f"batch:{batch_id}"] if batch_id else []), f"weight_event:{event_id}",
              f"weight:{float(weight):g}", f"prior_weight:{float(prior):g}",
-             f"weight_date:{weight_date}", f"prior_date:{prior_date}"], [],
+             f"weight_date:{weight_date}", f"prior_date:{prior_date}",
+             f"weight_recorded:{_aware(created_at).isoformat()}"], [],
             (f"{label} has a recorded weight change of {change:+.1f}% ({float(prior):g} kg to {float(weight):g} kg)."
              if material else f"{label}'s latest recorded weight change is within the material threshold at {change:+.1f}%."),
             ("HERDMASTER must reassess this descriptive change against current canonical health, feed and lifecycle evidence; no cause is inferred."

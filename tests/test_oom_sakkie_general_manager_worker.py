@@ -596,3 +596,185 @@ def test_confirmed_duplicate_releases_claim_and_reschedules_without_delivery():
 def test_candidate_contract_fails_closed(field, value):
     with pytest.raises(ManagerCaseError):
         normalize_candidate(_candidate(**{field: value}), now=NOW)
+
+
+@pytest.mark.parametrize("dedupe,prior_refs,candidate_refs", [
+    ("herdmaster:bulk-condition:PIG-A",
+     ["observation:NEW", "observed:2026-08-17T10:00:00Z"],
+     ["observation:OLD", "observed:2026-08-16T10:00:00Z"]),
+    ("herdmaster:bulk-weight-change:PIG-A",
+     ["weight_event:NEW", "weight_date:2026-08-17"],
+     ["weight_event:OLD", "weight_date:2026-08-16"]),
+    ("herdmaster:bulk-weight-change:PIG-A",
+     ["weight_event:NEW", "weight_date:2026-08-17", "weight_recorded:2026-08-17T10:00:00Z"],
+     ["weight_event:OLD", "weight_date:2026-08-17", "weight_recorded:2026-08-17T09:00:00Z"]),
+    ("herdmaster:bulk-weight-change:PIG-A",
+     ["weight_event:WGT-Z", "weight_date:2026-08-17", "weight_recorded:2026-08-17T10:00:00Z"],
+     ["weight_event:WGT-A", "weight_date:2026-08-17", "weight_recorded:2026-08-17T10:00:00Z"]),
+    ("herdmaster:bulk-condition:PIG-A",
+     ["observation:NEW", "observed:2026-08-17T10:00:00Z", "observation_recorded:2026-08-17T10:10:00Z"],
+     ["observation:OLD", "observed:2026-08-17T10:00:00Z", "observation_recorded:2026-08-17T10:05:00Z"]),
+    ("herdmaster:bulk-condition:PIG-A",
+     ["observation:CORRECTED", "supersedes_observation:OLD", "observed:2026-08-16T10:00:00Z"],
+     ["observation:OLD", "observed:2026-08-17T10:00:00Z"]),
+    ("herdmaster:bulk-condition:PIG-A",
+     ["observation:CORRECTED-C", "supersedes_observation:CORRECTED-B",
+      "supersedes_observation:OLD-A", "observed:2026-08-15T10:00:00Z"],
+     ["observation:OLD-A", "observed:2026-08-17T10:00:00Z"]),
+])
+def test_terminal_reconciliation_rejects_provably_stale_canonical_evidence(
+        dedupe, prior_refs, candidate_refs):
+    commands = []
+    class Cursor:
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchone(self):
+            return ("old", 8, "waiting_reassessment", None, None, prior_refs)
+    candidate = normalize_candidate(_candidate(dedupe_key=dedupe,
+        specialist="HERDMASTER", evidence_refs=candidate_refs,
+        terminal_state="completed"), now=NOW)
+    assert PostgresManagerCaseStore(connect_factory=lambda: None)._reconcile(
+        Cursor(), candidate, NOW) == "stale"
+    assert len(commands) == 1  # Only the locked read; no update or event.
+
+
+@pytest.mark.parametrize("state,lease_until,owner,replace_owner,expected", [
+    ("delegated", NOW + timedelta(minutes=2), "OTHER", True, "deferred"),
+    ("waiting_reassessment", NOW + timedelta(minutes=2), "OTHER", True, "deferred"),
+    ("delegated", NOW - timedelta(minutes=2), "OTHER", True, "replayed"),
+    ("delegated", NOW + timedelta(minutes=2), "THIS", False, "replayed"),
+    ("delegated", NOW + timedelta(minutes=2), "THIS", True, "changed"),
+])
+def test_terminal_reconciliation_preserves_other_delivery_owner(
+        state, lease_until, owner, replace_owner, expected):
+    commands = []
+    class Cursor:
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchone(self):
+            return ("old", 8, state, owner, lease_until,
+                    ["observation:OLD", "observed:2026-08-16T10:00:00Z"])
+    candidate = normalize_candidate(_candidate(
+        dedupe_key="herdmaster:bulk-condition:PIG-A", specialist="HERDMASTER",
+        evidence_refs=["observation:NEW", "observed:2026-08-17T10:00:00Z"],
+        terminal_state="completed"), now=NOW)
+    assert PostgresManagerCaseStore(connect_factory=lambda: None)._reconcile(
+        Cursor(), candidate, NOW, lease_owner="THIS",
+        replace_delegated_owner=replace_owner) == expected
+    if expected != "changed":
+        assert len(commands) == 1
+    else:
+        assert any("status='completed'" in sql for sql, _ in commands)
+
+
+@pytest.mark.parametrize("ancestors,expected", [
+    (["OLD"], "changed"), (["INTERMEDIATE", "OLD"], "changed"),
+    (["UNRELATED"], "stale")])
+def test_backdated_terminal_correction_requires_exact_canonical_lineage(ancestors, expected):
+    commands = []
+    class Cursor:
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchone(self):
+            return ("old", 8, "waiting_reassessment", None, None,
+                    ["observation:OLD", "observed:2026-08-17T10:00:00Z",
+                     "observation_recorded:2026-08-17T10:01:00Z"])
+    candidate = normalize_candidate(_candidate(
+        dedupe_key="herdmaster:bulk-condition:PIG-A", specialist="HERDMASTER",
+        evidence_refs=["observation:CORRECTED",
+            *("supersedes_observation:" + ancestor for ancestor in ancestors),
+            "observed:2026-08-16T10:00:00Z", "observation_recorded:2026-08-18T10:00:00Z"],
+        terminal_state="completed"), now=NOW)
+    assert PostgresManagerCaseStore(connect_factory=lambda: None)._reconcile(
+        Cursor(), candidate, NOW) == expected
+    if expected == "changed":
+        assert any("oom_manager_case_events" in sql and params[3] == "completed"
+                   for sql, params in commands)
+    else:
+        assert len(commands) == 1
+
+
+@pytest.mark.parametrize("readback,proven", [
+    ((2, "fresh", None, "completed", None, None), True),
+    ((3, "newer", None, "open", None, None), False),
+    ((2, "fresh", None, "delegated", "OWN", NOW + timedelta(minutes=2)), False),
+    ((2, "fresh", None, "completed", "OTHER", NOW + timedelta(minutes=2)), False),
+    ((2, "fresh", None, "completed", None, NOW - timedelta(minutes=2)), False),
+    (None, False),
+])
+def test_completion_outcome_requires_exact_lease_free_final_readback(monkeypatch, readback, proven):
+    commands, delivered = [], []
+    claim = ("OOM-CASE-COMPLETE", "herdmaster:bulk-condition:PIG-A", "HERDMASTER",
+             "urgent", "open", "old", ["observation:OLD"], [],
+             "Existing follow-up.", "Reassess.", NOW, 1, None)
+    class Cursor:
+        def __init__(self): self.last_sql = ""
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params):
+            self.last_sql = sql
+            commands.append((sql, params))
+        def fetchall(self): return [claim] if "join eligible" in self.last_sql else []
+        def fetchone(self):
+            assert "select generation,evidence_digest,last_delivery_digest,status" in self.last_sql
+            if readback and readback[4] == "OWN":
+                owner = next(params[0] for sql, params in commands
+                    if "assigned_worker_id=%s,lease_until=%s,last_heartbeat_at=%s" in sql)
+                return (*readback[:4], owner, datetime.now(timezone.utc) + timedelta(minutes=2))
+            return readback
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        def close(self): pass
+    store = PostgresManagerCaseStore(connect_factory=Connection)
+    monkeypatch.setattr(store, "_refresh_claim", lambda case, *_args: {
+        **case, "status": "completed", "generation": 2, "evidence_digest": "fresh"})
+    audit = build_scheduled_brain_guard_audit(source_revision="test", now=NOW,
+        alignment_result={"version": "v1", "passed": True, "findings": [], "checked_files": []})
+    result = store.run_cycle([], now=NOW, source_revision="test",
+        deliver=lambda case: delivered.append(case), refresh=lambda case: case,
+        brain_guard_audit=audit)
+    assert delivered == []
+    assert result["deliveries_confirmed"] == 0
+    assert result["exceptions"] == (0 if proven else 1)
+    assert result["case_results"][0]["outcome_status"] == (
+        "manager_case_completed_from_current_evidence" if proven
+        else "manager_case_completion_persistence_unproven")
+    finish_index = next(index for index, (sql, _) in enumerate(commands)
+        if "select generation,evidence_digest,last_delivery_digest,status" in sql)
+    assert all("oom_manager_cases" not in sql and "oom_manager_case_events" not in sql
+               for sql, _ in commands[finish_index + 1:])
+
+
+@pytest.mark.parametrize("claimed_status,completed", [
+    ("waiting_reassessment", True), ("delegated", False)])
+def test_refresh_terminal_evidence_preserves_reclaimed_delegated_fence(claimed_status, completed):
+    commands = []
+    raw = _candidate(dedupe_key="herdmaster:bulk-condition:PIG-A",
+        specialist="HERDMASTER", evidence_refs=["observation:RECOVERED"],
+        terminal_state="completed")
+    fresh = normalize_candidate(raw, now=NOW)
+    claimed = {**fresh, "generation": 1, "evidence_digest": "old", "status": claimed_status}
+    current = (fresh["case_id"], fresh["dedupe_key"], "HERDMASTER", "urgent",
+        "completed" if completed else "delegated", fresh["evidence_digest"] if completed else "old",
+        fresh["evidence_refs"], [], fresh["summary"], fresh["next_action"], NOW,
+        2 if completed else 1, None)
+    responses = [(1, "old", "THIS", NOW + timedelta(minutes=2)),
+        ("old", 1, "delegated", "THIS", NOW + timedelta(minutes=2), ["observation:OLD"]), current]
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchone(self): return responses.pop(0)
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+    result = PostgresManagerCaseStore(connect_factory=Connection)._refresh_claim(
+        claimed, raw, NOW, "THIS")
+    assert not responses
+    assert (result["status"] == "completed") is completed
+    assert any("status='completed'" in sql for sql, _ in commands) is completed
+    assert any("status='delegated'" in sql for sql, _ in commands) is not completed
+    if not completed:
+        assert result["_refreshed_generation"] is True
+        assert not any("oom_manager_case_events" in sql and params[3] == "completed"
+                       for sql, params in commands)
