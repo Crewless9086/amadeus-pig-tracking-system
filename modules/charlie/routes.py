@@ -1107,6 +1107,19 @@ def charlie_protected_admission_record_route(mission_id):
         packet = dict(metadata.get("review_packet") or {})
         contract = dict(metadata.get("mission_admission_contract") or {})
         family = dict(metadata.get("mission_family") or {})
+        desktop = (metadata.get("desktop_first_registration")
+                   or metadata.get("desktop_candidate_succession")
+                   or (metadata.get("external_supervisor") or {}).get("transport") == "codex_desktop")
+        # Desktop candidates change only through the owner-bound maintainer
+        # transition. A delayed receipt must never invalidate its successor.
+        if desktop and (packet.get("pr_number") != pr_number
+                or packet.get("candidate_revision") != identity["head_sha"]
+                or packet.get("branch_name") != candidate.get("branch")
+                or family.get("root_mission_id") != identity["root_mission_id"]
+                or family.get("generation") != identity["generation"]
+                or contract.get("generation") != identity["generation"]
+                or contract.get("base_sha") != identity["base_sha"]):
+            raise ValueError("canonical_desktop_candidate_linkage_changed")
         if packet and packet.get("candidate_revision") != identity["head_sha"]:
             current_admission = dict(metadata.get("mission_admission") or {})
             invalidated, invalidated_status = invalidate_external_candidate_admission(
