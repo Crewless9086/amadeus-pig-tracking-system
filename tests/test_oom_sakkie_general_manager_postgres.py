@@ -121,6 +121,69 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         return self.store.run_cycle(values, now=self.now, source_revision='local-regression',
             brain_guard_audit={'passed': True}, **kwargs)
 
+    def test_farm_round_retains_active_mortality_without_new_superseded_history(self):
+        from copy import deepcopy
+        from modules.oom_sakkie import farm_manager_runtime as runtime
+        from modules.oom_sakkie import herdmaster_mortality_runtime as mortality
+        from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+        from tests.test_oom_sakkie_farm_round_persistence import packet, parsed, loaders, RETIRED, OWNER, NOW
+
+        class ReviewCursor(_IsolatedCursor):
+            def execute(inner, sql, params=None):
+                return super().execute(sql.replace('public.', inner.owner.schema + '.'), params)
+        class ReviewConnection(_IsolatedConnection):
+            def cursor(inner):
+                return ReviewCursor(inner.connection.cursor(), inner.owner)
+        def review_db(**_kwargs):
+            return ReviewConnection(psycopg.connect(URL, options='-c statement_timeout=10000'), self)
+
+        migrations = Path(__file__).parents[1] / 'supabase' / 'migrations'
+        with review_db() as db:
+            db.execute((migrations / '202607070001_create_sam_live_stock_conversation_review_events.sql').read_text(encoding='utf-8'))
+            db.execute('create table public.litter_cohort_dispositions(pig_id text primary key)')
+            guard_source = (migrations / '202607300001_create_litter_supersession_rail.sql').read_text(encoding='utf-8')
+            # Execute the actual production function unchanged except isolated schema.
+            definition = guard_source.split('create or replace function public.reject_superseded_pig_fact()', 1)[1].split(
+                'create or replace function public.reject_superseded_pig_mutation()', 1)[0]
+            db.execute('create or replace function public.reject_superseded_pig_fact()' + definition)
+            db.execute('create trigger reject_superseded_pig_fact before insert or update or delete on '
+                'public.sam_live_stock_conversation_review_events for each row execute function public.reject_superseded_pig_fact()')
+            db.execute('insert into public.litter_cohort_dispositions values(%s)', (RETIRED,))
+        original = packet(); before = deepcopy(original)
+        with patch.dict(os.environ, {'DATABASE_URL': URL}), \
+             patch.object(runtime, 'connect_bounded_postgres', side_effect=review_db), \
+             patch.object(runtime, 'connect_bounded_read', side_effect=review_db), \
+             patch.object(mortality, 'connect_bounded_postgres', side_effect=review_db), \
+             patch.object(mortality, 'connect_bounded_read', side_effect=review_db):
+            rejected = runtime._event_store('record', 'SYNTHETIC-UNPROJECTED',
+                {'binding': {}, 'result': {}, 'mortality_packet': original})
+            self.assertFalse(rejected['success'])
+            args = dict(now=NOW, loaders=loaders(original))
+            first, status = runtime.handle_farm_manager_round(parsed(),
+                issue_gateway_owner_authority(OWNER, OWNER), **args)
+            replay, replay_status = runtime.handle_farm_manager_round(parsed(),
+                issue_gateway_owner_authority(OWNER, OWNER), **args)
+            self.assertEqual((status, replay_status), (200, 200))
+            self.assertEqual(replay['status'], 'farm_manager_round_replay_suppressed')
+            self.assertEqual(first['result_digest'], replay['result_digest'])
+            retained = runtime._event_store('load', first['mission_id'], None)
+            projected = retained['mortality_packet']
+            self.assertEqual(projected, {k: v for k, v in original.items() if k != 'excluded_dated_or_superseded'})
+            self.assertEqual(original, before)
+            self.assertNotIn(RETIRED, json.dumps(retained))
+            active_conflict = deepcopy(projected)
+            active_conflict['proven_facts'][0]['pig_id'] = RETIRED
+            rejected_active = runtime._event_store('record', 'SYNTHETIC-ACTIVE-CONFLICT',
+                {'binding': {}, 'result': {}, 'mortality_packet': active_conflict})
+            self.assertFalse(rejected_active['success'])
+        with review_db() as db:
+            rows = db.execute('select event_source,review_json from public.sam_live_stock_conversation_review_events order by event_source').fetchall()
+            self.assertEqual(len(rows), 2)  # Exactly one farm report and its existing consumption receipt.
+            by_source = dict(rows)
+            receipt = by_source[mortality.EVENT_SOURCE]['mortality_consumption']
+            self.assertEqual(receipt['evidence_digest'], original['evidence_digest'])
+            self.assertEqual(set(receipt['canonical_death_event_fingerprints']), {'SYNTHETIC-CURRENT-DEATH'})
+
     def test_five_specialists_rotate_due_herd_cases_and_new_critical_evidence_preempts(self):
         # Exercise the production claim SQL over natural five-minute cadences,
         # rather than draining the queue within one not-yet-due interval.
