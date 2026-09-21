@@ -132,11 +132,11 @@ def test_completed_batch_projects_exact_pig_material_bcs_and_weight_findings():
         def fetchall(self):
             if self.calls == 1:
                 return [("OBS-LOW", "PIG-A", NOW, NOW, {"body_condition_score": 2},
-                    "BATCH-1", "DRAFT-1", "Teena", None),
+                    "BATCH-1", "DRAFT-1", "Teena", None, None),
                     ("OBS-OK", "PIG-B", NOW, NOW, {"body_condition_score": 3.5},
-                    "BATCH-1", "DRAFT-1", "Bonnie", None)]
+                    "BATCH-1", "DRAFT-1", "Bonnie", None, None)]
             return [("WEIGHT-1", "PIG-C", NOW.date(), 45, 40, NOW.date()-timedelta(days=7),
-                     "BATCH-1", "Waki", None)]
+                     "BATCH-1", "Waki", None, NOW)]
         def __enter__(self): return self
         def __exit__(self, *_args): return False
     class Connection:
@@ -418,3 +418,70 @@ def test_missing_current_observation_names_acquisition_owner_and_retry(monkeypat
     assert case["unknowns"] == ["current_date_canonical_rootline_observation"]
     assert "existing Oom Sakkie ROOTLINE schedule" in case["next_action"]
     assert case["next_reassessment_at"] == (NOW + timedelta(minutes=5)).isoformat()
+
+
+
+def test_refresh_collector_error_is_not_a_missing_candidate_and_keeps_sibling():
+    from modules.oom_sakkie.manager_case_sources import ManagerCollectorRefreshError
+    def _herdmaster(now):
+        raise RuntimeError("private connection detail must not escape")
+    def _beacon(now):
+        return [{"dedupe_key": "beacon:current", "specialist": "BEACON"}]
+    cases = [{"dedupe_key": "herdmaster:bulk-weight-change:PIG-A", "specialist": "HERDMASTER"},
+             {"dedupe_key": "beacon:current", "specialist": "BEACON"}]
+    result = collect_manager_refresh_snapshot(now=NOW, cases=cases,
+        collectors=(_herdmaster, _beacon))
+    error = result[(cases[0]["dedupe_key"], "HERDMASTER")]
+    assert isinstance(error, ManagerCollectorRefreshError)
+    assert error.collector_failure_kind == "collector:herdmaster:RuntimeError"
+    assert "private" not in str(error)
+    assert result[("beacon:current", "BEACON")] == {"dedupe_key": "beacon:current", "specialist": "BEACON"}
+
+
+def test_refresh_successful_absence_remains_unresolved_not_collector_failure():
+    def _herdmaster(now):
+        return []
+    case = {"dedupe_key": "herdmaster:bulk-weight-change:PIG-A", "specialist": "HERDMASTER"}
+    assert collect_manager_refresh_snapshot(now=NOW, cases=[case], collectors=(_herdmaster,)) == {}
+    assert collect_manager_candidate(now=NOW, **case, collectors=(_herdmaster,)) is None
+
+
+def test_single_refresh_preserves_sanitized_owning_collector_failure():
+    import pytest
+    from modules.oom_sakkie.manager_case_sources import ManagerCollectorRefreshError
+    def _herdmaster(now):
+        raise TimeoutError("private timeout details")
+    with pytest.raises(ManagerCollectorRefreshError) as failure:
+        collect_manager_candidate(now=NOW, dedupe_key="herdmaster:bulk-weight-change:PIG-A",
+            specialist="HERDMASTER", collectors=(_herdmaster,))
+    assert str(failure.value) == "collector:herdmaster:TimeoutError"
+
+
+def test_manual_current_evidence_has_no_invented_batch_identity_or_owner_send(monkeypatch):
+    class Cursor:
+        calls = 0
+        def execute(self, *_args): self.calls += 1
+        def fetchall(self):
+            if self.calls == 1:
+                return [("OBS-MANUAL", "PIG-A", NOW, NOW, {"body_condition_score": 3},
+                         None, None, "A", None, ["OBS-PREVIOUS", "OBS-ORIGINAL"])]
+            return [("WEIGHT-MANUAL", "PIG-A", NOW.date(), 51, 50, NOW.date()-timedelta(days=7),
+                     None, "A", None, NOW)]
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    class Connection:
+        def cursor(self): return Cursor()
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "42")
+    rows = _completed_bulk_batch_findings(NOW, connect=Connection)
+    assert len(rows) == 2
+    assert "supersedes_observation:OBS-PREVIOUS" in rows[0]["evidence_refs"]
+    assert "supersedes_observation:OBS-ORIGINAL" in rows[0]["evidence_refs"]
+    assert f"weight_recorded:{NOW.isoformat()}" in rows[1]["evidence_refs"]
+    for row in rows:
+        assert row["terminal_state"] == "completed"
+        assert not any(ref.startswith(("batch:", "draft:")) for ref in row["evidence_refs"])
+        outcome = deliver_farm_manager_case({**row, "case_id": "OOM-CASE-TEST", "generation": 2},
+            deliver=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("stale send")))
+        assert outcome["telegram_sends"] == 0
