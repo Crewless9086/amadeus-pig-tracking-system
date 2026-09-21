@@ -1657,9 +1657,23 @@ def append_mission_admission_event(
                         "status": "mission_admission_root_mismatch",
                         "mission_id": mission_id,
                     }, 409
+                # Recheck under the same row lock as the projection write. A
+                # callback can have verified authority before candidate succession.
+                family = metadata.get("mission_family") or {}
+                contract = metadata.get("mission_admission_contract") or {}
+                packet = metadata.get("review_packet") or {}
+                if (not isinstance(family, dict) or not isinstance(contract, dict)
+                        or not isinstance(packet, dict)
+                        or family.get("root_mission_id") != admission["root_mission_id"]
+                        or family.get("generation") != admission["generation"]
+                        or contract.get("generation") != admission["generation"]
+                        or contract.get("base_sha") != admission["base_sha"]
+                        or packet.get("candidate_revision") != admission["head_sha"]):
+                    return {"success": False, "status": "mission_admission_candidate_mismatch",
+                            "mission_id": mission_id}, 409
                 current = metadata.get("mission_admission")
                 if isinstance(current, dict) and current.get("status") == "valid":
-                    if current.get("receipt_id") == projection["receipt_id"]:
+                    if current == projection:
                         return {
                             "success": True,
                             "status": "exact_replay",
@@ -1671,6 +1685,13 @@ def append_mission_admission_event(
                         "status": "mission_admission_conflict",
                         "mission_id": mission_id,
                     }, 409
+                if (isinstance(current, dict)
+                        and current.get("status") in {"consumed", "revoked", "invalidated"}
+                        and current.get("generation") == admission["generation"]
+                        and current.get("base_sha") == admission["base_sha"]
+                        and current.get("head_sha") == admission["head_sha"]):
+                    return {"success": False, "status": "mission_admission_retired",
+                            "mission_id": mission_id}, 409
                 created = _insert_operational_event(cursor, event)
                 if not created:
                     stored = _load_operational_event(cursor, event["idempotency_key"])

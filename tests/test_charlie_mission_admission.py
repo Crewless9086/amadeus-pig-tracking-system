@@ -214,6 +214,12 @@ def _admission_projection(**updates):
     return value
 
 
+def _admission_binding():
+    return {"mission_family": {"root_mission_id": "CMQ-20260813-05", "generation": GENERATION},
+            "mission_admission_contract": {"generation": GENERATION, "base_sha": BASE},
+            "review_packet": {"candidate_revision": HEAD}}
+
+
 class AdmissionStoreCursor:
     def __init__(self, metadata=None, *, correction_exists=True, read_rows=None):
         self.metadata = dict(metadata or {})
@@ -1797,7 +1803,7 @@ class MissionAdmissionStoreTests(unittest.TestCase):
         )
 
     def test_append_uses_existing_event_fabric_and_updates_projection_transactionally(self):
-        cursor = AdmissionStoreCursor()
+        cursor = AdmissionStoreCursor(_admission_binding())
         connection = AdmissionStoreConnection(cursor)
         admission = _admission_projection()
         result, status = append_mission_admission_event(
@@ -1813,6 +1819,24 @@ class MissionAdmissionStoreTests(unittest.TestCase):
         self.assertTrue(any("insert into public.operational_events" in sql for sql in statements))
         self.assertTrue(any("update public.charlie_missions" in sql for sql in statements))
         self.assertEqual(cursor.metadata["mission_admission"]["status"], "valid")
+
+    def test_append_rechecks_canonical_binding_under_lock_before_any_write(self):
+        for field in ("missing", "root", "family_generation", "contract_generation", "base", "head"):
+            metadata = _admission_binding()
+            if field == "missing": metadata = {}
+            elif field == "root": metadata["mission_family"]["root_mission_id"] = "OTHER"
+            elif field == "family_generation": metadata["mission_family"]["generation"] = "new-generation"
+            elif field == "contract_generation": metadata["mission_admission_contract"]["generation"] = "new-generation"
+            elif field == "base": metadata["mission_admission_contract"]["base_sha"] = "c" * 40
+            elif field == "head": metadata["review_packet"]["candidate_revision"] = "c" * 40
+            cursor = AdmissionStoreCursor(metadata)
+            with self.subTest(field=field):
+                result, status = append_mission_admission_event("CMQ-20260813-05", _admission_projection(),
+                    authenticated_principal="authority", connect_factory=lambda _: AdmissionStoreConnection(cursor))
+                self.assertEqual(status, 409, result)
+                self.assertTrue(all(sql.startswith("select ") for sql, _ in cursor.executed))
+                self.assertIn("for update", cursor.executed[0][0])
+                self.assertEqual(cursor.metadata, metadata)
 
     def test_authenticated_owner_correction_changes_generation_and_invalidates_atomically(self):
         current = {
@@ -2000,14 +2024,11 @@ class MissionAdmissionPostgresTests(unittest.TestCase):
                     truncate public.operational_events,
                              public.charlie_mission_events,
                              public.charlie_missions;
-                    insert into public.charlie_missions
-                        (mission_id,status,metadata_json)
-                    values (
-                        'CMQ-20260813-05',
-                        'paused',
-                        '{"mission_family":{"root_mission_id":"CMQ-20260813-05"}}'
-                    );
                 """)
+                cursor.execute("""insert into public.charlie_missions
+                        (mission_id,status,metadata_json)
+                    values ('CMQ-20260813-05','paused',%s::jsonb)""",
+                    (json.dumps(_admission_binding()),))
 
     def _record(self):
         result, status = append_mission_admission_event(

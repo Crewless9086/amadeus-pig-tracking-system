@@ -1,4 +1,4 @@
-"""One paused first-registration, never a general mission metadata writer.
+"""Paused registration and one exact consolidation succession; no generic writer.
 
 This is a maintainer preparation/registration boundary, not owner authentication.
 The caller must independently authenticate Charl's exact, manifest-bound approval.
@@ -36,6 +36,7 @@ IMPLEMENTATION_PATHS = (
     "scripts/register_desktop_consolidation.py",
 )
 BOOTSTRAP_PATHS = sorted((*IMPLEMENTATION_PATHS,
+    "modules/charlie/mission_store.py", "modules/charlie/routes.py",
     ".github/workflows/charlie-core-tests.yml",
     "scripts/charlie_mission_admission_guard.py",
     "tests/test_charlie_mission_admission.py",
@@ -136,6 +137,35 @@ def _load(raw, expected_digest, label):
         raise RegistrationError(label + "_json_invalid") from exc
 
 
+def _validate_owner_package(manifest, approval, expected_manifest_sha256, now, *, version, decision):
+    instruction = _object(manifest["owner_instruction"], {
+        "owner_principal", "task_id", "source_message_id", "evidence_ref",
+        "text", "text_sha256", "issued_at",
+    }, "owner_instruction")
+    principal = _text(instruction["owner_principal"], "owner_principal", 180)
+    if not principal.startswith("owner:") or instruction["task_id"] != TASK_ID:
+        raise RegistrationError("owner_instruction_identity_invalid")
+    for key in ("source_message_id", "evidence_ref"):
+        _text(instruction[key], "owner_instruction_" + key)
+    _text(instruction["text"], "owner_instruction_text", 2000)
+    if sha256(instruction["text"].encode("utf-8")) != instruction["text_sha256"]:
+        raise RegistrationError("owner_instruction_sha256_mismatch")
+    issued = _time(approval["issued_at"], "approval_issued_at")
+    expires = _time(manifest["expires_at"], "expires_at")
+    if (approval["version"] != version or approval["decision"] != decision
+            or approval["manifest_sha256"] != expected_manifest_sha256
+            or approval["owner_principal"] != principal or approval["task_id"] != TASK_ID
+            or _time(approval["expires_at"], "approval_expires_at") != expires):
+        raise RegistrationError("approval_binding_invalid")
+    if (not _time(instruction["issued_at"], "instruction_issued_at") <= issued <= now < expires
+            or expires - issued > timedelta(hours=24)):
+        raise RegistrationError("approval_not_current")
+    for key in ("approval_id", "source_message_id", "evidence_ref"):
+        _text(approval[key], "approval_" + key, 120 if key.endswith("id") else 500)
+    _text(approval["instruction_text"], "approval_instruction_text", 2000)
+    return instruction, principal, issued
+
+
 def prepare_registration(manifest_bytes, *, expected_manifest_sha256,
                          approval_bytes, expected_approval_sha256, now=None):
     """Validate an immutable package without reading credentials or a database.
@@ -157,31 +187,8 @@ def prepare_registration(manifest_bytes, *, expected_manifest_sha256,
     for key in ("idempotency_key", "generation"):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,159}", str(manifest[key])):
             raise RegistrationError(key + "_invalid")
-    instruction = _object(manifest["owner_instruction"], {
-        "owner_principal", "task_id", "source_message_id", "evidence_ref",
-        "text", "text_sha256", "issued_at",
-    }, "owner_instruction")
-    principal = _text(instruction["owner_principal"], "owner_principal", 180)
-    if not principal.startswith("owner:") or instruction["task_id"] != TASK_ID:
-        raise RegistrationError("owner_instruction_identity_invalid")
-    for key in ("source_message_id", "evidence_ref"):
-        _text(instruction[key], "owner_instruction_" + key)
-    _text(instruction["text"], "owner_instruction_text", 2000)
-    if sha256(instruction["text"].encode("utf-8")) != instruction["text_sha256"]:
-        raise RegistrationError("owner_instruction_sha256_mismatch")
-    issued = _time(approval["issued_at"], "approval_issued_at")
-    expires = _time(manifest["expires_at"], "expires_at")
-    if (approval["version"] != VERSION or approval["decision"] != DECISION
-            or approval["manifest_sha256"] != expected_manifest_sha256
-            or approval["owner_principal"] != principal or approval["task_id"] != TASK_ID
-            or _time(approval["expires_at"], "approval_expires_at") != expires):
-        raise RegistrationError("approval_binding_invalid")
-    if (not _time(instruction["issued_at"], "instruction_issued_at") <= issued <= now < expires
-            or expires - issued > timedelta(hours=24)):
-        raise RegistrationError("approval_not_current")
-    for key in ("approval_id", "source_message_id", "evidence_ref"):
-        _text(approval[key], "approval_" + key, 120 if key.endswith("id") else 500)
-    _text(approval["instruction_text"], "approval_instruction_text", 2000)
+    instruction, principal, issued = _validate_owner_package(
+        manifest, approval, expected_manifest_sha256, now, version=VERSION, decision=DECISION)
     candidate = _object(manifest["candidate"], {
         "pr_number", "branch", "base_sha", "head_sha", "tree_sha",
         "diff_sha256", "changed_files",
@@ -366,3 +373,276 @@ def register_first_mission(manifest_bytes, *, expected_manifest_sha256,
     return {"status": "registered_paused", "mission_id": MISSION_ID,
             "manifest_sha256": expected_manifest_sha256, "writes": 3,
             "admission_issued": False, "runnable": False}
+
+
+SUCCESSION_VERSION = "desktop_consolidation_candidate_succession_v1"
+SUCCESSION_DECISION = "approve_paused_consolidation_successor_only"
+CONSOLIDATION_BASE = "e46743cb3e8d224b60d17eb5920acb113f613a52"
+CONSOLIDATION_ORIGINAL = "013a9ebe23c3fedeedb285a88ad5103aad1d6a97"
+CONSOLIDATION_CHECKPOINT = "eff2ea1e8a1b4130e5c3febde7f608aff6b6f990"
+CONSOLIDATION_SCOPE_CHECKPOINT = "cfd1057dd19f027bd040a622e28b4d8528e4198d"
+SUCCESSOR_BRANCH = "codex/workspace-consolidation-20260919"
+
+
+def _correction_digest(event):
+    # Match the existing canonical authority reader, including Unicode encoding.
+    return sha256(json.dumps({key: value for key, value in event.items() if key != "recorded_at"},
+                             sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+
+def prepare_successor(manifest_bytes, *, expected_manifest_sha256,
+                      approval_bytes, expected_approval_sha256, now=None):
+    """Prepare exactly PR1342 -> PR1341; supplied evidence is not authentication."""
+    now = now or _utc_now()
+    if now.tzinfo is None:
+        raise RegistrationError("timezone_required")
+    keys = (_MANIFEST_KEYS - {"expected_state"}) | {"predecessor", "merge_evidence"}
+    manifest = _object(_load(manifest_bytes, expected_manifest_sha256, "manifest"), keys, "manifest")
+    approval = _object(_load(approval_bytes, expected_approval_sha256, "approval"), _APPROVAL_KEYS, "approval")
+    if (manifest["version"] != SUCCESSION_VERSION or manifest["mission_id"] != MISSION_ID
+            or manifest["task_id"] != TASK_ID or manifest["repository"] != REPOSITORY):
+        raise RegistrationError("succession_scope_invalid")
+    for key in ("idempotency_key", "generation"):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,159}", str(manifest[key])):
+            raise RegistrationError(key + "_invalid")
+    _, principal, issued = _validate_owner_package(manifest, approval, expected_manifest_sha256,
+        now, version=SUCCESSION_VERSION, decision=SUCCESSION_DECISION)
+    previous = _object(manifest["predecessor"], {
+        "metadata_sha256", "registration_manifest_sha256", "registration_approval_sha256",
+        "correction_event_id", "correction_sha256", "generation", "pr_number", "head_sha",
+        "receipt_id", "content_sha256", "admission_status",
+    }, "predecessor")
+    for key in ("metadata_sha256", "registration_manifest_sha256", "registration_approval_sha256",
+                "correction_sha256", "content_sha256"):
+        _sha(previous[key], "predecessor_" + key)
+    _sha(previous["head_sha"], "predecessor_head", 40)
+    for key in ("generation", "correction_event_id"):
+        _text(previous[key], "predecessor_" + key)
+    if (previous["pr_number"] != 1342 or type(previous["pr_number"]) is not int
+            or not re.fullmatch(r"MAR-[0-9A-F]{64}", str(previous["receipt_id"]))
+            or previous["admission_status"] not in {"valid", "consumed"}
+            or manifest["generation"] == previous["generation"]):
+        raise RegistrationError("predecessor_identity_invalid")
+    candidate = _object(manifest["candidate"], {
+        "pr_number", "branch", "base_sha", "head_sha", "tree_sha", "diff_sha256", "changed_files",
+    }, "candidate")
+    if (type(candidate["pr_number"]) is not int or candidate["pr_number"] != 1341
+            or candidate["branch"] != SUCCESSOR_BRANCH):
+        raise RegistrationError("successor_identity_invalid")
+    for key in ("base_sha", "head_sha", "tree_sha"):
+        _sha(candidate[key], "candidate_" + key, 40)
+    if candidate["base_sha"] == candidate["head_sha"]:
+        raise RegistrationError("candidate_empty")
+    _sha(candidate["diff_sha256"], "candidate_diff")
+    paths = _strings(candidate["changed_files"], "candidate_paths", paths=True)
+    implementation = _object(manifest["implementation"], {"revision", "files"}, "implementation")
+    _sha(implementation["revision"], "implementation_revision", 40)
+    if implementation["revision"] != candidate["base_sha"]:
+        raise RegistrationError("implementation_not_protected_main")
+    _object(implementation["files"], IMPLEMENTATION_PATHS, "implementation_files")
+    for value in implementation["files"].values():
+        _sha(value, "implementation_file")
+    merge = _object(manifest["merge_evidence"], {
+        "repository", "pr_number", "head_sha", "merge_sha", "main_sha", "base_ref",
+        "merged_at", "observed_at", "evidence_ref", "evidence_sha256",
+    }, "merge_evidence")
+    if (merge["repository"] != REPOSITORY or type(merge["pr_number"]) is not int
+            or merge["pr_number"] != 1342 or merge["head_sha"] != previous["head_sha"]
+            or merge["base_ref"] != "main" or merge["main_sha"] != candidate["base_sha"]):
+        raise RegistrationError("predecessor_merge_mismatch")
+    _sha(merge["merge_sha"], "merge_sha", 40)
+    _sha(merge["evidence_sha256"], "merge_evidence_sha256")
+    _text(merge["evidence_ref"], "merge_evidence_ref")
+    if not _time(merge["merged_at"], "merged_at") <= _time(merge["observed_at"], "observed_at") <= issued:
+        raise RegistrationError("merge_evidence_chronology_invalid")
+    for key in ("required_tests", "operational_acceptance"):
+        _strings(manifest[key], key)
+    for key in ("test_evidence", "review_evidence"):
+        if not isinstance(manifest[key], list) or not 1 <= len(manifest[key]) <= 20:
+            raise RegistrationError(key + "_required")
+        for evidence in manifest[key]:
+            _object(evidence, {"ref", "sha256"}, key)
+            _text(evidence["ref"], key + "_ref")
+            _sha(evidence["sha256"], key + "_sha256")
+    contract = {
+        "generation": manifest["generation"], "branch": candidate["branch"],
+        "base_sha": candidate["base_sha"], "allowed_files": paths, "forbidden_files": ["*"],
+        "allowed_effects": ALLOWED_EFFECTS, "forbidden_effects": FORBIDDEN_EFFECTS,
+        "required_tests": manifest["required_tests"],
+        "operational_acceptance": manifest["operational_acceptance"],
+    }
+    packet = {
+        "repository": REPOSITORY, "pr_number": candidate["pr_number"],
+        "branch_name": candidate["branch"], "candidate_revision": candidate["head_sha"],
+        "candidate_tree": candidate["tree_sha"], "candidate_diff_sha256": candidate["diff_sha256"],
+        "changed_files": paths, "test_evidence": manifest["test_evidence"],
+        "review_evidence": manifest["review_evidence"],
+    }
+    correction = build_mission_control_event(MISSION_ID, {
+        "event_type": "owner_correction_recorded", "summary": approval["instruction_text"],
+        "corrects_event_id": previous["correction_event_id"],
+        "idempotency_key": manifest["idempotency_key"] + ":" + approval["approval_id"],
+        "real_life_state": "prepared", "current_worker": "codex_desktop:" + TASK_ID,
+        "first_missing_acceptance_gate": "Separate protected-main admission and release of PR1341.",
+        "next_automatic_step": "NONE: succession remains paused and non-runnable.",
+        "owner_action": "NONE: this event grants candidate succession only.",
+        "evidence_refs": [approval["evidence_ref"], merge["evidence_ref"],
+                          "sha256:" + expected_manifest_sha256, "sha256:" + expected_approval_sha256],
+    }, recorded_by=principal, now=issued)
+    return {"manifest": manifest, "approval": approval,
+            "manifest_sha256": expected_manifest_sha256, "approval_sha256": expected_approval_sha256,
+            "packet": packet, "contract": contract, "correction": correction,
+            "requires_independent_owner_authentication": True,
+            "requires_independent_merge_verification": True}
+
+
+def verify_successor_source(manifest):
+    from scripts.register_desktop_consolidation import verify_local_successor
+    verify_local_successor(manifest)
+
+
+def bind_successor(manifest_bytes, *, expected_manifest_sha256,
+                   approval_bytes, expected_approval_sha256,
+                   authenticated_owner_principal="", verified_merge_evidence=None,
+                   database_url=None, connect_factory=None, dry_run=True, now=None):
+    """Retire one merged predecessor and bind PR1341 atomically, still paused.
+
+    The trusted maintainer caller independently authenticates approval and fresh
+    provider readback. No public caller, issuer, release or runner is exposed.
+    """
+    if not dry_run and now is not None:
+        raise RegistrationError("apply_clock_override_forbidden")
+    plan = prepare_successor(manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        approval_bytes=approval_bytes, expected_approval_sha256=expected_approval_sha256,
+        now=now if dry_run else _utc_now())
+    if dry_run:
+        return {"status": "dry_run", "database_accessed": False, "writes": 0, "plan": plan}
+    manifest, approval = plan["manifest"], plan["approval"]
+    principal = approval["owner_principal"]
+    if authenticated_owner_principal != principal:
+        raise RegistrationError("independently_authenticated_owner_required")
+    # The verifier supplies the same immutable merge identity plus a fresh check
+    # time; it cannot replace the merge or main identities authorized by Charl.
+    verified = dict(verified_merge_evidence or {})
+    checked_at = verified.pop("checked_at", None)
+    if (verified != manifest["merge_evidence"] or checked_at is None
+            or not timedelta(0) <= _utc_now() - _time(checked_at, "merge_checked_at") <= timedelta(minutes=5)):
+        raise RegistrationError("independently_verified_current_merge_required")
+    verify_successor_source(manifest)
+    if not database_url and connect_factory is None:
+        raise RegistrationError("explicit_database_connection_required")
+    expected = manifest["predecessor"]
+    event_id = "DESKTOP-SUCCESSION-" + expected_manifest_sha256.upper()
+    receipt_keys = ("receipt_id", "content_sha256", "generation", "head_sha")
+
+    def latest_correction(cursor):
+        cursor.execute("select event_id,metadata_json,recorded_by from public.charlie_mission_events "
+                       "where mission_id=%s and event_type='owner_correction_recorded' "
+                       "order by created_at desc,event_id desc limit 1", (MISSION_ID,))
+        return cursor.fetchone()
+
+    def paused_row(cursor):
+        cursor.execute("select status,approval_level,source,metadata_json from public.charlie_missions "
+                       "where mission_id=%s for update", (MISSION_ID,))
+        row = cursor.fetchone()
+        if row is None or tuple(row[:3]) != ("paused", "LEVEL 0", "codex_desktop"):
+            raise RegistrationError("paused_desktop_mission_required")
+        metadata = dict(row[3] or {})
+        if (mission_store.mission_runtime_eligible({"metadata": metadata})
+                or metadata.get("portfolio_classification") != {"classification": "registration_only", "runnable": False}
+                or metadata.get("external_supervisor") != {
+                    "principal": "codex_desktop:" + TASK_ID, "transport": "codex_desktop", "task_id": TASK_ID}
+                or any(key in metadata for key in ("dispatch_authorization", "hermes_native_execution", "execution_lease"))):
+            raise RegistrationError("non_runnable_desktop_boundary_changed")
+        return metadata
+
+    with mission_store._connect(database_url or "", connect_factory) as connection:
+        if getattr(connection, "autocommit", False):
+            raise RegistrationError("transaction_required")
+        with connection.cursor() as cursor:
+            cursor.execute("set local lock_timeout='3s'")
+            cursor.execute("set local statement_timeout='10s'")
+            metadata = paused_row(cursor)
+            if _utc_now() >= _time(manifest["expires_at"], "expires_at"):
+                raise RegistrationError("approval_not_current")
+            cursor.execute("select metadata_json from public.charlie_mission_events where event_id=%s "
+                           "and mission_id=%s", (event_id, MISSION_ID))
+            recorded = cursor.fetchone()
+            correction = latest_correction(cursor)
+            existing = metadata.get("desktop_candidate_succession")
+            if existing or recorded:
+                if (not recorded or not existing
+                        or existing != {"event_id": event_id, "manifest_sha256": expected_manifest_sha256,
+                                        "approval_sha256": expected_approval_sha256}
+                        or recorded[0].get("manifest") != manifest or recorded[0].get("approval") != approval
+                        or metadata.get("review_packet") != plan["packet"]
+                        or metadata.get("mission_admission_contract") != plan["contract"]
+                        or metadata.get("mission_family") != {"root_mission_id": MISSION_ID, "generation": manifest["generation"]}
+                        or not correction or correction[0] != plan["correction"]["event_id"]
+                        or correction[1] != plan["correction"] or correction[2] != principal):
+                    raise RegistrationError("succession_replay_conflict")
+                current = metadata.get("mission_admission")
+                if current and any(current.get(key) != value for key, value in {
+                        "mission_id": MISSION_ID, "root_mission_id": MISSION_ID,
+                        "generation": manifest["generation"], "base_sha": manifest["candidate"]["base_sha"],
+                        "head_sha": manifest["candidate"]["head_sha"]}.items()):
+                    raise RegistrationError("successor_admission_conflict")
+                return {"status": "exact_replay", "mission_id": MISSION_ID, "writes": 0, "runnable": False}
+            if sha256(_json_bytes(metadata)) != expected["metadata_sha256"]:
+                raise RegistrationError("predecessor_state_changed")
+            first = metadata.get("desktop_first_registration") or {}
+            packet, contract = metadata.get("review_packet") or {}, metadata.get("mission_admission_contract") or {}
+            admission, family = metadata.get("mission_admission") or {}, metadata.get("mission_family") or {}
+            if (first.get("manifest_sha256") != expected["registration_manifest_sha256"]
+                    or first.get("approval_sha256") != expected["registration_approval_sha256"]
+                    or (first.get("manifest") or {}).get("owner_instruction") != manifest["owner_instruction"]
+                    or packet.get("pr_number") != 1342 or packet.get("candidate_revision") != expected["head_sha"]
+                    or family != {"root_mission_id": MISSION_ID, "generation": expected["generation"]}
+                    or contract.get("generation") != expected["generation"]
+                    or admission.get("status") != expected["admission_status"]
+                    or any(admission.get(key) != expected[key] for key in receipt_keys)
+                    or admission.get("mission_id") != MISSION_ID or admission.get("root_mission_id") != MISSION_ID
+                    or not isinstance(admission.get("signed_receipt"), dict)
+                    or not correction or correction[0] != expected["correction_event_id"]
+                    or correction[2] != principal or _correction_digest(correction[1]) != expected["correction_sha256"]):
+                raise RegistrationError("predecessor_identity_changed")
+            from modules.charlie.mission_control import validate_mission_control_event
+            if not validate_mission_control_event(correction[1])[0]:
+                raise RegistrationError("predecessor_correction_invalid")
+            # Preserve the original packet and receipt bytes, and their consumed
+            # retirement, in the append-only mission event. No active receipt is
+            # transplanted to the new generation; the protected issuer must sign it.
+            history = {"version": SUCCESSION_VERSION, "manifest": manifest, "approval": approval,
+                "manifest_sha256": expected_manifest_sha256, "approval_sha256": expected_approval_sha256,
+                "previous_metadata": metadata,
+                "retired_admission": (dict(admission) if admission["status"] == "consumed"
+                                      else dict(admission, status="consumed", consumed_by=principal,
+                                                consumed_at=_utc_now().isoformat())),
+                "successor_packet": plan["packet"], "successor_contract": plan["contract"]}
+            updated = dict(metadata)
+            updated.pop("mission_admission")
+            updated.update({"review_packet": plan["packet"], "mission_admission_contract": plan["contract"],
+                "mission_family": {"root_mission_id": MISSION_ID, "generation": manifest["generation"]},
+                "desktop_candidate_succession": {"event_id": event_id,
+                    "manifest_sha256": expected_manifest_sha256, "approval_sha256": expected_approval_sha256}})
+            updated["mission_control_projection"] = apply_event_to_projection(
+                {"mission_id": MISSION_ID, "metadata": updated}, plan["correction"])
+            cursor.execute("update public.charlie_missions set metadata_json=%s::jsonb,updated_at=now() "
+                           "where mission_id=%s", (json.dumps(updated, sort_keys=True), MISSION_ID))
+            for eid, kind, payload, notes, created_at in (
+                (event_id, "workflow_updated", history, "Merged Desktop candidate retired; exact PR1341 bound paused.", approval["issued_at"]),
+                (plan["correction"]["event_id"], "owner_correction_recorded", plan["correction"],
+                 plan["correction"]["summary"], plan["correction"]["recorded_at"]),
+            ):
+                cursor.execute("insert into public.charlie_mission_events "
+                    "(event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at) "
+                    "values (%s,%s,%s,%s,%s,%s::jsonb,%s)",
+                    (eid, MISSION_ID, kind, notes, principal, json.dumps(payload, sort_keys=True), created_at))
+            cursor.execute("select metadata_json from public.charlie_mission_events where event_id=%s "
+                           "and mission_id=%s", (event_id, MISSION_ID))
+            saved = cursor.fetchone()
+            if (paused_row(cursor) != updated or not saved or saved[0] != history
+                    or latest_correction(cursor) != (plan["correction"]["event_id"], plan["correction"], principal)):
+                raise RegistrationError("succession_readback_mismatch")
+    return {"status": "successor_bound_paused", "mission_id": MISSION_ID,
+            "event_id": event_id, "writes": 3, "admission_issued": False, "runnable": False}
