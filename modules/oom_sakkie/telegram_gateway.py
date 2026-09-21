@@ -261,10 +261,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         _record_auth_failure()
         return _gateway_result(False, "telegram_gateway_auth_denied", policy, 403)
 
-    delivery_disabled_proof = _delivery_disabled_internal_proof(payload, headers)
+    body, status = _dispatch_authenticated_telegram_message(
+        payload, environ=environ, policy=policy,
+        delivery_disabled_proof=_delivery_disabled_internal_proof(payload, headers))
+    body["telegram_intake"] = "authenticated_gateway_relay"
+    return body, status
 
+
+def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
+                                             delivery_disabled_proof=False,
+                                             require_backend_delivery=False):
+    """Shared routing after an entrypoint's credential gate; never a payload flag."""
     source = environ if environ is not None else os.environ
-    parsed = parse_telegram_gateway_payload(payload)
+    try:
+        parsed = parse_telegram_gateway_payload(payload)
+    except TelegramPayloadError as exc:
+        return _gateway_result(False, str(exc), policy, 400)
     allowed_ids = _allowed_user_ids(source)
     if allowed_ids and parsed["telegram_user_id"] not in allowed_ids:
         return _gateway_result(False, "telegram_user_not_allowed", policy, 403)
@@ -960,7 +972,16 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "reply_transport": "backend_handles_owner_task_delivery",
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         if not delivery.get("success"):
+            if require_backend_delivery:
+                body["success"] = False
             return body, 202
+    elif require_backend_delivery and body.get("success") and str(body.get("answer") or "").strip():
+        body.update({"success": False, "status": "telegram_direct_durable_delivery_unavailable",
+            "reply_transport": "backend_delivery_required",
+            "delivery": {"success": False, "status": "durable_delivery_unavailable",
+                         "telegram_sends": 0, "telegram_edits": 0,
+                         "delivery_definitely_not_sent": True}})
+        return body, 503
     return body, response_code
 
 
@@ -1649,7 +1670,100 @@ def _protected_gateway_response(parsed, policy, result, status):
     return body, status if delivery.get("success") else (503 if result.get("success") else 202)
 
 
+class TelegramPayloadError(ValueError):
+    """An authenticated transport supplied a conflicting or malformed envelope."""
+
+
 def parse_telegram_gateway_payload(payload):
+    if not isinstance(payload, dict):
+        raise TelegramPayloadError("telegram_payload_malformed")
+    native_keys = {"message", "callback_query", "edited_message", "channel_post", "edited_channel_post"}
+    present = native_keys.intersection(payload)
+    if not present:
+        return _parse_legacy_flat_telegram_payload(payload)
+    if len(present) != 1 or present.intersection({"edited_message", "channel_post", "edited_channel_post"}):
+        raise TelegramPayloadError("telegram_original_envelope_required")
+    callback = payload.get("callback_query") if "callback_query" in payload else None
+    if callback is not None and not isinstance(callback, dict):
+        raise TelegramPayloadError("telegram_payload_malformed")
+    message = callback.get("message") if callback is not None else payload.get("message")
+    if not isinstance(message, dict):
+        raise TelegramPayloadError("telegram_payload_malformed")
+    sender = callback.get("from") if callback is not None else message.get("from")
+    chat = message.get("chat")
+    if (not isinstance(sender, dict) or not isinstance(chat, dict)
+            or not sender.get("id") or isinstance(sender.get("id"), (bool, dict, list))
+            or not chat.get("id") or isinstance(chat.get("id"), (bool, dict, list))
+            or not isinstance(chat.get("type"), str) or sender.get("is_bot")):
+        raise TelegramPayloadError("telegram_native_identity_malformed")
+    media_kinds = {"voice", "audio", "photo", "video", "document", "animation", "video_note", "sticker"}
+    if len(media_kinds.intersection(message)) > 1:
+        raise TelegramPayloadError("telegram_native_content_conflict")
+    message_identity = message.get("message_id")
+    if message_identity is not None and (type(message_identity) not in (int, str)
+            or not str(message_identity).isascii() or not str(message_identity).isdigit()
+            or len(str(message_identity)) > 20 or int(message_identity) <= 0):
+        raise TelegramPayloadError("telegram_native_provider_identity_malformed")
+    text = message.get("text", message.get("caption", ""))
+    if not isinstance(text, str):
+        raise TelegramPayloadError("telegram_native_text_malformed")
+    reply = message.get("reply_to_message") or {}
+    if not isinstance(reply, dict):
+        raise TelegramPayloadError("telegram_native_reply_malformed")
+    stamp = ""
+    if "date" in message:
+        if type(message["date"]) is not int or message["date"] <= 0:
+            raise TelegramPayloadError("telegram_native_time_malformed")
+        try:
+            stamp = datetime.fromtimestamp(message["date"], timezone.utc).isoformat()
+        except (ValueError, OverflowError, OSError):
+            raise TelegramPayloadError("telegram_native_time_malformed") from None
+    user_id, chat_id, chat_type = str(sender["id"]), str(chat["id"]), chat["type"]
+    message_id = str(message.get("message_id") or "")
+    callback_id = str(callback.get("id") or "") if callback is not None else ""
+    callback_data = str(callback.get("data") or "") if callback is not None else ""
+    reply_id = message_id if callback is not None else str(reply.get("message_id") or "")
+    expected = {"text": text, "telegram_user_id": user_id, "from_user_id": user_id,
+        "telegram_chat_id": chat_id, "chat_id": chat_id, "telegram_chat_type": chat_type,
+        "session_id": chat_id, "message_id": message_id, "telegram_message_id": message_id,
+        "provider_message_id": callback_id if callback is not None else message_id,
+        "reply_to_message_id": reply_id, "callback_query_id": callback_id,
+        "callback_data": callback_data}
+    if callback is None:
+        expected["provider_timestamp"] = stamp
+    for key, value in expected.items():
+        if key not in payload:
+            continue
+        copied = str(payload[key])
+        if key == "text":
+            matches = copied.strip() == value.strip()
+        elif key == "session_id":
+            matches = copied in {value, "telegram-" + value}
+        elif key == "provider_timestamp" and stamp:
+            try:
+                copied_time = datetime.fromisoformat(copied.replace("Z", "+00:00"))
+                matches = (copied_time.tzinfo is not None
+                    and copied_time.astimezone(timezone.utc).isoformat() == stamp)
+            except ValueError:
+                matches = False
+        else:
+            matches = copied == value
+        if not matches:
+            raise TelegramPayloadError("telegram_native_flat_conflict")
+    for key, value in (("from", sender), ("chat", chat)):
+        if key in payload and payload[key] != value:
+            raise TelegramPayloadError("telegram_native_flat_conflict")
+    return {"text": text.strip()[:MAX_TELEGRAM_TEXT_CHARS],
+        "telegram_user_id": user_id, "telegram_chat_id": chat_id,
+        "telegram_chat_type": chat_type, "session_id": "telegram-" + chat_id,
+        "provider_message_id": expected["provider_message_id"],
+        "provider_timestamp": datetime.now(timezone.utc).isoformat() if callback is not None else stamp,
+        "source_card_timestamp": stamp if callback is not None else "",
+        "reply_to_message_id": reply_id, "callback_query_id": callback_id,
+        "callback_data": callback_data}
+
+
+def _parse_legacy_flat_telegram_payload(payload):
     payload = payload or {}
     callback = payload.get("callback_query") if isinstance(payload.get("callback_query"), dict) else {}
     message = callback.get("message") or payload.get("message") or payload.get("edited_message") or {}

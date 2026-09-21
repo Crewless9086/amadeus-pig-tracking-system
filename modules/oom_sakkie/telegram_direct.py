@@ -31,6 +31,9 @@ from modules.oom_sakkie.telegram_gateway import (
     MIN_TOKEN_CHARS,
     TRUTHY,
     parse_telegram_gateway_payload,
+    TelegramPayloadError,
+    _dispatch_authenticated_telegram_message,
+    telegram_gateway_policy,
 )
 from modules.beacon.media_intake import (
     handle_telegram_media_intake,
@@ -182,6 +185,38 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     if not authenticated:
         _record_auth_failure()
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
+
+    try:
+        native_parsed = parse_telegram_gateway_payload(payload)
+    except TelegramPayloadError as exc:
+        return _direct_result(False, str(exc), policy, 400)
+    native_message = payload.get("message") if isinstance(payload, dict) else None
+    ordinary_native = (isinstance(native_message, dict) and not payload.get("callback_query")
+        and telegram_media_envelope(payload) is None
+        and (is_telegram_voice_payload(payload)
+             or ("text" in native_message and not _telegram_command_for_text(native_parsed["text"])["recognized"])))
+    if ordinary_native:
+        # Native voice enters before the compatibility STT branch: one transcript,
+        # one semantic front door and one existing durable delivery owner.
+        if not native_parsed["provider_message_id"] or not native_parsed["provider_timestamp"]:
+            return _direct_result(False, "telegram_native_provider_identity_required", policy, 400)
+        source = environ if environ is not None else os.environ
+        body, status = _dispatch_authenticated_telegram_message(payload, environ=source,
+            policy=telegram_gateway_policy(source), require_backend_delivery=True)
+        body.pop("telegram_gateway", None)
+        principal = resolve_family_principal(native_parsed, source)
+        body.update({"family_role": principal.role.value, "language": principal.language,
+                     "authorization_id": principal.authorization_id,
+                     "binding_digest": principal.binding_digest})
+        body.update({"telegram_intake": "authenticated_direct_webhook",
+                     "mode": "telegram_direct_shared_gateway", "telegram_direct": policy})
+        if isinstance(body.get("delivery"), dict) and body["delivery"].get("success") is False:
+            body["success"] = False
+        return body, status
+    if (native_message is None and not payload.get("callback_query")
+            and not native_parsed["callback_query_id"]
+            and not _telegram_command_for_text(native_parsed["text"])["recognized"]):
+        return _direct_result(False, "telegram_original_envelope_required", policy, 400)
 
     voice_parsed = None
     if is_telegram_voice_payload(payload):
@@ -1012,7 +1047,8 @@ def _telegram_command_for_text(text):
     item = aliases.get(clean, ("ask", ""))
     kind, routed = item[0], item[1]
     allow_specialist_llm = len(item) > 2 and item[2] is True
-    return {"kind": kind, "text": routed, "allow_specialist_llm": allow_specialist_llm}
+    return {"kind": kind, "text": routed, "allow_specialist_llm": allow_specialist_llm,
+            "recognized": clean in aliases}
 
 
 def _campaign_action_message_result(action_result):
