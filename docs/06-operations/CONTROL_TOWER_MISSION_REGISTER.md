@@ -1,13 +1,13 @@
 # Control Tower Mission Register
 
 Status: current-state evidence; non-doctrine.
-Updated: 2026-09-21 publication qualified; admission transition repair active.
+Updated: 2026-09-21 09:59 UTC; repair PR1342 merged and web revision verified.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `REPOSITORY-CONSOLIDATION-20260918`.
 Migration: physical retention VERIFIED; original 18 commits not integrated.
 
-Latest handover: [publication and active admission repair](receipts/20260921/CONSOLIDATION_ADMISSION_REPAIR.md).
+Latest handover: [verified repair release and consolidation next gate](receipts/20260921/CONSOLIDATION_ADMISSION_REPAIR.md).
 The owner's manual move is verified by the full native preservation audit:
 172,892 objects match the baseline, old source absent, same retained root
 identity, zero Cloud dependencies. Total retained source roots: 557.
@@ -37,35 +37,33 @@ remain unchanged. No release protection may be bypassed or identity fabricated.
 | `C:\Amadeus\.runtime` | Temporary work and evidence | Active phase `consolidation\integration-20260920` |
 | `C:\Amadeus\recovery\20260919` | Consolidated recovery | 557 retained source roots; prior bundles and restore proofs preserved |
 
-The original 18-commit candidate `013a9ebe23c3fedeedb285a88ad5103aad1d6a97`
-remains intact. Its documentation successor `eff2ea1e8a1b4130e5c3febde7f608aff6b6f990`
-was published with exact owner approval as draft PR1341. Reviewed repair
-`66d5ec824b8a01f2e8e71fbcd931732fdc226288` was separately approved and published
-as draft PR1342. All application checks passed on both published heads; the
-repair's two real PostgreSQL registration tests also passed. Admission remains
-red: the exact mission and external admission receipt are absent. Neither PR
-is merged. Current main is `e46743cb3e8d224b60d17eb5920acb113f613a52`.
+The original eighteen commits through `013a9ebe23c3fedeedb285a88ad5103aad1d6a97`
+remain preserved in consolidation PR1341, still draft and unmerged. Its published
+head is `b3772ace87093603fa5b4bab1e02c4d2429822a6`; local release documentation
+may advance separately. Original published heads remain preserved in history.
 
-Charl explicitly directed continuation after publication. The existing repair
-worktree now implements the missing paused Desktop candidate transition from
-PR1342 to PR1341, including retained predecessor evidence, receipt retirement,
-exact replay and transactional rollback. First registration alone cannot
-complete that sequence. Review also reproduced a delayed callback restoring the
-retired admission. The callback/store repair and exact web deployment must precede
-succession; registration alone does not contain that race. This is active
-engineering work, not an owner wait.
-Publication approval for the existing heads does not authorize production
-registration, signed issuance, merge or deployment. Prepare the exact qualified
-operation before requesting any genuinely missing protected authority. No
-general-manager or farm runtime change has begun.
+Charl explicitly reconfirmed sole coordination and authorized the paused mission,
+two audit records, protected repair merge and web deployment. Exact registration
+and separate transactional readback passed. The mission remains paused, LEVEL0;
+the two registration events and valid signed admission were verified.
+Protected issuer run `35585437715` and trusted checks run `35585623902` passed.
 
-At 05:37 UTC September 21, provider and web health readbacks agreed on
-`3d321e4932cf205d03e759cc71a26edd411bc9d2`. Web and native-worker automatic
-deployment are off; seven repository cron services use commit-triggered
-deployment, one of them suspended. Merge preparation must contain incidental
-deployments and verify provider state. September 20 observations of Docker
-absence, n8n unavailability and four Disabled CHARLIE tasks remain dated evidence.
-No cleanup/audit helper remains active after the full audit completed.
+Repair PR1342 source `8507253dcd0a98b747903369c2a8e7cc5e3c00f0` passed independent
+review and all required checks, including real PostgreSQL transactions. Normal
+protected merge produced `86e95d09078a5b1a2eb8b698e04489d9a2184e38`; its tree
+matched the reviewed prospective tree. No protection was bypassed.
+Render web deployment `dep-daoftko473hc73a65q80` is live. At 09:59 UTC,
+provider and public revision readback both confirmed that exact merge.
+All nine service configurations and the other eight deployment IDs were unchanged.
+The merge's `[skip render]` marker contained automatic cron deployments.
+
+Next gate: prepare the exact PR1341 consolidation successor against repaired main,
+then qualify the paused candidate transition and its separate protected release.
+No PR1341 succession, merge, worker activation or farm operation was performed.
+The general-manager repair, five drift reconciliations and genuine Oom Sakkie /
+HERDMASTER owner journey remain outstanding. Repair release is technical progress,
+not evidence of autonomous farm operation. September 20 Docker/n8n observations
+remain dated evidence; no cleanup/audit helper is active.
 
 Prior deletion counts, incomplete-snapshot truth, dirty history, opaque links,
 four unverified pytest ownership classifications, identities, holds and failures
