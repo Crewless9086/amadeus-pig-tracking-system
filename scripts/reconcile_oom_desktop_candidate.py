@@ -18,7 +18,7 @@ VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
 BASE = "76f48e8faa01baa3b31aa0adf91afd88e78d4d04"
-HEAD = "22012a498f7a34134ed608c8fe2a59d992e8247c"
+HEAD = "bd87551214a0703b925afc7bc43437497f5a6e20"
 APPROVED_RUNTIME_HEAD = "d2ed7329d52b56588c81a6611cde611dab554b4a"
 BRANCH = "codex/oom-delivery-claim-safety-20260921"
 PREDECESSOR_PR = 1344
@@ -27,7 +27,8 @@ PREDECESSOR_HEAD = "076f80f4e6d7216a29baa446d1e917167f0ae7ef"
 PREDECESSOR_BRANCH = "codex/oom-owner-reply-repair-20260921"
 QUALIFICATION_TEST_PATHS = sorted([
     "tests/test_herdmaster_mortality_journey_postgres.py", "tests/test_litter_weaning_ingress_postgres.py",
-    "tests/test_litter_weaning_review_postgres.py", "tests/test_telegram_voice_ingress_postgres.py",
+    "tests/test_litter_weaning_review_postgres.py", "tests/test_oom_sakkie_herdmaster_health_loss_runtime.py",
+    "tests/test_oom_sakkie_manager_question_runtime.py", "tests/test_telegram_voice_ingress_postgres.py",
 ])
 PATHS = sorted([
     "modules/oom_sakkie/family_message_lifecycle.py", "modules/oom_sakkie/telegram_direct.py",
@@ -43,14 +44,14 @@ DECISION = "reconcile_exact_oom_child_pr1345"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
 REMOVED_EFFECTS = {"exact_pr1344_four_file_source_repair",
     "application_revision_rollback:web:f9c003855cc335be6b652f313bfb0e3c02fb1f2a"}
-ADDED_EFFECTS = {"exact_pr1345_seven_file_repair_plus_four_test_only_qualification_fixes",
+ADDED_EFFECTS = {"exact_pr1345_seven_file_repair_plus_six_test_only_qualification_fixes",
     "application_revision_rollback:web:76f48e8faa01baa3b31aa0adf91afd88e78d4d04"}
 REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
-    "Release only the protected merge whose application tree equals qualified PR1345 head22012a498f7a34134ed608c8fe2a59d992e8247c to existing web srv-d6sijjkhg0os73f7regg only after protected merge and required checks.",
-    "Owner approval remains bound to runtime candidate d2ed7329d52b56588c81a6611cde611dab554b4a; qualified candidate 22012a498f7a34134ed608c8fe2a59d992e8247c must descend from it and differ only in the four pinned PostgreSQL qualification test files.",
+    "Release only the protected merge whose application tree equals qualified PR1345 headbd87551214a0703b925afc7bc43437497f5a6e20 to existing web srv-d6sijjkhg0os73f7regg only after protected merge and required checks.",
+    "Owner approval remains bound to runtime candidate d2ed7329d52b56588c81a6611cde611dab554b4a; qualified candidate bd87551214a0703b925afc7bc43437497f5a6e20 must descend from it and differ only in the six pinned qualification test files.",
     "No scheduler deployment, webhook cutover, n8n workflow disablement, database migration, permission or configuration change, farm write, hardware command, manual cron trigger or manufactured acceptance.",
     "Verify exact loaded revisions and genuine agent/owner journeys; source, CI, health and terminal-created fixtures are not business completion.",
 }
