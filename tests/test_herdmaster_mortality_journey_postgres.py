@@ -267,7 +267,7 @@ def test_gateway_authentication_role_capability_and_protected_callback(journey, 
     monkeypatch.setenv('OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED','true')
     monkeypatch.setenv('OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN',token)
     monkeypatch.setenv('OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS',j['actor']+',990000')
-    card = 'SIMULATED-CARD-' + uuid.uuid4().hex
+    card = '1235'  # Synthetic positive Telegram card ID following native input 1234.
     deliveries = []
     def simulated_provider(parsed, result, **kwargs):
         deliveries.append(result)
@@ -298,7 +298,7 @@ def test_gateway_authentication_role_capability_and_protected_callback(journey, 
     callback=result['message']['reply_markup']['inline_keyboard'][0][0]['callback_data']
     confirmation={'callback_query':{'id':'SIMULATED-CALLBACK-'+uuid.uuid4().hex,
         'from':{'id':int(j['actor'])},'data':callback,
-        'message':{'message_id':card,'date':int(time.time()),'text':'Simulated preview card',
+        'message':{'message_id':int(card),'date':int(time.time()),'text':'Simulated preview card',
             'chat':{'id':int(j['actor']),'type':'private'}}}}
     foreign=json.loads(json.dumps(confirmation))
     foreign['callback_query']['from']['id']=990000

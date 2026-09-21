@@ -45,8 +45,11 @@ def ingress(monkeypatch):
     def provider(_token, method, body, **kwargs):
         assert _token == 'SYNTHETIC-weaning-bot'
         assert method in ('sendMessage', 'editMessageText')
-        message_id = str(body.get('message_id') or ('SIMULATED-CARD-' + uuid.uuid4().hex))
-        deliveries.append({'method': method, 'body': body, 'message_id': message_id})
+        # Telegram issues positive chat-local message IDs; edits retain that card.
+        if method == 'sendMessage':
+            j['message_sequence'] = j.get('message_sequence', 1000) + 1
+        message_id = int(body.get('message_id') or j['message_sequence'])
+        deliveries.append({'method': method, 'body': body, 'message_id': str(message_id)})
         return {'ok': True, 'result': {'message_id': message_id, 'date': int(time.time()),
             'chat': {'id': int(actor), 'type': 'private'}, 'text': body['text']}}
     monkeypatch.setattr(sam_live_stock_launch_control, '_telegram_api', provider)
@@ -105,7 +108,7 @@ def test_real_ingress_and_provider_delivery_commit_once_in_afrikaans(ingress, mo
     assert replay.status_code == 200 and len(j['deliveries']) == 1, replay.get_json()
     callback = {'callback_query': {'id':'SIMULATED-CB-'+uuid.uuid4().hex, 'from': {'id':int(j['actor'])},
         'data': result['reply_markup']['inline_keyboard'][0][0]['callback_data'],
-        'message': {'message_id': j['deliveries'][0]['message_id'], 'date': int(time.time()),
+        'message': {'message_id': int(j['deliveries'][0]['message_id']), 'date': int(time.time()),
             'chat': {'id':int(j['actor']), 'type':'private'}, 'text':'SIMULATED preview card'}}}
     foreign = copy.deepcopy(callback)
     foreign['callback_query']['from']['id'] = 990000

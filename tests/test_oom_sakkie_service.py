@@ -1181,7 +1181,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 67890, "type": "private"},
                 },
             },
             headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
@@ -1466,55 +1466,16 @@ class OomSakkieServiceTests(unittest.TestCase):
     }, clear=True)
     @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
     @patch("modules.oom_sakkie.telegram_direct.handle_message")
-    def test_telegram_direct_webhook_sends_owner_reply_only_after_answer(self, mock_handle, mock_send):
-        mock_handle.return_value = ({
-            "success": True,
-            "answer": "Read-only owner answer.",
-            "tool_used": "farm_attention_summary",
-            "risk_level": 0,
-            "trace_id": "OSK-TRACE-DIRECT",
-            "safety_notes": ["No farm write."],
-        }, 200)
-        mock_send.return_value = ({
-            "success": True,
-            "status": "telegram_sent",
-            "sends_telegram": True,
-            "writes": False,
-            "dispatch_enabled": False,
-        }, 200)
-
+    def test_telegram_direct_without_native_receipt_cannot_use_legacy_sender(self, mock_handle, mock_send):
         result, status_code = handle_telegram_direct_webhook(
-            {
-                "message": {
-                    "text": "what needs attention today",
-                    "from": {"id": 12345},
-                    "chat": {"id": 12345, "type": "private"},
-                },
-            },
-            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
-        )
-
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertEqual(result["status"], "telegram_sent")
-        self.assertTrue(result["sends_telegram"])
-        self.assertFalse(result["writes"])
-        self.assertFalse(result["dispatch_enabled"])
-        self.assertFalse(result["can_trigger_outbound_llm"])
-        self.assertEqual(result["answer"], "Read-only owner answer.")
-        self.assertIn("Oom Sakkie", result["telegram_text"])
-        self.assertIn("Read-only owner answer.", result["telegram_text"])
-        self.assertIn("No farm/control write", result["telegram_text"])
-        mock_handle.assert_called_once_with({
-            "text": "what needs attention today",
-            "channel": "telegram_read_only",
-            "session_id": "telegram-12345",
-        })
-        mock_send.assert_called_once_with(
-            chat_id="12345",
-            text=result["telegram_text"],
-            environ=None,
-        )
+            {"message": {"text": "what needs attention today", "from": {"id": 12345},
+                         "chat": {"id": 12345, "type": "private"}}},
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET})
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "telegram_native_provider_identity_required")
+        mock_handle.assert_not_called()
+        mock_send.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -1642,7 +1603,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "callback_query": {
                     "data": "sam_live_review_approve:SAM-LIVE-REVIEW-ABC123",
                     "from": {"id": 99999},
-                    "message": {"message_id": 99, "chat": {"id": 67890}},
+                    "message": {"message_id": 99, "chat": {"id": 67890, "type": "private"}},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1953,14 +1914,14 @@ class OomSakkieServiceTests(unittest.TestCase):
     @patch("modules.oom_sakkie.service.route_with_llm")
     @patch("modules.oom_sakkie.service.get_tool")
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_telegram_direct_is_deterministic_only_when_llm_surfaces_are_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose, mock_send):
+    def test_telegram_direct_legacy_attention_command_stays_deterministic_with_llm_surfaces_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose, mock_send):
         mock_get_tool.return_value = _fake_farm_attention_tool()
         mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
 
         result, status_code = handle_telegram_direct_webhook(
             {
                 "message": {
-                    "text": "what needs attention today",
+                    "text": "/attention",
                     "from": {"id": 12345},
                     "chat": {"id": 12345, "type": "private"},
                 },
@@ -2283,7 +2244,8 @@ class OomSakkieServiceTests(unittest.TestCase):
     }, clear=True)
     def test_telegram_direct_rejects_unapproved_user_id_before_send(self):
         result, status_code = handle_telegram_direct_webhook(
-            {"text": "farm status", "telegram_user_id": "999", "telegram_chat_id": "999"},
+            {"message": {"message_id": 301, "date": 1786880000, "text": "farm status",
+                         "from": {"id": 999}, "chat": {"id": 999, "type": "private"}}},
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
         )
 

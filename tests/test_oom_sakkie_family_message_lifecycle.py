@@ -1005,3 +1005,154 @@ def test_existing_card_binding_rejects_provider_identity_substitution():
             provider_evidence_loader=lambda _chat,_message,e=evidence:e,event_store=memory.store)
         assert bound["status"]=="existing_card_provider_evidence_mismatch"
         assert memory.rows=={}
+
+
+@pytest.mark.parametrize("claim", [
+    {"success": False}, {"success": False, "created": None},
+    {"success": False, "created": True}, {"success": True},
+    {"success": True, "created": False}, {"success": True, "created": 1}, None,
+])
+@pytest.mark.parametrize("path", ["send", "edit", "notification", "brief"])
+def test_unproven_durable_claim_never_reaches_its_provider_effect(path, claim):
+    memory=Memory(); mission="OOM-CLAIM-SAFETY"; claims=[]; deleted=[]
+    specialist="OOM_SAKKIE" if path=="brief" else "HERDMASTER"
+    initial={**RESULT,"status":"daily_farm_manager_ready"} if path=="brief" else RESULT
+    if path!="send":
+        deliver_family_result(PARSED,initial,specialist=specialist,mission_id=mission,
+            card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow={**RESULT,"answer":"One current follow-up."}
+    if path=="notification":
+        deliver_family_result({**PARSED,"provider_message_id":"501"},follow,
+            specialist=specialist,mission_id=mission,card_mission_id=mission,
+            event_store=memory.store,sender=memory.send,editor=memory.edit)
+        follow={**follow,"requires_visible_notification":True}
+    memory.sent.clear(); memory.edited.clear()
+    before=dict(memory.rows)
+    target={"send":"delivery_attempted", "edit":"update_attempted",
+        "notification":"notification_attempted", "brief":"brief_generation_delivery_attempted"}[path]
+    def store(action, identity, payload):
+        if action=="record" and payload.get("state")==target:
+            claims.append(identity)
+            return claim
+        return memory.store(action,identity,payload)
+    if path=="brief":
+        outcome=replace_current_brief({**PARSED,"provider_message_id":"502"},
+            {**follow,"status":"daily_farm_manager_ready","rolling_brief_replacement":True},
+            mission_id=mission+":GEN2",card_mission_id=mission,previous_message_id="700",
+            generation_digest="c"*64,event_store=store,sender=memory.send,
+            deleter=lambda *_:deleted.append(True))
+    else:
+        outcome=deliver_family_result({**PARSED,"provider_message_id":"502"},follow,
+            specialist=specialist,mission_id=mission,card_mission_id=mission,
+            event_store=store,sender=memory.send,editor=memory.edit)
+    expected={"send":"family_message_delivery_ambiguous",
+        "edit":"family_message_update_delivery_ambiguous",
+        "notification":"family_message_notification_ambiguous",
+        "brief":"brief_replacement_delivery_ambiguous"}[path]
+    assert outcome["success"] is False and outcome["status"]==expected
+    assert outcome["telegram_sends"]==outcome["telegram_edits"]==0
+    assert claims and memory.sent==memory.edited==deleted==[]
+    assert memory.rows==before
+
+
+def test_real_event_store_failed_claim_returns_without_provider_contact(monkeypatch):
+    from modules.oom_sakkie import bounded_postgres_read, family_message_lifecycle
+    from modules.sales import sam_live_stock_launch_control
+    monkeypatch.delenv("DATABASE_URL",raising=False)
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*_):return False
+        def execute(self,*_):pass
+        def fetchall(self):return []
+    class Connection:
+        def __enter__(self):return self
+        def __exit__(self,*_):return False
+        def cursor(self):return Cursor()
+    monkeypatch.setattr(bounded_postgres_read,"connect_bounded_rootline_postgres",lambda **_:Connection())
+    captured=[]
+    def failed_record(event,**_):
+        captured.append(event)
+        return {"success":False,"status":"review_event_persistence_failed"},503
+    monkeypatch.setattr(sam_live_stock_launch_control,"record_sam_live_stock_review_event",failed_record)
+    with patch.object(family_message_lifecycle,"_send_telegram") as send, \
+         patch.object(family_message_lifecycle,"_edit_telegram") as edit:
+        outcome=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER")
+    assert outcome["status"]=="family_message_delivery_ambiguous"
+    assert outcome["success"] is False and outcome["telegram_sends"]==outcome["telegram_edits"]==0
+    send.assert_not_called(); edit.assert_not_called()
+    assert len(captured)==1
+    assert captured[0]["review_json"]["family_message_lifecycle"]["state"]=="delivery_attempted"
+
+
+@pytest.mark.parametrize("exclusive_completion", [False, True])
+def test_confirmed_edit_with_failed_receipt_preserves_bounded_recovery(exclusive_completion):
+    memory=Memory(); mission="OOM-EDIT-RECEIPT-DOWN"
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    def store(action,identity,payload):
+        if action=="record" and payload.get("state")=="updated":
+            return {"success":False}
+        return memory.store(action,identity,payload)
+    inbound={**PARSED,"provider_message_id":"501"}
+    follow={**RESULT,"answer":"Current safe follow-up."}
+    if exclusive_completion:
+        follow.update(status="completed", owner_visible_completion_policy="verified_edit_or_new_message")
+    first=deliver_family_result(inbound,follow,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(inbound,follow,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    assert first["success"] is False
+    assert first["status"]=="family_message_provider_confirmed_receipt_unavailable"
+    assert first["provider_delivery_confirmed"] is True
+    assert first["telegram_message_id"]=="700" and first["telegram_edits"]==1
+    assert first["telegram_sends"]==0 and first.get("delivery_definitely_not_sent") is not True
+    if exclusive_completion:
+        # The existing exclusive-completion policy permits one separately
+        # claimed idempotent same-card recovery edit, never a second send.
+        assert replay["status"]=="family_message_provider_confirmed_receipt_unavailable"
+        assert replay["telegram_edits"]==1 and replay["telegram_sends"]==0
+    else:
+        assert replay["status"]=="family_message_update_delivery_ambiguous"
+        assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    third=deliver_family_result(inbound,follow,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    assert third["status"]=="family_message_update_delivery_ambiguous"
+    assert third["telegram_sends"]==third["telegram_edits"]==0
+    assert len(memory.sent)==1 and len(memory.edited)==1+int(exclusive_completion)
+
+
+def test_postsend_receipt_exception_keeps_durable_attempt_and_never_resends():
+    memory=Memory(); mission="OOM-CLAIM-THEN-RECEIPT-EXCEPTION"
+    def store(action,identity,payload):
+        if action=="record" and payload.get("state")=="delivered":
+            raise RuntimeError("synthetic receipt failure after provider acceptance")
+        return memory.store(action,identity,payload)
+    with pytest.raises(RuntimeError,match="synthetic receipt failure"):
+        deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+            card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    assert replay["success"] is False and replay["status"]=="family_message_delivery_ambiguous"
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    assert replay.get("delivery_definitely_not_sent") is not True
+    assert len(memory.sent)==1 and not memory.edited
+
+
+def test_concurrent_initial_delivery_claim_has_exactly_one_sender():
+    memory=Memory(); barrier=Barrier(2); lock=Lock(); mission="OOM-CONCURRENT-INITIAL-CLAIM"
+    def store(action,identity,payload):
+        if action=="load":
+            with lock: snapshot=list(memory.rows.values())
+            barrier.wait(timeout=5)
+            return snapshot
+        with lock:return memory.store(action,identity,payload)
+    def sender(chat,text):
+        with lock:return memory.send(chat,text)
+    def run(_):
+        return deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+            card_mission_id=mission,event_store=store,sender=sender,editor=memory.edit)
+    with ThreadPoolExecutor(max_workers=2) as pool: results=list(pool.map(run,range(2)))
+    assert sorted(r["status"] for r in results)==["family_message_delivered","family_message_delivery_ambiguous"]
+    assert sum(r["telegram_sends"] for r in results)==1 and len(memory.sent)==1
+    assert not memory.edited
+    assert len([row for row in memory.rows.values() if row["state"]=="delivery_attempted"])==1

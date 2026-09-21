@@ -105,7 +105,7 @@ def test_completion_edit_recovers_once_after_real_commit(ingress,monkeypatch,tra
     monkeypatch.setattr(sam_live_stock_launch_control,'_telegram_api',flaky)
     callback={'callback_query':{'id':'REVIEW-CB-'+j['litter'],'from':{'id':int(j['actor'])},
         'data':preview['reply_markup']['inline_keyboard'][0][0]['callback_data'],
-        'message':{'message_id':card,'date':int(time.time()),'chat':{'id':int(j['actor']),'type':'private'},'text':'Synthetic exact preview'}}}
+        'message':{'message_id':int(card),'date':int(time.time()),'chat':{'id':int(j['actor']),'type':'private'},'text':'Synthetic exact preview'}}}
     first,_=post(j,transport,envelope=callback)
     assert state(j)['receipts'] == 1
     after=state(j)
@@ -188,7 +188,7 @@ def test_ambiguous_first_arrival_provenance_never_claims(numeric_provider,monkey
             db.execute("""update app_private.oom_protected_action_claims
                 set preview_payload=preview_payload-'provider_message_id' where callback_token=%s""",
                 (action(preview)['callback_token'],))
-    before=state(j); claims=claim_states(j)
+    before=state(j); claims=claim_states(j); deliveries_before=len(j['deliveries'])
     envelope={'message':{'message_id':int(card) if provenance in {'before_card','before_card_reply'} else 'opaque-confirm' if provenance=='opaque_id' else 1003,
         'date':stamp-1 if provenance=='older_time' else stamp,
         'from':{'id':int(j['actor'])},'chat':{'id':int(j['actor']),'type':'private'},'text':'Ja, teken dit so aan.'}}
@@ -198,9 +198,16 @@ def test_ambiguous_first_arrival_provenance_never_claims(numeric_provider,monkey
         envelope['message']['reply_to_message']={'message_id':int(card)}
     semantic(monkeypatch,{},continuation=True,message_kind='confirmation')
     response,_=post(j,transport,envelope=envelope)
-    assert response.status_code == 409,response.get_json()
+    if provenance == 'opaque_id':
+        # A malformed native provider ID is rejected before semantic/claim routing.
+        assert response.status_code == 400,response.get_json()
+        assert response.get_json()['status'] == 'telegram_native_provider_identity_malformed'
+        assert response.get_json()['success'] is False and response.get_json()['writes'] is False
+        assert len(j['deliveries']) == deliveries_before
+    else:
+        assert response.status_code == 409,response.get_json()
+        assert action(response)['answer'] and not action(response)['writes_farm_data']
     assert state(j) == before and claim_states(j) == claims
-    assert action(response)['answer'] and not action(response)['writes_farm_data']
     evidence('provenance-'+transport+'-'+provenance,{'litter':j['litter'],'envelope':envelope,
         'response':response.get_json(),'before':before,'after':state(j),'claims_before':claims,'claims_after':claim_states(j)})
 

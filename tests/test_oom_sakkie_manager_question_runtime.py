@@ -668,7 +668,7 @@ def test_authenticated_context_database_failure_returns_bounded_zero_effect_resp
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": token,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": OWNER,
         "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID": OWNER}
-    payload = {"message": {"message_id": "synthetic-context-db-down",
+    payload = {"message": {"message_id": 3531,
         "date": int(NOW.timestamp()), "text": "They are eating and drinking normally",
         "from": {"id": int(OWNER)},
         "chat": {"id": int(OWNER), "type": "private"}}}
