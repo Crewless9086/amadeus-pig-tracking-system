@@ -121,6 +121,143 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         return self.store.run_cycle(values, now=self.now, source_revision='local-regression',
             brain_guard_audit={'passed': True}, **kwargs)
 
+    def test_five_specialists_rotate_due_herd_cases_and_new_critical_evidence_preempts(self):
+        # Exercise the production claim SQL over natural five-minute cadences,
+        # rather than draining the queue within one not-yet-due interval.
+        critical = self.value('mortality', urgency='critical',
+            next_reassessment_at=self.now.isoformat())
+        siblings = [self.value(name, urgency='due',
+            next_reassessment_at=self.now.isoformat()) for name in ('purpose', 'family')]
+        values = [critical, *siblings, *[self.value(name.lower(), specialist=name,
+            urgency='urgent', next_reassessment_at=self.now.isoformat())
+            for name in ('ROOTLINE', 'SAM', 'BEACON', 'RUNTIME')]]
+        current_time = [self.now]
+        class ProcessingClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current_time[0]
+        by_key = {row['dedupe_key']: row for row in values}
+        herd_turns, results = [], []
+        def deliver(row):
+            if row['specialist'] == 'HERDMASTER':
+                herd_turns.append((row['dedupe_key'], row['generation']))
+                return deliver_farm_manager_case(row, now=current_time[0],
+                    deliver=lambda *_a, **_k: self.fail('quiet case attempted provider I/O'))
+            return {'success': True, 'status': 'non_farm_case_delivery_suppressed',
+                'delivery_confirmed': False, 'telegram_sends': 0}
+        with patch.object(worker_module, 'datetime', ProcessingClock), patch.dict(
+                os.environ, {'OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS': '77'}):
+            for cycle in range(5):
+                self.now = current_time[0]
+                if cycle == 1:
+                    # Prior-generation completion must not demote genuinely new
+                    # critical evidence, despite an inherited recent heartbeat.
+                    changed = {**critical, 'summary': 'New canonical mortality evidence',
+                        'evidence_refs': ['mortality:new-evidence'],
+                        'next_reassessment_at': self.now.isoformat()}
+                    by_key[critical['dedupe_key']] = changed
+                result = self.cycle(list(by_key.values()),
+                    refresh=lambda row: by_key[row['dedupe_key']], deliver=deliver)
+                self.assertTrue(result['success'], result)
+                self.assertEqual(result['cases_claimed'], CLAIM_LIMIT)
+                self.assertEqual(result['deliveries_confirmed'], 0)
+                self.assertEqual({row['specialist'] for row in result['case_results']},
+                    worker_module.SPECIALISTS)
+                results.append(result)
+                current_time[0] += timedelta(minutes=6)
+        self.assertEqual(herd_turns[:2], [(critical['dedupe_key'], 1), (critical['dedupe_key'], 2)])
+        self.assertEqual({key for key, _ in herd_turns[2:4]},
+            {row['dedupe_key'] for row in siblings})
+        self.assertEqual(herd_turns[4], (critical['dedupe_key'], 2))
+        self.assertTrue(all(result['candidate_replays'] >= 6 for result in results[1:]))
+        with self.db() as db:
+            rows = db.execute("""select status,last_delivery_digest,assigned_worker_id,lease_until
+                from app_private.oom_manager_cases""").fetchall()
+            self.assertEqual(len(rows), 7)
+            self.assertTrue(all(row == ('waiting_reassessment', None, None, None) for row in rows))
+            self.assertEqual(db.execute("""select count(*) from app_private.oom_manager_case_events
+                where event_type in ('delivery_confirmed','completed')""").fetchone()[0], 0)
+
+    def test_unfinished_critical_generation_keeps_priority_after_deadline_and_refresh_deferral(self):
+        critical = self.value('deferred-critical', urgency='critical',
+            next_reassessment_at=self.now.isoformat())
+        values = [critical, self.value('older-due', urgency='due',
+            next_reassessment_at=self.now.isoformat()), *[
+                self.value(name.lower(), specialist=name, urgency='urgent',
+                    next_reassessment_at=self.now.isoformat())
+                for name in ('ROOTLINE', 'SAM', 'BEACON', 'RUNTIME')]]
+        by_key = {row['dedupe_key']: row for row in values}
+        current_time = [self.now]
+        class ProcessingClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current_time[0]
+        with patch.object(worker_module, 'datetime', ProcessingClock):
+            deferred = self.cycle(values, deadline_monotonic=0,
+                deliver=lambda *_a, **_k: self.fail('deadline invoked delivery'))
+            self.assertEqual(deferred['deadline_deferrals'], CLAIM_LIMIT)
+            self.assertEqual(deferred['deliveries_confirmed'], 0)
+            for outcome in ('manager_delivery_refreshed_generation_deferred',
+                            'no_owner_question_delivery_suppressed'):
+                current_time[0] += timedelta(minutes=6)
+                self.now = current_time[0]
+                result = self.cycle(values, refresh=lambda row: by_key[row['dedupe_key']],
+                    deliver=lambda row: {'success': True, 'status': outcome,
+                        'delivery_confirmed': False, 'telegram_sends': 0})
+                self.assertTrue(result['success'], result)
+                herd = [row for row in result['case_results'] if row['specialist'] == 'HERDMASTER']
+                self.assertEqual([row['case_id'] for row in herd],
+                    [normalize_candidate(critical, now=self.now)['case_id']])
+            # Once actually reassessed, that unchanged critical generation yields
+            # to the older due sibling without being marked delivered/completed.
+            current_time[0] += timedelta(minutes=6)
+            self.now = current_time[0]
+            final = self.cycle(values, refresh=lambda row: by_key[row['dedupe_key']],
+                deliver=lambda row: {'success': True, 'status': 'no_owner_question_delivery_suppressed',
+                    'delivery_confirmed': False})
+            herd = [row for row in final['case_results'] if row['specialist'] == 'HERDMASTER']
+            self.assertEqual([row['case_id'] for row in herd],
+                [normalize_candidate(values[1], now=self.now)['case_id']])
+
+    def test_unchanged_failed_critical_does_not_keep_old_due_time_ahead_of_siblings(self):
+        critical = self.value('failing-critical', urgency='critical',
+            next_reassessment_at=self.now.isoformat())
+        siblings = [self.value(name, urgency='due', next_reassessment_at=self.now.isoformat())
+            for name in ('purpose', 'family')]
+        values = [critical, *siblings, *[self.value(name.lower(), specialist=name,
+            urgency='urgent', next_reassessment_at=self.now.isoformat())
+            for name in ('ROOTLINE', 'SAM', 'BEACON', 'RUNTIME')]]
+        by_key = {row['dedupe_key']: row for row in values}
+        current_time = [self.now]
+        class ProcessingClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current_time[0]
+        herd_turns = []
+        def deliver(row):
+            if row['specialist'] == 'HERDMASTER':
+                herd_turns.append(row['dedupe_key'])
+            if row['dedupe_key'] == critical['dedupe_key']:
+                # This existing failure path intentionally retains an overdue
+                # next_reassessment_at. The completed attempt still rotates.
+                return {'success': False, 'status': 'manager_owner_binding_unavailable',
+                    'delivery_confirmed': False}
+            return {'success': True, 'status': 'delivery_disabled', 'delivery_confirmed': False}
+        with patch.object(worker_module, 'datetime', ProcessingClock):
+            for _ in range(4):
+                self.now = current_time[0]
+                result = self.cycle(values, refresh=lambda row: by_key[row['dedupe_key']], deliver=deliver)
+                self.assertTrue(result['success'], result)
+                self.assertEqual(result['cases_claimed'], CLAIM_LIMIT)
+                current_time[0] += timedelta(minutes=6)
+        self.assertEqual(herd_turns[0], critical['dedupe_key'])
+        self.assertEqual(set(herd_turns[1:3]), {row['dedupe_key'] for row in siblings})
+        self.assertEqual(herd_turns[3], critical['dedupe_key'])
+        with self.db() as db:
+            row = db.execute("""select status,next_reassessment_at,last_delivery_digest
+                from app_private.oom_manager_cases where dedupe_key=%s""", (critical['dedupe_key'],)).fetchone()
+            self.assertEqual(row, ('exception', current_time[0] - timedelta(minutes=24), None))
+
     def test_canonical_writer_case_identity_survives_refresh_delivery_and_replay(self):
         key = 'herdmaster-litter-follow-up:LIT-OFFLINE'
         canonical_id = 'OOM-MANAGER-HERD-LITTER-OFFLINE'

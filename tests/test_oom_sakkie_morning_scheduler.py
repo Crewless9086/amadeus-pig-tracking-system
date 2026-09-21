@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import importlib
+import pytest
 from urllib.error import HTTPError
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
@@ -197,3 +198,47 @@ def test_multi_recipient_runtime_success_is_scheduler_success(monkeypatch):
         post_fn=_scheduler_post({"success":True,
             "status":"morning_runtime_recipients_projected"},calls))
     assert code==0 and result["success"] is True
+
+
+@pytest.mark.parametrize("failed_stage", [
+    "protected-payment-recovery", "green-print-recovery", "beacon-publication-cycle"])
+@pytest.mark.parametrize("failure", ["http", "timeout", "json", "non_object", "truncated", "http_truncated"])
+def test_independent_lane_failure_does_not_starve_manager(monkeypatch, failed_stage, failure):
+    import io
+    module = _script_module(monkeypatch)
+    calls = []
+    ordinary = _scheduler_post({"success": True, "status": "daily_manager_replay_suppressed"}, [])
+
+    def post(url, payload):
+        calls.append(url.rsplit("/", 1)[-1])
+        if url.endswith(failed_stage):
+            if failure in {"truncated", "http_truncated"}:
+                from http.client import IncompleteRead
+                if failure == "truncated":
+                    raise IncompleteRead(b"private partial response", 100)
+                class TruncatedBody(io.BytesIO):
+                    def read(self, *args):
+                        raise IncompleteRead(b"private partial response", 100)
+                raise HTTPError(url, 503, "private details", {}, TruncatedBody())
+            if failure == "http":
+                raise HTTPError(url, 503, "private details", {}, io.BytesIO(
+                    b'{"status":"upstream_unavailable","private_data":"never log this"}'))
+            if failure == "timeout":
+                raise TimeoutError("ambiguous request")
+            if failure == "json":
+                raise ValueError("invalid JSON")
+            return []
+        return ordinary(url, payload)
+
+    result, code = module.run_scheduler(
+        now=datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc), post_fn=post)
+    assert code == 1 and result["success"] is False
+    assert calls.count("general-manager-cycle") == 1
+    assert calls.count(failed_stage) == 1
+    assert len(calls) == 5
+    assert result["manager_status"] == "general_manager_cycle_completed"
+    assert result["request_failures"][0]["provider_effects_unknown"] is True
+    assert "private" not in str(result)
+    if failure == "http":
+        assert result["request_failures"][0]["http_status"] == 503
+        assert result["request_failures"][0]["response_status"] == "upstream_unavailable"

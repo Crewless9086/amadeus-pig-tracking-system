@@ -1,6 +1,9 @@
 """Render cron client for the authenticated deployed morning entry point."""
 import json
 import os
+import re
+from http.client import HTTPException
+from urllib.error import HTTPError
 import urllib.request
 from datetime import datetime, timezone
 
@@ -18,10 +21,34 @@ MORNING_OK = {"daily_manager_presented", "daily_manager_replay_suppressed",
               "daily_manager_unchanged_silent", "morning_runtime_recipients_projected"}
 
 def run_scheduler(*, now=None, post_fn=post):
+    request_failures = []
+
     def invoke(target, payload, *, timeout=120):
-        if post_fn is post:
-            return post_fn(target, payload, timeout=timeout)
-        return post_fn(target, payload)
+        stage = target.rsplit("/", 1)[-1].replace("-", "_")
+        try:
+            response = (post_fn(target, payload, timeout=timeout)
+                        if post_fn is post else post_fn(target, payload))
+            if not isinstance(response, dict):
+                raise ValueError("scheduler_response_not_object")
+            return response
+        except (OSError, HTTPException, ValueError) as exc:
+            # Requests may already have produced effects. Never retry here or
+            # let one independent lane prevent the manager's bounded cycle.
+            failure = {"stage": stage, "failure_kind": type(exc).__name__,
+                       "provider_effects_unknown": True}
+            if isinstance(exc, HTTPError):
+                failure["http_status"] = exc.code
+                try:
+                    body = json.loads(exc.read(4096))
+                    status = body.get("status") if isinstance(body, dict) else None
+                    if isinstance(status, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,119}", status):
+                        failure["response_status"] = status
+                except (OSError, HTTPException, ValueError):
+                    pass
+                finally:
+                    exc.close()
+            request_failures.append(failure)
+            return {"success": False, "status": stage + "_request_contained", **failure}
 
     recovery_url = url.rsplit("/morning-schedule", 1)[0] + "/protected-payment-recovery"
     green_recovery_url = url.rsplit("/morning-schedule", 1)[0] + "/green-print-recovery"
@@ -33,33 +60,11 @@ def run_scheduler(*, now=None, post_fn=post):
     now = now or datetime.now(timezone.utc)
     morning = None
     if synthetic or (now.hour > 4 or (now.hour == 4 and now.minute >= 45)):
-        try:
-            morning = invoke(
-                url,
-                {"synthetic_acceptance_identity": synthetic} if synthetic else {},
-            )
-        except (OSError, TimeoutError, ValueError) as exc:
-            # A provider may have accepted the request before the response
-            # failed. Never retry an ambiguous morning lifecycle call; retain
-            # truthful failure evidence and continue into the separately
-            # bounded manager reserve.
-            morning = {
-                "success": False,
-                "status": "morning_schedule_request_contained",
-                "failure_kind": exc.__class__.__name__,
-                "telegram_sends": 0,
-                "telegram_edits": 0,
-                "provider_actions": 0,
-                "hardware_commands": 0,
-                "writes_farm_data": False,
-            }
-    try:
-        manager = invoke(manager_url, {}, timeout=MANAGER_TIMEOUT_SECONDS)
-    except (OSError, TimeoutError, ValueError) as exc:
-        manager = {"success": False, "status": "general_manager_cycle_request_contained",
-                   "failure_kind": exc.__class__.__name__, "telegram_sends": 0,
-                   "provider_actions": 0, "hardware_commands": 0,
-                   "writes_farm_data": False}
+        morning = invoke(
+            url,
+            {"synthetic_acceptance_identity": synthetic} if synthetic else {},
+        )
+    manager = invoke(manager_url, {}, timeout=MANAGER_TIMEOUT_SECONDS)
     safe = (recovery.get("status") in {"payment_recovery_idle", "payment_recovery_completed"}
         and green_recovery.get("status") in {"documents_green_recovery_idle", "documents_green_recovery_authorized"}
         and manager.get("status") == "general_manager_cycle_completed"
@@ -84,7 +89,8 @@ def run_scheduler(*, now=None, post_fn=post):
     "beacon_publication_status": beacon.get("status"),
     "beacon_publication_consumer_status": beacon.get("consumer_status"),
     "morning_status": (morning or {}).get("status"),
-    "morning_failure_kind": (morning or {}).get("failure_kind")}
+    "morning_failure_kind": (morning or {}).get("failure_kind"),
+    "request_failures": request_failures}
     return result, 0 if safe else 1
 
 if __name__ == "__main__":
