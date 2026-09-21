@@ -315,6 +315,73 @@ class MemoryDelivery:
         return {key: row for key, row in self.daily_rows.items() if key.endswith(":OUTCOME")}
 
 
+@pytest.mark.parametrize("failure", [TimeoutError, ValueError])
+def test_rootline_refresh_failure_localizes_mixed_daily_brief_without_changing_authority(monkeypatch, failure):
+    class FailedFuture:
+        cancelled = False
+
+        def result(self, *, timeout):
+            assert timeout == 7.0
+            raise failure("OFFLINE-ROOTLINE-REFRESH-UNAVAILABLE")
+
+        def cancel(self):
+            self.cancelled = True
+
+    future = FailedFuture()
+
+    class FailedExecutor:
+        def submit(self, fn, *, operating_date, now):
+            assert fn is runtime.build_current_rootline_specialist_result
+            assert operating_date == NOW.date().isoformat() and now == NOW
+            return future
+
+    monkeypatch.setattr(runtime, "_ROOTLINE_REFRESH_EXECUTOR", FailedExecutor())
+    captured = runtime._load_rootline_snapshot(NOW)
+    original = repr(captured)
+    projections = {language: runtime._project_rootline_snapshot(captured, NOW, language)
+                   for language in ("en", "af")}
+    assert repr(captured) == original and future.cancelled is True
+    english, afrikaans = [projections[language].work_items[0] for language in ("en", "af")]
+    assert structural_item(english) == structural_item(afrikaans)
+    assert english.title == "Refresh today's irrigation decision"
+    assert "do not start irrigation or commissioning" in english.next_action
+    for item in (english, afrikaans):
+        assert item.state is WorkState.WAITING_EVIDENCE and item.authority is Authority.ADVISORY
+        assert item.genuine_question == "" and item.question_for == ""
+        assert item.provenance.source_refs == (
+            "canonical_rootline_refresh_not_available_within_manager_deadline",)
+
+    memory = MemoryDelivery(monkeypatch)
+    for language in ("en", "af"):
+        def run():
+            return daily.run_daily_farm_manager(owner_user_id="OFFLINE-" + language,
+                chat_id="OFFLINE-" + language,
+                specialist_results=[project(language), projections[language]], litter_rows=molly(),
+                now=NOW, language=language, deliver=memory.deliver, replace_brief=memory.replace,
+                semantic_prioritizer=lambda rows, **_kwargs: list(rows))
+        first, replay = run(), run()
+        assert first["status"] == "daily_manager_presented" and first["telegram_sends"] == 1
+        assert replay["status"] == "daily_manager_unchanged_silent" and replay["telegram_sends"] == 0
+        assert first["writes_farm_data"] is False and first["hardware_commands"] == 0
+        assert first["protected_actions_performed"] is False
+        delivery = memory.deliveries[-1]
+        assert delivery["input"]["status"] == "daily_farm_manager_ready"
+        assert not family.localize_recipient_result(
+            delivery["parsed"], delivery["input"], specialist="OOM_SAKKIE"
+        ).get("recipient_language_render_unrecognized")
+        answer = delivery["input"]["answer"]
+        assert projections[language].work_items[0].why in answer
+        assert ("EEN VRAAG" if language == "af" else "ONE QUESTION") in answer
+        assert ("Mysikind en Mona" if language == "af" else "Mysikind and Mona") in answer
+    assert afrikaans.title == "Werk vandag se besproeiingsbesluit by"
+    assert afrikaans.why == (
+        "Die huidige krag-, weervoorspelling- en waterlesings kon nie almal betyds "
+        "bygewerk word om besproeiing veilig aan te beveel nie.")
+    assert "moenie besproeiing of ingebruikneming" in afrikaans.next_action
+    assert len(memory.sends) == 2 and len(memory.family_rows) == 4
+    assert len(memory.outcomes()) == 2
+
+
 def test_real_retained_shape_projects_recipient_wording_with_same_facts_and_bindings():
     en, af = project("en"), project("af")
     assert en.result_id == af.result_id and en.observed_at == af.observed_at

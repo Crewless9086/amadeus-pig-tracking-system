@@ -604,7 +604,22 @@ def _load_rootline_snapshot(now):
 
 def _project_rootline_snapshot(snapshot, now, language="en"):
     if snapshot.get("failed_result"):
-        return snapshot["failed_result"]
+        result = snapshot["failed_result"]
+        if (str(language).lower().startswith("af")
+                and result.result_id == "rootline-current-reassessment-needed"):
+            # The shared snapshot retains its evidence and authority; localize
+            # only this generated fallback for each recipient's daily brief.
+            result = replace(result, work_items=tuple(
+                replace(item,
+                    title="Werk vandag se besproeiingsbesluit by",
+                    why=("Die huidige krag-, weervoorspelling- en waterlesings kon nie almal betyds "
+                         "bygewerk word om besproeiing veilig aan te beveel nie."),
+                    next_action=("Oom Sakkie sal die besluit heroorweeg wanneer nuwe ROOTLINE-lesings "
+                                 "beskikbaar is; moenie besproeiing of ingebruikneming vanuit hierdie "
+                                 "opsomming begin nie."))
+                if item.dedupe_key == "rootline:current-reassessment-needed" else item
+                for item in result.work_items))
+        return result
     raw = snapshot["raw"]
     observed = _time(((raw.get("evidence") or {}).get("generated_at") or raw.get("generated_at")), now)
     result_id = str(raw.get("result_id") or raw.get("plan_id") or "rootline-current")

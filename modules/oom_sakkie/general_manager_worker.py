@@ -241,26 +241,47 @@ class PostgresManagerCaseStore:
                                 as e(dedupe_key text,evidence_refs jsonb)
                             where m.dedupe_key=e.dedupe_key""",
                             (now, json.dumps(replay_epochs)))
-                    cur.execute("""with eligible as materialized (
-                            select case_id,specialist,urgency,next_reassessment_at,
-                                row_number() over (partition by specialist order by
-                                    case urgency when 'critical' then 0 when 'urgent' then 1
-                                    when 'due' then 2 when 'planned' then 3 else 4 end,
-                                    next_reassessment_at,case_id) specialist_rank
-                            from app_private.oom_manager_cases
-                            where status in ('open','delegated','waiting_reassessment','exception')
-                              and next_reassessment_at<=%s
-                              and (lease_until is null or lease_until<%s)
+                    # New critical/urgent evidence keeps its first turn even if a
+                    # deadline previously deferred it. Only a finished attempt in
+                    # this generation makes it routine reassessment work; an older
+                    # delivery or a claimed/deferred event is not that evidence.
+                    # Thereafter age advances on every attempt, including failures,
+                    # so unchanged high urgency cannot starve due sibling cases.
+                    cur.execute("""with due as materialized (
+                            select m.case_id,m.specialist,m.urgency,m.last_heartbeat_at,
+                                greatest(m.next_reassessment_at,
+                                    coalesce(m.last_heartbeat_at,m.next_reassessment_at)) fair_due_at,
+                                case when m.urgency in ('critical','urgent') and not exists (
+                                    select 1 from app_private.oom_manager_case_events e
+                                    where e.case_id=m.case_id and e.generation=m.generation
+                                      and e.event_type in ('delivery_confirmed','delivery_suppressed','exception')
+                                      and coalesce(e.event_payload->>'outcome_status','') not in (
+                                          'manager_cycle_deadline_deferred',
+                                          'family_message_cycle_deadline_deferred',
+                                          'manager_delivery_refreshed_generation_deferred')
+                                ) then case m.urgency when 'critical' then 0 else 1 end
+                                  else 2 end fresh_priority
+                            from app_private.oom_manager_cases m
+                            where m.status in ('open','delegated','waiting_reassessment','exception')
+                              and m.next_reassessment_at<=%s
+                              and (m.lease_until is null or m.lease_until<%s)
+                        ), eligible as materialized (
+                            select *,row_number() over (partition by specialist order by
+                                fresh_priority,fair_due_at,last_heartbeat_at nulls first,
+                                case urgency when 'critical' then 0 when 'urgent' then 1
+                                when 'due' then 2 when 'planned' then 3 else 4 end,
+                                case_id) specialist_rank
+                            from due
                         )
                         select m.case_id,m.dedupe_key,m.specialist,m.urgency,m.status,
                             m.evidence_digest,m.evidence_refs,m.unknowns,m.summary,m.next_action,
                             m.next_reassessment_at,m.generation,m.last_delivery_digest
                         from app_private.oom_manager_cases m join eligible e using(case_id)
                         order by case when e.specialist_rank=1 then 0 else 1 end,
+                            e.fresh_priority,e.fair_due_at,e.last_heartbeat_at nulls first,
                             case e.urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
-                            case when e.specialist='BEACON' then 0 else 1 end,
-                            e.next_reassessment_at,e.case_id
+                            case when e.specialist='BEACON' then 0 else 1 end,e.case_id
                         for update of m skip locked limit %s""",
                         (now, now, CLAIM_LIMIT))
                     for row in cur.fetchall():
