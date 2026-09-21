@@ -263,7 +263,7 @@ def test_authenticated_gateway_synthetic_health_acceptance_withholds_provider_se
         # Deliberately omit OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED.
     }
     payload = {"message": {
-        "message_id": "synthetic-stage2-gateway-002", "date": 1786604460,
+        "message_id": 3168, "date": 1786604460,
         "text": "Pig 002 is not eating, appears otherwise fine, is lying down and will be monitored.",
         "from": {"id": 42}, "chat": {"id": 42, "type": "private"},
     }}
