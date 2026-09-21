@@ -71,7 +71,11 @@ def _voice(j, monkeypatch, transport, transcript, *, reply=''):
 
 
 def _input_rows(payload):
-    identity = voice._receipt_id(gateway.parse_telegram_gateway_payload(payload))
+    # Inspect the raw provider identity independently, including rejected envelopes.
+    message = payload['message']
+    identity = voice._receipt_id({'telegram_user_id': str(message['from']['id']),
+        'telegram_chat_id': str(message['chat']['id']),
+        'provider_message_id': str(message['message_id'])})
     with psycopg.connect(os.environ['DATABASE_URL']) as db:
         return dict(db.execute("""select review_event_id,review_json->'telegram_voice_input'
             from public.sam_live_stock_conversation_review_events where review_event_id=any(%s)""",
@@ -114,10 +118,27 @@ def test_real_route_authorizes_native_family_before_download_or_stt(weaning_ingr
         payload['message']['date'] -= 7 * 3600
     opener = Mock(side_effect=AssertionError('Provider before authorization'))
     monkeypatch.setattr(voice.urllib.request, 'build_opener', opener)
+    claim = Mock(side_effect=AssertionError('Rejected voice must not create an input claim'))
+    monkeypatch.setattr(voice, '_claim_input', claim)
     before = weaning.state(j)
     response = post(j['client'], transport, payload, secret=j['token'], bad_auth=invalid == 'credential')
-    assert response.status_code in {403, 415}, response.get_json()
-    opener.assert_not_called()
+    expected = {
+        'credential': (403, 'telegram_gateway_auth_denied' if transport == 'gateway' else 'telegram_direct_auth_denied'),
+        'unknown': (403, 'telegram_user_not_allowed'),
+        'group': (403, 'telegram_family_identity_not_authorized'),
+        'override': (400, 'telegram_native_flat_conflict'),
+        'caption': (415, 'telegram_voice_separate_text_required'),
+        'callback': (400, 'telegram_native_flat_conflict'),
+        'stale': (403, 'telegram_voice_private_family_authority_required'),
+    }[invalid]
+    assert (response.status_code, response.get_json()['status']) == expected, response.get_json()
+    assert response.get_json()['success'] is False
+    opener.assert_not_called(); claim.assert_not_called()
+    if invalid == 'caption':
+        # The authenticated sender still receives the existing localized format notice.
+        assert len(j['deliveries']) == 1 and j['deliveries'][0]['method'] == 'sendMessage'
+    else:
+        assert not j['deliveries']
     assert not _input_rows(payload) and weaning.state(j) == before
 
 

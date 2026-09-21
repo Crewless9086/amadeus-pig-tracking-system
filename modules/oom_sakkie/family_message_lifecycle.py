@@ -537,7 +537,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     "telegram_sends": 0, "telegram_edits": 0}
         claimed = store("record", update_id, {**payload, "event_id": update_id,
             "state": "update_attempted", "telegram_message_id": card_id})
-        if claimed.get("created") is False:
+        if (not isinstance(claimed, dict) or claimed.get("success") is not True
+                or claimed.get("created") is not True):
             return {"success": False, "status": "family_message_update_delivery_ambiguous",
                     "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
         provider_editor = editor or _edit_telegram
@@ -556,8 +557,15 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "state": "contained", "reason": "telegram_edit_unconfirmed"})
             return {"success": False, "status": "family_message_update_contained",
                     "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
-        store("record", update_id + "-DELIVERED", {**payload, "event_id": update_id + "-DELIVERED",
+        updated = store("record", update_id + "-DELIVERED", {**payload, "event_id": update_id + "-DELIVERED",
             "state": "updated", "telegram_message_id": card_id})
+        if not isinstance(updated, dict) or updated.get("success") is not True:
+            return {"success": False,
+                "status": "family_message_provider_confirmed_receipt_unavailable",
+                "provider_delivery_confirmed": True,
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": card_id, "telegram_sends": 0,
+                "telegram_edits": 1}
         if exclusive_completion:
             return {"success": True, "status": "family_message_completion_card_updated",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -581,7 +589,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_sends": 0, "telegram_edits": 0}
     claimed = store("record", attempt_id, {**payload, "event_id": attempt_id, "state": "delivery_attempted"})
-    if claimed.get("created") is False:
+    if (not isinstance(claimed, dict) or claimed.get("success") is not True
+            or claimed.get("created") is not True):
         return {"success": False, "status": "family_message_delivery_ambiguous",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
     provider_sender = sender or _send_telegram
@@ -740,7 +749,8 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     else:
         claim = store("record", generation_id, {**payload, "event_id": generation_id,
             "state": "brief_generation_delivery_attempted"})
-        if not isinstance(claim, dict) or claim.get("created") is not True:
+        if (not isinstance(claim, dict) or claim.get("success") is not True
+                or claim.get("created") is not True):
             return {"success": False, "status": "brief_replacement_delivery_ambiguous",
                     "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
         response = ((sender)(str(parsed.get("telegram_chat_id") or ""), text)
@@ -802,7 +812,8 @@ def _deliver_visible_notification(parsed, payload, text, mission_id, card_missio
     notification_claim = store("record", notification_id, {**payload,
         "event_id": notification_id, "state": "notification_attempted",
         "telegram_message_id": card_id})
-    if notification_claim.get("created") is not True:
+    if (not isinstance(notification_claim, dict) or notification_claim.get("success") is not True
+            or notification_claim.get("created") is not True):
         return {"success": False, "status": "family_message_notification_ambiguous",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": prior_edits}

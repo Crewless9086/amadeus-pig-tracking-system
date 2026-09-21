@@ -1,4 +1,4 @@
-"""Exact OMQ child/PR1345 maintainer reconciliation; no public apply endpoint.
+"""Exact OMQ child/PR1346 maintainer reconciliation; no public apply endpoint.
 
 Caller authentication is a trusted maintainer boundary, never inferred from files.
 Preparation is DB-free. Apply performs canonical metadata reconciliation only.
@@ -17,41 +17,38 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = "76f48e8faa01baa3b31aa0adf91afd88e78d4d04"
-HEAD = "bd87551214a0703b925afc7bc43437497f5a6e20"
-APPROVED_RUNTIME_HEAD = "d2ed7329d52b56588c81a6611cde611dab554b4a"
-BRANCH = "codex/oom-delivery-claim-safety-20260921"
-PREDECESSOR_PR = 1344
-PREDECESSOR_BASE = "f9c003855cc335be6b652f313bfb0e3c02fb1f2a"
-PREDECESSOR_HEAD = "076f80f4e6d7216a29baa446d1e917167f0ae7ef"
-PREDECESSOR_BRANCH = "codex/oom-owner-reply-repair-20260921"
-QUALIFICATION_TEST_PATHS = sorted([
-    "tests/test_herdmaster_mortality_journey_postgres.py", "tests/test_litter_weaning_ingress_postgres.py",
-    "tests/test_litter_weaning_review_postgres.py", "tests/test_oom_sakkie_herdmaster_health_loss_runtime.py",
-    "tests/test_oom_sakkie_manager_question_runtime.py", "tests/test_telegram_voice_ingress_postgres.py",
-])
+BASE = "7bd2947f2b959a88e3b18cc6193bb5c6c0514248"
+HEAD = "82ed9f802741f781adcc764a89066c91034ba99e"
+# This exact source scope is prospective; only independent authenticated owner
+# approval of the manifest authorizes applying the reconciliation.
+APPROVED_RUNTIME_HEAD = HEAD
+BRANCH = "codex/oom-retained-followup-refresh-20260921"
+PREDECESSOR_PR = 1345
+PREDECESSOR_BASE = "76f48e8faa01baa3b31aa0adf91afd88e78d4d04"
+PREDECESSOR_HEAD = "bd87551214a0703b925afc7bc43437497f5a6e20"
+PREDECESSOR_BRANCH = "codex/oom-delivery-claim-safety-20260921"
+QUALIFICATION_TEST_PATHS = []
 PATHS = sorted([
-    "modules/oom_sakkie/family_message_lifecycle.py", "modules/oom_sakkie/telegram_direct.py",
-    "modules/oom_sakkie/telegram_gateway.py", "tests/test_oom_sakkie_family_channel_parity.py",
-    "tests/test_oom_sakkie_family_message_lifecycle.py", "tests/test_oom_sakkie_routes.py",
-    "tests/test_oom_sakkie_service.py",
-] + QUALIFICATION_TEST_PATHS)
+    "modules/oom_sakkie/general_manager_worker.py", "modules/oom_sakkie/manager_case_sources.py",
+    "tests/test_oom_sakkie_general_manager_postgres.py",
+    "tests/test_oom_sakkie_general_manager_worker.py", "tests/test_oom_sakkie_manager_case_sources.py",
+])
 HELPERS = ("modules/charlie/mission_store.py", "modules/charlie/mission_control.py")
 MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "tests/test_oom_desktop_candidate_reconciliation.py",
     ".github/workflows/oom-desktop-rebind-qualification.yml"}
-DECISION = "reconcile_exact_oom_child_pr1345"
+DECISION = "reconcile_exact_oom_child_pr1346"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1344_four_file_source_repair",
-    "application_revision_rollback:web:f9c003855cc335be6b652f313bfb0e3c02fb1f2a"}
-ADDED_EFFECTS = {"exact_pr1345_seven_file_repair_plus_six_test_only_qualification_fixes",
+REMOVED_EFFECTS = {"exact_pr1345_seven_file_repair_plus_six_test_only_qualification_fixes",
     "application_revision_rollback:web:76f48e8faa01baa3b31aa0adf91afd88e78d4d04"}
+ADDED_EFFECTS = {"exact_pr1346_five_file_retained_followup_refresh_and_safe_completion",
+    "application_revision_rollback:web:7bd2947f2b959a88e3b18cc6193bb5c6c0514248"}
 REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
-    "Release only the protected merge whose application tree equals qualified PR1345 headbd87551214a0703b925afc7bc43437497f5a6e20 to existing web srv-d6sijjkhg0os73f7regg only after protected merge and required checks.",
-    "Owner approval remains bound to runtime candidate d2ed7329d52b56588c81a6611cde611dab554b4a; qualified candidate bd87551214a0703b925afc7bc43437497f5a6e20 must descend from it and differ only in the six pinned qualification test files.",
+    "Release only the protected merge whose application tree equals exact PR1346 head82ed9f802741f781adcc764a89066c91034ba99e to existing web srv-d6sijjkhg0os73f7regg only after protected merge and required checks.",
+    "Require authenticated owner approval for exact retained HERDMASTER follow-up refresh and safe-completion candidate82ed9f802741f781adcc764a89066c91034ba99e; no additional qualification-only successor is included in this scope.",
     "No scheduler deployment, webhook cutover, n8n workflow disablement, database migration, permission or configuration change, farm write, hardware command, manual cron trigger or manufactured acceptance.",
     "Verify exact loaded revisions and genuine agent/owner journeys; source, CI, health and terminal-created fixtures are not business completion.",
 }
@@ -141,7 +138,7 @@ def prepare_reconciliation(manifest_bytes, approval_bytes, *, expected_manifest_
     for key in ("generation", "idempotency_key"):
         _require(isinstance(m[key], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,159}", m[key]), key + "_invalid")
     c = _fields(m["candidate"], {"pr_number", "branch", "base_sha", "head_sha", "tree_sha", "diff_sha256", "changed_files"}, "candidate_fields")
-    _require(type(c["pr_number"]) is int and c["pr_number"] == 1345 and c["branch"] == BRANCH
+    _require(type(c["pr_number"]) is int and c["pr_number"] == 1346 and c["branch"] == BRANCH
              and c["base_sha"] == BASE and c["head_sha"] == HEAD and _sha(c["tree_sha"], 40)
              and _sha(c["diff_sha256"]) and c["changed_files"] == PATHS, "candidate_identity_changed")
     implementation = _fields(m["implementation"], {"base_revision", "adapter_sha256", "helper_files"}, "implementation_fields")
@@ -269,7 +266,7 @@ def _bindings(plan):
     family = dict(m["expected_child_record"]["metadata_json"]["mission_family"])
     family["generation"] = m["generation"]
     c = m["candidate"]
-    return {"review_packet": {"pr_number": 1345, "branch_name": BRANCH, "candidate_revision": HEAD,
+    return {"review_packet": {"pr_number": 1346, "branch_name": BRANCH, "candidate_revision": HEAD,
                 "candidate_tree": c["tree_sha"], "candidate_diff_sha256": c["diff_sha256"], "changed_files": PATHS},
             "mission_admission_contract": m["contract"], "mission_family": family,
             "external_supervisor": m["desktop"],
@@ -367,14 +364,14 @@ def reconcile_candidate(manifest_bytes, approval_bytes, *, expected_manifest_sha
             cursor.execute("insert into public.charlie_mission_events "
                 "(event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at) "
                 "values(%s,%s,'workflow_updated',%s,%s,%s::jsonb,now())",
-                (plan["event_id"], MISSION_ID, "Owner-approved exact Desktop PR1345 candidate reconciliation.",
+                (plan["event_id"], MISSION_ID, "Owner-approved exact Desktop PR1346 candidate reconciliation.",
                  a["owner_principal"], canonical(history).decode()))
             after = _read_record(cursor, MISSION_ID)
             _require(_same_scalar_record(before, after) and after["metadata_json"] == updated
                      and _read_record(cursor, PARENT_ID) == records[PARENT_ID]
                      and _event(cursor, plan["event_id"]) == (history, a["owner_principal"], "workflow_updated")
                      and _latest_correction(cursor) == correction, "final_readback_mismatch")
-    return {"status": "candidate_reconciled", "mission_id": MISSION_ID, "pr_number": 1345,
+    return {"status": "candidate_reconciled", "mission_id": MISSION_ID, "pr_number": 1346,
             "head_sha": HEAD, "writes": 5, "admission_issued": False, "release_performed": False}
 
 

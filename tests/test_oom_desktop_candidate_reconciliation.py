@@ -26,8 +26,13 @@ NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
 PREDECESSOR_PATHS = sorted([
-    "modules/oom_sakkie/farm_manager_runtime.py", "modules/oom_sakkie/telegram_gateway.py",
-    "tests/test_oom_sakkie_farm_round_persistence.py", "tests/test_oom_sakkie_general_manager_postgres.py",
+    "modules/oom_sakkie/family_message_lifecycle.py", "modules/oom_sakkie/telegram_direct.py",
+    "modules/oom_sakkie/telegram_gateway.py", "tests/test_oom_sakkie_family_channel_parity.py",
+    "tests/test_oom_sakkie_family_message_lifecycle.py", "tests/test_oom_sakkie_routes.py",
+    "tests/test_oom_sakkie_service.py", "tests/test_herdmaster_mortality_journey_postgres.py",
+    "tests/test_litter_weaning_ingress_postgres.py", "tests/test_litter_weaning_review_postgres.py",
+    "tests/test_oom_sakkie_herdmaster_health_loss_runtime.py",
+    "tests/test_oom_sakkie_manager_question_runtime.py", "tests/test_telegram_voice_ingress_postgres.py",
 ])
 
 
@@ -66,12 +71,12 @@ def fixtures():
 def arguments(child=None, parent=None, correction=None):
     default_child, default_parent, default_correction = fixtures()
     child, parent, correction = child or default_child, parent or default_parent, correction or default_correction
-    candidate = {"pr_number": 1345, "branch": adapter.BRANCH, "base_sha": adapter.BASE,
+    candidate = {"pr_number": 1346, "branch": adapter.BRANCH, "base_sha": adapter.BASE,
         "head_sha": adapter.HEAD, "tree_sha": "f" * 40, "changed_files": adapter.PATHS,
         "diff_sha256": canonical_candidate_diff(adapter.PATHS, b"synthetic candidate diff")}
     prior_contract = child["metadata_json"]["mission_admission_contract"]
     manifest = {"version": adapter.VERSION, "mission_id": adapter.MISSION_ID, "parent_mission_id": adapter.PARENT_ID,
-        "candidate": candidate, "generation": "synthetic-new-generation", "idempotency_key": "synthetic-rebind-1345",
+        "candidate": candidate, "generation": "synthetic-new-generation", "idempotency_key": "synthetic-rebind-1346",
         "desktop": {"task_id": adapter.TASK_ID, "principal": PRINCIPAL, "transport": "codex_desktop"},
         "expected_child_record": child, "expected_child_sha256": adapter.digest(adapter.canonical(child)),
         "expected_parent_record": parent, "expected_parent_sha256": adapter.digest(adapter.canonical(parent)),
@@ -429,16 +434,17 @@ class ReconciliationTests(unittest.TestCase):
                 self.fail("source verification reached candidate before rejecting checkout drift")
             with self.subTest(reason=reason),patch.object(adapter.subprocess,"check_output",side_effect=git):
                 with self.assertRaisesRegex(adapter.ReconciliationError,reason):adapter.verify_source_and_candidate(plan)
-    def test_qualified_successor_requires_approved_ancestry_and_only_exact_test_changes(self):
+    def test_exact_candidate_requires_approved_ancestry_and_empty_qualification_delta(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        cases=("valid", "wrong_ancestor", "runtime_change", "missing_test", "extra_test")
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
+        cases=("valid", "wrong_ancestor", "runtime_change", "extra_test")
         for case in cases:
             qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)
             if case=="runtime_change":qualification_paths.append("modules/oom_sakkie/telegram_gateway.py")
-            elif case=="missing_test":qualification_paths.pop()
             elif case=="extra_test":qualification_paths.append("tests/unapproved_test.py")
             def git(command,**_):
                 args=command[2:]
@@ -448,7 +454,7 @@ class ReconciliationTests(unittest.TestCase):
                 if args==["merge-base",adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD]:
                     return (("a"*40 if case=="wrong_ancestor" else adapter.APPROVED_RUNTIME_HEAD)+"\n").encode()
                 if args==["diff","--name-only",adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD,"--"]:
-                    return ("\n".join(qualification_paths)+"\n").encode()
+                    return ("".join(path+"\n" for path in qualification_paths)).encode()
                 if args==["rev-parse",adapter.HEAD+"^{tree}"]:return (m["candidate"]["tree_sha"]+"\n").encode()
                 if args==["diff","--name-only",adapter.BASE,adapter.HEAD,"--"]:
                     return ("\n".join(adapter.PATHS)+"\n").encode()
