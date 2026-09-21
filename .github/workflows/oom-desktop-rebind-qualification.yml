@@ -1,7 +1,7 @@
 name: OOM Desktop Rebind Qualification
 on:
   push:
-    branches: [codex/oom-owner-reply-registration-20260921]
+    branches: [codex/oom-telegram-convergence-registration-20260921]
 permissions:
   contents: read
 jobs:

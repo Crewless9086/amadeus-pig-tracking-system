@@ -26,9 +26,8 @@ NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
 PREDECESSOR_PATHS = sorted([
-    "modules/oom_sakkie/general_manager_worker.py", "modules/oom_sakkie/farm_manager_runtime.py",
-    "scripts/oom_sakkie_morning_scheduler.py", "tests/test_oom_sakkie_general_manager_postgres.py",
-    "tests/test_oom_sakkie_morning_scheduler.py", "tests/test_oom_sakkie_herd_morning_language.py",
+    "modules/oom_sakkie/farm_manager_runtime.py", "modules/oom_sakkie/telegram_gateway.py",
+    "tests/test_oom_sakkie_farm_round_persistence.py", "tests/test_oom_sakkie_general_manager_postgres.py",
 ])
 
 
@@ -40,7 +39,7 @@ def fixtures():
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
         "allowed_effects": sorted(adapter.REMOVED_EFFECTS | {"repository_candidate_validation", "merge", "existing_web_application_release"}),
-        "forbidden_effects": ["farm_write", "hardware_command", "database_migration", "service_configuration_change"],
+        "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
         "mission_id": adapter.MISSION_ID, "root_mission_id": adapter.PARENT_ID,
@@ -67,12 +66,12 @@ def fixtures():
 def arguments(child=None, parent=None, correction=None):
     default_child, default_parent, default_correction = fixtures()
     child, parent, correction = child or default_child, parent or default_parent, correction or default_correction
-    candidate = {"pr_number": 1344, "branch": adapter.BRANCH, "base_sha": adapter.BASE,
+    candidate = {"pr_number": 1345, "branch": adapter.BRANCH, "base_sha": adapter.BASE,
         "head_sha": adapter.HEAD, "tree_sha": "f" * 40, "changed_files": adapter.PATHS,
         "diff_sha256": canonical_candidate_diff(adapter.PATHS, b"synthetic candidate diff")}
     prior_contract = child["metadata_json"]["mission_admission_contract"]
     manifest = {"version": adapter.VERSION, "mission_id": adapter.MISSION_ID, "parent_mission_id": adapter.PARENT_ID,
-        "candidate": candidate, "generation": "synthetic-new-generation", "idempotency_key": "synthetic-rebind-1344",
+        "candidate": candidate, "generation": "synthetic-new-generation", "idempotency_key": "synthetic-rebind-1345",
         "desktop": {"task_id": adapter.TASK_ID, "principal": PRINCIPAL, "transport": "codex_desktop"},
         "expected_child_record": child, "expected_child_sha256": adapter.digest(adapter.canonical(child)),
         "expected_parent_record": parent, "expected_parent_sha256": adapter.digest(adapter.canonical(parent)),
@@ -80,7 +79,7 @@ def arguments(child=None, parent=None, correction=None):
         "contract": {**prior_contract, "generation": "synthetic-new-generation", "branch": adapter.BRANCH,
             "base_sha": adapter.BASE, "allowed_files": adapter.PATHS,
             "allowed_effects": sorted(set(prior_contract["allowed_effects"]) - adapter.REMOVED_EFFECTS | adapter.ADDED_EFFECTS),
-            "forbidden_effects": sorted(set(prior_contract["forbidden_effects"]) | {"cron_deploy"}),
+            "forbidden_effects": sorted(prior_contract["forbidden_effects"]),
             "operational_acceptance": sorted(adapter.REQUIRED_ACCEPTANCE)},
         "implementation": {"base_revision": adapter.BASE, "adapter_sha256": "0" * 64,
             "helper_files": {p: "1" * 64 for p in adapter.HELPERS}}, "expires_at": (NOW+timedelta(hours=1)).isoformat()}
@@ -361,7 +360,7 @@ class ReconciliationTests(unittest.TestCase):
                 contract["allowed_effects"].append("existing_scheduler_application_release:crn-d9us4d3ncjis73adehrg")
             elif field=="cron_prohibition":contract["forbidden_effects"].remove("cron_deploy")
             elif field=="rollback":
-                contract["allowed_effects"].append("application_revision_rollback:web:86e95d09078a5b1a2eb8b698e04489d9a2184e38")
+                contract["allowed_effects"].append("application_revision_rollback:web:f9c003855cc335be6b652f313bfb0e3c02fb1f2a")
             else:contract["operational_acceptance"].append("Release the previous scheduler candidate too.")
             with self.subTest(field=field),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
@@ -370,7 +369,7 @@ class ReconciliationTests(unittest.TestCase):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
             row=m["expected_child_record"];md=row["metadata_json"]
             packet,contract,admission=md["review_packet"],md["mission_admission_contract"],md["mission_admission"]
-            if field=="pr":packet["pr_number"]=1336
+            if field=="pr":packet["pr_number"]=1343
             elif field=="head":packet["candidate_revision"]=admission["head_sha"]="b"*40
             elif field=="base":contract["base_sha"]=admission["base_sha"]="a"*40
             elif field=="branch":packet["branch_name"]=contract["branch"]="synthetic-other-branch"
@@ -379,12 +378,12 @@ class ReconciliationTests(unittest.TestCase):
             with self.subTest(field=field),self.assertRaisesRegex(adapter.ReconciliationError,"predecessor_binding_invalid"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
     def test_prior_reconciliation_history_survives_the_next_transition(self):
-        old_binding={"version":adapter.VERSION,"event_id":"synthetic-pr1343-rebind",
+        old_binding={"version":adapter.VERSION,"event_id":"synthetic-pr1344-rebind",
             "manifest_sha256":"5"*64,"approval_sha256":"6"*64}
         md=self.db.rows[adapter.MISSION_ID]["metadata_json"]
         md["desktop_candidate_reconciliation"]=deepcopy(old_binding)
         old_history=({"bindings":{"desktop_candidate_reconciliation":deepcopy(old_binding)},
-            "previous_record":{"historical_pr1336":"retained"}},OWNER,"workflow_updated")
+            "previous_record":{"historical_pr1343":"retained"}},OWNER,"workflow_updated")
         self.db.events[old_binding["event_id"]]=deepcopy(old_history)
         args=arguments(self.db.rows[adapter.MISSION_ID],self.db.rows[adapter.PARENT_ID])
         before=deepcopy(self.db.rows[adapter.MISSION_ID])
@@ -430,6 +429,38 @@ class ReconciliationTests(unittest.TestCase):
                 self.fail("source verification reached candidate before rejecting checkout drift")
             with self.subTest(reason=reason),patch.object(adapter.subprocess,"check_output",side_effect=git):
                 with self.assertRaisesRegex(adapter.ReconciliationError,reason):adapter.verify_source_and_candidate(plan)
+    def test_qualified_successor_requires_approved_ancestry_and_only_exact_test_changes(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
+        m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
+        plan=adapter.prepare_reconciliation(**encode(m,a))
+        cases=("valid", "wrong_ancestor", "runtime_change", "missing_test", "extra_test")
+        for case in cases:
+            qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)
+            if case=="runtime_change":qualification_paths.append("modules/oom_sakkie/telegram_gateway.py")
+            elif case=="missing_test":qualification_paths.pop()
+            elif case=="extra_test":qualification_paths.append("tests/unapproved_test.py")
+            def git(command,**_):
+                args=command[2:]
+                if args==["rev-parse","origin/main"]:return (adapter.BASE+"\n").encode()
+                if args==["diff","--name-only",adapter.BASE,"--"]:return b""
+                if args==["ls-files","--others","--exclude-standard"]:return b""
+                if args==["merge-base",adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD]:
+                    return (("a"*40 if case=="wrong_ancestor" else adapter.APPROVED_RUNTIME_HEAD)+"\n").encode()
+                if args==["diff","--name-only",adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD,"--"]:
+                    return ("\n".join(qualification_paths)+"\n").encode()
+                if args==["rev-parse",adapter.HEAD+"^{tree}"]:return (m["candidate"]["tree_sha"]+"\n").encode()
+                if args==["diff","--name-only",adapter.BASE,adapter.HEAD,"--"]:
+                    return ("\n".join(adapter.PATHS)+"\n").encode()
+                if args==["diff","--no-ext-diff","--no-textconv","--binary","--full-index",adapter.BASE,adapter.HEAD,"--"]:
+                    return b"synthetic candidate diff"
+                self.fail("unexpected Git inspection: "+repr(args))
+            with self.subTest(case=case),patch.object(adapter.subprocess,"check_output",side_effect=git):
+                if case=="valid":adapter.verify_source_and_candidate(plan)
+                else:
+                    reason="approved_runtime_ancestry_changed" if case=="wrong_ancestor" else "qualification_only_test_paths_changed"
+                    with self.assertRaisesRegex(adapter.ReconciliationError,reason):
+                        adapter.verify_source_and_candidate(plan)
     def test_real_protected_issuer_callback_verifier_and_late_callback_chain(self):
         issuer_chain(self,self.connect,self.snapshot)
     def test_cli_is_preparation_only(self):

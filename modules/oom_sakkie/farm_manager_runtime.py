@@ -193,9 +193,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     recorded = store("record", mission_id, {"binding": binding, "result": output,
         "mortality_packet": mortality_packet})
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
-        return {"handled": True, "success": False,
-            "status": "farm_manager_round_persistence_unproven",
-            "mission_id": mission_id, **ZERO_AUTHORITY}, 503
+        return _persistence_failure(parsed, mission_id), 503
     if recorded.get("created") is False:
         winner = store("load", mission_id, None) or {}
         if (winner.get("binding") or {}) != binding:
@@ -207,14 +205,14 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
                 str(semantic.get("language") or "en")):
             return {"handled": True, "success": False,
                 "status": "farm_manager_mortality_receipt_unavailable",
-                "mission_id": mission_id, **ZERO_AUTHORITY}, 503
+                "records_audit_trace": True, "mission_id": mission_id, **ZERO_AUTHORITY}, 503
         return {**(winner.get("result") or {}),
                 "status": "farm_manager_round_replay_suppressed"}, 200
     if mortality_packet and not _append_mortality_receipt(mortality_packet,
             authority, owner, composition_now, str(semantic.get("language") or "en")):
         return {"handled": True, "success": False,
             "status": "farm_manager_mortality_receipt_unavailable",
-            "mission_id": mission_id, **ZERO_AUTHORITY}, 503
+            "records_audit_trace": True, "mission_id": mission_id, **ZERO_AUTHORITY}, 503
     return output, 200
 
 
@@ -353,8 +351,32 @@ def _mortality_packet(brief):
     for item in brief.queue:
         packet = item.metadata.get("mortality_packet") if item.metadata else None
         if isinstance(packet, dict):
-            return packet
+            # Excluded historical diagnostics remain in canonical history. They
+            # are not consumed by the current assessment and must not become
+            # new actionable references to superseded animal identities.
+            return {key: value for key, value in packet.items()
+                    if key != "excluded_dated_or_superseded"}
     return None
+
+
+def _persistence_failure(parsed, mission_id):
+    language = str(parsed.get("output_language") or
+                   (parsed.get("semantic") or {}).get("language") or "en")
+    is_af = language.casefold().startswith("af")
+    answer = ("<b>OOM SAKKIE — PLAASVERSLAG TERUGGEHOU</b>\n\n"
+        "Ek kon nie bevestig dat vandag se plaasverslag veilig gestoor is nie. "
+        "Ek het geen plaashandelinge uitgevoer nie. Hierdie versoek is nog nie voltooi nie."
+        if is_af else "<b>OOM SAKKIE — FARM REPORT NOT CONFIRMED</b>\n\n"
+        "I couldn’t confirm that today’s farm report was saved. "
+        "I haven’t carried out any farm actions. This request is not complete.")
+    return {"handled": True, "success": False,
+        "status": "farm_manager_round_persistence_unproven", "mission_id": mission_id,
+        "card_mission_id": mission_id + "-PERSISTENCE-FAILURE",
+        "specialist_identity": "OOM_SAKKIE", "answer": answer,
+        "recipient_render_contract": "specialist_structured_recipient_v1",
+        "recipient_language": "af" if is_af else "en",
+        "requires_visible_notification": True, "records_audit_trace": False,
+        "audit_trace_status": "unproven", "do_not_retry_automatically": True, **ZERO_AUTHORITY}
 
 
 def _append_mortality_receipt(packet, authority, owner, observed_at, language):
