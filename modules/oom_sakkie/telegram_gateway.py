@@ -872,17 +872,28 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     manager_result, manager_status = handle_farm_manager_round(parsed, gateway_authority)
     if manager_result.get("handled"):
         answer = str(manager_result.get("answer") or "")
-        delivery = deliver_family_result(parsed, manager_result, specialist="OOM_SAKKIE",
-            mission_id=str(manager_result.get("mission_id") or ""),
-            card_mission_id=str(manager_result.get("card_mission_id") or "")) \
-            if manager_result.get("success") else {"success": False, "telegram_sends": 0}
+        persistence_failed = manager_result.get("status") == "farm_manager_round_persistence_unproven"
+        if persistence_failed:
+            delivery = _deliver_farm_persistence_failure(parsed, manager_result)
+        else:
+            delivery = deliver_family_result(parsed, manager_result, specialist="OOM_SAKKIE",
+                mission_id=str(manager_result.get("mission_id") or ""),
+                card_mission_id=str(manager_result.get("card_mission_id") or "")) \
+                if manager_result.get("success") else {"success": False, "telegram_sends": 0}
         body, _ = _gateway_result(bool(manager_result.get("success")),
             str(manager_result.get("status") or "farm_manager_contained"), policy, manager_status)
         body.update({"telegram_user_id": parsed["telegram_user_id"],
             "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
             "answer": answer, "message": manager_result, "delivery": delivery,
-            "records_audit_trace": True, "reply_transport": "backend_handles_owner_task_delivery",
+            "records_audit_trace": manager_result.get("records_audit_trace") is True
+                or manager_result.get("success") is True,
+            "reply_transport": "backend_handles_owner_task_delivery",
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        if persistence_failed:
+            body["audit_trace_status"] = "unproven"
+            body["failure_notice_delivery_confirmed"] = bool(
+                delivery.get("success") is True and delivery.get("telegram_message_id"))
+            return body, manager_status
         return body, manager_status if delivery.get("success") else 202
 
     if farm_manager_principal:
@@ -982,6 +993,29 @@ def _family_gateway_response(parsed, principal, policy):
     if family_result.get("callback_token"):
         body["preview_card_bound"] = bind_family_rootline_preview_card(family_result, delivery)
     return body, family_status if delivery.get("success") else 202
+
+
+def _deliver_farm_persistence_failure(parsed, result):
+    """One separately bound notice; never turn a failed report into success."""
+    from modules.oom_sakkie.family_message_lifecycle import _event_store
+
+    def durable_store(action, identity, payload):
+        saved = _event_store(action, identity, payload)
+        if action == "record" and (not isinstance(saved, dict) or saved.get("success") is not True):
+            raise RuntimeError("farm_failure_notice_persistence_unproven")
+        return saved
+
+    try:
+        return deliver_family_result(parsed, result, specialist="OOM_SAKKIE",
+            mission_id=str(result.get("mission_id") or ""),
+            card_mission_id=str(result.get("card_mission_id") or ""),
+            event_store=durable_store)
+    except Exception:
+        # A provider call may already have happened. Keep the durable attempt
+        # for reconciliation; no retry authority is granted by this response.
+        return {"success": False, "status": "farm_failure_notice_unconfirmed",
+            "telegram_sends": 0, "telegram_edits": 0,
+            "provider_effects_unknown": True, "do_not_retry_automatically": True}
 
 
 def _farm_manager_operational_fallback(*, parsed, principal, capability, replay_identity):
