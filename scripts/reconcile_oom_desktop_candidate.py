@@ -21,20 +21,22 @@ BASE = "e37c4d9ee446644914543e5977f57c8c7dc3e737"
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
 CANDIDATE_PR = 1347
-HEAD = "a06bf7f6e8598b7ffd5a74319ffa95704bd42110"
+HEAD = "01887fc9507967c81004ba6c84020b04c4687bba"
 APPROVED_RUNTIME_HEAD = "346ee49e80acd03c3471121d714c1dd50a01da05"
 BRANCH = "codex/oom-runtime-readiness-20260922"
 PREDECESSOR_PR = 1346
 PREDECESSOR_BASE = "7bd2947f2b959a88e3b18cc6193bb5c6c0514248"
 PREDECESSOR_HEAD = "82ed9f802741f781adcc764a89066c91034ba99e"
 PREDECESSOR_BRANCH = "codex/oom-retained-followup-refresh-20260921"
-QUALIFICATION_TEST_PATHS = ["tests/test_telegram_voice_ingress_postgres.py"]
+QUALIFICATION_TEST_PATHS = ["tests/test_beacon_campaign.py", "tests/test_beacon_public_livestock_content_policy.py", "tests/test_telegram_voice_ingress_postgres.py"]
 PATHS = [
     ".github/workflows/oom-sakkie-audit-rails.yml",
     "modules/oom_sakkie/daily_farm_manager.py",
     "modules/oom_sakkie/family_message_lifecycle.py",
     "modules/telemetry/rootline_mixer_readiness_observer.py",
     "scripts/oom_sakkie_morning_scheduler.py",
+    "tests/test_beacon_campaign.py",
+    "tests/test_beacon_public_livestock_content_policy.py",
     "tests/test_oom_sakkie_daily_farm_manager.py",
     "tests/test_oom_sakkie_daily_farm_manager_postgres.py",
     "tests/test_oom_sakkie_family_message_lifecycle.py",
@@ -66,7 +68,7 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
     f"Release only the protected merge whose application tree equals the exact manifest-bound PR and head to existing web {WEB_SERVICE} and existing scheduler {SCHEDULER_SERVICE}, only after protected merge and required checks.",
-    "Require independently authenticated owner approval of the exact final candidate, manifest and web-plus-scheduler scope, including only the reviewed test-only correction from runtime head346ee49e80acd03c3471121d714c1dd50a01da05 in tests/test_telegram_voice_ingress_postgres.py; no later candidate or qualification successor is authorized.",
+    "Require independently authenticated owner approval of the exact final candidate, manifest and web-plus-scheduler scope, including only the reviewed test-only corrections from runtime head346ee49e80acd03c3471121d714c1dd50a01da05 in tests/test_beacon_campaign.py, tests/test_beacon_public_livestock_content_policy.py and tests/test_telegram_voice_ingress_postgres.py; no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK} and scheduler {SCHEDULER_SERVICE} revision {SCHEDULER_ROLLBACK}; neither revision authorizes another service or configuration change.",
     f"No other scheduler deployment beyond {SCHEDULER_SERVICE}, webhook cutover, n8n workflow disablement, database migration, permission or configuration change, farm write, hardware command, manual cron trigger or manufactured acceptance.",
     "Verify exact loaded revisions and genuine agent/owner journeys; source, CI, health and terminal-created fixtures are not business completion.",

@@ -519,7 +519,7 @@ class ReconciliationTests(unittest.TestCase):
         plan=adapter.prepare_reconciliation(**encode(m,a))
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "346ee49e80acd03c3471121d714c1dd50a01da05")
         self.assertNotEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
-        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, ["tests/test_telegram_voice_ingress_postgres.py"])
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, ["tests/test_beacon_campaign.py", "tests/test_beacon_public_livestock_content_policy.py", "tests/test_telegram_voice_ingress_postgres.py"])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "missing_test", "wrong_test")
         for case in cases:
             qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)
