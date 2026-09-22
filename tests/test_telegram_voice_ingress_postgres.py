@@ -264,6 +264,10 @@ def test_spoken_ja_replies_to_delivered_daily_question_and_keeps_prior_facts(que
     # Existing daily-question clock is moved to this request's real freshness window.
     moment = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=3)
     monkeypatch.setattr(dialogue, 'NOW', moment)
+    # This voice-reply journey requires a delivered question at a fresh real
+    # timestamp, even when CI runs before 06:45. Scheduling has separate gates.
+    monkeypatch.setattr(dialogue.daily, 'MORNING_HOUR', 0)
+    monkeypatch.setattr(dialogue.daily, 'MORNING_MINUTE', 0)
     j['provider_clock'][0] = moment
     monkeypatch.setenv('OOM_SAKKIE_STT_ENABLED', 'true')
     monkeypatch.setenv('OPENAI_API_KEY', 'SYNTHETIC-NO-PROVIDER-KEY')
