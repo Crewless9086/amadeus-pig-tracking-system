@@ -440,13 +440,37 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
     connector = connect or connect_bounded_read
     with connector() as connection:
         with connection.cursor() as cur:
-            cur.execute("""select review_json->'herdmaster_health_loss'
+            from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
+                read_retained_health_reports, resolve_retained_health_reports, retained_report_binding)
+            cur.execute("""select dedupe_key,evidence_refs,status
+                from app_private.oom_manager_cases where specialist='HERDMASTER'
+                  and (dedupe_key like 'herdmaster:retained-mortality:%%'
+                    or dedupe_key like 'herdmaster:retained-litter-loss:%%')
+                order by case_id limit 65""")
+            retained = cur.fetchall()
+            if len(retained) > 64:
+                raise ValueError("retained_report_case_read_bound_exceeded")
+            retained_ids = {str(ref).split(":", 1)[1]
+                for _key, refs, _status in retained for ref in refs
+                if str(ref).startswith("provider_message:")}
+            # The age bound applies to NEW intake only. Terminal manager cases
+            # reserve their IDs too; recent source history cannot reopen them.
+            cur.execute("""select distinct review_json->'herdmaster_health_loss'->>'provider_message_id'
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_herdmaster_health_loss_runtime'
-                  and created_at >= %s
-                  and review_json->'herdmaster_health_loss'->>'status'='waiting_for_input'
-                order by created_at,review_event_id""", (now - timedelta(days=7),))
-            health = [row[0] for row in cur.fetchall() if row and isinstance(row[0], dict)]
+                  and created_at >= %s order by 1 limit 65""", (now - timedelta(days=7),))
+            recent = cur.fetchall()
+            if len(recent) > 64:
+                raise ValueError("retained_report_intake_read_bound_exceeded")
+            new_ids = {str(row[0]) for row in recent if row[0]} - retained_ids
+            provider_ids = retained_ids | new_ids
+            evidence = (read_retained_health_reports(cur, provider_ids) if provider_ids
+                        else {"reports": [], "lifecycle": [], "claims": []})
+            health = []
+            for provider in sorted(new_ids):
+                rows, failure = resolve_retained_health_reports(evidence, (provider,))
+                if not failure:
+                    health.extend(rows)
             cur.execute("""select action_kind,mission_id,provider_message_id,status,expires_at,preview_payload
                 from app_private.oom_protected_action_claims
                 where action_kind='herdmaster_record_farrowing_litter'
@@ -455,7 +479,7 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
                 "provider_message_id": row[2], "status": row[3],
                 "expires_at": row[4], "preview_payload": row[5] or {}}
                 for row in cur.fetchall()]
-            cur.execute("select pig_id,tag_number,status,on_farm from public.pigs")
+            cur.execute("select pig_id,tag_number,status,on_farm from public.current_canonical_pigs")
             pigs = [{"pig_id": row[0], "tag_number": row[1], "status": row[2],
                      "on_farm": row[3]} for row in cur.fetchall()]
             cur.execute("select litter_id,sow_pig_id,farrowing_date from public.litters")
@@ -469,9 +493,39 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
                 "status": row[2], "expires_at": row[3], "preview_payload": row[4] or {},
                 "preview_card_message_id": row[5], "delivery_state": row[6]}
                 for row in cur.fetchall()]
-    return _project_retained_herd_report_recovery(
+    candidates = _project_retained_herd_report_recovery(
         now, health, expired, canonical_pigs=pigs, canonical_litters=litters,
         farrowing_claims=claims)
+    for candidate in candidates:
+        if candidate["dedupe_key"].startswith(("herdmaster:retained-mortality:", "herdmaster:retained-litter-loss:")):
+            ids = {ref.split(":", 1)[1] for ref in candidate["evidence_refs"]
+                   if ref.startswith("provider_message:")}
+            bound_rows = [row for row in health if row.get("provider_message_id") in ids]
+            candidate["evidence_refs"].append(retained_report_binding(bound_rows))
+    for key, refs, status in retained:
+        if status not in {"open", "delegated", "waiting_reassessment", "exception"}:
+            continue
+        ids = {str(ref).split(":", 1)[1] for ref in refs
+               if str(ref).startswith("provider_message:")}
+        rows, failure = resolve_retained_health_reports(evidence, ids)
+        if failure:
+            continue
+        binding = retained_report_binding(rows)
+        prior_bindings = {str(ref) for ref in refs if str(ref).startswith("retained_report_binding:")}
+        if prior_bindings and prior_bindings != {binding}:
+            continue
+        projected = _project_retained_herd_report_recovery(now, rows, [], canonical_pigs=pigs)
+        # Preserve the exact retained incident set and canonical target. A changed
+        # group/identity needs its owning reconciliation, never a new manager key.
+        bound = {str(ref) for ref in refs if str(ref).startswith(
+            ("provider_message:", "incident_date:", "pig:", "tag:"))}
+        for candidate in projected:
+            current = {str(ref) for ref in candidate["evidence_refs"] if str(ref).startswith(
+                ("provider_message:", "incident_date:", "pig:", "tag:"))}
+            if candidate["dedupe_key"] == key and current == bound:
+                candidate["evidence_refs"].append(binding)
+                candidates.append(candidate)
+    return candidates
 
 
 def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pigs=(),

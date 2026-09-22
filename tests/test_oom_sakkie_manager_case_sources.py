@@ -485,3 +485,73 @@ def test_manual_current_evidence_has_no_invented_batch_identity_or_owner_send(mo
         outcome = deliver_farm_manager_case({**row, "case_id": "OOM-CASE-TEST", "generation": 2},
             deliver=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("stale send")))
         assert outcome["telegram_sends"] == 0
+
+
+def _report_recovery_fixture(*, cases=None, recent=(), reports=None, lifecycle=None, claims=()):
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import Connection, report
+    rows = reports if reports is not None else [report()]
+    if cases is None:
+        cases = [("herdmaster:retained-mortality:101",
+                  ["provider_message:101", "pig:P27", "tag:27"], "exception")]
+    responses = [cases, [(value,) for value in recent]]
+    if recent or cases:
+        responses += [[(row,) for row in rows],
+                      [(row,) for row in (rows if lifecycle is None else lifecycle)], list(claims)]
+    responses += [[], [("P27", "27", "Active", True)], [], []]
+    return lambda: Connection(responses)
+
+
+def test_old_exact_retained_report_keeps_key_and_stable_binding_across_refresh():
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    from modules.oom_sakkie.general_manager_worker import normalize_candidate
+    now = datetime(2026, 9, 22, tzinfo=timezone.utc)
+    first = _retained_herd_report_recovery_candidates(now, connect=_report_recovery_fixture())
+    assert len(first) == 1 and first[0]["dedupe_key"] == "herdmaster:retained-mortality:101"
+    bindings = [ref for ref in first[0]["evidence_refs"] if ref.startswith("retained_report_binding:")]
+    assert len(bindings) == 1
+    retained = [(first[0]["dedupe_key"], first[0]["evidence_refs"], "exception")]
+    replay = _retained_herd_report_recovery_candidates(now + timedelta(days=30),
+        connect=_report_recovery_fixture(cases=retained))
+    assert replay[0]["evidence_refs"] == first[0]["evidence_refs"]
+    assert normalize_candidate(first[0], now=now)["evidence_digest"] == normalize_candidate(replay[0], now=now)["evidence_digest"]
+
+
+def test_bound_retained_case_rejects_unique_replacement_principal_or_mission():
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_report_binding
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import report
+    refs = ["provider_message:101", "pig:P27", "tag:27", retained_report_binding([report()])]
+    cases = [("herdmaster:retained-mortality:101", refs, "exception")]
+    for changed in (report(owner_user_id="99", chat_id="99"), report(mission="OTHER")):
+        assert _retained_herd_report_recovery_candidates(NOW,
+            connect=_report_recovery_fixture(cases=cases, reports=[changed])) == []
+
+
+def test_closed_retained_cases_and_changed_refs_are_not_reopened_by_recent_intake():
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    for status, refs in (("completed", ["provider_message:101", "pig:P27", "tag:27"]),
+                         ("contained", ["provider_message:101", "pig:P27", "tag:27"]),
+                         ("exception", ["provider_message:101", "pig:FOREIGN", "tag:27"])):
+        cases = [("herdmaster:retained-mortality:101", refs, status)]
+        assert _retained_herd_report_recovery_candidates(NOW,
+            connect=_report_recovery_fixture(cases=cases, recent=["101"])) == []
+
+
+def test_litter_retained_membership_is_exact_not_regrouped_with_new_same_day_report():
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import report
+    reports = [report("201", "REPORT-201", owner_text_verbatim="Linda 2 kleintjies dood"),
+               report("202", "REPORT-202", owner_text_verbatim="Linda kleintjies dood op 19 Aug"),
+               report("200", "REPORT-200", owner_text_verbatim="Linda 2 kleintjies dood op 19 Aug")]
+    key = "herdmaster:retained-litter-loss:201:2026-08-19"
+    refs = ["provider_message:201", "provider_message:202", "incident_date:2026-08-19"]
+    cases = [(key, refs, "exception")]
+    result = _retained_herd_report_recovery_candidates(NOW,
+        connect=_report_recovery_fixture(cases=cases, recent=["200"], reports=reports))
+    retained = next(row for row in result if row["dedupe_key"] == key)
+    assert {ref for ref in retained["evidence_refs"] if ref.startswith("provider_message:")} == {
+        "provider_message:201", "provider_message:202"}
+    for invalid in (reports[:1], [reports[0], {**reports[1],
+            "owner_text_verbatim": "Linda kleintjies dood op 20 Aug"}]):
+        assert _retained_herd_report_recovery_candidates(NOW,
+            connect=_report_recovery_fixture(cases=cases, reports=invalid)) == []
