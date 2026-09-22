@@ -512,18 +512,21 @@ class ReconciliationTests(unittest.TestCase):
                 self.fail("source verification reached candidate before rejecting checkout drift")
             with self.subTest(reason=reason),patch.object(adapter.subprocess,"check_output",side_effect=git):
                 with self.assertRaisesRegex(adapter.ReconciliationError,reason):adapter.verify_source_and_candidate(plan)
-    def test_exact_candidate_requires_approved_ancestry_and_empty_qualification_delta(self):
+    def test_exact_candidate_requires_approved_ancestry_and_exact_qualification_delta(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
-        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
-        cases=("valid", "wrong_ancestor", "runtime_change", "extra_test")
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "346ee49e80acd03c3471121d714c1dd50a01da05")
+        self.assertNotEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, ["tests/test_telegram_voice_ingress_postgres.py"])
+        cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "missing_test", "wrong_test")
         for case in cases:
             qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)
             if case=="runtime_change":qualification_paths.append("modules/oom_sakkie/telegram_gateway.py")
             elif case=="extra_test":qualification_paths.append("tests/unapproved_test.py")
+            elif case=="missing_test":qualification_paths=[]
+            elif case=="wrong_test":qualification_paths=["tests/unapproved_test.py"]
             def git(command,**_):
                 args=command[2:]
                 if args==["rev-parse","origin/main"]:return (adapter.BASE+"\n").encode()
