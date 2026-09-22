@@ -786,7 +786,8 @@ class BeaconCampaignTests(unittest.TestCase):
             "target_page_id": "page",
             "public_content_policy": awareness_policy(
                 "A day with the piglets on the farm.", media=assets),
-        }, poster=lambda *_: called.append(True), environ={
+        }, now_provider=lambda: datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
+           poster=lambda *_: called.append(True), environ={
             "BEACON_FACEBOOK_POSTING_ENABLED": "1",
             "BEACON_FACEBOOK_PAGE_ID": "page",
             "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
@@ -1327,7 +1328,8 @@ class BeaconCampaignTests(unittest.TestCase):
             "public_content_policy": awareness_policy(
                 "Follow the farm journey for responsible piglet care.",
                 media=assets),
-        }, media_projector=lambda identities, _database_url: ({
+        }, now_provider=lambda: datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
+           media_projector=lambda identities, _database_url: ({
             "success": True, "assets": [
                 {**item, "projection_authority": "server_database_private_binary_v1"}
                 for item in assets if item["asset_id"] in identities
@@ -1381,7 +1383,8 @@ class BeaconCampaignTests(unittest.TestCase):
             "target_page_id": "page",
             "public_content_policy": awareness_policy(
                 "Follow the farm journey for responsible piglet care."),
-        }, poster=lambda *_: calls.append("meta"),
+        }, now_provider=lambda: datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
+           poster=lambda *_: calls.append("meta"),
            execution_recorder=lambda *_args, **_kwargs: calls.append("claim"),
            environ={
                "BEACON_FACEBOOK_POSTING_ENABLED": "1",

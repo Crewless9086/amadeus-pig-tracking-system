@@ -312,7 +312,7 @@ class MemoryDelivery:
             semantic_prioritizer=lambda rows, **_kwargs: list(rows))
 
     def outcomes(self):
-        return {key: row for key, row in self.daily_rows.items() if key.endswith(":OUTCOME")}
+        return {key: row for key, row in self.daily_rows.items() if key.endswith((":OUTCOME", ":PRESENTED"))}
 
 
 @pytest.mark.parametrize("failure", [TimeoutError, ValueError])

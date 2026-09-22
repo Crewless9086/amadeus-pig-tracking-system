@@ -675,41 +675,72 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     events = list(store("load", card_mission_id, None) or [])
     owner_scope = hashlib.sha256((str(parsed.get("telegram_user_id") or "") + "|"
         + str(parsed.get("telegram_chat_id") or "")).encode()).hexdigest()[:16].upper()
-    generation_id = (card_mission_id + "-OWNER-" + owner_scope
+    rendered_sha = hashlib.sha256(text.encode()).hexdigest()
+    legacy_id = (card_mission_id + "-OWNER-" + owner_scope
         + "-GENERATION-" + digest[:20].upper())
+    transition = hashlib.sha256(json.dumps([card_mission_id, owner_scope, prior_id, digest],
+        separators=(",", ":")).encode()).hexdigest()[:32].upper()
+    # The shared audit store bounds event identities to 120 characters.
+    # Keep the full owner/card/predecessor binding in the digest and payload.
+    generation_id = "OOM-BRIEF-TRANSITION-V2-" + transition
     generation_events = [row for row in events
         if str(row.get("event_id") or "").startswith(generation_id)]
+    legacy_events = [row for row in events
+        if str(row.get("event_id") or "").startswith(legacy_id)]
+    def owned(row):
+        return (str(row.get("owner_user_id") or "") == str(parsed.get("telegram_user_id") or "")
+            and str(row.get("chat_id") or "") == str(parsed.get("telegram_chat_id") or "")
+            and str(row.get("card_mission_id") or "") == card_mission_id
+            and str(row.get("specialist_identity") or "") == "OOM_SAKKIE")
+    if legacy_events:
+        if (any(not owned(row) or str(row.get("generation_digest") or "") != digest
+                for row in legacy_events)
+                or len({str(row.get("previous_telegram_message_id") or "")
+                        for row in legacy_events}) != 1):
+            return {"success": False, "status": "brief_replacement_generation_binding_conflict",
+                "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+        if str(legacy_events[0].get("previous_telegram_message_id") or "") == prior_id:
+            # Resume the exact historical transition; never create a new
+            # attempt identity around an old ambiguous provider boundary.
+            if generation_events:
+                return {"success": False, "status": "brief_replacement_generation_binding_conflict",
+                    "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+            generation_id, generation_events = legacy_id, legacy_events
+        elif not (any(row.get("state") == "brief_generation_delivered" for row in legacy_events)
+                  and any(row.get("state") == "brief_generation_superseded" for row in legacy_events)):
+            return {"success": False, "status": "brief_replacement_delivery_ambiguous",
+                "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    if any(not owned(row) or str(row.get("generation_digest") or "") != digest
+            or str(row.get("rendered_text_sha256") or "") != rendered_sha
+            or str(row.get("previous_telegram_message_id") or "") != prior_id
+            for row in generation_events):
+        return {"success": False, "status": "brief_replacement_generation_binding_conflict",
+            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
     delivered = next((row for row in reversed(generation_events)
         if row.get("state") == "brief_generation_delivered"), None)
     superseded_receipt = next((row for row in reversed(generation_events)
         if row.get("state") == "brief_generation_superseded"), None)
     confirmed_generation_ids = {str(row.get("event_id") or "").removesuffix("-SUPERSEDED")
-        for row in events if row.get("state") == "brief_generation_superseded"}
-    brief_deliveries = [row for row in events
-        if ((row.get("state") in {"delivered", "updated"}
-             and row.get("task_state") == "daily_farm_manager_ready")
-            or (row.get("state") == "brief_generation_delivered"
-                and str(row.get("event_id") or "").removesuffix("-DELIVERED")
-                    in confirmed_generation_ids))
-        and str(row.get("owner_user_id") or "") == str(parsed.get("telegram_user_id") or "")
-        and str(row.get("chat_id") or "") == str(parsed.get("telegram_chat_id") or "")
-        and str(row.get("specialist_identity") or "") == "OOM_SAKKIE"]
+        for row in events if owned(row) and row.get("state") == "brief_generation_superseded"}
+    brief_deliveries = [row for row in events if owned(row)
+        and ((row.get("state") in {"delivered", "updated"}
+              and row.get("task_state") == "daily_farm_manager_ready")
+             or (row.get("state") == "brief_generation_delivered"
+                 and str(row.get("event_id") or "").removesuffix("-DELIVERED")
+                     in confirmed_generation_ids))]
     prior = brief_deliveries[-1] if brief_deliveries else None
-    if not prior or str(prior.get("telegram_message_id") or "") != prior_id:
+    # A process can stop after canonical supersession but before its daily
+    # receipt. Only this exact currently-confirmed transition may recover it.
+    recovering_current = bool(delivered and superseded_receipt and prior
+        and prior.get("event_id") == delivered.get("event_id")
+        and str(prior.get("telegram_message_id") or "") == str(delivered.get("telegram_message_id") or ""))
+    if not prior or (str(prior.get("telegram_message_id") or "") != prior_id and not recovering_current):
         return {"success": False, "status": "brief_replacement_prior_binding_unproven",
             "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
-    if str(prior.get("generation_digest") or "").lower() == digest:
+    if not recovering_current and str(prior.get("generation_digest") or "").lower() == digest:
         return {"success": True, "status": "brief_replacement_unchanged_suppressed",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": prior_id, "previous_telegram_message_id": prior_id,
-            "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
-    if generation_events and any(
-            str(row.get("owner_user_id") or "") != str(parsed.get("telegram_user_id") or "")
-            or str(row.get("chat_id") or "") != str(parsed.get("telegram_chat_id") or "")
-            or str(row.get("generation_digest") or "") != digest
-            or str(row.get("previous_telegram_message_id") or "") != prior_id
-            for row in generation_events):
-        return {"success": False, "status": "brief_replacement_generation_binding_conflict",
             "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
     cleanup_receipt = next((row for row in reversed(generation_events)
         if row.get("state") in {"brief_previous_deleted", "brief_cleanup_debt"}), None)

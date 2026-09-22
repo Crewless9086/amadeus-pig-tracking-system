@@ -17,7 +17,8 @@ from modules.telemetry.rootline_device_registry import get_device_contract
 DEVICE_ID = "100204d497"
 DEVICE_IDENTITY = "FERTILIZER-MIXER-CH2"
 CHANNEL = 2
-NATIVE_FAIL_STOP_SECONDS = 300
+# Exact commissioned CH2 envelope; readiness never grants actuation authority.
+NATIVE_FAIL_STOP_SECONDS = 1800
 CONTRACT_VERSION = "rootline_mixer_readiness_observer.v1"
 
 

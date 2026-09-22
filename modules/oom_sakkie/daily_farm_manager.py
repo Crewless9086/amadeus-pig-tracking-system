@@ -7,6 +7,7 @@ from hashlib import sha256
 import html
 import json
 import os
+import re
 from urllib import error as urllib_error, request as urllib_request
 from zoneinfo import ZoneInfo
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
@@ -65,7 +66,9 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     replacement = bool(prior.get("status") in {"presented", "unchanged"}
                        and prior.get("material_digest") != digest
                        and str(prior.get("telegram_message_id") or ""))
-    claim_id = (projection_identity + ":GENERATION:" + digest[:20].upper()
+    transition = sha256(json.dumps([str(prior.get("telegram_message_id") or ""), digest],
+        separators=(",", ":")).encode()).hexdigest()[:32].upper()
+    claim_id = (projection_identity + ":TRANSITION-V2:" + transition
                 if replacement else projection_identity + ":DELIVERY")
     retry_proven = bool(prior.get("status") == "provider_ambiguous"
                         and prior.get("delivery_definitely_not_sent") is True
@@ -137,6 +140,15 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
             mission_id=claim_id, card_mission_id=projection_identity,
             delivery_retry_authority=retry_authority)
+    replacement_failure = str((delivery or {}).get("status") or "")
+    if replacement_failure not in {
+            "recipient_language_render_unrecognized", "brief_replacement_binding_incomplete",
+            "brief_replacement_prior_binding_unproven", "brief_replacement_generation_binding_conflict",
+            "brief_replacement_delivery_ambiguous",
+            "brief_replacement_provider_confirmed_receipt_unavailable",
+            "brief_replacement_supersession_receipt_unavailable", "brief_cleanup_receipt_unavailable"}:
+        replacement_failure = "brief_replacement_unconfirmed"
+    failure_detail = {"delivery_failure_reason": replacement_failure} if replacement else {}
     message_id = str((delivery or {}).get("telegram_message_id") or "")
     provider_confirmed = bool(message_id and ((delivery or {}).get("success") is True
         or (delivery or {}).get("provider_delivery_confirmed") is True))
@@ -145,29 +157,30 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         # provider access. Transport failures retain their existing ambiguity.
         language_rejected = ((delivery or {}).get("status") == "recipient_language_render_unrecognized"
                              and (delivery or {}).get("delivery_definitely_not_sent") is True)
-        failure_status = "recipient_language_render_unrecognized" if language_rejected else "provider_ambiguous"
+        failure_status = ("recipient_language_render_unrecognized" if language_rejected else
+                          "replacement_ambiguous" if replacement else "provider_ambiguous")
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
-            "material_digest": digest, "status": failure_status,
+            "material_digest": digest, "status": failure_status, **failure_detail,
             "observed_at": now.isoformat(), "telegram_sends": 0,
             "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
             "delivery_definitely_not_sent":
                 (delivery or {}).get("delivery_definitely_not_sent") is True})
         return {"success": False, "status": ("daily_manager_recipient_language_rejected" if language_rejected else
                                             "daily_manager_delivery_ambiguous"),
-                "daily_identity": identity, "material_digest": digest,
+                "daily_identity": identity, "material_digest": digest, **failure_detail,
                 **({"delivery_definitely_not_sent": True, "delivery_failure_reason": failure_status}
                    if language_rejected else {}),
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
     if delivery.get("success") is not True:
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
-            "material_digest": digest, "status": "provider_confirmed_receipt_unavailable",
+            "material_digest": digest, "status": "provider_confirmed_receipt_unavailable", **failure_detail,
             "observed_at": now.isoformat(), "telegram_message_id": message_id,
-            "telegram_sends": int(delivery.get("telegram_sends") or 1)})
+            "telegram_sends": int(delivery.get("telegram_sends") or 0)})
         return {"success": False,
-            "status": "daily_manager_provider_confirmed_receipt_unavailable",
+            "status": "daily_manager_provider_confirmed_receipt_unavailable", **failure_detail,
             "daily_identity": identity, "material_digest": digest,
             "telegram_message_id": message_id,
-            "telegram_sends": int(delivery.get("telegram_sends") or 1),
+            "telegram_sends": int(delivery.get("telegram_sends") or 0),
             "telegram_edits": int(delivery.get("telegram_edits") or 0), **ZERO}
     task_receipts_proven = True
     for task in packet["all_tasks"]:
@@ -177,7 +190,7 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
              "telegram_message_id": str(delivery.get("telegram_message_id"))})
         task_receipts_proven = task_receipts_proven and isinstance(receipt, dict) \
             and receipt.get("success") is True
-    outcome = store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
+    outcome = store("record_daily", claim_id + ":PRESENTED", {"daily_identity": identity,
         "material_digest": digest, "status": "presented", "observed_at": now.isoformat(),
         "answer_sha256": sha256(packet["answer"].strip().encode()).hexdigest(),
         "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
@@ -186,12 +199,12 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "telegram_sends": int(delivery.get("telegram_sends") or 0),
         "previous_telegram_message_id": str(prior.get("telegram_message_id") or "")
             if replacement else "",
-        "generation_replaced": replacement})
+        "generation_replaced": replacement}) if task_receipts_proven else None
     if not task_receipts_proven or not isinstance(outcome, dict) or outcome.get("success") is not True:
         return {"success": False, "status": "daily_manager_provider_confirmed_lifecycle_unavailable",
             "daily_identity": identity, "material_digest": digest,
             "telegram_message_id": message_id,
-            "telegram_sends": int(delivery.get("telegram_sends") or 1),
+            "telegram_sends": int(delivery.get("telegram_sends") or 0),
             "telegram_edits": int(delivery.get("telegram_edits") or 0), **ZERO}
     return {"success": True, "status": "daily_manager_presented",
         "daily_identity": identity, "material_digest": digest,
@@ -409,9 +422,14 @@ def _load_daily(identity, binding):
                   and review_json->'daily_farm_manager'->>'chat_id'=%s
                   and review_json->'daily_farm_manager'->>'status' in
                       ('presented','unchanged','provider_ambiguous')
+                  and not (review_json->'daily_farm_manager'->>'status'='provider_ambiguous'
+                           and review_event_id ~ %s)
                 order by created_at desc, review_event_id desc limit 1""",
                 (EVENT_SOURCE, identity, str(binding.get("owner_user_id") or ""),
-                 str(binding.get("chat_id") or "")))
+                 str(binding.get("chat_id") or ""),
+                 "^" + re.escape(_owner_projection_identity(identity,
+                     binding.get("owner_user_id"), binding.get("chat_id")))
+                     + r":GENERATION:[0-9A-F]{20}:OUTCOME$"))
             row = cursor.fetchone(); return row[0] if row else None
 
 

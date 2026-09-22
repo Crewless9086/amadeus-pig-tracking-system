@@ -6,11 +6,13 @@ from http.client import HTTPException
 from urllib.error import HTTPError
 import urllib.request
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 url = os.environ["OOM_SAKKIE_MORNING_SCHEDULER_URL"].rstrip("/")
 token = os.environ["OOM_SAKKIE_MORNING_SCHEDULER_TOKEN"]
 synthetic = str(os.environ.get("OOM_SAKKIE_SYNTHETIC_ACCEPTANCE_IDENTITY") or "").strip()
 MANAGER_TIMEOUT_SECONDS = 90
+SAST = ZoneInfo("Africa/Johannesburg")
 def post(target, payload, *, timeout=120):
     request = urllib.request.Request(target, data=json.dumps(payload).encode(), method="POST",
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
@@ -18,7 +20,31 @@ def post(target, payload, *, timeout=120):
         return json.load(response)
 
 MORNING_OK = {"daily_manager_presented", "daily_manager_replay_suppressed",
-              "daily_manager_unchanged_silent", "morning_runtime_recipients_projected"}
+              "daily_manager_unchanged_silent", "morning_runtime_recipients_projected",
+              "morning_runtime_not_due", "daily_manager_not_due",
+              "daily_manager_internal_work_silent"}
+
+
+def _recipient_failures(body):
+    """Keep bounded status diagnostics, never recipient identities or prose."""
+    rows = body.get("recipient_results") if isinstance(body, dict) else None
+    if not isinstance(rows, list):
+        return []
+    failures = []
+    for index, row in enumerate(rows[:8], 1):
+        if not isinstance(row, dict) or row.get("success") is not False:
+            continue
+        failure = {"recipient_index": index, "success": False}
+        for field, pattern in (
+                ("status", r"[a-z][a-z0-9_]{0,119}"),
+                ("delivery_failure_reason", r"[a-z][a-z0-9_]{0,119}"),
+                ("failure_kind", r"[A-Za-z][A-Za-z0-9_]{0,63}"),
+                ("failure_class", r"[A-Za-z][A-Za-z0-9_]{0,63}")):
+            value = row.get(field)
+            if isinstance(value, str) and re.fullmatch(pattern, value):
+                failure[field] = value
+        failures.append(failure)
+    return failures
 
 def run_scheduler(*, now=None, post_fn=post):
     request_failures = []
@@ -30,6 +56,8 @@ def run_scheduler(*, now=None, post_fn=post):
                         if post_fn is post else post_fn(target, payload))
             if not isinstance(response, dict):
                 raise ValueError("scheduler_response_not_object")
+            if stage == "morning_schedule":
+                response = {**response, "recipient_failures": _recipient_failures(response)}
             return response
         except (OSError, HTTPException, ValueError) as exc:
             # Requests may already have produced effects. Never retry here or
@@ -43,6 +71,10 @@ def run_scheduler(*, now=None, post_fn=post):
                     status = body.get("status") if isinstance(body, dict) else None
                     if isinstance(status, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,119}", status):
                         failure["response_status"] = status
+                    if stage == "morning_schedule":
+                        recipients = _recipient_failures(body)
+                        if recipients:
+                            failure["recipient_failures"] = recipients
                 except (OSError, HTTPException, ValueError):
                     pass
                 finally:
@@ -59,7 +91,8 @@ def run_scheduler(*, now=None, post_fn=post):
     beacon = invoke(beacon_url, {})
     now = now or datetime.now(timezone.utc)
     morning = None
-    if synthetic or (now.hour > 4 or (now.hour == 4 and now.minute >= 45)):
+    local = now.astimezone(SAST)
+    if synthetic or (local.hour, local.minute) >= (6, 45):
         morning = invoke(
             url,
             {"synthetic_acceptance_identity": synthetic} if synthetic else {},
@@ -70,7 +103,8 @@ def run_scheduler(*, now=None, post_fn=post):
         and manager.get("status") == "general_manager_cycle_completed"
         and beacon.get("success") is True
         and (morning is None or (morning.get("success") is True
-                                 and morning.get("status") in MORNING_OK)))
+                                 and morning.get("status") in MORNING_OK
+                                 and not morning.get("recipient_failures"))))
     result = {"success": safe, "status": recovery.get("status"),
     "worker_id": recovery.get("worker_id"), "cycle_id": recovery.get("cycle_id"),
     "heartbeat_at": recovery.get("heartbeat_at"), "next_cycle_at": recovery.get("next_cycle_at"),
@@ -90,6 +124,7 @@ def run_scheduler(*, now=None, post_fn=post):
     "beacon_publication_consumer_status": beacon.get("consumer_status"),
     "morning_status": (morning or {}).get("status"),
     "morning_failure_kind": (morning or {}).get("failure_kind"),
+    "morning_recipient_failures": (morning or {}).get("recipient_failures", []),
     "request_failures": request_failures}
     return result, 0 if safe else 1
 

@@ -12,7 +12,7 @@ from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completi
 
 
 def test_brief_replacement_confirms_supersession_before_optional_cleanup():
-    rows = {"prior":{"event_id":"prior","state":"delivered",
+    rows = {"prior":{"event_id":"prior","state":"delivered","card_mission_id":"DAILY",
         "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
         "specialist_identity":"OOM_SAKKIE","task_state":"daily_farm_manager_ready"}}
     order = []
@@ -39,7 +39,7 @@ def test_brief_replacement_confirms_supersession_before_optional_cleanup():
 
 
 def test_ambiguous_brief_replacement_keeps_previous_current_and_never_deletes():
-    rows = {"prior":{"event_id":"prior","state":"delivered",
+    rows = {"prior":{"event_id":"prior","state":"delivered","card_mission_id":"DAILY",
         "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
         "specialist_identity":"OOM_SAKKIE","task_state":"daily_farm_manager_ready"}}; deleted = []
     def store(action, identity, payload):
@@ -80,7 +80,7 @@ def test_brief_replacement_requires_exact_prior_owner_provider_binding():
 
 def test_unchanged_rolling_brief_is_silent_before_provider_io():
     digest = "9" * 64
-    rows = [{"state":"delivered", "event_id":"D-GENERATION-9-DELIVERED",
+    rows = [{"state":"delivered", "event_id":"D-GENERATION-9-DELIVERED", "card_mission_id":"D",
         "telegram_message_id":"100", "owner_user_id":"42", "chat_id":"42",
         "specialist_identity":"OOM_SAKKIE", "task_state":"daily_farm_manager_ready",
         "generation_digest":digest}]
@@ -97,7 +97,7 @@ def test_unchanged_rolling_brief_is_silent_before_provider_io():
 
 
 def test_different_material_generations_serialize_against_one_current_brief():
-    rows={"prior":{"event_id":"prior","state":"delivered","task_state":"daily_farm_manager_ready",
+    rows={"prior":{"event_id":"prior","state":"delivered","card_mission_id":"D","task_state":"daily_farm_manager_ready",
         "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
         "specialist_identity":"OOM_SAKKIE"}}
     row_lock=Lock(); projection=Lock(); sends=[]
@@ -126,7 +126,7 @@ def test_different_material_generations_serialize_against_one_current_brief():
 
 
 def test_delivered_generation_resumes_supersession_without_another_send():
-    rows={"prior":{"event_id":"prior","state":"delivered","task_state":"daily_farm_manager_ready",
+    rows={"prior":{"event_id":"prior","state":"delivered","card_mission_id":"D","task_state":"daily_farm_manager_ready",
         "telegram_message_id":"100","owner_user_id":"42","chat_id":"42",
         "specialist_identity":"OOM_SAKKIE"}}
     fail_supersession=[True]; sends=[]
@@ -1156,3 +1156,107 @@ def test_concurrent_initial_delivery_claim_has_exactly_one_sender():
     assert sum(r["telegram_sends"] for r in results)==1 and len(memory.sent)==1
     assert not memory.edited
     assert len([row for row in memory.rows.values() if row["state"]=="delivery_attempted"])==1
+
+
+def _legacy_brief_transition(states, previous="90"):
+    digest = "b" * 64
+    legacy_id = "D-OWNER-" + hashlib.sha256(b"42|42").hexdigest()[:16].upper() + "-GENERATION-" + digest[:20].upper()
+    common = {"owner_user_id": "42", "chat_id": "42", "card_mission_id": "D",
+        "specialist_identity": "OOM_SAKKIE", "generation_digest": digest,
+        "rendered_text_sha256": hashlib.sha256(b"current B").hexdigest(),
+        "previous_telegram_message_id": previous}
+    rows = {}
+    suffix = {"brief_generation_delivery_attempted": "", "brief_generation_delivered": "-DELIVERED",
+        "brief_generation_superseded": "-SUPERSEDED", "brief_previous_deleted": "-CLEANUP",
+        "contained": "-CONTAINED"}
+    for state in states:
+        identity = legacy_id + suffix[state]
+        rows[identity] = {**common, "event_id": identity, "state": state,
+            **({"telegram_message_id": "101"} if state not in {"contained", "brief_generation_delivery_attempted"} else {})}
+    return rows
+
+
+def _call_transition(rows, previous="100", sender=None, deleter=None):
+    def store(action, identity, payload):
+        if action == "load":
+            return [dict(row) for row in rows.values()]
+        created = identity not in rows
+        if created:
+            rows[identity] = dict(payload)
+        return {"success": True, "created": created}
+    return replace_current_brief({"telegram_user_id": "42", "telegram_chat_id": "42",
+        "provider_message_id": "scheduled:current", "provider_timestamp": "2026-09-22T05:00:00+00:00",
+        "output_language": "en"}, {"answer": "current B", "status": "daily_farm_manager_ready",
+        "rolling_brief_replacement": True}, mission_id="D:TRANSITION", card_mission_id="D",
+        previous_message_id=previous, generation_digest="b" * 64, event_store=store,
+        sender=sender or (lambda *_: pytest.fail("unexpected send")),
+        deleter=deleter or (lambda *_: pytest.fail("unexpected delete")))
+
+
+def _seed_current_brief(rows, message="100"):
+    rows["CURRENT-" + message] = {"event_id": "CURRENT-" + message,
+        "owner_user_id": "42", "chat_id": "42", "card_mission_id": "D",
+        "specialist_identity": "OOM_SAKKIE", "state": "delivered",
+        "task_state": "daily_farm_manager_ready", "telegram_message_id": message}
+
+
+@pytest.mark.parametrize("previous", ["90", "100"])
+@pytest.mark.parametrize("states", [
+    ("brief_generation_delivery_attempted",),
+    ("brief_generation_delivery_attempted", "contained")])
+def test_legacy_ambiguous_attempt_fences_same_and_different_predecessors(previous, states):
+    rows = _legacy_brief_transition(states, previous)
+    _seed_current_brief(rows)
+    before = {key: dict(value) for key, value in rows.items()}
+    outcome = _call_transition(rows)
+    assert outcome["status"] == "brief_replacement_delivery_ambiguous"
+    assert outcome["telegram_sends"] == outcome["telegram_deletes"] == 0
+    assert rows == before
+
+
+def test_confirmed_legacy_generation_allows_new_recurrence_but_not_stale_recovery():
+    rows = _legacy_brief_transition(("brief_generation_delivery_attempted",
+        "brief_generation_delivered", "brief_generation_superseded", "brief_previous_deleted"))
+    before = {key: dict(value) for key, value in rows.items()}
+    _seed_current_brief(rows)
+    sends, deletes = [], []
+    outcome = _call_transition(rows,
+        sender=lambda *_: sends.append(1) or {"success": True, "telegram_message_id": "102"},
+        deleter=lambda *_: deletes.append(1) or {"success": True})
+    assert outcome["success"] and len(sends) == len(deletes) == 1
+    assert all(rows[key] == value for key, value in before.items())
+    replay = _call_transition(rows)
+    assert replay["success"] and replay["telegram_sends"] == replay["telegram_deletes"] == 0
+    _seed_current_brief(rows, "103")
+    stale = _call_transition(rows)
+    assert stale["status"] == "brief_replacement_prior_binding_unproven"
+
+
+def test_exact_confirmed_legacy_transition_recovers_cleanup_debt_without_provider_retry():
+    rows = {}
+    _seed_current_brief(rows)
+    rows.update(_legacy_brief_transition(("brief_generation_delivery_attempted",
+        "brief_generation_delivered", "brief_generation_superseded"), previous="100"))
+    before = {key: dict(value) for key, value in rows.items()}
+    outcome = _call_transition(rows)
+    assert outcome["status"] == "brief_replaced_cleanup_debt" and outcome["success"]
+    assert outcome["telegram_message_id"] == "101"
+    assert outcome["telegram_sends"] == outcome["telegram_deletes"] == 0
+    assert all(rows[key] == value for key, value in before.items())
+    assert sum(row["state"] == "brief_cleanup_debt" for row in rows.values()) == 1
+
+
+@pytest.mark.parametrize("field,value", [
+    ("owner_user_id", "other"), ("chat_id", "other"), ("card_mission_id", "OTHER"),
+    ("specialist_identity", "ROOTLINE"), ("generation_digest", "c" * 64),
+    ("rendered_text_sha256", "c" * 64), ("previous_telegram_message_id", "other")])
+def test_conflicting_transition_receipt_cannot_claim_current_delivery(field, value):
+    rows = {}
+    _seed_current_brief(rows)
+    rows.update(_legacy_brief_transition(("brief_generation_delivery_attempted",
+        "brief_generation_delivered", "brief_generation_superseded"), previous="100"))
+    delivered = next(row for row in rows.values() if row["state"] == "brief_generation_delivered")
+    delivered[field] = value
+    outcome = _call_transition(rows)
+    assert not outcome["success"]
+    assert outcome["telegram_sends"] == outcome["telegram_deletes"] == 0
