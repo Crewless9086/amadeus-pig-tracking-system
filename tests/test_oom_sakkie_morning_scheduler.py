@@ -242,3 +242,97 @@ def test_independent_lane_failure_does_not_starve_manager(monkeypatch, failed_st
     if failure == "http":
         assert result["request_failures"][0]["http_status"] == 503
         assert result["request_failures"][0]["response_status"] == "upstream_unavailable"
+
+
+@pytest.mark.parametrize("now,invoked", [
+    (datetime(2026, 9, 21, 21, 59, tzinfo=timezone.utc), True),
+    (datetime(2026, 9, 21, 22, 0, tzinfo=timezone.utc), False),
+    (datetime(2026, 9, 22, 0, 0, tzinfo=timezone.utc), False),
+    (datetime(2026, 9, 22, 4, 44, tzinfo=timezone.utc), False),
+    (datetime(2026, 9, 22, 4, 45, tzinfo=timezone.utc), True),
+])
+def test_morning_gate_uses_sast_date_boundary(monkeypatch, now, invoked):
+    module = _script_module(monkeypatch)
+    monkeypatch.setattr(module, "synthetic", "")
+    calls = []
+    result, code = module.run_scheduler(now=now, post_fn=_scheduler_post(
+        {"success": True, "status": "daily_manager_unchanged_silent"}, calls))
+    assert code == 0 and result["success"] is True
+    assert sum(url.endswith("morning-schedule") for url, _ in calls) == int(invoked)
+    assert sum(url.endswith("general-manager-cycle") for url, _ in calls) == 1
+
+
+def test_explicit_synthetic_schedule_still_runs_before_morning(monkeypatch):
+    module = _script_module(monkeypatch)
+    monkeypatch.setattr(module, "synthetic", "synthetic_acceptance:LOCAL-ONLY")
+    calls = []
+    module.run_scheduler(now=datetime(2026, 9, 21, 22, 0, tzinfo=timezone.utc),
+        post_fn=_scheduler_post({"success": True, "status": "morning_runtime_not_due"}, calls))
+    morning = [(url, body) for url, body in calls if url.endswith("morning-schedule")]
+    assert len(morning) == 1
+    assert morning[0][1] == {"synthetic_acceptance_identity": "synthetic_acceptance:LOCAL-ONLY"}
+
+
+@pytest.mark.parametrize("status", ["morning_runtime_not_due", "daily_manager_not_due",
+                                    "daily_manager_internal_work_silent"])
+@pytest.mark.parametrize("success", [True, False])
+def test_proven_silent_morning_status_requires_true_success(monkeypatch, status, success):
+    module = _script_module(monkeypatch)
+    result, code = module.run_scheduler(now=datetime(2026, 9, 22, 5, 0, tzinfo=timezone.utc),
+        post_fn=_scheduler_post({"success": success, "status": status}, []))
+    assert code == (0 if success else 1)
+    assert result["success"] is success
+
+
+@pytest.mark.parametrize("transport", ["http503", "body_false", "contradictory_success"])
+def test_morning_recipient_failures_stay_failed_and_emit_only_safe_diagnostics(monkeypatch, transport):
+    import io, json
+    module = _script_module(monkeypatch)
+    calls = []
+    body = {"success": transport == "contradictory_success",
+        "status": "morning_runtime_recipients_projected",
+        "recipient_results": [
+            {"success": True, "status": "daily_manager_unchanged_silent",
+             "owner_user_id": "private-owner", "answer": "private message"},
+            {"success": False, "status": "daily_manager_delivery_ambiguous",
+             "failure_class": "ValueError", "failure_kind": "private exception text",
+             "delivery_failure_reason": "brief_replacement_generation_binding_conflict",
+             "owner_user_id": "private-owner", "chat_id": "private-chat", "answer": "private message"},
+            {"success": False, "status": "private unstructured body", "failure_class": "private\ntrace",
+             "delivery_failure_reason": "private unstructured reason"},
+        ], "private_data": "private body"}
+    ordinary = _scheduler_post({"success": True, "status": "daily_manager_presented"}, [])
+    error_body = io.BytesIO(json.dumps(body).encode())
+    def post(url, payload):
+        calls.append(url)
+        if url.endswith("morning-schedule"):
+            if transport == "http503":
+                raise HTTPError(url, 503, "private reason", {}, error_body)
+            return body
+        return ordinary(url, payload)
+    result, code = module.run_scheduler(now=datetime(2026, 9, 22, 5, 0, tzinfo=timezone.utc), post_fn=post)
+    assert code == 1 and result["success"] is False
+    assert result["morning_recipient_failures"] == [
+        {"recipient_index": 2, "success": False, "status": "daily_manager_delivery_ambiguous",
+         "delivery_failure_reason": "brief_replacement_generation_binding_conflict",
+         "failure_class": "ValueError"},
+        {"recipient_index": 3, "success": False}]
+    assert "private" not in json.dumps(result)
+    assert sum(url.endswith("morning-schedule") for url in calls) == 1
+    assert sum(url.endswith("general-manager-cycle") for url in calls) == 1
+    if transport == "http503":
+        assert result["request_failures"][0]["http_status"] == 503
+        assert result["request_failures"][0]["recipient_failures"] == result["morning_recipient_failures"]
+        assert error_body.closed
+
+
+def test_morning_recipient_diagnostics_are_bounded_and_validate_field_types(monkeypatch):
+    module = _script_module(monkeypatch)
+    body = {"success": False, "status": "morning_runtime_recipients_projected",
+        "recipient_results": [{"success": False, "status": "x" * 121,
+            "failure_kind": {"private": "object"}, "failure_class": 123}] * 20}
+    result, code = module.run_scheduler(now=datetime(2026, 9, 22, 5, 0, tzinfo=timezone.utc),
+        post_fn=_scheduler_post(body, []))
+    assert code == 1
+    assert result["morning_recipient_failures"] == [
+        {"recipient_index": index, "success": False} for index in range(1, 9)]

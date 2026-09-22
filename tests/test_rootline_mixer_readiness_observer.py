@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from modules.telemetry.rootline_mixer_readiness_observer import collect_mixer_readiness
 from modules.oom_sakkie.general_manager_worker import (
     deliver_farm_manager_case, run_general_manager_cycle,
@@ -20,7 +22,7 @@ def provider(*args, **kwargs):
             {"channel": 1, "output_state": "OFF", "native_auto_off_enabled": True,
              "native_auto_off_seconds": 120},
             {"channel": 2, "output_state": "OFF", "native_auto_off_enabled": True,
-             "native_auto_off_seconds": 300}]}
+             "native_auto_off_seconds": 1800}]}
 
 
 def test_ready_readback_is_bounded_stable_and_replay_silent():
@@ -122,3 +124,29 @@ def test_readiness_attention_never_uses_telegram_delivery():
     assert result["status"] == "readiness_attention_only"
     assert result["telegram_sends"] == 0
     assert result["provider_actions"] == 0
+
+
+@pytest.mark.parametrize("seconds", [None, 300, 1799, 1801, 3600])
+def test_uncommissioned_native_duration_keeps_readiness_held(seconds):
+    def mismatched(*args, **kwargs):
+        value = provider(*args, **kwargs)
+        value["channels"][1]["native_auto_off_seconds"] = seconds
+        return value
+    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=mismatched,
+        execution_store=lambda action, payload: None)[0]
+    assert row["unknowns"] == ["native_fail_stop_seconds"]
+    assert row["equipment_lifecycle"] == "held"
+    assert row["equipment_evidence"]["provider_readiness_proven"] is False
+
+
+def test_registry_binding_drift_fails_before_provider_or_ledger_calls(monkeypatch):
+    import modules.telemetry.rootline_mixer_readiness_observer as observer
+    from modules.telemetry.rootline_device_registry import get_device_contract
+    contract = get_device_contract("FERTILIZER-MIXER-CH2")
+    contract["native_fail_stop_seconds"] = 300
+    monkeypatch.setattr(observer, "get_device_contract", lambda identity: contract)
+    def unexpected(*args, **kwargs):
+        raise AssertionError("External dependency must not be called")
+    with pytest.raises(ValueError, match="rootline_mixer_registry_binding_invalid"):
+        collect_mixer_readiness(now=NOW, token_store=object(), readback=unexpected,
+            execution_store=unexpected)

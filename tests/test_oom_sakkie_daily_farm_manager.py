@@ -438,3 +438,194 @@ def test_actual_delivery_boundary_preserves_complete_en_af_brief_without_mixed_l
     assert "welstandsopdatering" in visible["77"] and "Staan Prince" in visible["77"]
     assert not any(word in visible["77"].casefold() for word in
                    ("today's", "one question", "supported action", "next check"))
+
+
+def _daily_family_transition_harness(monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from modules.oom_sakkie import daily_farm_manager as daily, family_message_lifecycle as family
+    state = SimpleNamespace(daily={}, family={}, sends=[], deletes=[], calls=[],
+        fail_daily=None, fail_family=None, fail_task=False, ambiguous=False, crash_cleanup=False)
+    def daily_store(action, identity, payload):
+        if action == "load_daily":
+            rows = [row for row in state.daily.values()
+                if row.get("daily_identity") == identity
+                and row.get("owner_user_id") == payload["owner_user_id"]
+                and row.get("chat_id") == payload["chat_id"]
+                and row.get("status") in {"presented", "unchanged", "provider_ambiguous"}]
+            return dict(rows[-1]) if rows else None
+        if action == "load_answered_questions":
+            return ()
+        if action == "record_daily" and payload.get("status") == "presented" and state.fail_daily:
+            failure, state.fail_daily = state.fail_daily, None
+            if failure == "raise":
+                raise RuntimeError("simulated process stop before daily receipt")
+            return {"success": False, "created": False}
+        if action == "record_task" and payload.get("lifecycle_state") == "presented" and state.fail_task:
+            state.fail_task = False
+            return {"success": False, "created": False}
+        created = identity not in state.daily
+        if created:
+            state.daily[identity] = {**payload, "event_id": identity, "event_kind": action}
+        return {"success": True, "created": created}
+    def family_store(action, identity, payload):
+        if action == "load":
+            return [dict(row) for row in state.family.values() if row["card_mission_id"] == identity]
+        if state.fail_family == payload.get("state"):
+            state.fail_family = None
+            return {"success": False, "created": False}
+        created = identity not in state.family
+        if created:
+            state.family[identity] = dict(payload)
+        return {"success": True, "created": created}
+    def sender(_chat, _text):
+        state.sends.append(str(8000 + len(state.sends)))
+        if state.ambiguous:
+            return {"success": False, "status": "provider_ambiguous"}
+        return {"success": True, "telegram_message_id": state.sends[-1]}
+    def deleter(_chat, message_id):
+        if state.crash_cleanup:
+            state.crash_cleanup = False
+            raise RuntimeError("simulated process stop before cleanup")
+        state.deletes.append(message_id)
+        return {"success": True}
+    def deliver(parsed, value, **kwargs):
+        outcome = family.deliver_family_result(parsed, value, event_store=family_store, sender=sender, **kwargs)
+        state.calls.append(outcome)
+        return outcome
+    def replace_brief(parsed, value, **kwargs):
+        outcome = family.replace_current_brief(parsed, value, event_store=family_store,
+            sender=sender, deleter=deleter, projection_lock=lambda _: nullcontext(), **kwargs)
+        state.calls.append(outcome)
+        return outcome
+    # Crucial: production's duplicate-claim branch compares the default store
+    # function identity. Passing only a custom store would mask this failure.
+    monkeypatch.setattr(daily, "daily_farm_manager_store", daily_store)
+    def run(label):
+        work = replace(item("CURRENT", "Synthetic current work " + label, specialist="herdmaster"),
+            authority=Authority.OWNER_DECISION)
+        return daily.run_daily_farm_manager(owner_user_id="42", chat_id="42",
+            specialist_results=[result(name="herdmaster", items=[work])], litter_rows=[],
+            now=NOW, language="en", deliver=deliver, replace_brief=replace_brief,
+            semantic_prioritizer=lambda rows, **_: list(rows))
+    state.run = run
+    return state
+
+
+@pytest.mark.parametrize("labels", [("A", "B", "A", "B"), ("A", "B", "C", "B"),
+    ("A", "B", "A", "B", "A", "B")])
+def test_daily_material_recurrence_uses_new_exact_transition_and_restart_is_silent(monkeypatch, labels):
+    state = _daily_family_transition_harness(monkeypatch)
+    first_b = None
+    for label in labels:
+        outcome = state.run(label)
+        assert outcome["success"] and outcome["status"] == "daily_manager_presented"
+        if label == "B" and first_b is None:
+            first_b = outcome["telegram_message_id"]
+    before = {key: dict(value) for key, value in state.daily.items()}
+    replay = state.run("B")
+    assert replay["status"] == "daily_manager_unchanged_silent"
+    assert len(state.sends) == len(labels) and len(state.deletes) == len(labels) - 1
+    assert first_b != outcome["telegram_message_id"]
+    assert state.daily == before
+    b_receipts = [row for row in state.daily.values() if row.get("status") == "presented"
+        and row.get("material_digest") == outcome["material_digest"]]
+    assert len(b_receipts) == labels.count("B")
+    assert len({row["event_id"] for row in b_receipts}) == len(b_receipts)
+
+
+@pytest.mark.parametrize("interruption", ["daily_reject", "daily_raise", "cleanup_raise", "supersession_reject"])
+def test_daily_confirmed_transition_recovers_receipts_without_repeating_provider_effect(monkeypatch, interruption):
+    state = _daily_family_transition_harness(monkeypatch)
+    assert state.run("A")["success"]
+    if interruption.startswith("daily"):
+        state.fail_daily = interruption.removeprefix("daily_")
+    elif interruption == "cleanup_raise":
+        state.crash_cleanup = True
+    else:
+        state.fail_family = "brief_generation_superseded"
+    if interruption.endswith("raise"):
+        with pytest.raises(RuntimeError, match="simulated process stop"):
+            state.run("B")
+    else:
+        failed = state.run("B")
+        assert not failed["success"]
+    old_rows = {key: dict(value) for key, value in state.daily.items()}
+    sends, deletes = len(state.sends), len(state.deletes)
+    recovered = state.run("B")
+    assert recovered["success"] and recovered["status"] == "daily_manager_presented"
+    assert recovered["telegram_sends"] == recovered["telegram_edits"] == 0
+    assert len(state.sends) == sends == 2
+    assert len(state.deletes) == deletes + int(interruption == "supersession_reject")
+    assert all(state.daily[key] == value for key, value in old_rows.items())
+    assert any(key.endswith(":PRESENTED") and row.get("telegram_message_id") == recovered["telegram_message_id"]
+        for key, row in state.daily.items())
+    assert state.run("B")["status"] == "daily_manager_unchanged_silent"
+
+
+def test_daily_replacement_ambiguity_retains_reason_and_never_retries_on_restart(monkeypatch):
+    state = _daily_family_transition_harness(monkeypatch)
+    assert state.run("A")["success"]
+    state.ambiguous = True
+    first = state.run("B")
+    state.ambiguous = False
+    replay = state.run("B")
+    assert first["status"] == replay["status"] == "daily_manager_delivery_ambiguous"
+    assert first["delivery_failure_reason"] == replay["delivery_failure_reason"] == "brief_replacement_delivery_ambiguous"
+    assert len(state.sends) == 2 and state.deletes == []
+    assert not first.get("delivery_definitely_not_sent") and not replay.get("delivery_definitely_not_sent")
+    assert any(row.get("status") == "replacement_ambiguous" for row in state.daily.values())
+
+
+def test_daily_zero_send_recovery_receipt_failure_is_not_reported_as_delivery(monkeypatch):
+    state = _daily_family_transition_harness(monkeypatch)
+    state.run("A")
+    state.fail_family = "brief_generation_superseded"
+    assert not state.run("B")["success"]
+    state.fail_daily = "reject"
+    recovery_failure = state.run("B")
+    assert recovery_failure["status"] == "daily_manager_provider_confirmed_lifecycle_unavailable"
+    assert not recovery_failure["success"] and recovery_failure["telegram_sends"] == 0
+    assert len(state.sends) == 2
+    assert state.run("B")["success"]
+    assert len(state.sends) == 2
+
+
+def test_daily_presented_task_receipt_failure_recovers_without_false_completion(monkeypatch):
+    state = _daily_family_transition_harness(monkeypatch)
+    assert state.run("A")["success"]
+    state.fail_task = True
+    failed = state.run("B")
+    assert failed["status"] == "daily_manager_provider_confirmed_lifecycle_unavailable"
+    assert not failed["success"] and failed["telegram_message_id"]
+    assert not any(row.get("status") == "presented"
+        and row.get("material_digest") == failed["material_digest"] for row in state.daily.values())
+    recovered = state.run("B")
+    assert recovered["success"] and recovered["telegram_sends"] == 0
+    assert len(state.sends) == 2 and len(state.deletes) == 1
+    assert state.run("B")["status"] == "daily_manager_unchanged_silent"
+
+
+def test_daily_and_family_transition_ids_survive_real_audit_parameter_bounds(monkeypatch):
+    from modules.sales.sam_live_stock_launch_control import _review_event_params
+    state = _daily_family_transition_harness(monkeypatch)
+    for label in ("A", "B", "A", "B", "A", "B"):
+        assert state.run(label)["success"]
+    for identity in [*state.daily, *state.family]:
+        assert len(identity) <= 120
+        assert _review_event_params({"review_event_id": identity})["review_event_id"] == identity
+    assert all("-GENERATION-" not in key for key in state.family if "TRANSITION-V2" in key)
+
+
+def test_changed_packet_after_missing_daily_receipt_is_contained_without_stale_advance(monkeypatch):
+    state = _daily_family_transition_harness(monkeypatch)
+    assert state.run("A")["success"]
+    state.fail_daily = "reject"
+    assert not state.run("B")["success"]
+    before = len(state.sends), len(state.deletes)
+    changed = state.run("C")
+    assert not changed["success"]
+    assert changed["delivery_failure_reason"] == "brief_replacement_prior_binding_unproven"
+    assert (len(state.sends), len(state.deletes)) == before
+    assert state.run("B")["success"]
+    assert state.run("C")["success"]
