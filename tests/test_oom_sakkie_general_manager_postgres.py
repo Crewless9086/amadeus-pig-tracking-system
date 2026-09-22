@@ -121,6 +121,68 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         return self.store.run_cycle(values, now=self.now, source_revision='local-regression',
             brain_guard_audit={'passed': True}, **kwargs)
 
+    def test_family_replay_is_successful_suppression_without_borrowed_generation_receipt(self):
+        from tests.test_oom_sakkie_general_manager_delivery import _real_family_delivery_harness
+        deliver, family_events, effects = _real_family_delivery_harness()
+        clock = [self.now]
+        class CurrentTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return clock[0]
+        first_candidate = self.value("replay", unknowns=["physical observation"],
+            evidence_refs=["event:before"], next_reassessment_at=self.now.isoformat())
+        def present(case):
+            return deliver_farm_manager_case(case, now=clock[0], deliver=deliver)
+        with patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"}), \
+                patch.object(worker_module, "datetime", CurrentTime):
+            first = self.cycle([first_candidate], deliver=present,
+                refresh=lambda _case: first_candidate)
+            self.assertEqual(first["deliveries_confirmed"], 1)
+            old_family = {key: dict(value) for key, value in family_events.items()}
+            with self.db() as db:
+                old_digest = db.execute("""select last_delivery_digest
+                    from app_private.oom_manager_cases""").fetchone()[0]
+                old_events = db.execute("""select event_id,event_payload
+                    from app_private.oom_manager_case_events order by event_id""").fetchall()
+            self.now += timedelta(minutes=1)
+            clock[0] = self.now
+            current = {**first_candidate, "evidence_refs": ["event:after"],
+                "next_reassessment_at": self.now.isoformat()}
+            second = self.cycle([current], deliver=present, refresh=lambda _case: current)
+            self.assertTrue(second["success"])
+            self.assertEqual(second["exceptions"], 0)
+            self.assertEqual(second["deliveries_confirmed"], 0)
+            self.assertEqual(second["deliveries_suppressed"], 1)
+            self.assertEqual(second["case_results"][0]["outcome_status"], "family_message_replayed_noop")
+            with self.db() as db:
+                state = db.execute("""select status,generation,evidence_digest,last_delivery_digest,
+                    next_reassessment_at,assigned_worker_id,lease_until
+                    from app_private.oom_manager_cases""").fetchone()
+                events = db.execute("""select event_type,generation,event_payload
+                    from app_private.oom_manager_case_events order by occurred_at,event_id""").fetchall()
+                preserved = dict(db.execute("""select event_id,event_payload
+                    from app_private.oom_manager_case_events""").fetchall())
+            self.assertEqual(state[:2], ("waiting_reassessment", 2))
+            self.assertNotEqual(state[2], old_digest)
+            self.assertEqual(state[3], old_digest)
+            self.assertGreater(state[4], self.now)
+            self.assertEqual(state[5:], (None, None))
+            self.assertFalse(any(kind in {"exception", "delivery_confirmed"} and generation == 2
+                for kind, generation, _payload in events))
+            self.assertTrue(any(kind == "delivery_suppressed" and generation == 2
+                for kind, generation, _payload in events))
+            self.assertTrue(all(preserved[key] == value for key, value in old_events))
+            self.now = state[4] + timedelta(seconds=1)
+            clock[0] = self.now
+            # A fresh store instance must reach the same family journal after restart.
+            self.store = PostgresManagerCaseStore(connect_factory=self.db)
+            replay = self.cycle([], deliver=present, refresh=lambda _case: current)
+            self.assertTrue(replay["success"])
+            self.assertEqual(replay["exceptions"], 0)
+            self.assertEqual(replay["deliveries_confirmed"], 0)
+        self.assertEqual(effects, ["send"])
+        self.assertEqual(family_events, old_family)
+
     def test_bulk_followups_survive_intake_window_only_for_exact_active_cases(self):
         # Run production collector SQL against actual source-table definitions in
         # the same isolated schema as this test's canonical manager cases.

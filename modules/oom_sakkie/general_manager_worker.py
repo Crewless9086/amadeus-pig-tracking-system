@@ -1094,6 +1094,18 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
         if not bind_claim_card(result["callback_token"], outcome["telegram_message_id"]):
             return {**outcome, "success": False, "delivery_confirmed": False,
                 "status": "beacon_protected_card_binding_failed"}
+    if outcome.get("status") in {
+            "family_message_replayed_noop", "family_message_provider_replay_noop"}:
+        # The family rail proved this exact presentation already exists.
+        # Successful suppression is not a new generation's delivery receipt.
+        replayed = bool(outcome.get("success") is True
+            and str(outcome.get("telegram_message_id") or "").strip()
+            and outcome.get("mission_id") == mission_id
+            and outcome.get("card_mission_id") == case["case_id"]
+            and outcome.get("telegram_sends") == 0
+            and outcome.get("telegram_edits") == 0
+            and outcome.get("provider_delivery_confirmed") is not True)
+        return {**outcome, "success": replayed, "delivery_confirmed": False}
     confirmed = bool(outcome.get("telegram_message_id") and (
         outcome.get("provider_delivery_confirmed") is True
         or (outcome.get("success") is True and int(outcome.get("telegram_edits") or 0) == 1)))
