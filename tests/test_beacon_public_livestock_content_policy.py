@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from datetime import datetime, timezone
 
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
@@ -123,15 +124,18 @@ class BeaconPublicLivestockContentPolicyTests(unittest.TestCase):
     def test_missing_stale_or_mismatched_authority_binding_fails_closed(self):
         assessment = self.assess("Molly and her piglets enjoy a quiet farm morning.")
         bound = public_livestock_policy_binding(assessment, target_page_id="PAGE-1")
+        in_window = datetime(2026, 9, 21, tzinfo=timezone.utc)
         self.assertTrue(public_livestock_policy_binding_matches(bound, assessment,
-            target_page_id="PAGE-1"))
+            target_page_id="PAGE-1", now=in_window))
+        self.assertFalse(public_livestock_policy_binding_matches(bound, assessment,
+            target_page_id="PAGE-1", now=datetime(2026, 9, 22, tzinfo=timezone.utc)))
         self.assertFalse(public_livestock_policy_binding_matches({}, assessment,
-            target_page_id="PAGE-1"))
+            target_page_id="PAGE-1", now=in_window))
         stale = dict(bound)
         stale["policy_authority"] = dict(bound["policy_authority"],
             source_digest="0" * 64)
         self.assertFalse(public_livestock_policy_binding_matches(stale, assessment,
-            target_page_id="PAGE-1"))
+            target_page_id="PAGE-1", now=in_window))
 
     def test_active_doctrine_retires_enquiry_capture_exception(self):
         root = Path(__file__).resolve().parents[1]
