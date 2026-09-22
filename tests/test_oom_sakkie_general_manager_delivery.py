@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+import pytest
+
 from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
 
 
@@ -113,3 +115,97 @@ def test_generation_retry_uses_stable_provider_binding_timestamp():
     deliver_farm_manager_case(_case(),now=datetime(2026,8,17,12,5,tzinfo=timezone.utc),deliver=ambiguous)
     assert len(set(timestamps)) == 1
     assert timestamps[0].endswith("+00:00")
+
+
+def _real_family_delivery_harness():
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    events, effects = {}, []
+    def store(action, identity, payload):
+        if action == "load":
+            return [dict(row) for row in events.values()
+                if row.get("card_mission_id") == identity]
+        created = identity not in events
+        if created:
+            events[identity] = dict(payload)
+        return {"success": True, "created": created}
+    def sender(*_args, **_kwargs):
+        effects.append("send")
+        return {"success": True, "telegram_message_id": "7001"}
+    def editor(*_args, **_kwargs):
+        effects.append("edit")
+        return {"success": True, "telegram_message_id": "7001"}
+    def deliver(parsed, result, **kwargs):
+        return deliver_family_result(parsed, result, event_store=store,
+            sender=sender, editor=editor, **kwargs)
+    return deliver, events, effects
+
+
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"})
+def test_new_generation_exact_family_presentation_replay_is_suppressed_not_failed():
+    deliver, events, effects = _real_family_delivery_harness()
+    first = deliver_farm_manager_case(_case(), deliver=deliver)
+    assert first["success"] and first["delivery_confirmed"] and effects == ["send"]
+    previous = {key: dict(value) for key, value in events.items()}
+    # New canonical evidence may leave the owner-facing presentation unchanged.
+    current = {**_case(), "generation": 3, "evidence_digest": "e" * 64}
+    result = deliver_farm_manager_case(current, deliver=deliver)
+    assert result["status"] == "family_message_replayed_noop"
+    assert result["success"] and result["delivery_confirmed"] is False
+    assert result["telegram_sends"] == result["telegram_edits"] == 0
+    assert result["mission_id"].endswith(":G3")
+    assert effects == ["send"] and events == previous
+
+
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"})
+def test_exact_generation_provider_replay_preserves_success_without_new_confirmation():
+    deliver, events, effects = _real_family_delivery_harness()
+    assert deliver_farm_manager_case(_case(), deliver=deliver)["success"]
+    previous = {key: dict(value) for key, value in events.items()}
+    result = deliver_farm_manager_case(_case(), deliver=deliver)
+    assert result["status"] == "family_message_provider_replay_noop"
+    assert result["success"] and result["delivery_confirmed"] is False
+    assert effects == ["send"] and events == previous
+
+
+@pytest.mark.parametrize("change", [
+    {"success": False},
+    {"telegram_message_id": ""},
+    {"mission_id": "FOREIGN:G2"},
+    {"card_mission_id": "FOREIGN"},
+    {"telegram_sends": 1},
+    {"telegram_edits": 1},
+    {"provider_delivery_confirmed": True},
+    {"status": "family_message_notification_ambiguous"},
+    {"status": "unexpected_success"},
+])
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"})
+def test_unproven_or_foreign_replay_is_not_successfully_suppressed(change):
+    outcome = {"success": True, "status": "family_message_replayed_noop",
+        "mission_id": "OOM-CASE-ABC:G2", "card_mission_id": "OOM-CASE-ABC",
+        "telegram_message_id": "7001", "telegram_sends": 0, "telegram_edits": 0}
+    outcome.update(change)
+    result = deliver_farm_manager_case(_case(), deliver=lambda *_args, **_kwargs: outcome)
+    assert result["success"] is False and result["delivery_confirmed"] is False
+
+
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"})
+def test_real_ambiguous_family_attempt_remains_contained_without_another_send():
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    events, sends = {}, []
+    def store(action, identity, payload):
+        if action == "load":
+            return list(events.values())
+        created = identity not in events
+        if created:
+            events[identity] = dict(payload)
+        return {"success": True, "created": created}
+    def sender(*_args, **_kwargs):
+        sends.append(1)
+        return {"success": False, "status": "provider_ambiguous"}
+    def deliver(parsed, result, **kwargs):
+        return deliver_family_result(parsed, result, event_store=store, sender=sender, **kwargs)
+    first = deliver_farm_manager_case(_case(), deliver=deliver)
+    replay = deliver_farm_manager_case(_case(), deliver=deliver)
+    assert first["success"] is replay["success"] is False
+    assert first["delivery_confirmed"] is replay["delivery_confirmed"] is False
+    assert sends == [1]
