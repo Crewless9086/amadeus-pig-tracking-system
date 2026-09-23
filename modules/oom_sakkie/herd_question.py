@@ -36,10 +36,12 @@ def answer_herd_question(
     matings,
     worklist=None,
     today=None,
+    subject=None,
+    language="en",
 ):
     """Resolve exactly one pig and compose canonical facts without writes."""
     today = today or date.today()
-    subject = _subject(question)
+    subject = str(subject).strip() if subject is not None else _subject(question)
     if not subject:
         return _failure(
             "animal_identity_required",
@@ -176,7 +178,7 @@ def answer_herd_question(
             ),
         },
     }
-    answer = _compose(tag, facts, missing, recommendation)
+    answer = _compose(tag, facts, missing, recommendation, language=language)
     fingerprint = hashlib.sha256(
         repr((CONTRACT_VERSION, pig_id, facts, missing, recommendation)).encode()
     ).hexdigest()[:24]
@@ -430,7 +432,7 @@ def _case_gap_is_superseded(item, pregnancy):
     )
 
 
-def _compose(tag, facts, missing, recommendation):
+def _compose(tag, facts, missing, recommendation, *, language="en"):
     identity = facts["identity"]
     weight = facts["latest_weight"]
     breeding = facts["breeding"]
@@ -441,9 +443,22 @@ def _compose(tag, facts, missing, recommendation):
         if isinstance(weight["weight_kg"], (int, float))
         else f"{weight['weight_kg']} kg"
     )
+    if str(language).casefold().startswith("af"):
+        labels = {"Active": "Aktief", "Sold": "Verkoop", "Dead": "Dood", "Removed": "Verwyder",
+                  "Slaughtered": "Geslag", "Breeding": "Teel", "Sale": "Verkope", "Meat": "Vleis",
+                  "Yes": "Ja", "No": "Nee", "Unknown": "Onbekend", "Pregnant": "Dragtig",
+                  "Not Pregnant": "Nie dragtig nie"}
+        local = lambda value: labels.get(str(value), "Onbekend")
+        dated = lambda value: "Onbekend" if value == "Unknown" else str(value)
+        return (f"Feite — {tag} ({identity['pig_id']}): lewensiklus {local(identity['lifecycle_status'])}; "
+            f"op plaas: {local(identity['on_farm'])}; doel: {local(identity['purpose'])}. "
+            f"Laaste aangetekende gewig: {dated(weight_text)}, bewysdatum {dated(weight['evidence_date'])}. "
+            f"Laaste paring: {dated(breeding['latest_mating_date'])}; dragtigheidsbewys: {local(breeding['pregnancy_check_result'])}.\n\n"
+            + ("Die gewigsbewys is verouderd of ontbreek. " if weight['stale'] else "")
+            + "Hierdie antwoord bevestig net aangetekende feite; dit bewys nie 'n nuwe fisiese uitkoms nie. Geen plaasrekord is verander nie.")
     return (
         f"Facts — {tag} ({identity['pig_id']}): lifecycle "
-        f"{identity['lifecycle_status']}; purpose {identity['purpose']}. "
+        f"{identity['lifecycle_status']}; on farm {identity['on_farm']}; purpose {identity['purpose']}. "
         f"Latest recorded weight {weight_text}, evidence date "
         f"{weight['evidence_date']}, observation time Unknown. Breeding status: "
         f"{breeding['status']}. Latest mating date: "
