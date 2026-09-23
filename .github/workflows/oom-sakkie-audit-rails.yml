@@ -299,6 +299,11 @@ jobs:
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_retained_report_recovery_postgres.py
           DATABASE_URL="" PYTHON_DOTENV_DISABLED="1" python -m pytest -q tests/test_oom_sakkie_manager_case_sources.py tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py
 
+      - name: Run canonical conversational follow-up gates
+        run: |
+          OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_conversation_followup_postgres.py
+          DATABASE_URL="" PYTHON_DOTENV_DISABLED="1" python -m pytest -q tests/test_oom_sakkie_conversation_followup.py tests/test_oom_sakkie_manager_question_runtime.py tests/test_herdmaster_ordinary_herd_question.py
+
       - name: Run retained farrowing conversation gates
         env:
           DATABASE_URL: ""

@@ -64,11 +64,24 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
                               loaders: dict[str, Callable] | None = None,
                               event_store=None, weighing_loader=None,
                               specialist_budget_seconds=SPECIALIST_BUDGET_SECONDS,
-                              clock=None):
+                              clock=None, case_loader=None):
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), dict) else {}
-    if not (semantic.get("domain") == "manager_round"
-            and not semantic.get("needs_clarification")) \
-            and not is_farm_manager_round(parsed.get("text", "")):
+    query = semantic.get("read_query") or {}
+    if query.get("kind") == "farm_brief":
+        query = {}
+    if query.get("kind") == "animal_status":
+        return {"handled": False}, 200
+    if (semantic and semantic.get("needs_clarification")
+            and not (query and _enquiry_clarification(query, str(semantic.get("language") or "en")))):
+        return {"handled": False}, 200
+    if query and (semantic.get("message_kind") not in {"question", "request"}
+                  or float(semantic.get("confidence") or 0) < .8):
+        return {"handled": False}, 200
+
+    if semantic:
+        if semantic.get("domain") != "manager_round":
+            return {"handled": False}, 200
+    elif not is_farm_manager_round(parsed.get("text", "")):
         return {"handled": False}, 200
     # The durable manager lifecycle is provider-bound. Legacy/local callers
     # without Telegram chronology continue through the existing read-only tool.
@@ -81,6 +94,8 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     chat = str(parsed.get("telegram_chat_id") or "")
     bound = bind_gateway_owner_authority(authority, "farm_manager_round")
     if not bound or bound.owner_user_id != owner or bound.private_chat_id != chat:
+        return {"handled": False}, 200
+    if query and bound.principal_role != "owner":
         return {"handled": False}, 200
     binding = {
         "owner": owner, "chat": chat,
@@ -120,6 +135,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
                     "status": "farm_manager_mortality_receipt_unavailable",
                     "mission_id": mission_id, **ZERO_AUTHORITY}, 503
             return {**preserved, "status": "farm_manager_round_replay_suppressed"}, 200
+    clarification = _enquiry_clarification(query, str(semantic.get("language") or "en")) if query else ""
     providers = loaders or {
         "herdmaster": lambda: _load_herdmaster(authority, owner, now,
             language=str(semantic.get("language") or "en")),
@@ -127,9 +143,13 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         "sam": lambda: _missing("sam", now),
         "beacon": lambda: _missing("beacon", now),
     }
+    if clarification:
+        providers = {name: (lambda name=name: _missing(name, now)) for name in ("herdmaster", "rootline", "sam", "beacon")}
     results = []
     exceptions = {}
-    specialists = ("herdmaster", "rootline", "sam", "beacon")
+    specialists = ((str(query["specialist"]).lower(),)
+        if query.get("kind") == "specialist_detail" and query.get("specialist")
+        else ("herdmaster", "rootline", "sam", "beacon"))
     # Independent specialist evidence loads run concurrently so one slow source
     # cannot consume the synchronous Telegram delivery budget. HERDMASTER may
     # append only its existing idempotent internal consumption audit trace.
@@ -166,7 +186,10 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     composition_now = now if explicit_now else clock().astimezone(timezone.utc)
     brief = build_family_brief(results, now=composition_now)
     try:
-        answer = _render(brief, language=str(semantic.get("language") or "en"))
+        answer = (_render_enquiry(brief, query,
+                    language=str(semantic.get("language") or "en"), now=composition_now,
+                    case_loader=case_loader)
+                  if query else _render(brief, language=str(semantic.get("language") or "en")))
     except ValueError:
         return {"handled": True, "success": False,
             "status": "farm_manager_round_render_contained",
@@ -182,14 +205,18 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         "result_digest": result_digest, "specialist_exceptions": exceptions,
         "specialist_gaps": dict(brief.specialist_gaps),
         "action_count": min(3, len(brief.queue)),
-        "question_count": sum(len(values) for values in brief.questions.values()),
+        "question_count": (int(bool(clarification)) if query else min(1, sum(len(values) for values in brief.questions.values()))),
+        "clarification_question": (clarification if query else next((q for values in brief.questions.values() for q in values), "")),
+        "read_only": True, "writes_performed": False,
+        "recipient_render_contract": "canonical_read_answer_v1",
+        "recipient_language": str(semantic.get("language") or "en"),
         "reassessment_triggers": [f.follow_up_id for f in brief.follow_ups],
         "weighing_worklist": weighing_worklist,
         "material_recomposition_authority": material_recomposition,
         "herdmaster_mortality_fingerprints": _mortality_fingerprints(brief),
         **ZERO_AUTHORITY,
     }
-    mortality_packet = _mortality_packet(brief)
+    mortality_packet = None if query else _mortality_packet(brief)
     recorded = store("record", mission_id, {"binding": binding, "result": output,
         "mortality_packet": mortality_packet})
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
@@ -802,3 +829,122 @@ def _event_store(action, identity, payload):
         connect_factory=lambda: connect_bounded_postgres(read_only=False))
     return {"success": status < 400 and saved.get("success") is True,
             "created": saved.get("created")}
+
+
+def _load_enquiry_cases(query=None):
+    """Bounded read of the existing manager, never a second work queue."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    columns = ("case_id", "dedupe_key", "specialist", "status", "summary", "next_action",
+               "unknowns", "next_reassessment_at", "lease_until", "last_heartbeat_at")
+    query = query or {}
+    prefixes = _CASE_PREFIXES.get(query.get("case_kind"), ())
+    with connect_bounded_rootline_postgres() as connection, connection.cursor() as cursor:
+        cursor.execute("""select case_id,dedupe_key,specialist,status,summary,next_action,
+                   unknowns,next_reassessment_at,lease_until,last_heartbeat_at
+            from app_private.oom_manager_cases where status <> 'completed'
+              and (%s or dedupe_key like any(%s))
+            order by next_reassessment_at,case_id limit 65""",
+            (not bool(prefixes), [prefix + '%' for prefix in prefixes]))
+        rows = cursor.fetchall()
+    return {"cases": [dict(zip(columns, row)) for row in rows[:64]], "truncated": len(rows) > 64}
+
+
+def _render_enquiry(brief, query, *, language, now, case_loader=None):
+    af = language.casefold().startswith("af")
+    kind = query.get("kind")
+    clarification = _enquiry_clarification(query, language)
+    if clarification:
+        return clarification
+    lines = ["<b>OOM SAKKIE — OPVOLG</b>" if af else "<b>OOM SAKKIE — FOLLOW-UP</b>"]
+    if kind in {"work_split", "case_status"}:
+        try:
+            cases = (case_loader or _load_enquiry_cases)(query)
+        except Exception:
+            cases = None
+        lines += ["", "<b>Aangetekende opvolgwerk</b>" if af else "<b>Recorded follow-up work</b>"]
+        if cases is None:
+            lines.append("Huidige saakstatus is nie beskikbaar nie; ek kan nie bevestig wat aan die gang is nie." if af else
+                         "Current case status is unavailable; I cannot verify what is running.")
+        else:
+            truncated = bool(cases.get("truncated")) if isinstance(cases, dict) else False
+            selected = cases.get("cases", []) if isinstance(cases, dict) else cases
+            for row in selected[:6]:
+                state = str(row.get("status") or "unknown")
+                lease = _time(row.get("lease_until"), datetime.min.replace(tzinfo=timezone.utc))
+                if state == "delegated":
+                    label = ("aktiewe werkerhuur" if af else "active worker lease") if lease > now else ("werkerhuur verstryk; uitvoering onbevestig" if af else "worker lease expired; execution unconfirmed")
+                else:
+                    label = ({"open": "in die tou", "waiting_reassessment": "wag op herbeoordeling", "exception": "tegnies geblokkeer", "contained": "beperk"}.get(state, state) if af else
+                             {"open": "queued", "waiting_reassessment": "waiting for reassessment", "exception": "technical exception", "contained": "contained"}.get(state, state))
+                summary = (_case_label_af(str(row.get("dedupe_key") or "")) if af else _clip(row.get("summary"), 220))
+                lines.append(f"• {_clip(row.get('specialist'), 30)}: {summary} — {_clip(label, 100)}.")
+            if truncated:
+                lines.append("Hierdie is 'n begrensde deel van die saakregister." if af else "This is a bounded partial case snapshot.")
+            if not selected and not truncated:
+                lines.append("Geen passende oop saak in hierdie huidige saakregister nie; dit bewys nie 'n fisiese uitkoms nie." if af else
+                             "No matching open case in this current case register; this does not prove a physical outcome.")
+            if len(selected) > 6:
+                lines.append((f"Nog {len(selected)-6} sake is aangeteken." if af else f"Another {len(selected)-6} cases are recorded."))
+    items = list(brief.queue)
+    if kind == "specialist_detail":
+        lines += ["", "<b>Huidige spesialisbevindinge</b>" if af else "<b>Current specialist findings</b>"]
+        for item in items[:5]:
+            finding = f"{item.title}. {item.why} " + ("Volgende stap: " if af else "Next step: ") + item.next_action
+            lines.append("• " + _read_text(finding, 660, af))
+        if not items:
+            lines.append("Geen ondersteunde aksie in die huidige spesialispakket nie." if af else "No supported action in the current specialist packet.")
+    if kind == "work_split":
+        lines += ["", "<b>Wat ek kan hanteer</b>" if af else "<b>What I can handle</b>",
+            "Ek lees en vergelyk spesialisbewyse. Die saakstatus hierbo onderskei beplande opvolg van werk wat werklik aan 'n werker toegewys is." if af else
+            "I read and compare specialist evidence. The case status above distinguishes queued follow-up from work actually assigned to a worker."]
+    questions = [q for values in brief.questions.values() for q in values]
+    if kind != "case_status":
+        lines += ["", "<b>Wat ek van jou nodig het</b>" if af else "<b>What I need from you</b>"]
+        owner_steps = list(dict.fromkeys(questions + [item.next_action for item in items
+            if not item.genuine_question and item.metadata.get("physical_work_ready") is True]))
+        lines.extend("• " + _read_text(step, 260, af) for step in owner_steps[:4])
+        if not owner_steps:
+            lines.append("Geen bewys-gesteunde nuwe vraag in die huidige pakket nie." if af else "No supported new owner question in the current packet.")
+    for specialist, gap in brief.specialist_gaps.items():
+        lines.append(("Bewysgaping: " if af else "Evidence gap: ") + _clip(specialist, 30) + " — " + ("nie beskikbaar nie" if af else _clip(gap, 80)))
+    lines += ["", "Hierdie is 'n leesantwoord; geen plaasrekord, sluiting of fisiese handeling is uitgevoer nie." if af else
+              "This is a read-only answer; no farm record, case closure or physical action was performed."]
+    answer = "\n".join(lines)
+    if len(answer) > 3900:
+        raise ValueError("enquiry_render_budget_exceeded")
+    return answer
+
+
+_CASE_PREFIXES = {
+    "farrowing": ("herdmaster:expired-farrowing:", "herdmaster:farrowing-", "herdmaster:herdmaster:farrowing-"),
+    "mortality": ("herdmaster:retained-mortality:", "herdmaster:retained-litter-loss:", "herdmaster:mortality", "herdmaster:herdmaster:mortality"),
+    "welfare": ("herdmaster:welfare:", "herdmaster:health:")}
+
+
+def _enquiry_clarification(query, language):
+    af = language.casefold().startswith("af")
+    if query.get("subject") and query.get("kind") in {"specialist_detail", "case_status"}:
+        return (f"Ek kan dier {_clip(query['subject'], 100)} se huidige status of die hele saakgroep wys. Ek kan nog nie een individuele saak veilig aan die dier koppel nie. Watter aansig verkies jy?" if af else
+                f"I can show animal {_clip(query['subject'], 100)}'s current status or the whole case family, but cannot yet bind an individual case to this animal. Which view would you like?")
+    if query.get("kind") == "case_status" and not query.get("case_kind"):
+        return ("Ek wil die regte saak bevestig. Bedoel jy 'n werpsaak, 'n sterfte-/afskeidsaak, of 'n ander spesifieke saak?" if af else
+                "Do you mean a farrowing case, an animal death/farewell case, or another specific case?")
+    if query.get("kind") == "specialist_detail" and not query.get("specialist"):
+        return "Watter spesialis se bevindinge bedoel jy?" if af else "Which specialist's findings do you mean?"
+    return ""
+
+
+def _read_text(value, limit, af):
+    if af:
+        from modules.oom_sakkie.family_message_lifecycle import _looks_afrikaans
+        if not _looks_afrikaans(str(value)):
+            return "Die besonderhede is nog nie in jou taal beskikbaar nie; geen gevolgtrekking word bygevoeg nie."
+    return _clip(value, limit)
+
+
+def _case_label_af(key):
+    if key.startswith(_CASE_PREFIXES["farrowing"]): return "Werp-opvolg"
+    if key.startswith(_CASE_PREFIXES["mortality"]): return "Sterfte-opvolg"
+    if key.startswith(_CASE_PREFIXES["welfare"]): return "Welstandsopvolg"
+    if key.startswith(("herdmaster:bulk-weight-", "herdmaster:weight", "herdmaster:herdmaster:weight")): return "Gewigsversoening"
+    return "Aangetekende opvolgsaak"
