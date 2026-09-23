@@ -2,10 +2,164 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+
+
+REPORT_READ_LIMIT = 1024
+REPORT_ID_LIMIT = 128
+REPORT_SOURCE = "oom_sakkie_herdmaster_health_loss_runtime"
+
+
+def read_retained_health_reports(cursor, provider_ids):
+    """Bounded canonical chronology, including later replies under another ID.
+
+    Provider IDs are chat-local. They select evidence, never authenticate it.
+    No status or age filter may precede the mission's latest-state selection.
+    """
+    ids = sorted(set(provider_ids))
+    if not ids or len(ids) > REPORT_ID_LIMIT or any(not str(v).isdigit() for v in ids):
+        raise ValueError("retained_report_identity_read_bound_invalid")
+    cursor.execute("""select review_json->'herdmaster_health_loss'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s
+          and review_json->'herdmaster_health_loss'->>'provider_message_id'=any(%s)
+        order by created_at desc,review_event_id desc limit %s""",
+        (REPORT_SOURCE, ids, REPORT_READ_LIMIT + 1))
+    reports = cursor.fetchall()
+    if len(reports) > REPORT_READ_LIMIT:
+        raise ValueError("retained_report_read_bound_exceeded")
+    payloads = [row[0] for row in reports if row and isinstance(row[0], dict)]
+    missions = sorted({str(row.get("mission_id") or "") for row in payloads} - {""})
+    if not missions:
+        return {"reports": payloads, "lifecycle": [], "claims": []}
+    cursor.execute("""select review_json->'herdmaster_health_loss'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s and (
+          review_json->'herdmaster_health_loss'->>'mission_id'=any(%s)
+          or review_json->'herdmaster_health_loss'->'consumed_context_missions' ?| %s
+          or exists (select 1 from jsonb_array_elements(coalesce(
+            review_json->'herdmaster_health_loss'->'superseded_duplicate_bindings',
+            '[]'::jsonb)) b where b->>'mission_id'=any(%s)))
+        order by created_at desc,review_event_id desc limit %s""",
+        (REPORT_SOURCE, missions, missions, missions, REPORT_READ_LIMIT + 1))
+    lifecycle = cursor.fetchall()
+    if len(lifecycle) > REPORT_READ_LIMIT:
+        raise ValueError("retained_report_lifecycle_read_bound_exceeded")
+    cursor.execute("""select owner_user_id,private_chat_id,mission_id,
+        provider_message_id,status,action_kind,preview_payload
+        from app_private.oom_protected_action_claims
+        where mission_id=any(%s) or provider_message_id=any(%s)
+          or preview_payload->'provider_message_ids' ?| %s
+        order by created_at desc limit %s""",
+        (missions, ids, ids, REPORT_READ_LIMIT + 1))
+    claims = cursor.fetchall()
+    if len(claims) > REPORT_READ_LIMIT:
+        raise ValueError("retained_report_claim_read_bound_exceeded")
+    return {"reports": payloads,
+        "lifecycle": [row[0] for row in lifecycle if row and isinstance(row[0], dict)],
+        "claims": claims}
+
+
+def resolve_retained_health_reports(evidence, provider_ids):
+    """Return only unchanged, uniquely owned, still-unresolved original reports.
+
+    Existing protected attempts are left to their own callback/recovery rail.
+    An expired/cancelled/completed/ambiguous claim never licenses a new digest.
+    This function neither retires a report nor infers farm completion.
+    """
+    ids = set(provider_ids)
+    if not ids:
+        return [], "retained_provider_identity_missing"
+    selected = []
+    for provider in sorted(ids):
+        rows = [row for row in evidence["reports"]
+                if str(row.get("provider_message_id") or "") == provider]
+        bindings = {(str(row.get("owner_user_id") or ""), str(row.get("chat_id") or ""),
+                     str(row.get("mission_id") or "")) for row in rows}
+        if len(bindings) != 1:
+            return [], "retained_report_principal_or_mission_unproven"
+        owner, chat, mission = next(iter(bindings))
+        if not owner or owner != chat or not mission:
+            return [], "retained_report_principal_or_mission_unproven"
+        current = [row for row in evidence["lifecycle"] if row.get("mission_id") == mission]
+        if not current or any((row.get("owner_user_id"), row.get("chat_id")) != (owner, chat)
+                              for row in current):
+            return [], "retained_report_lifecycle_unproven"
+        latest = current[0]
+        original = rows[-1]
+        if (latest.get("status") != "waiting_for_input"
+                or latest.get("provider_message_id") != provider
+                or latest.get("owner_text_verbatim") != original.get("owner_text_verbatim")
+                or latest.get("correction_digest")
+                or latest.get("invalidated_operation_ids")):
+            return [], "retained_report_no_longer_unresolved"
+        selected.append(latest)
+    principals = {(row["owner_user_id"], row["chat_id"]) for row in selected}
+    if len(principals) != 1:
+        return [], "retained_report_principal_or_mission_unproven"
+    owner, chat = next(iter(principals))
+    missions = {row["mission_id"] for row in selected}
+    for row in evidence["lifecycle"]:
+        if (row.get("owner_user_id"), row.get("chat_id")) != (owner, chat):
+            continue
+        # A reference is enough to stop re-preview; it is never completion proof.
+        # Even an incomplete supersession binding requires canonical reconciliation.
+        if (missions.intersection(row.get("consumed_context_missions") or ())
+                or any(isinstance(binding, dict) and binding.get("mission_id") in missions
+                       for binding in row.get("superseded_duplicate_bindings") or ())):
+            return [], "retained_report_correction_requires_reconciliation"
+    for claim in evidence["claims"]:
+        c_owner, c_chat, mission, provider, _status, _kind, payload = claim
+        members = set((payload or {}).get("provider_message_ids") or ())
+        if (str(mission) in missions or ((str(c_owner), str(c_chat)) == (owner, chat)
+                and (str(provider) in ids or members.intersection(ids)))):
+            return [], "retained_report_existing_protected_attempt"
+    return selected, ""
+
+
+
+def retained_report_binding(rows):
+    """Stable source identity, not a claim that the report facts are current."""
+    identities = sorted({(str(row.get("provider_message_id") or ""),
+                          str(row.get("owner_user_id") or ""),
+                          str(row.get("chat_id") or ""),
+                          str(row.get("mission_id") or "")) for row in rows})
+    return "retained_report_binding:" + hashlib.sha256(
+        json.dumps(identities, separators=(",", ":")).encode()).hexdigest()
+
+
+def _validated_report_case(case, provider_ids):
+    with connect_bounded_read() as connection:
+        with connection.cursor() as cursor:
+            evidence = read_retained_health_reports(cursor, provider_ids)
+    rows, failure = resolve_retained_health_reports(evidence, provider_ids)
+    if failure:
+        return [], failure
+    refs = tuple(str(v) for v in case.get("evidence_refs") or ())
+    bindings = {value for value in refs if value.startswith("retained_report_binding:")}
+    if bindings != {retained_report_binding(rows)}:
+        return [], "retained_report_source_binding_unproven"
+    key = str(case.get("dedupe_key") or "")
+    if key.startswith("herdmaster:retained-mortality:"):
+        tags = {v.split(":", 1)[1] for v in refs if v.startswith("tag:")}
+        reported = {match.group(1) for row in rows for match in
+                    [re.search(r"\b(?:vark|pig)\s*(?:nr)?\s*(\d+)\b",
+                               str(row.get("owner_text_verbatim") or ""), re.I)] if match}
+        if (len(provider_ids) != 1 or key != "herdmaster:retained-mortality:" + provider_ids[0]
+                or len(tags) != 1 or tags != reported):
+            return [], "retained_mortality_exact_identity_unproven"
+    else:
+        incidents = {v.split(":", 1)[1] for v in refs if v.startswith("incident_date:")}
+        dates = {f"2026-08-{int(match.group(1)):02d}" for row in rows for match in
+                 [re.search(r"\b(\d{1,2})\s+aug\b", str(row.get("owner_text_verbatim") or ""), re.I)] if match}
+        if (len(incidents) != 1 or dates != incidents or key !=
+                "herdmaster:retained-litter-loss:" + provider_ids[0] + ":" + next(iter(incidents))):
+            return [], "retained_litter_loss_exact_facts_unproven"
+    return rows, ""
 
 
 def build_retained_protected_preview(case):
@@ -15,44 +169,39 @@ def build_retained_protected_preview(case):
     if not provider_ids:
         return _contained("retained_provider_identity_missing")
     if "litter-loss" in str((case or {}).get("dedupe_key") or ""):
-        return _litter_loss(provider_ids, refs, str((case or {}).get("evidence_digest") or ""))
+        return _litter_loss(provider_ids, refs, str((case or {}).get("evidence_digest") or ""), case)
     if "expired-farrowing" in str((case or {}).get("dedupe_key") or ""):
         return _farrowing(provider_ids, str((case or {}).get("evidence_digest") or ""))
     if "retained-mortality" in str((case or {}).get("dedupe_key") or ""):
-        return _mortality(provider_ids, refs)
+        return _mortality(provider_ids, refs, case)
     return _contained("retained_recovery_case_kind_unsupported")
 
 
-def _litter_loss(provider_ids, refs, recovery_identity):
-    incident = next((value.split(":", 1)[1] for value in refs
-                     if value.startswith("incident_date:")), "")
+def _litter_loss(provider_ids, refs, recovery_identity, case):
+    payloads, failure = _validated_report_case(case, provider_ids)
+    if failure:
+        return _contained(failure)
+    incident = next(value.split(":", 1)[1] for value in refs if value.startswith("incident_date:"))
+    owner, chat = payloads[0]["owner_user_id"], payloads[0]["chat_id"]
+    texts = [str(value.get("owner_text_verbatim") or "") for value in payloads]
+    counts = {int(match.group(1)) for text in texts
+              for match in [re.search(r"\b(\d+)\s+kleintjies\s+dood\b", text, re.I)] if match}
+    identities = [(value.get("preview") or {}).get("evaluator", {}).get("identity", {})
+                  for value in payloads]
+    sows = {str(value.get("pig_id")) for value in identities
+            if value.get("resolved") is True and value.get("pig_id")}
+    if len(counts) != 1 or len(sows) != 1:
+        return _contained("retained_litter_loss_exact_facts_unproven")
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
-            cur.execute("""select review_json->'herdmaster_health_loss'
-                from public.sam_live_stock_conversation_review_events
-                where event_source='oom_sakkie_herdmaster_health_loss_runtime'
-                  and review_json->'herdmaster_health_loss'->>'provider_message_id'=any(%s)
-                order by created_at""", (list(provider_ids),))
-            rows = cur.fetchall()
-            payloads = [dict(row[0] or {}) for row in rows if row and isinstance(row[0], dict)]
-            principals = {(str(value.get("owner_user_id") or ""),
-                           str(value.get("chat_id") or "")) for value in payloads}
-            if len(principals) != 1:
-                return _contained("retained_litter_loss_principal_unproven")
-            owner, chat = next(iter(principals))
-            if not owner or owner != chat:
-                return _contained("retained_litter_loss_principal_unproven")
-            texts = [str(value.get("owner_text_verbatim") or "") for value in payloads]
-            counts = {int(match.group(1)) for text in texts
-                      for match in [re.search(r"\b(\d+)\s+kleintjies\s+dood\b", text, re.I)]
-                      if match}
-            if len(counts) != 1 or not incident:
-                return _contained("retained_litter_loss_exact_facts_unproven")
             cur.execute("""select l.litter_id
                 from public.current_canonical_litters l
                 join public.current_canonical_pigs s on s.pig_id=l.sow_pig_id
-                where lower(s.pig_name)=lower(%s) and lower(coalesce(l.litter_status,''))='active'
-                order by l.farrowing_date desc,l.litter_id desc limit 2""", ("Linda",))
+                where s.pig_id=%s and lower(s.pig_name)='linda'
+                  and lower(coalesce(l.litter_status,''))='active'
+                  and l.farrowing_date<=%s::date
+                order by l.farrowing_date desc,l.litter_id desc limit 2""",
+                (next(iter(sows)), incident))
             litters = cur.fetchall()
     if len(litters) != 1:
         return _contained("retained_litter_loss_active_litter_unproven")
@@ -144,19 +293,12 @@ def _farrowing(provider_ids, recovery_identity):
     return _protected(result)
 
 
-def _mortality(provider_ids, refs):
-    with connect_bounded_read() as connection:
-        with connection.cursor() as cur:
-            cur.execute("""select review_json->'herdmaster_health_loss'
-                from public.sam_live_stock_conversation_review_events
-                where event_source='oom_sakkie_herdmaster_health_loss_runtime'
-                  and review_json->'herdmaster_health_loss'->>'provider_message_id'=any(%s)
-                order by created_at desc limit 1""", (list(provider_ids),))
-            row = cur.fetchone()
-    payload = dict(row[0] or {}) if row and isinstance(row[0], dict) else {}
-    owner, chat = str(payload.get("owner_user_id") or ""), str(payload.get("chat_id") or "")
-    if not owner or owner != chat:
-        return _contained("retained_mortality_principal_unproven")
+def _mortality(provider_ids, refs, case):
+    payloads, failure = _validated_report_case(case, provider_ids)
+    if failure:
+        return _contained(failure)
+    payload = payloads[0]
+    owner, chat = payload["owner_user_id"], payload["chat_id"]
     target = next((value.split(":", 1)[1] for value in refs
                    if value.startswith("pig:") and ":" in value), "")
     from modules.oom_sakkie.herdmaster_health_loss_preview import (
