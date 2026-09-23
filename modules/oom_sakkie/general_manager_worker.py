@@ -1015,8 +1015,61 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
             from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
                 build_retained_protected_preview,
             )
-            retained_recovery = build_retained_protected_preview
-        return route_retained_manager_recovery(case, preview_builder=retained_recovery)
+            retained_recovery = lambda value: build_retained_protected_preview(
+                value, deadline_monotonic=deadline_monotonic)
+        if not str(case.get("dedupe_key") or "").startswith((
+                "herdmaster:retained-mortality:", "herdmaster:retained-litter-loss:")):
+            # Other retained families retain their existing preview-only contract.
+            return route_retained_manager_recovery(case, preview_builder=retained_recovery)
+        from modules.oom_sakkie.family_message_lifecycle import (
+            deliver_family_result, PROVIDER_DELIVERY_RESERVE_SECONDS)
+        def deadline_available():
+            return deadline_monotonic is None or time.monotonic() + (
+                max(PROVIDER_DELIVERY_RESERVE_SECONDS, CASE_COMPLETION_RESERVE_SECONDS)) < deadline_monotonic
+        if not deadline_available():
+            return {"success": False, "status": "manager_cycle_deadline_deferred",
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
+        preview = route_retained_manager_recovery(case, preview_builder=retained_recovery)
+        if preview.get("success") is not True or preview.get("suppress_owner_delivery") is not False:
+            return {**preview, "delivery_confirmed": False}
+        parsed = preview.get("retained_delivery_context") or {}
+        owner, chat = parsed.get("telegram_user_id"), parsed.get("telegram_chat_id")
+        from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
+        expected_card = (protected_card_mission_id(preview.get("mission_id"), preview.get("preview_digest"))
+            if preview.get("action_kind") == "mortality" else preview.get("mission_id"))
+        if (not owner or owner != chat or not parsed.get("provider_message_id")
+                or not parsed.get("provider_timestamp") or not preview.get("mission_id")
+                or preview.get("card_mission_id") != expected_card
+                or not preview.get("preview_digest") or not preview.get("action_kind")):
+            return {"success": False, "status": "retained_delivery_binding_unproven",
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
+        from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_recipient_authorized
+        if not retained_recipient_authorized(parsed):
+            return {"success": False, "status": "retained_recipient_not_currently_authorized",
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
+        if not deadline_available():
+            return {"success": False, "status": "manager_cycle_deadline_deferred",
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
+        from modules.oom_sakkie.family_message_lifecycle import _send_telegram
+        def authorized_sender(destination, text, **kwargs):
+            if str(destination) != str(chat) or not retained_recipient_authorized(parsed):
+                return {"success": False, "status": "retained_recipient_not_currently_authorized",
+                        "delivery_definitely_not_sent": True}
+            return _send_telegram(destination, text, **kwargs)
+        outcome = dict((deliver or deliver_family_result)(parsed, preview, specialist=specialist,
+            mission_id=preview["mission_id"], card_mission_id=preview["card_mission_id"],
+            sender=authorized_sender, deadline_monotonic=deadline_monotonic) or {})
+        if outcome.get("status") == "protected_delivery_replayed_noop":
+            replayed = (outcome.get("success") is True and bool(outcome.get("provider_card_message_id"))
+                and outcome.get("telegram_sends") == 0 and outcome.get("telegram_edits") == 0)
+            return {**outcome, "success": replayed, "delivery_confirmed": False}
+        confirmed = (outcome.get("success") is True
+            and outcome.get("status") == "protected_delivery_confirmed"
+            and outcome.get("protected_preview_card_bound") is True
+            and outcome.get("delivery_confirmed") is True
+            and bool(outcome.get("telegram_message_id")))
+        return {**outcome, "success": confirmed, "delivery_confirmed": confirmed,
+            "writes_farm_data": False}
     owners = [value.strip() for value in str(
         os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",")
         if value.strip()]

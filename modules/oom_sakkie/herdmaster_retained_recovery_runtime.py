@@ -1,7 +1,10 @@
 """Preview-only bridge from durable manager cases to existing protected rails."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
+import html
+import time
 import json
 import re
 
@@ -50,7 +53,15 @@ def read_retained_health_reports(cursor, provider_ids):
     if len(lifecycle) > REPORT_READ_LIMIT:
         raise ValueError("retained_report_lifecycle_read_bound_exceeded")
     cursor.execute("""select owner_user_id,private_chat_id,mission_id,
-        provider_message_id,status,action_kind,preview_payload
+        provider_message_id,status,action_kind,preview_payload,
+        jsonb_build_object('callback_token',callback_token,'preview_digest',preview_digest,
+          'evidence_generation',evidence_generation,'expires_at',expires_at,
+          'preview_card_message_id',preview_card_message_id,'delivery_state',delivery_state,
+          'delivery_attempt_id',delivery_attempt_id,'delivery_attempted_at',delivery_attempted_at,
+          'provider_accepted_at',provider_accepted_at,'delivery_confirmed_at',delivery_confirmed_at,
+          'delivery_ambiguous_at',delivery_ambiguous_at,'delivery_result',delivery_result,
+          'result_payload',result_payload,'confirmation_provider_message_id',confirmation_provider_message_id,
+          'confirmation_provider_timestamp',confirmation_provider_timestamp,'completed_at',completed_at) as delivery
         from app_private.oom_protected_action_claims
         where mission_id=any(%s) or provider_message_id=any(%s)
           or preview_payload->'provider_message_ids' ?| %s
@@ -64,7 +75,7 @@ def read_retained_health_reports(cursor, provider_ids):
         "claims": claims}
 
 
-def resolve_retained_health_reports(evidence, provider_ids):
+def resolve_retained_health_reports(evidence, provider_ids, *, retain_existing_attempts=False):
     """Return only unchanged, uniquely owned, still-unresolved original reports.
 
     Existing protected attempts are left to their own callback/recovery rail.
@@ -91,7 +102,14 @@ def resolve_retained_health_reports(evidence, provider_ids):
             return [], "retained_report_lifecycle_unproven"
         latest = current[0]
         original = rows[-1]
-        if (latest.get("status") != "waiting_for_input"
+        bridge = latest.get("retained_repreview") or {}
+        recovered = (retain_existing_attempts and latest.get("status") == "preview_ready"
+            and str(latest.get("event_phase") or "").startswith("retained_preview_generated:")
+            and bridge.get("contract_version") == "retained_health_preview_v1"
+            and bridge.get("source_binding") == retained_report_binding([original])
+            and bool(bridge.get("claim_mission_id")) and bool(bridge.get("claim_preview_digest"))
+            and latest.get("operation_id") == (latest.get("preview") or {}).get("confirmation_binding", {}).get("operation_id"))
+        if (latest.get("status") != "waiting_for_input" and not recovered
                 or latest.get("provider_message_id") != provider
                 or latest.get("owner_text_verbatim") != original.get("owner_text_verbatim")
                 or latest.get("correction_digest")
@@ -113,11 +131,15 @@ def resolve_retained_health_reports(evidence, provider_ids):
                        for binding in row.get("superseded_duplicate_bindings") or ())):
             return [], "retained_report_correction_requires_reconciliation"
     for claim in evidence["claims"]:
-        c_owner, c_chat, mission, provider, _status, _kind, payload = claim
+        c_owner, c_chat, mission, provider, _status, _kind, payload = claim[:7]
         members = set((payload or {}).get("provider_message_ids") or ())
         if (str(mission) in missions or ((str(c_owner), str(c_chat)) == (owner, chat)
                 and (str(provider) in ids or members.intersection(ids)))):
-            return [], "retained_report_existing_protected_attempt"
+            if not retain_existing_attempts:
+                return [], "retained_report_existing_protected_attempt"
+            # Keep the exact retained case observable. This permits no delivery:
+            # the preview boundary must compare current canonical evidence with
+            # the existing claim, and terminal/uncertain attempts remain contained.
     return selected, ""
 
 
@@ -132,11 +154,11 @@ def retained_report_binding(rows):
         json.dumps(identities, separators=(",", ":")).encode()).hexdigest()
 
 
-def _validated_report_case(case, provider_ids):
+def _validated_report_case(case, provider_ids, *, claims_out=None):
     with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             evidence = read_retained_health_reports(cursor, provider_ids)
-    rows, failure = resolve_retained_health_reports(evidence, provider_ids)
+    rows, failure = resolve_retained_health_reports(evidence, provider_ids, retain_existing_attempts=True)
     if failure:
         return [], failure
     refs = tuple(str(v) for v in case.get("evidence_refs") or ())
@@ -159,26 +181,31 @@ def _validated_report_case(case, provider_ids):
         if (len(incidents) != 1 or dates != incidents or key !=
                 "herdmaster:retained-litter-loss:" + provider_ids[0] + ":" + next(iter(incidents))):
             return [], "retained_litter_loss_exact_facts_unproven"
+    if not all(retained_recipient_authorized(_delivery_context(row)) for row in rows):
+        return [], "retained_recipient_not_currently_authorized"
+    if claims_out is not None:
+        claims_out.extend(evidence["claims"])
     return rows, ""
 
 
-def build_retained_protected_preview(case):
+def build_retained_protected_preview(case, *, deadline_monotonic=None):
     refs = tuple(str(value) for value in (case or {}).get("evidence_refs") or ())
     provider_ids = tuple(sorted({value.split(":", 1)[1] for value in refs
                                  if value.startswith("provider_message:") and ":" in value}))
     if not provider_ids:
         return _contained("retained_provider_identity_missing")
     if "litter-loss" in str((case or {}).get("dedupe_key") or ""):
-        return _litter_loss(provider_ids, refs, str((case or {}).get("evidence_digest") or ""), case)
+        return _litter_loss(provider_ids, refs, str((case or {}).get("evidence_digest") or ""), case, deadline_monotonic)
     if "expired-farrowing" in str((case or {}).get("dedupe_key") or ""):
         return _farrowing(provider_ids, str((case or {}).get("evidence_digest") or ""))
     if "retained-mortality" in str((case or {}).get("dedupe_key") or ""):
-        return _mortality(provider_ids, refs, case)
+        return _mortality(provider_ids, refs, case, deadline_monotonic)
     return _contained("retained_recovery_case_kind_unsupported")
 
 
-def _litter_loss(provider_ids, refs, recovery_identity, case):
-    payloads, failure = _validated_report_case(case, provider_ids)
+def _litter_loss(provider_ids, refs, recovery_identity, case, deadline_monotonic=None):
+    claims = []
+    payloads, failure = _validated_report_case(case, provider_ids, claims_out=claims)
     if failure:
         return _contained(failure)
     incident = next(value.split(":", 1)[1] for value in refs if value.startswith("incident_date:"))
@@ -222,15 +249,20 @@ def _litter_loss(provider_ids, refs, recovery_identity, case):
         "operation_id": operation_id,
         "provider_message_ids": list(provider_ids), "owner_user_id": owner,
         "private_chat_id": chat, "selected_piglets": preview.get("selected_piglets") or []}
-    from modules.oom_sakkie.protected_action_claims import create_claim
     suffix = hashlib.sha256((recovery_identity + "|" + "|".join(provider_ids)).encode()).hexdigest()[:20].upper()
     mission = "OOM-HERDMASTER-LITTER-LOSS-" + suffix
-    claim = create_claim(action_kind="herdmaster_record_litter_piglet_deaths",
+    claim, failure = _same_or_new_claim(payloads, claims, deadline_monotonic,
+        action_kind="herdmaster_record_litter_piglet_deaths",
         owner_user_id=owner, private_chat_id=chat, mission_id=mission,
         provider_message_id=provider_ids[0], evidence_generation=recovery_identity,
         preview_payload=payload)
+    if failure:
+        return _contained(failure)
     return _protected({"success": True, "status": "litter_piglet_deaths_preview_ready",
-        "answer": f"HERDMASTER protected preview: Linda's litter; {count} piglets died on {incident}; reason Unknown. Confirm only if correct.",
+        "answer": _litter_preview_text(payload, payloads[0].get("output_language") or "af"),
+        "recipient_render_contract": "specialist_structured_recipient_v1",
+        "recipient_language": payloads[0].get("output_language") or "af",
+        "retained_delivery_context": _delivery_context(payloads[0]),
         "mission_id": mission, "card_mission_id": mission,
         "callback_token": claim["callback_token"], "preview_digest": claim["preview_digest"],
         "action_kind": "herdmaster_record_litter_piglet_deaths",
@@ -293,8 +325,9 @@ def _farrowing(provider_ids, recovery_identity):
     return _protected(result)
 
 
-def _mortality(provider_ids, refs, case):
-    payloads, failure = _validated_report_case(case, provider_ids)
+def _mortality(provider_ids, refs, case, deadline_monotonic=None):
+    claims = []
+    payloads, failure = _validated_report_case(case, provider_ids, claims_out=claims)
     if failure:
         return _contained(failure)
     payload = payloads[0]
@@ -315,7 +348,10 @@ def _mortality(provider_ids, refs, case):
         "provider_timestamp": str(payload.get("provider_timestamp") or ""),
         "provider_timezone": "Africa/Johannesburg",
         "output_language": payload.get("output_language") or "af",
-        "text": str(payload.get("owner_text_verbatim") or ""),
+        "text": str(payload.get("combined_text") or payload.get("owner_text_verbatim") or ""),
+        **({"report_parts": payload["report_parts"]} if payload.get("report_parts") else {}),
+        **{key: value for key, value in (payload.get("semantic_interpretation") or {}).items()
+           if key in {"welfare_observation", "clinical_observation"}},
     }, evidence)
     identity = dict((preview.get("evaluator") or {}).get("identity") or {})
     if not target or str(identity.get("pig_id") or "") != target:
@@ -330,8 +366,7 @@ def _mortality(provider_ids, refs, case):
         return _contained("retained_mortality_preview_unproven")
     mission = "OOM-HERDMASTER-MORTALITY-" + hashlib.sha256(
         (provider + "|" + target + "|" + operation).encode()).hexdigest()[:24].upper()
-    from modules.oom_sakkie.protected_action_claims import create_claim
-    claim = create_claim(action_kind="mortality", owner_user_id=owner,
+    request = dict(action_kind="mortality", owner_user_id=owner,
         private_chat_id=chat, mission_id=mission, provider_message_id=provider,
         evidence_generation=str(evidence.get("evidence_generation") or ""),
         preview_payload={"operation_id": operation,
@@ -339,14 +374,224 @@ def _mortality(provider_ids, refs, case):
             "identity": identity,
             "event_family": str((preview.get("evaluator") or {}).get("event_family") or ""),
             "effect_kind": "mortality"})
-    return _protected({"success": True, "status": "mortality_preview_ready",
+    claim, failure = _same_or_new_claim(payloads, claims, deadline_monotonic, **request)
+    if failure:
+        return _contained(failure)
+    from modules.oom_sakkie.herdmaster_health_loss_runtime import persist_retained_health_loss_preview
+    persisted = persist_retained_health_loss_preview(payload, preview,
+        source_binding=retained_report_binding(payloads), claim=claim, claim_request=request)
+    if persisted.get("success") is not True:
+        return _contained(persisted.get("status") or "retained_preview_lifecycle_unproven")
+    from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
+    return _protected({**persisted, "success": True, "status": "preview_ready",
+        "tool_used": "herdmaster_health_loss_preview",
         "answer": str(preview.get("owner_text") or ""), "mission_id": mission,
-        "card_mission_id": mission, "callback_token": claim["callback_token"],
+        "recipient_render_contract": "herdmaster_health_loss_recipient_v1",
+        "recipient_language": payload.get("output_language") or "af",
+        "retained_delivery_context": _delivery_context(payload),
+        "card_mission_id": protected_card_mission_id(mission, claim["preview_digest"]),
+        "callback_token": claim["callback_token"],
         "preview_digest": claim["preview_digest"], "action_kind": "mortality",
         "reply_markup": {"inline_keyboard": [[
             {"text": "Confirm and record", "callback_data": f"oompa:{claim['callback_token']}:confirm"},
             {"text": "Change", "callback_data": f"oompa:{claim['callback_token']}:change"},
             {"text": "Cancel", "callback_data": f"oompa:{claim['callback_token']}:cancel"}]]}})
+
+
+def _litter_preview_text(payload, language):
+    af = str(language).casefold().startswith("af")
+    litter = html.escape(str(payload["litter_id"]))
+    piglets = ", ".join(html.escape(str(value)) for value in payload["pig_ids"])
+    date = html.escape(str(payload["event_date"]))
+    if af:
+        return (f"<b>HERDMASTER - BESKERMDE VOORSKOU</b>\nLinda se werpsel {litter}; "
+            f"{payload['count']} kleintjies dood op {date}.\nPresiese kleintjies: {piglets}. "
+            "Rede: Onbekend. Bevestig slegs indien korrek. Niks is nog aangeteken nie.")
+    return (f"<b>HERDMASTER - PROTECTED PREVIEW</b>\nLinda's litter {litter}; "
+        f"{payload['count']} piglets died on {date}.\nExact piglets: {piglets}. "
+        "Reason: Unknown. Confirm only if correct. Nothing has been recorded yet.")
+
+
+def _delivery_context(row):
+    return {"telegram_user_id": str(row["owner_user_id"]),
+        "telegram_chat_id": str(row["chat_id"]),
+        "telegram_chat_type": "private",
+        "provider_message_id": str(row["provider_message_id"]),
+        "provider_timestamp": str(row.get("provider_timestamp") or ""),
+        "output_language": row.get("output_language") or "af"}
+
+
+def retained_recipient_authorized(parsed):
+    """Apply the existing gateway/family policy to the exact retained recipient."""
+    import os
+    from modules.oom_sakkie.telegram_gateway import _allowed_user_ids
+    from modules.oom_sakkie.family_access import resolve_family_principal, authorize_family_message
+    allowed = _allowed_user_ids(os.environ)
+    if not allowed or str(parsed.get("telegram_user_id") or "") not in allowed:
+        return False
+    principal = resolve_family_principal(parsed, os.environ)
+    return authorize_family_message(principal, parsed, capability="mortality_confirmation").allowed
+
+
+def _same_or_new_claim(rows, claims, deadline_monotonic, **requested):
+    """Reuse the exact claim; a never-attempted expiry may renew once with audit."""
+    from modules.oom_sakkie.protected_action_claims import create_claim, canonical_preview_digest
+    if not all(retained_recipient_authorized(_delivery_context(row)) for row in rows):
+        return None, "retained_recipient_not_currently_authorized"
+    ids = {str(row["provider_message_id"]) for row in rows}
+    missions = {str(row["mission_id"]) for row in rows}
+    owner, chat = requested["owner_user_id"], requested["private_chat_id"]
+    related = [claim for claim in claims if str(claim[2]) in missions or
+        ((str(claim[0]), str(claim[1])) == (owner, chat) and
+         (str(claim[3]) in ids or ids.intersection((claim[6] or {}).get("provider_message_ids") or ())))]
+    if deadline_monotonic is not None:
+        from modules.oom_sakkie.family_message_lifecycle import PROVIDER_DELIVERY_RESERVE_SECONDS
+        if time.monotonic() + PROVIDER_DELIVERY_RESERVE_SECONDS >= deadline_monotonic:
+            return None, "manager_cycle_deadline_deferred"
+    if not related:
+        return create_claim(**requested), ""
+    if len(related) != 1 or len(related[0]) != 8:
+        return None, "retained_claim_identity_or_delivery_unproven"
+    c_owner, c_chat, mission, provider, status, kind, payload, delivery = related[0]
+    if not isinstance(delivery, dict):
+        return None, "retained_claim_identity_or_delivery_unproven"
+    try:
+        expires = datetime.fromisoformat(str(delivery.get("expires_at") or "").replace("Z", "+00:00"))
+        if expires.tzinfo is None:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return None, "retained_claim_expiry_unproven"
+    if status not in {"active", "expired"}:
+        return None, "retained_claim_terminal_requires_current_review"
+    digest = canonical_preview_digest(kind, payload)
+    if ((str(c_owner), str(c_chat), str(mission), str(provider), str(kind)) !=
+            (owner, chat, requested["mission_id"], requested["provider_message_id"], requested["action_kind"])
+            or payload != requested["preview_payload"]
+            or delivery.get("evidence_generation") != requested["evidence_generation"]
+            or delivery.get("preview_digest") != digest
+            or not delivery.get("callback_token")):
+        return None, "retained_claim_current_preview_mismatch"
+    if status == "expired" or expires <= datetime.now(timezone.utc):
+        return _renew_unattempted_claim(rows, delivery, requested)
+    state, card = delivery.get("delivery_state"), delivery.get("preview_card_message_id")
+    unattempted = state in (None, "claim_created") and not card and all(
+        delivery.get(key) is None for key in ("delivery_attempt_id", "delivery_attempted_at",
+            "provider_accepted_at", "delivery_confirmed_at", "delivery_ambiguous_at", "delivery_result",
+            "result_payload", "confirmation_provider_message_id", "confirmation_provider_timestamp", "completed_at"))
+    confirmed = (state == "delivery_confirmed" and bool(card)
+        and bool(delivery.get("delivery_attempt_id")) and bool(delivery.get("delivery_attempted_at"))
+        and bool(delivery.get("provider_accepted_at")) and bool(delivery.get("delivery_confirmed_at"))
+        and delivery.get("delivery_ambiguous_at") is None
+        and isinstance(delivery.get("delivery_result"), dict)
+        and delivery["delivery_result"].get("success") is True
+        and str(delivery["delivery_result"].get("telegram_message_id") or "") == str(card))
+    if not (unattempted or confirmed):
+        return None, "retained_claim_delivery_outcome_unproven"
+    # The existing protected lifecycle owns the final locked check, one provider
+    # attempt and binding; an already bound card is only a no-send replay.
+    return {"callback_token": delivery["callback_token"], "preview_digest": digest}, ""
+
+
+
+_RENEWAL_EVENT = "retained_protected_preview_expiry_renewed"
+_RENEWAL_AGGREGATE = "protected_action_claim"
+_RENEWAL_MARKERS = ("preview_card_message_id", "delivery_attempt_id", "delivery_attempted_at",
+    "provider_accepted_at", "delivery_confirmed_at", "delivery_ambiguous_at", "delivery_result",
+    "confirmation_provider_message_id", "confirmation_provider_timestamp", "result_payload", "completed_at")
+
+
+def _renew_unattempted_claim(rows, delivery, requested):
+    """One audited TTL extension, atomically locked; never a provider-attempt retry.
+
+    The caller rebuilt the same preview from current canonical evidence. Recheck
+    exact source rows and the complete claim under its lock. A source correction
+    versus this transaction is not atomically serialized; lifecycle persistence
+    and the genuine callback retain their separate current-binding gates.
+    """
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    from modules.charlie.operational_events import build_event
+    from modules.charlie.mission_store import _insert_operational_event
+    if not all(retained_recipient_authorized(_delivery_context(row)) for row in rows):
+        return None, "retained_recipient_not_currently_authorized"
+    token = str(delivery.get("callback_token") or "")
+    aggregate = hashlib.sha256(token.encode()).hexdigest()
+    source_binding = retained_report_binding(rows)
+    failure = "retained_claim_expired_requires_current_review"
+    if not token or requested.get("action_kind") not in {"mortality", "herdmaster_record_litter_piglet_deaths"}:
+        return None, failure
+    try:
+        with connect_bounded_rootline_postgres(read_only=False) as db, db.cursor() as cur:
+            cur.execute("""select to_jsonb(c),clock_timestamp()
+                from app_private.oom_protected_action_claims c where callback_token=%s for update""", (token,))
+            value = cur.fetchone()
+            if not value:
+                return None, failure
+            claim, observed_at = value
+            digest = canonical_preview_digest(requested["action_kind"], requested["preview_payload"])
+            if (not isinstance(claim, dict) or any(claim.get(key) != requested[key] for key in (
+                    "action_kind", "owner_user_id", "private_chat_id", "mission_id",
+                    "provider_message_id", "evidence_generation", "preview_payload"))
+                    or claim.get("preview_digest") != digest or digest != delivery.get("preview_digest")
+                    or claim.get("status") not in {"active", "expired"}
+                    or claim.get("delivery_state") not in {None, "claim_created", "expired"}
+                    or any(claim.get(key) is not None for key in _RENEWAL_MARKERS)):
+                return None, failure
+            expires = datetime.fromisoformat(str(claim.get("expires_at") or "").replace("Z", "+00:00"))
+            prior_expiry = datetime.fromisoformat(str(delivery.get("expires_at") or "").replace("Z", "+00:00"))
+            if expires.tzinfo is None or expires != prior_expiry or expires > observed_at:
+                return None, failure
+            cur.execute("""select event_id from public.operational_events
+                where aggregate_type=%s and aggregate_id=%s limit 1""", (_RENEWAL_AGGREGATE, aggregate))
+            if cur.fetchone():
+                return None, "retained_claim_renewal_already_consumed"
+            cur.execute("""select callback_token from app_private.oom_protected_action_claims
+                where mission_id=%s and status='active' and callback_token<>%s limit 1""",
+                (requested["mission_id"], token))
+            if cur.fetchone():
+                return None, "retained_claim_other_active_attempt"
+            current = read_retained_health_reports(cur, [row["provider_message_id"] for row in rows])
+            resolved, reason = resolve_retained_health_reports(current,
+                [row["provider_message_id"] for row in rows], retain_existing_attempts=True)
+            if reason or resolved != rows or retained_report_binding(resolved) != source_binding:
+                return None, "retained_claim_source_changed_before_renewal"
+            if not all(retained_recipient_authorized(_delivery_context(row)) for row in rows):
+                return None, "retained_recipient_not_currently_authorized"
+            cur.execute("""update app_private.oom_protected_action_claims
+                set expires_at=clock_timestamp()+interval '30 minutes',status='active',delivery_state='claim_created'
+                where callback_token=%s and expires_at=%s and status=%s
+                returning expires_at""", (token, expires, claim["status"]))
+            renewed = cur.fetchone()
+            if cur.rowcount != 1 or not renewed:
+                raise RuntimeError("retained_claim_renewal_compare_and_set_failed")
+            event_key = "retained-preview-renewal:" + aggregate + ":" + expires.isoformat()
+            audit = {"contract_version": "retained_preview_renewal_v1", "claim_hash": aggregate,
+                "source_binding": source_binding, "mission_id": requested["mission_id"],
+                "preview_digest": digest, "evidence_generation": requested["evidence_generation"],
+                "old_expires_at": expires.isoformat(), "new_expires_at": renewed[0].isoformat(),
+                "old_status": claim["status"], "old_delivery_state": claim.get("delivery_state"),
+                "new_status": "active", "new_delivery_state": "claim_created",
+                "provider_attempts": 0, "farm_writes": 0, "one_time_only": True}
+            ready = build_event({"event_id": "OOM-RETAINED-RENEWAL-" + aggregate[:32].upper(),
+                "idempotency_key": event_key, "event_type": _RENEWAL_EVENT, "domain": "approvals",
+                "aggregate_type": _RENEWAL_AGGREGATE, "aggregate_id": aggregate,
+                "source_system": "oom_sakkie", "authority_tier": "bounded_auto",
+                "privacy_class": "owner_private", "actor_type": "system",
+                "actor_id": "retained_preview_recovery", "correlation_id": requested["mission_id"],
+                "occurred_at": observed_at.isoformat(), "recorded_at": observed_at.isoformat(),
+                "payload": audit, "provenance": {"source_ref": source_binding}})
+            if ready.get("accepted") is not True or not _insert_operational_event(cur, ready["event"]):
+                raise RuntimeError("retained_claim_renewal_audit_unproven")
+            cur.execute("""select c.expires_at,c.status,c.delivery_state,e.payload_json
+                from app_private.oom_protected_action_claims c join public.operational_events e
+                  on e.idempotency_key=%s where c.callback_token=%s""", (event_key, token))
+            if cur.fetchone() != (renewed[0], "active", "claim_created", audit):
+                raise RuntimeError("retained_claim_renewal_readback_unproven")
+        return {"callback_token": token, "preview_digest": digest,
+                "retained_unattempted_expiry_renewed": True}, ""
+    except Exception:
+        # Transaction context rolls back the expiry CAS and audit together.
+        return None, "retained_claim_renewal_persistence_unproven"
 
 
 def _protected(result):
