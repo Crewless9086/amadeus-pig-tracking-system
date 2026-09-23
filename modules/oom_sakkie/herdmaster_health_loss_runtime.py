@@ -359,6 +359,11 @@ def handle_authenticated_health_loss_message(
                 "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, 503
         return {"handled": True, "success": recorded.get("success") is True,
             "status": lifecycle["status"], "answer": answer, "mission_id": mission_id,
+            "recipient_render_contract": "specialist_structured_recipient_v1",
+            "recipient_language": "af" if str(active.get("output_language") or output_language).casefold().startswith("af") else "en",
+            "welfare_case_closed": recorded.get("welfare_case_closed") is True,
+            "living_checks_reconciled": int(recorded.get("living_checks_reconciled") or 0),
+            "preserved_distinct_work": int(recorded.get("preserved_distinct_work") or 0),
             "card_mission_id": mission_id, "records_audit_trace": True,
             "writes_farm_data": bool(recorded.get("writes_farm_data")),
             "rows_created": int(recorded.get("rows_created") or 0),
@@ -550,6 +555,101 @@ def handle_authenticated_health_loss_message(
         "welfare_case_persistence_degraded": welfare_case.get("success") is not True,
         **protected,
     }, 200
+
+
+def _retained_preview_readback(source_mission, callback_token):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+    with connect_bounded_read() as db, db.cursor() as cur:
+        # All statuses, including cancellations, must participate in latest-state
+        # selection. Active-context filtering is not the safety predicate.
+        cur.execute("""select review_json->'herdmaster_health_loss'
+            from public.sam_live_stock_conversation_review_events where event_source=%s
+              and review_json->'herdmaster_health_loss'->>'mission_id'=%s
+            order by created_at desc,review_event_id desc limit 1""", (EVENT_SOURCE, source_mission))
+        row = cur.fetchone()
+        source = row[0] if row else None
+        cur.execute("""select status,expires_at,preview_card_message_id,preview_digest,
+            owner_user_id,private_chat_id,action_kind,mission_id,provider_message_id,
+            evidence_generation,preview_payload,delivery_state,delivery_attempt_id,
+            delivery_attempted_at,provider_accepted_at,delivery_confirmed_at,delivery_ambiguous_at,
+            delivery_result from app_private.oom_protected_action_claims where callback_token=%s""",
+            (callback_token,))
+        claim = cur.fetchone()
+    return source, claim
+
+
+def persist_retained_health_loss_preview(source, preview, *, source_binding, claim, claim_request):
+    """Publish one current preview on its original report mission before delivery.
+
+    This is internal metadata reconciliation, not an owner ingress or confirmation.
+    It preserves original report chronology and uses the existing append-only
+    recorder. Readback detects recorded conflicts; it is not an atomic cancellation
+    fence with a separate concurrent writer.
+    """
+    failure = {"success": False, "status": "retained_preview_lifecycle_unproven",
+        "telegram_sends": 0, "writes_farm_data": False}
+    from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_recipient_authorized, _delivery_context
+    if not retained_recipient_authorized(_delivery_context(source)):
+        return {**failure, "status": "retained_recipient_not_currently_authorized"}
+    binding = preview.get("confirmation_binding") or {}
+    if (not source.get("mission_id") or source.get("owner_user_id") != source.get("chat_id")
+            or not source.get("owner_user_id") or not source.get("provider_timestamp")
+            or preview.get("success") is not True or preview.get("confirmation_ready") is not True
+            or binding.get("confirmation_ready") is not True
+            or not binding.get("operation_id") or not str(source_binding).startswith("retained_report_binding:")):
+        return failure
+    token = str(claim.get("callback_token") or "")
+    current, stored = _retained_preview_readback(source["mission_id"], token)
+    if current != source or not stored:
+        return {**failure, "status": "retained_preview_source_changed_before_persistence"}
+    (status, expires, card, digest, owner, chat, kind, mission, provider,
+     generation, payload, state, attempt, attempted, accepted, confirmed, ambiguous, result) = stored
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    exact = (status == "active" and expires > datetime.now(timezone.utc)
+        and (owner, chat, kind, mission, provider, generation, payload) == (
+            claim_request["owner_user_id"], claim_request["private_chat_id"],
+            claim_request["action_kind"], claim_request["mission_id"],
+            claim_request["provider_message_id"], claim_request["evidence_generation"],
+            claim_request["preview_payload"])
+        and digest == claim.get("preview_digest") == canonical_preview_digest(kind, payload))
+    if not exact:
+        return {**failure, "status": "retained_preview_claim_changed_before_persistence"}
+    phase_material = source_binding + "|" + mission + "|" + digest
+    phase = "retained_preview_generated:" + hashlib.sha256(phase_material.encode()).hexdigest()[:24]
+    provenance = {"contract_version": "retained_health_preview_v1", "source_binding": source_binding,
+        "claim_mission_id": mission, "claim_preview_digest": digest,
+        "claim_evidence_generation": generation}
+    expected = {**source, "status": "preview_ready", "event_phase": phase,
+        "operation_id": binding["operation_id"], "preview": preview,
+        "owner_text": _owner_message(preview),
+        "evidence_generation": binding.get("evidence_generation") or generation,
+        "retained_repreview": provenance}
+    prior = source.get("retained_repreview") or {}
+    if source.get("event_phase") == phase:
+        expected["retained_repreview"] = {**provenance, "generated_at": prior.get("generated_at")}
+        if not prior.get("generated_at") or source != expected:
+            return {**failure, "status": "retained_preview_lifecycle_replay_conflict"}
+    else:
+        unattempted = state in (None, "claim_created") and all(value is None for value in
+            (card, attempt, attempted, accepted, confirmed, ambiguous, result))
+        if not unattempted or source.get("status") != "waiting_for_input":
+            return {**failure, "status": "retained_preview_transition_not_unattempted"}
+        expected["retained_repreview"] = {**provenance, "generated_at": datetime.now(timezone.utc).isoformat()}
+        if not retained_recipient_authorized(_delivery_context(source)):
+            return {**failure, "status": "retained_recipient_not_currently_authorized"}
+        saved = _record_lifecycle_event(expected)
+        if saved.get("success") is not True:
+            return {**failure, "status": "retained_preview_lifecycle_persistence_failed"}
+    readback, _claim = _retained_preview_readback(source["mission_id"], token)
+    if readback != expected:
+        return {**failure, "status": "retained_preview_lifecycle_readback_unproven"}
+    active = _load_active_contexts(str(owner), owner_user_id=str(owner))
+    visible = [row for row in active if row.get("mission_id") == source["mission_id"]]
+    if (len(visible) != 1 or visible[0].get("status") != "preview_ready"
+            or visible[0].get("operation_id") != binding["operation_id"]
+            or visible[0].get("preview") != preview):
+        return {**failure, "status": "retained_preview_callback_context_unproven"}
+    return {**_existing_lifecycle_result(expected), "retained_preview_readback_verified": True}
 
 
 def _protected_preview_fields(lifecycle, *, claim_creator=None):
