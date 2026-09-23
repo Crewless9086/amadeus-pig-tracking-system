@@ -25,12 +25,15 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml',
+PREDECESSOR_PATHS = ['modules/oom_sakkie/general_manager_worker.py',
+    'modules/oom_sakkie/herdmaster_health_loss_runtime.py',
     'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py',
     'modules/oom_sakkie/manager_case_sources.py',
     'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py',
-    'tests/test_oom_sakkie_manager_case_sources.py',
     'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+PRESERVED_PREVIEW_EFFECTS = {'automatic_once_per_claim_never_attempted_retained_preview_renewal',
+    'current_recipient_authorized_protected_confirmation_delivery',
+    'verified_same_case_mortality_completion_projection'}
 # Synthetic candidate identity permits qualification while production pins remain
 # visibly pending. These values never represent an actual PR or owner approval.
 SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40,
@@ -54,7 +57,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | {"repository_candidate_validation", "merge", "existing_web_application_release"}),
+        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {"repository_candidate_validation", "merge", "existing_web_application_release"}),
         "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -87,7 +90,7 @@ def arguments(child=None, parent=None, correction=None):
         "diff_sha256": canonical_candidate_diff(adapter.PATHS, b"synthetic candidate diff")}
     prior_contract = child["metadata_json"]["mission_admission_contract"]
     manifest = {"version": adapter.VERSION, "mission_id": adapter.MISSION_ID, "parent_mission_id": adapter.PARENT_ID,
-        "candidate": candidate, "generation": "synthetic-new-generation", "idempotency_key": "synthetic-retained-preview-rebind",
+        "candidate": candidate, "generation": "synthetic-new-generation", "idempotency_key": "synthetic-conversation-followup-rebind",
         "desktop": {"task_id": adapter.TASK_ID, "principal": PRINCIPAL, "transport": "codex_desktop"},
         "expected_child_record": child, "expected_child_sha256": adapter.digest(adapter.canonical(child)),
         "expected_parent_record": parent, "expected_parent_sha256": adapter.digest(adapter.canonical(parent)),
@@ -448,6 +451,25 @@ class ReconciliationTests(unittest.TestCase):
         with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
             adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
+    def test_conversation_scope_preserves_read_only_principal_and_exact_evidence_guards(self):
+        for before, after in (("read-only repeatable-read snapshot", "unbounded mutable snapshot"),
+                              ("an unrelated pending farrowing question must not capture", "an unrelated pending farrowing question may capture"),
+                              ("contain ambiguous or missing identity", "guess ambiguous or missing identity"),
+                              ("scope evidence before limits", "limit before scoping evidence"),
+                              ("must not create farm facts", "may create farm facts"),
+                              ("borrow another recipient's context", "borrow context freely"),
+                              ("later natural manager-cycle continuity", "a terminal-triggered cycle")):
+            m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+            original=m["contract"]["operational_acceptance"]
+            changed=[value.replace(before,after) for value in original]
+            self.assertNotEqual(changed,original)
+            m["contract"]["operational_acceptance"]=changed
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        plan=adapter.prepare_reconciliation(**self.args)
+        self.assertTrue(PRESERVED_PREVIEW_EFFECTS <= set(plan["manifest"]["contract"]["allowed_effects"]))
+        self.assertFalse(PRESERVED_PREVIEW_EFFECTS & adapter.ADDED_EFFECTS)
+
     def test_blanket_cron_prohibition_and_prior_delivery_history_are_preserved(self):
         before=self.snapshot()
         prior=self.db.rows[adapter.MISSION_ID]["metadata_json"]["mission_admission_contract"]
@@ -538,7 +560,7 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "52aec70d6432580ae0c479cd1f2bbdb2322b9ca4")
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "b7516441bf0df2f592829176053ff21c71e34723")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")

@@ -1,4 +1,4 @@
-"""Exact OMQ retained-preview maintainer reconciliation; no public apply endpoint.
+"""Exact OMQ conversation-followup maintainer reconciliation; no public apply endpoint.
 
 Caller authentication is a trusted maintainer boundary, never inferred from files.
 Preparation is DB-free. Apply performs canonical metadata reconciliation only.
@@ -17,25 +17,32 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = "731f28c72f5186146320613a23fca7b76757ec2a"
+BASE = "1c148e4f3d1691f85e6af1133ec8569ffa0c195e"
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1350
-HEAD = "52aec70d6432580ae0c479cd1f2bbdb2322b9ca4"
+CANDIDATE_PR = 1351
+HEAD = "b7516441bf0df2f592829176053ff21c71e34723"
 APPROVED_RUNTIME_HEAD = HEAD
-BRANCH = "codex/oom-retained-preview-delivery-20260923"
-PREDECESSOR_PR = 1349
-PREDECESSOR_BASE = "a41b4a204d0de38a2ab99790e0827fcb3a34381b"
-PREDECESSOR_HEAD = "3f4733e7ee29c839e6d36dc44a81a4ca0142e803"
-PREDECESSOR_BRANCH = "codex/oom-retained-report-recovery-20260922"
+BRANCH = "codex/oom-conversation-followup-20260923"
+PREDECESSOR_PR = 1350
+PREDECESSOR_BASE = "731f28c72f5186146320613a23fca7b76757ec2a"
+PREDECESSOR_HEAD = "52aec70d6432580ae0c479cd1f2bbdb2322b9ca4"
+PREDECESSOR_BRANCH = "codex/oom-retained-preview-delivery-20260923"
 QUALIFICATION_TEST_PATHS = []
 PATHS = [
-    'modules/oom_sakkie/general_manager_worker.py',
-    'modules/oom_sakkie/herdmaster_health_loss_runtime.py',
-    'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py',
-    'modules/oom_sakkie/manager_case_sources.py',
-    'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py',
-    'tests/test_oom_sakkie_retained_report_recovery_postgres.py',
+    '.github/workflows/oom-sakkie-audit-rails.yml',
+    'modules/oom_sakkie/family_message_lifecycle.py',
+    'modules/oom_sakkie/farm_manager_runtime.py',
+    'modules/oom_sakkie/herd_question.py',
+    'modules/oom_sakkie/manager_question_runtime.py',
+    'modules/oom_sakkie/owner_conversation_front_door.py',
+    'modules/oom_sakkie/semantic_front_door.py',
+    'modules/oom_sakkie/service.py',
+    'modules/oom_sakkie/telegram_gateway.py',
+    'modules/oom_sakkie/tools.py',
+    'modules/pig_weights/farm_supabase_read_service.py',
+    'tests/test_oom_sakkie_conversation_followup.py',
+    'tests/test_oom_sakkie_conversation_followup_postgres.py',
 ]
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
@@ -46,14 +53,11 @@ HELPERS = ("modules/charlie/mission_store.py", "modules/charlie/mission_control.
 MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "tests/test_oom_desktop_candidate_reconciliation.py",
     ".github/workflows/oom-desktop-rebind-qualification.yml"}
-DECISION = "reconcile_exact_oom_retained_preview_delivery_candidate"
+DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1349_six_file_retained_report_identity_recovery",
-    "application_revision_rollback:web:a41b4a204d0de38a2ab99790e0827fcb3a34381b"}
-ADDED_EFFECTS = {"exact_pr1350_six_file_retained_preview_delivery_and_verified_closure",
-    "automatic_once_per_claim_never_attempted_retained_preview_renewal",
-    "current_recipient_authorized_protected_confirmation_delivery",
-    "verified_same_case_mortality_completion_projection",
+REMOVED_EFFECTS = {"exact_pr1350_six_file_retained_preview_delivery_and_verified_closure",
+    "application_revision_rollback:web:731f28c72f5186146320613a23fca7b76757ec2a"}
+ADDED_EFFECTS = {"exact_pr1351_thirteen_file_read_only_conversation_followup",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -61,15 +65,20 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
-    f"Release only the protected merge whose application tree equals exact PR1350 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest, web-only release and the bounded automatic renewal and confirmation-delivery behavior below; no later candidate or qualification successor is authorized.",
+    f"Release only the protected merge whose application tree equals exact PR1351 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only conversation-followup release; source pins and prior PR1350 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",
     "Allow canonical retained preview persistence and the existing protected family delivery rail to deliver one bound confirmation card; preserve callback identity, deadlines, provider ambiguity and silent replay. A genuine authorized confirmation remains mandatory before the existing domain executor may record any farm fact; registration, release and renewal are not farm confirmation.",
     "Project mortality completion to the SAME retained manager case only from exact completed source, protected claim and non-superseded current canonical operation and welfare readback; delivery alone, expired state, missing facts and silence never close a case.",
     "No scheduler deployment, webhook cutover, n8n workflow disablement, database migration, permission or configuration change, direct or terminal farm write, hardware command, manual cron trigger or manufactured acceptance.",
-    "Verify exact loaded web revision, natural-cycle delivery and timing, genuine confirmation, canonical readback and a later independent same-case closure/replay. Missing litter/disposal facts, non-atomic concurrent source-cancellation fencing and unproved live cold-path timing remain explicit limitations; source, tests, renewal or a sent card are not business completion. Farrowing remains its existing preview-only path; no missing litter fact is inferred.",
+    "Answer genuine later broad-brief, responsibilities and HERDMASTER-detail questions from current bounded canonical evidence; an unrelated pending farrowing question must not capture a new read enquiry or turn it into a farm-write confirmation.",
+    "Resolve an explicit animal by exact canonical Pig ID, tag or name in one bounded read-only repeatable-read snapshot; preserve Active, Sold and Dead lifecycle facts, contain ambiguous or missing identity, scope evidence before limits and report overflow rather than silently answering from an incomplete animal history.",
+    "Use bounded delivered context for current English and Afrikaans follow-ups, preserving owner, private chat, provider and subject binding; distinguish an explicit clarification question from a delivered summary and ask targeted Farewell ambiguity without inventing a farm outcome.",
+    "Read-only conversation answers must not create farm facts, close cases, create or renew protected claims, weaken current private-principal authorization, borrow another recipient's context or retry ambiguous delivery; existing protected actions retain their separate confirmation rails.",
+    "Verify exact loaded web revision and genuine subsequent provider delivery against canonical animal/case identities, read-query scope, language and durable audit; verify replay containment and later natural manager-cycle continuity. Do not substitute a terminal answer, replay historical Telegram messages, make the owner relay terminal actions or request already-pending physical facts again.",
+    "Preserve prior bounded retained-preview authority and limitations: missing litter/disposal facts, non-atomic concurrent source-cancellation fencing and unproved live cold-path timing remain explicit. Genuine authorized confirmation, canonical operation/welfare readback and later independent same-case closure/replay remain required for that separate retained journey. Farrowing remains preview-only; source, tests, release or a sent card are not business completion.",
 }
 
 

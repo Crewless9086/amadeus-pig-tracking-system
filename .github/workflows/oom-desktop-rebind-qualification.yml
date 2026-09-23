@@ -1,7 +1,7 @@
 name: OOM Desktop Rebind Qualification
 on:
   push:
-    branches: [codex/oom-retained-preview-registration-20260923]
+    branches: [codex/oom-conversation-registration-20260923]
 permissions:
   contents: read
 jobs:

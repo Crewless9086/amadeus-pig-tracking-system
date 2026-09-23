@@ -493,6 +493,12 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
                 "status": row[2], "expires_at": row[3], "preview_payload": row[4] or {},
                 "preview_card_message_id": row[5], "delivery_state": row[6]}
                 for row in cur.fetchall()]
+            completed = {}
+            for key, refs, status in retained:
+                if status in {"open", "delegated", "waiting_reassessment", "exception"}:
+                    terminal = _retained_mortality_completion(cur, key, refs, evidence, now)
+                    if terminal:
+                        completed[key] = terminal
     candidates = _project_retained_herd_report_recovery(
         now, health, expired, canonical_pigs=pigs, canonical_litters=litters,
         farrowing_claims=claims)
@@ -503,11 +509,14 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
             bound_rows = [row for row in health if row.get("provider_message_id") in ids]
             candidate["evidence_refs"].append(retained_report_binding(bound_rows))
     for key, refs, status in retained:
+        if key in completed:
+            candidates.append(completed[key])
+            continue
         if status not in {"open", "delegated", "waiting_reassessment", "exception"}:
             continue
         ids = {str(ref).split(":", 1)[1] for ref in refs
                if str(ref).startswith("provider_message:")}
-        rows, failure = resolve_retained_health_reports(evidence, ids)
+        rows, failure = resolve_retained_health_reports(evidence, ids, retain_existing_attempts=True)
         if failure:
             continue
         binding = retained_report_binding(rows)
@@ -526,6 +535,98 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None):
                 candidate["evidence_refs"].append(binding)
                 candidates.append(candidate)
     return candidates
+
+
+
+def _retained_mortality_completion(cursor, key, refs, evidence, now):
+    """Close this exact retained case only from confirmed canonical operation proof."""
+    from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_report_binding
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    from modules.pig_weights.herdmaster_health_loss_recording import _readback_mortality_welfare
+    if not str(key).startswith("herdmaster:retained-mortality:"):
+        return None
+    provider = str(key).removeprefix("herdmaster:retained-mortality:")
+    if {str(ref) for ref in refs if str(ref).startswith("provider_message:")} != {"provider_message:" + provider}:
+        return None
+    reports = [row for row in evidence["reports"] if row.get("provider_message_id") == provider]
+    identities = {(r.get("owner_user_id"), r.get("chat_id"), r.get("mission_id")) for r in reports}
+    if len(identities) != 1:
+        return None
+    owner, chat, mission = next(iter(identities))
+    if not owner or owner != chat or not mission:
+        return None
+    source_binding = retained_report_binding([reports[-1]])
+    if {str(ref) for ref in refs if str(ref).startswith("retained_report_binding:")} != {source_binding}:
+        return None
+    latest = next((row for row in evidence["lifecycle"] if row.get("mission_id") == mission), {})
+    if (latest.get("status") != "completed" or latest.get("event_phase") != "recording_completed"
+            or (latest.get("owner_user_id"), latest.get("chat_id")) != (owner, chat)
+            or latest.get("correction_digest") or latest.get("invalidated_operation_ids")):
+        return None
+    if any((row.get("owner_user_id"), row.get("chat_id")) == (owner, chat) and (
+            mission in (row.get("consumed_context_missions") or ())
+            or any(isinstance(b, dict) and b.get("mission_id") == mission
+                   for b in row.get("superseded_duplicate_bindings") or ())) for row in evidence["lifecycle"]):
+        return None
+    related = [c for c in evidence["claims"] if str(c[2]) == mission
+        or (str(c[0]), str(c[1]), str(c[3])) == (owner, chat, provider)]
+    if len(related) != 1 or len(related[0]) != 8:
+        return None
+    c_owner, c_chat, claim_mission, c_provider, state, kind, payload, metadata = related[0]
+    payload, metadata = payload or {}, metadata or {}
+    recorded, outcome = latest.get("recording_result") or {}, metadata.get("result_payload") or {}
+    preview = latest.get("preview") or {}
+    binding, identity = preview.get("confirmation_binding") or {}, payload.get("identity") or {}
+    operation, pig = str(payload.get("operation_id") or ""), str(identity.get("pig_id") or "")
+    event, welfare = str(recorded.get("lifecycle_event_id") or ""), str(recorded.get("welfare_case_id") or "")
+    provenance = latest.get("retained_repreview") or {}
+    if (not all((operation, pig, event, welfare)) or (c_owner, c_chat, c_provider, state, kind) !=
+            (owner, chat, provider, "completed", "mortality")
+            or payload.get("effect_kind") != "mortality"
+            or {str(ref) for ref in refs if str(ref).startswith("pig:")} != {"pig:" + pig}
+            or {str(ref) for ref in refs if str(ref).startswith("tag:")} != {"tag:" + str(identity.get("tag_number") or "")}
+            or metadata.get("preview_digest") != canonical_preview_digest(kind, payload)
+            or metadata.get("delivery_state") != "delivery_confirmed" or not metadata.get("preview_card_message_id")
+            or metadata.get("confirmation_provider_message_id") != latest.get("provider_message_id")
+            or not metadata.get("confirmation_provider_timestamp")
+            or provenance.get("source_binding") != source_binding
+            or provenance.get("claim_mission_id") != claim_mission
+            or provenance.get("claim_preview_digest") != metadata.get("preview_digest")
+            or operation != latest.get("operation_id") or operation != binding.get("operation_id")
+            or operation != recorded.get("operation_id")
+            or payload.get("preview_sha256") != binding.get("preview_sha256")
+            or identity != (preview.get("evaluator") or {}).get("identity")
+            or recorded.get("success") is not True or recorded.get("pig_id") != pig
+            or outcome.get("success") is not True or outcome.get("status") != "completed"
+            or outcome.get("pig_id") != pig or outcome.get("lifecycle_event_id") != event):
+        return None
+    cursor.execute("""select e.event_payload,e.actor_reference,e.effective_at::date
+        from public.pig_lifecycle_events e
+        join public.current_canonical_pigs p on p.pig_id=e.pig_id
+        where e.lifecycle_event_id=%s and e.pig_id=%s and e.idempotency_key=%s
+          and e.lifecycle_event_type='exited_farm'
+          and not exists(select 1 from public.pig_lifecycle_events later
+                         where later.supersedes_lifecycle_event_id=e.lifecycle_event_id)
+        limit 2""", (event, pig, operation))
+    rows = cursor.fetchall()
+    if len(rows) != 1:
+        return None
+    event_payload, actor, event_date = rows[0]
+    expected = {"operation_id": operation, "pig_id": pig, "provider_message_id": provider,
+        "preview_sha256": payload.get("preview_sha256"), "actor_id": owner,
+        "evidence_generation": binding.get("evidence_generation"), "event_date": str(event_date),
+        "resulting_status": "Dead", "resulting_on_farm": False}
+    if (actor != owner or str(event_date) != str(recorded.get("event_date"))
+            or any((event_payload or {}).get(k) != v for k, v in expected.items())):
+        return None
+    canonical = _readback_mortality_welfare(cursor, pig_id=pig, event_id=event, welfare_case_id=welfare)
+    if canonical.get("canonical_readback_verified") is not True:
+        return None
+    return _candidate(str(key), "HERDMASTER", "urgent", list(refs) + [
+        "completed_operation:" + operation, "lifecycle_event:" + event, "welfare_case:" + welfare], [],
+        "The exact retained mortality operation and canonical closure were verified.",
+        "Completed from the same confirmed protected operation; no further owner delivery.", now,
+        message_family="retained_protected_recovery", terminal_state="completed")
 
 
 def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pigs=(),
