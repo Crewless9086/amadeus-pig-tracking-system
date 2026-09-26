@@ -17,19 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = '089f97823730593394a82ec000cf98602cef138c'
+BASE = 'ba198bfd1e630251aacf31355641d9fbf7b5319c'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1354
-HEAD = 'c3dd3b2fec19730939e2e71f3c5855c110d24d1f'
+CANDIDATE_PR = 1355
+HEAD = '9d4e6672672564308e867a8c628df21f2f4e7746'
 APPROVED_RUNTIME_HEAD = HEAD
-BRANCH = 'codex/oom-mortality-date-20260926'
-PREDECESSOR_PR = 1353
-PREDECESSOR_BASE = 'c3dc87c0580bac0d54bb9a514af83f45eed8abd8'
-PREDECESSOR_HEAD = 'fb3d90d61b2a0a75998930f9428db7f28b30be93'
-PREDECESSOR_BRANCH = 'codex/oom-question-read-timeout-20260926'
+BRANCH = 'codex/oom-retained-reply-recovery-20260926'
+PREDECESSOR_PR = 1354
+PREDECESSOR_BASE = '089f97823730593394a82ec000cf98602cef138c'
+PREDECESSOR_HEAD = 'c3dd3b2fec19730939e2e71f3c5855c110d24d1f'
+PREDECESSOR_BRANCH = 'codex/oom-mortality-date-20260926'
 QUALIFICATION_TEST_PATHS = []
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/pig_weights/herdmaster_natural_health_loss_intake.py', 'tests/test_herdmaster_natural_health_loss_intake.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py']
+PATHS = ['modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -41,9 +41,9 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     ".github/workflows/oom-desktop-rebind-qualification.yml"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1353_question_lookup_and_deduplicated_failure_notice",
-    "application_revision_rollback:web:c3dc87c0580bac0d54bb9a514af83f45eed8abd8"}
-ADDED_EFFECTS = {"exact_pr1354_named_mortality_date_confirmation_preview",
+REMOVED_EFFECTS = {"exact_pr1354_named_mortality_date_confirmation_preview",
+    "application_revision_rollback:web:089f97823730593394a82ec000cf98602cef138c"}
+ADDED_EFFECTS = {"exact_pr1355_typed_retained_mortality_recovery",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -51,6 +51,7 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    "Select retained mortality reports and short replies from existing typed specialist assessment and exact canonical animal identity; contrary assessment never falls back to legacy prose. Preserve latest-state, recipient, cancellation, supersession, protected claim, confirmation and replay guards; prove a genuine scheduled confirmation-card delivery and later canonical outcome separately.",
     "Recognize owner-reported named mortality dates in either order and ordinal forms; resolve omitted year from the original evidence timestamp, preserve explicit year, reject invalid or conflicting dates, and retain chronology validation and genuine confirmation before any mortality write.",
     "Keep question history reads within existing deadlines without repeated full-history scans; preserve owner/chat isolation, partial ordering and cross-day answered-question retirement.",
     "Context failure may deliver one truthful notice through the existing durable provider-bound rail under a separate identity; do not consume later request recovery, retry ambiguous sends, call paid inference or perform farm writes. A notice is not an answer.",
@@ -58,8 +59,8 @@ REQUIRED_ACCEPTANCE = {
     "Scheduled prioritization uses no paid model; coalesce routine briefing changes, preserve distinct urgent/owner-decision interrupts, and back off the same failed generation. Do not alter the existing scheduler or trigger a manual cycle.",
     "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
     "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
-    f"Release only the protected merge whose application tree equals exact PR1354 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only named mortality date parsing release; source pins and prior PR1353 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    f"Release only the protected merge whose application tree equals exact PR1355 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only typed retained mortality recovery release; source pins and prior PR1354 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",
