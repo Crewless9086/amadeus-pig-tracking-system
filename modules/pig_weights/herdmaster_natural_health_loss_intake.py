@@ -662,29 +662,39 @@ def _typed_welfare_report(value, provider_time, text="", *, clinical=None):
     return parsed
 
 
-def _explicit_event_dates(text):
+_EVENT_MONTHS = {
+    "jan": 1, "january": 1, "januarie": 1, "feb": 2, "february": 2,
+    "februarie": 2, "mar": 3, "march": 3, "maart": 3, "apr": 4,
+    "april": 4, "may": 5, "mei": 5, "jun": 6, "june": 6, "juni": 6,
+    "jul": 7, "july": 7, "juli": 7, "aug": 8, "august": 8,
+    "augustus": 8, "sep": 9, "september": 9, "oct": 10, "october": 10,
+    "okt": 10, "oktober": 10, "nov": 11, "november": 11, "dec": 12,
+    "december": 12, "des": 12, "desember": 12,
+}
+_EVENT_MONTH_NAMES = "|".join(sorted(_EVENT_MONTHS, key=len, reverse=True))
+_NAMED_EVENT_DATE_PATTERN = (
+    rf"\b(?:(?P<day_first>\d{{1,2}}(?:st|nd|rd|th)?)\s+(?P<month_after>{_EVENT_MONTH_NAMES})"
+    rf"|(?P<month_first>{_EVENT_MONTH_NAMES})\s+(?P<day_after>\d{{1,2}}(?:st|nd|rd|th)?))"
+    r"\b(?:\s*,?\s*(?P<year>\d{4}))?\b(?!\s*,?\s*\d)")
+
+
+def _explicit_event_dates(text, *, reference_date=None):
     values = set()
     for raw in re.findall(r"\b20\d{2}-\d{2}-\d{2}\b", text):
         try:
             values.add(datetime.fromisoformat(raw).date())
         except ValueError:
             pass
-    months = {
-        "jan": 1, "january": 1, "januarie": 1, "feb": 2, "february": 2,
-        "februarie": 2, "mar": 3, "march": 3, "maart": 3, "apr": 4,
-        "april": 4, "may": 5, "mei": 5, "jun": 6, "june": 6, "juni": 6,
-        "jul": 7, "july": 7, "juli": 7, "aug": 8, "august": 8,
-        "augustus": 8, "sep": 9, "september": 9, "oct": 10, "october": 10,
-        "okt": 10, "oktober": 10, "nov": 11, "november": 11, "dec": 12,
-        "december": 12, "des": 12, "desember": 12,
-    }
-    for day, month, year in re.findall(
-            r"\b(\d{1,2})\s+([a-z]+)\s+(20\d{2})\b", text, re.I):
+    for match in re.finditer(_NAMED_EVENT_DATE_PATTERN, text, re.I):
+        year = match['year'] or (reference_date.year if reference_date is not None else None)
+        if year is None:
+            continue
+        month = match['month_first'] or match['month_after']
+        day = re.match(r"\d+", match['day_first'] or match['day_after']).group()
         try:
-            if month.casefold() in months:
-                values.add(datetime(int(year), months[month.casefold()], int(day)).date())
+            values.add(datetime(int(year), _EVENT_MONTHS[month.casefold()], int(day)).date())
         except ValueError:
-            pass
+            return []
     for day, month, year in re.findall(r"\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b", text):
         try:
             values.add(datetime(int(year), int(month), int(day)).date())
@@ -711,12 +721,16 @@ def _mortality_event_date(report, provider_time):
         if other_event and not death_words:
             continue
         if death_words:
+            # A comma inside a named date separates its year, not a new event.
+            text = re.sub(_NAMED_EVENT_DATE_PATTERN,
+                lambda match: match.group().replace(",", " "), text, flags=re.I)
             clauses = re.split(r"[.!?;,]\s*", text)
             text = " ".join(clause for clause in clauses if re.search(
                 r"\b(?:died|dead|death|passed away|dood|gesterf|afsterwe)\b", clause))
         text = re.sub(r"\b(?:this (?:morning|afternoon|evening)|vanoggend|vanmiddag|vanaand)\b", "today", text)
         text = re.sub(r"\b(?:last night|gisteraand)\b", "yesterday", text)
-        date_pattern = r"\b(?:20\d{2}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]20\d{2}|\d{1,2}\s+[a-z]+\s+20\d{2})\b"
+        date_pattern = (r"\b(?:20\d{2}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]20\d{2})\b"
+                        + "|" + _NAMED_EVENT_DATE_PATTERN)
         relative_pattern = r"\b(today|vandag|yesterday|gister|eergister|tomorrow|môre)\b"
         if index and not death_words:
             # Accept an actual short answer to the date question. Do not infer
@@ -727,7 +741,12 @@ def _mortality_event_date(report, provider_time):
                 r"it|dit|was|is|on|op|the|die|date|datum|should|be|must)\b", "", remainder)
             if re.search(r"\w", remainder):
                 continue
-        dates = _explicit_event_dates(text)
+        # Resolve an omitted year against this evidence message's local year,
+        # not server time or a later follow-up. The full date remains subject
+        # to chronology checks and the existing owner-confirmed preview.
+        moment = _provider_time({"provider_timestamp": part.get("provider_timestamp"),
+                                 "provider_timezone": "Africa/Johannesburg"})
+        dates = _explicit_event_dates(text, reference_date=moment.date())
         date_shaped = re.search(date_pattern, text)
         relative = set(re.findall(relative_pattern, text))
         if date_shaped or dates:
@@ -738,8 +757,6 @@ def _mortality_event_date(report, provider_time):
             days = {offsets[word] for word in relative}
             if len(days) != 1:
                 return None
-            moment = _provider_time({"provider_timestamp": part.get("provider_timestamp"),
-                                     "provider_timezone": "Africa/Johannesburg"})
             return moment.date() + timedelta(days=days.pop())
     return None
 
