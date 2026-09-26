@@ -68,7 +68,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                 assignee="charl", state=WorkState.DUE_TODAY,
                 authority=Authority.ADVISORY, provenance=item_provenance,
                 business_value=115, metadata={"physical_work_ready": True,
-                    "exceptional_weighing_due_now": True, "pig_id": pig_id}))
+                    "exceptional_weighing_due_now": True, "pig_id": pig_id,
+                    "notification_decision_identity": "weighing:" + pig_id + ":" + str(window.get("start") or "") + ":" + str(window.get("end") or "")}))
         routine_missing = [row for row in missing if row not in exceptional_due]
         if not routine_missing:
             routine_missing = []

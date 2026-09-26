@@ -4,7 +4,8 @@ import time
 from datetime import datetime, timezone
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
-from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
+from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message, model_budget_denial_result
+from modules.oom_sakkie.model_budget import ModelBudgetError
 from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_litter_message
@@ -531,14 +532,33 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
         return body, 503
     semantic_policy = semantic_front_door_policy(source)
     semantic_authoritative = bool(gateway_authority is not None and semantic_policy.get("enabled"))
-    if gateway_authority is not None and active_manager_question:
-        from modules.oom_sakkie.semantic_front_door import load_bounded_owner_context
-        semantic = interpret_owner_message(parsed, environ=source,
-            context_loader=lambda inbound: semantic_context_with_manager_question(
-                inbound, base_context_loader=load_bounded_owner_context,
-                question=active_manager_question))
-    else:
-        semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
+    try:
+        if gateway_authority is not None and active_manager_question:
+            from modules.oom_sakkie.semantic_front_door import load_bounded_owner_context
+            semantic = interpret_owner_message(parsed, environ=source,
+                context_loader=lambda inbound: semantic_context_with_manager_question(
+                    inbound, base_context_loader=load_bounded_owner_context,
+                    question=active_manager_question))
+        else:
+            semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
+    except ModelBudgetError as exc:
+        result = model_budget_denial_result(exc.status, parsed.get("output_language") or family_principal.language)
+        try:
+            delivery = deliver_family_result(parsed, result, specialist="OOM_SAKKIE")
+        except Exception:
+            delivery = {"success": False, "status": "budget_notice_delivery_unproven",
+                "telegram_sends": 0, "telegram_edits": 0,
+                "provider_effects_unknown": True, "do_not_retry_automatically": True}
+        body, _ = _gateway_result(False, result["status"], policy, 200)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": result["answer"], "message": result, "delivery": delivery,
+            "model_budget_denied": True, "request_interpreted": False,
+            "records_audit_trace": delivery.get("success") is True and bool(delivery.get("telegram_message_id")),
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": False, "hardware_commands": 0})
+        return body, 200 if delivery.get("success") else 503
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
 

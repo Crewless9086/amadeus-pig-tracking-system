@@ -25,7 +25,7 @@ class MorningWindowMissed(RuntimeError):
 
 def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
                       herd_loader=None, rootline_loader=None, litter_loader=None,
-                      sales_loader=None):
+                      sales_loader=None, replace_brief=None):
     """Run the due daily plan or its one bounded visible failure escalation."""
     source = environ if environ is not None else os.environ
     now = _aware(now or datetime.now(timezone.utc))
@@ -60,7 +60,7 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
                 owner_user_id=principal.telegram_user_id,
                 chat_id=principal.private_chat_id, specialist_results=results,
                 litter_rows=litters, sale_rows=sales, deliver=deliver, store=store,
-                now=now, language=principal.language))
+                now=now, language=principal.language, replace_brief=replace_brief))
         summary = _recipient_summary(outcomes)
         optional_failures = list(snapshot.get("optional_source_failures") or ())
         if optional_failures:

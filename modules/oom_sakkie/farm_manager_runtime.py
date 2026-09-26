@@ -451,7 +451,8 @@ def _active_welfare_result(active, now, language="en"):
             domain="herd", title=title, why=why,
             next_action=next_action, assignee="charl", state=WorkState.URGENT,
             authority=Authority.ADVISORY, provenance=provenance, business_value=120,
-            genuine_question=question, question_for="charl"))
+            genuine_question=question, question_for="charl",
+            metadata={"notification_decision_identity": str(row.get("lifecycle_id") or "")}))
     result_id = "herdmaster-active-welfare-" + _digest([
         (item.item_id, item.provenance.observed_at.isoformat()) for item in items])[:20]
     rebound = tuple(replace(item, provenance=replace(item.provenance, result_id=result_id)) for item in items)
@@ -486,6 +487,7 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
             "operational_status": status,
             "current_evidence": [f"Authenticated owner observation: {status}; {observation.get('observed_signs') or 'no additional sign supplied'}."],
             "observed_at": observation.get("observed_at"), "source_identity": observation.get("source_identity"),
+            "mating_id": observation.get("mating_id") or known.get("current_mating_id"),
             "smallest_next_observation": ("Watch appetite, comfort and any labour sign; clinical scanning remains optional."
                 if status == "Assumed Pregnant" else "Reassess only if new heat, condition or clinical evidence appears."),
             "clinical_confirmation": "Optional higher-confidence fact; not clinically confirmed.",
@@ -556,7 +558,9 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
             next_action=("Gee die huidige uitkoms; as daar 'n werpsel was, sal ek die datum en geboortetellings vra en die bevestiging voorberei."
                 if is_af else "Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and prepare the confirmation."),
             assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
-            provenance=provenance, business_value=110, genuine_question=question, question_for="charl"))
+            provenance=provenance, business_value=110, genuine_question=question, question_for="charl",
+            metadata={"notification_decision_identity": "matings:" + ":".join(
+                sorted(str(row["mating_id"]) for row in group)) if all(row.get("mating_id") for row in group) else ""}))
     rebound = tuple(replace(item, provenance=provenance) for item in items)
     return SpecialistResult("herdmaster", result_id, observed,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
@@ -683,7 +687,8 @@ def _project_rootline_snapshot(snapshot, now, language="en"):
         assignee="charl", state=state, authority=Authority.ADVISORY, provenance=provenance,
         business_value=80, genuine_question=projection["question"],
         question_for="charl" if projection["question"] else "",
-        metadata={"owner_followup": projection["next_action"]},
+        metadata={"owner_followup": projection["next_action"],
+                  "notification_decision_identity": projection.get("notification_decision_identity", "")},
     )
     return SpecialistResult("rootline", result_id, observed,
         SpecialistAvailability.AVAILABLE if raw.get("success") else SpecialistAvailability.CONTAINED,

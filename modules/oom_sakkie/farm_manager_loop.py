@@ -137,6 +137,7 @@ class SpecialistWorkItem:
             "exceptional_weighing_due_now": bool,
             "pig_id": str,
             "owner_followup": str,
+            "notification_decision_identity": str,
         }
         unknown = set(self.metadata) - set(allowed_metadata)
         if unknown:

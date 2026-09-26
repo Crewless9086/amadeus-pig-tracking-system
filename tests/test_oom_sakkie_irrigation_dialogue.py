@@ -297,8 +297,17 @@ class HttpResponse:
         return self
     def __exit__(self, *_):
         return False
-    def read(self):
-        return self.value.encode()
+    def read(self, size=-1):
+        data = self.value.encode()
+        return data if size < 0 else data[:size]
+
+
+@pytest.fixture
+def inert_model_accounting():
+    # Preserve request pricing/admission; isolate persistence for canned HTTP.
+    from tests.farm_model_test_support import isolated_model_budget
+    with isolated_model_budget():
+        yield
 
 
 @pytest.mark.parametrize('basis,context,text', [
@@ -308,7 +317,7 @@ class HttpResponse:
          'telegram_message_id': '700', 'delivery_provider_timestamp': (NOW-timedelta(minutes=5)).isoformat(),
          'clarification_question': 'Is die watervoorraad vol?'}]}, 'Ja.'),
 ])
-def test_actual_semantic_interpreter_preserves_typed_water_meaning_without_wording_gate(basis, context, text):
+def test_actual_semantic_interpreter_preserves_typed_water_meaning_without_wording_gate(basis, context, text, inert_model_accounting):
     value = {'domain': 'rootline', 'intent': 'water_levels_observed', 'message_kind': 'observation',
         'confidence': .99, 'language': 'af', 'observation': text,
         'observation_facts': [{'subject': 'storage_tanks', 'state': 'FULL'}],
@@ -316,7 +325,7 @@ def test_actual_semantic_interpreter_preserves_typed_water_meaning_without_wordi
     result = interpret_owner_message({'text': text, 'provider_timestamp': NOW.isoformat(),
         'reply_to_message_id': '700' if context else ''},
         environ={'OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED': '1',
-            'OOM_SAKKIE_LLM_ROUTER_MODEL': 'synthetic', 'OPENAI_API_KEY': 'synthetic-only'},
+            'OOM_SAKKIE_LLM_ROUTER_MODEL': 'gpt-4.1-mini', 'OPENAI_API_KEY': 'synthetic-only'},
         context_loader=lambda _: context, http_open=lambda *a, **k: HttpResponse(value))
     assert result.observation_facts == ({'subject': 'storage_tanks', 'state': 'FULL'},)
     assert result.needs_clarification is False
@@ -324,7 +333,7 @@ def test_actual_semantic_interpreter_preserves_typed_water_meaning_without_wordi
 
 @pytest.mark.parametrize('new_domain', ['rootline', 'herd_health'])
 @pytest.mark.parametrize('reply', ['', '700'])
-def test_bare_yes_uses_newest_question_across_domains_unless_exact_reply(new_domain, reply):
+def test_bare_yes_uses_newest_question_across_domains_unless_exact_reply(new_domain, reply, inert_model_accounting):
     value = {'domain': 'rootline', 'intent': 'water_levels_observed', 'message_kind': 'observation',
         'confidence': .99, 'observation_facts': [{'subject': 'storage_tanks', 'state': 'FULL'}],
         'water_observation_context': {'source': 'active_question', 'telegram_message_id': '700'}}
@@ -337,7 +346,7 @@ def test_bare_yes_uses_newest_question_across_domains_unless_exact_reply(new_dom
     result = interpret_owner_message({'text': 'Yes.', 'provider_timestamp': NOW.isoformat(),
         'reply_to_message_id': reply},
         environ={'OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED': '1',
-            'OOM_SAKKIE_LLM_ROUTER_MODEL': 'synthetic', 'OPENAI_API_KEY': 'synthetic-only'},
+            'OOM_SAKKIE_LLM_ROUTER_MODEL': 'gpt-4.1-mini', 'OPENAI_API_KEY': 'synthetic-only'},
         context_loader=lambda _: {'recent_turns': turns}, http_open=lambda *a, **k: HttpResponse(value))
     assert bool(result.observation_facts) == bool(reply)
     assert result.needs_clarification == (not bool(reply))

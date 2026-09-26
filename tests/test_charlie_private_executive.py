@@ -13,10 +13,10 @@ class CharliePrivateExecutiveTests(unittest.TestCase):
         class Response:
             def __enter__(self): return self
             def __exit__(self, *_args): return False
-            def read(self): return json.dumps({"choices": [{"message": {"content": "CORE is moving. No owner action is required."}}]}).encode()
+            def read(self, size=-1): return json.dumps({"choices": [{"message": {"content": "CORE is moving. No owner action is required."}}]}).encode()
         plan = build_executive_plan("What is CORE doing?", {"type": "read_core_status", "args": {}, "risk_flags": []}, {})
         evidence = [{"success": True, "intent_type": "read_core_status", "status": 200, "result": {"summary": "One mission is active."}}]
-        reply = compose_executive_reply(plan, evidence, environ={"CHARLIE_PRIVATE_LLM_ENABLED": "true", "CHARLIE_PRIVATE_LLM_MODEL": "test-model", "OPENAI_API_KEY": "secret"}, http_open=lambda *_args, **_kwargs: Response())
+        reply = compose_executive_reply(plan, evidence, environ={"CHARLIE_PRIVATE_LLM_ENABLED": "true", "CHARLIE_PRIVATE_LLM_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"}, http_open=lambda *_args, **_kwargs: Response())
         self.assertEqual(reply, "CORE is moving. No owner action is required.")
 
     def test_synthesis_receives_structured_agent_evidence_and_owner_context(self):
@@ -24,7 +24,7 @@ class CharliePrivateExecutiveTests(unittest.TestCase):
         class Response:
             def __enter__(self): return self
             def __exit__(self, *_args): return False
-            def read(self): return json.dumps({"choices": [{"message": {"content": "You have 6 pigs on the farm."}}]}).encode()
+            def read(self, size=-1): return json.dumps({"choices": [{"message": {"content": "You have 6 pigs on the farm."}}]}).encode()
         def open_request(request, **_kwargs):
             captured.update(json.loads(request.data.decode("utf-8")))
             return Response()
@@ -36,7 +36,7 @@ class CharliePrivateExecutiveTests(unittest.TestCase):
             "sources": [{"name": "pig_current_state"}], "freshness": {"mode": "live"}, "confidence": .99,
             "agent": {"agent_id": "herdmaster", "capability": "herd_inventory"},
         }}]
-        reply = compose_executive_reply(plan, evidence, environ={"CHARLIE_PRIVATE_LLM_ENABLED": "1", "CHARLIE_PRIVATE_LLM_MODEL": "test", "OPENAI_API_KEY": "secret"}, http_open=open_request)
+        reply = compose_executive_reply(plan, evidence, environ={"CHARLIE_PRIVATE_LLM_ENABLED": "1", "CHARLIE_PRIVATE_LLM_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"}, http_open=open_request)
         user = json.loads(captured["messages"][1]["content"])
         self.assertEqual(reply, "You have 6 pigs on the farm.")
         self.assertEqual(user["owner_preferences"]["owner_instruction"], "Be direct")
@@ -102,3 +102,13 @@ class CharliePrivateExecutiveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def setUpModule():
+    from tests.farm_model_test_support import isolated_model_budget
+    global _model_budget_test_scope
+    _model_budget_test_scope = isolated_model_budget()
+
+
+def tearDownModule():
+    _model_budget_test_scope.close()

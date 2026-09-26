@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from modules.oom_sakkie.model_budget import budgeted_urlopen
+
 import base64
 import json
 import os
@@ -66,7 +68,7 @@ def transcribe_chatwoot_voice(attachment: Mapping[str, Any], _payload=None, *, e
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=25) as response:
+        with budgeted_urlopen(request, timeout=25, purpose="sam_media", environ=source) as response:
             result = json.loads(response.read().decode("utf-8"))
         return {"status": "transcribed", "transcript": clean(result.get("text"), 1800), **policy}
     except Exception as exc:
@@ -102,7 +104,7 @@ def classify_chatwoot_image(attachment: Mapping[str, Any], payload=None, *, envi
             headers={"Authorization": f"Bearer {str(source.get(OPENAI_API_KEY_ENV) or '').strip()}", "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=25) as response:
+        with budgeted_urlopen(request, timeout=25, purpose="sam_media", environ=source) as response:
             result = json.loads(response.read().decode("utf-8"))
         content = result["choices"][0]["message"]["content"]
         parsed = json.loads(content)

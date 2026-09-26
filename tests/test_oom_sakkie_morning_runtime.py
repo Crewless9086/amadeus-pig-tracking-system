@@ -314,6 +314,9 @@ def test_one_recipient_provider_failure_does_not_block_other_recipient():
     retry_barrier = __import__("threading").Barrier(2)
     concurrent_phase = [False]
     def store(action, identity, payload):
+        if action in {"load_notification_state", "load_notification_failure"}:
+            from tests.test_oom_sakkie_daily_farm_manager import notification_state
+            return notification_state(events.values(), identity, payload)
         if action == "load_daily":
             value = daily.get((identity, payload["owner_user_id"], payload["chat_id"]))
             if concurrent_phase[0] and payload["owner_user_id"] == "77" \
@@ -322,6 +325,9 @@ def test_one_recipient_provider_failure_does_not_block_other_recipient():
             return value
         if action == "load_answered_questions": return ()
         if action == "record_daily":
+            events.setdefault(identity, dict(payload))
+            if payload.get("status") == "notification_backoff":
+                return {"success": True, "created": True}
             key = (payload["daily_identity"], payload.get("owner_user_id", ""),
                    payload.get("chat_id", ""))
             daily[key] = dict(payload)
@@ -351,6 +357,10 @@ def test_one_recipient_provider_failure_does_not_block_other_recipient():
     assert outcome["success"] is False and outcome["telegram_sends"] == 1
     assert [row["status"] for row in outcome["recipient_results"]] == [
         "daily_manager_presented", "daily_manager_delivery_ambiguous"]
+    blocked = run_morning_cycle(**args)
+    assert blocked["recipient_results"][1]["status"] == "daily_manager_failure_backoff"
+    from datetime import timedelta
+    args["now"] = NOW + timedelta(minutes=31)
     concurrent_phase[0] = True
     with ThreadPoolExecutor(max_workers=2) as executor:
         recovered = list(executor.map(lambda _: run_morning_cycle(**args), range(2)))
@@ -361,3 +371,39 @@ def test_one_recipient_provider_failure_does_not_block_other_recipient():
     assert sum(row["telegram_sends"] for row in recovered) == 1
     assert daily[("OOM-DAILY-FARM-MANAGER-2026-08-13", "42", "42")]["telegram_message_id"] == "charl-card"
     assert daily[("OOM-DAILY-FARM-MANAGER-2026-08-13", "77", "77")]["telegram_message_id"] == "anton-card"
+
+
+def test_real_morning_two_recipients_routine_changes_are_silent_without_any_model(monkeypatch):
+    from datetime import timedelta
+    from modules.oom_sakkie import daily_farm_manager as daily, farm_manager_runtime as runtime
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery, snapshot, NOW as MORNING_NOW
+    memory = MemoryDelivery(monkeypatch)
+    def forbidden(*a, **k): pytest.fail("routine paid inference")
+    monkeypatch.setattr(daily, "_semantic_prioritize", forbidden)
+    state = snapshot()
+    # Each simulated tick carries fresh timestamps with unchanged facts.
+    def herd_snapshot(owner, now):
+        state["canonical"]["generated_at"] = now.isoformat()
+        return state
+    monkeypatch.setattr(runtime, "_load_herdmaster_snapshot", herd_snapshot)
+    rootline = {"success": True, "result_id": "ROOTLINE-ONE", "recommendations": [
+        {"subject": "B12345", "status": "Hold", "reason": "Available evidence does not establish enough current deficit for irrigation."}],
+        "owner_brief": {"family_fact_needed": ""}}
+    monkeypatch.setattr(runtime, "_load_rootline_snapshot", lambda *a: {"raw": rootline})
+    kwargs = dict(environ=_two_manager_env(), deliver=memory.deliver, replace_brief=memory.replace,
+        litter_loader=lambda: {"allocation_inputs": {"litter_rows": []}},
+        sales_loader=lambda: ({"success": True, "sales_transactions": []}, 200))
+    first = run_morning_cycle(now=MORNING_NOW, **kwargs)
+    assert first["success"] and first["telegram_sends"] == 2
+    for minute in (5, 10):
+        outcome = run_morning_cycle(now=MORNING_NOW + timedelta(minutes=minute), **kwargs)
+        assert outcome["success"] and outcome["telegram_sends"] == 0, outcome
+    rootline["recommendations"][0]["reason"] = "Summer evaporation favours an evening or night window."
+    for minute in (15, 20):
+        outcome = run_morning_cycle(now=MORNING_NOW + timedelta(minutes=minute), **kwargs)
+        assert outcome["success"] and outcome["telegram_sends"] == 0, outcome
+        assert all(row["status"] == "daily_manager_routine_coalesced" for row in outcome["recipient_results"])
+    assert len(memory.sends) == 2 and not memory.replacements and not memory.deletions
+    tomorrow = run_morning_cycle(now=MORNING_NOW + timedelta(days=1, hours=6), **kwargs)
+    assert tomorrow["success"] and tomorrow["telegram_sends"] == 2
+    assert len(memory.sends) == 4

@@ -942,28 +942,21 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     @patch.dict(os.environ, {"OOM_SAKKIE_STT_ENABLED": "1", "OPENAI_API_KEY": "test-key"}, clear=True)
     @patch("modules.oom_sakkie.voice_stt.urllib.request.urlopen")
-    def test_backend_voice_stt_transcribes_without_storage_or_writes(self, urlopen):
-        response = Mock()
-        response.read.return_value = json.dumps({"text": "show me the safety gates"}).encode("utf-8")
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        urlopen.return_value = response
+    def test_backend_voice_stt_unpriced_audio_stops_before_provider(self, urlopen):
         upload = Mock()
         upload.mimetype = "audio/webm"
         upload.read.return_value = b"fake-audio"
-
         result, status_code = transcribe_oom_sakkie_voice_audio(upload)
-
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertEqual(result["text"], "show me the safety gates")
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["model_budget_denied"])
+        self.assertTrue(result["text_only"])
+        self.assertIn("type", result["answer"].lower())
         self.assertFalse(result["always_on_mic_enabled"])
         self.assertFalse(result["stores_audio"])
         self.assertFalse(result["writes"])
         self.assertFalse(result["dispatch_enabled"])
-        request = urlopen.call_args.args[0]
-        self.assertEqual(request.get_method(), "POST")
-        self.assertIn("multipart/form-data", request.headers["Content-type"])
+        urlopen.assert_not_called()
 
     @patch.dict(os.environ, {}, clear=True)
     def test_backend_voice_stt_is_fail_closed_without_explicit_enable(self):
@@ -1045,7 +1038,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
         "OPENAI_API_KEY": "test-key",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
     }, clear=True)
     def test_telegram_direct_policy_discloses_explicit_ledger_llm_egress_when_enabled(self):
         policy = get_runtime_policy()
@@ -1199,9 +1192,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
@@ -1240,9 +1233,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     @patch("modules.oom_sakkie.service.get_tool")
@@ -1271,9 +1264,9 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
@@ -1904,9 +1897,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
@@ -2931,7 +2924,7 @@ def literal_false_is_allowed():
     def test_agent_authority_matrix_surfaces_effective_single_shot_env_gate(self):
         with patch.dict(os.environ, {
             "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
             "OPENAI_API_KEY": "test-key",
         }, clear=False):
             matrix = get_agent_authority_matrix()
@@ -4618,7 +4611,7 @@ def literal_false_is_allowed():
     @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_execution_approval")
     @patch.dict(os.environ, {
         "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     def test_sentinel_single_shot_runner_refuses_consumed_approval_before_network(
@@ -4658,7 +4651,7 @@ def literal_false_is_allowed():
     @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_execution_approval")
     @patch.dict(os.environ, {
         "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     def test_sentinel_single_shot_runner_refuses_missing_approval_before_network(self, mock_get_approval, mock_urlopen):
@@ -4681,7 +4674,7 @@ def literal_false_is_allowed():
     @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_execution_approval")
     @patch.dict(os.environ, {
         "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     def test_sentinel_single_shot_runner_success_writes_append_only_result(
@@ -4700,7 +4693,7 @@ def literal_false_is_allowed():
             def __exit__(self, *_args):
                 return False
 
-            def read(self):
+            def read(self, size=-1):
                 return json.dumps({
                     "choices": [{
                         "message": {
@@ -4764,7 +4757,7 @@ def literal_false_is_allowed():
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
     def test_specialist_dry_run_policy_exposes_egress_and_no_write(self):
@@ -5369,7 +5362,7 @@ def literal_false_is_allowed():
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
         "OPENAI_API_KEY": "test-key",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
     }, clear=True)
     @patch("modules.oom_sakkie.ledger_agent.urllib_request.urlopen")
     @patch("modules.oom_sakkie.tools.get_meat_planning_data")
@@ -5430,7 +5423,7 @@ def literal_false_is_allowed():
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
         "OPENAI_API_KEY": "test-key",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
     }, clear=True)
     @patch("modules.oom_sakkie.tools.record_sales_campaign")
     @patch("modules.oom_sakkie.ledger_agent.urllib_request.urlopen")
@@ -5491,7 +5484,7 @@ def literal_false_is_allowed():
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
         "OPENAI_API_KEY": "test-key",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
     }, clear=True)
     @patch("modules.oom_sakkie.ledger_agent.urllib_request.urlopen")
     @patch("modules.oom_sakkie.tools.get_meat_planning_data")
@@ -7732,7 +7725,7 @@ def literal_false_is_allowed():
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "true",
         "OPENAI_API_KEY": "test-key",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
     }, clear=True)
     @patch("modules.oom_sakkie.llm_router.urllib_request.urlopen", side_effect=urllib_error.URLError("offline"))
     def test_llm_router_network_failure_fails_closed(self, _urlopen):
@@ -7778,7 +7771,7 @@ def literal_false_is_allowed():
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "true",
         "OPENAI_API_KEY": "test-key",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
     }, clear=True)
     @patch("modules.oom_sakkie.llm_answer.urllib_request.urlopen")
     def test_llm_answer_rejects_off_topic_single_tool_disclaimer(self, mock_urlopen):
@@ -7805,7 +7798,7 @@ def literal_false_is_allowed():
 
         self.assertIsNone(answer)
 
-    @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model"}, clear=True)
+    @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini"}, clear=True)
     def test_llm_answer_prompt_is_spoken_copilot_not_generic_reader(self):
         payload = _build_payload(
             user_text="what needs attention",
@@ -8004,7 +7997,7 @@ def literal_false_is_allowed():
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "true",
         "OPENAI_API_KEY": "test-key",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini",
     }, clear=True)
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.tools.get_current_power_state")
@@ -9551,3 +9544,13 @@ def literal_false_is_allowed():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def setUpModule():
+    from tests.farm_model_test_support import isolated_model_budget
+    global _model_budget_test_scope
+    _model_budget_test_scope = isolated_model_budget()
+
+
+def tearDownModule():
+    _model_budget_test_scope.close()

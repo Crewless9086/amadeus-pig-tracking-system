@@ -1,3 +1,5 @@
+
+from modules.oom_sakkie.model_budget import budgeted_urlopen
 import hmac
 import hashlib
 import json
@@ -6123,7 +6125,7 @@ def _call_sam_live_stock_reply_llm(context_packet, source):
         method="POST",
     )
     try:
-        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+        with budgeted_urlopen(req, timeout=_timeout(source), purpose="sam_livestock_reply", environ=source) as response:
             body = response.read().decode("utf-8")
     except urllib_error.HTTPError as exc:
         return _llm_error_payload("http_error", exc)

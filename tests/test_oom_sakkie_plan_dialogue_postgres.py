@@ -159,12 +159,16 @@ def test_group_plan_partial_restart_answer_retirement_and_next_cycle(journey,lan
     current=daily.run_daily_farm_manager(owner_user_id=actor,chat_id=actor,
         specialist_results=[result],litter_rows=[],deliver=family.deliver_family_result,
         now=NOW+timedelta(minutes=5),language=language)
-    assert current['success'],current
-    delivered_count=len(j['provider'])
+    # Retiring the answered question changes the briefing digest, but is not
+    # a new owner decision: both subsequent cycles must coalesce silently.
+    assert current['success'] and current['status']=='daily_manager_routine_coalesced',current
+    assert current['telegram_sends']==current['telegram_edits']==0
+    assert len(j['provider'])==delivered_count
     unchanged=daily.run_daily_farm_manager(owner_user_id=actor,chat_id=actor,
         specialist_results=[result],litter_rows=[],deliver=family.deliver_family_result,
         now=NOW+timedelta(minutes=10),language=language)
-    assert unchanged['status']=='daily_manager_unchanged_silent'
+    assert unchanged['status']=='daily_manager_routine_coalesced'
+    assert unchanged['telegram_sends']==unchanged['telegram_edits']==0
     assert len(j['provider'])==delivered_count
     with psycopg.connect(DSN) as db:
         assert db.execute('select count(*) from public.pig_observation_events where pig_id=%s',(j['pig'],)).fetchone()[0]==0

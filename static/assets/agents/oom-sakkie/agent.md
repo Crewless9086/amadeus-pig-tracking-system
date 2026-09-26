@@ -7,7 +7,7 @@ Status: `GENERATED / NON_DOCTRINE`
 - UI role label: `Command`
 - Canonical role: owner/farm-team facing farm commander under CHARLIE.
 - Canonical doctrine: `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md`
-- Canonical doctrine SHA-256: `8038917b65f82b018be66c109f3972349beea656014ff251197812f2067c9772`
+- Canonical doctrine SHA-256: `1b5732bb9a43c2911388d725ef2e32ae34bb696425472712be54a769b94529f3`
 - Asset metadata: `static/assets/agents/oom-sakkie/agent.json`
 - Asset metadata SHA-256: `1852ad4c00488d38a9f0205c957a36ca00785e84a0d39dbf539df6df44cd7868`
 - Central asset registry: `static/assets/agents/agent_registry.json`

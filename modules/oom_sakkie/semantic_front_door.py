@@ -6,6 +6,8 @@ specialist boundaries retain every write, send, publication and control gate.
 
 from __future__ import annotations
 
+from modules.oom_sakkie.model_budget import ModelBudgetError, budgeted_urlopen
+
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
@@ -85,8 +87,7 @@ def interpret_media_owner_context(owner_context: str, asset_sha256: str, *, envi
         headers={"Authorization": f"Bearer {str(source.get(API_KEY_ENV) or '').strip()}",
                  "Content-Type": "application/json"}, method="POST")
     try:
-        opener = http_open or urllib_request.urlopen
-        with opener(request, timeout=_timeout(source)) as response:
+        with budgeted_urlopen(request, timeout=_timeout(source), purpose="oom_media_context", environ=source, http_open=http_open) as response:
             body = response.read().decode("utf-8")
         envelope = json.loads(body or "{}")
         value = json.loads(_strip_fence(str(envelope["choices"][0]["message"]["content"] or "")))
@@ -147,9 +148,10 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
         headers={"Authorization": f"Bearer {str(source.get(API_KEY_ENV) or '').strip()}",
                  "Content-Type": "application/json"}, method="POST")
     try:
-        opener = http_open or urllib_request.urlopen
-        with opener(request, timeout=_timeout(source)) as response:
+        with budgeted_urlopen(request, timeout=_timeout(source), purpose="oom_owner_interpretation", environ=source, http_open=http_open) as response:
             body = response.read().decode("utf-8")
+    except ModelBudgetError:
+        raise
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError, ValueError):
         return None
     result = parse_semantic_response(body)

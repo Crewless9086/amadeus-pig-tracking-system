@@ -22,7 +22,7 @@ class BeaconPostComposerTests(unittest.TestCase):
             historical_events=HISTORY,
             environ={
                 "BEACON_BACKEND_LLM_ENABLED": "1",
-                "BEACON_BACKEND_LLM_MODEL": "test-model",
+                "BEACON_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "not-used-by-fake",
             },
             requester=requester,
@@ -75,3 +75,13 @@ class BeaconPostComposerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def setUpModule():
+    from tests.farm_model_test_support import isolated_model_budget
+    global _model_budget_test_scope
+    _model_budget_test_scope = isolated_model_budget()
+
+
+def tearDownModule():
+    _model_budget_test_scope.close()

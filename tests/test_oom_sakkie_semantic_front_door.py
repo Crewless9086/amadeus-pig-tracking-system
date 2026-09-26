@@ -12,7 +12,7 @@ from modules.oom_sakkie.semantic_front_door import (
 
 
 MEDIA_ENV = {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-    "OOM_SAKKIE_LLM_ROUTER_MODEL": "semantic-test", "OPENAI_API_KEY": "secret"}
+    "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"}
 
 
 def test_media_context_uses_typed_affirmative_semantics_and_binds_digest():
@@ -23,7 +23,7 @@ def test_media_context_uses_typed_affirmative_semantics_and_binds_digest():
     result = interpret_media_owner_context("Bella het pas 13 varkies gekry", "a" * 64,
         environ=MEDIA_ENV, http_open=lambda *_args, **_kwargs: _HttpResponse(_response(value)))
     assert result.subject_tags == ("litter", "live_stock", "piglets")
-    assert result.model == "semantic-test" and len(result.semantic_digest) == 64
+    assert result.model == "gpt-4.1-mini" and len(result.semantic_digest) == 64
 
 
 @pytest.mark.parametrize("override", [
@@ -49,7 +49,7 @@ class _HttpResponse:
     def __init__(self, body): self.body = body
     def __enter__(self): return self
     def __exit__(self, *_args): return False
-    def read(self): return self.body.encode()
+    def read(self, size=-1): return self.body.encode()
 
 
 def _semantic(domain, intent, **extra):
@@ -129,7 +129,7 @@ def test_actual_natural_farrowing_phrase_family_reaches_one_typed_contract(text,
         return _HttpResponse(_response(semantic))
     result = interpret_owner_message({"text": text, "provider_message_id": "NATURAL-LITTER"},
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"},
         context_loader=lambda parsed: {}, http_open=opener)
     assert result.intent == "record_farrowing_litter"
     assert result.farrowing_litter["total_born"] == 9
@@ -140,7 +140,7 @@ def test_actual_natural_farrowing_phrase_family_reaches_one_typed_contract(text,
 
 def test_semantic_front_door_is_llm_first_but_has_zero_authority():
     policy = semantic_front_door_policy({"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"})
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"})
     assert policy["enabled"] and policy["configured"]
     assert not policy["can_execute"] and not policy["can_write"]
     assert not policy["can_send"] and not policy["can_control_hardware"]
@@ -160,7 +160,7 @@ def test_awareness_semantic_family_preserves_stable_intent(text, language, conti
             message_kind="request", language=language, continuation=continuation)))
     result = interpret_owner_message({"text": text, "provider_message_id": "AWARENESS-1"},
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"},
         context_loader=lambda parsed: ({"recent_turns": [{"semantic_domain": "beacon",
             "semantic_intent": "live_stock_awareness"}]} if continuation else {}), http_open=open_request)
     assert result.domain == "beacon" and result.intent == "live_stock_awareness"
@@ -182,7 +182,7 @@ def test_private_media_review_semantic_family_preserves_stable_intent(text, lang
             message_kind="request", language=language, continuation=continuation)))
     result = interpret_owner_message({"text": text, "provider_message_id": "MEDIA-REVIEW-1"},
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"},
         context_loader=lambda parsed: ({"recent_turns": [{"semantic_domain": "beacon",
             "semantic_intent": "private_media_library_review"}]} if continuation else {}),
         http_open=open_request)
@@ -208,7 +208,7 @@ def test_documents_print_semantic_family_uses_one_stable_intent(
             protected_preview_required=True)))
     result=interpret_owner_message({"text":text,"provider_message_id":"DOC-PRINT-1"},
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini","OPENAI_API_KEY":"secret"},
         context_loader=lambda parsed:({"recent_turns":[{
             "semantic_domain":"documents",
             "semantic_intent":"weekly_weighing_sheet_print"}]} if continuation else {}),
@@ -225,7 +225,7 @@ def test_ambiguous_documents_semantic_result_retains_one_clarification():
         "clarification_question":"Do you want the weekly weighing sheet printed?"})
     result=interpret_owner_message({"text":"Print that one","provider_message_id":"DOC-2"},
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini","OPENAI_API_KEY":"secret"},
         context_loader=lambda parsed:{},
         http_open=lambda request,timeout:_HttpResponse(_response(payload)))
     assert result.domain=="documents" and result.needs_clarification is True
@@ -236,7 +236,7 @@ def test_unrelated_print_language_is_not_documents_intent():
     result=interpret_owner_message({"text":"What is today's farm plan?",
         "provider_message_id":"DOC-3"},
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini","OPENAI_API_KEY":"secret"},
         context_loader=lambda parsed:{},http_open=lambda request,timeout:_HttpResponse(
             _response(_semantic("manager_round","daily_brief",message_kind="question"))))
     assert result.domain=="manager_round" and result.intent=="daily_brief"
@@ -379,7 +379,7 @@ def test_delayed_short_readiness_reply_receives_typed_active_context(text,langua
     result=interpret_owner_message({"text":text,"telegram_user_id":"42","telegram_chat_id":"42",
         "provider_message_id":"3501","provider_timestamp":"2026-08-17T09:44:00+00:00"},
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini","OPENAI_API_KEY":"secret"},
         context_loader=lambda parsed:{"recent_turns":_eligible_clarification_context([notice],parsed)},
         http_open=opener)
     sent=json.loads(captured["messages"][1]["content"])["context"]
@@ -406,7 +406,7 @@ def test_completed_lifecycle_suppresses_old_typed_wait_from_semantic_context(tex
             needs_clarification=True,clarification_question="What should I help with?")))
     result=interpret_owner_message(parsed,
         environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
-            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini","OPENAI_API_KEY":"secret"},
         context_loader=lambda value:{"recent_turns":_eligible_clarification_context(
             [completed,notice],value)},http_open=opener)
     sent=json.loads(captured["messages"][1]["content"])["context"]
@@ -419,7 +419,7 @@ def test_stale_context_cannot_turn_ambiguous_reply_into_canonical_water_facts():
             {"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}])
     result=interpret_owner_message({"text":"Albei vol","provider_message_id":"3477",
         "provider_timestamp":"2026-08-09T07:33:06+00:00"},
-        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"test",
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini",
                  "OPENAI_API_KEY":"secret"},http_open=lambda *_args,**_kwargs:_HttpResponse(_response(response)),
         context_loader=lambda _parsed:{"recent_turns":[{"state":"delivered","telegram_message_id":"700",
             "delivery_provider_timestamp":"2026-08-08T07:30:00+00:00","semantic_domain":"rootline",
@@ -433,7 +433,7 @@ def test_generic_singular_tank_words_cannot_select_a_canonical_subject():
             observation=text,observation_facts=[{"subject":"storage_tanks","state":"FULL"}])
         result=interpret_owner_message({"text":text,"provider_message_id":"3477",
             "provider_timestamp":"2026-08-09T07:33:06+00:00"},
-            environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"test",
+            environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini",
                      "OPENAI_API_KEY":"secret"},http_open=lambda *_args,body=_response(response),**_kwargs:_HttpResponse(body),
             context_loader=lambda _parsed:{"recent_turns":[]})
         assert result.observation_facts==()
@@ -450,7 +450,7 @@ def test_fresh_exact_context_allows_natural_afrikaans_short_reply():
         "clarification_question":"Storage tanks, reservoir, or both?"}]}
     result=interpret_owner_message({"text":"Albei vol","provider_message_id":"3477",
         "provider_timestamp":"2026-08-09T07:33:06+00:00","reply_to_message_id":"700"},
-        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"test",
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini",
                  "OPENAI_API_KEY":"secret"},http_open=lambda *_args,**_kwargs:_HttpResponse(_response(response)),
         context_loader=lambda _parsed:context)
     assert len(result.observation_facts)==2 and result.needs_clarification is False
@@ -475,7 +475,7 @@ def test_interpreter_receives_bounded_active_context():
     parsed = {"text": "Hy is baie swak", "telegram_user_id": "42", "telegram_chat_id": "42",
         "provider_message_id": "9", "reply_to_message_id": "8"}
     result = interpret_owner_message(parsed, environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"},
         context_loader=lambda _parsed: {"active_cases": [{"tag": str(i)} for i in range(20)],
                                         "recent_turns": [{"text": str(i)} for i in range(20)]},
         http_open=opener)
@@ -498,7 +498,7 @@ def test_gateway_attaches_semantic_hint_before_specialist_routing(interpret, ope
         "mission_id": "OOM-ROOTLINE-1", "writes_farm_data": False}, 200)
     env = {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "g" * 40,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42", "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"}
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "secret"}
     payload = {"message": {"message_id": 3219, "date": 1785790000, "text": "C Camp has stopped",
         "from": {"id": 42}, "chat": {"id": 42, "type": "private"}}}
     with patch.dict("os.environ", env, clear=True), patch(
@@ -522,7 +522,7 @@ def test_gateway_documents_ambiguity_asks_once_without_print_claim(interpret,del
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"g"*40,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42",
         "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
-        "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"}
+        "OOM_SAKKIE_LLM_ROUTER_MODEL":"gpt-4.1-mini","OPENAI_API_KEY":"secret"}
     payload={"message":{"message_id":3220,"date":1785790001,"text":"Print that one",
         "from":{"id":42},"chat":{"id":42,"type":"private"}}}
     with patch.dict("os.environ",env,clear=True), patch(
@@ -686,3 +686,13 @@ def test_parse_semantic_response_preserves_only_bounded_breeding_actions():
     assert result.breeding_actions[0]["animal_ref"] == "Ms Piggy"
     assert result.breeding_actions[0]["body_condition_score"] == 2
     assert result.breeding_actions[1]["action"] == "near_farrowing"
+
+
+def setUpModule():
+    from tests.farm_model_test_support import isolated_model_budget
+    global _model_budget_test_scope
+    _model_budget_test_scope = isolated_model_budget()
+
+
+def tearDownModule():
+    _model_budget_test_scope.close()

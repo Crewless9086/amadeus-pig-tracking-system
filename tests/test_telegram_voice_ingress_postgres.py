@@ -2,6 +2,8 @@
 
 No microphone, spoken audio, live recognition, Telegram send or hardware call.
 The existing canonical writers and durable dialogue/claim/delivery stores run.
+Successful recovery cases inject the transcription boundary explicitly; they do
+not claim production audio is enabled. A separate case proves real budget denial.
 """
 import copy
 from datetime import datetime, timedelta, timezone
@@ -16,7 +18,7 @@ import pytest
 
 from app import app
 from modules.oom_sakkie import telegram_voice as voice, telegram_gateway as gateway
-from modules.oom_sakkie import semantic_front_door
+from modules.oom_sakkie import semantic_front_door, voice_stt
 from modules.sales import sam_live_stock_launch_control
 from tests import test_litter_weaning_ingress_postgres as weaning
 from tests import test_litter_first_treatment_ingress_postgres as treatment
@@ -60,11 +62,21 @@ def _configure(j, monkeypatch):
         lambda *a, **k: ({'success': True, 'status': 'SYNTHETIC-ACK'}, 200))
 
 
+def _canned_transcription(monkeypatch, provider):
+    # Qualify downstream recovery without bypassing the production budget guard.
+    def transcribe(audio_bytes, content_type, policy, **kwargs):
+        assert audio_bytes == provider.audio
+        assert kwargs['language'] == provider.language
+        return provider.transcript
+    monkeypatch.setattr(voice_stt, '_call_openai_transcription', transcribe)
+
+
 def _voice(j, monkeypatch, transport, transcript, *, reply=''):
     j['message_sequence'] += 10
     payload = voice_payload(j['actor'], j['message_sequence'], reply=reply)
     principal = voice._authorize_native(payload, gateway.parse_telegram_gateway_payload(payload), os.environ)
     provider = CannedVoiceProvider(payload, transcript, language=principal.language)
+    _canned_transcription(monkeypatch, provider)
     monkeypatch.setattr(voice.urllib.request, 'build_opener', lambda *a: provider)
     response = post(j['client'], transport, payload, secret=j['token'])
     return response, payload, provider
@@ -149,7 +161,7 @@ def test_voice_weaning_retains_short_reply_previews_and_only_button_commits(wean
     weaning.semantic(monkeypatch, {'sow_ref': j['sow'], 'action_date': 'gister', 'notes': 'Almal drink water.'})
     response, first, provider = _voice(j, monkeypatch, transport, 'Die varkies is gister gespeen. Almal drink water.')
     assert response.status_code == 200 and weaning.action(response)['question_count'] == 1, response.get_json()
-    assert len(provider.requests) == 3 and weaning.state(j) == before
+    assert len(provider.requests) == 2 and weaning.state(j) == before
     weaning.semantic(monkeypatch, {'scope': 'all_current'}, continuation=True)
     response, second, provider = _voice(j, monkeypatch, transport, 'Ja, almal in die werpsel.')
     preview = weaning.action(response); card = j['deliveries'][-1]['message_id']
@@ -161,9 +173,9 @@ def test_voice_weaning_retains_short_reply_previews_and_only_button_commits(wean
     assert retained['provenance']['reported_input_only'] and not retained['provenance']['stores_audio']
     sent = len(j['deliveries'])
     repeat = post(j['client'], transport, second, secret=j['token'])
-    assert repeat.status_code == 200 and len(provider.requests) == 3 and len(j['deliveries']) == sent
+    assert repeat.status_code == 200 and len(provider.requests) == 2 and len(j['deliveries']) == sent
     cross_route = post(j['client'], 'direct' if transport == 'gateway' else 'gateway', second, secret=j['token'])
-    assert cross_route.status_code == 200 and len(provider.requests) == 3 and len(j['deliveries']) == sent
+    assert cross_route.status_code == 200 and len(provider.requests) == 2 and len(j['deliveries']) == sent
     weaning.semantic(monkeypatch, {}, continuation=True, message_kind='confirmation')
     response, consent, provider = _voice(j, monkeypatch, transport, 'Ja, teken daardie presiese feite aan.', reply=card)
     assert weaning.action(response)['status'] == 'telegram_voice_preview_button_required', response.get_json()
@@ -216,7 +228,7 @@ def test_voice_mortality_uses_original_identity_and_existing_canonical_writer(mo
     response, original, provider = _voice(j, monkeypatch, transport, f'Vark {j["tag"]} is gister dood. Nog nie begrawe nie.')
     preview = weaning.action(response); card = j['deliveries'][-1]['message_id']
     assert response.status_code == 200 and preview['status'] == 'preview_ready', response.get_json()
-    assert mortality.state(j) == before and len(provider.requests) == 3
+    assert mortality.state(j) == before and len(provider.requests) == 2
     confirmed = post(j['client'], transport, _callback(j, preview, card), secret=j['token'])
     assert confirmed.status_code == 201, confirmed.get_json()
     after = mortality.state(j)
@@ -234,11 +246,11 @@ def test_recognition_is_retained_before_semantic_failure_and_retry_never_retrans
     monkeypatch.setattr(gateway, 'interpret_owner_message', Mock(side_effect=RuntimeError('SYNTHETIC semantic interruption')))
     response, original, provider = _voice(j, monkeypatch, 'gateway', 'Die hele werpsel is gister gespeen.')
     assert response.status_code >= 500
-    assert _retained(original)['status'] == 'transcribed' and len(provider.requests) == 3
+    assert _retained(original)['status'] == 'transcribed' and len(provider.requests) == 2
     weaning.semantic(monkeypatch, {'sow_ref': j['sow'], 'action_date': 'gister', 'scope': 'all_current'})
     response = post(j['client'], 'gateway', original, secret=j['token'])
     assert response.status_code == 200 and weaning.action(response)['status'] == 'litter_weaning_preview_ready', response.get_json()
-    assert len(provider.requests) == 3 and weaning.state(j)['receipts'] == 0
+    assert len(provider.requests) == 2 and weaning.state(j)['receipts'] == 0
 
 
 def test_started_attempt_and_changed_provider_binding_never_repeat_provider_work(weaning_ingress, monkeypatch):
@@ -283,6 +295,7 @@ def test_spoken_ja_replies_to_delivered_daily_question_and_keeps_prior_facts(que
     payload['message']['date'] = int((moment + timedelta(minutes=2)).timestamp())
     j['provider_clock'][0] = moment + timedelta(minutes=2)
     provider = CannedVoiceProvider(payload, 'Ja.')
+    _canned_transcription(monkeypatch, provider)
     monkeypatch.setattr(voice.urllib.request, 'build_opener', lambda *a: provider)
     real_interpret = gateway.interpret_owner_message
     def interpret(parsed, **kwargs):
@@ -309,7 +322,7 @@ def test_spoken_ja_replies_to_delivered_daily_question_and_keeps_prior_facts(que
     assert dialogue.questions._load_questions(j['actor'], j['actor']) == []
     sent = len(j['provider'])
     duplicate = post(app.test_client(), 'gateway', payload, secret=j['token'])
-    assert duplicate.status_code == 200 and len(provider.requests) == 3 and len(j['provider']) == sent
+    assert duplicate.status_code == 200 and len(provider.requests) == 2 and len(j['provider']) == sent
     assert _retained(payload)['text'] == 'Ja.'
     with psycopg.connect(os.environ['DATABASE_URL']) as db:
         assert db.execute('select count(*) from public.pig_observation_events where pig_id=%s', (j['pig'],)).fetchone()[0] == 0
@@ -356,7 +369,7 @@ def test_voice_standing_authority_mixer_request_never_constructs_transport(weani
     monkeypatch.setattr(mixer, 'RootlineIFTTTTransport', transport)
     response, _, provider = _voice(j, monkeypatch, 'gateway', 'Start the mixer.')
     assert response.status_code == 200 and weaning.action(response)['status'] == 'telegram_voice_preview_button_required', response.get_json()
-    assert weaning.action(response)['hardware_commands'] == 0 and len(provider.requests) == 3
+    assert weaning.action(response)['hardware_commands'] == 0 and len(provider.requests) == 2
     transport.assert_not_called()
 
 
@@ -365,6 +378,7 @@ def test_authenticated_voice_cannot_mint_delegated_irrigation_execution(weaning_
     j = weaning_ingress; _configure(j, monkeypatch)
     payload = voice_payload(j['actor'])
     provider = CannedVoiceProvider(payload, 'Begin die besproeiing.')
+    _canned_transcription(monkeypatch, provider)
     monkeypatch.setattr(voice.urllib.request, 'build_opener', lambda *a: provider)
     parsed, failure = voice.prepare_telegram_voice_input(payload, gateway.parse_telegram_gateway_payload(payload))
     assert failure is None
@@ -408,6 +422,7 @@ def test_failed_or_uncertain_recognition_has_durable_non_retranscribing_replay(w
         opener = Mock(side_effect=OSError('SYNTHETIC provider unavailable'))
         monkeypatch.setattr(voice.urllib.request, 'build_opener', opener)
     else:
+        _canned_transcription(monkeypatch, provider)
         monkeypatch.setattr(voice.urllib.request, 'build_opener', lambda *a: provider)
         monkeypatch.setattr(voice, '_retain_input', Mock(side_effect=RuntimeError('SYNTHETIC interrupted result retention')))
     before = weaning.state(j)
@@ -420,4 +435,26 @@ def test_failed_or_uncertain_recognition_has_durable_non_retranscribing_replay(w
     if fault == 'provider':
         assert opener.call_count == 1 and _retained(payload)['status'] == 'failed'
     else:
-        assert len(provider.requests) == 3 and len(snapshot) == 1
+        assert len(provider.requests) == 2 and len(snapshot) == 1
+
+
+@pytest.mark.parametrize('transport', ['gateway', 'direct'])
+def test_unpriced_voice_is_denied_without_paid_call_or_farm_write(weaning_ingress, monkeypatch, transport):
+    j = weaning_ingress; _configure(j, monkeypatch)
+    payload = voice_payload(j['actor'])
+    provider = CannedVoiceProvider(payload, 'Must never be transcribed')
+    # Keep the real transcription and budget boundary for this case.
+    monkeypatch.setattr(voice.urllib.request, 'build_opener', lambda *a: provider)
+    before = weaning.state(j)
+    response = post(j['client'], transport, payload, secret=j['token'])
+    assert response.status_code == 503, response.get_json()
+    assert response.get_json()['status'] == 'farm_model_budget_endpoint_unpriced'
+    assert 'Tik asseblief' in response.get_json()['answer']
+    assert len(provider.requests) == 2
+    assert _retained(payload)['failure_status'] == 'farm_model_budget_endpoint_unpriced'
+    sent = len(j['deliveries'])
+    snapshot = _input_rows(payload)
+    repeat = post(j['client'], 'direct' if transport == 'gateway' else 'gateway', payload, secret=j['token'])
+    assert repeat.status_code == 503
+    assert len(provider.requests) == 2 and len(j['deliveries']) == sent
+    assert _input_rows(payload) == snapshot and weaning.state(j) == before

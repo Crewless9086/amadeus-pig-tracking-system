@@ -15,7 +15,7 @@ from modules.oom_sakkie.farm_manager_loop import Authority, Provenance, Speciali
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 
 NOW = datetime.now(timezone.utc).replace(microsecond=0)
-MODEL_ENV = {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1", "OOM_SAKKIE_LLM_ROUTER_MODEL": "inert-test", "OPENAI_API_KEY": "inert"}
+MODEL_ENV = {"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1", "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-4.1-mini", "OPENAI_API_KEY": "inert"}
 
 
 def interpretation(kind=None, language="en", **query):
@@ -29,7 +29,7 @@ class Response:
     def __init__(self, value): self.value = value
     def __enter__(self): return self
     def __exit__(self, *_args): return False
-    def read(self): return json.dumps({"choices": [{"message": {"content": json.dumps(self.value)}}]}).encode()
+    def read(self, size=-1): return json.dumps({"choices": [{"message": {"content": json.dumps(self.value)}}]}).encode()
 
 
 class ReadConnection:
@@ -381,3 +381,13 @@ def test_model_case_ambiguity_uses_typed_recipient_question_and_delivered_contex
     assert len(delivered) == 1 and delivered[0]["clarification_contract"] == "explicit_question_v1"
     assert delivered[0]["clarification_question"] in journey.sends[0][1]
     assert journey.claim.call_count == 0
+
+
+def setUpModule():
+    from tests.farm_model_test_support import isolated_model_budget
+    global _model_budget_test_scope
+    _model_budget_test_scope = isolated_model_budget()
+
+
+def tearDownModule():
+    _model_budget_test_scope.close()
