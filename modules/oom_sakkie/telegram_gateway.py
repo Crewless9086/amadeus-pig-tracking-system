@@ -844,10 +844,15 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, litter_status if delivery.get("success") else 202
 
-    health_result, health_status = handle_authenticated_health_loss_message(
-        parsed,
-        gateway_authority,
-    )
+    # A validated information request cannot become an owner health report
+    # because its short answer happens to match a legacy intake phrase.
+    if semantic_authoritative and (parsed.get("semantic") or {}).get("read_query"):
+        health_result, health_status = {"handled": False}, 200
+    else:
+        health_result, health_status = handle_authenticated_health_loss_message(
+            parsed,
+            gateway_authority,
+        )
     if health_result.get("handled"):
         answer = str(health_result.get("answer") or "")
         if not answer and health_result.get("success") is not True:
@@ -962,7 +967,7 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
     durable_delivery_ready = bool(str(os.environ.get("DATABASE_URL") or "").strip()
                                   and str(parsed.get("provider_message_id") or "").strip()
                                   and str(parsed.get("provider_timestamp") or "").strip())
-    if body.get("success") and str(body.get("answer") or "").strip() and durable_delivery_ready:
+    if (body.get("success") or message_result.get("answer_available") is True) and str(body.get("answer") or "").strip() and durable_delivery_ready:
         specialist = str(message_result.get("tool_used") or "OOM_SAKKIE").upper()
         delivery = deliver_family_result(
             parsed, message_result, specialist=specialist,

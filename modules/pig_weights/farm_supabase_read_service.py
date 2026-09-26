@@ -443,6 +443,18 @@ def get_active_pigs(connect_factory=None):
     ]
 
 
+
+def resolve_pig_read_identity(subject, connect_factory=None):
+    subject = str(subject or "").strip()
+    if not subject or len(subject) > 100:
+        return []
+    return _fetch_all("""select state.pig_id, state.tag_number, state.pig_name
+        from public.current_canonical_pig_state state
+        where lower(state.pig_id) = lower(%s) or lower(state.tag_number) = lower(%s)
+           or lower(state.pig_name) = lower(%s)
+        order by state.pig_id limit 3""", (subject, subject, subject),
+        connect_factory=connect_factory)
+
 def get_pig_detail(pig_id, connect_factory=None):
     row = _fetch_one(
         """
@@ -2376,6 +2388,16 @@ def project_mating_overview(rows, state_rows, today=None):
         })
     return records
 
+
+
+def get_pig_mating_read_evidence(pig_id, detail, connect_factory=None):
+    rows = _fetch_all("""select * from public.mating_events
+        where sow_pig_id=%s or boar_pig_id=%s
+        order by mating_date desc nulls last,mating_id desc limit 65""",
+        (pig_id, pig_id), connect_factory=connect_factory)
+    if len(rows) > 64:
+        raise ValueError("pig_mating_evidence_truncated")
+    return project_mating_overview(rows, [detail])
 
 def get_mating_overview(connect_factory=None):
     rows = _fetch_all(

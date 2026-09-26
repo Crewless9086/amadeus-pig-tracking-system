@@ -1482,11 +1482,38 @@ def herdmaster_herd_question_handler(args):
             "raw": {},
         }
     try:
+        subject = (args or {}).get("subject")
+        if subject is not None:
+            from contextlib import nullcontext
+            from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+            from modules.pig_weights.farm_supabase_read_service import (
+                resolve_pig_read_identity, get_pig_detail, get_pig_mating_read_evidence)
+            with connect_bounded_rootline_postgres() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("set transaction isolation level repeatable read")
+                def borrowed(_url):
+                    return nullcontext(connection)
+                borrowed.transaction_managed = True
+                matches = resolve_pig_read_identity(subject, connect_factory=borrowed)
+                pigs, matings = [], []
+                for row in matches:
+                    detail = get_pig_detail(row["pig_id"], connect_factory=borrowed)
+                    if not detail or detail.get("pig_id") != row["pig_id"]:
+                        raise ValueError("canonical_pig_readback_unavailable")
+                    pigs.append({**detail, "latest_weight_kg": detail.get("current_weight_kg"),
+                                 "latest_weight_date": detail.get("last_weight_date")})
+                if len(pigs) == 1:
+                    matings = get_pig_mating_read_evidence(pigs[0]["pig_id"], pigs[0], connect_factory=borrowed)
+            readiness, worklist = {"success": True, "pigs": pigs}, None
+        else:
+            readiness, matings = get_pig_allocation_readiness_data(), get_mating_overview()
+            worklist = _current_herdmaster_breeding_loop()
         result = answer_herd_question(
-            (args or {}).get("user_text"),
-            readiness=get_pig_allocation_readiness_data(),
-            matings=get_mating_overview(),
-            worklist=_current_herdmaster_breeding_loop(),
+            (args or {}).get("user_text"), subject=subject,
+            language=(args or {}).get("semantic_language") or "en",
+            readiness=readiness,
+            matings=matings,
+            worklist=worklist,
         )
     except Exception:
         result = {
@@ -1498,6 +1525,12 @@ def herdmaster_herd_question_handler(args):
             "writes_performed": False,
             "protected_actions_performed": False,
         }
+    if str((args or {}).get("semantic_language") or "").casefold().startswith("af") and result.get("success") is not True:
+        messages = {"animal_identity_required": "Noem asseblief een dier of sy presiese tag/Pig ID.",
+            "animal_identity_ambiguous": "Meer as een dier stem ooreen; gee asseblief die presiese Pig ID.",
+            "animal_identity_not_found": "Ek kon daardie naam of tag nie aan 'n kanonieke dier koppel nie. Dit bewys nie dat die dier weg of dood is nie.",
+            "canonical_herd_evidence_unavailable": "Huidige kanonieke dierbewyse is nie beskikbaar nie. Geen plaasaksie is uitgevoer nie."}
+        result["clarification"] = messages.get(result.get("status"), messages["canonical_herd_evidence_unavailable"])
     success = result.get("success") is True
     return {
         "success": success,
@@ -3460,7 +3493,8 @@ TOOL_REGISTRY = {
         input_schema={
             "type": "object",
             "required": ["user_text"],
-            "properties": {"user_text": {"type": "string", "minLength": 1}},
+            "properties": {"user_text": {"type": "string", "minLength": 1},
+                           "subject": {"type": "string", "minLength": 1, "maxLength": 100}},
             "additionalProperties": False,
         },
         output_schema=_tool_output_schema(),

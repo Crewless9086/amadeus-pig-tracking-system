@@ -395,7 +395,14 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                      str(result.get("status") or "working"), text_sha)
     if int(result.get("question_count") or 0) == 1:
         payload["clarification_question"] = str(
-            result.get("clarification_question") or text)[:240]
+            result.get("clarification_question") or (text if result.get("status") in {
+                "owner_context_clarification_required", "waiting_for_input",
+                "manager_question_partial_reply_recorded"} else ""))[:240]
+    if str(result.get("clarification_question") or "").strip():
+        payload["clarification_contract"] = "explicit_question_v1"
+    if result.get("read_only") is True or result.get("status") in {"farm_manager_round_ready", "farm_manager_round_replay_suppressed"}:
+        payload["conversation_question"] = str(parsed.get("text") or "")[:500]
+        payload["conversation_answer"] = text[:2400]
     for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
                 "confirmation_prompt_sha256", "operation_id", "preview_hash",
                 "evidence_generation", "confirmation_token",
@@ -958,6 +965,7 @@ def _event(parsed, mission_id, card_mission_id, specialist, task_state, text_sha
         "semantic_domain": str(semantic.get("domain") or "")[:40],
         "semantic_intent": str(semantic.get("intent") or "")[:100],
         "semantic_continuation": semantic.get("continuation") is True,
+        "read_query": dict(semantic.get("read_query") or {}),
         "clarification_question": str(semantic.get("clarification_question") or "")[:240]}
 
 

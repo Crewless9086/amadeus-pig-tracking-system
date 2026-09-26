@@ -69,7 +69,7 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
         "delivery_provider_timestamp": str(question.get("presented_at") or question.get("observed_at") or "")[:40],
         "telegram_message_id": str(question.get("telegram_message_id") or "")[:40],
         "semantic_domain": str((question.get("question_binding") or {}).get("domain") or "manager_round")[:40],
-        "semantic_intent": "manager_question_reply",
+        "semantic_intent": "pending_manager_question",
         "clarification_question": str(question.get("question") or "")[:240]})
     for prior in question.get("partial_replies") or ():
         if isinstance(prior, dict) and str(prior.get("owner_evidence") or "").strip():
@@ -92,8 +92,10 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
                     "delivery_provider_timestamp": str(prior.get("clarification_presented_at") or "")[:40],
                     "telegram_message_id": str(prior.get("clarification_telegram_message_id") or "")[:40],
                     "semantic_domain": str(prior.get("domain") or "")[:40],
-                    "semantic_intent": "manager_question_reply",
+                    "semantic_intent": "pending_manager_question",
                     "clarification_question": clarification[:240]})
+    context["pending_manager_question"] = {"question": str(question.get("question") or "")[:500],
+        "use_only_for": "owner_observation_or_correction_answering_this_question"}
     context["recent_turns"] = recent[-8:]
     return context
 
@@ -101,6 +103,8 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
 def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                                   question_loader=None, event_store=None,
                                   event_loader=None, health_handler=None):
+    if semantic is not None and getattr(semantic, "read_query", None):
+        return {"handled": False, **ZERO}, 200
     if authority is None:
         return {"handled": False, **ZERO}, 200
     if event_store is None:

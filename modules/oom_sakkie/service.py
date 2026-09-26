@@ -564,6 +564,8 @@ def handle_message(payload):
         "authenticated_owner": legacy_authenticated_owner,
         "gateway_authority": bound_gateway_authority,
         "semantic_language": str(semantic.get("language") or "en"),
+        **({"subject": semantic["read_query"].get("subject", "")}
+           if (semantic.get("read_query") or {}).get("kind") == "animal_status" else {}),
     })
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])
@@ -621,6 +623,10 @@ def handle_message(payload):
         "success": protected_tool_succeeded,
         "answer": answer,
         "tool_used": tool.name,
+        **({"read_only": True, "answer_available": bool(answer),
+            "writes_performed": False, "recipient_render_contract": "canonical_read_answer_v1",
+            "recipient_language": str(semantic.get("language") or "en")}
+           if tool.name == "herdmaster_herd_question" else {}),
         "trace_id": trace_id,
         "risk_level": int(tool.risk_level),
         "links": links,
@@ -669,6 +675,8 @@ def semantic_intent_match(semantic):
         return None
     if confidence < CONFIDENCE_FLOOR:
         return None
+    if (semantic.get("read_query") or {}).get("kind") == "animal_status":
+        return IntentMatch("animal_status", "herdmaster_herd_question", confidence, "semantic:animal_read")
     if semantic.get("domain") == "rootline":
         return IntentMatch(
             str(semantic.get("intent") or "rootline_advice")[:80],
