@@ -789,3 +789,34 @@ def test_mortality_write_success_with_lifecycle_store_failure_is_visible_and_rec
     assert "DEATH RECORDED" in recovered["answer"] and "no longer available on farm" in recovered["answer"]
     assert recorded[0]["status"] == "completed"
     assert confirm.call_count == 2
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_pig148_month_first_report_and_retained_date_reply_reach_confirmation(loader):
+    packet = evidence()
+    packet["animals"][0].update(pig_id="PIG-TEST-148", tag_number="148")
+    packet["as_of_timestamp"] = "2026-09-26T16:37:00+00:00"
+    loader.return_value = packet
+    original = "Pig 148 died on September 15th."
+    timestamp = "2026-09-26T16:35:00+00:00"
+    active = {"status": "waiting_for_input", "combined_text": original,
+        "mission_id": "OOM-HERDMASTER-TEST148", "operation_id": "",
+        "provider_message_id": "5092", "provider_timestamp": timestamp,
+        "report_parts": [{"text": original, "provider_timestamp": timestamp}],
+        "preview": {"evaluator": {"identity": {
+            "pig_id": "PIG-TEST-148", "tag_number": "148"}}}}
+    for text, context in [(original, None), ("September 15th", active)]:
+        store, recorded = memory_store(context)
+        result, status = handle_authenticated_health_loss_message(
+            {**parsed(text, "test-148-date"), "provider_timestamp": "2026-09-26T16:36:00+00:00",
+             "semantic": {"domain": "herd_health", "continuation": bool(context),
+                          "needs_clarification": False, "entity_refs": ["148"]}},
+            issue_gateway_owner_authority("42", "42"), context_store=store)
+        assert status == 200
+        assert result.get("question_count") == 0, (text, result)
+        assert "2026-09-15" in result["answer"]
+        assert "on which date" not in result["answer"].lower()
+        assert recorded[0]["preview"]["writes_farm_data"] is False
+        assert recorded[0]["preview"]["confirmation_ready"] is True
+        if context:
+            assert result["mission_id"] == context["mission_id"]

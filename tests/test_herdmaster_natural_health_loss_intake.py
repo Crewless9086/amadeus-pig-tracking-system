@@ -737,3 +737,62 @@ def test_explicit_owner_reported_mortality_date_outranks_intake_date():
     observed = {row["fact"]: row["value"] for row in result["observed_facts"]}
     assert observed["no_visible_signs_in_other_pigs_reported"] is True
     assert observed["pen_cleaning_reported"] is True
+
+
+@pytest.mark.parametrize("wording,expected", [
+    ("September 15th", "2026-09-15"),
+    ("15th September", "2026-09-15"),
+    ("September 15", "2026-09-15"),
+    ("15 September", "2026-09-15"),
+    ("September 15th, 2025", "2025-09-15"),
+    ("15 September 2025", "2025-09-15"),
+    ("15 September 2026", "2026-09-15"),
+])
+@pytest.mark.parametrize("follow_up", [False, True])
+def test_named_mortality_date_in_original_report_or_owner_reply(wording, expected, follow_up):
+    original = "Pig 148 died." if follow_up else f"Pig 148 died on {wording}."
+    owner_report = report(original)
+    owner_report["provider_timestamp"] = "2026-09-26T16:35:00+00:00"
+    if follow_up:
+        owner_report["report_parts"] = [
+            {"text": original, "provider_timestamp": owner_report["provider_timestamp"]},
+            {"text": wording, "provider_timestamp": "2026-09-26T16:36:00+00:00"},
+        ]
+    canonical = evidence(animal("PIG-TEST-148", "", "148"))
+    canonical["as_of_timestamp"] = "2026-09-26T16:37:00+00:00"
+    result = evaluate_health_loss_intake(owner_report, canonical)
+    assert result["status"] == "preview_ready"
+    assert result["preview"]["event_date"] == expected
+    assert result["smallest_missing_follow_up_question"] == ""
+
+
+@pytest.mark.parametrize("wording,status", [
+    ("September 31st", "event_date_required"),
+    ("September 15th or September 16th", "event_date_required"),
+    ("December 15th", "chronology_conflict"),
+    ("February 29th", "event_date_required"),
+    ("September 15th 20255", "event_date_required"),
+    ("September 15th 99", "event_date_required"),
+])
+def test_named_mortality_dates_do_not_bypass_calendar_or_chronology(wording, status):
+    owner_report = report(f"Pig 148 died on {wording}.")
+    owner_report["provider_timestamp"] = "2026-09-26T16:35:00+00:00"
+    canonical = evidence(animal("PIG-TEST-148", "", "148"))
+    canonical["as_of_timestamp"] = "2026-09-26T16:37:00+00:00"
+    result = evaluate_health_loss_intake(owner_report, canonical)
+    assert result["status"] == status
+
+
+@pytest.mark.parametrize("follow_up", ["He was buried on January 1st.", "Pens cleaned today."])
+def test_named_death_date_keeps_original_message_year_across_later_followup(follow_up):
+    owner_report = report("Pig 148 died on December 15th.")
+    owner_report["provider_timestamp"] = "2027-01-02T08:00:00+02:00"
+    owner_report["report_parts"] = [
+        {"text": owner_report["text"], "provider_timestamp": "2026-12-20T08:00:00+02:00"},
+        {"text": follow_up, "provider_timestamp": owner_report["provider_timestamp"]},
+    ]
+    canonical = evidence(animal("PIG-TEST-148", "", "148"))
+    canonical["as_of_timestamp"] = "2027-01-02T08:01:00+02:00"
+    result = evaluate_health_loss_intake(owner_report, canonical)
+    assert result["status"] == "preview_ready"
+    assert result["preview"]["event_date"] == "2026-12-15"
