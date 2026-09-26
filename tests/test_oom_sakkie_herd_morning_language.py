@@ -243,6 +243,9 @@ class MemoryDelivery:
         monkeypatch.setattr(daily, "daily_farm_manager_store", self.store_daily)
 
     def store_daily(self, action, identity, payload):
+        if action in {"load_notification_state", "load_notification_failure"}:
+            from tests.test_oom_sakkie_daily_farm_manager import notification_state
+            return notification_state(self.daily_rows.values(), identity, payload)
         if action == "load_daily":
             candidates = [row for row in self.daily_rows.values()
                           if row.get("daily_identity") == identity
@@ -438,10 +441,11 @@ def test_true_transport_ambiguity_keeps_one_attempt_across_production_shaped_rep
     result = project(language)
     first = memory.run(language, result, litters=molly())
     replay = memory.run(language, result, litters=molly())
-    assert first["status"] == replay["status"] == "daily_manager_delivery_ambiguous"
+    assert first["status"] == "daily_manager_delivery_ambiguous"
+    assert replay["status"] == "daily_manager_failure_backoff"
     assert memory.sends == [("OFFLINE-" + language, EXPECTED[language])]
     assert {row["state"] for row in memory.family_rows.values()} == {"delivery_attempted", "contained"}
-    assert memory.deliveries[1]["outcome"]["status"] == "family_message_delivery_ambiguous"
+    assert len(memory.deliveries) == 1
     assert all(row["kwargs"]["delivery_retry_authority"] is None for row in memory.deliveries)
     outcome, = memory.outcomes().values()
     assert outcome["status"] == "provider_ambiguous" and outcome["delivery_definitely_not_sent"] is False
@@ -487,10 +491,11 @@ def test_unsupported_raw_english_question_stays_exact_and_is_truthfully_rejected
     memory = MemoryDelivery(monkeypatch)
     first = memory.run("af", result)
     replay = memory.run("af", result)
+    assert first["status"] == "daily_manager_recipient_language_rejected"
+    assert replay["status"] == "daily_manager_failure_backoff"
+    assert first["delivery_definitely_not_sent"] is True
     for outcome in (first, replay):
-        assert outcome["status"] == "daily_manager_recipient_language_rejected"
         assert outcome["delivery_failure_reason"] == "recipient_language_render_unrecognized"
-        assert outcome["delivery_definitely_not_sent"] is True
         assert outcome["telegram_sends"] == outcome["telegram_edits"] == 0
     assert not memory.sends and not memory.family_calls and not memory.family_rows
     assert all(row["outcome"]["status"] == "recipient_language_render_unrecognized" for row in memory.deliveries)
@@ -547,31 +552,19 @@ def test_language_rejected_replacement_preserves_old_card_before_lock_store_send
 
 
 @pytest.mark.parametrize("language", ["en", "af"])
-def test_recipient_language_replacement_is_confirmed_before_old_card_cleanup_then_replay_is_silent(monkeypatch, language):
+def test_routine_completed_work_coalesces_without_replacement_in_both_languages(monkeypatch, language):
     memory = MemoryDelivery(monkeypatch)
     result = project(language)
     first = memory.run(language, result, litters=molly())
-    # A changed canonical watcher snapshot removes this completed work from
-    # the current plan. The specialist facts remain identical.
     completed_litters = [{**molly()[0], "Litter_Status": "Weaned", "Weaned_Count": 9}]
-    refreshed = memory.run(language, result, litters=completed_litters)
-    replay = memory.run(language, result, litters=completed_litters)
-    assert first["status"] == refreshed["status"] == "daily_manager_presented"
-    assert list(memory.outcomes().values())[-1]["previous_telegram_message_id"] == first["telegram_message_id"]
-    assert refreshed["telegram_message_id"] != first["telegram_message_id"]
-    assert replay["status"] == "daily_manager_unchanged_silent" and replay["telegram_sends"] == 0
-    assert memory.sends == [("OFFLINE-" + language, EXPECTED[language]),
-                            ("OFFLINE-" + language, EXPECTED_REPLACEMENT[language])]
-    assert memory.deletions == [("OFFLINE-" + language, first["telegram_message_id"])]
-    replacement, = memory.replacements
-    assert replacement["outcome"]["status"] == "brief_replaced"
-    assert replacement["outcome"]["telegram_sends"] == replacement["outcome"]["telegram_deletes"] == 1
-    card = replacement["kwargs"]["card_mission_id"]
-    assert memory.lock_calls == [("enter", card), ("exit", card)]
-    assert {row["state"] for row in memory.family_rows.values()} == {
-        "delivery_attempted", "delivered", "brief_generation_delivery_attempted",
-        "brief_generation_delivered", "brief_generation_superseded", "brief_previous_deleted"}
-    assert len(memory.outcomes()) == 2
+    for _ in range(2):
+        refreshed = memory.run(language, result, litters=completed_litters)
+        assert refreshed["status"] == "daily_manager_routine_coalesced"
+        assert refreshed["telegram_sends"] == refreshed["telegram_edits"] == 0
+    assert first["status"] == "daily_manager_presented"
+    assert memory.sends == [("OFFLINE-" + language, EXPECTED[language])]
+    assert not memory.replacements and not memory.deletions and not memory.lock_calls
+    assert len(memory.outcomes()) == 1
 
 
 def test_a_valid_changed_plan_after_rejected_replacement_cannot_claim_the_old_card_as_new_delivery(monkeypatch):

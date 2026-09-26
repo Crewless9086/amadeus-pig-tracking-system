@@ -76,7 +76,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
     def test_webhook_policy_reports_agent_v2_gate(self):
         policy = sam_meat_runtime.sam_meat_webhook_policy(environ={
             "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
-            "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+            "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
             "OPENAI_API_KEY": "test-key",
         })
 
@@ -1196,7 +1196,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             ),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
-                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
@@ -1236,7 +1236,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             inbound_payload(content="I want a half carcass Set A in Riversdale."),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
-                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
@@ -1286,7 +1286,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             inbound_payload(content="Riversdale"),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
-                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
@@ -1325,7 +1325,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             inbound_payload(content="Thanks, noted."),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
-                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
@@ -1362,7 +1362,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             inbound_payload(content="What is the price for half carcass Set A in Riversdale?"),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
-                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
@@ -1376,7 +1376,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_agent_v2_empty_llm_decision_falls_back_to_guarded_reply(self, mock_record, mock_contract, mock_active):
+    @patch("modules.sales.sam_meat_runtime._call_sam_meat_llm", return_value={})
+    def test_agent_v2_empty_llm_decision_falls_back_to_guarded_reply(self, _inert_extract, mock_record, mock_contract, mock_active):
         mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
         mock_record.return_value = ({
             "success": False,
@@ -1394,7 +1395,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
                 "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
-                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
@@ -1413,7 +1414,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_vague_meat_interest_does_not_repeat_generic_intro_when_agent_v2_empty(self, mock_record, mock_contract, mock_active):
+    @patch("modules.sales.sam_meat_runtime._call_sam_meat_llm", return_value={})
+    def test_vague_meat_interest_does_not_repeat_generic_intro_when_agent_v2_empty(self, _inert_extract, mock_record, mock_contract, mock_active):
         mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
         mock_record.return_value = ({
             "success": True,
@@ -1431,7 +1433,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
                 "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
-                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
@@ -1978,3 +1980,13 @@ class SamMeatRuntimeTests(unittest.TestCase):
 if __name__ == "__main__":
 
     unittest.main()
+
+
+def setUpModule():
+    from tests.farm_model_test_support import isolated_model_budget
+    global _model_budget_test_scope
+    _model_budget_test_scope = isolated_model_budget()
+
+
+def tearDownModule():
+    _model_budget_test_scope.close()

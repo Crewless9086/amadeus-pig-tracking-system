@@ -203,8 +203,29 @@ def _looks_afrikaans(text: str) -> bool:
         "vark", "plaas", "besproeiing", "veilig", "wanneer", "hierdie", "jou",
         "foto", "foto's", "voltooi", "reggestelde", "gekanselleer", "aksie",
         "nodig", "staan", "drink", "kontroleer", "outomaties", "welstandsopdatering"}
+    # Afrikaans "want" means "because". Only accept that conjunction when
+    # its own clause has Afrikaans syntax, never because an AF heading was
+    # prepended to an English instruction such as "I want water".
+    if "want" in words and _afrikaans_conjunction_want(visible):
+        english.remove("want")
     return len(afrikaans) >= 2 and not bool(words & english)
 
+
+
+def _afrikaans_conjunction_want(visible):
+    for clause in re.split(r"[.!?\n]", visible.casefold()):
+        tokens = re.findall(r"[^\W\d_]+", clause, flags=re.UNICODE)
+        for index, token in enumerate(tokens):
+            if token != "want":
+                continue
+            before, after = tokens[:index], tokens[index + 1:]
+            if (not before or not after or before[-1] in {"i", "we", "you", "they"}
+                    or after[0] not in {"die", "dit", "daar", "ons", "hulle", "jy", "ek",
+                                        "geen", "hierdie", "hy", "sy"}
+                    or not set(before) & {"die", "nie", "geen", "ek", "ons", "hulle", "hierdie", "besproeiing"}
+                    or not set(after) & {"die", "nie", "het", "geen", "word", "hierdie", "nodig"}):
+                return False
+    return True
 
 def _afrikaans_bound_facts(result: Mapping[str, Any]) -> str:
     labels = {"pig_id": "Vark", "pig_number": "Vark", "tag_number": "Oormerk",

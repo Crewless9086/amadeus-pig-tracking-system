@@ -299,6 +299,9 @@ def voice_confirmation_required(parsed):
 
 
 def _failure(error, language):
+    if str(error.status or "").startswith("farm_model_"):
+        from modules.oom_sakkie.service import model_budget_denial_result
+        return model_budget_denial_result(error.status, language, voice=True), error.http_status
     if error.status == "telegram_voice_attempt_processing":
         return {"handled": True, "success": False, "status": error.status,
                 "suppress_family_delivery": True, "writes_farm_data": False}, error.http_status

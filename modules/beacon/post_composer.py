@@ -1,4 +1,7 @@
 import json
+import io
+
+from modules.oom_sakkie.model_budget import budgeted_urlopen
 import os
 import re
 from urllib import request as urllib_request
@@ -155,17 +158,19 @@ def _llm_suggestions(brief, lane, history, source, requester=None):
         ],
     }
     try:
+        req = urllib_request.Request(
+            source.get(LLM_URL_ENV) or DEFAULT_LLM_URL,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Authorization": f"Bearer {source[OPENAI_API_KEY_ENV]}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        # Injected composers remain behind the same durable reservation boundary.
+        opener = None
         if requester:
-            response = requester(body)
-        else:
-            req = urllib_request.Request(
-                source.get(LLM_URL_ENV) or DEFAULT_LLM_URL,
-                data=json.dumps(body).encode("utf-8"),
-                headers={"Authorization": f"Bearer {source[OPENAI_API_KEY_ENV]}", "Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib_request.urlopen(req, timeout=30) as raw:
-                response = json.loads(raw.read().decode("utf-8"))
+            def opener(request, timeout):
+                return io.BytesIO(json.dumps(requester(json.loads(request.data))).encode("utf-8"))
+        with budgeted_urlopen(req, timeout=30, purpose="beacon_caption_suggestions", environ=source, http_open=opener) as raw:
+            response = json.loads(raw.read().decode("utf-8"))
         if isinstance(response, dict) and isinstance(response.get("suggestions"), list):
             return response["suggestions"]
         content = (((response.get("choices") or [{}])[0].get("message") or {}).get("content") or "{}")
@@ -194,17 +199,19 @@ def _llm_revision(caption, instruction, lane, history, source, requester=None):
         ],
     }
     try:
+        req = urllib_request.Request(
+            source.get(LLM_URL_ENV) or DEFAULT_LLM_URL,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Authorization": f"Bearer {source[OPENAI_API_KEY_ENV]}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        # Injected composers remain behind the same durable reservation boundary.
+        opener = None
         if requester:
-            response = requester(body)
-        else:
-            req = urllib_request.Request(
-                source.get(LLM_URL_ENV) or DEFAULT_LLM_URL,
-                data=json.dumps(body).encode("utf-8"),
-                headers={"Authorization": f"Bearer {source[OPENAI_API_KEY_ENV]}", "Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib_request.urlopen(req, timeout=30) as raw:
-                response = json.loads(raw.read().decode("utf-8"))
+            def opener(request, timeout):
+                return io.BytesIO(json.dumps(requester(json.loads(request.data))).encode("utf-8"))
+        with budgeted_urlopen(req, timeout=30, purpose="beacon_caption_revision", environ=source, http_open=opener) as raw:
+            response = json.loads(raw.read().decode("utf-8"))
         if isinstance(response, dict) and response.get("caption"):
             return _clean_caption(response["caption"], 2200)
         content = (((response.get("choices") or [{}])[0].get("message") or {}).get("content") or "{}")

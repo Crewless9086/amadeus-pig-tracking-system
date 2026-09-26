@@ -1,3 +1,5 @@
+
+from modules.oom_sakkie.model_budget import budgeted_urlopen
 import json
 import os
 import re
@@ -96,7 +98,7 @@ def run_ledger_sales_agent(*, user_text, offer_context, draft_context, environ=N
         method="POST",
     )
     try:
-        with urllib_request.urlopen(request, timeout=_timeout_seconds(source)) as response:
+        with budgeted_urlopen(request, timeout=_timeout_seconds(source), purpose="ledger", environ=source) as response:
             body = response.read().decode("utf-8")
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
         return _fallback("ledger_agent_unavailable", policy, "Ledger's LLM advisor could not be reached. No customer action was taken.")

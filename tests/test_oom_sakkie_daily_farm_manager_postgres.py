@@ -162,3 +162,56 @@ def test_real_daily_store_restart_recovers_legacy_failure_without_mutating_histo
             with connection.cursor() as cursor:
                 cursor.execute("""update public.sam_live_stock_conversation_review_events
                     set review_json='{}'::jsonb where review_event_id=%s""", (legacy_id,))
+
+
+@pytest.mark.parametrize("status,owner,chat,notified", [
+    ("presented", "42", "42", True), ("detected", "42", "42", False),
+    ("provider_ambiguous", "42", "42", False), ("presented", "99", "99", False),
+    ("presented", "42", "99", False),
+])
+def test_notification_sql_recalls_only_exact_confirmed_recipient_keys_across_dates(
+        isolated_daily_store, status, owner, chat, notified):
+    connect, _ = isolated_daily_store
+    yesterday = "OOM-DAILY-FARM-MANAGER-2026-09-22"
+    today = "OOM-DAILY-FARM-MANAGER-2026-09-23"
+    body = {"daily_identity": yesterday, "owner_user_id": owner, "chat_id": chat,
+            "status": status, "notification_keys": ["decision:known", "urgent:known"],
+            "question": "Same pending question", "question_binding": {"dedupe_key": "case-1", "domain": "herd"}}
+    assert daily.daily_farm_manager_store("record_daily", "EXACT-CONFIRMED", body)["success"]
+    state = daily._load_notification_state(today, {"owner_user_id": "42", "chat_id": "42",
+        "notification_keys": ["decision:known", "urgent:new"]})
+    assert state["success"]
+    assert state["notified_keys"] == (["decision:known"] if notified else [])
+    assert bool(state["last_presented"]) is notified
+    empty = daily._load_notification_state(today, {"owner_user_id": "42", "chat_id": "42", "notification_keys": []})
+    assert empty["notified_keys"] == []
+
+
+def test_failure_sql_is_exact_generation_day_recipient_and_does_not_replace_confirmed_card(isolated_daily_store):
+    identity = "OOM-DAILY-FARM-MANAGER-2026-09-23"
+    base = {"daily_identity": identity, "owner_user_id": "42", "chat_id": "42", "material_digest": "A"}
+    assert daily.daily_farm_manager_store("record_daily", "PRESENTED-A", {
+        **base, "status": "presented", "telegram_message_id": "100",
+        "notification_keys": ["decision:A"], "next_routine_due_at": "2026-09-24T06:45:00+02:00"})["success"]
+    failure = {**base, "material_digest": "B", "status": "notification_backoff",
+        "failure_status": "recipient_language_render_unrecognized", "retry_after": "2026-09-23T08:30:00Z"}
+    assert daily.daily_farm_manager_store("record_daily", "FAILED-B", failure)["success"]
+    assert daily._load_notification_failure(identity, {**base, "material_digest": "B"})["retry_after"] == failure["retry_after"]
+    assert daily._load_notification_failure(identity, base)["retry_after"] is None
+    assert daily._load_notification_failure(identity, {**base, "material_digest": "B", "chat_id": "77"})["retry_after"] is None
+    assert daily._load_notification_failure("OOM-DAILY-FARM-MANAGER-2026-09-24", {**base, "material_digest": "B"})["retry_after"] is None
+    assert daily._load_daily(identity, base)["telegram_message_id"] == "100"
+    assert daily._load_notification_state(identity, {**base, "notification_keys": ["decision:A"]})["notified_keys"] == ["decision:A"]
+
+
+def test_notification_overflow_contains_before_opening_database(monkeypatch):
+    monkeypatch.setattr(daily, "connect_bounded_read", lambda: pytest.fail("overflow must not query"))
+    assert daily._load_notification_state("identity", {
+        "notification_keys": [str(i) for i in range(daily.MAX_NOTIFICATION_KEYS + 1)]}) == {"success": False}
+
+
+def test_notification_sql_admits_more_than_sixty_four_current_candidates(isolated_daily_store):
+    keys = ["urgent:" + str(i) for i in range(70)]
+    state = daily._load_notification_state("DAILY", {
+        "owner_user_id": "42", "chat_id": "42", "notification_keys": keys})
+    assert state["success"] and state["notified_keys"] == []

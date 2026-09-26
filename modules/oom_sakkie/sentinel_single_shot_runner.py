@@ -1,3 +1,5 @@
+
+from modules.oom_sakkie.model_budget import budgeted_urlopen
 import json
 import os
 from urllib import error as urllib_error
@@ -248,7 +250,7 @@ def _call_sentinel_llm(*, approval, dispatch_request, dry_run_request_id):
         method="POST",
     )
     try:
-        with urllib_request.urlopen(req, timeout=_timeout_seconds()) as response:
+        with budgeted_urlopen(req, timeout=_timeout_seconds(), purpose="sentinel_review") as response:
             body = response.read().decode("utf-8")
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
         return None

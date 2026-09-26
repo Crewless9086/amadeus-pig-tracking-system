@@ -159,7 +159,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
             reasons.append(reason)
     why = _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af)
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
-    question = _owner_question(brief.get("family_fact_needed"))
+    question = _localized_owner_question(result, brief, af)
     next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result), now_hint=result.get("evidence_cutoff"))
     lines.extend(["",
         f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
@@ -187,7 +187,7 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
         if reason and reason not in reasons:
             reasons.append(reason)
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
-    question = _owner_question(brief.get("family_fact_needed"))
+    question = _localized_owner_question(result, brief, af)
     reassess = _human_reassessment(brief.get("reassess") or _next_reassessment(result),
         now_hint=result.get("evidence_cutoff"))
     return {
@@ -198,6 +198,7 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
                         + (" wanneer vars lesings of veranderde toestande beskikbaar is." if af else
                            " when fresh readings or changed conditions are available.")),
         "question": question,
+        "notification_decision_identity": _owner_question_identity(result, brief),
     }
 
 
@@ -274,8 +275,58 @@ def _verified_completion(lifecycle: Mapping[str, Any], zone: str) -> bool:
             and str(shutdown.get("state") or "").upper() == "OFF")
 
 
+# These are exact outputs of ROOTLINE's typed deterministic need classifier.
+# Unknown prose is not translated by guessing or trusted by a render flag.
+_AF_CLASSIFIER_REASONS = {
+    "Weekly irrigation demand, water and dry observed weather support one bounded gravity-fed segment.":
+        "Die week se besproeiingsbehoefte, beskikbare water en droë waargenome weer ondersteun een begrensde swaartekragbesproeiingsegment.",
+    "Urgent water need supports one bounded gravity-fed segment with the native fail-stop.":
+        "Dringende waterbehoefte ondersteun een begrensde swaartekragbesproeiingsegment met die ingeboude veiligheidsafskakeling.",
+    "Urgent water continuity outweighs strict grid avoidance; retain the bounded native fail-stop.":
+        "Dringende watervoorsiening weeg swaarder as die vermyding van netwerkkrag; behou die begrensde veiligheidsafskakeling.",
+    "Available evidence does not establish enough current deficit for irrigation.":
+        "Die beskikbare bewyse toon nie genoeg huidige watertekort om besproeiing te regverdig nie.",
+    "Summer evaporation favours an evening or night window.":
+        "Somerverdamping bevoordeel besproeiing in die aand of nag.",
+    "Water need is supported but fresh power evidence is required at execution time.":
+        "Die waterbehoefte is bewys, maar vars kraglesings is nodig voordat uitvoering begin.",
+    "Winter daylight, surplus solar and reserve margin support a bounded daytime segment.":
+        "Winterdaglig, oortollige sonkrag en die beskikbare reserwe ondersteun een begrensde dagsegment.",
+    "Current need and battery margin support one bounded segment.":
+        "Die huidige behoefte en batteryreserwe ondersteun een begrensde segment.",
+    "Need is supported, but wait for reserve recovery or an explicitly justified water-continuity grid decision.":
+        "Die behoefte is bewys, maar wag vir die herstel van die reserwe of 'n uitdruklik gemotiveerde netwerkkragbesluit vir watervoorsiening.",
+}
+
+
+def _owner_question_identity(result, brief):
+    question = _owner_question(brief.get("family_fact_needed"))
+    matching = [row for row in result.get("owner_questions") or ()
+                if isinstance(row, Mapping) and str(row.get("question") or "").strip() == question
+                and str(row.get("fact") or "").strip()]
+    facts = {str(row["fact"]).strip() for row in matching}
+    return "rootline-fact:" + next(iter(facts)) if question and len(facts) == 1 else ""
+
+
+def _localized_owner_question(result, brief, af):
+    question = _owner_question(brief.get("family_fact_needed"))
+    if not af or not question:
+        return question
+    typed = next((row for row in result.get("owner_questions") or ()
+                  if isinstance(row, Mapping) and str(row.get("question") or "").strip() == question), {})
+    translations = {
+        ("water_continuity_need", "Is there a genuine water-continuity need today: normal, needed or urgent?"):
+            "Is daar vandag 'n werklike behoefte aan watervoorsiening: normaal, nodig of dringend?",
+        ("current_tank_observation", "If convenient, are the tanks LOW, OK or FULL, and when was that observed?"):
+            "As dit gerieflik is, is die tenks LAAG, REG of VOL, en wanneer is dit waargeneem?",
+    }
+    return translations.get((str(typed.get("fact") or ""), question), question)
+
+
 def _short_reason(value: str, af: bool) -> str:
     text = " ".join(str(value or "").split())
+    if af and text in _AF_CLASSIFIER_REASONS:
+        return _AF_CLASSIFIER_REASONS[text]
     if af and text.casefold().startswith("fresh local evidence records rain"):
         return "Vars plaaslike bewyse toon reën; ROOTLINE kontroleer weer of besproeiing nodig is."
     if "durable parent objective" in text.casefold() or "_" in text:

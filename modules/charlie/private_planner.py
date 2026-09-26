@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from modules.oom_sakkie.model_budget import budgeted_urlopen
+
 import json
 import re
 import urllib.request
@@ -146,8 +148,7 @@ def _llm_plan(text, context, policy, *, environ=None, http_open=None):
     }).encode("utf-8")
     request = urllib.request.Request(policy["llm_url"], data=body, headers={"Authorization": f"Bearer {source.get('OPENAI_API_KEY','')}", "Content-Type": "application/json"}, method="POST")
     try:
-        opener = http_open or urllib.request.urlopen
-        with opener(request, timeout=30) as response:
+        with budgeted_urlopen(request, timeout=30, purpose="charlie_private_plan", environ=source, http_open=http_open) as response:
             parsed = json.loads(response.read().decode("utf-8"))
         result = json.loads(parsed["choices"][0]["message"]["content"])
     except Exception:
