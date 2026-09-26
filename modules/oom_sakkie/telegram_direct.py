@@ -390,7 +390,8 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             principal_role=family_principal.role.value, capabilities=family_principal.effective_permissions)
         health_result, health_status = handle_protected_action_input(parsed, authority)
         if not health_result.get("handled"):
-            if semantic_front_door_policy(source).get("enabled"):
+            if (semantic_front_door_policy(source).get("enabled")
+                    and not _telegram_command_for_text(parsed["text"])["recognized"]):
                 semantic = interpret_owner_message(parsed, environ=source)
                 if semantic is not None:
                     parsed = {**parsed, "semantic": semantic.as_hint()}

@@ -6,6 +6,8 @@ import os
 
 import requests
 
+from modules.oom_sakkie.model_budget import ModelBudgetError, budgeted_requests_post
+
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
 
 
@@ -19,8 +21,9 @@ def transcribe_web_audio(audio, filename, mime_type, policy, *, environ=None, ht
     source = environ if environ is not None else os.environ
     client = http_client or requests
     try:
-        response = client.post(
+        response = budgeted_requests_post(
             "https://api.openai.com/v1/audio/transcriptions",
+            purpose="charlie_private_voice", environ=source, http_client=client,
             headers={"Authorization": f"Bearer {source.get('OPENAI_API_KEY', '')}"},
             data={"model": policy.get("transcription_model"), "language": "en"},
             files={"file": (str(filename or "owner-voice.webm")[:180], audio, str(mime_type or "audio/webm")[:120])},
@@ -28,6 +31,13 @@ def transcribe_web_audio(audio, filename, mime_type, policy, *, environ=None, ht
         )
         response.raise_for_status()
         text = str(response.json().get("text") or "").strip()
+    except ModelBudgetError as error:
+        from modules.oom_sakkie.service import model_budget_denial_result
+        notice = model_budget_denial_result(error.status,
+            source.get("OOM_SAKKIE_TELEGRAM_OWNER_LANGUAGE") or "en", voice=True)
+        result = {"success": False, "status": notice["status"], "text": "",
+            "answer": notice["answer"], "model_budget_denied": True, "text_only": True}
+        return result, 503
     except (OSError, ValueError, requests.RequestException):
         return {"success": False, "status": "voice_transcription_failed", "text": ""}, 502
     return {"success": bool(text), "status": "voice_transcribed" if text else "voice_transcription_empty", "text": text[:12000]}, 200 if text else 422

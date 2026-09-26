@@ -95,6 +95,8 @@ def item(identity,title,state=WorkState.PLANNED,value=50,question="",specialist=
 def store():
     rows={}
     def effect(action,identity,payload):
+        if action in {"load_notification_state", "load_notification_failure"}:
+            return notification_state(rows.values(), identity, payload)
         if action=="load_daily":
             candidates=[row for row in rows.values() if row.get("daily_identity")==identity
                         and row.get("status") in {"presented","unchanged"}
@@ -188,11 +190,11 @@ def test_maximum_three_priorities_retains_watch_and_one_question():
     assert packet["answer"].count("<b>ONE QUESTION</b>")==1
 
 
-def test_semantic_manager_may_rank_supported_ids_but_cannot_invent_or_omit_work():
+def test_daily_order_is_deterministic_and_never_calls_injected_ranker():
     items=[item("ONE","One"),item("TWO","Two"),item("THREE","Three")]
     ranked=build_daily_management_packet([result(items=items)],now=NOW,
-        semantic_prioritizer=lambda rows,**_kwargs:["THREE","ONE","TWO"])
-    assert [row.item_id for row in ranked["priorities"]]==["THREE","ONE","TWO"]
+        semantic_prioritizer=lambda *_args,**_kwargs: pytest.fail("routine model invocation"))
+    assert [row.item_id for row in ranked["priorities"]]==["ONE","THREE","TWO"]
     rejected=build_daily_management_packet([result(items=items)],now=NOW,
         semantic_prioritizer=lambda rows,**_kwargs:["INVENTED"])
     assert [row.item_id for row in rejected["priorities"]]==["ONE","THREE","TWO"]
@@ -329,7 +331,7 @@ def test_provider_ambiguity_is_quarantined_without_retry():
         specialist_results=[result(items=[replace(item("R-1","Rain Hold"), authority=Authority.OWNER_DECISION)])],litter_rows=[],
         deliver=ambiguous,store=state,now=NOW)
     assert first["status"]=="daily_manager_delivery_ambiguous"
-    assert replay["status"]=="daily_manager_replay_suppressed" and len(calls)==1
+    assert replay["status"]=="daily_manager_failure_backoff" and len(calls)==1
 
 
 def test_material_refresh_replaces_brief_instead_of_editing_or_acknowledging():
@@ -447,6 +449,8 @@ def _daily_family_transition_harness(monkeypatch):
     state = SimpleNamespace(daily={}, family={}, sends=[], deletes=[], calls=[],
         fail_daily=None, fail_family=None, fail_task=False, ambiguous=False, crash_cleanup=False)
     def daily_store(action, identity, payload):
+        if action in {"load_notification_state", "load_notification_failure"}:
+            return notification_state(state.daily.values(), identity, payload)
         if action == "load_daily":
             rows = [row for row in state.daily.values()
                 if row.get("daily_identity") == identity
@@ -501,12 +505,13 @@ def _daily_family_transition_harness(monkeypatch):
     # Crucial: production's duplicate-claim branch compares the default store
     # function identity. Passing only a custom store would mask this failure.
     monkeypatch.setattr(daily, "daily_farm_manager_store", daily_store)
-    def run(label):
-        work = replace(item("CURRENT", "Synthetic current work " + label, specialist="herdmaster"),
+    def run(label, *, now=NOW):
+        work = replace(item("CURRENT", "Synthetic current work " + label,
+            state=WorkState.URGENT, specialist="herdmaster"),
             authority=Authority.OWNER_DECISION)
         return daily.run_daily_farm_manager(owner_user_id="42", chat_id="42",
             specialist_results=[result(name="herdmaster", items=[work])], litter_rows=[],
-            now=NOW, language="en", deliver=deliver, replace_brief=replace_brief,
+            now=now, language="en", deliver=deliver, replace_brief=replace_brief,
             semantic_prioritizer=lambda rows, **_: list(rows))
     state.run = run
     return state
@@ -514,24 +519,20 @@ def _daily_family_transition_harness(monkeypatch):
 
 @pytest.mark.parametrize("labels", [("A", "B", "A", "B"), ("A", "B", "C", "B"),
     ("A", "B", "A", "B", "A", "B")])
-def test_daily_material_recurrence_uses_new_exact_transition_and_restart_is_silent(monkeypatch, labels):
+def test_daily_material_recurrence_does_not_realert_already_notified_facts(monkeypatch, labels):
     state = _daily_family_transition_harness(monkeypatch)
-    first_b = None
+    seen = set()
+    state.latest = None
     for label in labels:
         outcome = state.run(label)
-        assert outcome["success"] and outcome["status"] == "daily_manager_presented"
-        if label == "B" and first_b is None:
-            first_b = outcome["telegram_message_id"]
-    before = {key: dict(value) for key, value in state.daily.items()}
-    replay = state.run("B")
-    assert replay["status"] == "daily_manager_unchanged_silent"
-    assert len(state.sends) == len(labels) and len(state.deletes) == len(labels) - 1
-    assert first_b != outcome["telegram_message_id"]
-    assert state.daily == before
-    b_receipts = [row for row in state.daily.values() if row.get("status") == "presented"
-        and row.get("material_digest") == outcome["material_digest"]]
-    assert len(b_receipts) == labels.count("B")
-    assert len({row["event_id"] for row in b_receipts}) == len(b_receipts)
+        assert outcome["success"]
+        assert outcome["status"] == ("daily_manager_presented" if label not in seen else
+            "daily_manager_unchanged_silent" if label == state.latest else "daily_manager_routine_coalesced")
+        if label not in seen:
+            state.latest = label
+        seen.add(label)
+    assert len(state.sends) == len(seen) and len(state.deletes) == len(seen) - 1
+
 
 
 @pytest.mark.parametrize("interruption", ["daily_reject", "daily_raise", "cleanup_raise", "supersession_reject"])
@@ -570,8 +571,10 @@ def test_daily_replacement_ambiguity_retains_reason_and_never_retries_on_restart
     first = state.run("B")
     state.ambiguous = False
     replay = state.run("B")
-    assert first["status"] == replay["status"] == "daily_manager_delivery_ambiguous"
-    assert first["delivery_failure_reason"] == replay["delivery_failure_reason"] == "brief_replacement_delivery_ambiguous"
+    assert first["status"] == "daily_manager_delivery_ambiguous"
+    assert replay["status"] == "daily_manager_failure_backoff"
+    assert first["delivery_failure_reason"] == "brief_replacement_delivery_ambiguous"
+    assert replay["delivery_failure_reason"] == "replacement_ambiguous"
     assert len(state.sends) == 2 and state.deletes == []
     assert not first.get("delivery_definitely_not_sent") and not replay.get("delivery_definitely_not_sent")
     assert any(row.get("status") == "replacement_ambiguous" for row in state.daily.values())
@@ -628,4 +631,186 @@ def test_changed_packet_after_missing_daily_receipt_is_contained_without_stale_a
     assert changed["delivery_failure_reason"] == "brief_replacement_prior_binding_unproven"
     assert (len(state.sends), len(state.deletes)) == before
     assert state.run("B")["success"]
-    assert state.run("C")["success"]
+    from datetime import timedelta
+    assert state.run("C")["status"] == "daily_manager_failure_backoff"
+    assert state.run("C", now=NOW + timedelta(minutes=31))["success"]
+
+
+def notification_state(values, identity, binding):
+    rows = [row for row in values if row.get("owner_user_id") == binding.get("owner_user_id")
+            and row.get("chat_id") == binding.get("chat_id")]
+    presented = [row for row in rows if row.get("status") == "presented"]
+    failures = [row for row in rows if row.get("status") == "notification_backoff"
+                and row.get("daily_identity") == identity
+                and row.get("material_digest") == binding.get("material_digest")]
+    return {"success": True, "notified_keys": sorted({key for row in presented
+        for key in row.get("notification_keys", [])}),
+        "last_presented": presented[-1] if presented else {},
+        **({"retry_after": failures[-1]["retry_after"],
+            "failure_status": failures[-1]["failure_status"]} if failures else {})}
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_real_daily_urgent_change_is_once_known_question_silent_and_next_day_due(monkeypatch, language):
+    from datetime import timedelta
+    from modules.oom_sakkie import daily_farm_manager as daily
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery
+    memory = MemoryDelivery(monkeypatch)
+    def forbidden(*a, **k): pytest.fail("routine model called")
+    monkeypatch.setattr(daily, "_semantic_prioritize", forbidden)
+    question = "Staan die vark nou?" if language == "af" else "Is the pig standing now?"
+    base = replace(item("PIG-CASE", "Die vark se saak" if language == "af" else "Pig case",
+        question=question), why="Die vark is veilig." if language == "af" else "Pig is stable.",
+        next_action=question, metadata={"notification_decision_identity": "CASE-1"})
+    def run(work, at=NOW):
+        return daily.run_daily_farm_manager(owner_user_id="42", chat_id="42",
+            specialist_results=[SpecialistResult("rootline", "rootline-1", at,
+                SpecialistAvailability.AVAILABLE, work_items=(work,))], litter_rows=[], now=at,
+            language=language, deliver=memory.deliver, replace_brief=memory.replace,
+            semantic_prioritizer=forbidden)
+    assert run(base)["status"] == "daily_manager_presented"
+    wording = replace(base, genuine_question=("Is die vark nog regop?" if language == "af" else
+                                              "Can the pig still stand?"), next_action="changed wording")
+    assert run(wording)["status"] == "daily_manager_routine_coalesced"
+    urgent = replace(base, state=WorkState.URGENT,
+        why="Die vark staan nie en het dringend hulp nodig." if language == "af" else "Pig cannot stand; urgent help needed.")
+    assert run(urgent)["status"] == "daily_manager_presented"
+    assert len(memory.sends) == 2 and question not in memory.sends[-1][1]
+    assert "earlier decision" in memory.sends[-1][1] if language == "en" else "vorige besluit" in memory.sends[-1][1]
+    clock_only = replace(urgent, due_at=NOW + timedelta(minutes=5),
+        next_action="Reassess at 12:35", provenance=replace(urgent.provenance,
+        observed_at=NOW + timedelta(minutes=5)))
+    assert run(clock_only, NOW + timedelta(minutes=5))["status"] in {
+        "daily_manager_routine_coalesced", "daily_manager_unchanged_silent"}
+    assert len(memory.sends) == 2
+    assert run(urgent, NOW + timedelta(days=1, hours=6))["status"] == "daily_manager_presented"
+    assert len(memory.sends) == 3 and question not in memory.sends[-1][1]
+    assert all(row["writes_farm_data"] is False for row in [run(urgent, NOW + timedelta(days=1, hours=6))])
+
+
+def test_new_canonical_decision_reopens_same_concern_without_wording_trigger(monkeypatch):
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery
+    memory = MemoryDelivery(monkeypatch)
+    work = replace(item("SAME", "Same pig", question="What happened?"),
+                   metadata={"notification_decision_identity": "MATING-1"})
+    def run(row):
+        return run_daily_farm_manager(owner_user_id="42", chat_id="42", specialist_results=[result(items=[row])],
+            litter_rows=[], now=NOW, deliver=memory.deliver, replace_brief=memory.replace)
+    assert run(work)["success"]
+    assert run(replace(work, genuine_question="Tell me the outcome?"))["status"] == "daily_manager_routine_coalesced"
+    assert run(replace(work, metadata={"notification_decision_identity": "MATING-2"}))["status"] == "daily_manager_presented"
+    assert len(memory.sends) == 2 and "What happened?" in memory.sends[-1][1]
+
+
+@pytest.mark.parametrize("count", [8, 70])
+def test_unseen_urgent_items_outside_first_six_are_not_acknowledged_or_lost(monkeypatch, count):
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery
+    memory = MemoryDelivery(monkeypatch)
+    work = [item(f"URGENT-{i}", f"Urgent animal {i}", WorkState.URGENT, value=100-i) for i in range(count)]
+    def run():
+        return run_daily_farm_manager(owner_user_id="42", chat_id="42", specialist_results=[result(items=work)],
+            litter_rows=[], now=NOW, deliver=memory.deliver, replace_brief=memory.replace)
+    expected = (count + 2) // 3
+    for _ in range(expected): assert run()["status"] == "daily_manager_presented"
+    assert len(memory.sends) == expected
+    for i in range(count): assert any(f"Urgent animal {i}" in text for _, text in memory.sends)
+    assert run()["status"] in {"daily_manager_routine_coalesced", "daily_manager_unchanged_silent"}
+    assert len(memory.sends) == expected
+
+
+def test_same_failed_generation_backs_off_but_new_urgent_and_next_day_can_progress(monkeypatch):
+    from datetime import timedelta
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery
+    memory = MemoryDelivery(monkeypatch)
+    bad = replace(item("BAD", "Die vark se saak", WorkState.URGENT),
+                  why="Please confirm the animal", next_action="Die saak word nagegaan.")
+    def run(work, at=NOW):
+        return run_daily_farm_manager(owner_user_id="42", chat_id="42", specialist_results=[result(items=[work])],
+            litter_rows=[], now=at, language="af", deliver=memory.deliver, replace_brief=memory.replace)
+    assert run(bad)["status"] == "daily_manager_recipient_language_rejected"
+    assert run(bad, NOW + timedelta(minutes=5))["status"] == "daily_manager_failure_backoff"
+    assert len(memory.deliveries) == 1 and not memory.sends and not memory.family_rows
+    assert run(bad, NOW + timedelta(minutes=31))["status"] == "daily_manager_recipient_language_rejected"
+    assert run(bad, NOW + timedelta(minutes=35))["status"] == "daily_manager_failure_backoff"
+    assert len(memory.deliveries) == 2
+    good = replace(bad, why="Die vark het nuwe hulp nodig en staan nie.")
+    assert run(good, NOW + timedelta(minutes=36))["status"] == "daily_manager_presented"
+    assert len(memory.sends) == 1
+    assert run(good, NOW + timedelta(days=1, hours=8))["status"] == "daily_manager_presented"
+    assert len(memory.sends) == 2
+
+
+@pytest.mark.parametrize("text,accepted", [
+    ("<b>VANDAG SE PLAASPLAN</b>\nDie grond is nat want die reën het geval.", True),
+    ("Die besproeiing loop nie want dit is nie nodig nie.", True),
+    ("<b>VANDAG SE PLAASPLAN</b>\nI want water.", False),
+    ("Die besproeiing is veilig. I want die water.", False),
+    ("Die grond is nat want current weather is dry.", False),
+    ("Die grond is nat want die reën het geval. Please confirm the action.", False),
+])
+def test_afrikaans_want_requires_local_clause_context_and_no_english_bypass(text, accepted):
+    from modules.oom_sakkie.family_message_lifecycle import _looks_afrikaans
+    assert _looks_afrikaans(text) is accepted
+
+
+def test_concurrent_real_family_initial_brief_has_one_provider_effect(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
+    from modules.oom_sakkie import daily_farm_manager as daily
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery
+    memory = MemoryDelivery(monkeypatch)
+    barrier, lock = Barrier(2), Lock()
+    original_daily, original_family = memory.store_daily, memory.store_family
+    def durable(action, identity, payload):
+        with lock: value = original_daily(action, identity, payload)
+        if action == "load_daily": barrier.wait(timeout=3)
+        return value
+    def family_store(action, identity, payload):
+        with lock: return original_family(action, identity, payload)
+    monkeypatch.setattr(daily, "daily_farm_manager_store", durable)
+    memory.store_family = family_store
+    def run(_):
+        return daily.run_daily_farm_manager(owner_user_id="42", chat_id="42",
+            specialist_results=[result(items=[item("Q", "Current work", question="Is the pig standing?")])],
+            litter_rows=[], now=NOW, deliver=memory.deliver, replace_brief=memory.replace)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(run, range(2)))
+    assert len(memory.sends) == 1
+    assert sum(row["telegram_sends"] for row in outcomes) == 1
+    assert len([row for row in memory.family_rows.values() if row["state"] == "delivery_attempted"]) == 1
+    assert all(row["writes_farm_data"] is False for row in outcomes)
+
+
+def test_unpersisted_failure_backoff_is_reported_unproven():
+    base = store()
+    def rejecting(action, identity, payload):
+        if action == "record_daily" and payload.get("status") == "notification_backoff":
+            return {"success": False}
+        return base(action, identity, payload)
+    outcome = run_daily_farm_manager(owner_user_id="42", chat_id="42",
+        specialist_results=[], litter_rows=[], now=NOW, store=rejecting,
+        deliver=lambda *a, **k: {"success": False, "status": "recipient_language_render_unrecognized",
+                                "delivery_definitely_not_sent": True})
+    assert outcome["status"] == "daily_manager_failure_backoff_persistence_unproven"
+    assert not outcome["success"] and outcome["telegram_sends"] == 0
+
+
+def test_prepolicy_pending_question_exact_task_seeds_current_identity_but_new_cycle_reopens(monkeypatch):
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery
+    memory = MemoryDelivery(monkeypatch)
+    work = replace(item("LEGACY-TASK", "Current pig", question="Is the pig standing?"),
+                   metadata={"notification_decision_identity": "LIFECYCLE-1"})
+    def run(row):
+        return run_daily_farm_manager(owner_user_id="42", chat_id="42", specialist_results=[result(items=[row])],
+            litter_rows=[], now=NOW, deliver=memory.deliver, replace_brief=memory.replace)
+    assert run(work)["status"] == "daily_manager_presented"
+    # Synthetic historical shape predates the notification keys/typed ID.
+    for row in memory.daily_rows.values():
+        if row.get("status") == "presented":
+            row.pop("notification_keys", None)
+            row["question_binding"].pop("decision_identity", None)
+    changed = replace(work, why="The same pending question has refreshed supporting records.")
+    assert run(changed)["status"] == "daily_manager_routine_coalesced"
+    reopened = replace(changed, item_id="NEW-TASK", metadata={"notification_decision_identity": "LIFECYCLE-2"})
+    assert run(reopened)["status"] == "daily_manager_presented"
+    assert len(memory.sends) == 2

@@ -8,7 +8,6 @@ import html
 import json
 import os
 import re
-from urllib import error as urllib_error, request as urllib_request
 from zoneinfo import ZoneInfo
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
@@ -22,6 +21,11 @@ CONTRACT_VERSION = "oom_sakkie_daily_farm_manager.v2"
 EVENT_SOURCE = "oom_sakkie_daily_farm_manager"
 MORNING_HOUR = 6
 MORNING_MINUTE = 45
+NOTIFICATION_VERSION = "daily_notification.v1"
+FAILURE_BACKOFF_MINUTES = 30
+# A full farm worklist may exceed the visible card by orders of magnitude.
+# The existing bounded read deadline still applies to this one set-based query.
+MAX_NOTIFICATION_KEYS = 1024
 ZERO = {"hardware_commands": 0, "writes_farm_data": False,
         "customer_sends": 0, "protected_actions_performed": False}
 
@@ -54,12 +58,59 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     packet = build_daily_management_packet(results, now=now, language=language,
         semantic_prioritizer=semantic_prioritizer)
     digest = packet["material_digest"]
+    notification = store("load_notification_state", identity, {
+        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+        "material_digest": digest, "notification_keys": packet["candidate_notification_keys"]}) or {}
+    if not isinstance(notification, dict) or notification.get("success") is not True:
+        return {"success": False, "status": "daily_manager_notification_state_unavailable",
+                "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+    known = set(notification.get("notified_keys") or ())
+    # Legacy cards contain the exact pending concern even before this policy
+    # stored notification fingerprints. Wording is not a new owner decision.
+    for previous in (prior, notification.get("last_presented") or {}):
+        binding = previous.get("question_binding") or {}
+        if binding.get("dedupe_key") and previous.get("question"):
+            current = packet["question_binding"]
+            same_task = all(binding.get(key) and binding.get(key) == current.get(key)
+                            for key in ("task_id", "domain", "dedupe_key"))
+            if binding.get("decision_identity") or not current.get("decision_identity") or same_task:
+                known.add(_decision_key(binding.get("domain"), binding["dedupe_key"],
+                    binding.get("decision_identity") or
+                    (current.get("decision_identity") if same_task else "")))
+    new_attention = set(packet["candidate_notification_keys"]) - known
+    if new_attention:
+        packet = build_daily_management_packet(results, now=now, language=language,
+            attention_keys=new_attention)
+        digest = packet["material_digest"]
     if prior.get("material_digest") == digest and prior.get("status") in {
             "presented", "unchanged"}:
         return {"success": True, "status": "daily_manager_unchanged_silent",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0,
-                "next_due_at": _next_check(local), **ZERO}
+                "next_due_at": _next_routine_due(local), **ZERO}
+    failure = store("load_notification_failure", identity, {
+        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+        "material_digest": digest}) or {}
+    if not isinstance(failure, dict) or failure.get("success") is not True:
+        return {"success": False, "status": "daily_manager_notification_state_unavailable",
+                "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+    retry_at = _timestamp(failure.get("retry_after"))
+    if retry_at and now < retry_at:
+        return {"success": False, "status": "daily_manager_failure_backoff",
+                "daily_identity": identity, "material_digest": digest,
+                "next_due_at": retry_at.isoformat(), "telegram_sends": 0,
+                "telegram_edits": 0, "delivery_failure_reason": failure.get("failure_status"), **ZERO}
+    if prior.get("status") in {"presented", "unchanged"} and not new_attention:
+        return {"success": True, "status": "daily_manager_routine_coalesced",
+                "daily_identity": identity, "material_digest": digest,
+                "next_due_at": prior.get("next_routine_due_at") or _next_routine_due(local),
+                "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+    question_key = _decision_key(packet["question_binding"].get("domain"),
+                                 packet["question_binding"].get("dedupe_key"),
+                                 packet["question_binding"].get("decision_identity"))
+    visible_question = "" if question_key in known else packet["question"]
+    packet["answer"] = _render(packet["priorities"], packet["watch"], visible_question,
+                               now, language, known_decisions=known)
     # One scheduled date owns one provider effect.  The material digest is
     # evidence carried by the claim, not part of its identity: evidence may
     # change while another worker starts or a process restarts.
@@ -80,7 +131,9 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "answer_sha256": sha256(packet["answer"].strip().encode()).hexdigest(),
         "material_digest": digest, "status": "detected", "observed_at": now.isoformat(),
         "task_identities": [row["task_id"] for row in packet["all_tasks"]],
-        "contract_version": CONTRACT_VERSION})
+        "contract_version": CONTRACT_VERSION,
+        "notification_version": NOTIFICATION_VERSION,
+        "notification_keys": packet["notification_keys"]})
     if not isinstance(claim, dict) or claim.get("success") is not True:
         return {"success": False, "status": "daily_manager_claim_unproven",
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
@@ -111,7 +164,7 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         return {"success": True, "status": "daily_manager_internal_work_silent",
                 "daily_identity": identity, "material_digest": digest,
                 "task_count": len(packet["all_tasks"]), "telegram_sends": 0,
-                "telegram_edits": 0, "next_due_at": _next_check(local), **ZERO}
+                "telegram_edits": 0, "next_due_at": _next_routine_due(local), **ZERO}
     parsed = {"telegram_user_id": str(owner_user_id), "telegram_chat_id": str(chat_id),
         "telegram_chat_type": "private", "output_language": str(language),
         "provider_message_id": "scheduled:" + claim_id,
@@ -162,9 +215,24 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
             "material_digest": digest, "status": failure_status, **failure_detail,
             "observed_at": now.isoformat(), "telegram_sends": 0,
+            "notification_version": NOTIFICATION_VERSION,
+            "retry_after": (now + timedelta(minutes=FAILURE_BACKOFF_MINUTES)).isoformat(),
             "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
             "delivery_definitely_not_sent":
                 (delivery or {}).get("delivery_definitely_not_sent") is True})
+        backoff_id = "OOM-DAILY-BACKOFF-" + sha256(json.dumps([claim_id, digest,
+            int(now.timestamp()) // (FAILURE_BACKOFF_MINUTES * 60)],
+            separators=(",", ":")).encode()).hexdigest()
+        backoff_receipt = store("record_daily", backoff_id, {"daily_identity": identity,
+            "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+            "material_digest": digest, "status": "notification_backoff",
+            "failure_status": failure_status, "observed_at": now.isoformat(),
+            "retry_after": (now + timedelta(minutes=FAILURE_BACKOFF_MINUTES)).isoformat(),
+            "notification_version": NOTIFICATION_VERSION})
+        if not isinstance(backoff_receipt, dict) or backoff_receipt.get("success") is not True:
+            return {"success": False, "status": "daily_manager_failure_backoff_persistence_unproven",
+                    "daily_identity": identity, "material_digest": digest,
+                    "telegram_sends": 0, "telegram_edits": 0, **ZERO}
         return {"success": False, "status": ("daily_manager_recipient_language_rejected" if language_rejected else
                                             "daily_manager_delivery_ambiguous"),
                 "daily_identity": identity, "material_digest": digest, **failure_detail,
@@ -199,7 +267,10 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "telegram_sends": int(delivery.get("telegram_sends") or 0),
         "previous_telegram_message_id": str(prior.get("telegram_message_id") or "")
             if replacement else "",
-        "generation_replaced": replacement}) if task_receipts_proven else None
+        "generation_replaced": replacement,
+        "notification_version": NOTIFICATION_VERSION,
+        "notification_keys": packet["notification_keys"],
+        "next_routine_due_at": _next_routine_due(local)}) if task_receipts_proven else None
     if not task_receipts_proven or not isinstance(outcome, dict) or outcome.get("success") is not True:
         return {"success": False, "status": "daily_manager_provider_confirmed_lifecycle_unavailable",
             "daily_identity": identity, "material_digest": digest,
@@ -212,7 +283,7 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "telegram_sends": int(delivery.get("telegram_sends") or 0),
         "telegram_edits": int(delivery.get("telegram_edits") or 0),
         "task_count": len(packet["all_tasks"]), "priority_count": len(packet["priorities"]),
-        "next_due_at": _next_check(local), **ZERO}
+        "next_due_at": _next_routine_due(local), **ZERO}
 
 
 def build_litter_watch_result(rows, *, now=None, language="en"):
@@ -338,7 +409,7 @@ def build_sale_watch_result(rows, *, now=None, language="en"):
 
 
 def build_daily_management_packet(results, *, now=None, language="en",
-                                  semantic_prioritizer=None):
+                                  semantic_prioritizer=None, attention_keys=None):
     now = _aware(now or datetime.now(timezone.utc))
     by_key = {}
     for result in results:
@@ -353,16 +424,15 @@ def build_daily_management_packet(results, *, now=None, language="en",
             if prior is None or _priority(item) < _priority(prior):
                 by_key[key] = item
     ranked = sorted(by_key.values(), key=_priority)
-    selected = (semantic_prioritizer or _semantic_prioritize)(ranked, language=language)
-    ordered = _validated_semantic_order(ranked, selected)
-    # The evidence-backed priority, value and due date choose visible work.
-    # A model may arrange those items for reading, but its ordering alone must
-    # not move an unchanged task across the three/six-item visibility cutoffs.
-    priority_keys = {row.dedupe_key for row in ranked[:3]}
-    watch_keys = {row.dedupe_key for row in ranked[3:6]}
-    priorities = [row for row in ordered if row.dedupe_key in priority_keys]
-    watch = [row for row in ordered if row.dedupe_key in watch_keys]
-    question = next((item.genuine_question for item in ranked
+    # Routine scheduling is deterministic. The compatibility argument is
+    # deliberately never called; interactive semantic interpretation is separate.
+    ordered = ranked
+    if attention_keys:
+        ordered = sorted(ranked, key=lambda row: (
+            not bool(set(_notification_keys([row], unbounded=True)) & set(attention_keys)),
+            _priority(row)))
+    priorities, watch = ordered[:3], ordered[3:6]
+    question = next((item.genuine_question for item in ordered
                      if item.genuine_question.strip()), "")
     question_item = next((item for item in ranked
                           if question and item.genuine_question.strip() == question), None)
@@ -379,18 +449,24 @@ def build_daily_management_packet(results, *, now=None, language="en",
                 if question_item else [])
     question_binding = ({"task_id": question_item.item_id,
         "dedupe_key": question_item.dedupe_key, "domain": question_item.domain,
-        "question": question,
+        "question": question, "decision_identity": _decision_identity(question_item),
         **({"pig_id": pig_refs[0]} if len(set(pig_refs)) == 1 else {})}
         if question_item else {})
     return {"contract_version": CONTRACT_VERSION, "material_digest": digest,
         "priorities": priorities, "watch": watch, "all_tasks": tasks,
         "question": question, "question_binding": question_binding,
+        "notification_keys": _notification_keys(priorities + watch, question_item),
+        "candidate_notification_keys": _notification_keys(ranked, unbounded=True),
         "answer": _render(priorities, watch, question, now, language)}
 
 
 def daily_farm_manager_store(action, identity, payload):
     if action == "load_daily":
         return _load_daily(identity, payload or {})
+    if action == "load_notification_failure":
+        return _load_notification_failure(identity, payload or {})
+    if action == "load_notification_state":
+        return _load_notification_state(identity, payload or {})
     if action == "load_answered_questions":
         return _load_answered_questions(payload or {})
     from modules.sales.sam_live_stock_launch_control import (
@@ -407,6 +483,97 @@ def daily_farm_manager_store(action, identity, payload):
     result, status = record_sam_live_stock_review_event(event)
     return {**result, "success": status < 400 and result.get("success") is True,
         "created": result.get("created", status < 300)}
+
+
+def _decision_identity(item):
+    return str(item.metadata.get("notification_decision_identity") or "") if item else ""
+
+
+def _decision_key(domain, dedupe_key, decision_identity=None):
+    if not domain or not dedupe_key:
+        return ""
+    return "decision:" + sha256(json.dumps([str(domain), str(dedupe_key), str(decision_identity or "")],
+        separators=(",", ":")).encode()).hexdigest()
+
+
+def _notification_keys(visible, question_item=None, *, unbounded=False):
+    keys = set()
+    shown = [row for row in visible if _owner_action_required(row)] + [
+        row for row in visible if not _owner_action_required(row)][:3]
+    for item in (visible if unbounded else shown):
+        if item.state is WorkState.URGENT:
+            # Source timestamps, reassessment clocks and ranking do not create
+            # an interruption. Changed urgent facts remain eligible immediately.
+            material = {key: value for key, value in _material(item).items()
+                        if key not in {"due_at", "business_value", "next_action", "owner_followup"}}
+            keys.add("urgent:" + sha256(json.dumps(material, sort_keys=True,
+                separators=(",", ":")).encode()).hexdigest())
+        if _owner_action_required(item):
+            keys.add(_decision_key(item.domain, item.dedupe_key, _decision_identity(item)))
+    if question_item is not None:
+        keys.add(_decision_key(question_item.domain, question_item.dedupe_key, _decision_identity(question_item)))
+    return sorted(keys)
+
+
+def _next_routine_due(local):
+    return (local + timedelta(days=1)).replace(hour=MORNING_HOUR,
+        minute=MORNING_MINUTE, second=0, microsecond=0).isoformat()
+
+
+def _timestamp(value):
+    try:
+        return _aware(datetime.fromisoformat(str(value).replace("Z", "+00:00")))
+    except (ValueError, TypeError):
+        return None
+
+
+def _load_notification_state(identity, binding):
+    keys = binding.get("notification_keys") or []
+    if not isinstance(keys, list) or len(keys) > MAX_NOTIFICATION_KEYS:
+        return {"success": False}
+    owner, chat = str(binding.get("owner_user_id") or ""), str(binding.get("chat_id") or "")
+    with connect_bounded_read() as connection:
+        with connection.cursor() as cursor:
+            # Only current candidate keys are returned. EXISTS retains exact
+            # notification memory across dates without fetching all history.
+            cursor.execute("""select candidate.key from unnest(%s::text[]) as candidate(key)
+                where exists (select 1 from public.sam_live_stock_conversation_review_events e
+                    where e.event_source=%s
+                      and e.review_json->'daily_farm_manager'->>'owner_user_id'=%s
+                      and e.review_json->'daily_farm_manager'->>'chat_id'=%s
+                      and e.review_json->'daily_farm_manager'->>'status'='presented'
+                      and e.review_json->'daily_farm_manager'->'notification_keys' ? candidate.key)
+                """, (keys, EVENT_SOURCE, owner, chat))
+            notified = [row[0] for row in cursor.fetchall()]
+            cursor.execute("""select review_json->'daily_farm_manager'
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s
+                  and review_json->'daily_farm_manager'->>'owner_user_id'=%s
+                  and review_json->'daily_farm_manager'->>'chat_id'=%s
+                  and review_json->'daily_farm_manager'->>'status'='presented'
+                order by created_at desc, review_event_id desc limit 1""",
+                (EVENT_SOURCE, owner, chat))
+            row = cursor.fetchone(); last_presented = row[0] if row else {}
+    return {"success": True, "notified_keys": notified, "last_presented": last_presented}
+
+
+def _load_notification_failure(identity, binding):
+    owner, chat = str(binding.get("owner_user_id") or ""), str(binding.get("chat_id") or "")
+    with connect_bounded_read() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""select review_json->'daily_farm_manager'
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s
+                  and review_json->'daily_farm_manager'->>'owner_user_id'=%s
+                  and review_json->'daily_farm_manager'->>'chat_id'=%s
+                  and review_json->'daily_farm_manager'->>'daily_identity'=%s
+                  and review_json->'daily_farm_manager'->>'material_digest'=%s
+                  and review_json->'daily_farm_manager'->>'status'='notification_backoff'
+                order by created_at desc, review_event_id desc limit 1""",
+                (EVENT_SOURCE, owner, chat, identity, str(binding.get("material_digest") or "")))
+            row = cursor.fetchone(); failure = row[0] if row else {}
+    return {"success": True, "retry_after": failure.get("retry_after"),
+            "failure_status": failure.get("failure_status")}
 
 
 def _load_daily(identity, binding):
@@ -459,7 +626,7 @@ def _load_answered_questions(binding):
             return tuple(values)
 
 
-def _render(priorities, watch, question, now, language):
+def _render(priorities, watch, question, now, language, *, known_decisions=()):
     af = str(language).lower().startswith("af")
     visible = list(priorities) + list(watch)
     owner_work = [row for row in visible if _owner_action_required(row)]
@@ -473,7 +640,7 @@ def _render(priorities, watch, question, now, language):
         lines.append("<b>AKSIE NODIG</b>" if af else "<b>ACTION NEEDED</b>")
         lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 130))}</b>\n"
                      f"{html.escape(_compact(row.why, 300))}\n"
-                     f"{html.escape(_compact(row.next_action, 300))}"
+                     f"{html.escape(_compact(_pending_decision_text(af) if _decision_key(row.domain, row.dedupe_key, _decision_identity(row)) in known_decisions else row.next_action, 300))}"
                      for index, row in enumerate(owner_work, 1))
     if automatic_work:
         lines.extend(("", "<b>OOM SAKKIE KONTROLEER OUTOMATIES</b>" if af
@@ -491,6 +658,11 @@ def _render(priorities, watch, question, now, language):
         lines.extend(("", "Geen aksie word nou van jou benodig nie."
                       if af else "No action required from you."))
     return "\n".join(lines)
+
+
+def _pending_decision_text(af):
+    return ("Jou vorige besluit of antwoord is nog uitstaande; ek vra dit nie weer nie." if af else
+            "Your earlier decision or answer remains pending; I am not asking again.")
 
 
 def _owner_action_required(item):
@@ -525,6 +697,8 @@ def _material(item):
         "state": item.state.value, "authority": item.authority.value,
         "business_value": item.business_value,
         "owner_action_required": _owner_action_required(item)}
+    if _decision_identity(item):
+        material["decision_identity"] = _decision_identity(item)
     if not _owner_action_required(item):
         material["owner_followup"] = str(item.metadata.get("owner_followup") or "")
     if _owner_action_required(item):
@@ -547,38 +721,8 @@ def _priority(item):
 
 
 def _semantic_prioritize(items, *, language="en"):
-    """Ask the approved read-only LLM to rank supported task identities only."""
-    from modules.oom_sakkie.llm_router import API_KEY_ENV, API_URL_ENV, DEFAULT_API_URL, MODEL_ENV
-    if str(os.environ.get("OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED") or "").lower() not in {
-            "1", "true", "yes", "on"}:
-        return None
-    model = str(os.environ.get(MODEL_ENV) or "").strip()
-    key = str(os.environ.get(API_KEY_ENV) or "").strip()
-    if not model or not key or not items:
-        return None
-    tasks = [{"task_id": row.item_id, "title": row.title, "why": row.why,
-              "next_action": row.next_action, "state": row.state.value,
-              "due_at": row.due_at.isoformat() if row.due_at else None,
-              "authority": row.authority.value} for row in items]
-    payload = {"model": model, "temperature": 0, "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": (
-            "You are Oom Sakkie's farm-management prioritizer. Rank only supplied task_id values. "
-            "Put urgent welfare, overdue work, today's protected readiness, and time-critical farm work first. "
-            "Missing evidence blocks only its dependent conclusion. Never invent facts, tasks, completion or authority. "
-            "Return JSON with ordered_task_ids containing every supplied identity exactly once.")},
-            {"role": "user", "content": json.dumps({"language": language, "tasks": tasks},
-                separators=(",", ":"))}]}
-    request = urllib_request.Request(str(os.environ.get(API_URL_ENV) or DEFAULT_API_URL),
-        data=json.dumps(payload).encode(), headers={"Authorization": "Bearer " + key,
-        "Content-Type": "application/json"}, method="POST")
-    try:
-        with urllib_request.urlopen(request, timeout=8) as response:
-            envelope = json.loads(response.read().decode())
-        content = json.loads(str(envelope["choices"][0]["message"]["content"]))
-        return content.get("ordered_task_ids")
-    except (KeyError, IndexError, TypeError, ValueError, OSError, TimeoutError,
-            json.JSONDecodeError, urllib_error.URLError, urllib_error.HTTPError):
-        return None
+    """Retained compatibility seam; routine ranking never performs inference."""
+    return None
 
 
 def _validated_semantic_order(items, selected):

@@ -149,3 +149,29 @@ card. Interrupted or ambiguous attempts are reconciled before any new attempt.
 Protected decisions bind owner, private chat, card, specialist, action,
 evidence generation, payload digest and expiry; completion edits once, removes
 controls and makes exact replay a no-op.
+
+## Farm AI Budget And Scheduled Notifications
+
+Owner-approved initial farm OpenAI budget: US$1 per Africa/Johannesburg day.
+This governs guarded backend OpenAI requests from Oom Sakkie and the shared
+farm callers. It does not govern ChatGPT/Codex subscription credits, external
+API clients, other providers or spending before the guard was activated.
+
+Routine monitoring retains its existing cadence and uses deterministic
+prioritization without paid ranking. Routine owner briefings are coalesced to
+one per day, normally from 06:45. Newly evidenced urgency or a genuinely new
+owner decision can interrupt; known pending questions do not repeatedly alert.
+Canonical decision/cycle identity distinguishes reopened work from wording or
+freshness changes. Existing recipient, confirmation and provider replay guards
+continue to apply. The same failed notification generation backs off for
+30 minutes without concealing a different urgent generation.
+
+Before a supported paid request, atomically reserve its conservative maximum
+cost against the shared durable daily ledger. Record validated token usage and
+cost after a known response. Unknown outcomes retain their reservation; missing
+accounting or unpriced requests stop before the provider call. The initial
+priced surface is bounded text Chat Completions. Optional OpenAI voice/image
+interpretation remains unavailable until separately bounded and priced, with
+clear text-only guidance to the owner. No budget denial changes farm facts or
+grants authority. Protected confirmations and deterministic monitoring remain
+available. Source qualification is not proof that these controls are deployed.

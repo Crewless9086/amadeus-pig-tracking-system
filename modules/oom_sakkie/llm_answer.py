@@ -1,3 +1,5 @@
+
+from modules.oom_sakkie.model_budget import budgeted_urlopen
 import json
 import os
 import re
@@ -69,7 +71,7 @@ def compose_answer_with_llm(*, user_text, tool_name, deterministic_answer, stale
         method="POST",
     )
     try:
-        with urllib_request.urlopen(req, timeout=_timeout_seconds()) as response:
+        with budgeted_urlopen(req, timeout=_timeout_seconds(), purpose="oom_answer") as response:
             body = response.read().decode("utf-8")
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
         return None

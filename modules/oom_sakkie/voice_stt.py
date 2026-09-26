@@ -1,3 +1,5 @@
+
+from modules.oom_sakkie.model_budget import ModelBudgetError, budgeted_urlopen
 import json
 import os
 import re
@@ -69,6 +71,12 @@ def transcribe_oom_sakkie_voice_audio(file_storage, environ=None, *, language="e
         text = _call_openai_transcription(audio_bytes, content_type or "audio/webm", policy,
             environ=environ, language=language, filename=filename, http_open=http_open,
             timeout=timeout)
+    except ModelBudgetError as error:
+        from modules.oom_sakkie.service import model_budget_denial_result
+        notice = model_budget_denial_result(error.status, language, voice=True)
+        body, code = _result(False, notice["status"], policy, 503)
+        body.update({"answer": notice["answer"], "model_budget_denied": True, "text_only": True})
+        return body, code
     except urllib.error.HTTPError as error:
         return _result(False, "backend_stt_http_error", policy, error.code if 400 <= error.code < 500 else 502)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
@@ -103,7 +111,7 @@ def _call_openai_transcription(audio_bytes, content_type, policy, environ=None, 
         },
         method="POST",
     )
-    with (http_open or urllib.request.urlopen)(request, timeout=timeout) as response:
+    with budgeted_urlopen(request, timeout=timeout, purpose="oom_voice", environ=environ, http_open=http_open) as response:
         response_bytes = response.read(MAX_TRANSCRIPTION_RESPONSE_BYTES + 1)
     if len(response_bytes) > MAX_TRANSCRIPTION_RESPONSE_BYTES:
         raise ValueError("transcription_response_too_large")

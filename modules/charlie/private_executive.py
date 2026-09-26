@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from modules.oom_sakkie.model_budget import budgeted_urlopen
+
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
@@ -185,8 +187,7 @@ def _grounded_synthesis(plan, evidence, fallback, *, environ=None, http_open=Non
         headers={"Authorization": f"Bearer {source.get('OPENAI_API_KEY', '')}", "Content-Type": "application/json"}, method="POST",
     )
     try:
-        opener = http_open or urllib.request.urlopen
-        with opener(request, timeout=30) as response:
+        with budgeted_urlopen(request, timeout=30, purpose="charlie_private_answer", environ=source, http_open=http_open) as response:
             parsed = json.loads(response.read().decode("utf-8"))
         text = str(parsed["choices"][0]["message"]["content"] or "").strip()
         return text[:3900] if text else fallback

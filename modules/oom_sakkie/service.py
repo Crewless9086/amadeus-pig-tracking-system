@@ -310,6 +310,43 @@ RULES = [
 ]
 
 
+def model_budget_denial_result(status, language="en", *, voice=False):
+    """Visible safe limitation, never a semantic interpretation or farm result."""
+    value = str(status or "")
+    if not re.fullmatch(r"farm_model_(?:budget_[a-z_]+|daily_budget_exhausted)", value):
+        value = "farm_model_budget_store_unavailable"
+    af = str(language or "en").casefold().startswith("af")
+    if value == "farm_model_daily_budget_exhausted":
+        text = ("Die daaglikse plaas-OpenAI-limiet van US$1 laat nie ruimte vir hierdie versoek nie. "
+                "Bestaande roetinekontroles en beskermde bevestigings bly beskikbaar."
+                if af else "The US$1 daily farm OpenAI limit leaves no room for this request. "
+                "Existing routine checks and protected confirmations remain available.")
+    elif value.endswith(("endpoint_unpriced", "model_unpriced", "request_unpriced", "multimodal_unpriced")):
+        text = ("Hierdie AI-invoer word nog nie deur die kostebeheer ondersteun nie."
+                if af else "This AI input is not yet supported by the cost controls.")
+    elif value.endswith(("input_limit", "output_limit", "messages_invalid", "request_invalid")):
+        text = ("Ek kan hierdie versoek nie veilig binne die AI-kostelimiete verwerk nie."
+                if af else "I cannot safely process this request within the AI cost limits.")
+    else:
+        text = ("Ek kan die AI-kosteboekhouding nie nou verifieer nie, dus is nuwe betaalde AI-oproepe veilig teruggehou. "
+                "Dit beteken nie die daaglikse limiet is opgebruik nie."
+                if af else "I cannot verify the AI cost accounting right now, so new paid AI calls are safely paused. "
+                "This does not mean the daily allowance is exhausted.")
+    if voice:
+        text += (" Tik asseblief die versoek. AI-stem- en beeldverwerking is tydelik nie beskikbaar nie."
+                 if af else " Please type the request. AI voice and image processing are temporarily unavailable.")
+    text += (" Ek het hierdie versoek nie vertolk of plaasrekords verander nie."
+             if af else " I have not interpreted this request or changed farm records.")
+    answer = ("<b>AI-KOSTEBEHEER</b>\n\n" if af else "<b>AI COST CONTROL</b>\n\n") + text
+    return {"handled": True, "success": False, "status": value, "answer": answer,
+        "answer_available": True, "needs_clarification": False,
+        "recipient_render_contract": "specialist_structured_recipient_v1",
+        "recipient_language": "af" if af else "en", "model_budget_denied": True,
+        "request_interpreted": False, "writes_farm_data": False,
+        "protected_actions_performed": False, "hardware_commands": 0,
+        "provider_control_calls": 0}
+
+
 def handle_message(payload):
     text = str((payload or {}).get("text") or "").strip()[:MAX_USER_TEXT_CHARS]
     channel = str((payload or {}).get("channel") or "kiosk").strip()[:40]

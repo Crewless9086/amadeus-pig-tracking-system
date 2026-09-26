@@ -1,3 +1,5 @@
+
+from modules.oom_sakkie.model_budget import budgeted_urlopen
 import hashlib
 import hmac
 import json
@@ -1193,7 +1195,7 @@ def _call_sam_meat_llm(message, inbound, source):
         method="POST",
     )
     try:
-        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+        with budgeted_urlopen(req, timeout=_timeout(source), purpose="sam_meat_extract", environ=source) as response:
             body = response.read().decode("utf-8")
     except urllib_error.HTTPError as exc:
         return _llm_error_payload("http_error", exc)
@@ -1282,7 +1284,7 @@ def _call_sam_meat_agent_v3_llm(context_packet, facts, source):
         method="POST",
     )
     try:
-        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+        with budgeted_urlopen(req, timeout=_timeout(source), purpose="sam_meat_reply", environ=source) as response:
             body = response.read().decode("utf-8")
     except urllib_error.HTTPError as exc:
         return _llm_error_payload("http_error", exc)
@@ -1341,7 +1343,7 @@ def _call_sam_meat_reply_rewriter_llm(decision, inbound, facts, prior_context, c
         method="POST",
     )
     try:
-        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+        with budgeted_urlopen(req, timeout=_timeout(source), purpose="sam_meat_reply", environ=source) as response:
             body = response.read().decode("utf-8")
     except urllib_error.HTTPError as exc:
         return _llm_error_payload("http_error", exc)
@@ -1507,7 +1509,7 @@ def _call_sam_meat_agent_llm(inbound, facts, prior_context, source):
         method="POST",
     )
     try:
-        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+        with budgeted_urlopen(req, timeout=_timeout(source), purpose="sam_meat_reply", environ=source) as response:
             body = response.read().decode("utf-8")
     except urllib_error.HTTPError as exc:
         return _llm_error_payload("http_error", exc)

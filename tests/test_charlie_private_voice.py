@@ -21,9 +21,15 @@ class CharliePrivateVoiceTests(unittest.TestCase):
         result, status = transcribe_web_audio(b"voice", "voice.webm", "audio/webm", {})
         self.assertEqual((status, result["status"]), (503, "voice_transcription_disabled"))
 
-    def test_transcription_uses_configured_model_without_exposing_key(self):
-        result, status = transcribe_web_audio(b"voice", "voice.webm", "audio/webm", {"transcription_enabled": True, "transcription_model": "whisper-test"}, environ={"OPENAI_API_KEY": "top-secret"}, http_client=FakeClient())
-        self.assertEqual((status, result["text"]), (200, "Wat doen CORE nou?"))
+    def test_unpriced_transcription_stops_before_provider_and_gives_text_guidance(self):
+        client = FakeClient()
+        result, status = transcribe_web_audio(b"voice", "voice.webm", "audio/webm", {"transcription_enabled": True, "transcription_model": "whisper-1"}, environ={"OPENAI_API_KEY": "top-secret"}, http_client=client)
+        self.assertEqual((status, result["status"]), (503, "farm_model_budget_endpoint_unpriced"))
+        self.assertEqual(result["text"], "")
+        self.assertTrue(result["model_budget_denied"] and result["text_only"])
+        self.assertIn("Please type", result["answer"])
+        self.assertNotIn("Send a new", result["answer"])
+        self.assertEqual(client.calls, [])
         self.assertNotIn("top-secret", str(result))
 
     def test_tts_is_provider_gated_and_returns_audio(self):

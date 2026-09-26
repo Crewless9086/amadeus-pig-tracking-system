@@ -100,6 +100,13 @@ def _handle_message(payload, binding, store, sender, environ, *, event_sink=None
         transcription = transcribe_voice(media, private_policy(environ), environ=environ)
         text = transcription.get("text") or ""
         if not text:
+            if transcription.get("model_budget_denied") is True:
+                notice = str(transcription["answer"]).replace("<b>", "").replace("</b>", "")
+                result, status = _reply(binding, notice, store, sender,
+                    update_id, media, environ, status_code=503)
+                result.update({"model_budget_denied": True,
+                    "model_budget_status": transcription["status"], "request_interpreted": False})
+                return result, status
             return _reply(binding, "I received the voice note, but private voice transcription is not enabled yet. Please type the instruction for now.", store, sender, update_id, media, environ)
     if not text:
         return _reply(binding, "I received the attachment. Tell me what you want me to inspect or do with it.", store, sender, update_id, media, environ)

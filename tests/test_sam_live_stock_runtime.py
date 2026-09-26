@@ -1146,7 +1146,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda *_: {
@@ -1564,7 +1564,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {
@@ -1650,7 +1650,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             inbound_payload(content="Yes, proceed and reserve the pig for me."),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {
@@ -1857,7 +1857,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1",
             "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
             "SAM_LIVE_STOCK_BACKEND_AGENT_V3_ENABLED": "1",
-            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
             "OPENAI_API_KEY": "test-key",
             "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1",
             "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED": "1",
@@ -2765,7 +2765,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             inbound_payload(),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -2813,7 +2813,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {
@@ -2901,7 +2901,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         calls = []
         environment = {
             "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
             "OPENAI_API_KEY": "test-secret-key-never-exposed",
         }
 
@@ -2940,7 +2940,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID": "99",
                 "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID": "77",
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -3142,7 +3142,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID": "99",
                 "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID": "77",
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -3216,7 +3216,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             inbound_payload(id=44, content="Do you have two females left?"),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -3273,7 +3273,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             inbound_payload(content="How much for 1 piglet?"),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -3323,7 +3323,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         payload = sam_live_stock_runtime._llm_reply_payload(
             context,
-            {"SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model"},
+            {"SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini"},
         )
         user_content = payload["messages"][1]["content"]
         parsed = json.loads(user_content)
@@ -3337,7 +3337,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             inbound_payload(),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -3444,7 +3444,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             inbound_payload(),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -4511,7 +4511,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             def __exit__(self, *_args):
                 return False
 
-            def read(self):
+            def read(self, size=-1):
                 return b'{"id":11,"status":"sent","source_id":"wamid.SECRET"}'
 
         with patch.object(
@@ -4546,7 +4546,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             def __exit__(self, *_args):
                 return False
 
-            def read(self):
+            def read(self, size=-1):
                 return b'{"id":12,"status":"sent"}'
 
         message = (
@@ -5610,7 +5610,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             inbound_payload(content="Can I get more info on this?", sender={"id": 99, "name": "Henry"}),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
             },
             conversation_history_loader=lambda *_args: {"success": True, "messages": []},
@@ -6231,7 +6231,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             {},
             {
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
                 "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
@@ -6292,7 +6292,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         source = {
             "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
-            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "gpt-4.1-mini",
             "OPENAI_API_KEY": "test-key",
             "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
             "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
@@ -6756,3 +6756,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def setUpModule():
+    from tests.farm_model_test_support import isolated_model_budget
+    global _model_budget_test_scope
+    _model_budget_test_scope = isolated_model_budget()
+
+
+def tearDownModule():
+    _model_budget_test_scope.close()

@@ -12,7 +12,7 @@ import urllib.request
 from modules.oom_sakkie import telegram_voice as voice
 from modules.oom_sakkie.telegram_gateway import parse_telegram_gateway_payload
 from modules.oom_sakkie.telegram_voice_audio import validate_ogg_opus_duration
-from modules.oom_sakkie.voice_stt import transcribe_oom_sakkie_voice_audio
+from modules.oom_sakkie.voice_stt import _multipart_body, transcribe_oom_sakkie_voice_audio
 from tests.telegram_voice_test_support import (
     CannedVoiceProvider, Response, environment, ogg_page, synthetic_ogg, voice_payload,
 )
@@ -56,16 +56,27 @@ class VoiceTransportBoundaryTests(unittest.TestCase):
         self.parsed = parse_telegram_gateway_payload(self.payload)
         self.principal = voice._authorize_native(self.payload, self.parsed, self.source)
 
-    def test_real_multipart_uses_configured_af_and_retains_canned_transcript_as_reported_input(self):
-        provider = CannedVoiceProvider(self.payload, "Vark SYNTHETIC-126 is gister dood.")
+    def test_unpriced_voice_stops_before_openai_and_gives_af_text_guidance(self):
+        provider = CannedVoiceProvider(self.payload, "CANNED UNUSED INPUT")
         with patch.object(voice.urllib.request, "build_opener", return_value=provider):
-            result = voice._bounded_transcription(self.payload, self.principal, self.source)
-        self.assertEqual(len(provider.requests), 3)
-        self.assertEqual(result["text"], provider.transcript)
-        self.assertEqual(result["provenance"]["language"], "af")
-        self.assertTrue(result["provenance"]["reported_input_only"])
-        self.assertFalse(result["provenance"]["stores_audio"])
-        self.assertFalse(result["provenance"]["audio_decoded"])
+            with self.assertRaises(voice.VoiceFailure) as caught:
+                voice._bounded_transcription(self.payload, self.principal, self.source)
+        self.assertEqual(caught.exception.status, "farm_model_budget_endpoint_unpriced")
+        self.assertEqual(len(provider.requests), 2)
+        self.assertTrue(all("api.telegram.org" in request.full_url for request in provider.requests))
+        notice, status = voice._failure(caught.exception, "af")
+        self.assertEqual(status, 503)
+        self.assertIn("Tik asseblief", notice["answer"])
+        self.assertNotIn("Stuur", notice["answer"])
+        self.assertFalse(notice["request_interpreted"])
+        self.assertFalse(notice["writes_farm_data"])
+
+    def test_multipart_encoder_retains_configured_af_without_provider_execution(self):
+        encoded = _multipart_body("synthetic-boundary", [("language", "af")],
+            "file", "telegram-voice.ogg", "audio/ogg", b"synthetic")
+        self.assertIn(b'name="language"\r\n\r\naf\r\n', encoded)
+        self.assertIn(b'filename="telegram-voice.ogg"', encoded)
+        self.assertIn(b"Content-Type: audio/ogg\r\n\r\nsynthetic", encoded)
 
     def test_declared_duration_and_downloaded_content_must_agree(self):
         self.payload["message"]["voice"]["duration"] = 5

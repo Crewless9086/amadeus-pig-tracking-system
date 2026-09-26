@@ -362,3 +362,44 @@ def test_manager_item_uses_same_completed_projection_without_internal_tokens():
     assert "B Camp: Controller OFF verified" in item["title"]
     assert "now_after" not in " ".join(item.values())
     assert item["question"] == ""
+
+
+def test_all_typed_classifier_reasons_localize_before_actual_daily_family_guard(monkeypatch):
+    from modules.oom_sakkie import rootline_daily_presentation as presentation
+    from modules.oom_sakkie import daily_farm_manager as daily, farm_manager_runtime as runtime
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery, NOW
+    memory = MemoryDelivery(monkeypatch)
+    for index, (english, afrikaans) in enumerate(presentation._AF_CLASSIFIER_REASONS.items()):
+        raw = {"success": True, "result_id": f"ROOTLINE-{index}", "recommendations": [
+            {"subject": "B12345", "status": "Hold", "reason": english}],
+            "owner_brief": {"family_fact_needed": "If convenient, are the tanks LOW, OK or FULL, and when was that observed?"},
+            "owner_questions": [{"fact": "current_tank_observation", "question":
+                "If convenient, are the tanks LOW, OK or FULL, and when was that observed?"}]}
+        work = runtime._project_rootline_snapshot({"raw": raw}, NOW, "af")
+        assert work.work_items[0].why == afrikaans
+        assert "tenks LAAG, REG of VOL" in work.work_items[0].genuine_question
+        outcome = daily.run_daily_farm_manager(owner_user_id=str(900+index), chat_id=str(900+index),
+            specialist_results=[work], litter_rows=[], now=NOW, language="af",
+            deliver=memory.deliver, replace_brief=memory.replace)
+        assert outcome["status"] == "daily_manager_presented"
+        assert english not in memory.sends[-1][1]
+    assert len(memory.sends) == len(presentation._AF_CLASSIFIER_REASONS)
+
+
+def test_distinct_typed_rootline_owner_decisions_are_not_collapsed_by_daily_concern(monkeypatch):
+    from modules.oom_sakkie import daily_farm_manager as daily, farm_manager_runtime as runtime
+    from tests.test_oom_sakkie_herd_morning_language import MemoryDelivery, NOW
+    memory = MemoryDelivery(monkeypatch)
+    def run(fact, question):
+        raw = {"success": True, "result_id": "ROOTLINE-ONE", "recommendations": [],
+            "owner_brief": {"family_fact_needed": question},
+            "owner_questions": [{"fact": fact, "question": question}]}
+        work = runtime._project_rootline_snapshot({"raw": raw}, NOW, "en")
+        return daily.run_daily_farm_manager(owner_user_id="42", chat_id="42",
+            specialist_results=[work], litter_rows=[], now=NOW, language="en",
+            deliver=memory.deliver, replace_brief=memory.replace)
+    assert run("current_tank_observation", "Are tanks LOW, OK or FULL?")["status"] == "daily_manager_presented"
+    assert run("current_tank_observation", "What is the tank level?")["status"] == "daily_manager_routine_coalesced"
+    assert run("water_continuity_need", "Is the water need urgent?")["status"] == "daily_manager_presented"
+    assert len(memory.sends) == 2 and "Is the water need urgent?" in memory.sends[-1][1]
+    assert run("water_continuity_need", "Is the water need urgent?")["status"] == "daily_manager_unchanged_silent"
