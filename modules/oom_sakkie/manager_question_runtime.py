@@ -717,7 +717,19 @@ def _load_questions(owner, chat):
     with connect_bounded_rootline_postgres(
             read_only=True, connect_deadline_seconds=3) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("""select q.body, coalesce(p.partials, '[]'::jsonb)
+            # Materialize the owner's reply history once. Correlating each daily
+            # candidate against the full append-only event table can exceed the
+            # synchronous three-second deadline as that table grows.
+            cursor.execute("""with replies as materialized (
+                    select review_json->'manager_question_reply' as body,
+                           created_at, review_event_id
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='oom_sakkie_manager_question_reply'
+                      and review_json->'manager_question_reply'->>'owner_user_id'=%s
+                      and review_json->'manager_question_reply'->>'chat_id'=%s
+                      and review_json->'manager_question_reply'->>'status' in ('recorded','partial')
+                )
+                select q.body, coalesce(p.partials, '[]'::jsonb)
                 from (select daily.review_json->'daily_farm_manager' as body,
                              daily.created_at, daily.review_event_id
                     from public.sam_live_stock_conversation_review_events daily
@@ -727,30 +739,24 @@ def _load_questions(owner, chat):
                       and daily.review_json->'daily_farm_manager'->>'chat_id'=%s
                       and coalesce(daily.review_json->'daily_farm_manager'->>'question','')<>''
                       and not exists (select 1
-                        from public.sam_live_stock_conversation_review_events answered
-                        where answered.event_source='oom_sakkie_manager_question_reply'
-                          and answered.review_json->'manager_question_reply'->>'status'='recorded'
-                          and answered.review_json->'manager_question_reply'->>'owner_user_id'=%s
-                          and answered.review_json->'manager_question_reply'->>'chat_id'=%s
-                           and answered.review_json->'manager_question_reply'->>'task_id'=
+                        from replies answered
+                        where answered.body->>'status'='recorded'
+                           and answered.body->>'task_id'=
                                daily.review_json->'daily_farm_manager'->'question_binding'->>'task_id'
-                           and answered.review_json->'manager_question_reply'->>'dedupe_key'=
+                           and answered.body->>'dedupe_key'=
                                daily.review_json->'daily_farm_manager'->'question_binding'->>'dedupe_key')
                     order by created_at desc, review_event_id desc limit 8) q
                 left join lateral (select jsonb_agg(
-                        partial.review_json->'manager_question_reply'
+                        partial.body
                         order by partial.created_at, partial.review_event_id) as partials
-                    from public.sam_live_stock_conversation_review_events partial
-                    where partial.event_source='oom_sakkie_manager_question_reply'
-                      and partial.review_json->'manager_question_reply'->>'status'='partial'
-                      and partial.review_json->'manager_question_reply'->>'owner_user_id'=%s
-                      and partial.review_json->'manager_question_reply'->>'chat_id'=%s
-                      and partial.review_json->'manager_question_reply'->>'task_id'=
+                    from replies partial
+                    where partial.body->>'status'='partial'
+                      and partial.body->>'task_id'=
                           q.body->'question_binding'->>'task_id'
-                      and partial.review_json->'manager_question_reply'->>'daily_identity'=
+                      and partial.body->>'daily_identity'=
                           q.body->>'daily_identity') p on true
                 order by q.created_at desc, q.review_event_id desc""",
-                (owner, chat, owner, chat, owner, chat))
+                (owner, chat, owner, chat))
             questions = []
             for body, partials in cursor.fetchall():
                 question = dict(body)

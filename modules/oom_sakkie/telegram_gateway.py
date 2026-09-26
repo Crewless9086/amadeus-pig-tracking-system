@@ -1,4 +1,5 @@
 import hmac
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -13,7 +14,7 @@ from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import handle_
 from modules.oom_sakkie.operational_specialist_intake import (
     handle_operational_specialist_message, is_exact_fertilizer_commissioning_request,
     recover_contextual_specialist_replay)
-from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result, mission_identity
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
 from modules.oom_sakkie.owner_operational_continuation import handle_owner_operational_continuation
@@ -515,21 +516,31 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
     active_manager_question = (load_active_manager_question(parsed)
                                if gateway_authority is not None else None)
     if isinstance(active_manager_question, dict) and active_manager_question.get("load_unavailable"):
+        logging.getLogger(__name__).warning("manager_question_context_unavailable: %s",
+            active_manager_question.get("load_failure_class", "unknown"))
+        result = {"handled": True, "success": False,
+            "status": "manager_question_context_unavailable",
+            "answer": ("I received your message, but I cannot read the farm-question "
+                       "context right now. I have not answered it or changed any farm record."),
+            "writes_farm_data": False, "hardware_commands": 0}
+        # A notice is not the request's answer. Give it a separate delivery
+        # identity so retries suppress the notice without consuming recovery.
+        notice_id = mission_identity(parsed, "OOM_SAKKIE") + ":CONTEXT-UNAVAILABLE"
+        try:
+            delivery = deliver_family_result(parsed, result, specialist="OOM_SAKKIE",
+                mission_id=notice_id, card_mission_id=notice_id)
+        except Exception:
+            delivery = {"success": False, "status": "context_notice_delivery_unproven",
+                "telegram_sends": 0, "telegram_edits": 0,
+                "provider_effects_unknown": True, "do_not_retry_automatically": True}
         body, _ = _gateway_result(False, "manager_question_context_unavailable", policy, 503)
         body.update({"telegram_user_id": parsed["telegram_user_id"],
             "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
-            "answer": ("I received the update, but could not safely load the active farm "
-                       "question. Nothing was retained or acted on; the same provider receipt "
-                       "will remain eligible for exact recovery."),
-            "message": {"handled": True, "success": False,
-                "status": "manager_question_context_unavailable",
-                "writes_farm_data": False, "hardware_commands": 0},
-            "delivery": {"success": False, "status": "durable_context_unavailable",
-                "telegram_sends": 0, "telegram_edits": 0},
-            "records_audit_trace": False,
-            "reply_transport": "bounded_authenticated_gateway_response",
-            "sends_telegram": False, "writes": False})
-        return body, 503
+            "answer": result["answer"], "message": result, "delivery": delivery,
+            "records_audit_trace": delivery.get("success") is True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0, "writes": False})
+        return body, 200 if delivery.get("success") else 503
     semantic_policy = semantic_front_door_policy(source)
     semantic_authoritative = bool(gateway_authority is not None and semantic_policy.get("enabled"))
     try:
