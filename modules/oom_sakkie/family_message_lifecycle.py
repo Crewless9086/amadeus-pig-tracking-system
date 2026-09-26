@@ -158,6 +158,9 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
                 "Die bevestigde handeling is een keer voltooi en die kanonieke resultaat is behou.")
         elif any(word in status for word in ("replay", "duplicate")):
             answer = "Hierdie bevestiging is reeds veilig verwerk. Geen duplikaat is geskep nie."
+        elif status == "manager_question_context_unavailable":
+            answer = ("Ek het jou boodskap ontvang, maar kan nie die plaasvraag se konteks "
+                "nou lees nie. Ek het dit nog nie beantwoord of enige plaasrekord verander nie.")
         elif any(word in status for word in ("fail", "unavailable", "invalid", "contained", "hold")):
             answer = "Die handeling is veilig teruggehou. Niks is uitgevoer nie; probeer later weer."
         localized["answer"] = answer

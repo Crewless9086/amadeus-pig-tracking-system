@@ -301,3 +301,61 @@ def test_individual_plan_partial_restart_reaches_real_bound_welfare_preview(jour
     assert len(history)==1 and history[0]['observed']==observations[0][1]['observed']
     assert history[0]['owner_report_parts'][0]['text']==original
     assert response.get_json()['writes_farm_data'] is False
+
+
+def test_question_history_lookup_scans_reply_history_once_and_preserves_scope(journey, monkeypatch):
+    """Exercise the real query with growing history and cross-day answered tasks."""
+    from psycopg.types.json import Jsonb
+    actor = journey['owner']; other = journey['actor']
+    prefix = 'LOOKUP-' + uuid.uuid4().hex
+    with psycopg.connect(DSN) as db:
+        for i in range(64):
+            body = {'owner_user_id': actor, 'chat_id': actor, 'status': 'presented',
+                'daily_identity': prefix + str(i), 'question': 'Current welfare?',
+                'presented_at': NOW.isoformat(),
+                'question_binding': {'task_id': prefix + str(i), 'dedupe_key': prefix + str(i)}}
+            db.execute("insert into public.sam_live_stock_conversation_review_events "
+                "(review_event_id,event_source,review_json) values (%s,%s,%s)",
+                (prefix + '-DAILY-' + str(i), 'oom_sakkie_daily_farm_manager',
+                 Jsonb({'daily_farm_manager': body})))
+            reply = {'owner_user_id': actor if i < 56 else other, 'chat_id': actor if i < 56 else other,
+                'status': 'recorded', 'task_id': prefix + str(i), 'dedupe_key': prefix + str(i),
+                'daily_identity': 'EARLIER-DAY'}
+            db.execute("insert into public.sam_live_stock_conversation_review_events "
+                "(review_event_id,event_source,review_json) values (%s,%s,%s)",
+                (prefix + '-REPLY-' + str(i), 'oom_sakkie_manager_question_reply',
+                 Jsonb({'manager_question_reply': reply})))
+        db.execute("insert into public.sam_live_stock_conversation_review_events "
+            "(review_event_id,event_source,review_json) select %s || i::text, "
+            "'unrelated_history', jsonb_build_object('padding',repeat('x',512)) "
+            "from generate_series(1,10000) i", (prefix + '-NOISE-',))
+        db.execute('analyze public.sam_live_stock_conversation_review_events')
+    # Capture the real runtime SELECT and inspect its execution plan, rather
+    # than accepting a fast result from a mocked database or tiny fixture.
+    captured = []; original = questions.connect_bounded_rootline_postgres
+    class Cursor:
+        def __init__(self, inner): self.inner = inner
+        def __enter__(self): self.inner.__enter__(); return self
+        def __exit__(self, *a): return self.inner.__exit__(*a)
+        def execute(self, sql, args):
+            captured.append((sql,args)); return self.inner.execute(sql,args)
+        def fetchall(self): return self.inner.fetchall()
+    class Connection:
+        def __init__(self, inner): self.inner = inner
+        def __enter__(self): self.inner.__enter__(); return self
+        def __exit__(self, *a): return self.inner.__exit__(*a)
+        def cursor(self): return Cursor(self.inner.cursor())
+    monkeypatch.setattr(questions, 'connect_bounded_rootline_postgres',
+        lambda **kw: Connection(original(**kw)))
+    rows = questions._load_questions(actor,actor)
+    assert {r['question_binding']['task_id'] for r in rows} == {prefix + str(i) for i in range(56,64)}
+    sql,args = captured[0]
+    with psycopg.connect(DSN) as db:
+        db.execute("set local statement_timeout='3000ms'")
+        plan = db.execute('explain (analyze,format json) ' + sql,args).fetchone()[0][0]['Plan']
+    def walk(node):
+        yield node
+        for child in node.get('Plans',[]): yield from walk(child)
+    history_scans = [node for node in walk(plan)
+        if node.get('Relation Name') == 'sam_live_stock_conversation_review_events']
+    assert history_scans and all(node['Actual Loops'] <= 1 for node in history_scans), plan
