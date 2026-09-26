@@ -17,33 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = "1c148e4f3d1691f85e6af1133ec8569ffa0c195e"
+BASE = "97a1b24241ae25108852a16dea501210e204cba2"
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1351
-HEAD = "b7516441bf0df2f592829176053ff21c71e34723"
+CANDIDATE_PR = 1352
+HEAD = "09843b099c2498c3598bb197940f86dbb053beb1"
 APPROVED_RUNTIME_HEAD = HEAD
-BRANCH = "codex/oom-conversation-followup-20260923"
-PREDECESSOR_PR = 1350
-PREDECESSOR_BASE = "731f28c72f5186146320613a23fca7b76757ec2a"
-PREDECESSOR_HEAD = "52aec70d6432580ae0c479cd1f2bbdb2322b9ca4"
-PREDECESSOR_BRANCH = "codex/oom-retained-preview-delivery-20260923"
+BRANCH = "codex/oom-cost-notification-controls-20260923"
+PREDECESSOR_PR = 1351
+PREDECESSOR_BASE = "1c148e4f3d1691f85e6af1133ec8569ffa0c195e"
+PREDECESSOR_HEAD = "b7516441bf0df2f592829176053ff21c71e34723"
+PREDECESSOR_BRANCH = "codex/oom-conversation-followup-20260923"
 QUALIFICATION_TEST_PATHS = []
-PATHS = [
-    '.github/workflows/oom-sakkie-audit-rails.yml',
-    'modules/oom_sakkie/family_message_lifecycle.py',
-    'modules/oom_sakkie/farm_manager_runtime.py',
-    'modules/oom_sakkie/herd_question.py',
-    'modules/oom_sakkie/manager_question_runtime.py',
-    'modules/oom_sakkie/owner_conversation_front_door.py',
-    'modules/oom_sakkie/semantic_front_door.py',
-    'modules/oom_sakkie/service.py',
-    'modules/oom_sakkie/telegram_gateway.py',
-    'modules/oom_sakkie/tools.py',
-    'modules/pig_weights/farm_supabase_read_service.py',
-    'tests/test_oom_sakkie_conversation_followup.py',
-    'tests/test_oom_sakkie_conversation_followup_postgres.py',
-]
+PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md', 'modules/beacon/post_composer.py', 'modules/charlie/private_executive.py', 'modules/charlie/private_media.py', 'modules/charlie/private_planner.py', 'modules/charlie/private_runtime.py', 'modules/charlie/private_voice.py', 'modules/oom_sakkie/daily_farm_manager.py', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/farm_manager_loop.py', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/herdmaster_daily_manager_adapter.py', 'modules/oom_sakkie/learning_llm.py', 'modules/oom_sakkie/ledger_agent.py', 'modules/oom_sakkie/llm_answer.py', 'modules/oom_sakkie/llm_router.py', 'modules/oom_sakkie/model_budget.py', 'modules/oom_sakkie/morning_runtime.py', 'modules/oom_sakkie/rootline_daily_presentation.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/oom_sakkie/sentinel_single_shot_runner.py', 'modules/oom_sakkie/service.py', 'modules/oom_sakkie/telegram_direct.py', 'modules/oom_sakkie/telegram_gateway.py', 'modules/oom_sakkie/telegram_voice.py', 'modules/oom_sakkie/voice_stt.py', 'modules/sales/sam_live_stock_media.py', 'modules/sales/sam_live_stock_runtime.py', 'modules/sales/sam_meat_runtime.py', 'static/assets/agents/oom-sakkie/agent.md', 'tests/farm_model_test_support.py', 'tests/test_beacon_post_composer.py', 'tests/test_charlie_private_executive.py', 'tests/test_charlie_private_media.py', 'tests/test_charlie_private_voice.py', 'tests/test_farm_openai_budget.py', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_daily_farm_manager.py', 'tests/test_oom_sakkie_daily_farm_manager_postgres.py', 'tests/test_oom_sakkie_herd_morning_language.py', 'tests/test_oom_sakkie_irrigation_dialogue.py', 'tests/test_oom_sakkie_irrigation_dialogue_postgres.py', 'tests/test_oom_sakkie_model_budget_denials.py', 'tests/test_oom_sakkie_morning_runtime.py', 'tests/test_oom_sakkie_plan_dialogue_postgres.py', 'tests/test_oom_sakkie_rootline_daily_presentation.py', 'tests/test_oom_sakkie_semantic_front_door.py', 'tests/test_oom_sakkie_service.py', 'tests/test_sam_live_stock_runtime.py', 'tests/test_sam_meat_runtime.py', 'tests/test_telegram_voice.py', 'tests/test_telegram_voice_ingress_postgres.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -55,9 +41,9 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     ".github/workflows/oom-desktop-rebind-qualification.yml"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1350_six_file_retained_preview_delivery_and_verified_closure",
-    "application_revision_rollback:web:731f28c72f5186146320613a23fca7b76757ec2a"}
-ADDED_EFFECTS = {"exact_pr1351_thirteen_file_read_only_conversation_followup",
+REMOVED_EFFECTS = {"exact_pr1351_thirteen_file_read_only_conversation_followup",
+    "application_revision_rollback:web:1c148e4f3d1691f85e6af1133ec8569ffa0c195e"}
+ADDED_EFFECTS = {"exact_pr1352_bounded_model_spend_and_quiet_routine_briefing",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -65,8 +51,12 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
-    f"Release only the protected merge whose application tree equals exact PR1351 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only conversation-followup release; source pins and prior PR1350 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    "Guarded farm OpenAI requests share one durable atomic US$1 SAST-day cap, reserve before provider effects and retain reservation on unknown usage or outcome. No cap is claimed for ChatGPT/Codex credits, historical spend, other providers or unguarded external clients.",
+    "Scheduled prioritization uses no paid model; coalesce routine briefing changes, preserve distinct urgent/owner-decision interrupts, and back off the same failed generation. Do not alter the existing scheduler or trigger a manual cycle.",
+    "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
+    "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
+    f"Release only the protected merge whose application tree equals exact PR1352 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only cost-and-notification release; source pins and prior PR1351 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",

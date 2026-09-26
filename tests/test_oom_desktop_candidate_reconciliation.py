@@ -25,12 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['modules/oom_sakkie/general_manager_worker.py',
-    'modules/oom_sakkie/herdmaster_health_loss_runtime.py',
-    'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py',
-    'modules/oom_sakkie/manager_case_sources.py',
-    'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py',
-    'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/herd_question.py', 'modules/oom_sakkie/manager_question_runtime.py', 'modules/oom_sakkie/owner_conversation_front_door.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/oom_sakkie/service.py', 'modules/oom_sakkie/telegram_gateway.py', 'modules/oom_sakkie/tools.py', 'modules/pig_weights/farm_supabase_read_service.py', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_conversation_followup_postgres.py']
 PRESERVED_PREVIEW_EFFECTS = {'automatic_once_per_claim_never_attempted_retained_preview_renewal',
     'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -560,7 +555,7 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "b7516441bf0df2f592829176053ff21c71e34723")
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "09843b099c2498c3598bb197940f86dbb053beb1")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
