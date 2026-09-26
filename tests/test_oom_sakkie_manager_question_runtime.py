@@ -661,8 +661,10 @@ def test_only_database_failures_acquire_zero_downstream_classification():
        return_value=None)
 @patch("modules.oom_sakkie.telegram_gateway.load_active_manager_question",
        return_value={"load_unavailable": True, "load_failure_class": "OperationalError"})
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result",
+       return_value={"success": False, "telegram_sends": 0, "telegram_edits": 0})
 def test_authenticated_context_database_failure_returns_bounded_zero_effect_response(
-        _load, _replay, _owner_task):
+        _delivery, _load, _replay, _owner_task):
     token = "c" * 40
     env = {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": token,
@@ -805,6 +807,69 @@ def test_answered_attributable_question_is_consumed_across_daily_identity_change
     from modules.oom_sakkie import manager_question_runtime
     source = inspect.getsource(manager_question_runtime._load_questions)
     answered_clause = source.split("and not exists (select 1", 1)[1].split(")\n", 1)[0]
-    assert "owner_user_id" in answered_clause and "chat_id" in answered_clause
+    scoped_replies = source.split("with replies as materialized (", 1)[1].split("select q.body", 1)[0]
+    assert "owner_user_id" in scoped_replies and "chat_id" in scoped_replies
     assert "task_id" in answered_clause and "dedupe_key" in answered_clause
     assert "answered.review_json->'manager_question_reply'->>'daily_identity'" not in answered_clause
+
+
+@pytest.mark.parametrize("provider_success", [True, False])
+def test_context_failure_notice_is_deduplicated_without_consuming_answer(monkeypatch, provider_success):
+    from modules.oom_sakkie import telegram_gateway as gateway
+    from modules.oom_sakkie import family_message_lifecycle as family
+    rows = {}; sends = []; inputs = []
+    def store(action, identity, payload):
+        if action == "load":
+            return [r for r in rows.values() if r.get("card_mission_id") == identity]
+        created = identity not in rows
+        if created: rows[identity] = dict(payload)
+        return {"success": True, "created": created}
+    def sender(*args, **kwargs):
+        sends.append(args)
+        return ({"success": True, "telegram_message_id": str(5000 + len(sends)),
+                 "provider_timestamp": NOW.isoformat()} if provider_success else
+                {"success": False, "status": "provider_outcome_unknown"})
+    def deliver(parsed, result, **kwargs):
+        inputs.append(dict(parsed))
+        return family.deliver_family_result(parsed, result, event_store=store,
+            sender=sender, **kwargs)
+    monkeypatch.setattr(gateway, "deliver_family_result", deliver)
+    monkeypatch.setattr(gateway, "load_active_manager_question",
+        lambda _: {"load_unavailable": True, "load_failure_class": "QueryCanceled"})
+    monkeypatch.setattr(gateway, "recover_contextual_specialist_replay", lambda _: None)
+    monkeypatch.setattr(gateway, "handle_owner_task_input", lambda *a, **k: ({"handled": False}, 200))
+    monkeypatch.setattr(gateway, "interpret_owner_message",
+        lambda *a, **k: pytest.fail("An unavailable context must not reach paid inference"))
+    token = "c" * 40
+    env = {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": token,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": OWNER,
+        "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID": OWNER}
+    payload = {"message": {"message_id": 3531, "date": int(NOW.timestamp()),
+        "text": "What is the status of Pig 154?", "from": {"id": int(OWNER)},
+        "chat": {"id": int(OWNER), "type": "private"}}}
+    kwargs = {"headers": {"Authorization": "Bearer " + token}, "environ": env}
+    first, code = gateway.handle_telegram_gateway_message(payload, **kwargs)
+    second, _ = gateway.handle_telegram_gateway_message(payload, **kwargs)
+    assert code == (200 if provider_success else 503)
+    assert len(sends) == 1
+    assert first["success"] is False and first["writes"] is False
+    assert second["delivery"]["telegram_sends"] == 0
+    assert first["message"]["hardware_commands"] == 0
+    assert all(r["card_mission_id"].endswith(":CONTEXT-UNAVAILABLE") for r in rows.values())
+    # A later successful answer to the very same provider receipt still owns
+    # the original mission identity, independent of the failure notification.
+    recovered = family.deliver_family_result(inputs[0],
+        {"success": True, "status": "herd_read_ready", "read_only": True,
+         "answer": "The current recorded weight is unknown."}, specialist="OOM_SAKKIE",
+        event_store=store, sender=lambda *a, **k: {"success": True,
+            "telegram_message_id": "6000", "provider_timestamp": NOW.isoformat()})
+    assert recovered["success"] is True and recovered["telegram_sends"] == 1
+
+
+def test_context_failure_notice_is_clear_in_afrikaans():
+    from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
+    value = localize_recipient_result({"output_language": "af"},
+        {"status": "manager_question_context_unavailable", "answer": "unavailable"}, "OOM_SAKKIE")
+    assert "nog nie beantwoord" in value["answer"]
+    assert "probeer later weer" not in value["answer"]
