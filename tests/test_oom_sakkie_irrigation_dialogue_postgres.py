@@ -1,4 +1,4 @@
-"""Real PostgreSQL/gateway dialogue; synthetic semantic responses and provider transport."""
+"""Real PostgreSQL/gateway dialogue; synthetic semantic responses, model accounting and provider transport."""
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import asdict
@@ -34,8 +34,9 @@ class Response:
     def __init__(self, value): self.value = value
     def __enter__(self): return self
     def __exit__(self, *_): return False
-    def read(self):
-        return json.dumps({'choices':[{'message':{'content':json.dumps(asdict(self.value))}}]}).encode()
+    def read(self, size=-1):
+        data = json.dumps({'choices':[{'message':{'content':json.dumps(asdict(self.value))}}]}).encode()
+        return data if size < 0 else data[:size]
 
 
 @pytest.fixture
@@ -43,9 +44,13 @@ def irrigation(monkeypatch):
     assert urlparse(DSN).hostname in {'127.0.0.1','localhost'}
     assert urlparse(DSN).path == '/irrigation_dialogue_test'
     j = plan_journey.__wrapped__(monkeypatch)
+    from tests.farm_model_test_support import FakeBudgetLedger
+    from modules.oom_sakkie import model_budget
+    ledger = FakeBudgetLedger()
+    monkeypatch.setattr(model_budget, '_default_store', lambda _source: ledger)
     def interpret(parsed, **kwargs):
         environment = {**os.environ, 'OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED':'1',
-            'OOM_SAKKIE_LLM_ROUTER_MODEL':'synthetic', 'OPENAI_API_KEY':'synthetic-only'}
+            'OOM_SAKKIE_LLM_ROUTER_MODEL':'gpt-4.1-mini', 'OPENAI_API_KEY':'synthetic-only'}
         return front.interpret_owner_message(parsed, environ=environment,
             context_loader=kwargs.get('context_loader'), http_open=lambda *a,**k: Response(j['semantic']['value']))
     monkeypatch.setattr(gateway, 'interpret_owner_message', interpret)
