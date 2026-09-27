@@ -21,8 +21,8 @@ BASE = 'c4488cf2d916db2b35befdefe10ca5e252804a2c'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
 CANDIDATE_PR = 1358
-HEAD = 'dccd184c1eed9cb12867de46085688b0156a4b0a'
-APPROVED_RUNTIME_HEAD = 'dccd184c1eed9cb12867de46085688b0156a4b0a'
+HEAD = 'cc7ca4a24290e2b493f82a64278aae49cdf0c83d'
+APPROVED_RUNTIME_HEAD = 'cc7ca4a24290e2b493f82a64278aae49cdf0c83d'
 BRANCH = 'codex/oom-manager-actionable-queue-20260927'
 PREDECESSOR_PR = 1357
 PREDECESSOR_BASE = '4d9ade2bd5ce2540d52e761af7d24ee5c202ab58'
