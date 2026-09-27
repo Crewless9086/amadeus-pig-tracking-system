@@ -555,7 +555,7 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "9d4e6672672564308e867a8c628df21f2f4e7746")
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "225c3df8c29cdf586678e0f62b587a099c6681b2")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
