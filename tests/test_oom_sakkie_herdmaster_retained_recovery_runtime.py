@@ -776,3 +776,47 @@ def test_recipient_revoked_during_family_read_is_denied_at_sender_boundary(retai
     result=deliver_farm_manager_case(j["case"])
     assert not result["success"] and not j["sends"]
     assert j["claim"]["delivery_state"]=="delivery_ambiguous"
+
+
+@pytest.mark.parametrize("reply", ["15 September", "September 15th", "15 September 2026", "Pig 27 died on September 15th."])
+def test_typed_short_reply_is_selected_and_worker_delivers_one_confirmation(retained_journey, reply):
+    from modules.oom_sakkie.manager_case_sources import _project_retained_herd_report_recovery
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    j = retained_journey
+    source = j["source"]
+    source.update(owner_text_verbatim=reply, output_language="en",
+        provider_timestamp="2026-09-26T18:23:08+00:00",
+        combined_text="Pig 27 died on September 15th. Follow-up: " + reply,
+        report_parts=[{"text": "Pig 27 died on September 15th.", "provider_timestamp": "2026-09-26T16:35:43+00:00"},
+                      {"text": reply, "provider_timestamp": "2026-09-26T18:23:08+00:00"}],
+        preview={"evaluator": {"event_family": "found_dead", "identity": {
+            "resolved": True, "tag_number": "27", "pig_id": "P27"}}})
+    j["evidence"]["as_of_timestamp"] = "2026-09-26T18:30:00+00:00"
+    candidates = _project_retained_herd_report_recovery(datetime.now(timezone.utc), [source], [],
+        canonical_pigs=[{"pig_id": "P27", "tag_number": "27", "status": "Active", "on_farm": True}])
+    assert len(candidates) == 1
+    assert candidates[0]["dedupe_key"] == j["case"]["dedupe_key"]
+    result = deliver_farm_manager_case(j["case"], deadline_monotonic=80.)
+    assert result["success"] and result["delivery_confirmed"]
+    assert len(j["sends"]) == j["creates"] == 1
+    assert "2026-09-15" in j["sends"][0][1]
+    assert j["history"][0]["status"] == "preview_ready"
+    assert j["claim"]["status"] == "active"
+    j["clock"] = 27.
+    replay = deliver_farm_manager_case(j["case"], deadline_monotonic=80.)
+    assert replay["status"] == "protected_delivery_replayed_noop"
+    assert len(j["sends"]) == j["creates"] == 1
+
+
+@pytest.mark.parametrize("change", [
+    {"event_family": "health_observation"},
+    {"identity": {"resolved": False, "tag_number": "27", "pig_id": "P27"}},
+    {"identity": {"resolved": True, "tag_number": "27", "pig_id": "OTHER"}},
+])
+def test_typed_recovery_cannot_be_overridden_by_death_words(change):
+    from modules.oom_sakkie.manager_case_sources import _project_retained_herd_report_recovery
+    assessment = {"event_family": "found_dead", "identity": {
+        "resolved": True, "tag_number": "27", "pig_id": "P27"}, **change}
+    row = report(preview={"evaluator": assessment})
+    assert _project_retained_herd_report_recovery(datetime.now(timezone.utc), [row], [],
+        canonical_pigs=[{"pig_id": "P27", "tag_number": "27", "status": "Active", "on_farm": True}]) == []

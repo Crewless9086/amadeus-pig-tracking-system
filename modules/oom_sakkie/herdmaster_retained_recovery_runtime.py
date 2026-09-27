@@ -144,6 +144,26 @@ def resolve_retained_health_reports(evidence, provider_ids, *, retain_existing_a
 
 
 
+def retained_mortality_tag(row):
+    """Use the retained specialist assessment, including identity-bound short replies.
+
+    Historical reports without a typed assessment retain their existing legacy
+    eligibility. Prose must never override a present contrary assessment.
+    """
+    if (row.get("semantic_interpretation") or {}).get("recording_prohibited"):
+        return ""
+    evaluator = (row.get("preview") or {}).get("evaluator") or {}
+    if evaluator:
+        identity = evaluator.get("identity") or {}
+        if (evaluator.get("event_family") == "found_dead"
+                and identity.get("resolved") is True and identity.get("pig_id")):
+            return str(identity.get("tag_number") or "")
+        return ""
+    text = str(row.get("owner_text_verbatim") or "")
+    match = re.search(r"\b(?:vark|pig)\s*(?:nr)?\s*(\d+)\b", text, re.I)
+    return match.group(1) if match and "dood" in text.casefold() else ""
+
+
 def retained_report_binding(rows):
     """Stable source identity, not a claim that the report facts are current."""
     identities = sorted({(str(row.get("provider_message_id") or ""),
@@ -168,9 +188,7 @@ def _validated_report_case(case, provider_ids, *, claims_out=None):
     key = str(case.get("dedupe_key") or "")
     if key.startswith("herdmaster:retained-mortality:"):
         tags = {v.split(":", 1)[1] for v in refs if v.startswith("tag:")}
-        reported = {match.group(1) for row in rows for match in
-                    [re.search(r"\b(?:vark|pig)\s*(?:nr)?\s*(\d+)\b",
-                               str(row.get("owner_text_verbatim") or ""), re.I)] if match}
+        reported = {retained_mortality_tag(row) for row in rows} - {""}
         if (len(provider_ids) != 1 or key != "herdmaster:retained-mortality:" + provider_ids[0]
                 or len(tags) != 1 or tags != reported):
             return [], "retained_mortality_exact_identity_unproven"
