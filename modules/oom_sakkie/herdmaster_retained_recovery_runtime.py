@@ -1,6 +1,7 @@
 """Preview-only bridge from durable manager cases to existing protected rails."""
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import html
@@ -378,6 +379,8 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
         return {**_contained("retained_mortality_removed_disposal_required"),
                 "missing_facts": ["removed_disposal"],
                 "answer": str(preview.get("owner_text") or "")}
+    preview = _unchanged_retained_preview(payload, preview,
+        evidence_generation=str(evidence.get("evidence_generation") or ""))
     binding = dict(preview.get("confirmation_binding") or {})
     operation = str(binding.get("operation_id") or "")
     if preview.get("success") is not True or not operation:
@@ -414,6 +417,40 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
             {"text": "Confirm and record", "callback_data": f"oompa:{claim['callback_token']}:confirm"},
             {"text": "Change", "callback_data": f"oompa:{claim['callback_token']}:change"},
             {"text": "Cancel", "callback_data": f"oompa:{claim['callback_token']}:cancel"}]]}})
+
+
+
+def _unchanged_retained_preview(source, current, *, evidence_generation):
+    """Keep an existing exact preview across the legacy clock-hash correction.
+
+    Fresh evaluation must reproduce the *whole* stored preview after replacing
+    only its generated operation identity and recomputing its preview digest.
+    No claim, expiry, lifecycle or confirmation is changed here. The caller must
+    still pass the existing exact claim, delivery and lifecycle readback gates.
+    Missing retained previews cannot recover a legacy claim this way.
+    """
+    prior = source.get("preview") or {}
+    bridge = source.get("retained_repreview") or {}
+    operation = str(source.get("operation_id") or "")
+    if (source.get("status") != "preview_ready"
+            or not str(source.get("event_phase") or "").startswith("retained_preview_generated:")
+            or bridge.get("contract_version") != "retained_health_preview_v1"
+            or not evidence_generation or bridge.get("claim_evidence_generation") != evidence_generation
+            or not operation or current.get("success") is not True
+            or current.get("confirmation_ready") is not True
+            or (prior.get("confirmation_binding") or {}).get("operation_id") != operation):
+        return current
+    candidate = deepcopy(current)
+    evaluated = candidate["evaluator"]
+    evaluated["operation_id"] = operation
+    evaluated["preview"]["operation_id"] = operation
+    digest = hashlib.sha256(json.dumps(evaluated["preview"], sort_keys=True,
+        separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
+    evaluated["preview_sha256"] = digest
+    for binding in (evaluated["confirmation_binding"], candidate["confirmation_binding"]):
+        binding["operation_id"] = operation
+        binding["preview_sha256"] = digest
+    return prior if candidate == prior else current
 
 
 def _litter_preview_text(payload, language):

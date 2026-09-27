@@ -272,6 +272,7 @@ def delivery_journey(store, monkeypatch, request):
     monkeypatch.setattr(delivery, "_connect", store)
     monkeypatch.setattr(welfare, "_connect", store)
     evidence = {"evidence_generation": "GEN-27", "as_of_timestamp": "2026-09-23T04:45:00+00:00",
+        "animal_evidence_generations": {"P27": "ANIMAL-27"},
         "animals": [{"pig_id": "P27", "tag_number": "27", "name": "Synthetic",
                      "lifecycle_status": "Active", "on_farm": True, "availability": "Herd", "pen": "PEN-A"}],
         "matings": [], "litters": []}
@@ -337,7 +338,8 @@ def delivery_journey(store, monkeypatch, request):
         assert operation == current["payload"]["operation_id"]
         assert binding["preview_sha256"] == current["payload"]["preview_sha256"]
         assert lifecycle["mission_id"] == source["mission_id"] and actor_id == "42"
-        assert kwargs["evidence_loader"]()["evidence_generation"] == binding["evidence_generation"]
+        assert binding["evidence_scope"] == "animal"
+        assert kwargs["evidence_loader"]()["animal_evidence_generations"]["P27"] == binding["evidence_generation"]
         effects.append(operation)
         return _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation, actor_id, **kwargs)
     monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._confirm_mortality_lifecycle", effect)
@@ -347,7 +349,9 @@ def delivery_journey(store, monkeypatch, request):
 
 @pytest.mark.parametrize("delivery_journey", ["legacy", "semantic"], indirect=True)
 @pytest.mark.parametrize("renewed_expired_claim", [False, True])
-def test_actual_manager_preview_delivery_callback_and_exact_replays(store, delivery_journey, renewed_expired_claim):
+@pytest.mark.parametrize("legacy_clock_identity", [False, True])
+def test_actual_manager_preview_delivery_callback_and_exact_replays(
+        store, delivery_journey, renewed_expired_claim, legacy_clock_identity, monkeypatch):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
     from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
@@ -355,8 +359,11 @@ def test_actual_manager_preview_delivery_callback_and_exact_replays(store, deliv
     from modules.oom_sakkie.family_message_lifecycle import deliver_family_result, load_family_lifecycle
     from modules.oom_sakkie.herdmaster_health_loss_runtime import _load_active_contexts
     j = delivery_journey
+    if legacy_clock_identity:
+        seed_legacy_clock_preview(j, monkeypatch)
     if renewed_expired_claim:
         expired_renewal_inputs(store, j)
+    j["evidence"]["as_of_timestamp"] = "2026-09-23T04:55:00+00:00"
     first = deliver_farm_manager_case(j["case"])
     assert first["success"] and first["delivery_confirmed"]
     claim = j["claim"](); card = protected_card_mission_id(first["mission_id"], claim["digest"])
@@ -377,6 +384,7 @@ def test_actual_manager_preview_delivery_callback_and_exact_replays(store, deliv
             cur.execute("select (select count(*) from public.pig_welfare_cases),(select count(*) from public.pig_welfare_case_events)")
             return cur.fetchone()
     assert welfare_counts() == (1, 1)
+    j["evidence"]["as_of_timestamp"] = "2026-09-23T05:00:00+00:00"
     again = deliver_farm_manager_case(collect(store)[0])
     assert again["success"] and again["status"] == "protected_delivery_replayed_noop"
     assert again["delivery_confirmed"] is False and len(j["sends"]) == 1
@@ -771,3 +779,39 @@ def test_actual_current_delegated_manager_can_receive_same_claim_once(
     assert replay["success"] is True and replay["status"] == "protected_delivery_replayed_noop"
     assert replay["delivery_confirmed"] is False and j["claim"]() == claim
     assert len(j["sends"]) == 1 and not j["edits"] and not j["effects"]
+
+
+def seed_legacy_clock_preview(journey, monkeypatch):
+    from modules.pig_weights import herdmaster_natural_health_loss_intake as intake
+    from tests.test_oom_sakkie_retained_preview_identity import legacy_clock_digest
+    with monkeypatch.context() as old:
+        old.setattr(intake, "_digest", legacy_clock_digest(intake._digest,
+            journey["evidence"]["as_of_timestamp"]))
+        assert recovery.build_retained_protected_preview(journey["case"])["success"]
+    assert journey["claim"]()["delivery_state"] == "claim_created"
+    journey["evidence"]["as_of_timestamp"] = "2026-09-23T04:50:00+00:00"
+
+
+@pytest.mark.parametrize("changed", ["generation", "cancelled", "attempt", "ambiguous", "correction", "revoked"])
+def test_actual_legacy_clock_identity_preserves_existing_safety_gates(
+        store, delivery_journey, monkeypatch, changed):
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    j = delivery_journey
+    seed_legacy_clock_preview(j, monkeypatch)
+    if changed == "generation": j["evidence"]["evidence_generation"] = "GEN-CHANGED"
+    elif changed == "correction":
+        add_report(store, report(provider="999", status="contained"), datetime.now(timezone.utc))
+    elif changed == "revoked": set_current_recipient_policy(monkeypatch, "allowlist_revoked")
+    else:
+        with store() as db, db.cursor() as cur:
+            if changed == "cancelled":
+                cur.execute("update app_private.oom_protected_action_claims set status='cancelled'")
+            elif changed == "attempt":
+                cur.execute("update app_private.oom_protected_action_claims set delivery_state='delivery_pending',delivery_attempt_id='earlier',delivery_attempted_at=now()")
+            else:
+                cur.execute("update app_private.oom_protected_action_claims set delivery_state='delivery_ambiguous',delivery_ambiguous_at=now()")
+    before = claim_snapshot(store)
+    result = deliver_farm_manager_case(j["case"])
+    assert not result["success"] and not result["delivery_confirmed"]
+    assert not j["sends"] and not j["effects"]
+    assert claim_snapshot(store) == before
