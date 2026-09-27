@@ -187,8 +187,10 @@ def test_individual_welfare_handoff_preserves_all_facts_and_their_provider_times
     assert forwarded['semantic']['confidence']==.99
     assert forwarded['semantic']['entity_refs']==['pig:PIG-TEST-DIALOGUE']
     assert forwarded['manager_question_report_parts']==[
-        {'text':'He is eating.','provider_timestamp':parsed['provider_timestamp']},
-        {'text':'Yes.','provider_timestamp':later['provider_timestamp']}]
+        {'text':'He is eating.','provider_timestamp':parsed['provider_timestamp'],
+         'provider_message_id':parsed['provider_message_id']},
+        {'text':'Yes.','provider_timestamp':later['provider_timestamp'],
+         'provider_message_id':later['provider_message_id']}]
 
 
 def test_actual_completed_group_receipt_retires_only_the_question(monkeypatch):
