@@ -254,7 +254,7 @@ def test_actual_current_canonical_identity_excludes_superseded_pig(store):
 
 
 @pytest.fixture
-def delivery_journey(store, monkeypatch):
+def delivery_journey(store, monkeypatch, request):
     """Actual canonical SQL/recorders/claims/domain effects; fake evidence/provider edges."""
     from modules.oom_sakkie import herdmaster_health_loss_runtime as health
     from modules.oom_sakkie import bounded_postgres_read as bounded
@@ -281,6 +281,32 @@ def delivery_journey(store, monkeypatch):
         cur.execute("insert into public.pig_active_outlets(pig_id,active) values('P27',true)")
     source = report(provider_timestamp="2026-08-20T08:00:00+00:00", output_language="af",
         owner_text_verbatim="Vark nr 27 is dood op 19 Aug 2026. Hy is verwyder en begrawe.")
+    if getattr(request, "param", "legacy") == "semantic":
+        from modules.pig_weights.herdmaster_mortality_observation import bind_mortality_observation
+        # The old parser cannot interpret this date or death phrasing. The real
+        # recovery path must preserve the source-bound semantic contract.
+        text = "We lost pig 27 the previous day. We laid him to rest."
+        source.update(owner_text_verbatim=text, combined_text=text,
+            report_parts=[{"text": text, "provider_message_id": source["provider_message_id"],
+                           "provider_timestamp": source["provider_timestamp"]}],
+            semantic_interpretation={"domain": "herd_health", "confidence": .98,
+                "mortality_observation": bind_mortality_observation({
+                    "animal": {"value": "27", "quote": "pig 27"},
+                    "death": {"value": "dead", "quote": "We lost pig 27"},
+                    "date": {"value": "2026-08-19", "quote": "the previous day"},
+                    "disposal": {"value": "buried", "quote": "We laid him to rest"}},
+                    text=text, provider_message_id=source["provider_message_id"],
+                    provider_timestamp=source["provider_timestamp"])})
+        from modules.oom_sakkie.herdmaster_health_loss_preview import prepare_health_loss_owner_preview
+        from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+        source["preview"] = prepare_health_loss_owner_preview({
+            "gateway_authority": issue_gateway_owner_authority("42", "42"),
+            "provider_message_id": source["provider_message_id"],
+            "provider_timestamp": source["provider_timestamp"], "text": text,
+            "report_parts": source["report_parts"], "output_language": "af",
+            "mortality_observation": source["semantic_interpretation"]["mortality_observation"]}, evidence)
+        assert source["preview"]["success"]
+        source["status"] = "preview_ready"
     add_report(store, source); retain(store)
     case = collect(store)[0]
     # Preserve the qualified binding on the existing case, as the real manager
@@ -319,6 +345,7 @@ def delivery_journey(store, monkeypatch):
             "edits": edits, "effects": effects, "evidence": evidence}
 
 
+@pytest.mark.parametrize("delivery_journey", ["legacy", "semantic"], indirect=True)
 @pytest.mark.parametrize("renewed_expired_claim", [False, True])
 def test_actual_manager_preview_delivery_callback_and_exact_replays(store, delivery_journey, renewed_expired_claim):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
