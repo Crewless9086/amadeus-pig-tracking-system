@@ -634,11 +634,14 @@ def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pi
     candidates = []
     pig_by_tag = {str(row.get("tag_number") or "").casefold(): row for row in canonical_pigs}
     for row in health or ():
-        text = str(row.get("owner_text_verbatim") or "")
-        match = re.search(r"\b(?:vark|pig)\s*(?:nr)?\s*(\d+)\b", text, re.I)
-        if not match or "dood" not in text.casefold():
+        from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_mortality_tag
+        tag = retained_mortality_tag(row)
+        if not tag:
             continue
-        tag = match.group(1); pig = pig_by_tag.get(tag.casefold()) or {}
+        pig = pig_by_tag.get(tag.casefold()) or {}
+        assessed = ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
+        if assessed and str(assessed.get("pig_id") or "") != str(pig.get("pig_id") or ""):
+            continue
         if str(pig.get("status") or "").casefold() in {"dead", "deceased", "culled"} or pig.get("on_farm") is False:
             continue
         provider = str(row.get("provider_message_id") or "")
