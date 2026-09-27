@@ -455,6 +455,192 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
             self.assertEqual(receipt['evidence_digest'], original['evidence_digest'])
             self.assertEqual(set(receipt['canonical_death_event_fingerprints']), {'SYNTHETIC-CURRENT-DEATH'})
 
+    def test_actionable_owner_work_precedes_large_quiet_backlog(self):
+        # Production-shaped backlog: source collection still retains every case,
+        # but quiet dispatches must not bury an unsent retained owner decision.
+        due = (self.now - timedelta(hours=4)).isoformat()
+        quiet = []
+        for index in range(226):
+            kind = index % 6
+            specialist = ('SAM', 'RUNTIME', 'ROOTLINE', 'HERDMASTER',
+                          'BEACON', 'HERDMASTER')[kind]
+            quiet.append(self.value('quiet-' + str(index), specialist=specialist,
+                dedupe_key=('rootline-readiness:' if kind == 2 else 'quiet:') + str(index),
+                urgency='critical', unknowns=['current question'] if kind in (2, 5) else [],
+                next_reassessment_at=due))
+        retained = self.value('retained', urgency='urgent',
+            dedupe_key='herdmaster:retained-mortality:synthetic',
+            message_family='retained_protected_recovery', next_reassessment_at=due)
+        urgent = self.value('urgent-water', specialist='ROOTLINE', urgency='critical',
+            unknowns=['current physical observation'], next_reassessment_at=due)
+        herd_question = self.value('urgent-herd', urgency='critical',
+            unknowns=['current welfare observation'], next_reassessment_at=due)
+        beacon = self.value('beacon-ready', specialist='BEACON', urgency='due',
+            unknowns=[], next_reassessment_at=due)
+        values = quiet + [retained, urgent, herd_question, beacon]
+        by_key = {row['dedupe_key']: row for row in values}
+        self.seed(values)
+        with self.db() as db, db.cursor() as cur:
+            for index, value in enumerate(quiet):
+                if index % 6 in (4, 5):
+                    cur.execute("""update app_private.oom_manager_cases
+                        set last_delivery_digest=evidence_digest where dedupe_key=%s""",
+                        (value['dedupe_key'],))
+            old = {**normalize_candidate(retained, now=self.now), 'generation': 1}
+            cur.execute("""update app_private.oom_manager_cases set status='exception',
+                last_heartbeat_at=%s where case_id=%s""",
+                (self.now - timedelta(minutes=90), old['case_id']))
+            self.store._event(cur, old, 'exception', self.now - timedelta(minutes=90),
+                outcome_status='retained_claim_current_preview_mismatch')
+        dispatched = []
+        result = self.cycle(values, refresh=lambda row: by_key[row['dedupe_key']],
+            deliver=lambda row: dispatched.append(row['dedupe_key']) or {
+                'success': True, 'status': 'synthetic_preview_only',
+                'delivery_confirmed': False, 'telegram_sends': 0})
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['cases_claimed'], CLAIM_LIMIT)
+        expected = {row['dedupe_key'] for row in (retained, urgent, herd_question, beacon)}
+        self.assertEqual(set(dispatched[:4]), expected)
+        self.assertLess(dispatched.index(herd_question['dedupe_key']),
+                        dispatched.index(retained['dedupe_key']))
+        self.assertEqual(result['deliveries_confirmed'], 0)
+        with self.db() as db:
+            self.assertEqual(db.execute('select count(*) from app_private.oom_manager_cases').fetchone()[0], 230)
+            self.assertEqual(db.execute("""select count(*) from app_private.oom_manager_case_events
+                where event_type in ('delivery_confirmed','completed')""").fetchone()[0], 0)
+
+    def test_newly_actionable_evidence_promotes_same_quiet_case(self):
+        owner = self
+        class ProcessingClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return owner.now
+        clock_patch = patch.object(worker_module, 'datetime', ProcessingClock)
+        clock_patch.start()
+        self.addCleanup(clock_patch.stop)
+        due = (self.now - timedelta(hours=1)).isoformat()
+        quiet = self.value('promote', urgency='critical', next_reassessment_at=due)
+        primary = [self.value('primary-' + str(i), unknowns=['current observation'],
+            urgency='urgent', next_reassessment_at=due) for i in range(6)]
+        values = [quiet, *primary]
+        by_key = {row['dedupe_key']: row for row in values}
+        self.seed(values)
+        calls = []
+        def deliver(row):
+            calls.append(row['dedupe_key'])
+            return {'success': True, 'status': 'synthetic_preview_only',
+                    'delivery_confirmed': False, 'telegram_sends': 0}
+        first = self.cycle(values, refresh=lambda row: by_key[row['dedupe_key']], deliver=deliver)
+        self.assertEqual(first['cases_claimed'], CLAIM_LIMIT)
+        self.assertNotIn(quiet['dedupe_key'], calls)
+        # Mere material change with no owner question is still quiet.
+        quiet_changed = {**quiet, 'summary': 'Fresh observation; no owner action',
+                         'evidence_refs': ['event:quiet-changed']}
+        by_key[quiet['dedupe_key']] = quiet_changed
+        self.now += timedelta(minutes=6)
+        calls.clear()
+        self.cycle(list(by_key.values()), refresh=lambda row: by_key[row['dedupe_key']], deliver=deliver)
+        self.assertNotIn(quiet['dedupe_key'], calls)
+        # A current question promotes the same identity/generation naturally.
+        actionable = {**quiet_changed, 'unknowns': ['current owner observation'],
+                      'evidence_refs': ['event:now-actionable']}
+        by_key[quiet['dedupe_key']] = actionable
+        self.now += timedelta(minutes=6)
+        calls.clear()
+        self.cycle(list(by_key.values()), refresh=lambda row: by_key[row['dedupe_key']], deliver=deliver)
+        self.assertEqual(calls[0], quiet['dedupe_key'])
+        with self.db() as db:
+            row = db.execute("""select case_id,generation,last_delivery_digest
+                from app_private.oom_manager_cases where dedupe_key=%s""", (quiet['dedupe_key'],)).fetchone()
+        self.assertEqual(row, (normalize_candidate(quiet, now=self.now)['case_id'], 3, None))
+
+    def test_expired_delegated_quiet_claims_cleanup_before_new_generation(self):
+        due = (self.now - timedelta(hours=1)).isoformat()
+        stale = [self.value('stale-duplicate', unknowns=['already delivered'], next_reassessment_at=due),
+                 self.value('stale-sam', specialist='SAM', next_reassessment_at=due)]
+        primary = [self.value('ready-' + str(i), unknowns=['current observation'],
+            urgency='due', next_reassessment_at=due) for i in range(6)]
+        values = [*stale, *primary]
+        self.seed(values)
+        with self.db() as db:
+            for value in stale:
+                db.execute("""update app_private.oom_manager_cases set status='delegated',
+                    assigned_worker_id='abandoned',lease_until=%s,
+                    last_delivery_digest=case when specialist='HERDMASTER' then evidence_digest else null end
+                    where dedupe_key=%s""", (self.now - timedelta(minutes=1), value['dedupe_key']))
+        by_key = {row['dedupe_key']: row for row in values}
+        for value in stale:
+            by_key[value['dedupe_key']] = {**value, 'evidence_refs': ['event:new-after-abandoned-lease']}
+        result = self.cycle(list(by_key.values()), refresh=lambda row: by_key[row['dedupe_key']],
+            deliver=lambda row: {'success': True, 'status': 'non_farm_case_delivery_suppressed',
+                                 'delivery_confirmed': False, 'telegram_sends': 0})
+        selected = {row['case_id'] for row in result['case_results']}
+        self.assertTrue({normalize_candidate(row, now=self.now)['case_id'] for row in stale} <= selected)
+        with self.db() as db:
+            rows = db.execute("""select assigned_worker_id,lease_until,status from app_private.oom_manager_cases
+                where dedupe_key=any(%s)""", ([row['dedupe_key'] for row in stale],)).fetchall()
+        self.assertEqual(rows, [(None, None, 'waiting_reassessment')] * 2)
+        # The collector can now replace both formerly delegated generations.
+        self.now += timedelta(minutes=6)
+        self.seed([by_key[row['dedupe_key']] for row in stale])
+        with self.db() as db:
+            generations = db.execute("""select generation from app_private.oom_manager_cases
+                where dedupe_key=any(%s)""", ([row['dedupe_key'] for row in stale],)).fetchall()
+        self.assertEqual(generations, [(2,), (2,)])
+
+    def test_overlapping_workers_claim_disjoint_actionable_cohorts_before_quiet(self):
+        due = (self.now - timedelta(hours=1)).isoformat()
+        ready = [self.value('concurrent-ready-' + str(i),
+            specialist=('HERDMASTER', 'ROOTLINE', 'BEACON')[i % 3],
+            unknowns=['current owner observation'], next_reassessment_at=due)
+            for i in range(12)]
+        quiet = [self.value('concurrent-quiet-' + str(i), urgency='critical',
+            next_reassessment_at=due) for i in range(6)]
+        busy = self.value('already-leased', urgency='critical',
+            unknowns=['current owner observation'], next_reassessment_at=due)
+        values = [*ready, *quiet, busy]
+        self.seed(values)
+        with self.db() as db:
+            db.execute("""update app_private.oom_manager_cases set status='delegated',
+                assigned_worker_id='existing-worker',lease_until=%s where dedupe_key=%s""",
+                (self.now + timedelta(minutes=5), busy['dedupe_key']))
+        by_key = {row['dedupe_key']: row for row in values}
+        barrier = threading.Barrier(2)
+        original = _IsolatedCursor.execute
+        def hold_selected_locks(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if 'join eligible e using(case_id)' in sql:
+                barrier.wait(timeout=5)
+            return result
+        def run(_):
+            store = PostgresManagerCaseStore(connect_factory=self.db)
+            return store.run_cycle([], now=self.now, source_revision='local-concurrency',
+                brain_guard_audit={'passed': True},
+                refresh=lambda row: by_key[row['dedupe_key']],
+                deliver=lambda row: {'success': True, 'status': 'synthetic_preview_only',
+                    'delivery_confirmed': False, 'telegram_sends': 0})
+        with patch.object(_IsolatedCursor, 'execute', hold_selected_locks), \
+                ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(run, range(2)))
+        self.assertTrue(all(row['success'] for row in results), results)
+        self.assertEqual([row['cases_claimed'] for row in results], [CLAIM_LIMIT] * 2)
+        cohorts = [{row['case_id'] for row in result['case_results']} for result in results]
+        self.assertFalse(cohorts[0] & cohorts[1])
+        self.assertEqual(len(cohorts[0] | cohorts[1]), 2 * CLAIM_LIMIT)
+        self.assertTrue((cohorts[0] | cohorts[1]) <= {
+            normalize_candidate(row, now=self.now)['case_id'] for row in ready})
+        self.assertTrue(all(row['deliveries_confirmed'] == 0 for row in results))
+        with self.db() as db:
+            busy_owner = db.execute("""select assigned_worker_id,status
+                from app_private.oom_manager_cases where dedupe_key=%s""",
+                (busy['dedupe_key'],)).fetchone()
+            quiet_claims = db.execute("""select count(*) from app_private.oom_manager_case_events e
+                join app_private.oom_manager_cases c using(case_id)
+                where e.event_type='claimed' and c.dedupe_key=any(%s)""",
+                ([row['dedupe_key'] for row in quiet],)).fetchone()[0]
+        self.assertEqual(busy_owner, ('existing-worker', 'delegated'))
+        self.assertEqual(quiet_claims, 0)
+
     def test_five_specialists_rotate_due_herd_cases_and_new_critical_evidence_preempts(self):
         # Exercise the production claim SQL over natural five-minute cadences,
         # rather than draining the queue within one not-yet-due interval.

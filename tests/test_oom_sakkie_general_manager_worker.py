@@ -340,7 +340,7 @@ def test_due_selection_orders_then_locks_with_skip_locked_and_limit():
     assert "for update of m skip locked limit %s" in selection
     selection_params = next(params for sql, params in commands if "join eligible" in sql)
     assert selection_params[-1] == CLAIM_LIMIT
-    assert "partition by specialist" in selection
+    assert "partition by work_class,specialist" in selection
 
 
 def test_expired_cycle_budget_defers_claim_without_specialist_or_provider_call():

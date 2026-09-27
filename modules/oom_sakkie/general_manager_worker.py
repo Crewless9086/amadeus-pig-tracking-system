@@ -249,6 +249,20 @@ class PostgresManagerCaseStore:
                     # so unchanged high urgency cannot starve due sibling cases.
                     cur.execute("""with due as materialized (
                             select m.case_id,m.specialist,m.urgency,m.last_heartbeat_at,
+                                -- Collection already reassesses every case. Give
+                                -- dispatch capacity to potentially actionable work;
+                                -- known quiet cases use only spare capacity. Expired
+                                -- delegated leases must still be reclaimed, including
+                                -- quiet/confirmed cases, to unlock later generations.
+                                case when m.status='delegated' then 0
+                                  when m.last_delivery_digest=m.evidence_digest
+                                    or starts_with(m.dedupe_key,'rootline-readiness:')
+                                    or m.specialist in ('SAM','RUNTIME')
+                                    or (m.specialist in ('HERDMASTER','ROOTLINE')
+                                      and m.unknowns='[]'::jsonb
+                                      and not (m.evidence_refs @>
+                                        '["manager_message_family:retained_protected_recovery"]'::jsonb))
+                                  then 1 else 0 end work_class,
                                 greatest(m.next_reassessment_at,
                                     coalesce(m.last_heartbeat_at,m.next_reassessment_at)) fair_due_at,
                                 case when m.urgency in ('critical','urgent') and not exists (
@@ -266,7 +280,7 @@ class PostgresManagerCaseStore:
                               and m.next_reassessment_at<=%s
                               and (m.lease_until is null or m.lease_until<%s)
                         ), eligible as materialized (
-                            select *,row_number() over (partition by specialist order by
+                            select *,row_number() over (partition by work_class,specialist order by
                                 fresh_priority,fair_due_at,last_heartbeat_at nulls first,
                                 case urgency when 'critical' then 0 when 'urgent' then 1
                                 when 'due' then 2 when 'planned' then 3 else 4 end,
@@ -277,7 +291,7 @@ class PostgresManagerCaseStore:
                             m.evidence_digest,m.evidence_refs,m.unknowns,m.summary,m.next_action,
                             m.next_reassessment_at,m.generation,m.last_delivery_digest
                         from app_private.oom_manager_cases m join eligible e using(case_id)
-                        order by case when e.specialist_rank=1 then 0 else 1 end,
+                        order by e.work_class,case when e.specialist_rank=1 then 0 else 1 end,
                             e.fresh_priority,e.fair_due_at,e.last_heartbeat_at nulls first,
                             case e.urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
