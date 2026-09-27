@@ -17,19 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = '4d9ade2bd5ce2540d52e761af7d24ee5c202ab58'
+BASE = 'c4488cf2d916db2b35befdefe10ca5e252804a2c'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1357
-HEAD = 'c4c606b0a395db6d4f389678f74135d311a6d987'
-APPROVED_RUNTIME_HEAD = 'c4c606b0a395db6d4f389678f74135d311a6d987'
-BRANCH = 'codex/oom-preview-identity-20260927'
-PREDECESSOR_PR = 1356
-PREDECESSOR_BASE = 'ad0650aecba2bb1f800ac305bfc3d713bb03877b'
-PREDECESSOR_HEAD = 'a4790dc6bbbddbb810cadf7d733209b3083a1db2'
-PREDECESSOR_BRANCH = 'codex/oom-retained-refresh-20260927'
+CANDIDATE_PR = 1358
+HEAD = 'dccd184c1eed9cb12867de46085688b0156a4b0a'
+APPROVED_RUNTIME_HEAD = 'dccd184c1eed9cb12867de46085688b0156a4b0a'
+BRANCH = 'codex/oom-manager-actionable-queue-20260927'
+PREDECESSOR_PR = 1357
+PREDECESSOR_BASE = '4d9ade2bd5ce2540d52e761af7d24ee5c202ab58'
+PREDECESSOR_HEAD = 'c4c606b0a395db6d4f389678f74135d311a6d987'
+PREDECESSOR_BRANCH = 'codex/oom-preview-identity-20260927'
 QUALIFICATION_TEST_PATHS = []
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/pig_weights/farm_supabase_read_service.py', 'modules/pig_weights/herdmaster_natural_health_loss_intake.py', 'tests/test_farm_supabase_read_service.py', 'tests/test_herdmaster_natural_health_loss_intake.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_retained_preview_identity.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_general_manager_worker.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -41,9 +41,9 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     ".github/workflows/oom-desktop-rebind-qualification.yml"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1356_source_bound_mortality_conversation",
-    "application_revision_rollback:web:ad0650aecba2bb1f800ac305bfc3d713bb03877b"}
-ADDED_EFFECTS = {"exact_pr1357_stable_retained_preview_identity",
+REMOVED_EFFECTS = {"exact_pr1357_stable_retained_preview_identity",
+    "application_revision_rollback:web:4d9ade2bd5ce2540d52e761af7d24ee5c202ab58"}
+ADDED_EFFECTS = {"exact_pr1358_actionable_manager_queue_priority",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -51,6 +51,8 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    "Prioritize potentially actionable owner work before known quiet dispatch paths using current canonical case fields; preserve specialist fairness within each class, active lease exclusion, expired delegated cleanup, five-claim capacity, deadlines, current-evidence refresh, protected confirmation and provider ambiguity. Do not delete quiet cases or mark them delivered or completed to free capacity.",
+    "Continue canonical collection for quiet cases and allow them spare dispatch capacity; do not claim a bounded quiet waiting time under sustained actionable demand. Prove large-backlog selection, same-case promotion after material owner-relevant evidence, disjoint concurrent claims, genuine later retained-card delivery and the protected canonical outcome separately. No additional model call, cadence change or manual scheduler trigger is authorized.",
     "Keep a protected operation stable across new canonical read timestamps while preserving chronology checks and all material evidence. An existing persisted retained preview may preserve its exact original operation only if fresh whole-preview content and global canonical generation still match; preserve the same claim, token, mission, expiry and source. No rebind, synthetic confirmation or broader expiry renewal is authorized.",
     "Read existing canonical health sources through one bounded consistent read-only snapshot; reject missing canonical configuration, incomplete reads and deadline exhaustion. Prove legacy unsent preview recovery, same-card replay, genuine callback, current canonical readback and a later natural manager cycle; unattempted expiry renewal remains once-only under existing guards.",
     "Preserve single-animal mortality meaning as source-bound animal/death/date/disposal facts across the semantic front door, manager-question partial replies, specialist preview and retained recovery; anchor relative dates to original provider time, reject missing sources and identity conflicts, retain uncertainty and invalidate corrected previews. No extra paid inference loop or new farm authority is granted.",
@@ -63,8 +65,8 @@ REQUIRED_ACCEPTANCE = {
     "Scheduled prioritization uses no paid model; coalesce routine briefing changes, preserve distinct urgent/owner-decision interrupts, and back off the same failed generation. Do not alter the existing scheduler or trigger a manual cycle.",
     "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
     "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
-    f"Release only the protected merge whose application tree equals exact PR1357 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only stable retained-preview identity release; source pins and prior PR1356 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    f"Release only the protected merge whose application tree equals exact PR1358 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only actionable manager queue release; source pins and prior PR1357 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",
