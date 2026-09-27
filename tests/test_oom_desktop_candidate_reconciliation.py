@@ -555,9 +555,9 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "225c3df8c29cdf586678e0f62b587a099c6681b2")
-        self.assertEqual(adapter.HEAD, "a4790dc6bbbddbb810cadf7d733209b3083a1db2")
-        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, ['tests/test_oom_sakkie_plan_dialogue.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py'])
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "c4c606b0a395db6d4f389678f74135d311a6d987")
+        self.assertEqual(adapter.HEAD, "c4c606b0a395db6d4f389678f74135d311a6d987")
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
         for case in cases:
             qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)

@@ -17,19 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = 'ad0650aecba2bb1f800ac305bfc3d713bb03877b'
+BASE = '4d9ade2bd5ce2540d52e761af7d24ee5c202ab58'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1356
-HEAD = 'a4790dc6bbbddbb810cadf7d733209b3083a1db2'
-APPROVED_RUNTIME_HEAD = '225c3df8c29cdf586678e0f62b587a099c6681b2'
-BRANCH = 'codex/oom-retained-refresh-20260927'
-PREDECESSOR_PR = 1355
-PREDECESSOR_BASE = 'ba198bfd1e630251aacf31355641d9fbf7b5319c'
-PREDECESSOR_HEAD = '9d4e6672672564308e867a8c628df21f2f4e7746'
-PREDECESSOR_BRANCH = 'codex/oom-retained-reply-recovery-20260926'
-QUALIFICATION_TEST_PATHS = ['tests/test_oom_sakkie_plan_dialogue.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/02-backend/OOM_SAKKIE_SEMANTIC_MORTALITY_CONTRACT.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_health_loss_preview.py', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/manager_question_runtime.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/pig_weights/herdmaster_mortality_observation.py', 'modules/pig_weights/herdmaster_natural_health_loss_intake.py', 'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_mortality_semantic_journey.py', 'tests/test_oom_sakkie_plan_dialogue.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+CANDIDATE_PR = 1357
+HEAD = 'c4c606b0a395db6d4f389678f74135d311a6d987'
+APPROVED_RUNTIME_HEAD = 'c4c606b0a395db6d4f389678f74135d311a6d987'
+BRANCH = 'codex/oom-preview-identity-20260927'
+PREDECESSOR_PR = 1356
+PREDECESSOR_BASE = 'ad0650aecba2bb1f800ac305bfc3d713bb03877b'
+PREDECESSOR_HEAD = 'a4790dc6bbbddbb810cadf7d733209b3083a1db2'
+PREDECESSOR_BRANCH = 'codex/oom-retained-refresh-20260927'
+QUALIFICATION_TEST_PATHS = []
+PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/pig_weights/farm_supabase_read_service.py', 'modules/pig_weights/herdmaster_natural_health_loss_intake.py', 'tests/test_farm_supabase_read_service.py', 'tests/test_herdmaster_natural_health_loss_intake.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_retained_preview_identity.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -41,9 +41,9 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     ".github/workflows/oom-desktop-rebind-qualification.yml"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1355_typed_retained_mortality_recovery",
-    "application_revision_rollback:web:ba198bfd1e630251aacf31355641d9fbf7b5319c"}
-ADDED_EFFECTS = {"exact_pr1356_source_bound_mortality_conversation",
+REMOVED_EFFECTS = {"exact_pr1356_source_bound_mortality_conversation",
+    "application_revision_rollback:web:ad0650aecba2bb1f800ac305bfc3d713bb03877b"}
+ADDED_EFFECTS = {"exact_pr1357_stable_retained_preview_identity",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -51,6 +51,8 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    "Keep a protected operation stable across new canonical read timestamps while preserving chronology checks and all material evidence. An existing persisted retained preview may preserve its exact original operation only if fresh whole-preview content and global canonical generation still match; preserve the same claim, token, mission, expiry and source. No rebind, synthetic confirmation or broader expiry renewal is authorized.",
+    "Read existing canonical health sources through one bounded consistent read-only snapshot; reject missing canonical configuration, incomplete reads and deadline exhaustion. Prove legacy unsent preview recovery, same-card replay, genuine callback, current canonical readback and a later natural manager cycle; unattempted expiry renewal remains once-only under existing guards.",
     "Preserve single-animal mortality meaning as source-bound animal/death/date/disposal facts across the semantic front door, manager-question partial replies, specialist preview and retained recovery; anchor relative dates to original provider time, reject missing sources and identity conflicts, retain uncertainty and invalidate corrected previews. No extra paid inference loop or new farm authority is granted.",
     "Separate retained-report refresh from broad herd collection; verify source and deadline containment, exact current canonical preview, genuine protected delivery/confirmation, atomic recording/readback, silent replay and a later independent manager cycle. Local or hosted simulations do not constitute owner acceptance.",
     "Select retained mortality reports and short replies from existing typed specialist assessment and exact canonical animal identity; contrary assessment never falls back to legacy prose. Preserve latest-state, recipient, cancellation, supersession, protected claim, confirmation and replay guards; prove a genuine scheduled confirmation-card delivery and later canonical outcome separately.",
@@ -61,8 +63,8 @@ REQUIRED_ACCEPTANCE = {
     "Scheduled prioritization uses no paid model; coalesce routine briefing changes, preserve distinct urgent/owner-decision interrupts, and back off the same failed generation. Do not alter the existing scheduler or trigger a manual cycle.",
     "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
     "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
-    f"Release only the protected merge whose application tree equals exact PR1356 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only source-bound mortality conversation release; source pins and prior PR1355 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    f"Release only the protected merge whose application tree equals exact PR1357 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only stable retained-preview identity release; source pins and prior PR1356 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",
