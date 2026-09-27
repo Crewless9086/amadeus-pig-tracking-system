@@ -369,7 +369,7 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
         "text": str(payload.get("combined_text") or payload.get("owner_text_verbatim") or ""),
         **({"report_parts": payload["report_parts"]} if payload.get("report_parts") else {}),
         **{key: value for key, value in (payload.get("semantic_interpretation") or {}).items()
-           if key in {"welfare_observation", "clinical_observation"}},
+           if key in {"mortality_observation", "welfare_observation", "clinical_observation"}},
     }, evidence)
     identity = dict((preview.get("evaluator") or {}).get("identity") or {})
     if not target or str(identity.get("pig_id") or "") != target:

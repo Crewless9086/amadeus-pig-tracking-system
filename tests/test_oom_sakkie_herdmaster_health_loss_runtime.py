@@ -150,7 +150,7 @@ def test_natural_afrikaans_vark_mortality_without_date_enters_shared_preview(loa
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
 def test_fresh_mortality_preview_uses_generation_bound_visible_card(loader, prepare):
     loader.return_value = evidence()
-    prepare.return_value = {"question_count": 0, "owner_message": "Voorskou",
+    prepare.return_value = {"success": True, "question_count": 0, "owner_message": "Voorskou",
         "confirmation_binding": {"operation_id": "HERD-FRESH", "preview_sha256": "P" * 64},
         "evaluator": {"event_family": "found_dead", "identity": {
             "pig_id": "PIG-2026-E88A", "tag_number": "11"}}}

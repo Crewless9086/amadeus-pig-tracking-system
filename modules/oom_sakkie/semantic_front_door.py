@@ -38,6 +38,7 @@ class SemanticInterpretation:
     entity_refs: tuple[str, ...] = ()
     continuation: bool = False
     observation: str = ""
+    mortality_observation: Mapping[str, Any] | None = None
     welfare_observation: Mapping[str, str] | None = None
     clinical_observation: Mapping[str, str] | None = None
     observation_facts: tuple[Mapping[str, Any], ...] = ()
@@ -174,6 +175,18 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
     if result and result.observation_facts and not _facts_context_allowed(parsed, context, result):
         return replace(result, observation_facts=(), needs_clarification=True,
             clarification_question="Are you reporting the storage tanks, the reservoir, or both?")
+    if result and result.mortality_observation:
+        from modules.pig_weights.herdmaster_mortality_observation import bind_mortality_observation
+        try:
+            # Validate quotes now; the specialist binds and retains the sources.
+            bind_mortality_observation(result.mortality_observation,
+                text=str(parsed.get("text") or ""),
+                provider_message_id=parsed.get("provider_message_id"),
+                provider_timestamp=parsed.get("provider_timestamp"))
+        except (TypeError, ValueError):
+            # Preserve the invalid typed boundary so it cannot become a legacy
+            # prose interpretation. The specialist contains it without effects.
+            return replace(result, confidence=0.0, needs_clarification=True)
     return result
 
 
@@ -192,6 +205,10 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         facts = _observation_facts(value.get("observation_facts"))
         water_context = _water_observation_context(value.get("water_observation_context"))
         irrigation = _irrigation_observation(value.get("irrigation_observation"))
+        from modules.pig_weights.herdmaster_mortality_observation import mortality_observation
+        mortality = mortality_observation(value.get("mortality_observation"))
+        if mortality and (domain != "herd_health" or message_kind not in {"observation", "correction"}):
+            raise ValueError("mortality_observation_requires_factual_health_report")
         welfare = _welfare_observation(value.get("welfare_observation"))
         clinical = _clinical_observation(value.get("clinical_observation"))
         breeding_actions = _breeding_actions(value.get("breeding_actions"))
@@ -209,7 +226,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         query = _read_query(value.get("read_query"), message_kind)
         if query:
             if (value.get("protected_preview_required") or value.get("recording_prohibited")
-                    or facts or welfare or clinical or breeding_actions or farrowing_litter
+                    or facts or mortality or welfare or clinical or breeding_actions or farrowing_litter
                     or litter_first_treatment or litter_weaning or confirmation_facts
                     or commissioning_facts or irrigation):
                 raise ValueError("read_query_conflicts_with_effect_contract")
@@ -219,6 +236,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             message_kind=message_kind,
             continuation=bool(value.get("continuation")),
             observation=str(value.get("observation") or "").strip()[:500],
+            mortality_observation=mortality,
             welfare_observation=welfare,
             clinical_observation=clinical,
             observation_facts=facts,
@@ -257,7 +275,10 @@ def load_bounded_owner_context(parsed: Mapping[str, Any]) -> dict[str, Any]:
         active.append({"specialist": "HERDMASTER", "mission_id": str(row.get("mission_id") or "")[:80],
             "status": str(row.get("status") or "")[:40],
             "tag": str(identity.get("tag_number") or row.get("tag_number") or "")[:40],
-            "card_message_id": str(row.get("card_message_id") or "")[:40]})
+            "card_message_id": str(row.get("card_message_id") or "")[:40],
+            "question": str(((row.get("preview") or {}).get("evaluator") or {}).get(
+                "smallest_missing_follow_up_question") or "")[:240],
+            "mortality_observation": (row.get("semantic_interpretation") or {}).get("mortality_observation")})
     recent, conversation = _load_recent_specialist_context(parsed, include_conversation=True)
     from modules.oom_sakkie.herdmaster_litter_weaning_runtime import load_weaning_context
     weaning = load_weaning_context(parsed)
@@ -347,9 +368,25 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,welfare_observation,clinical_observation,observation_facts,water_observation_context,irrigation_observation,breeding_actions,farrowing_litter,litter_first_treatment,confirmation_facts,commissioning_facts,"
+        "observation,mortality_observation,welfare_observation,clinical_observation,observation_facts,water_observation_context,irrigation_observation,breeding_actions,farrowing_litter,litter_first_treatment,confirmation_facts,commissioning_facts,"
         "protected_preview_required,recording_prohibited,read_query,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
+        " For an actual animal death report or its follow-up/correction, return mortality_observation. "
+        "It is an object with optional animal, death, date, disposal facts; each fact has exactly value and quote. "
+        "quote must be a verbatim substring of THIS owner message, never assistant prose or an older message. "
+        "animal.value is an exact tag, name or Pig ID appearing in its quote. Omit animal on a contextual reply; "
+        "use entity_refs for the one unambiguous active animal and continuation=true. Never guess between cases. "
+        "death.value is dead, alive or unknown. Interpret negation and uncertainty; anticipated death is not dead. "
+        "date.value is the death/discovery date in ISO YYYY-MM-DD, or null for explicitly uncertain/conflicting dates. "
+        "Its quote contains the actual date words, not a burial date. Resolve relative or omitted-year dates using "
+        "THIS provider_timestamp and provider_timezone, never the processing date or a planned date. "
+        "An omitted year is the most recent occurrence on or before the message's local date; ask if ambiguous. "
+        "Preserve explicit future dates for chronology validation; never silently change their year. "
+        "disposal.value is removed, buried, removed_and_buried, cremated, disposed or unknown, only if actually reported. "
+        "Return only facts supplied by this message. Do not restate past facts as fresh quotes. A date-only answer "
+        "has only a date fact. An explicit replacement is message_kind correction. Unmentioned facts remain retained. "
+        "Do not use this contract for hypothetical questions or compound farrowing/litter counts. "
+        "Never infer a death, cause, exact time, missing date or disposal. These facts propose a protected preview only. "
         " For a factual welfare observation or correction, welfare_observation may contain only eating, drinking, "
         "standing, moving and breathing (breathing normally), each with the exact state yes, no or unknown. Resolve the meaning from the current "
         "message and its bounded question context in any language; do not infer an unreported state. Omit fields "
@@ -431,7 +468,9 @@ def _payload(parsed, context, source):
         "Do not put facts, instructions, authority, arrays or extra keys in read_query; use only the demonstrated keys plus context_message_id when a delivered reference is truly needed. "
     )
     user = {"message": str(parsed.get("text") or "")[:2000],
-            "provider_message_id": str(parsed.get("provider_message_id") or "")[:80], "context": context}
+            "provider_message_id": str(parsed.get("provider_message_id") or "")[:80],
+            "provider_timestamp": str(parsed.get("provider_timestamp") or "")[:80],
+            "provider_timezone": "Africa/Johannesburg", "context": context}
     return {"model": str(source.get(MODEL_ENV) or "").strip(), "temperature": 0,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": json.dumps(user, separators=(",", ":"))}],

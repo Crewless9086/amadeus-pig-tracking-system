@@ -555,3 +555,46 @@ def test_litter_retained_membership_is_exact_not_regrouped_with_new_same_day_rep
             "owner_text_verbatim": "Linda kleintjies dood op 20 Aug"}]):
         assert _retained_herd_report_recovery_candidates(NOW,
             connect=_report_recovery_fixture(cases=cases, reports=invalid)) == []
+
+
+def test_retained_refresh_reuses_canonical_recovery_without_full_herd_overview(monkeypatch):
+    from modules.oom_sakkie import manager_case_sources as sources
+    case = {"dedupe_key": "herdmaster:retained-mortality:5097", "specialist": "HERDMASTER"}
+    sibling = {"dedupe_key": "herdmaster:retained-litter-loss:4052:2026-08-04",
+               "specialist": "HERDMASTER"}
+    calls = []
+    def retained(now):
+        calls.append(now)
+        return [case, sibling]
+    def forbidden(_now):
+        raise AssertionError("unrelated herd overview must not run")
+    monkeypatch.setattr(sources, "_herdmaster", forbidden)
+    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", retained)
+    assert sources.collect_manager_refresh_snapshot(now=NOW, cases=[case]) == {
+        (case["dedupe_key"], "HERDMASTER"): case}
+    assert calls == [NOW]
+    # Canonical absence cannot reuse the old candidate or invent completion.
+    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", lambda now: [])
+    assert sources.collect_manager_refresh_snapshot(now=NOW, cases=[case]) == {}
+
+
+def test_retained_refresh_failure_is_contained_without_stale_fallback(monkeypatch):
+    from modules.oom_sakkie import manager_case_sources as sources
+    case = {"dedupe_key": "herdmaster:retained-mortality:5097", "specialist": "HERDMASTER"}
+    def failing(now):
+        raise TimeoutError("private connection details")
+    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", failing)
+    result = sources.collect_manager_refresh_snapshot(now=NOW, cases=[case])
+    error = result[(case["dedupe_key"], "HERDMASTER")]
+    assert isinstance(error, sources.ManagerCollectorRefreshError)
+    assert str(error) == "collector:herdmaster:TimeoutError"
+
+
+def test_retained_refresh_does_not_accept_wrong_specialist(monkeypatch):
+    from modules.oom_sakkie import manager_case_sources as sources
+    case = {"dedupe_key": "herdmaster:retained-mortality:5097", "specialist": "ROOTLINE"}
+    def forbidden(now):
+        raise AssertionError("wrong specialist cannot use retained shortcut")
+    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", forbidden)
+    monkeypatch.setattr(sources, "_herdmaster", lambda now: [])
+    assert sources.collect_manager_refresh_snapshot(now=NOW, cases=[case]) == {}
