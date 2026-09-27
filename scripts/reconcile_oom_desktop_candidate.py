@@ -21,14 +21,14 @@ BASE = 'ad0650aecba2bb1f800ac305bfc3d713bb03877b'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
 CANDIDATE_PR = 1356
-HEAD = '225c3df8c29cdf586678e0f62b587a099c6681b2'
-APPROVED_RUNTIME_HEAD = HEAD
+HEAD = '2ed5bcd70915baf98f049ecd8c5d13f031f9c0f9'
+APPROVED_RUNTIME_HEAD = '225c3df8c29cdf586678e0f62b587a099c6681b2'
 BRANCH = 'codex/oom-retained-refresh-20260927'
 PREDECESSOR_PR = 1355
 PREDECESSOR_BASE = 'ba198bfd1e630251aacf31355641d9fbf7b5319c'
 PREDECESSOR_HEAD = '9d4e6672672564308e867a8c628df21f2f4e7746'
 PREDECESSOR_BRANCH = 'codex/oom-retained-reply-recovery-20260926'
-QUALIFICATION_TEST_PATHS = []
+QUALIFICATION_TEST_PATHS = ['tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/02-backend/OOM_SAKKIE_SEMANTIC_MORTALITY_CONTRACT.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_health_loss_preview.py', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/manager_question_runtime.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/pig_weights/herdmaster_mortality_observation.py', 'modules/pig_weights/herdmaster_natural_health_loss_intake.py', 'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_mortality_semantic_journey.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE

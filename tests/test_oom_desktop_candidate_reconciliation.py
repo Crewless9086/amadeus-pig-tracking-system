@@ -556,8 +556,8 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "225c3df8c29cdf586678e0f62b587a099c6681b2")
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, adapter.HEAD)
-        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
+        self.assertEqual(adapter.HEAD, "2ed5bcd70915baf98f049ecd8c5d13f031f9c0f9")
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, ["tests/test_oom_sakkie_retained_report_recovery_postgres.py"])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
         for case in cases:
             qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)
