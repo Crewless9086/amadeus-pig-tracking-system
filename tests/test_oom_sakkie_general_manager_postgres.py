@@ -1078,7 +1078,10 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self._full_wrapper_with_slow_owner('rootline-readiness')
 
     def test_ready_claim_order_rechecks_pending_head_before_next_dispatch(self):
+        # Keep the three farm specialists actionable so this test isolates
+        # readiness ordering, rather than quiet-case dispatch priority.
         values = [self.value(owner, dedupe_key=owner + ':ordered', specialist=owner.upper(),
+            unknowns=['current owner observation'] if owner in ('herdmaster', 'rootline') else [],
             urgency=urgency, next_reassessment_at=self.now.isoformat())
             for owner, urgency in (('herdmaster', 'critical'), ('rootline', 'urgent'),
                                    ('beacon', 'due'), ('sam', 'planned'), ('runtime', 'watch'))]
