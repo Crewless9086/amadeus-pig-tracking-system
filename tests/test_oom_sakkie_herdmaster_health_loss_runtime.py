@@ -173,18 +173,14 @@ def test_fresh_mortality_preview_uses_generation_bound_visible_card(loader, prep
     prepare.assert_called_once()
 
 
-@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_litter_register_rows")
-@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_mating_overview")
-@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_pig_master_rows")
-def test_canonical_loader_preserves_birth_and_terminal_chronology(pigs, matings, litters):
-    pigs.return_value = [{
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_health_loss_source_snapshot")
+def test_canonical_loader_preserves_birth_and_terminal_chronology(snapshot):
+    snapshot.return_value = {"animals": [{
         "Pig_ID": "PIG-2026-0002", "Pig_Name": "Pig 002", "Tag_Number": "002",
         "Status": "Deceased", "On_Farm": "No", "Purpose": "Unknown",
         "Current_Pen_ID": "", "Date_Of_Birth": "2026-01-10",
         "Exit_Date": "2026-08-12",
-    }]
-    matings.return_value = []
-    litters.return_value = []
+    }], "matings": [], "litters": []}
 
     packet = load_canonical_health_loss_evidence()
     animal = packet["animals"][0]

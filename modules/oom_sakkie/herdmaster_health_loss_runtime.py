@@ -19,9 +19,7 @@ from typing import Any, Mapping
 
 from modules.oom_sakkie.herdmaster_health_loss_preview import prepare_health_loss_owner_preview
 from modules.pig_weights.farm_supabase_read_service import (
-    get_litter_register_rows,
-    get_mating_overview,
-    get_pig_master_rows,
+    get_health_loss_source_snapshot,
 )
 from modules.pig_weights.herdmaster_health_loss_recording import confirm_health_loss_preview
 from modules.pig_weights.pig_welfare_case_runtime import (
@@ -870,8 +868,9 @@ def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
 
 
 def load_canonical_health_loss_evidence(*, connect_factory=None):
+    rows = get_health_loss_source_snapshot(connect_factory=connect_factory)
     animals = []
-    for row in get_pig_master_rows(connect_factory=connect_factory):
+    for row in rows["animals"]:
         animals.append({
             "pig_id": str(row.get("Pig_ID") or ""),
             "name": str(row.get("Pig_Name") or ""),
@@ -889,12 +888,12 @@ def load_canonical_health_loss_evidence(*, connect_factory=None):
         "boar_pig_id": str(row.get("boar_pig_id") or ""),
         "date": str(row.get("mating_date") or ""),
         "is_open": str(row.get("is_open") or "").lower() in {"yes", "true", "1"},
-    } for row in get_mating_overview(connect_factory=connect_factory)]
+    } for row in rows["matings"]]
     litters = [{
         "litter_id": str(row.get("Litter_ID") or ""),
         "sow_pig_id": str(row.get("Sow_Pig_ID") or ""),
         "farrowing_date": str(row.get("Farrowing_Date") or ""),
-    } for row in get_litter_register_rows(connect_factory=connect_factory)]
+    } for row in rows["litters"]]
     material = json.dumps({"animals": animals, "matings": matings, "litters": litters}, sort_keys=True, separators=(",", ":"))
     animal_generations = {}
     for animal in animals:

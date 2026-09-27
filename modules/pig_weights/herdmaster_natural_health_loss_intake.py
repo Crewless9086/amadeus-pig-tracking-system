@@ -1000,7 +1000,12 @@ def _operation_identity(report, animal, parsed, chronology, effects, canonical,
         "suspected": parsed["suspected"], "veterinary": parsed["veterinary"],
         "mating_id": (chronology.get("mating") or {}).get("mating_id"),
         "canonical_evidence_generation": _clean(canonical.get("evidence_generation"), 120),
-        "canonical_packet_sha256": _digest(canonical),
+        # Observation time validates chronology above, but is not a farm fact.
+        # A new read of unchanged evidence must preserve the protected operation.
+        # Keep every other field, including generations and related chronology.
+        "canonical_packet_sha256": _digest({
+            key: value for key, value in canonical.items() if key != "as_of_timestamp"
+        }),
         **({"mortality_observation": report["mortality_observation"]}
            if report.get("mortality_observation") else {}),
         "before": before, "effects": effects, "missing": missing,
