@@ -124,7 +124,24 @@ def handle_authenticated_health_loss_message(
     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
     provider_timestamp = str(parsed.get("provider_timestamp") or "").strip()
     output_language = "af" if str(parsed.get("output_language") or "en").casefold().startswith("af") else "en"
-    explicit_health = bool(HEALTH_PATTERN.search(text) or (
+    mortality = semantic.get("mortality_observation")
+    bound_mortality = None
+    semantic_health = (semantic.get("domain") == "herd_health"
+        and semantic.get("message_kind") in {"observation", "correction"}
+        and float(semantic.get("confidence") or 0) >= 0.8)
+    if mortality is not None and not semantic.get("recording_prohibited"):
+        from modules.pig_weights.herdmaster_mortality_observation import bind_mortality_observation
+        try:
+            if not semantic_health or semantic.get("recording_prohibited"):
+                raise ValueError("mortality_meaning_unresolved")
+            bound_mortality = bind_mortality_observation(mortality, text=text,
+                provider_message_id=provider_message_id, provider_timestamp=provider_timestamp)
+        except (TypeError, ValueError):
+            return {"handled": True, "success": False,
+                "status": "health_loss_semantic_evidence_unproven",
+                "answer": _health_loss_message(output_language, "semantic_evidence_unproven"),
+                "writes_farm_data": False, "protected_actions_performed": False}, 409
+    explicit_health = bool(bound_mortality or HEALTH_PATTERN.search(text) or (
         semantic.get("domain") == "herd_health" and not semantic.get("needs_clarification")))
     confirmation_shaped = bool(CONFIRMATION_PATTERN.fullmatch(text))
     if confirmation_shaped and (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
@@ -169,7 +186,12 @@ def handle_authenticated_health_loss_message(
         text, contexts, provider_message_id,
         reply_to_message_id=reply_to_message_id,
         provider_timestamp=provider_timestamp,
-        entity_refs=semantic.get("entity_refs") or ())
+        entity_refs=([bound_mortality["animal"]["value"]] if bound_mortality and "animal" in bound_mortality
+                     else semantic.get("entity_refs") or ()),
+        semantic_continuation=bool(semantic.get("domain") == "herd_health"
+            and float(semantic.get("confidence") or 0) >= 0.8
+            and (semantic_health or semantic.get("recording_prohibited"))
+            and semantic.get("continuation")))
     if ambiguity:
         if all(str(row.get("status") or "").startswith("waiting_for_context")
                for row in ambiguity):
@@ -374,6 +396,24 @@ def handle_authenticated_health_loss_message(
 
     active_for_message = active if follow_up else None
     owner_intent = _classify_preview_owner_intent(text, active_for_message)
+    if (active_for_message and semantic.get("domain") == "herd_health"
+            and float(semantic.get("confidence") or 0) >= 0.8 and semantic.get("recording_prohibited")):
+        owner_intent = "declines_preview"
+    elif (active_for_message and owner_intent != "declines_preview" and semantic_health
+            and (semantic.get("message_kind") == "correction"
+                 or (bound_mortality and active_for_message.get("operation_id")))):
+        owner_intent = "corrects_preview"
+    if bound_mortality and "animal" in bound_mortality and active_for_message:
+        identity = ((active_for_message.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
+        reference = bound_mortality["animal"]["value"].casefold()
+        if reference not in {str(identity.get(key) or "").casefold()
+                            for key in ("pig_id", "tag_number", "name")}:
+            return {"handled": True, "success": False,
+                "status": "health_loss_semantic_context_identity_conflict",
+                "answer": _health_loss_message(output_language, "identity_required"),
+                "writes_farm_data": False, "protected_actions_performed": False}, 409
+    if active_for_message and bound_mortality and (bound_mortality.get("death") or {}).get("value") == "alive":
+        owner_intent = "declines_preview"
     correction_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     if (active_for_message and owner_intent == "corrects_preview"
             and str(active_for_message.get("provider_message_id") or "") == provider_message_id
@@ -390,6 +430,13 @@ def handle_authenticated_health_loss_message(
                 + [str(active_for_message.get("operation_id") or "")]
             )),
             "owner_text": _health_loss_message(output_language, "cancelled"),
+            "owner_text_verbatim": text,
+            "report_parts": list(active_for_message.get("report_parts") or []) + [{
+                "text": text, "provider_message_id": provider_message_id,
+                "provider_timestamp": provider_timestamp}],
+            "semantic_interpretation": {**semantic, **({"mortality_observation": {
+                **((active_for_message.get("semantic_interpretation") or {}).get("mortality_observation") or {}),
+                **bound_mortality}} if bound_mortality else {})},
             "event_phase": "preview_declined"}
         stored = _record_lifecycle_event(lifecycle, context_store=context_store)
         if stored.get("success") is not True:
@@ -437,7 +484,8 @@ def handle_authenticated_health_loss_message(
     interpreted = (f" Semantic interpretation pending owner preview confirmation: {semantic_observation}"
                    if semantic.get("domain") == "herd_health"
                    and float(semantic.get("confidence") or 0) >= 0.8
-                   and semantic_observation else "")
+                   and semantic_observation and not bound_mortality
+                   and not ((active_for_message or {}).get("semantic_interpretation") or {}).get("mortality_observation") else "")
     current_text = (text + interpreted).strip()
     # The manager conversation passes already attributable partial answers.
     # Keep their original evidence times for date interpretation and retain
@@ -456,7 +504,8 @@ def handle_authenticated_health_loss_message(
     if manager_parts:
         report_parts.extend(dict(part) for part in manager_parts)
     else:
-        report_parts.append({"text": text, "provider_timestamp": evidence_provider_timestamp})
+        report_parts.append({"text": text, "provider_timestamp": evidence_provider_timestamp,
+                             "provider_message_id": evidence_provider_message_id})
     if parsed.get("application_form"):
         report_parts[-1]["display_text"] = str(parsed["application_form"].get("notes") or "")
     evidence = load_canonical_health_loss_evidence(connect_factory=connect_factory)
@@ -478,7 +527,20 @@ def handle_authenticated_health_loss_message(
             if states:
                 envelope[field] = states
                 semantic = {**semantic, field: states}
+    prior_mortality = ((active_for_message or {}).get("semantic_interpretation") or {}).get("mortality_observation")
+    manager_mortality = parsed.get("manager_question_mortality_observation")
+    if bound_mortality or prior_mortality or manager_mortality:
+        # Field deltas retain their original quotations and provider chronology.
+        # Explicit unknown replaces a prior value; it never revives old certainty.
+        merged_mortality = {**(prior_mortality or {}), **(manager_mortality or {}), **(bound_mortality or {})}
+        envelope["mortality_observation"] = merged_mortality
+        semantic = {**semantic, "mortality_observation": merged_mortality}
     preview = prepare_health_loss_owner_preview(envelope, evidence)
+    if not preview.get("success") and not int(preview.get("question_count") or 0):
+        return {"handled": True, "success": False,
+            "status": "health_loss_preview_evidence_unproven",
+            "answer": _health_loss_message(output_language, "semantic_evidence_unproven"),
+            "writes_farm_data": False, "protected_actions_performed": False}, 409
     owner_text = _owner_message(preview)
     mission_id = str((active_for_message or {}).get("mission_id") or "") or "OOM-HERDMASTER-" + hashlib.sha256(
         f"{parsed.get('telegram_user_id')}|{parsed.get('telegram_chat_id')}|{provider_message_id}".encode()
@@ -703,6 +765,7 @@ def _preview_is_mortality(preview: Mapping[str, Any]) -> bool:
 def _health_loss_message(language: str, key: str) -> str:
     messages = {
         "en": {
+            "semantic_evidence_unproven": "I could not safely match the interpreted facts to your original message. Nothing was recorded; the conversation needs recovery before confirmation.",
             "active_context_unavailable": "<b>HERDMASTER FOLLOW-UP PAUSED</b>\n\nI could not safely read the active animal-case history. Nothing new was recorded.",
             "stale_confirmation": "<b>OLD HERDMASTER PREVIEW EXPIRED</b>\n\nThat confirmation belongs to an earlier corrected preview. Nothing was recorded. Use the current preview.",
             "pending_ambiguous": "<b>HERDMASTER - WHICH UPDATE?</b>\n\nMore than one pending update could match. Reply to the exact question card.",
@@ -717,6 +780,7 @@ def _health_loss_message(language: str, key: str) -> str:
             "claim_unavailable": "<b>HERDMASTER CONFIRMATION UNAVAILABLE</b>\n\nThe preview was retained, but its protected buttons could not be stored safely. Nothing was recorded.",
         },
         "af": {
+            "semantic_evidence_unproven": "Ek kon nie die verstaanbare feite veilig aan jou oorspronklike boodskap koppel nie. Niks is aangeteken nie; die gesprek moet herstel word voor bevestiging.",
             "active_context_unavailable": "<b>HERDMASTER-OPVOLG OPGESKORT</b>\n\nEk kon nie die aktiewe diersaak se geskiedenis veilig lees nie. Niks nuuts is aangeteken nie.",
             "stale_confirmation": "<b>OU HERDMASTER-VOORSKOU HET VERVAL</b>\n\nDaardie bevestiging behoort aan 'n vroeere gekorrigeerde voorskou. Niks is aangeteken nie. Gebruik die huidige voorskou.",
             "pending_ambiguous": "<b>HERDMASTER - WATTER OPDATERING?</b>\n\nMeer as een hangende opdatering kan pas. Antwoord op die presiese vraagkaart.",
@@ -1032,7 +1096,8 @@ def _context_missing(context):
 
 
 def _resolve_active_context(text, contexts, provider_message_id="", *,
-                            reply_to_message_id="", provider_timestamp="", entity_refs=()):
+                            reply_to_message_id="", provider_timestamp="", entity_refs=(),
+                            semantic_continuation=False):
     exact_confirmations = [row for row in contexts
         if text == "CONFIRM " + str(row.get("operation_id") or "")]
     if len(exact_confirmations) == 1:
@@ -1112,7 +1177,8 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
         if len(prior) == 1 and echoes:
             return prior[0], False, [str(row.get("mission_id") or "") for row in echoes]
         return None, matches if len(matches) > 1 else False, []
-    if UNRELATED_OPERATIONAL_PATTERN.search(text) or not FOLLOW_UP_PATTERN.search(text):
+    if not semantic_continuation and (
+            UNRELATED_OPERATIONAL_PATTERN.search(text) or not FOLLOW_UP_PATTERN.search(text)):
         return None, False, []
     candidates = [row for row in contexts
         if str(row.get("status") or "") in {"waiting_for_input", "preview_ready",

@@ -778,3 +778,42 @@ def test_refresh_terminal_evidence_preserves_reclaimed_delegated_fence(claimed_s
         assert result["_refreshed_generation"] is True
         assert not any("oom_manager_case_events" in sql and params[3] == "completed"
                        for sql, params in commands)
+
+
+def test_retained_recovery_refresh_is_ready_while_full_herd_refresh_is_blocked(monkeypatch):
+    from threading import Event
+    from modules.oom_sakkie import manager_case_sources as sources
+    release, blocked, ready = Event(), Event(), Event()
+    retained = {"case_id": "RETAINED", "dedupe_key": "herdmaster:retained-mortality:5097",
+                "specialist": "HERDMASTER"}
+    routine = {"case_id": "ROUTINE", "dedupe_key": "herdmaster:welfare:OTHER",
+               "specialist": "HERDMASTER"}
+    groups = []
+    monkeypatch.setattr(sources, "collect_manager_candidates", lambda **kwargs: [])
+    def snapshot(**kwargs):
+        cases = tuple(kwargs["cases"])
+        groups.append(tuple(row["case_id"] for row in cases))
+        if routine in cases:
+            blocked.set()
+            assert release.wait(3), "test must release the blocked collector"
+        else:
+            ready.set()
+        return {(row["dedupe_key"], row["specialist"]): row for row in cases}
+    monkeypatch.setattr(sources, "collect_manager_refresh_snapshot", snapshot)
+    class Store:
+        def run_cycle(self, _candidates, **kwargs):
+            batch = kwargs["refresh_batch"]([routine, retained])
+            try:
+                assert blocked.wait(1)
+                assert ready.wait(1), "retained case must have an independent refresh"
+                batch.wait_for_ready()
+                result = batch.poll()
+                assert result == {"RETAINED": retained}
+                return result
+            finally:
+                release.set()
+                batch.close()
+    result = run_general_manager_cycle(now=NOW, source_revision="test", store=Store(),
+        collectors=(lambda _now: [],))
+    assert result == {"RETAINED": retained}
+    assert sorted(groups) == [("RETAINED",), ("ROUTINE",)]

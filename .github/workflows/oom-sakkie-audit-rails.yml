@@ -300,7 +300,7 @@ jobs:
       - name: Run retained report identity and age recovery gates
         run: |
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_retained_report_recovery_postgres.py
-          DATABASE_URL="" PYTHON_DOTENV_DISABLED="1" python -m pytest -q tests/test_oom_sakkie_manager_case_sources.py tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py
+          DATABASE_URL="" PYTHON_DOTENV_DISABLED="1" python -m pytest -q tests/test_oom_sakkie_manager_case_sources.py tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py tests/test_oom_sakkie_general_manager_worker.py tests/test_oom_sakkie_mortality_semantic_journey.py
 
       - name: Run canonical conversational follow-up gates
         run: |

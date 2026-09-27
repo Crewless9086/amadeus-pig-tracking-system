@@ -340,14 +340,31 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                 handle_authenticated_health_loss_message)
             health_handler = handle_authenticated_health_loss_message
         report_parts = [{"text": str(item.get("owner_evidence") or ""),
-                         "provider_timestamp": str(item.get("provider_timestamp") or "")}
+                         "provider_timestamp": str(item.get("provider_timestamp") or ""),
+                         "provider_message_id": str(item.get("provider_message_id") or "")}
                         for item in partials]
-        report_parts.append({"text": text, "provider_timestamp": provider_at})
+        report_parts.append({"text": text, "provider_timestamp": provider_at,
+                             "provider_message_id": provider})
+        mortality = {}
+        try:
+            from modules.pig_weights.herdmaster_mortality_observation import bind_mortality_observation
+            for item, part in zip(partials + [record], report_parts):
+                value = (item.get("semantic_facts") or {}).get("mortality_observation")
+                if value is not None:
+                    mortality.update(bind_mortality_observation(value,
+                        text=part["text"], provider_message_id=part["provider_message_id"],
+                        provider_timestamp=part["provider_timestamp"]))
+        except (TypeError, ValueError):
+            return {"handled": True, "success": False,
+                "status": "manager_question_mortality_source_unproven",
+                "answer": "I retained the question, but could not verify the original source of its facts. Nothing was recorded.",
+                "requires_visible_notification": True, **ZERO}, 409
         forwarded = {**parsed, "text": f"Pig {pig_id}: {text}",
             # The daily card has been authenticated above. It is not a health
             # preview card; hand the typed pig to a fresh specialist intake.
             "reply_to_message_id": "",
             "manager_question_report_parts": report_parts,
+            "manager_question_mortality_observation": mortality or None,
             "semantic": {**semantic.as_hint(), "domain": "herd_health", "continuation": True,
                 "entity_refs": [f"pig:{pig_id}"],
                 "observation": " ".join(accumulated["observations"]),
@@ -1009,6 +1026,7 @@ def _semantic_facts(semantic):
     return {"domain": str(getattr(semantic, "domain", "") or ""),
         "intent": str(getattr(semantic, "intent", "") or ""),
         "observation": str(getattr(semantic, "observation", "") or ""),
+        "mortality_observation": getattr(semantic, "mortality_observation", None),
         "welfare_observation": dict(getattr(semantic, "welfare_observation", None) or {}),
         "clinical_observation": dict(getattr(semantic, "clinical_observation", None) or {}),
         "observation_facts": list(getattr(semantic, "observation_facts", ()) or ()),

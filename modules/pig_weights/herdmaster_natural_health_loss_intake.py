@@ -76,7 +76,20 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
     pig_ids = [_clean(row.get("pig_id"), 80) for row in animals]
     if any(not pig_id for pig_id in pig_ids) or len(pig_ids) != len(set(pig_ids)):
         raise IntakeEvidenceError("canonical_animal_identity_invalid_or_duplicate")
-    matches = _identity_matches(text, animals)
+    from modules.pig_weights.herdmaster_mortality_observation import validate_mortality_sources
+    try:
+        mortality = validate_mortality_sources(report.get("mortality_observation"), report)
+    except (TypeError, ValueError) as exc:
+        raise IntakeEvidenceError(str(exc)) from exc
+    if mortality and "animal" in mortality:
+        reference = mortality["animal"]["value"].casefold()
+        matches = [row for row in animals if reference in {
+            str(row.get(key) or "").casefold() for key in ("pig_id", "tag_number", "name")}]
+        explicit = _identity_matches(text, animals)
+        if any(row["pig_id"] not in {match["pig_id"] for match in matches} for row in explicit):
+            matches = []
+    else:
+        matches = _identity_matches(text, animals)
     identity = _identity_result(matches)
     if not identity["resolved"]:
         return _result(
@@ -94,7 +107,8 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
         parsed = _typed_welfare_report(typed_welfare, provider_time, text, clinical=typed_clinical)
         unknown = [key for key, state in {**(typed_welfare or {}), **(typed_clinical or {})}.items()
                    if state == "unknown"]
-        if unknown and not parsed["dead"] and not parsed["farrowing"]:
+        if (unknown and not parsed["dead"] and not parsed["farrowing"]
+                and (not mortality or (mortality.get("death") or {}).get("value") != "dead")):
             phrase = {"eating":"eating", "drinking":"drinking water",
                       "standing":"standing", "moving":"moving normally",
                       "breathing":"breathing normally"}.get(unknown[0])
@@ -107,6 +121,14 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
                 inference=parsed["inference"]), "immediate_welfare_priority": _welfare(parsed)}
     else:
         parsed = _parse_report(text, provider_time)
+    if mortality:
+        # Existing parsing remains compatibility for untyped observations only.
+        # It cannot override a source-bound death, date or disposal fact.
+        parsed = _apply_mortality_observation(parsed, mortality)
+        if "death" in mortality and mortality["death"]["value"] != "dead":
+            return _result(status="mortality_not_confirmed", identity=identity,
+                family="unknown", question=f"Is {_display(animal)} alive, or has its death been confirmed?",
+                provider_time=provider_time)
     if parsed["family"] == "unknown":
         return _result(
             status="event_details_required", identity=identity, family="unknown",
@@ -118,7 +140,11 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
         scoped_generation = (canonical.get("animal_evidence_generations") or {}).get(animal["pig_id"])
         if scoped_generation:
             canonical = {**canonical, "evidence_generation": scoped_generation, "evidence_scope": "animal"}
-        event_date = _mortality_event_date(report, provider_time)
+        if mortality:
+            raw_date = (mortality.get("date") or {}).get("value")
+            event_date = datetime.fromisoformat(raw_date).date() if raw_date else None
+        else:
+            event_date = _mortality_event_date(report, provider_time)
         if not event_date:
             return _result(status="event_date_required", identity=identity,
                 family=parsed["family"], question=f"On which date did {_display(animal)} die or get found dead?",
@@ -208,6 +234,36 @@ def evaluate_health_loss_intake(report: Mapping, canonical: Mapping) -> dict:
         "transaction_policy": TRANSACTION_POLICY,
         **AUTHORITY,
     }
+
+
+def _apply_mortality_observation(parsed, facts):
+    parsed = dict(parsed)
+    parsed["observed"] = [dict(row) for row in parsed["observed"]]
+    if "death" in facts:
+        parsed["dead"] = facts["death"]["value"] == "dead"
+        parsed["reported_died"] = parsed["dead"]
+        parsed["found_dead"] = parsed["dead"]
+        parsed["observed"] = [row for row in parsed["observed"] if row["fact"] != "animal_reported_dead"]
+        parsed["families"] = [value for value in parsed["families"] if value != "found_dead"]
+        if parsed["dead"]:
+            # Historical living-welfare signs remain source evidence, but do
+            # not turn an explicit current death into another welfare question.
+            if not parsed["farrowing"]:
+                parsed["families"] = []
+            parsed["families"].append("found_dead")
+            parsed["observed"].append({"fact": "animal_reported_dead", "value": True})
+        parsed["family"] = (parsed["families"][0] if len(parsed["families"]) == 1 else
+                            "compound_event" if parsed["families"] else "unknown")
+    if "disposal" in facts:
+        outcome = facts["disposal"]["value"]
+        parsed["removal_supplied"] = outcome != "unknown"
+        parsed["removal_outcome"] = {
+            "removed": "removed from pen", "removed_and_buried": "removed and buried",
+            "unknown": ""}.get(outcome, outcome)
+        parsed["observed"] = [row for row in parsed["observed"] if row["fact"] != "removal_or_disposal_context_reported"]
+        if parsed["removal_supplied"]:
+            parsed["observed"].append({"fact": "removal_or_disposal_context_reported", "value": True})
+    return parsed
 
 
 def _mapping(value, label):
@@ -945,6 +1001,8 @@ def _operation_identity(report, animal, parsed, chronology, effects, canonical,
         "mating_id": (chronology.get("mating") or {}).get("mating_id"),
         "canonical_evidence_generation": _clean(canonical.get("evidence_generation"), 120),
         "canonical_packet_sha256": _digest(canonical),
+        **({"mortality_observation": report["mortality_observation"]}
+           if report.get("mortality_observation") else {}),
         "before": before, "effects": effects, "missing": missing,
         "required_confirmations": confirmations,
     }

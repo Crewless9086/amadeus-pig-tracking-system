@@ -57,6 +57,8 @@ def prepare_health_loss_owner_preview(
         return _failure("authenticated_envelope_incomplete")
     if envelope.get("report_parts"):
         report["report_parts"] = envelope["report_parts"]
+    if envelope.get("mortality_observation") is not None:
+        report["mortality_observation"] = envelope["mortality_observation"]
     if envelope.get("welfare_observation") is not None:
         report["welfare_observation"] = envelope["welfare_observation"]
     if envelope.get("clinical_observation") is not None:

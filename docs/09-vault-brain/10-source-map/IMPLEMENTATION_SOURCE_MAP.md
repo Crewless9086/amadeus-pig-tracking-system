@@ -363,6 +363,16 @@
   `modules/oom_sakkie/herdmaster_health_loss_preview.py`. Runtime source and a
   narrow protected writer exist separately; their presence does not prove an
   enabled or operational production journey.
+- Source-bound semantic mortality facts: `modules/pig_weights/herdmaster_mortality_observation.py`;
+  original-time interpretation in `modules/oom_sakkie/semantic_front_door.py`,
+  partial-answer preservation in `manager_question_runtime.py`, and reuse by
+  `herdmaster_health_loss_runtime.py` / `herdmaster_retained_recovery_runtime.py`.
+  Technical contract and acceptance limits:
+  `docs/02-backend/OOM_SAKKIE_SEMANTIC_MORTALITY_CONTRACT.md`.
+  Conversation-family proof: `tests/test_oom_sakkie_mortality_semantic_journey.py`;
+  disposable-database delivery/confirmation/replay proof:
+  `tests/test_oom_sakkie_retained_report_recovery_postgres.py`. Source existence
+  does not establish deployed model or owner-outcome acceptance.
 - Focused health/loss contract and runtime tests:
   `tests/test_herdmaster_natural_health_loss_intake.py` and
   `tests/test_oom_sakkie_herdmaster_health_loss_preview.py`, plus

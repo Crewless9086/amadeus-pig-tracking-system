@@ -125,6 +125,13 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
     return result
 
 
+def is_retained_herd_refresh_case(case):
+    """These cases are owned by the existing retained-report collector."""
+    return (str(case.get("specialist") or "").upper() == "HERDMASTER"
+        and str(case.get("dedupe_key") or "").startswith((
+            "herdmaster:retained-mortality:", "herdmaster:retained-litter-loss:")))
+
+
 def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
     """Refresh every claimed case from one read per owning specialist.
 
@@ -134,13 +141,24 @@ def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
     existing per-collector containment and parallel collection behavior while
     returning only exact claimed identities.
     """
+    cases = tuple(cases or ())
     requested = {
         (str(case.get("dedupe_key") or ""), str(case.get("specialist") or "").upper())
-        for case in cases or ()
+        for case in cases
     }
     requested.discard(("", ""))
     if not requested:
         return {}
+    if collectors is None and all(is_retained_herd_refresh_case(case) for case in cases):
+        # Reuse the same canonical chronology, claim, identity and completion
+        # checks as intake. The unrelated herd overview must not consume this
+        # protected recovery's refresh window.
+        try:
+            rows = _retained_herd_report_recovery_candidates(now)
+        except Exception as exc:
+            failure = ManagerCollectorRefreshError("herdmaster", exc.__class__.__name__)
+            return {identity: failure for identity in requested}
+        return _project_refresh_rows(rows, requested)
     available = tuple(collectors or (
         _rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime))
     wanted = set()
