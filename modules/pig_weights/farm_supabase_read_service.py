@@ -1000,6 +1000,32 @@ def get_allocation_input_rows(
         return result
 
 
+
+def get_health_loss_source_snapshot(connect_factory=None, *,
+        deadline_seconds=ALLOCATION_TOTAL_DEADLINE_SECONDS, now_fn=monotonic):
+    """Reuse the canonical health readers in one bounded, consistent snapshot."""
+    if not farm_supabase_reads_available() and connect_factory is None:
+        raise RuntimeError(f"{DATABASE_URL_ENV} is not configured.")
+    started = now_fn()
+    with _connect(connect_factory=connect_factory) as connection:
+        snapshot = _AllocationSnapshot(connection, now_fn() - started,
+            deadline_seconds=deadline_seconds, now_fn=now_fn, started_at=started,
+            stages=("health_animals", "health_matings", "health_mating_state", "health_litters"))
+        if snapshot.remaining_seconds() <= 0:
+            raise TimeoutError("health snapshot deadline exhausted during connection acquisition")
+        if not getattr(connect_factory, "transaction_managed", False):
+            with connection.cursor() as cursor:
+                cursor.execute("set transaction isolation level repeatable read read only")
+        rows = {
+            "animals": get_pig_master_rows(connect_factory=snapshot),
+            "matings": get_mating_overview(connect_factory=snapshot),
+            "litters": get_litter_register_rows(connect_factory=snapshot),
+        }
+        if snapshot.remaining_seconds() <= 0:
+            raise TimeoutError("health snapshot deadline exhausted during result projection")
+        return rows
+
+
 def get_breeding_attention_source_snapshot(
     connect_factory=None,
     *,

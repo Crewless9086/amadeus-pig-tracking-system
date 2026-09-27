@@ -13,8 +13,9 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             self.name = name
 
     class _SnapshotCursor:
-        def __init__(self, fail_fragment=None):
+        def __init__(self, fail_fragment=None, statements=None):
             self.fail_fragment = fail_fragment
+            self.statements = statements
             self.description = [FarmSupabaseReadServiceTests._Column("placeholder")]
             self.rows = []
             self.last_sql = ""
@@ -28,6 +29,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         def execute(self, sql, _params=()):
             text = str(sql).lower()
             self.last_sql = text
+            if self.statements is not None:
+                self.statements.append(text)
             if self.fail_fragment and self.fail_fragment in text:
                 raise TimeoutError("bounded statement timeout")
             self.rows = []
@@ -45,6 +48,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         def __init__(self, fail_fragment=None):
             self.fail_fragment = fail_fragment
             self.cursor_count = 0
+            self.statements = []
             self.exit_count = 0
             self.exit_exception = None
 
@@ -58,7 +62,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
         def cursor(self):
             self.cursor_count += 1
-            return FarmSupabaseReadServiceTests._SnapshotCursor(self.fail_fragment)
+            return FarmSupabaseReadServiceTests._SnapshotCursor(self.fail_fragment, self.statements)
 
     def test_allocation_readiness_uses_one_bounded_consistent_snapshot(self):
         connection = self._SnapshotConnection()
@@ -80,6 +84,84 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertTrue(all(stage["state"] == "complete" for stage in progress["stages"]))
         self.assertEqual(connection.exit_count, 1)
         self.assertIsNone(connection.exit_exception)
+
+    def test_health_source_uses_one_connection_for_all_four_existing_queries(self):
+        connection = self._SnapshotConnection()
+        calls = []
+        def factory(_url):
+            calls.append(connection)
+            return connection
+        result = farm_supabase_read_service.get_health_loss_source_snapshot(connect_factory=factory)
+        self.assertEqual(result, {"animals": [], "matings": [], "litters": []})
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(connection.cursor_count, 5)  # setup plus four data queries
+        self.assertEqual(connection.statements[0], "set transaction isolation level repeatable read read only")
+        self.assertEqual(sum(q.startswith("set local statement_timeout") for q in connection.statements), 4)
+        self.assertEqual(connection.exit_count, 1)
+        self.assertIsNone(connection.exit_exception)
+
+    def test_health_source_requires_canonical_configuration_before_connecting(self):
+        with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
+                patch.object(farm_supabase_read_service, "_connect") as connect:
+            with self.assertRaisesRegex(RuntimeError, "is not configured"):
+                farm_supabase_read_service.get_health_loss_source_snapshot()
+            connect.assert_not_called()
+
+    def test_health_snapshot_preserves_nonempty_canonical_reader_projection(self):
+        # Both paths use the actual four SQL readers/projectors with synthetic
+        # result rows, so connection reuse cannot discard or reinterpret facts.
+        owner = self
+        class Cursor(self._SnapshotCursor):
+            def execute(self, sql, params=()):
+                super().execute(sql, params)
+                text = str(sql).lower()
+                if text.startswith("set"):
+                    return self
+                if "from public.mating_events mating" in text:
+                    row = {"mating_id": "MAT-A", "sow_pig_id": "P27",
+                        "mating_date": date(2026, 5, 1), "outcome": ""}
+                elif "from public.current_canonical_litters" in text:
+                    row = {"litter_id": "LIT-A", "sow_pig_id": "P27", "farrowing_date": date(2026, 8, 23)}
+                else:
+                    row = {"pig_id": "P27", "tag_number": "27", "pig_name": "Synthetic",
+                        "status": "Active", "on_farm": True, "birth_date": date(2026, 1, 1)}
+                self.description = [owner._Column(key) for key in row]
+                self.rows = [tuple(row.values())]
+                return self
+        class Connection(self._SnapshotConnection):
+            def cursor(self):
+                self.cursor_count += 1
+                return Cursor(statements=self.statements)
+        readers = farm_supabase_read_service
+        expected = {"animals": readers.get_pig_master_rows(connect_factory=lambda _: Connection()),
+            "matings": readers.get_mating_overview(connect_factory=lambda _: Connection()),
+            "litters": readers.get_litter_register_rows(connect_factory=lambda _: Connection())}
+        result = readers.get_health_loss_source_snapshot(connect_factory=lambda _: Connection())
+        self.assertEqual(result, expected)
+        self.assertTrue(all(result.values()))
+        self.assertEqual(result["animals"][0]["Pig_ID"], "P27")
+
+    def test_health_source_query_failure_does_not_return_partial_evidence(self):
+        connection = self._SnapshotConnection("from public.mating_events")
+        with self.assertRaises(TimeoutError):
+            farm_supabase_read_service.get_health_loss_source_snapshot(connect_factory=lambda _: connection)
+        self.assertEqual(connection.exit_count, 1)
+        self.assertIs(connection.exit_exception, TimeoutError)
+
+    def test_health_source_connection_time_consumes_deadline(self):
+        connection = self._SnapshotConnection()
+        with self.assertRaisesRegex(TimeoutError, "connection acquisition"):
+            farm_supabase_read_service.get_health_loss_source_snapshot(
+                connect_factory=lambda _: connection, now_fn=iter([0.0, 21.0, 21.0]).__next__)
+        self.assertEqual(connection.cursor_count, 0)
+        self.assertEqual(connection.exit_count, 1)
+
+    def test_health_source_preserves_managed_transaction_ownership(self):
+        connection = self._SnapshotConnection()
+        factory = pig_weights_service._ManagedReadFactory(connection)
+        farm_supabase_read_service.get_health_loss_source_snapshot(connect_factory=factory)
+        self.assertEqual(connection.cursor_count, 4)
+        self.assertEqual(connection.exit_count, 0)
 
     def test_breeding_attention_snapshot_uses_one_connection_and_nine_queries(self):
         connection = self._SnapshotConnection()

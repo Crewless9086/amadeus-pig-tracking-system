@@ -796,3 +796,33 @@ def test_named_death_date_keeps_original_message_year_across_later_followup(foll
     result = evaluate_health_loss_intake(owner_report, canonical)
     assert result["status"] == "preview_ready"
     assert result["preview"]["event_date"] == "2026-12-15"
+
+
+@pytest.mark.parametrize("later", ["2026-08-01T08:36:00+02:00", "2026-08-02T06:31:00+00:00"])
+def test_new_observation_clock_preserves_exact_operation_and_preview(later):
+    canonical = evidence(animal("PIG-93", "93", "93"))
+    natural = report("Pig 93 died on 31 July and was buried.")
+    original = deepcopy(canonical)
+    first = evaluate_health_loss_intake(natural, canonical)
+    reread = evaluate_health_loss_intake(natural, {**canonical, "as_of_timestamp": later})
+    assert first["success"] and reread["success"]
+    assert first == reread
+    assert canonical == original
+
+
+def test_material_packet_change_still_invalidates_identity_even_with_same_generation():
+    canonical = evidence(animal("PIG-93", "93", "93"))
+    natural = report("Pig 93 died on 31 July and was buried.")
+    first = evaluate_health_loss_intake(natural, canonical)
+    changed = deepcopy(canonical)
+    changed["animals"][0]["pen"] = "Hospital"
+    second = evaluate_health_loss_intake(natural, changed)
+    assert first["operation_id"] != second["operation_id"]
+    assert first["preview_sha256"] != second["preview_sha256"]
+
+
+def test_identity_clock_exclusion_does_not_bypass_chronology_validation():
+    canonical = evidence(animal("PIG-93", "93", "93"))
+    with pytest.raises(IntakeEvidenceError, match="provider_timestamp_future_or_skewed"):
+        evaluate_health_loss_intake(report("Pig 93 died on 31 July and was buried."),
+            {**canonical, "as_of_timestamp": "2026-08-01T08:00:00+02:00"})
