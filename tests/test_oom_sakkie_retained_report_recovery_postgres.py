@@ -369,6 +369,9 @@ def test_actual_manager_preview_delivery_callback_and_exact_replays(
     claim = j["claim"](); card = protected_card_mission_id(first["mission_id"], claim["digest"])
     assert claim["card"] == "701" and claim["delivery_state"] == "delivery_confirmed"
     assert len(j["sends"]) == 1 and not j["effects"]
+    buttons = j["sends"][0][2]["reply_markup"]["inline_keyboard"][0]
+    assert [button["callback_data"] for button in buttons] == [
+        f"oompa:{claim['token']}:{action}" for action in ("confirm", "change", "cancel")]
     with store(True) as db, db.cursor() as cur:
         cur.execute("select status,on_farm,current_pen_id from public.pig_current_state where pig_id='P27'")
         assert cur.fetchone() == ("Active", True, "PEN-A")

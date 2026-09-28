@@ -425,6 +425,11 @@ def test_real_retained_worker_preview_family_binding_and_replay(retained_journey
     assert first["success"] and first["delivery_confirmed"] and first["protected_preview_card_bound"]
     assert j["creates"]==1 and len(j["sends"])==1
     assert j["sends"][0][0]=="42"
+    buttons=j["sends"][0][2]["reply_markup"]["inline_keyboard"][0]
+    assert [button["text"] for button in buttons]==["Confirm and record","Change","Cancel"]
+    assert [button["callback_data"] for button in buttons]==[
+        f"oompa:{j['claim']['callback_token']}:{action}" for action in ("confirm","change","cancel")]
+    assert j["sends"][0][2]["deadline_monotonic"]==80.
     text=j["sends"][0][1]
     assert "etiket 27" in text and "2026-08-19" in text and "verwyder en begrawe" in text
     assert "Niks word uitgevoer voordat" not in text  # generic fallback would discard precise facts
