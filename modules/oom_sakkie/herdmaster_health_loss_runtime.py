@@ -168,6 +168,8 @@ def handle_authenticated_health_loss_message(
             "answer": _health_loss_message(output_language, "active_context_unavailable"),
             "records_audit_trace": False, "writes_farm_data": False,
             "protected_actions_performed": False}, 503
+    from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+    source_heads = {row["mission_id"]: source_tx.predecessor(row) for row in contexts}
     stale_confirmation = next((row for row in contexts
         if confirmation_shaped and text.removeprefix("CONFIRM ") in {
             str(value) for value in row.get("invalidated_operation_ids") or []
@@ -214,7 +216,7 @@ def handle_authenticated_health_loss_message(
                                      "tag_number": _context_tag(row)} for row in ambiguity],
             "event_phase": "context_disambiguation_pending",
         }
-        stored = _record_lifecycle_event(pending, context_store=context_store)
+        stored = _record_lifecycle_event(pending, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
         if stored.get("success") is not True:
             return {"handled": True, "success": False,
                     "status": "health_loss_context_persistence_failed",
@@ -311,7 +313,8 @@ def handle_authenticated_health_loss_message(
                         "status": "health_loss_context_resolution_chronology_conflict",
                         "writes_farm_data": False, "protected_actions_performed": False}, 409
             claimed = bool(active.get("_pending_claimed")) or _claim_pending_context(
-                pending, active, parsed, context_store=context_store)
+                pending, active, parsed, context_store=context_store,
+                expected_sources=source_heads, connect_factory=connect_factory)
             if not claimed:
                 return {"handled": True, "success": False,
                         "status": "health_loss_context_consumption_already_claimed",
@@ -328,7 +331,7 @@ def handle_authenticated_health_loss_message(
             "provider_timestamp": provider_timestamp,
             "clarification_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
             "event_phase": "entity_clarification_retained"}
-            stored = _record_lifecycle_event(clarification, context_store=context_store)
+            stored = _record_lifecycle_event(clarification, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
             if stored.get("success") is not True:
                 return {"handled": True, "success": False,
                         "status": "health_loss_lifecycle_persistence_failed"}, 503
@@ -338,6 +341,11 @@ def handle_authenticated_health_loss_message(
             return result, 200
 
     if confirmation:
+        if (active.get("retained_repreview") or {}).get("contract_version") == "retained_health_preview_v1":
+            # Retained previews require the real protected callback receipt;
+            # a plain text CONFIRM or caller JSON flag cannot execute them.
+            return {"handled": True, "success": False, "status": "retained_mortality_protected_callback_required",
+                "writes_farm_data": False, "protected_actions_performed": False}, 409
         if parsed.get("callback_confirmation") is True:
             active_preview=active.get("preview") if isinstance(active.get("preview"),Mapping) else {}
             binding=active_preview.get("confirmation_binding") if isinstance(
@@ -367,7 +375,7 @@ def handle_authenticated_health_loss_message(
             "status": "completed" if recorded.get("success") else "contained",
             "owner_text": answer, "recording_result": recorded,
             "event_phase": "recording_completed" if recorded.get("success") else "recording_contained"}
-        persisted = _record_lifecycle_event(lifecycle, context_store=context_store)
+        persisted = _record_lifecycle_event(lifecycle, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
         if persisted.get("success") is not True:
             return {"handled": True, "success": False,
                 "status": "health_loss_completion_persistence_pending",
@@ -436,7 +444,7 @@ def handle_authenticated_health_loss_message(
                 **((active_for_message.get("semantic_interpretation") or {}).get("mortality_observation") or {}),
                 **bound_mortality}} if bound_mortality else {})},
             "event_phase": "preview_declined"}
-        stored = _record_lifecycle_event(lifecycle, context_store=context_store)
+        stored = _record_lifecycle_event(lifecycle, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
         if stored.get("success") is not True:
             return {"handled": True, "success": False,
                     "status": "health_loss_lifecycle_persistence_failed"}, 503
@@ -471,7 +479,7 @@ def handle_authenticated_health_loss_message(
                     list(active_for_message.get("invalidated_operation_ids") or [])
                     + ([previous_operation_id] if previous_operation_id else [])
                 )), "event_phase": "preview_invalidated"}
-            invalidated = _record_lifecycle_event(pending, context_store=context_store)
+            invalidated = _record_lifecycle_event(pending, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
             if invalidated.get("success") is not True:
                 return {"handled": True, "success": False,
                         "status": "health_loss_preview_invalidation_failed",
@@ -578,7 +586,7 @@ def handle_authenticated_health_loss_message(
             + ([consumed_pending_context] if consumed_pending_context else [])
         )),
     }
-    stored = _record_lifecycle_event(lifecycle, context_store=context_store)
+    stored = _record_lifecycle_event(lifecycle, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
     if stored.get("success") is not True:
         return {"handled": True, "success": False, "status": "health_loss_lifecycle_persistence_failed"}, 503
     welfare_case = stored.get("welfare_case") or {
@@ -646,6 +654,7 @@ def persist_retained_health_loss_preview(source, preview, *, source_binding, cla
     recorder. Readback detects recorded conflicts; it is not an atomic cancellation
     fence with a separate concurrent writer.
     """
+    from modules.oom_sakkie import herdmaster_source_transaction as source_tx
     failure = {"success": False, "status": "retained_preview_lifecycle_unproven",
         "telegram_sends": 0, "writes_farm_data": False}
     from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_recipient_authorized, _delivery_context
@@ -697,7 +706,7 @@ def persist_retained_health_loss_preview(source, preview, *, source_binding, cla
         expected["retained_repreview"] = {**provenance, "generated_at": datetime.now(timezone.utc).isoformat()}
         if not retained_recipient_authorized(_delivery_context(source)):
             return {**failure, "status": "retained_recipient_not_currently_authorized"}
-        saved = _record_lifecycle_event(expected)
+        saved = _record_lifecycle_event(expected, expected_sources={source["mission_id"]: source_tx.predecessor(source)})
         if saved.get("success") is not True:
             return {**failure, "status": "retained_preview_lifecycle_persistence_failed"}
     readback, _claim = _retained_preview_readback(source["mission_id"], token)
@@ -867,8 +876,9 @@ def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
         "protected_actions_performed": False}
 
 
-def load_canonical_health_loss_evidence(*, connect_factory=None):
-    rows = get_health_loss_source_snapshot(connect_factory=connect_factory)
+def load_canonical_health_loss_evidence(*, connect_factory=None, deadline_seconds=None):
+    rows = get_health_loss_source_snapshot(connect_factory=connect_factory,
+        **({"deadline_seconds": deadline_seconds} if deadline_seconds is not None else {}))
     animals = []
     for row in rows["animals"]:
         animals.append({
@@ -936,7 +946,30 @@ def _owner_message(preview: Mapping[str, Any]) -> str:
     )
 
 
-def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None):
+def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None,
+                            expected_sources=None, connect_factory=None):
+    from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+    if context_store is None:
+        from modules.oom_sakkie.protected_delivery_lifecycle import _connect
+        def write(body, reader, created_at):
+            return _write_lifecycle_event(body, connect_factory=reader, created_at=created_at)
+        try:
+            return source_tx.append_lifecycle(lifecycle, expected_sources, write,
+                connect_factory=connect_factory or _connect)
+        except Exception:
+            if getattr(connect_factory, "transaction_managed", False):
+                raise  # The enclosing farm transaction must roll back too.
+            return {"success": False, "status": "health_source_append_conflict_or_unavailable"}
+    # Explicit in-memory test adapter; real callers always take the SQL fence.
+    result = _write_lifecycle_event(lifecycle, context_store=context_store)
+    if result.get("success") is True and expected_sources is not None:
+        expected_sources[lifecycle["mission_id"]] = source_tx.digest(source_tx.record_body(lifecycle))
+    return result
+
+
+def _write_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None, connect_factory=None, created_at=None):
+    from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+    lifecycle = source_tx.record_body(lifecycle)
     event_id = "OOM-HERD-HEALTH-" + hashlib.sha256(
         (
             f"{lifecycle.get('chat_id')}|{lifecycle.get('provider_message_id')}|"
@@ -957,15 +990,17 @@ def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None)
     event["facts_json"] = {}
     event["customer_message_excerpt"] = ""
     event["sam_reply_excerpt"] = ""
-    result, status = record_sam_live_stock_review_event(event)
+    result, status = record_sam_live_stock_review_event(event,
+        database_url="enclosing-transaction", connect_factory=connect_factory, created_at=created_at)
     stored = status < 400 and result.get("success") is True
     welfare_case = None
     if stored and welfare_case_runtime_enabled():
-        welfare_case = append_welfare_case_context(lifecycle)
+        welfare_case = append_welfare_case_context(lifecycle, connect_factory=connect_factory)
+        source_tx.require_applicable_welfare_result(lifecycle, welfare_case)
     return {**result, "success": stored, "welfare_case": welfare_case}
 
 
-def _claim_pending_context(pending, target, parsed, *, context_store=None):
+def _claim_pending_context(pending, target, parsed, *, context_store=None, expected_sources=None, connect_factory=None):
     claim = {**dict(pending),
         "status": "waiting_for_context_consumption",
         "resolution_provider_message_id": str(parsed.get("provider_message_id") or ""),
@@ -974,7 +1009,8 @@ def _claim_pending_context(pending, target, parsed, *, context_store=None):
             str(parsed.get("text") or "").encode("utf-8")).hexdigest(),
         "target_mission_id": str(target.get("mission_id") or ""),
         "event_phase": "context_consumption_claimed"}
-    recorded = _record_lifecycle_event(claim, context_store=context_store)
+    recorded = _record_lifecycle_event(claim, context_store=context_store,
+        expected_sources=expected_sources, connect_factory=connect_factory)
     return recorded.get("success") is True and recorded.get("created") is not False
 
 
@@ -1018,12 +1054,12 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
                 cursor.execute(
                     f"""
                     with health as materialized (
-                        select h.review_json->'herdmaster_health_loss' as body, h.created_at
+                        select h.review_json->'herdmaster_health_loss' as body, h.created_at, h.review_event_id
                         from public.sam_live_stock_conversation_review_events h
                         where h.event_source = %s
                           and h.chatwoot_conversation_id = %s
                           {owner_clause}
-                        order by h.created_at desc limit 100
+                        order by h.created_at desc,h.review_event_id desc limit 100
                     ), missions as materialized (
                         select distinct body->>'mission_id' as mission_id from health
                     ), cards as materialized (
@@ -1038,20 +1074,33 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
                     )
                     select h.body, h.created_at, c.message_id from health h
                     left join cards c on c.mission_id=h.body->>'mission_id'
-                    order by h.created_at desc
+                    order by h.created_at desc,h.review_event_id desc
                     """,
                     params,
                 )
                 rows = cursor.fetchall()
         current = []
+        stale_terminal_missions = set()
+        seen_missions = set()
         now = datetime.now(timezone.utc)
         for value, created_at, card_message_id in rows:
             if not isinstance(value, dict):
                 continue
-            if created_at and now - created_at.astimezone(timezone.utc) > CONTEXT_WINDOW:
+            mission = str(value.get("mission_id") or "")
+            if mission in seen_missions:
                 continue
+            seen_missions.add(mission)
+            outside_window = created_at and now - created_at.astimezone(timezone.utc) > CONTEXT_WINDOW
+            if outside_window:
+                if value.get("status") in {"waiting_for_context", "waiting_for_context_consumption",
+                        "waiting_for_input", "preview_ready", "waiting_for_confirmation", "preview_correction_pending"}:
+                    # A durable open welfare case may retain this original context.
+                    continue
+                stale_terminal_missions.add(mission)
+            # All latest statuses act as tombstones before active projection.
             current.append({**value, "card_message_id": str(card_message_id or "")})
-        return _dedupe_active_contexts(durable + current, owner_user_id=owner_user_id)
+        return [row for row in _dedupe_active_contexts(current + durable, owner_user_id=owner_user_id)
+                if row.get("mission_id") not in stale_terminal_missions]
     except Exception as exc:
         raise ActiveContextLoadError("active_context_read_failed") from exc
 
@@ -1064,12 +1113,10 @@ def _dedupe_active_contexts(rows, *, owner_user_id=""):
         bound_owner = str(row.get("owner_user_id") or "")
         if owner_user_id and bound_owner and bound_owner != owner_user_id:
             continue
-        if status not in {"waiting_for_context", "waiting_for_context_consumption",
-                          "waiting_for_input", "preview_ready",
-                          "waiting_for_confirmation", "preview_correction_pending",
-                          "completed"} or not mission or mission in latest:
+        if not mission or mission in latest:
             continue
-        latest[mission] = row
+        from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+        latest[mission] = {**row, "_source_predecessor_digest": source_tx.predecessor(row)}
     superseded = set(); validated_by_source = {mission: [] for mission in latest}
     for source_mission, row in latest.items():
         source_tag = _context_tag(row)
@@ -1089,7 +1136,9 @@ def _dedupe_active_contexts(rows, *, owner_user_id=""):
     return [{**row,
              "superseded_duplicate_missions": sorted(value["mission_id"] for value in validated_by_source[mission]),
              "superseded_duplicate_bindings": validated_by_source[mission]}
-            for mission, row in latest.items() if mission not in superseded]
+            for mission, row in latest.items() if mission not in superseded and row.get("status") in {
+                "waiting_for_context", "waiting_for_context_consumption", "waiting_for_input",
+                "preview_ready", "waiting_for_confirmation", "preview_correction_pending", "completed"}]
 
 
 def _context_tag(context):

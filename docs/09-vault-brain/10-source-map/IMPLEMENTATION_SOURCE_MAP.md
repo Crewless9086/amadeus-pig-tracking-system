@@ -373,6 +373,20 @@
   disposable-database delivery/confirmation/replay proof:
   `tests/test_oom_sakkie_retained_report_recovery_postgres.py`. Source existence
   does not establish deployed model or owner-outcome acceptance.
+- Retained mortality first-attempt window: `modules/oom_sakkie/retained_mortality_presentation.py`
+  performs current-source/material and complete-history admission;
+  `retained_mortality_history.py` validates retained audit and no-effect history;
+  `herdmaster_source_transaction.py` serializes source chronology and borrowed
+  transactions; `retained_mortality_confirmation.py` joins the existing genuine
+  callback to the canonical mortality executor and atomic source/claim completion.
+  `protected_payment_recovery.py` reuses the scheduled completed-claim delivery
+  worker with canonical readback, fresh recipient authority and expired-lease
+  recovery. It adds no scheduled pre-domain mortality execution.
+  Existing protected claims and family delivery remain the only provider rails.
+  Real transaction/concurrency and delivery-budget qualification:
+  `tests/test_oom_sakkie_retained_mortality_presentation_postgres.py`.
+  The health/loss workflow owns the approved finite-window rule; source presence
+  and tests do not prove live delivery or owner acceptance.
 - Focused health/loss contract and runtime tests:
   `tests/test_herdmaster_natural_health_loss_intake.py` and
   `tests/test_oom_sakkie_herdmaster_health_loss_preview.py`, plus

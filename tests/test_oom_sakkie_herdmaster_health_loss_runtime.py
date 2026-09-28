@@ -18,14 +18,15 @@ from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 
 
-def capture_active_context_query(monkeypatch, *, owner_user_id="", rows=()):
+def capture_active_context_query(monkeypatch, *, owner_user_id="", rows=(), durable=()):
     """Capture the runtime's actual SQL without connecting to a database."""
     connection = MagicMock()
     cursor = connection.__enter__.return_value.cursor.return_value.__enter__.return_value
     cursor.fetchall.return_value = list(rows)
     with monkeypatch.context() as scoped:
         scoped.setenv("DATABASE_URL", "synthetic-unused-url")
-        scoped.setattr(health_loss, "welfare_case_runtime_enabled", lambda: False)
+        scoped.setattr(health_loss, "welfare_case_runtime_enabled", lambda: bool(durable))
+        scoped.setattr(health_loss, "load_open_welfare_case_contexts", lambda *_a: list(durable))
         scoped.setattr("psycopg.connect", lambda *_args, **_kwargs: connection)
         contexts = health_loss._load_active_contexts("42", owner_user_id=owner_user_id)
     cursor.execute.assert_called_once()
@@ -855,3 +856,20 @@ def test_pig148_month_first_report_and_retained_date_reply_reach_confirmation(lo
         assert recorded[0]["preview"]["confirmation_ready"] is True
         if context:
             assert result["mission_id"] == context["mission_id"]
+
+
+@pytest.mark.parametrize("terminal",["contained","cancelled","completed"])
+def test_old_latest_terminal_blocks_recent_and_durable_preview_resurrection(monkeypatch,terminal):
+    now=datetime.now(timezone.utc)
+    preview={"mission_id":"SYNTHETIC-OLD","owner_user_id":"42","chat_id":"42","status":"preview_ready"}
+    contexts,_,_=capture_active_context_query(monkeypatch,owner_user_id="42",durable=[preview],rows=[
+        ({**preview,"status":terminal},now-timedelta(days=2),None),
+        (preview,now-timedelta(days=3),None)])
+    assert contexts==[]
+
+
+def test_old_open_case_keeps_durable_context(monkeypatch):
+    preview={"mission_id":"SYNTHETIC-OPEN","owner_user_id":"42","chat_id":"42","status":"preview_ready"}
+    contexts,_,_=capture_active_context_query(monkeypatch,owner_user_id="42",durable=[preview],rows=[
+        (preview,datetime.now(timezone.utc)-timedelta(days=2),None)])
+    assert [row["mission_id"] for row in contexts]==[preview["mission_id"]]

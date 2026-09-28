@@ -79,7 +79,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt pytest
 
       - name: Prepare Riversdale source-writer tables
         run: |
@@ -204,6 +204,11 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608210001_create_green_print_jobs.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608220002_allow_herdmaster_farrowing_protected_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608260001_allow_herdmaster_litter_actions_protected_claims.sql
+
+      - name: Prove retained mortality first-delivery window and confirmation transactions
+        env:
+          OOM_PROTECTED_ACTION_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m pytest -q tests/test_oom_sakkie_retained_mortality_presentation.py tests/test_oom_sakkie_retained_mortality_presentation_postgres.py tests/test_oom_sakkie_protected_payment_recovery.py
 
       - name: Run BEACON current-generation retirement and publication serialization tests
         env:

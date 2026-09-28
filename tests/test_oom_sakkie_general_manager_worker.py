@@ -96,11 +96,13 @@ def _prepared_retained_budget_journey(monkeypatch):
     # An already-created, never-sent claim whose UTC TTL advances with the same
     # synthetic clock as the cycle. Neither expiry nor ordinary renewal helps.
     j['clock'] = 0.
-    j['claim']['expires_at'] = NOW + timedelta(minutes=30)
+    utc_base = datetime.now(timezone.utc) + timedelta(seconds=1)
+    j['claim']['expires_at'] = utc_base + timedelta(minutes=30)
     class CycleTime(datetime):
         @classmethod
         def now(cls, tz=None):
-            return NOW + timedelta(seconds=j['clock'])
+            return utc_base + timedelta(seconds=j['clock'])
+    j['utc_now'] = lambda: CycleTime.now(timezone.utc)
     for module in (recovery, health, protected, family):
         monkeypatch.setattr(module, 'datetime', CycleTime)
     j.update(provider_gate_times=[], preparation_cost=15.475, delivery_started=0.)
@@ -110,10 +112,11 @@ def _prepared_retained_budget_journey(monkeypatch):
         if action == 'load':
             # Charge the observed aggregate preparation cost through the final
             # family history load. Individual I/O timings are not live claims.
-            minimum = j['delivery_started'] + j['preparation_cost']
+            # The one canonical loader now runs after family preparation.
+            minimum = j['delivery_started'] + j['preparation_cost'] - j['load_cost']
             assert j['clock'] <= minimum
             j['clock'] = minimum
-            j['provider_gate_times'].append(j['clock'])
+            j['provider_gate_times'].append(j['clock'] + j['load_cost'])
         return result
     monkeypatch.setattr(family, '_event_store', costed_store)
     return j
@@ -129,6 +132,8 @@ def test_unexpired_retained_card_obeys_full_positive_path_budget(
     j['clock'] = 15.021 + reconciliation_seconds + 7.021
     j['delivery_started'] = j['clock']
     case = normalize_candidate(_candidate(**j['case']), now=NOW)
+    case['generation'] = j['case']['generation']
+    j['case'].update({key:case[key] for key in ('case_id','dedupe_key','generation','evidence_digest')})
     result = worker.deliver_farm_manager_case(case, deadline_monotonic=80.)
     assert worker.GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS == 80
     assert worker.CASE_COMPLETION_RESERVE_SECONDS == family.PROVIDER_DELIVERY_RESERVE_SECONDS == 30
@@ -137,7 +142,12 @@ def test_unexpired_retained_card_obeys_full_positive_path_budget(
     assert len(j['sends']) == int(confirmed)
     assert bool(j['claim'].get('delivery_attempt_id')) is confirmed
     assert bool(j['claim'].get('preview_card_message_id')) is confirmed
-    assert j['claim']['callback_token'] == token and j['claim']['expires_at'] == expiry
+    assert j['claim']['callback_token'] == token
+    assert len(j['window_audits']) == int(confirmed)
+    if confirmed:
+        assert j['claim']['expires_at'] - j['claim']['delivery_attempted_at'] == timedelta(minutes=30)
+    else:
+        assert j['claim']['expires_at'] == expiry
     assert not j['renewal_audits'] and j['creates'] == 1
     if confirmed:
         assert result['protected_preview_card_bound']

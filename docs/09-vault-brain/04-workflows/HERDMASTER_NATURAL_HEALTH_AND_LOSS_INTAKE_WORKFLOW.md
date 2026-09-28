@@ -126,6 +126,43 @@ set. A future compound executor must revalidate evidence and commit supported
 effects atomically with exact replay changing zero rows. This workflow does not
 authorize such an executor.
 
+## Retained mortality confirmation window
+
+For an original retained mortality report that has never had a real protected
+card attempt, one finite 30-minute confirmation window begins at the first
+permitted delivery attempt. Waiting for the manager must not consume this
+window. The existing report, claim, preview, operation and history remain the
+same; no replacement report or automatic owner confirmation is created.
+
+Admission requires complete bounded source, claim, case and delivery history,
+current recipient authority and fresh canonical facts. Cancellation, correction,
+supersession, conflicting effects, incomplete history or uncertain provider
+history prevents admission. A documented correction of a false pre-send attempt
+requires its exact audit chain; it is not permission to disregard real attempts.
+Window creation and attempt ownership commit together exactly once. An attempt,
+ambiguous result or prior window never starts another automatic window.
+
+The genuine protected callback must match its durable owner, chat, card and
+receipt. Before recording, the existing mortality service revalidates the source
+and canonical evidence. Source completion, canonical domain effects and the
+existing protected claim completion commit in one transaction; failure rolls
+all three back together. Exact callback recovery uses the original completed
+operation without recording a second death. Source
+cancellation and append operations share an ordered fence; canonical writers
+outside that fence are checked through fresh validation, not presumed locked.
+
+After canonical completion, the existing scheduled recovery worker may resume
+completion delivery when its previous delivery lease has expired, including a
+worker interruption or delivery exception. It first verifies the exact canonical
+event and current recipient authority, then reuses the existing idempotent message
+lifecycle. An unresolved effect remains held. This does not authorize the scheduler
+to execute a mortality claim that has not completed its domain transaction.
+
+A known pre-send SQL timeout may be retried only after proven rollback and a
+successful connection close. An uncertain commit or provider effect remains
+contained. Local implementation approval does not establish deployed behavior
+or dispense with genuine confirmation and operational acceptance.
+
 ## Immutable stage-one fixtures
 
 1. Pig 002: the owner reports that the pig is not eating, appears otherwise

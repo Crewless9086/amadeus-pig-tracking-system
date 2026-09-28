@@ -287,3 +287,91 @@ def test_store_records_actual_finish_heartbeat_not_cycle_start():
     _RecoveryStore(lambda: Connection(cursor)).finish_cycle("cycle", started, {"status": "idle"})
     assert cursor.params[0] > started
     assert cursor.params[1] == cursor.params[0]
+
+
+@pytest.fixture
+def completed_retained_recovery(monkeypatch):
+    from copy import deepcopy
+    from modules.oom_sakkie import protected_payment_recovery as recovery
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_OWNER_USER_ID","42")
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS","42")
+    monkeypatch.setenv("OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON","[]")
+    preview={"effect_kind":"mortality","operation_id":"SYNTHETIC-OP","preview_sha256":"b"*64,
+        "identity":{"pig_id":"SYNTHETIC-PIG","tag_number":"27"}}
+    recorded={"success":True,"status":"completed","operation_id":"SYNTHETIC-OP","pig_id":"SYNTHETIC-PIG",
+        "lifecycle_event_id":"SYNTHETIC-LIFE","welfare_case_id":"SYNTHETIC-WELFARE",
+        "mission_id":"OOM-HERDMASTER-MORTALITY-SYNTHETIC","source_mission_id":"SYNTHETIC-SOURCE",
+        "welfare_case_closed":True,"writes_farm_data":True,"protected_actions_performed":True}
+    claim={**deepcopy(CLAIM),"owner_user_id":"42","private_chat_id":"42","action_kind":"mortality",
+        "status":"completed","mission_id":recorded["mission_id"],"preview_payload":preview,
+        "result_payload":recorded,"canonical_effect_kind":"mortality"}
+    state={"claim":claim,"canonical":{key:preview[key] for key in ("operation_id","preview_sha256")},
+        "actor":"42","readback":True,"reads":[],"delivered":[]}
+    state["canonical"]["pig_id"]=preview["identity"]["pig_id"]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self):return self
+        def execute(self,query,params=None):
+            assert query.strip().startswith(("set local","select")),"completion recovery must not write farm data"
+            state["reads"].append((query,params));self.params=params
+        def fetchall(self):
+            if self.params!=("SYNTHETIC-LIFE","SYNTHETIC-PIG","SYNTHETIC-OP"):return []
+            return [(state["canonical"],state["actor"])]
+    class Completed(Store):
+        def acquire(self,cycle,now):
+            if self.claimed:return None
+            self.claimed=True;return deepcopy(state["claim"])
+        def connect(self):return DB()
+    monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._readback_mortality_welfare",
+        lambda *args,**kwargs:{"canonical_readback_verified":state["readback"]})
+    def forbidden(*args,**kwargs):pytest.fail("completed scheduler invoked a farm executor or claim completer")
+    def run():
+        store=Completed();state["store"]=store
+        return recovery.run_payment_recovery_cycle(store=store,executor=forbidden,completer=forbidden,
+            deliverer=lambda parsed,result,**kwargs:state["delivered"].append((parsed,result,kwargs)) or {
+                "success":True,"telegram_message_id":"SYNTHETIC-CARD","telegram_edits":1,"telegram_sends":0})
+    return state,run
+
+
+def test_exact_completed_retained_mortality_is_presented_without_any_writer(completed_retained_recovery):
+    state,run=completed_retained_recovery
+    result=run()
+    assert result["status"]=="payment_recovery_completed" and len(state["delivered"])==1
+    parsed,delivery,kwargs=state["delivered"][0]
+    assert delivery["writes_farm_data"] is False and delivery["protected_actions_performed"] is False
+    assert delivery["reply_markup"]=={"inline_keyboard":[]} and delivery["rows_created"]==0
+    assert kwargs["mission_id"]==state["claim"]["mission_id"] and kwargs["specialist"]=="HERDMASTER"
+    assert state["reads"] and parsed["telegram_user_id"]=="42"
+
+
+@pytest.mark.parametrize("fault",["operation","pig","lifecycle","welfare","source","claim_mission",
+    "canonical_pig","canonical_preview","canonical_operation","actor","readback","contradictory_effect","missing_canonical"])
+def test_completed_retained_recovery_requires_exact_canonical_binding(completed_retained_recovery,fault):
+    state,run=completed_retained_recovery
+    result=state["claim"]["result_payload"]
+    key={"operation":"operation_id","pig":"pig_id","lifecycle":"lifecycle_event_id",
+        "welfare":"welfare_case_id","source":"source_mission_id","claim_mission":"mission_id"}.get(fault)
+    if key:result[key]="" if fault in {"welfare","source"} else "OTHER"
+    elif fault.startswith("canonical_"):
+        key={"canonical_pig":"pig_id","canonical_preview":"preview_sha256","canonical_operation":"operation_id"}[fault]
+        state["canonical"][key]="OTHER"
+    elif fault=="actor":state["actor"]="OTHER"
+    elif fault=="readback":state["readback"]=False
+    else:state["claim"]["canonical_effect_kind"]="health_observation" if fault=="contradictory_effect" else "unknown"
+    outcome=run()
+    assert outcome["status"]=="payment_recovery_pending" and not state["delivered"]
+    assert state["store"].releases==["effect_unresolved"]
+
+
+def test_completed_retained_recovery_rechecks_recipient_after_canonical_reads(completed_retained_recovery,monkeypatch):
+    state,run=completed_retained_recovery
+    def revoked_readback(*args,**kwargs):
+        monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS","99")
+        return {"canonical_readback_verified":True}
+    monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._readback_mortality_welfare",revoked_readback)
+    before=dict(state["claim"]["result_payload"])
+    outcome=run()
+    assert outcome["status"]=="payment_recovery_pending" and not state["delivered"]
+    assert state["claim"]["result_payload"]==before and state["claim"]["status"]=="completed"
+    assert state["store"].releases==["exception_pending"]

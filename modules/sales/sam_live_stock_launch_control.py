@@ -409,9 +409,12 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
         return {"success": False, "status": "sam_live_stock_owner_card_load_failed", "error": _clean(str(exc), 240), "card": {}, **AUTHORITY_FLAGS}, 500
 
 
-def record_sam_live_stock_review_event(event, database_url=None, *, connect_factory=None):
+def record_sam_live_stock_review_event(event, database_url=None, *, connect_factory=None, created_at=None):
     event = event if isinstance(event, dict) else {}
     params = _review_event_params(event)
+    if created_at is not None and (not isinstance(created_at, datetime) or created_at.tzinfo is None):
+        raise ValueError("review_event_created_at_requires_aware_datetime")
+    params["created_at"] = created_at
     if not params["review_event_id"]:
         params["review_event_id"] = _stable_id("SAM-LIVE-REVIEW", [params.get("chatwoot_conversation_id"), params.get("customer_message_excerpt")])
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
@@ -428,6 +431,7 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
                 cursor.execute(
                     """
                     insert into public.sam_live_stock_conversation_review_events (
+                        created_at,
                         review_event_id,
                         chatwoot_conversation_id,
                         chatwoot_message_id,
@@ -460,6 +464,7 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
                         writes_farm_data
                     )
                     values (
+                        coalesce(%(created_at)s::timestamptz,now()),
                         %(review_event_id)s,
                         %(chatwoot_conversation_id)s,
                         %(chatwoot_message_id)s,

@@ -300,6 +300,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             private_chat_id=str(parsed.get("telegram_chat_id") or ""),
             action_kind=str(result["action_kind"]),
             defer_attempt=True, deadline_monotonic=deadline_monotonic,
+            **({"presentation_policy": result["_retained_mortality_policy"]}
+               if "_retained_mortality_policy" in result else {}),
             deliver=lambda begin_attempt=None: deliver_family_result(parsed,
                 {**result, "_protected_delivery_owned": True}, specialist=specialist,
                 mission_id=mission_id, card_mission_id=card_mission_id,

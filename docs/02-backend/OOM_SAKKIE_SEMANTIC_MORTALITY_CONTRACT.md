@@ -67,6 +67,26 @@ re-run the language model. Historical reports without typed facts retain the
 legacy compatibility evaluator; their migration is not declared complete.
 Compound farrowing/litter outcomes and other domains retain their own contracts.
 
+## First protected delivery and genuine confirmation
+
+The retained report stages an immutable rendering hint. The provider admission
+reloads its current source and complete history, checks canonical facts once,
+and atomically records the existing claim's first attempt with one 30-minute
+expiry. It does not spend the window during preparation or create a second claim.
+A prior attempt, ambiguity, cancellation or uncertain history refuses a restart.
+
+The protected button callback consumes the existing durable receipt. Source
+chronology is checked again and the existing mortality executor records domain
+effects, source completion and protected claim completion in one borrowed
+transaction. A plain text command
+or caller-supplied callback flag cannot replace that receipt. The same callback
+can recover a committed result; it cannot record another death. Timeout retry
+requires proven rollback, and unknown transaction outcomes remain contained.
+The scheduled completed-claim worker verifies the canonical event and recipient
+authority before recovering a completion message after an expired delivery lease.
+It does not execute pre-domain mortality claims or retry unresolved effects.
+This adds no model call, new database store, migration or provider path.
+
 ## Qualification and acceptance
 
 - `tests/test_oom_sakkie_mortality_semantic_journey.py`: real semantic parser,

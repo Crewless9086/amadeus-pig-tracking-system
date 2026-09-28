@@ -359,19 +359,30 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
     from modules.oom_sakkie.herdmaster_health_loss_runtime import (
         load_canonical_health_loss_evidence,
     )
-    evidence = load_canonical_health_loss_evidence()
+    bridge = payload.get("retained_repreview") or {}
+    prepared = (payload.get("status") == "preview_ready"
+        and str(payload.get("event_phase") or "").startswith("retained_preview_generated:")
+        and bridge.get("contract_version") == "retained_health_preview_v1")
     provider = str(payload.get("provider_message_id") or "")
-    preview = prepare_health_loss_owner_preview({
-        "gateway_authority": issue_gateway_owner_authority(owner, chat),
-        "provider_message_id": provider,
-        "provider_timestamp": str(payload.get("provider_timestamp") or ""),
-        "provider_timezone": "Africa/Johannesburg",
-        "output_language": payload.get("output_language") or "af",
-        "text": str(payload.get("combined_text") or payload.get("owner_text_verbatim") or ""),
-        **({"report_parts": payload["report_parts"]} if payload.get("report_parts") else {}),
-        **{key: value for key, value in (payload.get("semantic_interpretation") or {}).items()
-           if key in {"mortality_observation", "welfare_observation", "clinical_observation"}},
-    }, evidence)
+    if prepared:
+        # A rendering hint only. The one fresh canonical rebuild moves to the
+        # protected provider gate; no stored evidence can admit a send.
+        preview = deepcopy(payload["preview"])
+        evidence = {"evidence_generation": bridge.get("claim_evidence_generation")}
+    else:
+        evidence = load_canonical_health_loss_evidence()
+        provider = str(payload.get("provider_message_id") or "")
+        preview = prepare_health_loss_owner_preview({
+            "gateway_authority": issue_gateway_owner_authority(owner, chat),
+            "provider_message_id": provider,
+            "provider_timestamp": str(payload.get("provider_timestamp") or ""),
+            "provider_timezone": "Africa/Johannesburg",
+            "output_language": payload.get("output_language") or "af",
+            "text": str(payload.get("combined_text") or payload.get("owner_text_verbatim") or ""),
+            **({"report_parts": payload["report_parts"]} if payload.get("report_parts") else {}),
+            **{key: value for key, value in (payload.get("semantic_interpretation") or {}).items()
+               if key in {"mortality_observation", "welfare_observation", "clinical_observation"}},
+        }, evidence)
     identity = dict((preview.get("evaluator") or {}).get("identity") or {})
     if not target or str(identity.get("pig_id") or "") != target:
         return _contained("retained_mortality_exact_identity_unproven")
@@ -395,14 +406,23 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
             "identity": identity,
             "event_family": str((preview.get("evaluator") or {}).get("event_family") or ""),
             "effect_kind": "mortality"})
-    claim, failure = _same_or_new_claim(payloads, claims, deadline_monotonic, **request)
+    claim, failure = _same_or_new_claim(payloads, claims, deadline_monotonic, staged_mortality=prepared, **request)
     if failure:
         return _contained(failure)
     from modules.oom_sakkie.herdmaster_health_loss_runtime import persist_retained_health_loss_preview
-    persisted = persist_retained_health_loss_preview(payload, preview,
-        source_binding=retained_report_binding(payloads), claim=claim, claim_request=request)
-    if persisted.get("success") is not True:
-        return _contained(persisted.get("status") or "retained_preview_lifecycle_unproven")
+    if not prepared:
+        persisted = persist_retained_health_loss_preview(payload, preview,
+            source_binding=retained_report_binding(payloads), claim=claim, claim_request=request)
+        if persisted.get("success") is not True:
+            return _contained(persisted.get("status") or "retained_preview_lifecycle_unproven")
+        # Creating a new preview consumes its fresh validation budget. A later
+        # normal cycle stages it and validates once at the actual effect gate.
+        return {"success": True, "status": "retained_mortality_prepared_not_presented",
+            "suppress_owner_delivery": True, "telegram_sends": 0, "telegram_edits": 0,
+            "writes_farm_data": False, "protected_actions_performed": False}
+    from modules.oom_sakkie.retained_mortality_presentation import stage
+    policy = stage(payload, request, claim, case) if claim.get("presentation_window_pending") else None
+    persisted = {"_retained_mortality_policy": policy} if policy is not None else {}
     from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
     return _protected({**persisted, "success": True, "status": "preview_ready",
         "tool_used": "herdmaster_health_loss_preview",
@@ -488,7 +508,7 @@ def retained_recipient_authorized(parsed):
     return authorize_family_message(principal, parsed, capability="mortality_confirmation").allowed
 
 
-def _same_or_new_claim(rows, claims, deadline_monotonic, **requested):
+def _same_or_new_claim(rows, claims, deadline_monotonic, *, staged_mortality=False, **requested):
     """Reuse the exact claim; a never-attempted expiry may renew once with audit."""
     from modules.oom_sakkie.protected_action_claims import create_claim, canonical_preview_digest
     if not all(retained_recipient_authorized(_delivery_context(row)) for row in rows):
@@ -504,6 +524,8 @@ def _same_or_new_claim(rows, claims, deadline_monotonic, **requested):
         if time.monotonic() + PROVIDER_DELIVERY_RESERVE_SECONDS >= deadline_monotonic:
             return None, "manager_cycle_deadline_deferred"
     if not related:
+        if staged_mortality:
+            return None, "retained_mortality_original_claim_missing"
         return create_claim(**requested), ""
     if len(related) != 1 or len(related[0]) != 8:
         return None, "retained_claim_identity_or_delivery_unproven"
@@ -526,6 +548,17 @@ def _same_or_new_claim(rows, claims, deadline_monotonic, **requested):
             or delivery.get("preview_digest") != digest
             or not delivery.get("callback_token")):
         return None, "retained_claim_current_preview_mismatch"
+    if staged_mortality:
+        unattempted = (kind == "mortality" and payload.get("effect_kind") == "mortality"
+            and delivery.get("delivery_state") in (None, "claim_created", "expired")
+            and all(key in delivery and delivery[key] is None for key in _RENEWAL_MARKERS))
+        if unattempted:
+            # No TTL update here. Full durable histories and canonical facts are
+            # reloaded under the source/claim locks by the provider gate.
+            return {"callback_token": delivery["callback_token"], "preview_digest": digest,
+                "presentation_window_pending": True}, ""
+        if status == "expired" or expires <= datetime.now(timezone.utc):
+            return None, "retained_claim_attempt_or_terminal_requires_review"
     if status == "expired" or expires <= datetime.now(timezone.utc):
         return _renew_unattempted_claim(rows, delivery, requested)
     state, card = delivery.get("delivery_state"), delivery.get("preview_card_message_id")

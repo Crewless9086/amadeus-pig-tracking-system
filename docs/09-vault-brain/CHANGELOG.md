@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-09-28 - Retained mortality first-delivery confirmation lifecycle
+
+- Recorded the specifically approved single 30-minute window at the first
+  permitted protected delivery attempt, preserving the original report and claim.
+- Mapped complete-history admission, ordered source updates, genuine callback
+  receipt validation and atomic canonical/source/claim completion to existing rails.
+- Reused scheduled completion delivery after expired leases, requiring canonical
+  readback and fresh recipient authority; unresolved effects stay held.
+- Preserved cancellation, ambiguity, expiry, idempotency and farm confirmation
+  boundaries. Qualification and live acceptance remain separate from source work.
+
 ## 2026-09-19 - Approved workspace and documentation consolidation (in progress)
 
 - Replaced the accumulated live register with one compact current view under

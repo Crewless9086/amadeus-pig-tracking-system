@@ -71,7 +71,9 @@ def load_open_welfare_case_contexts(chat_id: str, owner_user_id: str, *, connect
             continue
         if str(context.get("chat_id") or "") != str(chat_id) or str(context.get("owner_user_id") or "") != str(owner_user_id):
             continue
-        result.append({**dict(context), "welfare_case_id": str(case_id),
+        from modules.oom_sakkie.herdmaster_source_transaction import predecessor
+        result.append({**dict(context), "_source_predecessor_digest": predecessor(context),
+                       "welfare_case_id": str(case_id),
                        "welfare_case_state": str(state), "welfare_case_urgency": str(urgency),
                        "welfare_case_owner": str(owner),
                        "welfare_case_next_check_at": next_check.isoformat() if next_check else None,
