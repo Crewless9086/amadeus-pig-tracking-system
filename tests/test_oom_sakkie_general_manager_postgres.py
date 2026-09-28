@@ -2324,17 +2324,41 @@ def test_two_completed_batches_query_and_repeated_cycles_use_only_latest_exact_p
                              source_revision="test")
     assert first["candidates_created"] == 2
     assert second["candidate_replays"] == 2
+    # The real collector retains both follow-ups for seven days; neither is due
+    # during these two five-minute cycles, and replay must not push that date out.
+    assert condition["next_reassessment_at"] == (now + timedelta(days=7)).isoformat()
+    assert weight["next_reassessment_at"] == (now + timedelta(days=7)).isoformat()
+    assert first["cases_claimed"] == second["cases_claimed"] == 0
     with connect() as db:
-        rows = db.execute("""select dedupe_key,status,generation from app_private.oom_manager_cases
+        rows = db.execute("""select dedupe_key,status,generation,next_reassessment_at
+            from app_private.oom_manager_cases
             where dedupe_key in (%s,%s) order by dedupe_key""",
             (condition["dedupe_key"], weight["dedupe_key"])).fetchall()
         event_count = db.execute("""select count(*) from app_private.oom_manager_case_events
             where case_id in (select case_id from app_private.oom_manager_cases
                 where dedupe_key in (%s,%s))""",
             (condition["dedupe_key"], weight["dedupe_key"])).fetchone()[0]
-    assert rows == [(condition["dedupe_key"], "waiting_reassessment", 1),
-                    (weight["dedupe_key"], "waiting_reassessment", 1)]
+    assert rows == [(condition["dedupe_key"], "open", 1, now + timedelta(days=7)),
+                    (weight["dedupe_key"], "open", 1, now + timedelta(days=7))]
     assert event_count == 2
+
+    due_at = rows[0][3]
+    due_findings = [item for item in _completed_bulk_batch_findings(due_at, connect=connect)
+        if f"pig:{pig_id}" in item["evidence_refs"]]
+    due_cycle = store.run_cycle(due_findings, now=due_at, source_revision="test")
+    assert_cycle_completed(due_cycle)
+    assert due_cycle["candidates_created"] == due_cycle["candidates_changed"] == 0
+    assert due_cycle["candidate_replays"] == due_cycle["cases_claimed"] == 2
+    assert due_cycle["deliveries_confirmed"] == 0
+    assert {item["outcome_status"] for item in due_cycle["case_results"]} == {
+        "manager_delivery_disabled"}
+    with connect() as db:
+        due_rows = db.execute("""select dedupe_key,status,generation,next_reassessment_at,
+            assigned_worker_id,lease_until,last_delivery_digest,last_delivery_at
+            from app_private.oom_manager_cases order by dedupe_key""").fetchall()
+    assert due_rows == [
+        (key, "waiting_reassessment", 1, due_at + worker_module.CADENCE, None, None, None, None)
+        for key in (condition["dedupe_key"], weight["dedupe_key"])]
 
 
 @pytest.mark.parametrize("material_kind", ["target-page", "enquiry-policy"])
@@ -2601,7 +2625,9 @@ def test_late_owned_failure_cannot_downgrade_confirmed_generation():
     assert len(snapshots) == 1
 
 
-def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence():
+def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence(monkeypatch):
+    # Owner binding is required even for the sibling's no-question suppression.
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "10001")
     now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=20)
     prefix = "orphan-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
     old = candidate("event:old", now, dedupe_key=prefix + ":prince",
@@ -2631,6 +2657,8 @@ def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence(
             deliver=lambda *_a, **_k: sends.append("unexpected")))
     assert retry["success"] is True and retry["cases_claimed"] == 2
     assert retry["exceptions"] == 1 and retry["deliveries_confirmed"] == 0
+    assert {item["outcome_status"] for item in retry["case_results"]} == {
+        "manager_delivery_refresh_unavailable", "no_owner_question_delivery_suppressed"}
     assert sends == before_send
     with connect() as db:
         row = db.execute("""select status,evidence_digest,last_delivery_digest,
@@ -2828,7 +2856,7 @@ def test_concurrent_newer_hold_and_prince_evidence_is_never_overwritten_or_deliv
     assert set(row[1]) == set(retained["unknowns"])
 
 
-def test_retained_recovery_family_survives_store_claim_and_routes_one_preview_only():
+def test_retained_recovery_family_survives_store_claim_and_rejects_unbound_preview():
     now = datetime.now(timezone.utc) + timedelta(minutes=6)
     dedupe = "herdmaster:retained-mortality:pg-" + now.strftime("%H%M%S%f")
     raw = candidate("provider_message:4050", now, dedupe_key=dedupe,
@@ -2842,18 +2870,32 @@ def test_retained_recovery_family_survives_store_claim_and_routes_one_preview_on
         return {"success": True, "status": "mortality_preview_ready",
             "answer": "Exact protected preview", "callback_token": "CALLBACK",
             "confirmation_required": True, "writes_farm_data": False}
+    # A preview token alone is insufficient: this deliberately omits the exact
+    # mortality mission/card/principal binding required before family delivery.
+    provider_calls = []
+    def forbidden_delivery(*args, **kwargs):
+        provider_calls.append((args, kwargs))
+        raise AssertionError("unbound_retained_preview_must_not_reach_provider")
     store = PostgresManagerCaseStore(connect_factory=connect)
     result = store.run_cycle([raw], now=now, source_revision="test",
         refresh=lambda _case: raw,
         deliver=lambda case: deliver_farm_manager_case(
-            case, retained_recovery=builder))
+            case, retained_recovery=builder, deliver=forbidden_delivery))
     assert previews and len(previews) == 1
-    assert result["deliveries_confirmed"] == 0
+    assert_cycle_completed(result)
+    assert result["deliveries_confirmed"] == 0 and result["exceptions"] == 1
+    assert result["case_results"][0]["outcome_status"] == "retained_delivery_binding_unproven"
+    assert provider_calls == []
     with connect() as db:
-        row = db.execute("""select evidence_refs from app_private.oom_manager_cases
+        row = db.execute("""select evidence_refs,status,last_delivery_digest,last_delivery_at,
+            assigned_worker_id,lease_until from app_private.oom_manager_cases
             where dedupe_key=%s""", (dedupe,)).fetchone()
-        events = db.execute("""select event_type from app_private.oom_manager_case_events
+        events = db.execute("""select event_type,event_payload from app_private.oom_manager_case_events
             where case_id=(select case_id from app_private.oom_manager_cases where dedupe_key=%s)""",
             (dedupe,)).fetchall()
     assert "manager_message_family:retained_protected_recovery" in row[0]
-    assert {value[0] for value in events} >= {"created", "claimed", "delegated", "delivery_suppressed"}
+    assert row[1:] == ("exception", None, None, None, None)
+    assert {value[0] for value in events} == {
+        "created", "claimed", "delegated", "exception", "reassessment_scheduled"}
+    exception = next(payload for event_type, payload in events if event_type == "exception")
+    assert exception["outcome_status"] == "retained_delivery_binding_unproven"
