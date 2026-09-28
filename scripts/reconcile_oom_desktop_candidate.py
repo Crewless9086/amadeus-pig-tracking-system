@@ -21,15 +21,15 @@ BASE = 'eb3ec23dc004373e7983646094c7fb0e4f1ba63c'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
 CANDIDATE_PR = 1359
-HEAD = '0ae56142230acb484b32df4fb7d709a2bcc569ac'
-APPROVED_RUNTIME_HEAD = '0ae56142230acb484b32df4fb7d709a2bcc569ac'
+HEAD = 'bee47b6255af247a6d6f0e2d1627cd87275a9dfd'
+APPROVED_RUNTIME_HEAD = 'bee47b6255af247a6d6f0e2d1627cd87275a9dfd'
 BRANCH = 'codex/oom-protected-delivery-deadline-20260928'
 PREDECESSOR_PR = 1358
 PREDECESSOR_BASE = 'c4488cf2d916db2b35befdefe10ca5e252804a2c'
 PREDECESSOR_HEAD = 'cc7ca4a24290e2b493f82a64278aae49cdf0c83d'
 PREDECESSOR_BRANCH = 'codex/oom-manager-actionable-queue-20260927'
 QUALIFICATION_TEST_PATHS = []
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/protected_delivery_lifecycle.py', 'tests/test_oom_sakkie_family_message_lifecycle.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/protected_delivery_lifecycle.py', 'tests/test_farrowing_conversation_postgres.py', 'tests/test_oom_sakkie_family_message_lifecycle.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -52,6 +52,7 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    "Allow an exactly bound explicit clarification question to become its conversation protected preview only under fresh delivery ownership before edit journaling. Verify the exact edited provider message identity; all other unbound existing cards remain rejected. Prove the farrowing question, protected preview, genuine synthetic confirmation and one canonical litter journey in disposable PostgreSQL.",
     "Preserve exact retained confirmation buttons through the manager authorized sender, bound to the existing token; keep recipient revalidation and deadline options. Prove the outgoing Confirm/Change/Cancel callback payload and genuine deployed card separately.",
     "Prepare the family protected message before claiming a delivery attempt. Immediately before the first family attempt journal, lock and recheck identity, active state, expiry and monotonic deadline; acquire at most one attempt. Preparation timeout or failure must leave the claim unattempted for normal scheduling.",
     "Prove load/gate/journal/provider ordering, cancellation and expiry during preparation, actual PostgreSQL concurrent preparers and lock-delay deferral, unchanged claim identity/expiry on retry, one bound delivery and silent replay. Fence stale finalizers with a fresh attempt identity. Hosted tests are qualification, not owner acceptance.",

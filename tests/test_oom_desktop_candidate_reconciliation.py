@@ -558,8 +558,8 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
         self.assertEqual(adapter.CANDIDATE_PR, 1359)
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "0ae56142230acb484b32df4fb7d709a2bcc569ac")
-        self.assertEqual(adapter.HEAD, "0ae56142230acb484b32df4fb7d709a2bcc569ac")
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "bee47b6255af247a6d6f0e2d1627cd87275a9dfd")
+        self.assertEqual(adapter.HEAD, "bee47b6255af247a6d6f0e2d1627cd87275a9dfd")
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
         for case in cases:
