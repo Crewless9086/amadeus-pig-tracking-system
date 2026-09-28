@@ -17,19 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = 'eb3ec23dc004373e7983646094c7fb0e4f1ba63c'
+BASE = '97c324bb7b91594ec0b587e70049380e9b9c529f'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1359
-HEAD = 'bee47b6255af247a6d6f0e2d1627cd87275a9dfd'
-APPROVED_RUNTIME_HEAD = 'bee47b6255af247a6d6f0e2d1627cd87275a9dfd'
-BRANCH = 'codex/oom-protected-delivery-deadline-20260928'
-PREDECESSOR_PR = 1358
-PREDECESSOR_BASE = 'c4488cf2d916db2b35befdefe10ca5e252804a2c'
-PREDECESSOR_HEAD = 'cc7ca4a24290e2b493f82a64278aae49cdf0c83d'
-PREDECESSOR_BRANCH = 'codex/oom-manager-actionable-queue-20260927'
+CANDIDATE_PR = 1360
+HEAD = 'a7f637e49eec1a1288e8d51d6308ec766b53b705'
+APPROVED_RUNTIME_HEAD = 'a7f637e49eec1a1288e8d51d6308ec766b53b705'
+BRANCH = 'codex/oom-retained-refresh-budget-20260928'
+PREDECESSOR_PR = 1359
+PREDECESSOR_BASE = 'eb3ec23dc004373e7983646094c7fb0e4f1ba63c'
+PREDECESSOR_HEAD = 'bee47b6255af247a6d6f0e2d1627cd87275a9dfd'
+PREDECESSOR_BRANCH = 'codex/oom-protected-delivery-deadline-20260928'
 QUALIFICATION_TEST_PATHS = []
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/protected_delivery_lifecycle.py', 'tests/test_farrowing_conversation_postgres.py', 'tests/test_oom_sakkie_family_message_lifecycle.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -39,12 +39,13 @@ HELPERS = ("modules/charlie/mission_store.py", "modules/charlie/mission_control.
 MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "tests/test_oom_desktop_candidate_reconciliation.py",
     ".github/workflows/oom-desktop-rebind-qualification.yml",
-    "scripts/correct_oom_presend_timeout.py", "tests/test_oom_presend_timeout_correction.py"}
+    "scripts/correct_oom_presend_timeout.py", "tests/test_oom_presend_timeout_correction.py",
+    "scripts/extend_oom_unsent_confirmation.py", "tests/test_oom_unsent_confirmation_extension.py"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1358_actionable_manager_queue_priority",
-    "application_revision_rollback:web:c4488cf2d916db2b35befdefe10ca5e252804a2c"}
-ADDED_EFFECTS = {"exact_protected_delivery_preparation_deadline_repair",
+REMOVED_EFFECTS = {"exact_protected_delivery_preparation_deadline_repair",
+    "application_revision_rollback:web:eb3ec23dc004373e7983646094c7fb0e4f1ba63c"}
+ADDED_EFFECTS = {"exact_retained_refresh_scope_and_card_history_budget_repair",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -52,6 +53,9 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    "Refresh only the exact claimed retained case identities through current canonical source, cancellation, resolution and completion checks; preserve the full canonical animal identity set for duplicate-tag rejection. Skip unrelated intake discovery during targeted retained refresh while preserving broad collection behavior.",
+    "Bound health context to its existing newest 100 owner/chat/source rows, join latest eligible family cards once per distinct mission, and prove PostgreSQL result equivalence against the prior query for ordering, terminal history, missing cards and owner isolation. Record bounded numeric stage durations in existing cycle/case metadata; no new model work, deadline extension, scheduler or farm authority.",
+    "Prove real loaded-revision retained preparation completes within the unchanged cycle deadline and delivers the same protected claim once. Timing and hosted equivalence tests alone do not prove delivery; any manual extension of an expired unsent claim requires separately authenticated exact recovery approval and immutable audit.",
     "Allow an exactly bound explicit clarification question to become its conversation protected preview only under fresh delivery ownership before edit journaling. Verify the exact edited provider message identity; all other unbound existing cards remain rejected. Prove the farrowing question, protected preview, genuine synthetic confirmation and one canonical litter journey in disposable PostgreSQL.",
     "Preserve exact retained confirmation buttons through the manager authorized sender, bound to the existing token; keep recipient revalidation and deadline options. Prove the outgoing Confirm/Change/Cancel callback payload and genuine deployed card separately.",
     "Prepare the family protected message before claiming a delivery attempt. Immediately before the first family attempt journal, lock and recheck identity, active state, expiry and monotonic deadline; acquire at most one attempt. Preparation timeout or failure must leave the claim unattempted for normal scheduling.",
@@ -72,7 +76,7 @@ REQUIRED_ACCEPTANCE = {
     "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
     "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
     f"Release only the protected merge whose application tree equals exact PR{CANDIDATE_PR} head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only protected delivery preparation repair; source pins and prior PR1358 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only retained refresh and card history budget repair; source pins and prior PR1359 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",

@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_general_manager_worker.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/protected_delivery_lifecycle.py', 'tests/test_farrowing_conversation_postgres.py', 'tests/test_oom_sakkie_family_message_lifecycle.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 PRESERVED_PREVIEW_EFFECTS = {'automatic_once_per_claim_never_attempted_retained_preview_renewal',
     'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -557,9 +557,9 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR, 1359)
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "bee47b6255af247a6d6f0e2d1627cd87275a9dfd")
-        self.assertEqual(adapter.HEAD, "bee47b6255af247a6d6f0e2d1627cd87275a9dfd")
+        self.assertEqual(adapter.CANDIDATE_PR, 1360)
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "a7f637e49eec1a1288e8d51d6308ec766b53b705")
+        self.assertEqual(adapter.HEAD, "a7f637e49eec1a1288e8d51d6308ec766b53b705")
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
         for case in cases:

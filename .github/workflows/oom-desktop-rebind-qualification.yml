@@ -37,3 +37,5 @@ jobs:
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation -v
       - name: Prove bounded pre-send metadata correction and rollback
         run: python -m pytest tests/test_oom_presend_timeout_correction.py -q
+      - name: Prove one-time unsent expiry extension, rejection and replay
+        run: python -m pytest tests/test_oom_unsent_confirmation_extension.py -q
