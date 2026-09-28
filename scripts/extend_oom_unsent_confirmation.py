@@ -16,6 +16,8 @@ EVENT_TYPE = "protected_unsent_confirmation_expiry_extended"
 KEY_PREFIX = "oom-unsent-confirmation-extension:"
 TTL_SECONDS = 1800
 BOUND = 128
+CASE_HISTORY_BOUND = 4096
+RENEWAL_CONSUMED = "retained_claim_renewal_already_consumed"
 CASE_CLOCKS = {"updated_at", "last_heartbeat_at", "next_reassessment_at"}
 PREIMAGE_KEYS = ("case", "claim", "related_claims", "family", "case_events",
                  "claim_audits", "source_history", "animal", "operations", "card_mission_id", "material_evidence")
@@ -104,6 +106,97 @@ def _case_material(case):
     return {k: v for k, v in case.items() if k not in CASE_CLOCKS}
 
 
+def _validate_family_history(family, source_history, claim, card_mission_id):
+    """Only complete, source-bound clarification deliveries predating this claim.
+
+    These are historical questions, never permission for a confirmation send.
+    Unknown fields (including null protected bindings) and incomplete attempts
+    fail closed. The exact detailed rows remain part of the approved preimage.
+    """
+    _require(isinstance(family, list) and len(family) <= BOUND, "family_history_bound")
+    base = {"event_id", "state", "mission_id", "card_mission_id", "owner_user_id", "chat_id",
+        "provider_message_id", "provider_timestamp", "inbound_text_sha256", "specialist_identity",
+        "task_state", "text_sha256", "semantic_domain", "semantic_intent", "semantic_continuation",
+        "read_query", "clarification_question"}
+    groups, event_ids = {}, set()
+    for item in family:
+        _require(isinstance(item, dict) and set(item) == {"review_event_id", "created_at", "record"},
+                 "family_record_shape_unproven")
+        r = item["record"]
+        _require(isinstance(r, dict) and r.get("state") in {"delivery_attempted", "delivered"},
+                 "family_effect_unproven")
+        extra = {"telegram_message_id", "delivery_provider_timestamp"} if r["state"] == "delivered" else set()
+        _require(set(r) == base | extra, "family_protected_or_unknown_fields")
+        _require(isinstance(r["event_id"], str) and bool(r["event_id"])
+            and r["event_id"] == item["review_event_id"] and r["event_id"] not in event_ids,
+            "family_event_identity_unproven")
+        _require(r["event_id"] == r["card_mission_id"] + (
+            "-DELIVERY-ATTEMPT" if r["state"] == "delivery_attempted" else "-DELIVERED"),
+            "family_event_identity_unproven")
+        event_ids.add(r["event_id"])
+        _require(r["owner_user_id"] == claim["owner_user_id"] and r["chat_id"] == claim["private_chat_id"]
+            and r["mission_id"] == r["card_mission_id"] == source_history[0]["record"]["mission_id"]
+            and r["card_mission_id"] not in {claim["mission_id"], card_mission_id}
+            and r["specialist_identity"] == "HERDMASTER" and r["task_state"] == "waiting_for_input"
+            and r["semantic_domain"] == "herd_health" and r["semantic_intent"] == "mortality_report"
+            and r["semantic_continuation"] is False and r["read_query"] == {}, "family_identity_unproven")
+        matches = [s for s in source_history if s["record"].get("status") == "waiting_for_input"
+            and s["record"].get("provider_message_id") == r["provider_message_id"]]
+        source_item = _one(matches, "family_clarification_source")
+        source = source_item["record"]
+        preview = source.get("preview") or {}
+        _require(source.get("owner_user_id") == r["owner_user_id"] and source.get("chat_id") == r["chat_id"]
+            and source.get("mission_id") == r["mission_id"] and source.get("event_phase") == "preview_generated"
+            and not source.get("operation_id") and preview.get("status") == "event_date_required"
+            and preview.get("success") is False and type(preview.get("question_count")) is int
+            and preview["question_count"] == 1 and not preview.get("confirmation_ready")
+            and not preview.get("confirmation_binding") and not preview.get("confirmation_required")
+            and all(preview.get(k) is False for k in ("consumes_confirmation", "protected_actions_performed",
+                "writes_farm_data", "routes_messages", "sends_telegram"))
+            and preview.get("zero_io") is True
+            and (preview.get("evaluator") or {}).get("identity") == claim["preview_payload"]["identity"],
+            "family_clarification_source_unproven")
+        question = preview.get("owner_text")
+        _require(isinstance(question, str) and bool(question.strip()) and len(question) <= 240
+            and question == source.get("owner_text") == r["clarification_question"]
+            and _sha(question) == r["text_sha256"]
+            and _sha(" ".join(str(source.get("owner_text_verbatim") or "").split())) == r["inbound_text_sha256"],
+            "family_clarification_text_unproven")
+        _require(_time(r["provider_timestamp"]) == _time(source["provider_timestamp"])
+            <= _time(source_item["created_at"]) <= _time(item["created_at"]) < _time(claim["created_at"]),
+            "family_clarification_chronology_unproven")
+        groups.setdefault((r["card_mission_id"], r["provider_message_id"], r["text_sha256"]), []).append(item)
+    for group in groups.values():
+        _require(len(group) == 2 and {r["record"]["state"] for r in group} == {"delivery_attempted", "delivered"},
+                 "family_clarification_delivery_incomplete")
+        attempted = next(r for r in group if r["record"]["state"] == "delivery_attempted")
+        delivered = next(r for r in group if r["record"]["state"] == "delivered")
+        stable = base - {"event_id", "state"}
+        _require(all(attempted["record"][k] == delivered["record"][k] for k in stable)
+            and isinstance(delivered["record"]["telegram_message_id"], str)
+            and bool(delivered["record"]["telegram_message_id"].strip())
+            and _time(attempted["created_at"]) <= _time(delivered["record"]["delivery_provider_timestamp"])
+            <= _time(delivered["created_at"]), "family_clarification_delivery_unproven")
+
+
+def _is_consumed_renewal_guard(event, claim):
+    """Production guard returns before preview persistence or provider delivery."""
+    p = event["event_payload"]
+    required = {"case_id", "cycle_id", "event_type", "failure_kind", "generation", "occurred_at",
+        "outcome_status", "provider_ambiguity_contained"}
+    timings = p.get("processing_timings_ms")
+    telemetry_valid = (p.get("deadline_phase", "") == "" and ("processing_timings_ms" not in p or
+        (isinstance(timings, dict) and set(timings) == {"dispatch_wait", "refresh_and_delivery"}
+         and all(type(v) is int and 0 <= v <= 3_600_000 for v in timings.values()))))
+    return (required <= set(p) <= required | {"deadline_phase", "processing_timings_ms"} and telemetry_valid
+        and event["event_type"] == p["event_type"] == "exception"
+        and p["failure_kind"] == p["outcome_status"] == RENEWAL_CONSUMED
+        and p["provider_ambiguity_contained"] is False
+        and p["case_id"] == event["case_id"] and p["generation"] == event["generation"]
+        and isinstance(p["cycle_id"], str) and bool(p["cycle_id"].strip())
+        and _time(p["occurred_at"]) == _time(event["occurred_at"]) >= _time(claim["expires_at"]))
+
+
 def _validate(evidence, original):
     old, old_case, _source = _original(original)
     c = _one(evidence["claim"], "claim")["record"]
@@ -122,23 +215,23 @@ def _validate(evidence, original):
     original_material = {k: v for k, v in _case_material(old_case).items() if k != "status"}
     _require(material == original_material, "original_case_material_changed")
     _require(evidence["card_mission_id"] == original["preimage"]["card_mission_id"], "card_identity_changed")
-    family = _one(evidence["family"], "family")
-    _require(all(type(family[k]) is int and family[k] == 0 for k in ("row_count", "effect_rows")),
-             "family_history_exists")
     _require(evidence["operations"] == [], "canonical_operation_exists")
     _require(evidence["animal"] == original["preimage"]["animal"], "canonical_material_changed")
     _require(0 < len(evidence["source_history"]) <= BOUND
         and evidence["source_history"] == original["preimage"]["source_history"], "source_history_changed")
+    _validate_family_history(evidence["family"], evidence["source_history"], c, evidence["card_mission_id"])
     _validate_material(evidence["material_evidence"], evidence["source_history"][0]["record"], c)
     events = evidence["case_events"]
-    _require(0 < len(events) <= BOUND, "case_history_bound")
+    _require(0 < len(events) <= CASE_HISTORY_BOUND, "case_history_bound")
+    _require(len({e["record"]["event_id"] for e in events}) == len(events), "case_history_duplicate")
     correction_event = audit["event_id"] + "-REASSESS"
     _require(sum(e["record"]["event_id"] == correction_event for e in events) == 1,
              "original_case_correction_missing")
     for item in events:
         event = item["record"]
         p = event["event_payload"]
-        _require(event["case_id"] == m["case_id"] and event["generation"] == m["generation"]
+        _require(event["case_id"] == m["case_id"] and type(event["generation"]) is int
+            and event["generation"] == m["generation"]
             and _time(event["occurred_at"]) >= _time(audit["occurred_at"]), "case_history_identity_changed")
         if event["event_id"] == correction_event:
             _require(event["event_type"] == "reassessment_scheduled"
@@ -146,6 +239,8 @@ def _validate(evidence, original):
                 and p.get("plan_sha256") == correction.plan_digest(original)
                 and p.get("outcome_status") == "proven_presend_timeout_classification_corrected",
                 "original_case_correction_mismatch")
+            continue
+        if _is_consumed_renewal_guard(event, c):
             continue
         _require(event["event_type"] in {"claimed", "delegated", "heartbeat", "exception", "reassessment_scheduled"}
             and not p.get("provider_ambiguity_contained") and not p.get("failure_kind")
@@ -226,6 +321,8 @@ def inspect_proposal(plan, *, fresh_preimage, now, authority, loaded_prevention)
             _require(prior[key] is None, "case_clock_regressed")
     _require(_time(case["next_reassessment_at"]) <= now, "case_not_due")
     observed = {_digest(e) for e in fresh_preimage["case_events"]}
+    _require(all(_time(e["record"]["occurred_at"]) <= now for e in fresh_preimage["case_events"]),
+             "case_history_from_future")
     _require(all(_digest(e) in observed for e in expected["case_events"]), "case_history_missing")
     return {"status": "proposal_consistent_not_authorized", "metadata_writes": 0,
         "plan_sha256": digest, "proposed_expires_at": (now + timedelta(seconds=TTL_SECONDS)).isoformat()}
@@ -250,6 +347,7 @@ def _fresh(cur, original, *, locked=False):
     providers = original["provider_ids"]
     lock = " for update" if locked else ""
     result = {"card_mission_id": original["preimage"]["card_mission_id"]}
+    family_missions = [result["card_mission_id"], c["mission_id"], source["mission_id"]]
     result["case"] = _rows(cur, "select to_jsonb(m) from app_private.oom_manager_cases m where case_id=%s" + lock,
         (m["case_id"],), ("record",))
     result["claim"] = _rows(cur, "select to_jsonb(c) from app_private.oom_protected_action_claims c where callback_token=%s" + lock,
@@ -264,21 +362,20 @@ def _fresh(cur, original, *, locked=False):
         where mission_id=any(%s) or provider_message_id=any(%s)
           or preview_payload->'provider_message_ids' ?| %s order by callback_token limit 129""",
         ([c["mission_id"], source["mission_id"]], providers, providers), ("record",))
-    result["family"] = _rows(cur, """select count(*),count(*) filter (where
-        review_json->'family_message_lifecycle'->>'state' in ('delivery_attempted','delivered',
-        'update_attempted','updated','contained','notification_attempted','notification_delivered'))
+    result["family"] = _rows(cur, """select review_event_id,created_at,review_json->'family_message_lifecycle'
         from public.sam_live_stock_conversation_review_events where event_source=%s and
-        (chatwoot_conversation_id=%s or review_json->'family_message_lifecycle'->>'card_mission_id'=%s
-         or review_json->'family_message_lifecycle'->>'mission_id'=any(%s))""",
-        (correction.FAMILY_SOURCE, result["card_mission_id"], result["card_mission_id"], [c["mission_id"], source["mission_id"]]),
-        ("row_count", "effect_rows"))
+        (chatwoot_conversation_id=any(%s) or review_json->'family_message_lifecycle'->>'card_mission_id'=any(%s)
+         or review_json->'family_message_lifecycle'->>'mission_id'=any(%s))
+        order by created_at desc,review_event_id desc limit 129""",
+        (correction.FAMILY_SOURCE, family_missions, family_missions, family_missions),
+        ("review_event_id", "created_at", "record"))
     result["claim_audits"] = _rows(cur, """select event_id,event_type,idempotency_key,payload_json,occurred_at
         from public.operational_events where aggregate_type='protected_action_claim' and aggregate_id=%s
         order by occurred_at desc,event_id desc limit 129""", (original["claim_hash"],),
         ("event_id", "event_type", "idempotency_key", "payload_json", "occurred_at"))
     audit = _correction_audit(result, original)
     result["case_events"] = _rows(cur, """select to_jsonb(e) from app_private.oom_manager_case_events e
-        where case_id=%s and occurred_at >= %s order by occurred_at desc,event_id desc limit 129""",
+        where case_id=%s and occurred_at >= %s order by occurred_at desc,event_id desc limit 4097""",
         (m["case_id"], audit["occurred_at"]), ("record",))
     result["source_history"] = _rows(cur, """select review_event_id,created_at,
         review_json->'herdmaster_health_loss' from public.sam_live_stock_conversation_review_events

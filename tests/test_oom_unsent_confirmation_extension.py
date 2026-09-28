@@ -13,6 +13,7 @@ from scripts import extend_oom_unsent_confirmation as extension
 from scripts import correct_oom_presend_timeout as correction
 from tests.test_oom_presend_timeout_correction import plan as original_plan
 from tests.test_oom_presend_timeout_correction import database as correction_database
+from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import retained_journey
 
 
 def material_fixture():
@@ -89,7 +90,7 @@ def fixture(original=None, material_evidence=None):
     evidence = {k: deepcopy(prior[k]) for k in ("animal", "source_history", "family", "card_mission_id")}
     evidence.update({"claim": [{"record": claim}], "related_claims": [{"record": deepcopy(claim)}],
         "case": [{"record": case}], "case_events": [case_event], "claim_audits": [audit, deepcopy(prior["claim_audits"][0])],
-        "operations": [], "material_evidence": deepcopy(material)})
+        "family": [], "operations": [], "material_evidence": deepcopy(material)})
     return original, evidence, now
 
 
@@ -97,6 +98,200 @@ def proposal(original, evidence, now):
     return extension.prepare_plan(evidence, original_correction_plan=original,
         prevention_revision="1" * 40, prevention_tree="2" * 40,
         authorization_expires_at=now + timedelta(hours=1))
+
+
+def clarification_fixture(original=None, material_evidence=None):
+    """Synthetic old date question, distinct from the later protected claim."""
+    original, evidence, _now = fixture(original, material_evidence)
+    prior = deepcopy(original["preimage"])
+    claim = prior["claim"][0]["record"]
+    when = min(extension._time(claim["created_at"]),
+        extension._time(evidence["material_evidence"]["as_of_timestamp"])) - timedelta(minutes=10)
+    source = deepcopy(prior["source_history"][0]["record"])
+    source.update(status="waiting_for_input", event_phase="preview_generated", operation_id="",
+        provider_message_id="99", provider_timestamp=when.isoformat(),
+        owner_text_verbatim="Vark nr 27 is dood.", combined_text="Vark nr 27 is dood.", report_parts=[])
+    source.pop("retained_repreview", None)
+    source["preview"] = extension._preview(source, evidence["material_evidence"])
+    source["owner_text"] = source["preview"]["owner_text"]
+    prior["source_history"].append({"review_event_id": "SYNTHETIC-OLD-QUESTION-SOURCE",
+        "created_at": (when + timedelta(seconds=1)).isoformat(), "record": source})
+    original = correction.prepare_plan(prior, prevention_revision=original["prevention_revision"],
+        prevention_tree=original["prevention_tree"], authorization_expires_at=original["authorization_expires_at"])
+    original, evidence, now = fixture(original, evidence["material_evidence"])
+    mission = source["mission_id"]
+    base = {"mission_id": mission, "card_mission_id": mission, "owner_user_id": claim["owner_user_id"],
+        "chat_id": claim["private_chat_id"], "provider_message_id": source["provider_message_id"],
+        "provider_timestamp": source["provider_timestamp"], "inbound_text_sha256": extension._sha(source["owner_text_verbatim"]),
+        "specialist_identity": "HERDMASTER", "task_state": "waiting_for_input",
+        "text_sha256": extension._sha(source["owner_text"]), "semantic_domain": "herd_health",
+        "semantic_intent": "mortality_report", "semantic_continuation": False, "read_query": {},
+        "clarification_question": source["owner_text"]}
+    attempt = {**base, "state": "delivery_attempted", "event_id": mission + "-DELIVERY-ATTEMPT"}
+    delivered = {**base, "state": "delivered", "event_id": mission + "-DELIVERED",
+        "telegram_message_id": "SYNTHETIC-OLD-MESSAGE", "delivery_provider_timestamp": (when + timedelta(seconds=3)).isoformat()}
+    evidence["family"] = [{"review_event_id": delivered["event_id"], "created_at": (when + timedelta(seconds=4)).isoformat(), "record": delivered},
+        {"review_event_id": attempt["event_id"], "created_at": (when + timedelta(seconds=2)).isoformat(), "record": attempt}]
+    return original, evidence, now
+
+
+def consumed_guard_event(evidence, occurred, index=0):
+    case = evidence["case"][0]["record"]
+    event = {"event_id": "SYNTHETIC-CONSUMED-" + str(index), "case_id": case["case_id"],
+        "generation": case["generation"], "event_type": "exception", "occurred_at": occurred.isoformat()}
+    event["event_payload"] = {k: event[k] for k in ("case_id", "generation", "event_type", "occurred_at")}
+    event["event_payload"].update(cycle_id="SYNTHETIC-CYCLE-" + str(index),
+        failure_kind=extension.RENEWAL_CONSUMED, outcome_status=extension.RENEWAL_CONSUMED,
+        provider_ambiguity_contained=False)
+    return {"record": event}
+
+
+def test_old_source_clarification_is_bound_preserved_and_not_a_protected_card():
+    original, e, now = clarification_fixture()
+    before = deepcopy((original, e))
+    p = proposal(original, e, now)
+    assert inspect(p, e, now)["metadata_writes"] == 0 and (original, e) == before
+    assert len(p["preimage"]["family"]) == 2 and p["preimage"]["family"] == e["family"]
+    reordered = deepcopy(e); reordered["family"].reverse()
+    extension._validate_family_history(reordered["family"], reordered["source_history"], e["claim"][0]["record"], e["card_mission_id"])
+    with pytest.raises(ValueError, match="fresh_family_mismatch"): inspect(p, reordered, now)
+    normalized = deepcopy(e["family"])
+    for row in normalized: row["created_at"] = row["created_at"].replace("T", " ")
+    extension._validate_family_history(normalized, e["source_history"], e["claim"][0]["record"], e["card_mission_id"])
+
+
+@pytest.mark.parametrize("fault", ["protected_card", "claim_mission", "callback", "operation", "confirmation", "unknown_field",
+    "wrong_actor", "wrong_chat", "provider", "question", "hash", "inbound", "event_id", "unknown_state", "cancelled",
+    "attempt_only", "delivered_only", "duplicate", "missing_message", "late", "reversed_time", "future_receipt",
+    "source_missing", "source_cancelled", "source_principal", "source_preview", "source_identity", "family_overflow"])
+def test_unproven_family_history_rejects_before_hooks(fault):
+    original, e, now = clarification_fixture()
+    d, a = e["family"]; record = d["record"]
+    claim = e["claim"][0]["record"]
+    if fault == "protected_card": record["card_mission_id"] = e["card_mission_id"]
+    elif fault == "claim_mission": record["mission_id"] = claim["mission_id"]
+    elif fault in {"callback", "operation", "confirmation", "unknown_field"}:
+        record[{"callback": "callback_token", "operation": "operation_id", "confirmation": "confirmation_token", "unknown_field": "new_field"}[fault]] = None
+    elif fault == "wrong_actor": record["owner_user_id"] = "OTHER"
+    elif fault == "wrong_chat": record["chat_id"] = "OTHER"
+    elif fault == "provider": record["provider_message_id"] = "OTHER"
+    elif fault == "question": record["clarification_question"] = "Unknown message"
+    elif fault == "hash": record["text_sha256"] = "0" * 64
+    elif fault == "inbound": record["inbound_text_sha256"] = "0" * 64
+    elif fault == "event_id": record["event_id"] = "OTHER"
+    elif fault in {"unknown_state", "cancelled"}: record["state"] = fault
+    elif fault == "attempt_only": e["family"] = [a]
+    elif fault == "delivered_only": e["family"] = [d]
+    elif fault == "duplicate": e["family"].append(deepcopy(a))
+    elif fault == "missing_message": record["telegram_message_id"] = ""
+    elif fault == "late": d["created_at"] = claim["created_at"]
+    elif fault == "reversed_time": a["created_at"] = d["created_at"]
+    elif fault == "future_receipt": record["delivery_provider_timestamp"] = (now + timedelta(days=1)).isoformat()
+    elif fault == "source_missing": e["source_history"].pop()
+    elif fault == "source_cancelled": e["source_history"][-1]["record"]["status"] = "cancelled"
+    elif fault == "source_principal": e["source_history"][-1]["record"]["owner_user_id"] = "OTHER"
+    elif fault == "source_preview": e["source_history"][-1]["record"]["preview"]["confirmation_ready"] = True
+    elif fault == "source_identity": e["source_history"][-1]["record"]["preview"]["evaluator"]["identity"]["pig_id"] = "OTHER"
+    elif fault == "family_overflow": e["family"] *= 65
+    with pytest.raises(ValueError): proposal(original, e, now)
+
+
+def test_complete_safe_case_history_above_old_limit_and_exact_new_overflow():
+    original, e, now = fixture()
+    e["case_events"] += [consumed_guard_event(e, now - timedelta(minutes=1), i)
+        for i in range(extension.CASE_HISTORY_BOUND - 1)]
+    p = proposal(original, e, now)
+    assert len(p["preimage"]["case_events"]) == 4096 and inspect(p, e, now)["metadata_writes"] == 0
+    e["case_events"].append(consumed_guard_event(e, now - timedelta(minutes=1), 4096))
+    with pytest.raises(ValueError, match="case_history_bound"): proposal(original, e, now)
+
+
+@pytest.mark.parametrize("fault", [None, "phase", "unknown_key", "boolean", "negative", "float", "infinite", "large"])
+def test_consumed_guard_allows_only_bounded_current_worker_telemetry(fault):
+    original, e, now = fixture(); item = consumed_guard_event(e, now - timedelta(minutes=1))
+    p = item["record"]["event_payload"]
+    p.update(deadline_phase="", processing_timings_ms={"dispatch_wait": 7013, "refresh_and_delivery": 8655})
+    if fault == "phase": p["deadline_phase"] = "after_retained_preview"
+    elif fault == "unknown_key": p["processing_timings_ms"]["telegram_sends"] = 0
+    elif fault is not None:
+        p["processing_timings_ms"]["dispatch_wait"] = {"boolean": True, "negative": -1, "float": 1.5,
+            "infinite": float("inf"), "large": 3_600_001}[fault]
+    e["case_events"].append(item)
+    if fault is None: assert inspect(proposal(original, e, now), e, now)["metadata_writes"] == 0
+    else:
+        with pytest.raises(ValueError): proposal(original, e, now)
+
+
+@pytest.mark.parametrize("fault", ["other_failure", "ambiguity", "missing_field", "extra_field", "wrong_case", "wrong_generation",
+    "wrong_event_type", "wrong_time", "before_expiry", "future", "missing_correction", "duplicate"])
+def test_consumed_renewal_guard_requires_exact_presend_shape_and_chronology(fault):
+    original, e, now = fixture(); item = consumed_guard_event(e, now - timedelta(minutes=1))
+    e["case_events"].append(item); event = item["record"]; p = event["event_payload"]
+    if fault == "other_failure": p["failure_kind"] = "UnknownError"
+    elif fault == "ambiguity": p["provider_ambiguity_contained"] = True
+    elif fault == "missing_field": p.pop("provider_ambiguity_contained")
+    elif fault == "extra_field": p["delivery_attempt_id"] = None
+    elif fault == "wrong_case": p["case_id"] = "OTHER"
+    elif fault == "wrong_generation": p["generation"] += 1
+    elif fault == "wrong_event_type": p["event_type"] = "delivered"
+    elif fault == "wrong_time": p["occurred_at"] = now.isoformat()
+    elif fault == "before_expiry": event["occurred_at"] = p["occurred_at"] = (extension._time(e["claim"][0]["record"]["expires_at"]) - timedelta(seconds=1)).isoformat()
+    elif fault == "future": event["occurred_at"] = p["occurred_at"] = (now + timedelta(days=1)).isoformat()
+    elif fault == "missing_correction": e["case_events"].pop(0)
+    elif fault == "duplicate": e["case_events"].append(deepcopy(item))
+    with pytest.raises(ValueError): inspect(proposal(original, e, now), e, now)
+
+
+def test_real_consumed_renewal_route_stops_before_preview_persistence_and_delivery(retained_journey, monkeypatch):
+    from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
+    from modules.oom_sakkie import herdmaster_health_loss_runtime as health
+    from modules.oom_sakkie import family_message_lifecycle as family
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "42")
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_OWNER_USER_ID", "42")
+    monkeypatch.setenv("OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON", "[]")
+    j = retained_journey
+    assert recovery.build_retained_protected_preview(j["case"])["success"]
+    j["claim"]["expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=5)
+    assert recovery.build_retained_protected_preview(j["case"])["success"]
+    assert len(j["renewal_audits"]) == 1
+    j["claim"]["expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=5)
+    before = deepcopy((j["claim"], j["history"], j["events"], j["renewal_audits"]))
+    def forbidden(*args, **kwargs): pytest.fail("consumed renewal crossed persistence/delivery boundary")
+    monkeypatch.setattr(health, "persist_retained_health_loss_preview", forbidden)
+    monkeypatch.setattr(family, "deliver_family_result", forbidden)
+    result = deliver_farm_manager_case(j["case"], deadline_monotonic=500.)
+    assert result["status"] == extension.RENEWAL_CONSUMED and result["delivery_confirmed"] is False
+    assert not j["sends"] and j["creates"] == 1
+    assert (j["claim"], j["history"], j["events"], j["renewal_audits"]) == before
+
+
+def test_actual_safety_sql_reads_detailed_family_and_complete_bounded_history():
+    original, evidence, now = clarification_fixture()
+    evidence["case_events"] += [consumed_guard_event(evidence, now - timedelta(minutes=1), i) for i in range(200)]
+    columns = [("case", ("record",)), ("claim", ("record",)), ("related_claims", ("record",)),
+        ("family", ("review_event_id", "created_at", "record")),
+        ("claim_audits", ("event_id", "event_type", "idempotency_key", "payload_json", "occurred_at")),
+        ("case_events", ("record",)), ("source_history", ("review_event_id", "created_at", "record")),
+        ("animal", ("record",)), ("operations", ("record",))]
+    class Cursor:
+        def __init__(self): self.statements = []
+        def execute(self, query, params):
+            key, names = columns[len(self.statements)]
+            self.rows = [tuple(row[k] for k in names) for row in evidence[key]]
+            self.statements.append((" ".join(query.split()), params))
+        def fetchall(self): return self.rows
+    cur = Cursor(); fresh = extension._fresh(cur, original)
+    fresh["material_evidence"] = evidence["material_evidence"]
+    assert fresh == evidence and proposal(original, fresh, now)["preimage"]["family"] == evidence["family"]
+    assert len(cur.statements) == 9
+    family_sql, family_params = cur.statements[3]
+    assert "count(" not in family_sql and "review_event_id,created_at" in family_sql and "limit 129" in family_sql
+    assert all(set(v) == {evidence["card_mission_id"], evidence["claim"][0]["record"]["mission_id"],
+        evidence["source_history"][0]["record"]["mission_id"]} for v in family_params[1:])
+    history_sql, history_params = cur.statements[5]
+    assert "occurred_at >= %s" in history_sql and "limit 4097" in history_sql
+    assert history_params == (evidence["case"][0]["record"]["case_id"], evidence["claim_audits"][0]["occurred_at"])
 
 
 def inspect(plan, fresh, now, *, authority_changes=None, deployment_changes=None):
@@ -158,8 +353,8 @@ def test_unsafe_or_changed_evidence_cannot_form_proposal(fault):
     elif fault == "source_added": e["source_history"].append(deepcopy(e["source_history"][0]))
     elif fault == "animal": e["animal"][0]["record"]["on_farm"] = False
     elif fault == "duplicate_animal": e["animal"].append(deepcopy(e["animal"][0]))
-    elif fault == "family": e["family"][0]["row_count"] = 1
-    elif fault == "boolean_family_count": e["family"][0]["row_count"] = False
+    elif fault == "family": e["family"] = [{"row_count": 1, "effect_rows": 1}]
+    elif fault == "boolean_family_count": e["family"] = [{"row_count": False, "effect_rows": 0}]
     elif fault == "operation": e["operations"] = [{"record": {"idempotency_key": "SYNTHETIC-OP"}}]
     elif fault == "related_claim": e["related_claims"].append(deepcopy(e["related_claims"][0]))
     elif fault == "renewal": e["claim_audits"][1]["payload_json"]["one_time_only"] = False
@@ -290,7 +485,7 @@ def test_fresh_canonical_clock_keeps_the_same_material_preview_and_expiry_bindin
 
 
 @pytest.fixture
-def extension_database(correction_database):
+def extension_database(correction_database, request):
     """Actual canonical reader SQL and actual claim/audit/farm table schemas.
 
     The inherited fixture enforces a localhost disposable URL and isolated
@@ -356,6 +551,16 @@ def extension_database(correction_database):
             (json.dumps({"herdmaster_health_loss": real["preimage"]["source_history"][0]["record"]}),))
         cur.execute("update public.operational_events set payload_json=%s::jsonb",
             (json.dumps(real["preimage"]["claim_audits"][0]["payload_json"]),))
+    if getattr(request, "param", False):
+        _unused, clarification, _now = clarification_fixture(real, evidence)
+        source = clarification["source_history"][-1]
+        insert("public.sam_live_stock_conversation_review_events", {"review_event_id": source["review_event_id"],
+            "event_source": correction.REPORT_SOURCE, "review_json": {"herdmaster_health_loss": source["record"]},
+            "created_at": source["created_at"]})
+        for row in clarification["family"]:
+            insert("public.sam_live_stock_conversation_review_events", {"review_event_id": row["review_event_id"],
+                "event_source": correction.FAMILY_SOURCE, "review_json": {"family_message_lifecycle": row["record"]},
+                "created_at": row["created_at"], "chatwoot_conversation_id": row["record"]["card_mission_id"]})
     # Bind the full PostgreSQL record shapes, including default/optional fields.
     before = old_snapshot()
     before["card_mission_id"] = real["preimage"]["card_mission_id"]
@@ -386,6 +591,7 @@ def extension_database(correction_database):
     return p, connect, state, insert
 
 
+@pytest.mark.parametrize("extension_database", [False, True], indirect=True)
 def test_postgres_two_writes_preserve_all_state_and_replay_after_progress(extension_database):
     p, connect, state, _insert = extension_database
     before = state()
@@ -415,6 +621,7 @@ def test_postgres_two_writes_preserve_all_state_and_replay_after_progress(extens
 
 
 @pytest.mark.parametrize("write", [1, 2])
+@pytest.mark.parametrize("extension_database", [False, True], indirect=True)
 def test_postgres_failure_after_either_write_rolls_back_everything(extension_database, write):
     p, connect, state, _insert = extension_database
     before = state()
@@ -433,6 +640,50 @@ def test_postgres_two_operators_commit_one_extension(extension_database):
         results = list(pool.map(run, range(2)))
     assert sorted(r["metadata_writes"] for r in results) == [0, 2]
     assert sum(e["record"]["event_type"] == extension.EVENT_TYPE for e in state()["public.operational_events"]) == 1
+
+
+@pytest.mark.parametrize("extension_database", [True], indirect=True)
+def test_postgres_old_clarification_and_over_128_safe_guard_events_are_complete(extension_database):
+    p, connect, state, _insert = extension_database
+    now = datetime.now(timezone.utc)
+    with connect() as db, db.cursor() as cur:
+        for i in range(200):
+            e = consumed_guard_event(p["preimage"], now - timedelta(seconds=1), i)["record"]
+            cur.execute("""insert into app_private.oom_manager_case_events
+                (event_id,case_id,generation,event_type,event_payload,occurred_at) values(%s,%s,%s,%s,%s::jsonb,%s)""",
+                tuple(e[k] if k != "event_payload" else json.dumps(e[k])
+                    for k in ("event_id", "case_id", "generation", "event_type", "event_payload", "occurred_at")))
+    fresh = extension.read_preimage(p["original_correction_plan"], connect_factory=connect)
+    assert len(fresh["case_events"]) == 201 and len(fresh["family"]) == 2
+    p = proposal(p["original_correction_plan"], fresh, now)
+    before = state(); assert apply(p, connect)["metadata_writes"] == 2
+    after = state()
+    for table in ("app_private.oom_manager_case_events", "public.sam_live_stock_conversation_review_events"):
+        assert after[table] == before[table]
+
+
+@pytest.mark.parametrize("extension_database", [True], indirect=True)
+@pytest.mark.parametrize("fault", ["protected", "unknown", "principal", "missing_attempt"])
+def test_postgres_family_query_catches_protected_or_changed_history_without_writes(extension_database, fault):
+    p, connect, state, insert = extension_database
+    record = deepcopy(p["preimage"]["family"][0]["record"])
+    if fault == "missing_attempt":
+        with connect() as db, db.cursor() as cur:
+            cur.execute("delete from public.sam_live_stock_conversation_review_events where review_event_id=%s",
+                        (p["preimage"]["family"][1]["review_event_id"],))
+    else:
+        record.update(event_id="SYNTHETIC-NEW-FAMILY")
+        if fault == "protected":
+            record.update(card_mission_id=p["preimage"]["card_mission_id"], mission_id="OTHER",
+                          callback_token=p["preimage"]["claim"][0]["record"]["callback_token"])
+        elif fault == "unknown": record["state"] = "unknown"
+        elif fault == "principal": record["owner_user_id"] = "OTHER"
+        insert("public.sam_live_stock_conversation_review_events", {"review_event_id": record["event_id"],
+            "event_source": correction.FAMILY_SOURCE, "review_json": {"family_message_lifecycle": record},
+            "created_at": datetime.now(timezone.utc), "chatwoot_conversation_id": record["card_mission_id"]})
+    before = state()
+    with pytest.raises(ValueError): apply(p, connect)
+    assert state() == before
 
 
 @pytest.mark.parametrize("change", ["attempt", "cancellation", "lease", "not_due", "source", "principal", "animal",
@@ -474,9 +725,11 @@ def test_postgres_fresh_canonical_change_rejects_without_extension(extension_dat
             "closure_reason": "synthetic", "occurred_at": occurred, "actor_reference": "owner", "source_system": "owner",
             "source_reference": "synthetic", "provenance_json": {}, "idempotency_key": "WC"})
     elif change == "history_overflow":
-        for index in range(129):
-            insert("app_private.oom_manager_case_events", {"event_id": f"SAFE-{index}", "case_id": "SYNTHETIC-CASE", "generation": 1,
-                "event_type": "heartbeat", "event_payload": {}, "occurred_at": datetime.now(timezone.utc)})
+        with connect() as db, db.cursor() as cur:
+            cur.execute("""insert into app_private.oom_manager_case_events
+                (event_id,case_id,generation,event_type,event_payload,occurred_at)
+                select 'SAFE-' || i,'SYNTHETIC-CASE',1,'heartbeat','{}',now()
+                from generate_series(1,%s) i""", (extension.CASE_HISTORY_BOUND,))
     before = state()
     with pytest.raises(ValueError): apply(p, connect)
     assert state() == before
