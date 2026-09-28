@@ -18,8 +18,10 @@ import pytest
 
 from modules.oom_sakkie import manager_case_sources as sources
 from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
+from modules.oom_sakkie import herdmaster_health_loss_runtime as health_loss
 from modules.oom_sakkie.general_manager_worker import normalize_candidate
 from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import report
+from tests.test_oom_sakkie_herdmaster_health_loss_runtime import capture_active_context_query
 
 URL = os.environ.get("OOM_PROTECTED_ACTION_POSTGRES_URL", "").strip()
 pytestmark = pytest.mark.skipif(not URL, reason="explicit disposable PostgreSQL URL is required")
@@ -132,16 +134,135 @@ def add_report(store, body, at=OLD):
 
 def retain(store, key="herdmaster:retained-mortality:101", refs=None, status="exception"):
     refs = refs or ["provider_message:101", "pig:P27", "tag:27"]
+    case_id = uuid4().hex
     with store() as db, db.cursor() as cur:
         cur.execute("""insert into app_private.oom_manager_cases
             (case_id,dedupe_key,specialist,urgency,status,evidence_digest,evidence_refs,
              summary,next_action,next_reassessment_at,generation)
             values(%s,%s,'HERDMASTER','urgent',%s,%s,%s,'synthetic','reassess',%s,1)""",
-            (uuid4().hex, key, status, "0" * 64, Jsonb(refs), OLD))
+            (case_id, key, status, "0" * 64, Jsonb(refs), OLD))
+    return {"case_id": case_id, "dedupe_key": key, "specialist": "HERDMASTER"}
 
 
-def collect(store, now=NOW):
-    return sources._retained_herd_report_recovery_candidates(now, connect=lambda: store(True))
+def collect(store, now=NOW, *, claimed_cases=None):
+    return sources._retained_herd_report_recovery_candidates(now, connect=lambda: store(True),
+                                                           claimed_cases=claimed_cases)
+
+
+@pytest.mark.parametrize("owner_user_id", ["42", ""])
+def test_actual_active_context_query_matches_correlated_history_and_card_selection(store, monkeypatch, owner_user_id):
+    _contexts, actual_query, params = capture_active_context_query(monkeypatch, owner_user_id=owner_user_id)
+    owner_clause = ("and h.review_json->'herdmaster_health_loss'->>'owner_user_id' = %s"
+                    if owner_user_id else "")
+    # The deployed predecessor query is the equivalence oracle, not a second
+    # copy of the optimized query. Keep its health and card ordering intact.
+    previous_query = f"""
+        select h.review_json->'herdmaster_health_loss', h.created_at,
+          (select f.review_json->'family_message_lifecycle'->>'telegram_message_id'
+           from public.sam_live_stock_conversation_review_events f
+           where f.event_source = 'oom_sakkie_family_message_lifecycle'
+             and f.review_json->'family_message_lifecycle'->>'card_mission_id' =
+                 h.review_json->'herdmaster_health_loss'->>'mission_id'
+             and f.review_json->'family_message_lifecycle'->>'state' in ('delivered','updated')
+           order by f.created_at desc, f.review_event_id desc limit 1)
+        from public.sam_live_stock_conversation_review_events h
+        where h.event_source = %s and h.chatwoot_conversation_id = %s {owner_clause}
+        order by h.created_at desc limit 100
+    """
+    now = datetime.now(timezone.utc)
+    with store() as db, db.cursor() as cur:
+        def event(event_id, source, chat, key, body, at):
+            cur.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,event_source,chatwoot_conversation_id,review_json,created_at)
+                values(%s,%s,%s,%s,%s)""", (event_id, source, chat, Jsonb({key: body}), at))
+        for index in range(105):
+            event(f"health-{index}", health_loss.EVENT_SOURCE, "oom-health-42", "herdmaster_health_loss",
+                  {"mission_id": f"MISSION-{index % 4}", "owner_user_id": "42",
+                   "status": "completed" if index == 0 else "waiting_for_input", "sample_index": index},
+                  now - timedelta(seconds=index))
+        for name, owner, chat, source, offset in (
+            ("FOREIGN-OWNER", "84", "oom-health-42", health_loss.EVENT_SOURCE, 1),
+            ("FOREIGN-CHAT", "42", "oom-health-84", health_loss.EVENT_SOURCE, 2),
+            ("FOREIGN-SOURCE", "42", "oom-health-42", "unrelated_event", 3),
+        ):
+            event(name, source, chat, "herdmaster_health_loss",
+                  {"mission_id": name, "owner_user_id": owner, "status": "waiting_for_input"},
+                  now + timedelta(seconds=offset))
+        for event_id, mission, state, message_id, seconds in (
+            ("card-original", "MISSION-0", "delivered", "600", -20),
+            ("card-update-a", "MISSION-0", "updated", "601", -10),
+            ("card-update-z", "MISSION-0", "updated", "602", -10),
+            ("card-undelivered", "MISSION-0", "prepared", "999", 10),
+            ("card-delivered", "MISSION-1", "delivered", "700", -5),
+            ("card-failed", "MISSION-1", "failed", "999", 10),
+            ("card-only-undelivered", "MISSION-2", "prepared", "999", 10),
+            ("card-missing-id-old", "MISSION-3", "delivered", "800", -10),
+            ("card-missing-id-new", "MISSION-3", "updated", None, -5),
+            ("card-other-owner", "FOREIGN-OWNER", "delivered", "900", 10),
+            ("card-other-chat", "FOREIGN-CHAT", "delivered", "901", 10),
+            ("card-other-mission", "UNRELATED-MISSION", "delivered", "902", 10),
+        ):
+            # Card lookup was and remains mission-scoped; owner/chat filtering
+            # applies to the health rows, not to family event metadata.
+            event(event_id, "oom_sakkie_family_message_lifecycle", "other-family-chat",
+                  "family_message_lifecycle", {"card_mission_id": mission, "state": state,
+                  "telegram_message_id": message_id, "owner_user_id": "84"}, now + timedelta(seconds=seconds))
+        event("wrong-card-source", "unrelated_event", "oom-health-42", "family_message_lifecycle",
+              {"card_mission_id": "MISSION-0", "state": "updated", "telegram_message_id": "999"},
+              now + timedelta(seconds=20))
+    with store(True) as db, db.cursor() as cur:
+        cur.execute(previous_query, params)
+        previous = cur.fetchall()
+        cur.execute(actual_query, params)
+        actual = cur.fetchall()
+    assert actual == previous
+    assert len(actual) == 100
+    assert {body["sample_index"] for body, _at, _card in actual if "sample_index" in body} == set(
+        range(100 if owner_user_id else 99))
+    assert {body["mission_id"] for body, _at, _card in actual} == {
+        "MISSION-0", "MISSION-1", "MISSION-2", "MISSION-3"} | ({"FOREIGN-OWNER"} if not owner_user_id else set())
+    expected_cards = {"MISSION-0": "602", "MISSION-1": "700", "MISSION-2": None,
+                      "MISSION-3": None, "FOREIGN-OWNER": "900"}
+    assert all(card == expected_cards[body["mission_id"]] for body, _at, card in actual)
+    with monkeypatch.context() as scoped:
+        scoped.setenv("DATABASE_URL", URL)
+        scoped.setattr(health_loss, "welfare_case_runtime_enabled", lambda: False)
+        scoped.setattr(psycopg, "connect", lambda *_args, **_kwargs: store(True))
+        projected = health_loss._load_active_contexts("42", owner_user_id=owner_user_id)
+    terminal = next(row for row in projected if row["mission_id"] == "MISSION-0")
+    assert terminal["status"] == "completed"
+    assert terminal["sample_index"] == 0
+    assert terminal["card_message_id"] == "602"
+
+
+def test_actual_scoped_refresh_selects_exact_pair_and_omits_unrelated_discovery(store, monkeypatch):
+    original, sibling = report(), report("102", "REPORT-102")
+    add_report(store, original)
+    add_report(store, sibling)
+    add_report(store, report("103", "NEW"), NOW - timedelta(days=1))
+    refs = ["provider_message:101", "pig:P27", "tag:27", recovery.retained_report_binding([original])]
+    claimed = retain(store, refs=refs)
+    other = retain(store, "herdmaster:retained-mortality:102", ["provider_message:102", "pig:P27", "tag:27",
+                    recovery.retained_report_binding([sibling])])
+    expected = next(row for row in collect(store) if row["dedupe_key"] == claimed["dedupe_key"])
+    calls = []
+    execute = Cursor.execute
+    def observe(self, query, params=None):
+        calls.append((query, params))
+        return execute(self, query, params)
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Cursor, "execute", observe)
+        assert collect(store, claimed_cases=[{**claimed, "evidence_refs": ["provider_message:103"]}]) == [expected]
+    assert len(calls) == 5
+    assert calls[1][1][1] == ["101"]
+    assert all("created_at >=" not in query and "herdmaster_record_farrowing_litter" not in query
+               and "from public.litters" not in query for query, _params in calls)
+    assert collect(store, claimed_cases=[{**claimed, "case_id": "MISSING"}]) == []
+    assert collect(store, claimed_cases=[{**claimed, "case_id": other["case_id"]}]) == []
+    assert collect(store, claimed_cases=[{**claimed, "dedupe_key": other["dedupe_key"]}]) == []
+    with store() as db, db.cursor() as cur:
+        cur.execute("update app_private.oom_manager_cases set status='contained' where case_id=%s", (claimed["case_id"],))
+    assert collect(store, claimed_cases=[{**claimed, "status": "delegated"}]) == []
 
 
 def test_actual_age_query_keeps_only_exact_open_retained_reports_and_recent_intake(store):
@@ -163,26 +284,32 @@ def test_actual_age_query_keeps_only_exact_open_retained_reports_and_recent_inta
 
 
 @pytest.mark.parametrize("status", ["contained", "completed", "preview_correction_pending"])
-def test_actual_latest_mission_query_sees_later_lifecycle_with_different_provider(store, status):
-    add_report(store, report()); retain(store)
+@pytest.mark.parametrize("targeted", [False, True])
+def test_actual_latest_mission_query_sees_later_lifecycle_with_different_provider(store, status, targeted):
+    add_report(store, report())
+    case = retain(store, refs=["provider_message:101", "pig:P27", "tag:27",
+                               recovery.retained_report_binding([report()])])
     add_report(store, report(provider="901", status=status), OLD + timedelta(days=1))
-    assert collect(store) == []
+    assert collect(store, claimed_cases=[case] if targeted else None) == []
 
 
 @pytest.mark.parametrize("kind", ["principal_collision", "consumed", "superseded", "missing_member"])
-def test_actual_related_identity_queries_contain_ambiguous_or_replaced_reports(store, kind):
-    add_report(store, report()); retain(store)
+@pytest.mark.parametrize("targeted", [False, True])
+def test_actual_related_identity_queries_contain_ambiguous_or_replaced_reports(store, kind, targeted):
+    add_report(store, report())
+    binding = recovery.retained_report_binding([report()])
+    case = retain(store, refs=["provider_message:101", "pig:P27", "tag:27", binding])
     if kind == "principal_collision":
         add_report(store, report(owner_user_id="99", chat_id="99"))
     elif kind == "missing_member":
         with store() as db, db.cursor() as cur:
             cur.execute("update app_private.oom_manager_cases set evidence_refs=%s",
-                        (Jsonb(["provider_message:101", "provider_message:102", "pig:P27", "tag:27"]),))
+                        (Jsonb(["provider_message:101", "provider_message:102", "pig:P27", "tag:27", binding]),))
     else:
         link = ({"consumed_context_missions": ["REPORT-101"]} if kind == "consumed" else
                 {"superseded_duplicate_bindings": [{"mission_id": "REPORT-101", "provider_message_id": "101", "tag_number": "27"}]})
         add_report(store, report("901", "CORRECTION", **link), OLD + timedelta(days=1))
-    assert collect(store) == []
+    assert collect(store, claimed_cases=[case] if targeted else None) == []
 
 
 @pytest.mark.parametrize("status", ["cancelled", "completed", "active", "expired"])
@@ -417,6 +544,12 @@ def test_actual_manager_preview_delivery_callback_and_exact_replays(
     terminal = collect(store)
     assert len(terminal) == 1 and terminal[0]["terminal_state"] == "completed"
     assert terminal[0]["dedupe_key"] == j["case"]["dedupe_key"]
+    with store(True) as db, db.cursor() as cur:
+        cur.execute("select case_id from app_private.oom_manager_cases where dedupe_key=%s",
+                    (j["case"]["dedupe_key"],))
+        claimed = {"case_id": cur.fetchone()[0], "dedupe_key": j["case"]["dedupe_key"],
+                   "specialist": "HERDMASTER"}
+    assert collect(store, claimed_cases=[claimed]) == terminal
     from modules.oom_sakkie.general_manager_worker import PostgresManagerCaseStore
     manager = PostgresManagerCaseStore(connect_factory=store)
     normalized = normalize_candidate(terminal[0], now=datetime.now(timezone.utc))

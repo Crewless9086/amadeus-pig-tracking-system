@@ -1012,22 +1012,33 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
                                 if owner_user_id else "")
                 params = ((EVENT_SOURCE, "oom-health-" + chat_id, owner_user_id)
                           if owner_user_id else (EVENT_SOURCE, "oom-health-" + chat_id))
+                # Repeated chronology rows share a mission card. Resolve that
+                # card once per mission after preserving the same 100-row intake,
+                # including terminal history; do not rescan all cards per event.
                 cursor.execute(
                     f"""
-                    select h.review_json->'herdmaster_health_loss', h.created_at,
-                      (select f.review_json->'family_message_lifecycle'->>'telegram_message_id'
-                       from public.sam_live_stock_conversation_review_events f
-                       where f.event_source = 'oom_sakkie_family_message_lifecycle'
-                         and f.review_json->'family_message_lifecycle'->>'card_mission_id' =
-                             h.review_json->'herdmaster_health_loss'->>'mission_id'
-                         and f.review_json->'family_message_lifecycle'->>'state' in ('delivered','updated')
-                       order by f.created_at desc, f.review_event_id desc limit 1)
-                    from public.sam_live_stock_conversation_review_events h
-                    where h.event_source = %s
-                      and h.chatwoot_conversation_id = %s
-                      {owner_clause}
+                    with health as materialized (
+                        select h.review_json->'herdmaster_health_loss' as body, h.created_at
+                        from public.sam_live_stock_conversation_review_events h
+                        where h.event_source = %s
+                          and h.chatwoot_conversation_id = %s
+                          {owner_clause}
+                        order by h.created_at desc limit 100
+                    ), missions as materialized (
+                        select distinct body->>'mission_id' as mission_id from health
+                    ), cards as materialized (
+                        select distinct on (m.mission_id) m.mission_id,
+                            f.review_json->'family_message_lifecycle'->>'telegram_message_id' as message_id
+                        from public.sam_live_stock_conversation_review_events f
+                        join missions m on m.mission_id =
+                            f.review_json->'family_message_lifecycle'->>'card_mission_id'
+                        where f.event_source = 'oom_sakkie_family_message_lifecycle'
+                          and f.review_json->'family_message_lifecycle'->>'state' in ('delivered','updated')
+                        order by m.mission_id, f.created_at desc, f.review_event_id desc
+                    )
+                    select h.body, h.created_at, c.message_id from health h
+                    left join cards c on c.mission_id=h.body->>'mission_id'
                     order by h.created_at desc
-                    limit 100
                     """,
                     params,
                 )
