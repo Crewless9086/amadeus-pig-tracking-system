@@ -1071,6 +1071,10 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
             if str(destination) != str(chat) or not retained_recipient_authorized(parsed):
                 return {"success": False, "status": "retained_recipient_not_currently_authorized",
                         "delivery_definitely_not_sent": True}
+            # The family lifecycle delegates provider options to custom senders.
+            # Keep the exact protected preview buttons on this authorized wrapper.
+            if isinstance(preview.get("reply_markup"), Mapping):
+                kwargs["reply_markup"] = preview["reply_markup"]
             return _send_telegram(destination, text, **kwargs)
         outcome = dict((deliver or deliver_family_result)(parsed, preview, specialist=specialist,
             mission_id=preview["mission_id"], card_mission_id=preview["card_mission_id"],
