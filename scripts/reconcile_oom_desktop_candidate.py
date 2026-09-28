@@ -20,7 +20,7 @@ PARENT_ID = "OMQ-20260813-03"
 BASE = 'eb3ec23dc004373e7983646094c7fb0e4f1ba63c'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = None
+CANDIDATE_PR = 1359
 HEAD = '0ae56142230acb484b32df4fb7d709a2bcc569ac'
 APPROVED_RUNTIME_HEAD = '0ae56142230acb484b32df4fb7d709a2bcc569ac'
 BRANCH = 'codex/oom-protected-delivery-deadline-20260928'

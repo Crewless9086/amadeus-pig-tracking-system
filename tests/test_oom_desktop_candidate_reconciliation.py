@@ -29,8 +29,8 @@ PREDECESSOR_PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'tests/test
 PRESERVED_PREVIEW_EFFECTS = {'automatic_once_per_claim_never_attempted_retained_preview_renewal',
     'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
-# Synthetic candidate identity permits qualification while production pins remain
-# visibly pending. These values never represent an actual PR or owner approval.
+# Synthetic candidate identity permits pre-publication qualification only while
+# pins are pending. Final qualification uses the real pins, never owner approval.
 SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40,
     "PATHS": ["scripts/oom_sakkie_morning_scheduler.py", "tests/test_oom_sakkie_morning_scheduler.py"]}
 
@@ -358,9 +358,11 @@ class ReconciliationTests(unittest.TestCase):
         with self.assertRaisesRegex(adapter.ReconciliationError,"replay_history_conflict"):apply(encode(m,a),self.connect)
         self.assertEqual(self.snapshot(),before)
     def test_wrong_candidate_scope_and_fabricated_provenance_fail_before_connection(self):
-        for field in ("head","scope","parent","source","prohibition","tests"):
+        for field in ("pr","boolean_pr","head","scope","parent","source","prohibition","tests"):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
-            if field=="head":m["candidate"]["head_sha"]="0"*40
+            if field=="pr":m["candidate"]["pr_number"]=adapter.CANDIDATE_PR+1
+            elif field=="boolean_pr":m["candidate"]["pr_number"]=True
+            elif field=="head":m["candidate"]["head_sha"]="0"*40
             elif field=="scope":m["candidate"]["changed_files"].append("app.py")
             elif field=="parent":m["expected_parent_sha256"]="0"*64
             elif field=="source":a["source"]["source_message_id"]="invented"
@@ -555,6 +557,7 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
+        self.assertEqual(adapter.CANDIDATE_PR, 1359)
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "0ae56142230acb484b32df4fb7d709a2bcc569ac")
         self.assertEqual(adapter.HEAD, "0ae56142230acb484b32df4fb7d709a2bcc569ac")
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
