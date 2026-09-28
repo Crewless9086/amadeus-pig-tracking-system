@@ -1,5 +1,6 @@
 import json
 import os
+from functools import wraps
 from concurrent.futures import ALL_COMPLETED, FIRST_COMPLETED, Future, ThreadPoolExecutor, wait as real_wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -926,15 +927,86 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(result['candidates_created'], 0)
         self.assertEqual(result['deliveries_confirmed'], 5)
         self.assertEqual(result['deadline_deferrals'], 0)
-        self.assertLessEqual(initial_lookup_counts[0], 66)
-        # Audit insert + failed whole prefetch + 33 complete run prefetches +
-        # 32 fresh gap reads + changed-case write/event + batched epoch update.
-        self.assertLessEqual(initial_statement_counts[0], 1 + 4 + 33 * 3 + 32 + 2 + 1)
+        self.assertEqual(initial_lookup_counts[0], 2)
+        # Audit insert + released initial snapshot + fresh whole cohort +
+        # changed-case write/event + batched epoch update. No terminal point reads.
+        self.assertEqual(initial_statement_counts[0], 1 + 4 + 3 + 2 + 1)
         with self.db() as db:
             rows = db.execute('select generation,evidence_refs from app_private.oom_manager_cases').fetchall()
         self.assertEqual(len(rows), 282)
         self.assertEqual(sum(generation == 2 for generation, _refs in rows), 1)
         self.assertTrue(all('observed:' + newer.isoformat() in refs for _generation, refs in rows))
+
+    def test_317_candidate_cycle_reaches_unexpired_protected_provider_with_full_costs(self):
+        from tests.test_oom_sakkie_general_manager_worker import (
+            NOW as claim_epoch, _prepared_retained_budget_journey)
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            j = _prepared_retained_budget_journey(monkeypatch)
+            values = sorted([self.value('positive-budget-' + str(i)) for i in range(316)],
+                key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+            absent = {(i + 1) * len(values) // 33 for i in range(32)}
+            for row in values[:4]:
+                row['next_reassessment_at'] = self.now.isoformat()
+            retained = self.value('retained-budget', **j['case'], urgency='critical',
+                next_reassessment_at=self.now.isoformat())
+            self.seed([row for i, row in enumerate(values) if i not in absent] + [retained])
+            values = [{**row, **({'terminal_state': 'completed'} if i in absent else {})}
+                      for i, row in enumerate(values)] + [retained]
+            by_key = {row['dedupe_key']: row for row in values}
+            self.statements = 0
+            j['clock'] = 15.021
+            original, lookups, queue_counts = _IsolatedCursor.execute, [], []
+            def costed(cursor, sql, params=None):
+                if 'for update of m skip locked limit' in ' '.join(sql.split()):
+                    queue_counts.append((self.statements, len(lookups)))
+                if ('select dedupe_key,evidence_digest,generation,status' in sql
+                        or 'select evidence_digest,generation,status' in sql):
+                    lookups.append(sql)
+                # Every actual manager SQL command, including transaction
+                # controls and delivery finalization, costs a synthetic 120ms.
+                j['clock'] += .12
+                return original(cursor, sql, params)
+            def refresh(cases):
+                j['clock'] += 7.021
+                return {row['case_id']: by_key[row['dedupe_key']] for row in cases}
+            outcomes = []
+            def deliver(row, **kwargs):
+                if row['dedupe_key'] != retained['dedupe_key']:
+                    return {'success': True, 'status': 'manager_delivery_disabled',
+                            'delivery_confirmed': False, 'telegram_sends': 0}
+                j['delivery_started'] = j['clock']
+                result = deliver_farm_manager_case(row, **kwargs)
+                outcomes.append(result)
+                return result
+            with patch.object(_IsolatedCursor, 'execute', costed):
+                result = self.cycle(values, deadline_monotonic=80,
+                    source_collection_ms=15021, refresh_batch=refresh, deliver=deliver)
+            self.assertTrue(result['success'], result)
+            self.assertEqual(result['candidate_replays'], 317)
+            self.assertEqual(result['cases_claimed'], 5)
+            self.assertEqual(result['deliveries_confirmed'], 1)
+            self.assertEqual(result['deadline_deferrals'], 0)
+            self.assertEqual(queue_counts, [(8, 2)])
+            self.assertEqual(len(j['sends']), 1)
+            self.assertTrue(outcomes[0]['protected_preview_card_bound'])
+            self.assertTrue(j['claim']['delivery_attempt_id'])
+            self.assertEqual(j['claim']['delivery_state'], 'delivery_confirmed')
+            self.assertEqual(j['provider_gate_times'], [pytest.approx(
+                j['delivery_started'] + 15.475)])
+            self.assertLess(j['provider_gate_times'][0], 50.)
+            self.assertLess(j['clock'], 80.)
+            self.assertEqual(j['claim']['expires_at'], claim_epoch + timedelta(minutes=30))
+            self.assertEqual(j['renewal_audits'], [])
+            with self.db() as db:
+                row = db.execute('''select generation,last_delivery_digest=evidence_digest,
+                    assigned_worker_id,lease_until from app_private.oom_manager_cases
+                    where dedupe_key=%s''', (retained['dedupe_key'],)).fetchone()
+                counts = dict(db.execute('''select event_type,count(*) from
+                    app_private.oom_manager_case_events where case_id=%s
+                    group by event_type''', (normalize_candidate(retained, now=self.now)['case_id'],)).fetchall())
+            self.assertEqual(row, (1, True, None, None))
+            self.assertEqual(counts, {'created': 1, 'claimed': 1, 'delegated': 1,
+                                    'delivery_confirmed': 1, 'reassessment_scheduled': 1})
 
     def _full_wrapper_with_slow_owner(self, slow_owner):
         from modules.oom_sakkie import manager_case_sources as sources
@@ -1032,7 +1104,23 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                 self.assertEqual(result['candidate_replays'], 313, result)
                 self.assertEqual(result['candidates_changed'], 1, result)
                 self.assertEqual(result['deliveries_confirmed'], 4, result)
-                self.assertEqual(result['deadline_deferrals'], 1, result)
+                # The batched reconciliation now leaves enough time for the
+                # collector's own 20s timeout before the global 50s send cutoff.
+                # Require that precise contained failure, not an interchangeable
+                # deadline outcome or success from an unproven late snapshot.
+                self.assertTrue(result['success'], result)
+                self.assertEqual(result['deadline_deferrals'], 0, result)
+                self.assertEqual(result['exceptions'], 1, result)
+                slow_case = next(row for row in due
+                    if row['dedupe_key'].split(':')[0] == slow_owner)
+                slow_id = normalize_candidate(slow_case, now=self.now)['case_id']
+                slow_result = next(row for row in result['case_results'] if row['case_id'] == slow_id)
+                self.assertEqual(slow_result['outcome_status'],
+                                 'manager_specialist_processing_exception_contained')
+                self.assertFalse(slow_result['delivery_confirmed'])
+                self.assertFalse(slow_finished.is_set())
+                self.assertNotIn(slow_id, [key for key, _generation, _when in sends])
+                self.assertLess(measured['simulated_elapsed_seconds'], 50)
                 self.assertTrue(all(when < 50 for _key, _generation, when in sends))
                 self.assertEqual(len({(key, generation) for key, generation, _when in sends}), 4)
                 self.assertEqual(counts['herdmaster'], 2)
@@ -1046,9 +1134,15 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                     rows = db.execute('''select dedupe_key,assigned_worker_id,lease_until,last_delivery_digest,
                         evidence_digest from app_private.oom_manager_cases where next_reassessment_at=%s''',
                         (self.now + timedelta(minutes=5),)).fetchall()
+                    failure = db.execute('''select event_payload from app_private.oom_manager_case_events
+                        where case_id=%s and event_type='exception' ''', (slow_id,)).fetchall()
                 self.assertEqual(len(rows), 5)
                 self.assertTrue(all(row[1:3] == (None, None) for row in rows))
                 self.assertEqual(sum(row[3] == row[4] for row in rows), 4)
+                self.assertEqual(len(failure), 1)
+                self.assertEqual(failure[0][0]['failure_kind'], 'TimeoutError')
+                self.assertEqual(failure[0][0]['outcome_status'],
+                                 'manager_specialist_processing_exception_contained')
                 # The late read has no effect; the next genuine-style cohort
                 # must reclaim its own generation and suppress the four replays.
                 self.statements = 0
@@ -1185,6 +1279,131 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(row, ('completed', 2))
         self.assertEqual(completed, 1)
 
+    def test_second_snapshot_deletion_releases_cohort_before_insertable_gap(self):
+        values = sorted([self.value('second-delete-' + str(i)) for i in range(4)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        terminal, deleted, *higher = values
+        self.seed(higher)
+        with patch.object(self.store, '_event'):
+            self.seed([deleted])  # no immutable referring event prevents this race
+        original, releases, rollbacks, point_keys = _IsolatedCursor.execute, [], [], []
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql.startswith('select evidence_digest,generation,status'):
+                point_keys.append(params[0])
+            if sql == 'rollback to savepoint oom_manager_reconciliation_prefetch':
+                rollbacks.append(True)
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch':
+                releases.append(True)
+                if len(releases) == 1:
+                    with self.db() as db:
+                        db.execute('delete from app_private.oom_manager_cases where dedupe_key=%s',
+                                   (deleted['dedupe_key'],))
+                elif len(releases) == 2:
+                    # The failed fresh snapshot must release every higher lock
+                    # before the now insertion-capable fallback can acquire it.
+                    with self.db() as db:
+                        db.execute('select case_id from app_private.oom_manager_cases '
+                                   'where dedupe_key=any(%s) for update nowait',
+                                   ([row['dedupe_key'] for row in higher],))
+            return result
+        with patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([{**terminal, 'terminal_state': 'completed'}, deleted, *higher])
+        self.assertTrue(result['success'], result)
+        self.assertEqual(len(rollbacks), 2)
+        self.assertIn(deleted['dedupe_key'], point_keys)
+        self.assertIn(terminal['dedupe_key'], point_keys)
+        self.assertEqual(result['candidates_created'], 1)
+        with self.db() as db:
+            rows = db.execute('select count(*),max(generation) from app_private.oom_manager_cases').fetchone()
+        self.assertEqual(rows, (3, 1))
+
+    def test_terminal_insert_after_second_snapshot_does_not_acquire_lower_lock(self):
+        values = sorted([self.value('late-terminal-' + str(i)) for i in range(3)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        lower, *higher = values
+        self.seed(higher)
+        terminal = {**lower, 'terminal_state': 'completed'}
+        external = self.db()
+        self.addCleanup(external.close)
+        external_pid = external.connection.info.backend_pid
+        inserted, releases, futures, point_keys = threading.Event(), [], [], []
+        original = _IsolatedCursor.execute
+        def competing_insert():
+            with external, external.cursor() as other:
+                self.store._reconcile(other, normalize_candidate(lower, now=self.now), self.now)
+                inserted.set()
+                other.execute('select case_id from app_private.oom_manager_cases '
+                              'where dedupe_key=%s for update', (higher[0]['dedupe_key'],))
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if (cursor.owner is self and cursor.cursor.connection.info.backend_pid != external_pid
+                    and sql.startswith('select evidence_digest,generation,status')):
+                point_keys.append(params[0])
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch':
+                releases.append(True)
+                if len(releases) == 2:
+                    futures.append(pool.submit(competing_insert))
+                    self.assertTrue(inserted.wait(5))
+                    limit, blocked = time.monotonic() + 3, False
+                    with connect() as observer:
+                        while time.monotonic() < limit:
+                            blocked = bool(observer.execute(
+                                'select cardinality(pg_blocking_pids(%s))>0', (external_pid,)).fetchone()[0])
+                            if blocked:
+                                break
+                            time.sleep(.01)
+                    self.assertTrue(blocked, 'competitor must hold lower and wait on retained higher locks')
+            return result
+        with ThreadPoolExecutor(max_workers=1) as pool, patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([terminal, *higher])
+            futures[0].result(timeout=5)
+        self.assertTrue(result['success'], result)
+        self.assertNotIn(lower['dedupe_key'], point_keys)
+        with self.db() as db:
+            row = db.execute('select status,generation from app_private.oom_manager_cases '
+                             'where dedupe_key=%s', (lower['dedupe_key'],)).fetchone()
+        self.assertEqual(row, ('open', 1))
+        # This insert occurred after the authoritative snapshot. The next
+        # reconciliation observes it; the first cycle never invents completion.
+        retry = self.cycle([terminal, *higher])
+        self.assertEqual(retry['candidates_changed'], 1)
+        with self.db() as db:
+            row = db.execute('select status,generation from app_private.oom_manager_cases '
+                             'where dedupe_key=%s', (lower['dedupe_key'],)).fetchone()
+        self.assertEqual(row, ('completed', 2))
+
+    def test_reversed_terminal_cohorts_keep_canonical_ids_and_serialize(self):
+        values = [self.value('terminal-overlap-' + str(i)) for i in range(30)]
+        absent = {5, 15, 25}
+        canonical = {row['dedupe_key']: f'CANONICAL-{100-i}'
+                     for i, row in enumerate(values) if i not in absent}
+        with self.db() as db, db.cursor() as cur:
+            for row in values:
+                if row['dedupe_key'] in canonical:
+                    self.store._reconcile(cur, {**normalize_candidate(row, now=self.now),
+                        'case_id': canonical[row['dedupe_key']]}, self.now)
+        values = [{**row, **({'terminal_state': 'completed'} if i in absent else {})}
+                  for i, row in enumerate(values)]
+        values[0] = {**values[0], 'summary': 'Same fresh canonical material in both cycles'}
+        barrier = threading.Barrier(2)
+        def run(reverse):
+            barrier.wait(timeout=10)
+            return self.cycle(list(reversed(values)) if reverse else values)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(run, (False, True)))
+        self.assertTrue(all(row['success'] for row in results), results)
+        self.assertEqual(sum(row['candidates_changed'] for row in results), 1)
+        with self.db() as db:
+            rows = db.execute('select dedupe_key,case_id,generation,assigned_worker_id,lease_until '
+                              'from app_private.oom_manager_cases').fetchall()
+            events = dict(db.execute('select event_type,count(*) from '
+                                    'app_private.oom_manager_case_events group by event_type').fetchall())
+        self.assertEqual({row[0]: row[1] for row in rows}, canonical)
+        self.assertEqual(sum(row[2] == 2 for row in rows), 1)
+        self.assertTrue(all(row[3:] == (None, None) for row in rows))
+        self.assertEqual(events, {'created': 27, 'evidence_changed': 1})
+
     def test_planned_run_relocks_changed_prior_and_preserves_duplicate_epochs(self):
         values = sorted([self.value('relock-' + str(i)) for i in range(4)],
             key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
@@ -1253,7 +1472,10 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                 external.execute('select case_id from app_private.oom_manager_cases where dedupe_key=%s for update',
                     (middle['dedupe_key'],))
         with patch.object(_IsolatedCursor, 'execute', gate), ThreadPoolExecutor(max_workers=2) as pool:
-            running = pool.submit(self.cycle, [prefix, {**gap, 'terminal_state': 'completed'}, lower, middle, higher])
+            # A duplicate terminal key keeps this test on the original ordered
+            # run fallback, whose prefix-lock preservation it specifically proves.
+            terminal_gap = {**gap, 'terminal_state': 'completed'}
+            running = pool.submit(self.cycle, [prefix, terminal_gap, terminal_gap, lower, middle, higher])
             if not run_locked.wait(timeout=5):
                 self.fail('run prefetch not reached: ' + str(running.result(timeout=5)))
             competing = pool.submit(finish_external)
@@ -1605,22 +1827,123 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(state.rows['historical-ambiguous-outcome'], historical)
 
 
+def _disposable_connection_info():
+    # Never fall back to DATABASE_URL or an environment-selected libpq service.
+    info = psycopg.conninfo.conninfo_to_dict(URL)
+    if (info.get("host") not in {"localhost", "127.0.0.1", "::1"}
+            or info.get("hostaddr") or info.get("service")
+            or not info.get("dbname", "").endswith("_test")):
+        raise ValueError("explicit_local_disposable_test_database_required")
+    return info
+
+
 @pytest.fixture(scope="module", autouse=True)
-def exact_migration():
+def disposable_roles():
+    # Roles are cluster-wide prerequisites; table data is never shared or reset.
+    _disposable_connection_info()
     with connect() as db:
-        db.execute("create schema if not exists app_private")
-        db.execute("""create table if not exists app_private.migration_log(
-            migration_id text primary key,description text not null)""")
         for role in ("anon", "authenticated"):
             db.execute("do $block$ begin execute 'create role %s'; exception when duplicate_object then null; end $block$" % role)
+
+
+@pytest.fixture(autouse=True)
+def isolated_function_database(request, monkeypatch):
+    if request.cls is not None:
+        # The unittest class already owns a fresh schema and its timing harness.
+        yield
+        return
+    info = _disposable_connection_info()
+    database = "omq_pytest_" + uuid.uuid4().hex
+    connections = []
+
+    def test_connect():
+        connection = psycopg.connect(**{**info, "dbname": database,
+            "options": "-c statement_timeout=10000", "connect_timeout": 5})
+        connections.append(connection)
+        return connection
+
+    with psycopg.connect(URL, autocommit=True, connect_timeout=5) as admin:
+        admin.execute(psycopg.sql.SQL("create database {} template template0").format(
+            psycopg.sql.Identifier(database)))
+    try:
+        monkeypatch.setattr(request.module, "connect", test_connect)
+        with test_connect() as db:
+            db.execute("create schema app_private")
+            db.execute("""create table app_private.migration_log(
+                migration_id text primary key,description text not null)""")
+            db.execute("""create table app_private.oom_protected_action_claims(
+                callback_token text primary key,action_kind text not null,
+                provider_message_id text,status text,result_payload jsonb,
+                completed_at timestamptz)""")
+            migrations = Path(__file__).parents[1] / "supabase" / "migrations"
+            names = ["202608170002_create_oom_manager_case_runtime.sql",
+                     "202608190002_create_beacon_protected_publication_consumer.sql"]
+            if request.node.originalname == (
+                    "test_two_completed_batches_query_and_repeated_cycles_use_only_latest_exact_pig_evidence"):
+                names += ["202606280001_create_bulk_weight_batch_tables.sql",
+                          "202606290001_create_farm_canonical_tables.sql",
+                          "202607200001_create_pig_observation_events.sql"]
+            for name in names:
+                db.execute((migrations / name).read_text(encoding="utf-8"))
+            assert db.execute("select count(*) from app_private.oom_manager_cases").fetchone() == (0,)
+        yield
+    finally:
+        # Close only connections opened by this test, then remove only its own DB.
+        for connection in connections:
+            connection.close()
+        assert database.startswith("omq_pytest_") and len(database) == 43
+        with psycopg.connect(URL, autocommit=True, connect_timeout=5) as admin:
+            admin.execute(psycopg.sql.SQL("drop database {}").format(
+                psycopg.sql.Identifier(database)))
+
+
+@pytest.fixture(autouse=True)
+def logical_cycle_clock(request, monkeypatch):
+    if request.cls is not None:
+        return
+    # These state-machine tests advance explicit cycle dates without sleeping.
+    # Refresh/finish must observe that same UTC clock, including on both workers.
+    # The class's real elapsed-time and deadline tests keep their existing clocks.
+    clock = threading.local()
+
+    class ProcessingClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = getattr(clock, "now", None)
+            if current is None:
+                return datetime.now(tz)
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+    run_cycle = PostgresManagerCaseStore.run_cycle
+
+    @wraps(run_cycle)
+    def at_cycle_time(store, candidates, *, now, **kwargs):
+        previous = getattr(clock, "now", None)
+        clock.now = now
+        try:
+            return run_cycle(store, candidates, now=now, **kwargs)
+        finally:
+            clock.now = previous
+
+    monkeypatch.setattr(worker_module, "datetime", ProcessingClock)
+    monkeypatch.setattr(PostgresManagerCaseStore, "run_cycle", at_cycle_time)
+
+
+def cycle_failure(result):
+    """Read the real durable failure, rather than a removed public result field."""
     with connect() as db:
-        migrations = Path(__file__).parents[1] / "supabase" / "migrations"
-        db.execute((migrations / "202608170002_create_oom_manager_case_runtime.sql").read_text(encoding="utf-8"))
-        db.execute("""create table if not exists app_private.oom_protected_action_claims(
-            callback_token text primary key,action_kind text not null,
-            provider_message_id text,status text,result_payload jsonb,
-            completed_at timestamptz)""")
-        db.execute((migrations / "202608190002_create_beacon_protected_publication_consumer.sql").read_text(encoding="utf-8"))
+        row = db.execute("""select status,case_counts from app_private.oom_manager_worker_cycles
+            where cycle_id=%s""", (result["cycle_id"],)).fetchone()
+    assert row is not None and row[0] == "failed", result
+    failure = row[1]["failure"]
+    assert failure["kind"] == result["failure_kind"]
+    return failure
+
+
+def assert_cycle_completed(result):
+    assert result["success"] is True, (
+        cycle_failure(result) if result.get("failure_kind") else result)
+    assert result["status"] == "general_manager_cycle_completed"
 
 
 def candidate(ref="event:one", due=None, **changes):
@@ -1645,6 +1968,8 @@ def test_exact_replay_is_one_case_and_delivery_is_not_duplicated():
         deliver=deliver, refresh=lambda claimed: current)
     second = store.run_cycle([candidate(due=now)], now=now + timedelta(seconds=1),
         source_revision="test", deliver=deliver, refresh=lambda claimed: current)
+    assert_cycle_completed(first)
+    assert_cycle_completed(second)
     assert first["candidates_created"] == 1 and first["deliveries_confirmed"] == 1
     assert second["candidate_replays"] == 1 and second["deliveries_confirmed"] == 0
     assert sends and len(sends) == 1
@@ -1830,7 +2155,12 @@ def test_refresh_claim_store_failures_remain_cycle_fatal(monkeypatch, failure):
         source_revision="test", refresh=lambda case: case, deliver=lambda case: {})
     assert result["success"] is False
     assert result["status"] == "general_manager_cycle_failed"
-    assert result["failure"]["kind"] == failure.__class__.__name__
+    persisted = cycle_failure(result)
+    assert persisted["kind"] == failure.__class__.__name__
+    if isinstance(failure, ManagerCaseError):
+        assert persisted["code"] == str(failure)
+    if getattr(failure, "sqlstate", None):
+        assert persisted["sqlstate"] == failure.sqlstate
 
 
 def test_refresh_domain_manager_case_error_remains_cycle_fatal():
@@ -1843,7 +2173,8 @@ def test_refresh_domain_manager_case_error_remains_cycle_fatal():
         [current], now=now + timedelta(seconds=2), source_revision="test",
         refresh=refresh, deliver=lambda case: {})
     assert result["success"] is False
-    assert result["failure"]["kind"] == "ManagerCaseError"
+    assert cycle_failure(result) == {"kind": "ManagerCaseError",
+        "code": "specialist_invariant_failed"}
 
 
 def test_delivery_manager_case_error_remains_cycle_fatal():
@@ -1856,7 +2187,8 @@ def test_delivery_manager_case_error_remains_cycle_fatal():
         [current], now=now + timedelta(seconds=2), source_revision="test",
         refresh=lambda case: case, deliver=deliver)
     assert result["success"] is False
-    assert result["failure"]["kind"] == "ManagerCaseError"
+    assert cycle_failure(result) == {"kind": "ManagerCaseError",
+        "code": "delivery_invariant_failed"}
 
 
 def test_delivery_outcome_normalization_failure_remains_cycle_fatal():
@@ -1870,7 +2202,7 @@ def test_delivery_outcome_normalization_failure_remains_cycle_fatal():
         [current], now=now + timedelta(seconds=2), source_revision="test",
         refresh=lambda case: case, deliver=lambda _case: InvalidOutcome())
     assert result["success"] is False
-    assert result["failure"]["kind"] == "RuntimeError"
+    assert cycle_failure(result) == {"kind": "RuntimeError"}
 
 
 def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():
@@ -1992,17 +2324,41 @@ def test_two_completed_batches_query_and_repeated_cycles_use_only_latest_exact_p
                              source_revision="test")
     assert first["candidates_created"] == 2
     assert second["candidate_replays"] == 2
+    # The real collector retains both follow-ups for seven days; neither is due
+    # during these two five-minute cycles, and replay must not push that date out.
+    assert condition["next_reassessment_at"] == (now + timedelta(days=7)).isoformat()
+    assert weight["next_reassessment_at"] == (now + timedelta(days=7)).isoformat()
+    assert first["cases_claimed"] == second["cases_claimed"] == 0
     with connect() as db:
-        rows = db.execute("""select dedupe_key,status,generation from app_private.oom_manager_cases
+        rows = db.execute("""select dedupe_key,status,generation,next_reassessment_at
+            from app_private.oom_manager_cases
             where dedupe_key in (%s,%s) order by dedupe_key""",
             (condition["dedupe_key"], weight["dedupe_key"])).fetchall()
         event_count = db.execute("""select count(*) from app_private.oom_manager_case_events
             where case_id in (select case_id from app_private.oom_manager_cases
                 where dedupe_key in (%s,%s))""",
             (condition["dedupe_key"], weight["dedupe_key"])).fetchone()[0]
-    assert rows == [(condition["dedupe_key"], "waiting_reassessment", 1),
-                    (weight["dedupe_key"], "waiting_reassessment", 1)]
+    assert rows == [(condition["dedupe_key"], "open", 1, now + timedelta(days=7)),
+                    (weight["dedupe_key"], "open", 1, now + timedelta(days=7))]
     assert event_count == 2
+
+    due_at = rows[0][3]
+    due_findings = [item for item in _completed_bulk_batch_findings(due_at, connect=connect)
+        if f"pig:{pig_id}" in item["evidence_refs"]]
+    due_cycle = store.run_cycle(due_findings, now=due_at, source_revision="test")
+    assert_cycle_completed(due_cycle)
+    assert due_cycle["candidates_created"] == due_cycle["candidates_changed"] == 0
+    assert due_cycle["candidate_replays"] == due_cycle["cases_claimed"] == 2
+    assert due_cycle["deliveries_confirmed"] == 0
+    assert {item["outcome_status"] for item in due_cycle["case_results"]} == {
+        "manager_delivery_disabled"}
+    with connect() as db:
+        due_rows = db.execute("""select dedupe_key,status,generation,next_reassessment_at,
+            assigned_worker_id,lease_until,last_delivery_digest,last_delivery_at
+            from app_private.oom_manager_cases order by dedupe_key""").fetchall()
+    assert due_rows == [
+        (key, "waiting_reassessment", 1, due_at + worker_module.CADENCE, None, None, None, None)
+        for key in (condition["dedupe_key"], weight["dedupe_key"])]
 
 
 @pytest.mark.parametrize("material_kind", ["target-page", "enquiry-policy"])
@@ -2037,6 +2393,9 @@ def test_beacon_material_binding_change_creates_exactly_one_successor(material_k
 
 def test_changed_evidence_advances_generation_and_append_only_events_reject_mutation():
     now = datetime.now(timezone.utc) + timedelta(minutes=1)
+    with connect() as db, db.cursor() as cur:
+        assert PostgresManagerCaseStore(connect_factory=connect)._reconcile(
+            cur, normalize_candidate(candidate("event:one", now), now=now), now) == "created"
     result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
         [candidate("event:two", now)], now=now, source_revision="test")
     assert result["candidates_changed"] == 1
@@ -2049,7 +2408,9 @@ def test_changed_evidence_advances_generation_and_append_only_events_reject_muta
 
 def test_expired_lease_resumes_after_restart():
     now = datetime.now(timezone.utc) + timedelta(minutes=2)
-    with connect() as db:
+    with connect() as db, db.cursor() as cur:
+        assert PostgresManagerCaseStore(connect_factory=connect)._reconcile(
+            cur, normalize_candidate(candidate("event:two", now), now=now), now) == "created"
         db.execute("""update app_private.oom_manager_cases set status='delegated',
             lease_until=%s,next_reassessment_at=%s where dedupe_key='rootline:current-plan'""",
             (now - timedelta(seconds=1), now - timedelta(seconds=1)))
@@ -2069,7 +2430,8 @@ def test_reclaimed_delegated_generation_contains_changed_refresh_before_provider
     current = normalize_candidate(candidate("event:two", now), now=now)
     changed = candidate("event:new-after-expired-delegation", now,
         summary="Canonical evidence changed while the prior lease was outstanding.")
-    with connect() as db:
+    with connect() as db, db.cursor() as cur:
+        assert store._reconcile(cur, current, now) == "created"
         db.execute("""update app_private.oom_manager_cases set status='delegated',
             assigned_worker_id='expired-cycle',lease_until=%s,next_reassessment_at=%s
             where dedupe_key='rootline:current-plan'""",
@@ -2106,7 +2468,12 @@ def test_changed_case_refresh_supersedes_stale_generation_then_stable_cycle_deli
     assert result["deliveries_confirmed"] == 0
     assert delivered == []
     assert result["case_results"][0]["outcome_status"] == "manager_delivery_refreshed_generation_deferred"
-    stable = store.run_cycle([current], now=now + timedelta(seconds=1),
+    with connect() as db:
+        generation, next_due = db.execute("""select generation,next_reassessment_at
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (current["dedupe_key"],)).fetchone()
+    assert generation == 2 and next_due == now + worker_module.CADENCE
+    stable = store.run_cycle([current], now=next_due,
         source_revision="test", refresh=lambda claimed: current,
         deliver=lambda case: (delivered.append(case) or {
             "success": True, "status": "delivery_confirmed",
@@ -2133,9 +2500,8 @@ def test_missing_refresh_contains_delivery_and_retains_case():
     assert result["case_results"][0]["outcome_status"] == "manager_delivery_refresh_unavailable"
 
 
-def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resend():
-    # Keep this isolated from later-dated shared-module fixtures while still
-    # exercising the real claim ordering and persistence rail.
+def test_confirmed_replay_skips_refresh_preserves_truth_and_rotates_without_resend():
+    # Exercise the real claim ordering and persistence rail in this test's DB.
     now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=10)
     prefix = "confirmed-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
     confirmed = candidate("event:confirmed", now, dedupe_key=prefix + ":confirmed",
@@ -2156,61 +2522,112 @@ def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resen
             (confirmed["dedupe_key"],)).fetchone()
         db.execute("""update app_private.oom_manager_cases set next_reassessment_at=%s,status='open'
             where dedupe_key=%s""", (now + timedelta(seconds=1), confirmed["dedupe_key"]))
+    refreshes = []
+    def forbidden_refresh(case):
+        refreshes.append(case["case_id"])
+        raise ManagerCaseError("confirmed_generation_must_not_refresh")
     retry_at = now + timedelta(seconds=2)
     retry = store.run_cycle([confirmed, next_case], now=retry_at, source_revision="test",
-        refresh=lambda case: None if case["dedupe_key"] == confirmed["dedupe_key"] else next_case,
+        refresh=forbidden_refresh,
         deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
             deliver=lambda *_a, **_k: sends.append("unexpected")))
-    assert retry["exceptions"] == 1
+    assert retry["exceptions"] == 0 and retry["cases_claimed"] == 2
     assert retry["deliveries_confirmed"] == 0
     assert sends == [first["case_results"][0]["case_id"]]
+    assert refreshes == []
     with connect() as db:
         after = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
             next_reassessment_at,assigned_worker_id,lease_until
             from app_private.oom_manager_cases where dedupe_key=%s""",
             (confirmed["dedupe_key"],)).fetchone()
         event = db.execute("""select event_payload from app_private.oom_manager_case_events
-            where case_id=%s and event_type='reassessment_scheduled'
+            where case_id=%s and event_type='delivery_suppressed'
             order by occurred_at desc limit 1""",
             (first["case_results"][0]["case_id"],)).fetchone()
     assert after[0] == "waiting_reassessment"
     assert after[1:4] == before
-    assert after[4] > retry_at and after[5:] == (None, None)
-    assert event[0]["confirmed_generation_preserved"] is True
-    assert event[0]["outcome_status"] == "manager_delivery_refresh_unavailable"
+    assert after[4] == retry_at + worker_module.CADENCE and after[5:] == (None, None)
+    assert event[0]["outcome_status"] == "manager_delivery_duplicate_suppressed"
     immediate = store.run_cycle([confirmed, next_case],
         now=retry_at + timedelta(seconds=1), source_revision="test",
-        refresh=lambda _case: next_case,
+        refresh=forbidden_refresh,
         deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
             deliver=lambda *_a, **_k: sends.append("unexpected")))
     assert immediate["cases_claimed"] == 0
     later_due_at = retry_at + timedelta(minutes=6)
     later_due = store.run_cycle([confirmed, next_case], now=later_due_at,
         source_revision="test",
-        refresh=lambda case: None if case["dedupe_key"] == confirmed["dedupe_key"] else next_case,
+        refresh=forbidden_refresh,
         deliver=lambda case: deliver_farm_manager_case(case, now=later_due_at,
             deliver=lambda *_a, **_k: sends.append("unexpected")))
     exact_result = next(row for row in later_due["case_results"]
         if row["case_id"] == first["case_results"][0]["case_id"])
-    assert exact_result["outcome_status"] == "manager_delivery_refresh_unavailable"
+    assert exact_result["outcome_status"] == "manager_delivery_duplicate_suppressed"
     with connect() as db:
         final = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
             next_reassessment_at,assigned_worker_id,lease_until
             from app_private.oom_manager_cases where dedupe_key=%s""",
             (confirmed["dedupe_key"],)).fetchone()
-        preservation_events = db.execute("""select count(*)
+        duplicate_events = db.execute("""select count(*)
             from app_private.oom_manager_case_events where case_id=%s
-              and event_type='reassessment_scheduled'
-              and event_payload->>'confirmed_generation_preserved'='true'""",
+              and event_type='delivery_suppressed'
+              and event_payload->>'outcome_status'='manager_delivery_duplicate_suppressed'""",
             (first["case_results"][0]["case_id"],)).fetchone()[0]
     assert final[0] == "waiting_reassessment"
     assert final[1:4] == before
-    assert final[4] > later_due_at and final[5:] == (None, None)
-    assert preservation_events == 2
+    assert final[4] == later_due_at + worker_module.CADENCE and final[5:] == (None, None)
+    assert duplicate_events == 2
     assert sends == [first["case_results"][0]["case_id"]]
+    assert refreshes == []
 
 
-def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence():
+def test_late_owned_failure_cannot_downgrade_confirmed_generation():
+    """Exercise the defensive finish rail with a stale, still-owned case snapshot.
+
+    A normal confirmed replay bypasses refresh; it cannot reach this branch.
+    The synthetic active lease below isolates the late-outcome persistence guard.
+    """
+    now = datetime.now(timezone.utc)
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    current = candidate("event:confirmed-before-late-failure", now)
+    snapshots = []
+    def confirmed(case):
+        snapshots.append(dict(case))
+        return {"success": True, "status": "delivery_confirmed", "delivery_confirmed": True}
+    result = store.run_cycle([current], now=now, source_revision="test",
+        refresh=lambda _case: current, deliver=confirmed)
+    assert_cycle_completed(result)
+    assert result["deliveries_confirmed"] == 1 and len(snapshots) == 1
+    stale = snapshots[0]
+    assert stale["last_delivery_digest"] is None
+    retry_at = now + timedelta(minutes=6)
+    with connect() as db:
+        before = db.execute("""select evidence_digest,last_delivery_digest,last_delivery_at
+            from app_private.oom_manager_cases where case_id=%s""", (stale["case_id"],)).fetchone()
+        db.execute("""update app_private.oom_manager_cases set status='delegated',
+            assigned_worker_id='late-owned-outcome',lease_until=%s,next_reassessment_at=%s
+            where case_id=%s""", (retry_at + worker_module.LEASE, retry_at, stale["case_id"]))
+    assert store._finish_claim(stale, {"success": False,
+        "status": "manager_delivery_refresh_unavailable", "delivery_confirmed": False,
+        "telegram_sends": 0}, retry_at, "late-owned-outcome") is True
+    with connect() as db:
+        after = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
+            next_reassessment_at,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where case_id=%s""", (stale["case_id"],)).fetchone()
+        event = db.execute("""select event_payload from app_private.oom_manager_case_events
+            where case_id=%s and event_type='reassessment_scheduled'
+            order by occurred_at desc limit 1""", (stale["case_id"],)).fetchone()[0]
+    assert after[0] == "waiting_reassessment" and after[1:4] == before
+    assert before[0] == before[1] and before[2] == now
+    assert after[4] == retry_at + worker_module.CADENCE and after[5:] == (None, None)
+    assert event["confirmed_generation_preserved"] is True
+    assert event["outcome_status"] == "manager_delivery_refresh_unavailable"
+    assert len(snapshots) == 1
+
+
+def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence(monkeypatch):
+    # Owner binding is required even for the sibling's no-question suppression.
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "10001")
     now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=20)
     prefix = "orphan-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
     old = candidate("event:old", now, dedupe_key=prefix + ":prince",
@@ -2240,6 +2657,8 @@ def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence(
             deliver=lambda *_a, **_k: sends.append("unexpected")))
     assert retry["success"] is True and retry["cases_claimed"] == 2
     assert retry["exceptions"] == 1 and retry["deliveries_confirmed"] == 0
+    assert {item["outcome_status"] for item in retry["case_results"]} == {
+        "manager_delivery_refresh_unavailable", "no_owner_question_delivery_suppressed"}
     assert sends == before_send
     with connect() as db:
         row = db.execute("""select status,evidence_digest,last_delivery_digest,
@@ -2437,7 +2856,7 @@ def test_concurrent_newer_hold_and_prince_evidence_is_never_overwritten_or_deliv
     assert set(row[1]) == set(retained["unknowns"])
 
 
-def test_retained_recovery_family_survives_store_claim_and_routes_one_preview_only():
+def test_retained_recovery_family_survives_store_claim_and_rejects_unbound_preview():
     now = datetime.now(timezone.utc) + timedelta(minutes=6)
     dedupe = "herdmaster:retained-mortality:pg-" + now.strftime("%H%M%S%f")
     raw = candidate("provider_message:4050", now, dedupe_key=dedupe,
@@ -2451,18 +2870,32 @@ def test_retained_recovery_family_survives_store_claim_and_routes_one_preview_on
         return {"success": True, "status": "mortality_preview_ready",
             "answer": "Exact protected preview", "callback_token": "CALLBACK",
             "confirmation_required": True, "writes_farm_data": False}
+    # A preview token alone is insufficient: this deliberately omits the exact
+    # mortality mission/card/principal binding required before family delivery.
+    provider_calls = []
+    def forbidden_delivery(*args, **kwargs):
+        provider_calls.append((args, kwargs))
+        raise AssertionError("unbound_retained_preview_must_not_reach_provider")
     store = PostgresManagerCaseStore(connect_factory=connect)
     result = store.run_cycle([raw], now=now, source_revision="test",
         refresh=lambda _case: raw,
         deliver=lambda case: deliver_farm_manager_case(
-            case, retained_recovery=builder))
+            case, retained_recovery=builder, deliver=forbidden_delivery))
     assert previews and len(previews) == 1
-    assert result["deliveries_confirmed"] == 0
+    assert_cycle_completed(result)
+    assert result["deliveries_confirmed"] == 0 and result["exceptions"] == 1
+    assert result["case_results"][0]["outcome_status"] == "retained_delivery_binding_unproven"
+    assert provider_calls == []
     with connect() as db:
-        row = db.execute("""select evidence_refs from app_private.oom_manager_cases
+        row = db.execute("""select evidence_refs,status,last_delivery_digest,last_delivery_at,
+            assigned_worker_id,lease_until from app_private.oom_manager_cases
             where dedupe_key=%s""", (dedupe,)).fetchone()
-        events = db.execute("""select event_type from app_private.oom_manager_case_events
+        events = db.execute("""select event_type,event_payload from app_private.oom_manager_case_events
             where case_id=(select case_id from app_private.oom_manager_cases where dedupe_key=%s)""",
             (dedupe,)).fetchall()
     assert "manager_message_family:retained_protected_recovery" in row[0]
-    assert {value[0] for value in events} >= {"created", "claimed", "delegated", "delivery_suppressed"}
+    assert row[1:] == ("exception", None, None, None, None)
+    assert {value[0] for value in events} == {
+        "created", "claimed", "delegated", "exception", "reassessment_scheduled"}
+    exception = next(payload for event_type, payload in events if event_type == "exception")
+    assert exception["outcome_status"] == "retained_delivery_binding_unproven"

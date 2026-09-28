@@ -15,6 +15,138 @@ from modules.oom_sakkie.general_manager_worker import (
 NOW = datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc)
 
 
+class _ReconciliationCursor:
+    def __init__(self, snapshots):
+        self.snapshots = iter(snapshots)
+        self.commands = []
+
+    def execute(self, sql, params=None):
+        self.commands.append((sql, params))
+        if sql.startswith('select dedupe_key,'):
+            self.rows = next(self.snapshots)
+
+    def fetchall(self):
+        return self.rows
+
+
+def _prior_row(candidate, **changes):
+    row = dict(evidence_digest=candidate['evidence_digest'], generation=1,
+        status='waiting_reassessment', assigned_worker_id=None, lease_until=None,
+        evidence_refs=candidate['evidence_refs'], case_id=candidate['case_id'])
+    row.update(changes)
+    return (candidate['dedupe_key'], *(row[key] for key in (
+        'evidence_digest', 'generation', 'status', 'assigned_worker_id',
+        'lease_until', 'evidence_refs', 'case_id')))
+
+
+@pytest.mark.parametrize('count', [314, 317])
+def test_terminal_only_gaps_use_two_fresh_cohort_reads_without_point_queries(count):
+    candidates = [normalize_candidate(_candidate(dedupe_key=f'herdmaster:bulk:{i}'), now=NOW)
+                  for i in range(count)]
+    gaps = {(i + 1) * count // 33 for i in range(32)}
+    for i in gaps:
+        candidates[i]['terminal_state'] = 'completed'
+    rows = [_prior_row(row) for i, row in enumerate(candidates) if i not in gaps]
+    cur = _ReconciliationCursor([rows, rows])
+    store = PostgresManagerCaseStore(connect_factory=lambda: None)
+    priors = list(store._reconciliation_priors(cur, candidates))
+    assert len(cur.commands) == 7  # failed first prefetch (4), retained second (3)
+    assert sum('order by case_id for update' in sql for sql, _ in cur.commands) == 2
+    assert sum(prior is None for _, prior in priors) == 32
+    assert all(store._reconcile(cur, row, NOW, locked_prior=prior) == 'replayed'
+               for row, prior in priors)
+    assert len(cur.commands) == 7
+
+
+@pytest.mark.parametrize('reason', ['insertable', 'beacon', 'duplicate_terminal', 'mixed_duplicate'])
+def test_insertion_or_later_locking_keeps_original_gap_path(reason):
+    from modules.oom_sakkie import general_manager_worker as worker
+    lower = normalize_candidate(_candidate(dedupe_key='herdmaster:gap'), now=NOW)
+    higher = normalize_candidate(_candidate(dedupe_key='herdmaster:present'), now=NOW)
+    lower['terminal_state'] = 'completed'
+    if reason == 'insertable':
+        lower.pop('terminal_state')
+    if reason == 'beacon':
+        lower['specialist'] = 'BEACON'
+    candidates = [lower, higher]
+    if reason.endswith('duplicate') or reason == 'duplicate_terminal':
+        duplicate = dict(lower)
+        if reason == 'mixed_duplicate':
+            duplicate.pop('terminal_state')
+        candidates.append(duplicate)
+    cur = _ReconciliationCursor([[_prior_row(higher)]])
+    priors = list(PostgresManagerCaseStore(connect_factory=lambda: None)
+                  ._reconciliation_priors(cur, candidates))
+    assert len(cur.commands) == 4
+    assert all(prior is worker._RECONCILIATION_PRIOR_UNREAD for _, prior in priors)
+
+
+def _prepared_retained_budget_journey(monkeypatch):
+    """Real retained preview and protected/family state machines; synthetic I/O."""
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import retained_journey
+    from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
+    from modules.oom_sakkie import herdmaster_health_loss_runtime as health
+    from modules.oom_sakkie import protected_delivery_lifecycle as protected
+    from modules.oom_sakkie import family_message_lifecycle as family
+    monkeypatch.setenv('OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS', '42')
+    monkeypatch.setenv('OOM_SAKKIE_TELEGRAM_OWNER_USER_ID', '42')
+    monkeypatch.setenv('OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON', '[]')
+    j = retained_journey.__wrapped__(monkeypatch)
+    assert recovery.build_retained_protected_preview(j['case'])['success']
+    # An already-created, never-sent claim whose UTC TTL advances with the same
+    # synthetic clock as the cycle. Neither expiry nor ordinary renewal helps.
+    j['clock'] = 0.
+    j['claim']['expires_at'] = NOW + timedelta(minutes=30)
+    class CycleTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW + timedelta(seconds=j['clock'])
+    for module in (recovery, health, protected, family):
+        monkeypatch.setattr(module, 'datetime', CycleTime)
+    j.update(provider_gate_times=[], preparation_cost=15.475, delivery_started=0.)
+    store = family._event_store
+    def costed_store(action, identity, payload):
+        result = store(action, identity, payload)
+        if action == 'load':
+            # Charge the observed aggregate preparation cost through the final
+            # family history load. Individual I/O timings are not live claims.
+            minimum = j['delivery_started'] + j['preparation_cost']
+            assert j['clock'] <= minimum
+            j['clock'] = minimum
+            j['provider_gate_times'].append(j['clock'])
+        return result
+    monkeypatch.setattr(family, '_event_store', costed_store)
+    return j
+
+
+@pytest.mark.parametrize('reconciliation_seconds,confirmed', [(3.6, True), (15.174, False)])
+def test_unexpired_retained_card_obeys_full_positive_path_budget(
+        monkeypatch, reconciliation_seconds, confirmed):
+    from modules.oom_sakkie import general_manager_worker as worker
+    from modules.oom_sakkie import family_message_lifecycle as family
+    j = _prepared_retained_budget_journey(monkeypatch)
+    token, expiry = j['claim']['callback_token'], j['claim']['expires_at']
+    j['clock'] = 15.021 + reconciliation_seconds + 7.021
+    j['delivery_started'] = j['clock']
+    case = normalize_candidate(_candidate(**j['case']), now=NOW)
+    result = worker.deliver_farm_manager_case(case, deadline_monotonic=80.)
+    assert worker.GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS == 80
+    assert worker.CASE_COMPLETION_RESERVE_SECONDS == family.PROVIDER_DELIVERY_RESERVE_SECONDS == 30
+    assert j['provider_gate_times'] == [pytest.approx(15.021 + reconciliation_seconds + 7.021 + 15.475)]
+    assert result['delivery_confirmed'] is confirmed
+    assert len(j['sends']) == int(confirmed)
+    assert bool(j['claim'].get('delivery_attempt_id')) is confirmed
+    assert bool(j['claim'].get('preview_card_message_id')) is confirmed
+    assert j['claim']['callback_token'] == token and j['claim']['expires_at'] == expiry
+    assert not j['renewal_audits'] and j['creates'] == 1
+    if confirmed:
+        assert result['protected_preview_card_bound']
+        assert j['sends'][0][2]['deadline_monotonic'] == 80.
+    else:
+        assert result['status'] == 'family_message_cycle_deadline_deferred'
+        assert not j['events'] and j['claim']['delivery_state'] == 'claim_created'
+
+
 def test_scheduled_brain_guard_audit_is_revision_bound_and_time_stable():
     result = {"version": "alignment.v1", "passed": True, "findings": [],
               "checked_files": ["b.md", "a.md"]}
