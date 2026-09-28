@@ -1103,7 +1103,23 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                 self.assertEqual(result['candidate_replays'], 313, result)
                 self.assertEqual(result['candidates_changed'], 1, result)
                 self.assertEqual(result['deliveries_confirmed'], 4, result)
-                self.assertEqual(result['deadline_deferrals'], 1, result)
+                # The batched reconciliation now leaves enough time for the
+                # collector's own 20s timeout before the global 50s send cutoff.
+                # Require that precise contained failure, not an interchangeable
+                # deadline outcome or success from an unproven late snapshot.
+                self.assertTrue(result['success'], result)
+                self.assertEqual(result['deadline_deferrals'], 0, result)
+                self.assertEqual(result['exceptions'], 1, result)
+                slow_case = next(row for row in due
+                    if row['dedupe_key'].split(':')[0] == slow_owner)
+                slow_id = normalize_candidate(slow_case, now=self.now)['case_id']
+                slow_result = next(row for row in result['case_results'] if row['case_id'] == slow_id)
+                self.assertEqual(slow_result['outcome_status'],
+                                 'manager_specialist_processing_exception_contained')
+                self.assertFalse(slow_result['delivery_confirmed'])
+                self.assertFalse(slow_finished.is_set())
+                self.assertNotIn(slow_id, [key for key, _generation, _when in sends])
+                self.assertLess(measured['simulated_elapsed_seconds'], 50)
                 self.assertTrue(all(when < 50 for _key, _generation, when in sends))
                 self.assertEqual(len({(key, generation) for key, generation, _when in sends}), 4)
                 self.assertEqual(counts['herdmaster'], 2)
@@ -1117,9 +1133,15 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                     rows = db.execute('''select dedupe_key,assigned_worker_id,lease_until,last_delivery_digest,
                         evidence_digest from app_private.oom_manager_cases where next_reassessment_at=%s''',
                         (self.now + timedelta(minutes=5),)).fetchall()
+                    failure = db.execute('''select event_payload from app_private.oom_manager_case_events
+                        where case_id=%s and event_type='exception' ''', (slow_id,)).fetchall()
                 self.assertEqual(len(rows), 5)
                 self.assertTrue(all(row[1:3] == (None, None) for row in rows))
                 self.assertEqual(sum(row[3] == row[4] for row in rows), 4)
+                self.assertEqual(len(failure), 1)
+                self.assertEqual(failure[0][0]['failure_kind'], 'TimeoutError')
+                self.assertEqual(failure[0][0]['outcome_status'],
+                                 'manager_specialist_processing_exception_contained')
                 # The late read has no effect; the next genuine-style cohort
                 # must reclaim its own generation and suppress the four replays.
                 self.statements = 0
