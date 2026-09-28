@@ -589,8 +589,8 @@ class ReconciliationTests(unittest.TestCase):
         plan=adapter.prepare_reconciliation(**encode(m,a))
         self.assertEqual(adapter.CANDIDATE_PR, 1361)
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "2e2ba0e3c349b10662221c073787498ca41fe4e3")
-        self.assertEqual(adapter.HEAD, "cdb6ffd8a84e4a9a8706020e53a249d618d4b13f")
-        self.assertEqual(adapter.TREE, "2314673bc2f02324f824110a7051c5280c0807e1")
+        self.assertEqual(adapter.HEAD, "0ea5e6ce18abdba6254ba8475558bf6415367aac")
+        self.assertEqual(adapter.TREE, "15d14989e07d831e3024e917f33e046b1260a0f3")
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,
             ['.github/workflows/oom-sakkie-audit-rails.yml', 'tests/test_oom_sakkie_general_manager_postgres.py'])
         self.assertEqual(adapter.PREDECESSOR_PATHS, PREDECESSOR_PATHS)
