@@ -1,5 +1,6 @@
 import json
 import os
+from functools import wraps
 from concurrent.futures import ALL_COMPLETED, FIRST_COMPLETED, Future, ThreadPoolExecutor, wait as real_wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1826,22 +1827,123 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(state.rows['historical-ambiguous-outcome'], historical)
 
 
+def _disposable_connection_info():
+    # Never fall back to DATABASE_URL or an environment-selected libpq service.
+    info = psycopg.conninfo.conninfo_to_dict(URL)
+    if (info.get("host") not in {"localhost", "127.0.0.1", "::1"}
+            or info.get("hostaddr") or info.get("service")
+            or not info.get("dbname", "").endswith("_test")):
+        raise ValueError("explicit_local_disposable_test_database_required")
+    return info
+
+
 @pytest.fixture(scope="module", autouse=True)
-def exact_migration():
+def disposable_roles():
+    # Roles are cluster-wide prerequisites; table data is never shared or reset.
+    _disposable_connection_info()
     with connect() as db:
-        db.execute("create schema if not exists app_private")
-        db.execute("""create table if not exists app_private.migration_log(
-            migration_id text primary key,description text not null)""")
         for role in ("anon", "authenticated"):
             db.execute("do $block$ begin execute 'create role %s'; exception when duplicate_object then null; end $block$" % role)
+
+
+@pytest.fixture(autouse=True)
+def isolated_function_database(request, monkeypatch):
+    if request.cls is not None:
+        # The unittest class already owns a fresh schema and its timing harness.
+        yield
+        return
+    info = _disposable_connection_info()
+    database = "omq_pytest_" + uuid.uuid4().hex
+    connections = []
+
+    def test_connect():
+        connection = psycopg.connect(**{**info, "dbname": database,
+            "options": "-c statement_timeout=10000", "connect_timeout": 5})
+        connections.append(connection)
+        return connection
+
+    with psycopg.connect(URL, autocommit=True, connect_timeout=5) as admin:
+        admin.execute(psycopg.sql.SQL("create database {} template template0").format(
+            psycopg.sql.Identifier(database)))
+    try:
+        monkeypatch.setattr(request.module, "connect", test_connect)
+        with test_connect() as db:
+            db.execute("create schema app_private")
+            db.execute("""create table app_private.migration_log(
+                migration_id text primary key,description text not null)""")
+            db.execute("""create table app_private.oom_protected_action_claims(
+                callback_token text primary key,action_kind text not null,
+                provider_message_id text,status text,result_payload jsonb,
+                completed_at timestamptz)""")
+            migrations = Path(__file__).parents[1] / "supabase" / "migrations"
+            names = ["202608170002_create_oom_manager_case_runtime.sql",
+                     "202608190002_create_beacon_protected_publication_consumer.sql"]
+            if request.node.originalname == (
+                    "test_two_completed_batches_query_and_repeated_cycles_use_only_latest_exact_pig_evidence"):
+                names += ["202606280001_create_bulk_weight_batch_tables.sql",
+                          "202606290001_create_farm_canonical_tables.sql",
+                          "202607200001_create_pig_observation_events.sql"]
+            for name in names:
+                db.execute((migrations / name).read_text(encoding="utf-8"))
+            assert db.execute("select count(*) from app_private.oom_manager_cases").fetchone() == (0,)
+        yield
+    finally:
+        # Close only connections opened by this test, then remove only its own DB.
+        for connection in connections:
+            connection.close()
+        assert database.startswith("omq_pytest_") and len(database) == 43
+        with psycopg.connect(URL, autocommit=True, connect_timeout=5) as admin:
+            admin.execute(psycopg.sql.SQL("drop database {}").format(
+                psycopg.sql.Identifier(database)))
+
+
+@pytest.fixture(autouse=True)
+def logical_cycle_clock(request, monkeypatch):
+    if request.cls is not None:
+        return
+    # These state-machine tests advance explicit cycle dates without sleeping.
+    # Refresh/finish must observe that same UTC clock, including on both workers.
+    # The class's real elapsed-time and deadline tests keep their existing clocks.
+    clock = threading.local()
+
+    class ProcessingClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = getattr(clock, "now", None)
+            if current is None:
+                return datetime.now(tz)
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+    run_cycle = PostgresManagerCaseStore.run_cycle
+
+    @wraps(run_cycle)
+    def at_cycle_time(store, candidates, *, now, **kwargs):
+        previous = getattr(clock, "now", None)
+        clock.now = now
+        try:
+            return run_cycle(store, candidates, now=now, **kwargs)
+        finally:
+            clock.now = previous
+
+    monkeypatch.setattr(worker_module, "datetime", ProcessingClock)
+    monkeypatch.setattr(PostgresManagerCaseStore, "run_cycle", at_cycle_time)
+
+
+def cycle_failure(result):
+    """Read the real durable failure, rather than a removed public result field."""
     with connect() as db:
-        migrations = Path(__file__).parents[1] / "supabase" / "migrations"
-        db.execute((migrations / "202608170002_create_oom_manager_case_runtime.sql").read_text(encoding="utf-8"))
-        db.execute("""create table if not exists app_private.oom_protected_action_claims(
-            callback_token text primary key,action_kind text not null,
-            provider_message_id text,status text,result_payload jsonb,
-            completed_at timestamptz)""")
-        db.execute((migrations / "202608190002_create_beacon_protected_publication_consumer.sql").read_text(encoding="utf-8"))
+        row = db.execute("""select status,case_counts from app_private.oom_manager_worker_cycles
+            where cycle_id=%s""", (result["cycle_id"],)).fetchone()
+    assert row is not None and row[0] == "failed", result
+    failure = row[1]["failure"]
+    assert failure["kind"] == result["failure_kind"]
+    return failure
+
+
+def assert_cycle_completed(result):
+    assert result["success"] is True, (
+        cycle_failure(result) if result.get("failure_kind") else result)
+    assert result["status"] == "general_manager_cycle_completed"
 
 
 def candidate(ref="event:one", due=None, **changes):
@@ -1866,6 +1968,8 @@ def test_exact_replay_is_one_case_and_delivery_is_not_duplicated():
         deliver=deliver, refresh=lambda claimed: current)
     second = store.run_cycle([candidate(due=now)], now=now + timedelta(seconds=1),
         source_revision="test", deliver=deliver, refresh=lambda claimed: current)
+    assert_cycle_completed(first)
+    assert_cycle_completed(second)
     assert first["candidates_created"] == 1 and first["deliveries_confirmed"] == 1
     assert second["candidate_replays"] == 1 and second["deliveries_confirmed"] == 0
     assert sends and len(sends) == 1
@@ -2051,7 +2155,12 @@ def test_refresh_claim_store_failures_remain_cycle_fatal(monkeypatch, failure):
         source_revision="test", refresh=lambda case: case, deliver=lambda case: {})
     assert result["success"] is False
     assert result["status"] == "general_manager_cycle_failed"
-    assert result["failure"]["kind"] == failure.__class__.__name__
+    persisted = cycle_failure(result)
+    assert persisted["kind"] == failure.__class__.__name__
+    if isinstance(failure, ManagerCaseError):
+        assert persisted["code"] == str(failure)
+    if getattr(failure, "sqlstate", None):
+        assert persisted["sqlstate"] == failure.sqlstate
 
 
 def test_refresh_domain_manager_case_error_remains_cycle_fatal():
@@ -2064,7 +2173,8 @@ def test_refresh_domain_manager_case_error_remains_cycle_fatal():
         [current], now=now + timedelta(seconds=2), source_revision="test",
         refresh=refresh, deliver=lambda case: {})
     assert result["success"] is False
-    assert result["failure"]["kind"] == "ManagerCaseError"
+    assert cycle_failure(result) == {"kind": "ManagerCaseError",
+        "code": "specialist_invariant_failed"}
 
 
 def test_delivery_manager_case_error_remains_cycle_fatal():
@@ -2077,7 +2187,8 @@ def test_delivery_manager_case_error_remains_cycle_fatal():
         [current], now=now + timedelta(seconds=2), source_revision="test",
         refresh=lambda case: case, deliver=deliver)
     assert result["success"] is False
-    assert result["failure"]["kind"] == "ManagerCaseError"
+    assert cycle_failure(result) == {"kind": "ManagerCaseError",
+        "code": "delivery_invariant_failed"}
 
 
 def test_delivery_outcome_normalization_failure_remains_cycle_fatal():
@@ -2091,7 +2202,7 @@ def test_delivery_outcome_normalization_failure_remains_cycle_fatal():
         [current], now=now + timedelta(seconds=2), source_revision="test",
         refresh=lambda case: case, deliver=lambda _case: InvalidOutcome())
     assert result["success"] is False
-    assert result["failure"]["kind"] == "RuntimeError"
+    assert cycle_failure(result) == {"kind": "RuntimeError"}
 
 
 def test_exact_pig_terminal_evidence_completes_case_once_without_delivery():
@@ -2258,6 +2369,9 @@ def test_beacon_material_binding_change_creates_exactly_one_successor(material_k
 
 def test_changed_evidence_advances_generation_and_append_only_events_reject_mutation():
     now = datetime.now(timezone.utc) + timedelta(minutes=1)
+    with connect() as db, db.cursor() as cur:
+        assert PostgresManagerCaseStore(connect_factory=connect)._reconcile(
+            cur, normalize_candidate(candidate("event:one", now), now=now), now) == "created"
     result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
         [candidate("event:two", now)], now=now, source_revision="test")
     assert result["candidates_changed"] == 1
@@ -2270,7 +2384,9 @@ def test_changed_evidence_advances_generation_and_append_only_events_reject_muta
 
 def test_expired_lease_resumes_after_restart():
     now = datetime.now(timezone.utc) + timedelta(minutes=2)
-    with connect() as db:
+    with connect() as db, db.cursor() as cur:
+        assert PostgresManagerCaseStore(connect_factory=connect)._reconcile(
+            cur, normalize_candidate(candidate("event:two", now), now=now), now) == "created"
         db.execute("""update app_private.oom_manager_cases set status='delegated',
             lease_until=%s,next_reassessment_at=%s where dedupe_key='rootline:current-plan'""",
             (now - timedelta(seconds=1), now - timedelta(seconds=1)))
@@ -2290,7 +2406,8 @@ def test_reclaimed_delegated_generation_contains_changed_refresh_before_provider
     current = normalize_candidate(candidate("event:two", now), now=now)
     changed = candidate("event:new-after-expired-delegation", now,
         summary="Canonical evidence changed while the prior lease was outstanding.")
-    with connect() as db:
+    with connect() as db, db.cursor() as cur:
+        assert store._reconcile(cur, current, now) == "created"
         db.execute("""update app_private.oom_manager_cases set status='delegated',
             assigned_worker_id='expired-cycle',lease_until=%s,next_reassessment_at=%s
             where dedupe_key='rootline:current-plan'""",
@@ -2327,7 +2444,12 @@ def test_changed_case_refresh_supersedes_stale_generation_then_stable_cycle_deli
     assert result["deliveries_confirmed"] == 0
     assert delivered == []
     assert result["case_results"][0]["outcome_status"] == "manager_delivery_refreshed_generation_deferred"
-    stable = store.run_cycle([current], now=now + timedelta(seconds=1),
+    with connect() as db:
+        generation, next_due = db.execute("""select generation,next_reassessment_at
+            from app_private.oom_manager_cases where dedupe_key=%s""",
+            (current["dedupe_key"],)).fetchone()
+    assert generation == 2 and next_due == now + worker_module.CADENCE
+    stable = store.run_cycle([current], now=next_due,
         source_revision="test", refresh=lambda claimed: current,
         deliver=lambda case: (delivered.append(case) or {
             "success": True, "status": "delivery_confirmed",
@@ -2354,9 +2476,8 @@ def test_missing_refresh_contains_delivery_and_retains_case():
     assert result["case_results"][0]["outcome_status"] == "manager_delivery_refresh_unavailable"
 
 
-def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resend():
-    # Keep this isolated from later-dated shared-module fixtures while still
-    # exercising the real claim ordering and persistence rail.
+def test_confirmed_replay_skips_refresh_preserves_truth_and_rotates_without_resend():
+    # Exercise the real claim ordering and persistence rail in this test's DB.
     now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=10)
     prefix = "confirmed-refresh:" + now.strftime("%Y%m%d%H%M%S%f")
     confirmed = candidate("event:confirmed", now, dedupe_key=prefix + ":confirmed",
@@ -2377,58 +2498,107 @@ def test_confirmed_refresh_unavailable_preserves_truth_and_rotates_without_resen
             (confirmed["dedupe_key"],)).fetchone()
         db.execute("""update app_private.oom_manager_cases set next_reassessment_at=%s,status='open'
             where dedupe_key=%s""", (now + timedelta(seconds=1), confirmed["dedupe_key"]))
+    refreshes = []
+    def forbidden_refresh(case):
+        refreshes.append(case["case_id"])
+        raise ManagerCaseError("confirmed_generation_must_not_refresh")
     retry_at = now + timedelta(seconds=2)
     retry = store.run_cycle([confirmed, next_case], now=retry_at, source_revision="test",
-        refresh=lambda case: None if case["dedupe_key"] == confirmed["dedupe_key"] else next_case,
+        refresh=forbidden_refresh,
         deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
             deliver=lambda *_a, **_k: sends.append("unexpected")))
-    assert retry["exceptions"] == 1
+    assert retry["exceptions"] == 0 and retry["cases_claimed"] == 2
     assert retry["deliveries_confirmed"] == 0
     assert sends == [first["case_results"][0]["case_id"]]
+    assert refreshes == []
     with connect() as db:
         after = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
             next_reassessment_at,assigned_worker_id,lease_until
             from app_private.oom_manager_cases where dedupe_key=%s""",
             (confirmed["dedupe_key"],)).fetchone()
         event = db.execute("""select event_payload from app_private.oom_manager_case_events
-            where case_id=%s and event_type='reassessment_scheduled'
+            where case_id=%s and event_type='delivery_suppressed'
             order by occurred_at desc limit 1""",
             (first["case_results"][0]["case_id"],)).fetchone()
     assert after[0] == "waiting_reassessment"
     assert after[1:4] == before
-    assert after[4] > retry_at and after[5:] == (None, None)
-    assert event[0]["confirmed_generation_preserved"] is True
-    assert event[0]["outcome_status"] == "manager_delivery_refresh_unavailable"
+    assert after[4] == retry_at + worker_module.CADENCE and after[5:] == (None, None)
+    assert event[0]["outcome_status"] == "manager_delivery_duplicate_suppressed"
     immediate = store.run_cycle([confirmed, next_case],
         now=retry_at + timedelta(seconds=1), source_revision="test",
-        refresh=lambda _case: next_case,
+        refresh=forbidden_refresh,
         deliver=lambda case: deliver_farm_manager_case(case, now=retry_at,
             deliver=lambda *_a, **_k: sends.append("unexpected")))
     assert immediate["cases_claimed"] == 0
     later_due_at = retry_at + timedelta(minutes=6)
     later_due = store.run_cycle([confirmed, next_case], now=later_due_at,
         source_revision="test",
-        refresh=lambda case: None if case["dedupe_key"] == confirmed["dedupe_key"] else next_case,
+        refresh=forbidden_refresh,
         deliver=lambda case: deliver_farm_manager_case(case, now=later_due_at,
             deliver=lambda *_a, **_k: sends.append("unexpected")))
     exact_result = next(row for row in later_due["case_results"]
         if row["case_id"] == first["case_results"][0]["case_id"])
-    assert exact_result["outcome_status"] == "manager_delivery_refresh_unavailable"
+    assert exact_result["outcome_status"] == "manager_delivery_duplicate_suppressed"
     with connect() as db:
         final = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
             next_reassessment_at,assigned_worker_id,lease_until
             from app_private.oom_manager_cases where dedupe_key=%s""",
             (confirmed["dedupe_key"],)).fetchone()
-        preservation_events = db.execute("""select count(*)
+        duplicate_events = db.execute("""select count(*)
             from app_private.oom_manager_case_events where case_id=%s
-              and event_type='reassessment_scheduled'
-              and event_payload->>'confirmed_generation_preserved'='true'""",
+              and event_type='delivery_suppressed'
+              and event_payload->>'outcome_status'='manager_delivery_duplicate_suppressed'""",
             (first["case_results"][0]["case_id"],)).fetchone()[0]
     assert final[0] == "waiting_reassessment"
     assert final[1:4] == before
-    assert final[4] > later_due_at and final[5:] == (None, None)
-    assert preservation_events == 2
+    assert final[4] == later_due_at + worker_module.CADENCE and final[5:] == (None, None)
+    assert duplicate_events == 2
     assert sends == [first["case_results"][0]["case_id"]]
+    assert refreshes == []
+
+
+def test_late_owned_failure_cannot_downgrade_confirmed_generation():
+    """Exercise the defensive finish rail with a stale, still-owned case snapshot.
+
+    A normal confirmed replay bypasses refresh; it cannot reach this branch.
+    The synthetic active lease below isolates the late-outcome persistence guard.
+    """
+    now = datetime.now(timezone.utc)
+    store = PostgresManagerCaseStore(connect_factory=connect)
+    current = candidate("event:confirmed-before-late-failure", now)
+    snapshots = []
+    def confirmed(case):
+        snapshots.append(dict(case))
+        return {"success": True, "status": "delivery_confirmed", "delivery_confirmed": True}
+    result = store.run_cycle([current], now=now, source_revision="test",
+        refresh=lambda _case: current, deliver=confirmed)
+    assert_cycle_completed(result)
+    assert result["deliveries_confirmed"] == 1 and len(snapshots) == 1
+    stale = snapshots[0]
+    assert stale["last_delivery_digest"] is None
+    retry_at = now + timedelta(minutes=6)
+    with connect() as db:
+        before = db.execute("""select evidence_digest,last_delivery_digest,last_delivery_at
+            from app_private.oom_manager_cases where case_id=%s""", (stale["case_id"],)).fetchone()
+        db.execute("""update app_private.oom_manager_cases set status='delegated',
+            assigned_worker_id='late-owned-outcome',lease_until=%s,next_reassessment_at=%s
+            where case_id=%s""", (retry_at + worker_module.LEASE, retry_at, stale["case_id"]))
+    assert store._finish_claim(stale, {"success": False,
+        "status": "manager_delivery_refresh_unavailable", "delivery_confirmed": False,
+        "telegram_sends": 0}, retry_at, "late-owned-outcome") is True
+    with connect() as db:
+        after = db.execute("""select status,evidence_digest,last_delivery_digest,last_delivery_at,
+            next_reassessment_at,assigned_worker_id,lease_until
+            from app_private.oom_manager_cases where case_id=%s""", (stale["case_id"],)).fetchone()
+        event = db.execute("""select event_payload from app_private.oom_manager_case_events
+            where case_id=%s and event_type='reassessment_scheduled'
+            order by occurred_at desc limit 1""", (stale["case_id"],)).fetchone()[0]
+    assert after[0] == "waiting_reassessment" and after[1:4] == before
+    assert before[0] == before[1] and before[2] == now
+    assert after[4] == retry_at + worker_module.CADENCE and after[5:] == (None, None)
+    assert event["confirmed_generation_preserved"] is True
+    assert event["outcome_status"] == "manager_delivery_refresh_unavailable"
+    assert len(snapshots) == 1
 
 
 def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence():
