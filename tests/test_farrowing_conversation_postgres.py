@@ -105,7 +105,14 @@ def test_question_card_short_reply_confirms_one_canonical_litter_and_replays_wit
     preview, code = report(row, second)
     assert code == 200 and preview["status"] == "farrowing_litter_preview_ready"
     assert farm_snapshot(row) == {"litters": [], "piglets": [], "followups": []}
-    deliver(row, second, preview)
+    delivered = deliver(row, second, preview)
+    assert delivered["delivery_confirmed"] is True
+    assert delivered["telegram_edits"] == 1 and delivered["telegram_sends"] == 0
+    with connect() as db:
+        binding = db.execute("""select delivery_state,preview_card_message_id
+            from app_private.oom_protected_action_claims where callback_token=%s""",
+            (preview["callback_token"],)).fetchone()
+    assert binding == ("delivery_confirmed", row["card"])
     confirmation = callback(row, preview)
     saved, code = confirm(row, confirmation)
     assert code == 201 and saved["canonical_readback_verified"] is True, saved

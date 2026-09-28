@@ -254,20 +254,31 @@ def test_invalid_structured_af_contract_falls_back_to_safe_localization():
     assert "Completed internally" not in memory.sent[0][1]
     assert "VOLTOOI" in memory.sent[0][1]
 
-def test_protected_preview_owns_durable_attempt_before_provider_send():
+def test_protected_preview_prepares_then_gates_before_journal_and_provider():
     memory=Memory(); order=[]
     protected={**RESULT,"callback_token":"TOKEN","preview_digest":"DIGEST",
         "action_kind":"rootline_device_commissioning"}
+    def store(action, identity, payload):
+        order.append("load" if action == "load" else payload["state"])
+        return memory.store(action, identity, payload)
+    def send(*args, **kwargs):
+        order.append("provider")
+        return memory.send(*args, **kwargs)
     def lifecycle(**kwargs):
-        order.append(("owned",kwargs["callback_token"],kwargs["action_kind"]))
-        delivered=kwargs["deliver"]()
-        order.append(("confirmed",delivered["telegram_message_id"]))
+        assert kwargs["defer_attempt"] is True
+        def begin():
+            assert order == ["load"]
+            assert kwargs["callback_token"] == "TOKEN"
+            assert kwargs["action_kind"] == "rootline_device_commissioning"
+            order.append("owned")
+        delivered=kwargs["deliver"](begin)
+        order.append("confirmed")
         return {**delivered,"status":"protected_delivery_confirmed",
             "delivery_confirmed":True}
     result=deliver_family_result(PARSED,protected,specialist="ROOTLINE",
-        event_store=memory.store,sender=memory.send,editor=memory.edit,
+        event_store=store,sender=send,editor=memory.edit,
         protected_delivery=lifecycle)
-    assert order==[("owned","TOKEN","rootline_device_commissioning"),("confirmed","700")]
+    assert order==["load","owned","delivery_attempted","provider","delivered","confirmed"]
     assert len(memory.sent)==1 and result["delivery_confirmed"] is True
 
 @pytest.mark.parametrize("partial",[
@@ -1260,3 +1271,57 @@ def test_conflicting_transition_receipt_cannot_claim_current_delivery(field, val
     outcome = _call_transition(rows)
     assert not outcome["success"]
     assert outcome["telegram_sends"] == outcome["telegram_deletes"] == 0
+
+
+@pytest.mark.parametrize("fault", [None, "gate_denied", "wrong_owner", "wrong_chat",
+    "wrong_mission", "wrong_specialist", "no_question_contract", "same_provider", "notice",
+    "missing_edit_id", "wrong_edit_id"])
+def test_explicit_question_can_become_protected_preview_only_after_fresh_gate(fault):
+    memory = Memory()
+    question = {**RESULT, "question_count": 1, "clarification_question": "Which date?",
+                "answer": "Which date?"}
+    deliver_family_result(PARSED, question, specialist="HERDMASTER", mission_id="CONTEXT",
+        card_mission_id="CONTEXT", event_store=memory.store, sender=memory.send)
+    latest = next(row for row in memory.rows.values() if row["state"] == "delivered")
+    changed = {"wrong_owner": ("owner_user_id", "other"), "wrong_chat": ("chat_id", "other"),
+        "wrong_mission": ("mission_id", "other"), "wrong_specialist": ("specialist_identity", "other"),
+        "no_question_contract": ("clarification_contract", "")}.get(fault)
+    if changed:
+        latest[changed[0]] = changed[1]
+    parsed = {**PARSED, "provider_message_id": "500" if fault == "same_provider" else "501",
+              "text": "15 September", "reply_to_message_id": "700"}
+    result = {"success": True, "status": "preview_ready", "answer": "Confirm the prepared record.",
+              "callback_token": "TOKEN", "preview_digest": "DIGEST", "action_kind": "ACTION"}
+    if fault == "notice": result["requires_visible_notification"] = True
+    order = []
+    def store(action, identity, payload):
+        order.append("load" if action == "load" else payload["state"])
+        return memory.store(action, identity, payload)
+    def editor(*args, **kwargs):
+        order.append("provider_edit")
+        response = memory.edit(*args)
+        if fault == "missing_edit_id": return {"success": True}
+        if fault == "wrong_edit_id": return {"success": True, "telegram_message_id": "other"}
+        return response
+    def protected(**kwargs):
+        assert kwargs["defer_attempt"] is True
+        def gate():
+            order.append("protected_gate")
+            if fault == "gate_denied": return {"success": False, "status": "synthetic_gate_denied"}
+        return kwargs["deliver"](gate)
+    delivered = deliver_family_result(parsed, result, specialist="HERDMASTER",
+        mission_id="CONTEXT", card_mission_id="CONTEXT", event_store=store,
+        sender=memory.send, editor=editor, protected_delivery=protected)
+    assert len(memory.sent) == 1
+    if fault is None:
+        assert delivered["success"] and delivered["telegram_edits"] == 1
+        assert order == ["load", "protected_gate", "update_attempted", "provider_edit", "updated"]
+    elif fault in {"missing_edit_id", "wrong_edit_id"}:
+        assert delivered["success"] is False and delivered["status"] == "family_message_update_contained"
+        assert order == ["load", "protected_gate", "update_attempted", "provider_edit", "contained"]
+    elif fault == "gate_denied":
+        assert delivered["status"] == "synthetic_gate_denied"
+        assert order == ["load", "protected_gate"] and not memory.edited
+    else:
+        assert delivered["status"] == "protected_delivery_existing_family_card_unbound"
+        assert order == ["load"] and not memory.edited

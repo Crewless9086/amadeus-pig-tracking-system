@@ -274,7 +274,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                           specialist: str, mission_id: str = "", card_mission_id: str = "",
                           event_store=None, sender=None, editor=None,
                           delivery_retry_authority=None, protected_delivery=None,
-                          deadline_monotonic=None) -> dict[str, Any]:
+                          deadline_monotonic=None, _provider_attempt=None) -> dict[str, Any]:
     """Persist and visibly deliver one result; duplicate input is a no-op."""
     result = localize_recipient_result(parsed, result, specialist)
     if result.get("recipient_language_render_unrecognized") is True:
@@ -299,13 +299,15 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             owner_user_id=str(parsed.get("telegram_user_id") or ""),
             private_chat_id=str(parsed.get("telegram_chat_id") or ""),
             action_kind=str(result["action_kind"]),
-            deliver=lambda: deliver_family_result(parsed,
+            defer_attempt=True, deadline_monotonic=deadline_monotonic,
+            deliver=lambda begin_attempt=None: deliver_family_result(parsed,
                 {**result, "_protected_delivery_owned": True}, specialist=specialist,
                 mission_id=mission_id, card_mission_id=card_mission_id,
                 event_store=event_store, sender=sender, editor=editor,
                 delivery_retry_authority=delivery_retry_authority,
                 protected_delivery=protected_delivery,
-                deadline_monotonic=deadline_monotonic))
+                deadline_monotonic=deadline_monotonic,
+                _provider_attempt=begin_attempt))
     if (result.get("album_progress_serialization_required") is True
             and result.get("album_progress_verified") is True
             and result.get("_album_progress_lock_held") is not True):
@@ -320,7 +322,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     event_store=event_store,sender=sender,editor=editor,
                     delivery_retry_authority=delivery_retry_authority,
                     protected_delivery=protected_delivery,
-                    deadline_monotonic=deadline_monotonic)
+                    deadline_monotonic=deadline_monotonic,
+                    _provider_attempt=_provider_attempt)
         except Exception:
             return {"success":False,"status":"family_message_album_progress_lock_unavailable",
                 "mission_id":mission_id,"card_mission_id":card_mission_id,
@@ -351,6 +354,25 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     delivered = next((row for row in events if row.get("state") == "delivered"), None)
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
+    clarification_transition = bool(card_id and latest
+        and latest.get("clarification_contract") == "explicit_question_v1"
+        and str(latest.get("clarification_question") or "").strip()
+        and all(str(latest.get(key) or "") == value and bool(value)
+            for key, value in {
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "owner_user_id": str(parsed.get("telegram_user_id") or ""),
+                "chat_id": str(parsed.get("telegram_chat_id") or ""),
+                "specialist_identity": specialist}.items())
+        and str(latest.get("provider_message_id") or "")
+            != str(parsed.get("provider_message_id") or "")
+        and str(latest.get("text_sha256") or "") != text_sha
+        and result.get("requires_visible_notification") is not True)
+    if _provider_attempt is not None and card_id and not clarification_transition:
+        # An explicit clarification can become the same conversation's protected
+        # preview. Other unbound cards cannot authorize a second protected effect.
+        return {"success": False, "status": "protected_delivery_existing_family_card_unbound",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_sends": 0, "telegram_edits": 0}
     immutable_initial_card = (
         specialist == "BEACON_MEDIA"
         and result.get("status") == "media_album_received"
@@ -566,6 +588,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     "mission_id": mission_id, "card_mission_id": card_mission_id,
                     "telegram_message_id": card_id,
                     "telegram_sends": 0, "telegram_edits": 0}
+        if _provider_attempt is not None:
+            denied = _provider_attempt()
+            if denied is not None:
+                return denied
         claimed = store("record", update_id, {**payload, "event_id": update_id,
             "state": "update_attempted", "telegram_message_id": card_id})
         if (not isinstance(claimed, dict) or claimed.get("success") is not True
@@ -580,7 +606,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             editor_kwargs["reply_markup"] = reply_markup
         response = provider_editor(*editor_args, **editor_kwargs)
         edit_verified = bool(response.get("success") and (
-            not exclusive_completion
+            (not exclusive_completion and _provider_attempt is None)
             or str(response.get("telegram_message_id") or "") == card_id
         ))
         if not edit_verified:
@@ -619,6 +645,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         return {"success": False, "status": "family_message_cycle_deadline_deferred",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_sends": 0, "telegram_edits": 0}
+    if _provider_attempt is not None:
+        denied = _provider_attempt()
+        if denied is not None:
+            return denied
     claimed = store("record", attempt_id, {**payload, "event_id": attempt_id, "state": "delivery_attempted"})
     if (not isinstance(claimed, dict) or claimed.get("success") is not True
             or claimed.get("created") is not True):
