@@ -17,19 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = 'c4488cf2d916db2b35befdefe10ca5e252804a2c'
+BASE = 'eb3ec23dc004373e7983646094c7fb0e4f1ba63c'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1358
-HEAD = 'cc7ca4a24290e2b493f82a64278aae49cdf0c83d'
-APPROVED_RUNTIME_HEAD = 'cc7ca4a24290e2b493f82a64278aae49cdf0c83d'
-BRANCH = 'codex/oom-manager-actionable-queue-20260927'
-PREDECESSOR_PR = 1357
-PREDECESSOR_BASE = '4d9ade2bd5ce2540d52e761af7d24ee5c202ab58'
-PREDECESSOR_HEAD = 'c4c606b0a395db6d4f389678f74135d311a6d987'
-PREDECESSOR_BRANCH = 'codex/oom-preview-identity-20260927'
+CANDIDATE_PR = None
+HEAD = '0ae56142230acb484b32df4fb7d709a2bcc569ac'
+APPROVED_RUNTIME_HEAD = '0ae56142230acb484b32df4fb7d709a2bcc569ac'
+BRANCH = 'codex/oom-protected-delivery-deadline-20260928'
+PREDECESSOR_PR = 1358
+PREDECESSOR_BASE = 'c4488cf2d916db2b35befdefe10ca5e252804a2c'
+PREDECESSOR_HEAD = 'cc7ca4a24290e2b493f82a64278aae49cdf0c83d'
+PREDECESSOR_BRANCH = 'codex/oom-manager-actionable-queue-20260927'
 QUALIFICATION_TEST_PATHS = []
-PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_general_manager_worker.py']
+PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/protected_delivery_lifecycle.py', 'tests/test_oom_sakkie_family_message_lifecycle.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -38,12 +38,13 @@ SCHEDULER_ROLLBACK = "f9c003855cc335be6b652f313bfb0e3c02fb1f2a"
 HELPERS = ("modules/charlie/mission_store.py", "modules/charlie/mission_control.py")
 MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "tests/test_oom_desktop_candidate_reconciliation.py",
-    ".github/workflows/oom-desktop-rebind-qualification.yml"}
+    ".github/workflows/oom-desktop-rebind-qualification.yml",
+    "scripts/correct_oom_presend_timeout.py", "tests/test_oom_presend_timeout_correction.py"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_pr1357_stable_retained_preview_identity",
-    "application_revision_rollback:web:4d9ade2bd5ce2540d52e761af7d24ee5c202ab58"}
-ADDED_EFFECTS = {"exact_pr1358_actionable_manager_queue_priority",
+REMOVED_EFFECTS = {"exact_pr1358_actionable_manager_queue_priority",
+    "application_revision_rollback:web:c4488cf2d916db2b35befdefe10ca5e252804a2c"}
+ADDED_EFFECTS = {"exact_protected_delivery_preparation_deadline_repair",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -51,6 +52,10 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    "Preserve exact retained confirmation buttons through the manager authorized sender, bound to the existing token; keep recipient revalidation and deadline options. Prove the outgoing Confirm/Change/Cancel callback payload and genuine deployed card separately.",
+    "Prepare the family protected message before claiming a delivery attempt. Immediately before the first family attempt journal, lock and recheck identity, active state, expiry and monotonic deadline; acquire at most one attempt. Preparation timeout or failure must leave the claim unattempted for normal scheduling.",
+    "Prove load/gate/journal/provider ordering, cancellation and expiry during preparation, actual PostgreSQL concurrent preparers and lock-delay deferral, unchanged claim identity/expiry on retry, one bound delivery and silent replay. Fence stale finalizers with a fresh attempt identity. Hosted tests are qualification, not owner acceptance.",
+    "Preserve uncertainty containment after acquiring an attempt, unbound existing-card rejection and existing callback authority. This application does not recover historical ambiguous claims or grant another automatic expiry renewal. Any separately approved exact incident metadata correction requires its own audited scope and unchanged current preimages; it may not send, confirm, record a farm fact or trigger scheduling.",
     "Prioritize potentially actionable owner work before known quiet dispatch paths using current canonical case fields; preserve specialist fairness within each class, active lease exclusion, expired delegated cleanup, five-claim capacity, deadlines, current-evidence refresh, protected confirmation and provider ambiguity. Do not delete quiet cases or mark them delivered or completed to free capacity.",
     "Continue canonical collection for quiet cases and allow them spare dispatch capacity; do not claim a bounded quiet waiting time under sustained actionable demand. Prove large-backlog selection, same-case promotion after material owner-relevant evidence, disjoint concurrent claims, genuine later retained-card delivery and the protected canonical outcome separately. No additional model call, cadence change or manual scheduler trigger is authorized.",
     "Keep a protected operation stable across new canonical read timestamps while preserving chronology checks and all material evidence. An existing persisted retained preview may preserve its exact original operation only if fresh whole-preview content and global canonical generation still match; preserve the same claim, token, mission, expiry and source. No rebind, synthetic confirmation or broader expiry renewal is authorized.",
@@ -65,8 +70,8 @@ REQUIRED_ACCEPTANCE = {
     "Scheduled prioritization uses no paid model; coalesce routine briefing changes, preserve distinct urgent/owner-decision interrupts, and back off the same failed generation. Do not alter the existing scheduler or trigger a manual cycle.",
     "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
     "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
-    f"Release only the protected merge whose application tree equals exact PR1358 head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only actionable manager queue release; source pins and prior PR1357 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    f"Release only the protected merge whose application tree equals exact PR{CANDIDATE_PR} head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only protected delivery preparation repair; source pins and prior PR1358 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",
