@@ -354,10 +354,22 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     delivered = next((row for row in events if row.get("state") == "delivered"), None)
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
-    if _provider_attempt is not None and card_id:
-        # An already-bound protected claim replays before preparation. A family
-        # card without that canonical binding is not authority to edit or send
-        # a second protected card/notification.
+    clarification_transition = bool(card_id and latest
+        and latest.get("clarification_contract") == "explicit_question_v1"
+        and str(latest.get("clarification_question") or "").strip()
+        and all(str(latest.get(key) or "") == value and bool(value)
+            for key, value in {
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "owner_user_id": str(parsed.get("telegram_user_id") or ""),
+                "chat_id": str(parsed.get("telegram_chat_id") or ""),
+                "specialist_identity": specialist}.items())
+        and str(latest.get("provider_message_id") or "")
+            != str(parsed.get("provider_message_id") or "")
+        and str(latest.get("text_sha256") or "") != text_sha
+        and result.get("requires_visible_notification") is not True)
+    if _provider_attempt is not None and card_id and not clarification_transition:
+        # An explicit clarification can become the same conversation's protected
+        # preview. Other unbound cards cannot authorize a second protected effect.
         return {"success": False, "status": "protected_delivery_existing_family_card_unbound",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_sends": 0, "telegram_edits": 0}
@@ -576,6 +588,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     "mission_id": mission_id, "card_mission_id": card_mission_id,
                     "telegram_message_id": card_id,
                     "telegram_sends": 0, "telegram_edits": 0}
+        if _provider_attempt is not None:
+            denied = _provider_attempt()
+            if denied is not None:
+                return denied
         claimed = store("record", update_id, {**payload, "event_id": update_id,
             "state": "update_attempted", "telegram_message_id": card_id})
         if (not isinstance(claimed, dict) or claimed.get("success") is not True
@@ -590,7 +606,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             editor_kwargs["reply_markup"] = reply_markup
         response = provider_editor(*editor_args, **editor_kwargs)
         edit_verified = bool(response.get("success") and (
-            not exclusive_completion
+            (not exclusive_completion and _provider_attempt is None)
             or str(response.get("telegram_message_id") or "") == card_id
         ))
         if not edit_verified:
