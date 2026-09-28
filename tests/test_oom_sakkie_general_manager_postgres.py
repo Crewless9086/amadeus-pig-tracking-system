@@ -926,15 +926,86 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(result['candidates_created'], 0)
         self.assertEqual(result['deliveries_confirmed'], 5)
         self.assertEqual(result['deadline_deferrals'], 0)
-        self.assertLessEqual(initial_lookup_counts[0], 66)
-        # Audit insert + failed whole prefetch + 33 complete run prefetches +
-        # 32 fresh gap reads + changed-case write/event + batched epoch update.
-        self.assertLessEqual(initial_statement_counts[0], 1 + 4 + 33 * 3 + 32 + 2 + 1)
+        self.assertEqual(initial_lookup_counts[0], 2)
+        # Audit insert + released initial snapshot + fresh whole cohort +
+        # changed-case write/event + batched epoch update. No terminal point reads.
+        self.assertEqual(initial_statement_counts[0], 1 + 4 + 3 + 2 + 1)
         with self.db() as db:
             rows = db.execute('select generation,evidence_refs from app_private.oom_manager_cases').fetchall()
         self.assertEqual(len(rows), 282)
         self.assertEqual(sum(generation == 2 for generation, _refs in rows), 1)
         self.assertTrue(all('observed:' + newer.isoformat() in refs for _generation, refs in rows))
+
+    def test_317_candidate_cycle_reaches_unexpired_protected_provider_with_full_costs(self):
+        from tests.test_oom_sakkie_general_manager_worker import (
+            NOW as claim_epoch, _prepared_retained_budget_journey)
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            j = _prepared_retained_budget_journey(monkeypatch)
+            values = sorted([self.value('positive-budget-' + str(i)) for i in range(316)],
+                key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+            absent = {(i + 1) * len(values) // 33 for i in range(32)}
+            for row in values[:4]:
+                row['next_reassessment_at'] = self.now.isoformat()
+            retained = self.value('retained-budget', **j['case'], urgency='critical',
+                next_reassessment_at=self.now.isoformat())
+            self.seed([row for i, row in enumerate(values) if i not in absent] + [retained])
+            values = [{**row, **({'terminal_state': 'completed'} if i in absent else {})}
+                      for i, row in enumerate(values)] + [retained]
+            by_key = {row['dedupe_key']: row for row in values}
+            self.statements = 0
+            j['clock'] = 15.021
+            original, lookups, queue_counts = _IsolatedCursor.execute, [], []
+            def costed(cursor, sql, params=None):
+                if 'for update of m skip locked limit' in ' '.join(sql.split()):
+                    queue_counts.append((self.statements, len(lookups)))
+                if ('select dedupe_key,evidence_digest,generation,status' in sql
+                        or 'select evidence_digest,generation,status' in sql):
+                    lookups.append(sql)
+                # Every actual manager SQL command, including transaction
+                # controls and delivery finalization, costs a synthetic 120ms.
+                j['clock'] += .12
+                return original(cursor, sql, params)
+            def refresh(cases):
+                j['clock'] += 7.021
+                return {row['case_id']: by_key[row['dedupe_key']] for row in cases}
+            outcomes = []
+            def deliver(row, **kwargs):
+                if row['dedupe_key'] != retained['dedupe_key']:
+                    return {'success': True, 'status': 'manager_delivery_disabled',
+                            'delivery_confirmed': False, 'telegram_sends': 0}
+                j['delivery_started'] = j['clock']
+                result = deliver_farm_manager_case(row, **kwargs)
+                outcomes.append(result)
+                return result
+            with patch.object(_IsolatedCursor, 'execute', costed):
+                result = self.cycle(values, deadline_monotonic=80,
+                    source_collection_ms=15021, refresh_batch=refresh, deliver=deliver)
+            self.assertTrue(result['success'], result)
+            self.assertEqual(result['candidate_replays'], 317)
+            self.assertEqual(result['cases_claimed'], 5)
+            self.assertEqual(result['deliveries_confirmed'], 1)
+            self.assertEqual(result['deadline_deferrals'], 0)
+            self.assertEqual(queue_counts, [(8, 2)])
+            self.assertEqual(len(j['sends']), 1)
+            self.assertTrue(outcomes[0]['protected_preview_card_bound'])
+            self.assertTrue(j['claim']['delivery_attempt_id'])
+            self.assertEqual(j['claim']['delivery_state'], 'delivery_confirmed')
+            self.assertEqual(j['provider_gate_times'], [pytest.approx(
+                j['delivery_started'] + 15.475)])
+            self.assertLess(j['provider_gate_times'][0], 50.)
+            self.assertLess(j['clock'], 80.)
+            self.assertEqual(j['claim']['expires_at'], claim_epoch + timedelta(minutes=30))
+            self.assertEqual(j['renewal_audits'], [])
+            with self.db() as db:
+                row = db.execute('''select generation,last_delivery_digest=evidence_digest,
+                    assigned_worker_id,lease_until from app_private.oom_manager_cases
+                    where dedupe_key=%s''', (retained['dedupe_key'],)).fetchone()
+                counts = dict(db.execute('''select event_type,count(*) from
+                    app_private.oom_manager_case_events where case_id=%s
+                    group by event_type''', (normalize_candidate(retained, now=self.now)['case_id'],)).fetchall())
+            self.assertEqual(row, (1, True, None, None))
+            self.assertEqual(counts, {'created': 1, 'claimed': 1, 'delegated': 1,
+                                    'delivery_confirmed': 1, 'reassessment_scheduled': 1})
 
     def _full_wrapper_with_slow_owner(self, slow_owner):
         from modules.oom_sakkie import manager_case_sources as sources
@@ -1185,6 +1256,131 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertEqual(row, ('completed', 2))
         self.assertEqual(completed, 1)
 
+    def test_second_snapshot_deletion_releases_cohort_before_insertable_gap(self):
+        values = sorted([self.value('second-delete-' + str(i)) for i in range(4)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        terminal, deleted, *higher = values
+        self.seed(higher)
+        with patch.object(self.store, '_event'):
+            self.seed([deleted])  # no immutable referring event prevents this race
+        original, releases, rollbacks, point_keys = _IsolatedCursor.execute, [], [], []
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if sql.startswith('select evidence_digest,generation,status'):
+                point_keys.append(params[0])
+            if sql == 'rollback to savepoint oom_manager_reconciliation_prefetch':
+                rollbacks.append(True)
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch':
+                releases.append(True)
+                if len(releases) == 1:
+                    with self.db() as db:
+                        db.execute('delete from app_private.oom_manager_cases where dedupe_key=%s',
+                                   (deleted['dedupe_key'],))
+                elif len(releases) == 2:
+                    # The failed fresh snapshot must release every higher lock
+                    # before the now insertion-capable fallback can acquire it.
+                    with self.db() as db:
+                        db.execute('select case_id from app_private.oom_manager_cases '
+                                   'where dedupe_key=any(%s) for update nowait',
+                                   ([row['dedupe_key'] for row in higher],))
+            return result
+        with patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([{**terminal, 'terminal_state': 'completed'}, deleted, *higher])
+        self.assertTrue(result['success'], result)
+        self.assertEqual(len(rollbacks), 2)
+        self.assertIn(deleted['dedupe_key'], point_keys)
+        self.assertIn(terminal['dedupe_key'], point_keys)
+        self.assertEqual(result['candidates_created'], 1)
+        with self.db() as db:
+            rows = db.execute('select count(*),max(generation) from app_private.oom_manager_cases').fetchone()
+        self.assertEqual(rows, (3, 1))
+
+    def test_terminal_insert_after_second_snapshot_does_not_acquire_lower_lock(self):
+        values = sorted([self.value('late-terminal-' + str(i)) for i in range(3)],
+            key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
+        lower, *higher = values
+        self.seed(higher)
+        terminal = {**lower, 'terminal_state': 'completed'}
+        external = self.db()
+        self.addCleanup(external.close)
+        external_pid = external.connection.info.backend_pid
+        inserted, releases, futures, point_keys = threading.Event(), [], [], []
+        original = _IsolatedCursor.execute
+        def competing_insert():
+            with external, external.cursor() as other:
+                self.store._reconcile(other, normalize_candidate(lower, now=self.now), self.now)
+                inserted.set()
+                other.execute('select case_id from app_private.oom_manager_cases '
+                              'where dedupe_key=%s for update', (higher[0]['dedupe_key'],))
+        def after_release(cursor, sql, params=None):
+            result = original(cursor, sql, params)
+            if (cursor.owner is self and cursor.cursor.connection.info.backend_pid != external_pid
+                    and sql.startswith('select evidence_digest,generation,status')):
+                point_keys.append(params[0])
+            if sql == 'release savepoint oom_manager_reconciliation_prefetch':
+                releases.append(True)
+                if len(releases) == 2:
+                    futures.append(pool.submit(competing_insert))
+                    self.assertTrue(inserted.wait(5))
+                    limit, blocked = time.monotonic() + 3, False
+                    with connect() as observer:
+                        while time.monotonic() < limit:
+                            blocked = bool(observer.execute(
+                                'select cardinality(pg_blocking_pids(%s))>0', (external_pid,)).fetchone()[0])
+                            if blocked:
+                                break
+                            time.sleep(.01)
+                    self.assertTrue(blocked, 'competitor must hold lower and wait on retained higher locks')
+            return result
+        with ThreadPoolExecutor(max_workers=1) as pool, patch.object(_IsolatedCursor, 'execute', after_release):
+            result = self.cycle([terminal, *higher])
+            futures[0].result(timeout=5)
+        self.assertTrue(result['success'], result)
+        self.assertNotIn(lower['dedupe_key'], point_keys)
+        with self.db() as db:
+            row = db.execute('select status,generation from app_private.oom_manager_cases '
+                             'where dedupe_key=%s', (lower['dedupe_key'],)).fetchone()
+        self.assertEqual(row, ('open', 1))
+        # This insert occurred after the authoritative snapshot. The next
+        # reconciliation observes it; the first cycle never invents completion.
+        retry = self.cycle([terminal, *higher])
+        self.assertEqual(retry['candidates_changed'], 1)
+        with self.db() as db:
+            row = db.execute('select status,generation from app_private.oom_manager_cases '
+                             'where dedupe_key=%s', (lower['dedupe_key'],)).fetchone()
+        self.assertEqual(row, ('completed', 2))
+
+    def test_reversed_terminal_cohorts_keep_canonical_ids_and_serialize(self):
+        values = [self.value('terminal-overlap-' + str(i)) for i in range(30)]
+        absent = {5, 15, 25}
+        canonical = {row['dedupe_key']: f'CANONICAL-{100-i}'
+                     for i, row in enumerate(values) if i not in absent}
+        with self.db() as db, db.cursor() as cur:
+            for row in values:
+                if row['dedupe_key'] in canonical:
+                    self.store._reconcile(cur, {**normalize_candidate(row, now=self.now),
+                        'case_id': canonical[row['dedupe_key']]}, self.now)
+        values = [{**row, **({'terminal_state': 'completed'} if i in absent else {})}
+                  for i, row in enumerate(values)]
+        values[0] = {**values[0], 'summary': 'Same fresh canonical material in both cycles'}
+        barrier = threading.Barrier(2)
+        def run(reverse):
+            barrier.wait(timeout=10)
+            return self.cycle(list(reversed(values)) if reverse else values)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(run, (False, True)))
+        self.assertTrue(all(row['success'] for row in results), results)
+        self.assertEqual(sum(row['candidates_changed'] for row in results), 1)
+        with self.db() as db:
+            rows = db.execute('select dedupe_key,case_id,generation,assigned_worker_id,lease_until '
+                              'from app_private.oom_manager_cases').fetchall()
+            events = dict(db.execute('select event_type,count(*) from '
+                                    'app_private.oom_manager_case_events group by event_type').fetchall())
+        self.assertEqual({row[0]: row[1] for row in rows}, canonical)
+        self.assertEqual(sum(row[2] == 2 for row in rows), 1)
+        self.assertTrue(all(row[3:] == (None, None) for row in rows))
+        self.assertEqual(events, {'created': 27, 'evidence_changed': 1})
+
     def test_planned_run_relocks_changed_prior_and_preserves_duplicate_epochs(self):
         values = sorted([self.value('relock-' + str(i)) for i in range(4)],
             key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
@@ -1253,7 +1449,10 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                 external.execute('select case_id from app_private.oom_manager_cases where dedupe_key=%s for update',
                     (middle['dedupe_key'],))
         with patch.object(_IsolatedCursor, 'execute', gate), ThreadPoolExecutor(max_workers=2) as pool:
-            running = pool.submit(self.cycle, [prefix, {**gap, 'terminal_state': 'completed'}, lower, middle, higher])
+            # A duplicate terminal key keeps this test on the original ordered
+            # run fallback, whose prefix-lock preservation it specifically proves.
+            terminal_gap = {**gap, 'terminal_state': 'completed'}
+            running = pool.submit(self.cycle, [prefix, terminal_gap, terminal_gap, lower, middle, higher])
             if not run_locked.wait(timeout=5):
                 self.fail('run prefetch not reached: ' + str(running.result(timeout=5)))
             competing = pool.submit(finish_external)
