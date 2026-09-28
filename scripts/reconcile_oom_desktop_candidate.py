@@ -17,19 +17,29 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = '97c324bb7b91594ec0b587e70049380e9b9c529f'
+BASE = 'fd350a80b3dd8e87b404f7ccb573efb5fa82fe05'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1360
-HEAD = 'a7f637e49eec1a1288e8d51d6308ec766b53b705'
-APPROVED_RUNTIME_HEAD = 'a7f637e49eec1a1288e8d51d6308ec766b53b705'
-BRANCH = 'codex/oom-retained-refresh-budget-20260928'
-PREDECESSOR_PR = 1359
-PREDECESSOR_BASE = 'eb3ec23dc004373e7983646094c7fb0e4f1ba63c'
-PREDECESSOR_HEAD = 'bee47b6255af247a6d6f0e2d1627cd87275a9dfd'
-PREDECESSOR_BRANCH = 'codex/oom-protected-delivery-deadline-20260928'
-QUALIFICATION_TEST_PATHS = []
-PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+CANDIDATE_PR = 1361
+HEAD = '270edc5a512d2f72f9b1c7341f3ef5d52d382a7d'
+TREE = 'fbe42eda3166edef4240cb96bf269622692ccf68'
+APPROVED_RUNTIME_HEAD = '2e2ba0e3c349b10662221c073787498ca41fe4e3'
+BRANCH = 'codex/oom-manager-reconciliation-batch-20260928'
+PREDECESSOR_PR = 1360
+PREDECESSOR_BASE = '97c324bb7b91594ec0b587e70049380e9b9c529f'
+PREDECESSOR_HEAD = 'a7f637e49eec1a1288e8d51d6308ec766b53b705'
+PREDECESSOR_BRANCH = 'codex/oom-retained-refresh-budget-20260928'
+QUALIFICATION_TEST_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml',
+    'tests/test_oom_sakkie_general_manager_postgres.py']
+PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml',
+    'modules/oom_sakkie/general_manager_worker.py',
+    'tests/test_oom_sakkie_general_manager_postgres.py',
+    'tests/test_oom_sakkie_general_manager_worker.py']
+PREDECESSOR_PATHS = ['modules/oom_sakkie/general_manager_worker.py',
+    'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/manager_case_sources.py',
+    'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py',
+    'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py',
+    'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -43,9 +53,9 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "scripts/extend_oom_unsent_confirmation.py", "tests/test_oom_unsent_confirmation_extension.py"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_protected_delivery_preparation_deadline_repair",
-    "application_revision_rollback:web:eb3ec23dc004373e7983646094c7fb0e4f1ba63c"}
-ADDED_EFFECTS = {"exact_retained_refresh_scope_and_card_history_budget_repair",
+REMOVED_EFFECTS = {"exact_retained_refresh_scope_and_card_history_budget_repair",
+    "application_revision_rollback:web:97c324bb7b91594ec0b587e70049380e9b9c529f"}
+ADDED_EFFECTS = {"exact_terminal_only_cohort_reconciliation_budget_repair",
     f"application_revision_rollback:web:{WEB_ROLLBACK}"}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
@@ -53,6 +63,10 @@ REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    "After releasing an incomplete initial reconciliation snapshot, take one fresh whole-cohort lock snapshot in canonical case-ID order only when all absent candidates are unique non-BEACON terminal findings. Preserve the original ordered fallback for insertion-capable gaps, every duplicate key, BEACON absences and a second-snapshot deletion that makes insertion possible; never acquire a lower follow-up lock from a retained terminal absence.",
+    "Prove the real PostgreSQL 314/317-candidate cohorts with 32 absent terminal findings use two whole-cohort lookup reads while preserving material events, generations, observation epochs, canonical identities and leases. Preserve concurrent insertion between snapshots, second-snapshot deletion rollback, post-snapshot insertion containment, reversed-cohort serialization and owning current-evidence refresh before delivery.",
+    "Exercise an unexpired protected confirmation through real preview, claim and family delivery gates with explicit synthetic collection, refresh and preparation costs; the slower control must remain unattempted. Keep the 80-second cycle deadline and 30-second send reserve unchanged. Collector timeout before the global cutoff must contain only that owner while ready specialists progress; late results cannot send and a later cycle must reclaim independently. Hosted timing models are qualification, not measured live latency or owner acceptance.",
+    "The qualification-only successor changes exactly the existing audit workflow and manager PostgreSQL tests relative to the pinned reviewed runtime head; no later candidate is admitted. This registration grants no incident recovery, further expiry extension, claim rearm, new parallel claim, reused observation window or synthetic owner confirmation; consumed ordinary renewal and manual extension remain consumed.",
     "Refresh only the exact claimed retained case identities through current canonical source, cancellation, resolution and completion checks; preserve the full canonical animal identity set for duplicate-tag rejection. Skip unrelated intake discovery during targeted retained refresh while preserving broad collection behavior.",
     "Bound health context to its existing newest 100 owner/chat/source rows, join latest eligible family cards once per distinct mission, and prove PostgreSQL result equivalence against the prior query for ordering, terminal history, missing cards and owner isolation. Record bounded numeric stage durations in existing cycle/case metadata; no new model work, deadline extension, scheduler or farm authority.",
     "Prove real loaded-revision retained preparation completes within the unchanged cycle deadline and delivers the same protected claim once. Timing and hosted equivalence tests alone do not prove delivery; any manual extension of an expired unsent claim requires separately authenticated exact recovery approval and immutable audit.",
@@ -76,7 +90,7 @@ REQUIRED_ACCEPTANCE = {
     "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
     "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
     f"Release only the protected merge whose application tree equals exact PR{CANDIDATE_PR} head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only retained refresh and card history budget repair; source pins and prior PR1359 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only terminal-only cohort reconciliation budget repair; source pins and prior PR1360 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed runtime to renew the SAME expired retained claim once only when current canonical facts, original private principal, source binding, operation, payload and digest still match and every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent; preserve token and original chronology, atomically audit the existing 30-minute renewal, and never extend again or rearm cancelled, changed, contained, completed, attempted or uncertain claims.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation, renewal and canonical preview persistence and immediately before sending to the original private recipient; never redirect to another owner or change family permissions.",
@@ -124,7 +138,7 @@ def _sha(value, size=64):
 
 def _require_candidate_pins():
     _require(type(CANDIDATE_PR) is int and CANDIDATE_PR > 0
-             and _sha(HEAD, 40) and _sha(APPROVED_RUNTIME_HEAD, 40)
+             and _sha(HEAD, 40) and _sha(TREE, 40) and _sha(APPROVED_RUNTIME_HEAD, 40)
              and isinstance(PATHS, list) and bool(PATHS)
              and all(isinstance(path, str) and path and not path.startswith(("/", "\\"))
                      and ":" not in path and "\\" not in path and ".." not in path.split("/")
@@ -188,7 +202,7 @@ def prepare_reconciliation(manifest_bytes, approval_bytes, *, expected_manifest_
         _require(isinstance(m[key], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,159}", m[key]), key + "_invalid")
     c = _fields(m["candidate"], {"pr_number", "branch", "base_sha", "head_sha", "tree_sha", "diff_sha256", "changed_files"}, "candidate_fields")
     _require(type(c["pr_number"]) is int and c["pr_number"] == CANDIDATE_PR and c["branch"] == BRANCH
-             and c["base_sha"] == BASE and c["head_sha"] == HEAD and _sha(c["tree_sha"], 40)
+             and c["base_sha"] == BASE and c["head_sha"] == HEAD and c["tree_sha"] == TREE
              and _sha(c["diff_sha256"]) and c["changed_files"] == PATHS, "candidate_identity_changed")
     implementation = _fields(m["implementation"], {"base_revision", "adapter_sha256", "helper_files"}, "implementation_fields")
     _require(implementation["base_revision"] == BASE and _sha(implementation["adapter_sha256"])
@@ -210,6 +224,7 @@ def prepare_reconciliation(manifest_bytes, approval_bytes, *, expected_manifest_
              and packet.get("candidate_revision") == PREDECESSOR_HEAD
              and packet.get("branch_name") == prior_contract.get("branch") == PREDECESSOR_BRANCH
              and prior_contract.get("base_sha") == PREDECESSOR_BASE
+             and prior_contract.get("allowed_files") == PREDECESSOR_PATHS
              and admission.get("mission_id") == MISSION_ID
              and admission.get("root_mission_id") == family["root_mission_id"]
              and admission.get("generation") == prior_contract.get("generation") == family["generation"]

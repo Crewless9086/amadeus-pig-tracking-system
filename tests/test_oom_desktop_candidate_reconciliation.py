@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/protected_delivery_lifecycle.py', 'tests/test_farrowing_conversation_postgres.py', 'tests/test_oom_sakkie_family_message_lifecycle.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
+PREDECESSOR_PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 PRESERVED_PREVIEW_EFFECTS = {'automatic_once_per_claim_never_attempted_retained_preview_renewal',
     'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -81,7 +81,7 @@ def arguments(child=None, parent=None, correction=None):
     default_child, default_parent, default_correction = fixtures()
     child, parent, correction = child or default_child, parent or default_parent, correction or default_correction
     candidate = {"pr_number": adapter.CANDIDATE_PR, "branch": adapter.BRANCH, "base_sha": adapter.BASE,
-        "head_sha": adapter.HEAD, "tree_sha": "f" * 40, "changed_files": adapter.PATHS,
+        "head_sha": adapter.HEAD, "tree_sha": adapter.TREE, "changed_files": adapter.PATHS,
         "diff_sha256": canonical_candidate_diff(adapter.PATHS, b"synthetic candidate diff")}
     prior_contract = child["metadata_json"]["mission_admission_contract"]
     manifest = {"version": adapter.VERSION, "mission_id": adapter.MISSION_ID, "parent_mission_id": adapter.PARENT_ID,
@@ -358,11 +358,12 @@ class ReconciliationTests(unittest.TestCase):
         with self.assertRaisesRegex(adapter.ReconciliationError,"replay_history_conflict"):apply(encode(m,a),self.connect)
         self.assertEqual(self.snapshot(),before)
     def test_wrong_candidate_scope_and_fabricated_provenance_fail_before_connection(self):
-        for field in ("pr","boolean_pr","head","scope","parent","source","prohibition","tests"):
+        for field in ("pr","boolean_pr","head","tree","scope","parent","source","prohibition","tests"):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
             if field=="pr":m["candidate"]["pr_number"]=adapter.CANDIDATE_PR+1
             elif field=="boolean_pr":m["candidate"]["pr_number"]=True
             elif field=="head":m["candidate"]["head_sha"]="0"*40
+            elif field=="tree":m["candidate"]["tree_sha"]="0"*40
             elif field=="scope":m["candidate"]["changed_files"].append("app.py")
             elif field=="parent":m["expected_parent_sha256"]="0"*64
             elif field=="source":a["source"]["source_message_id"]="invented"
@@ -371,7 +372,7 @@ class ReconciliationTests(unittest.TestCase):
             with self.subTest(field=field),self.assertRaises(adapter.ReconciliationError):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
     def test_pending_candidate_pins_reject_before_source_or_database_access(self):
-        for fields in ({"CANDIDATE_PR": None}, {"CANDIDATE_PR": True}, {"HEAD": None},
+        for fields in ({"CANDIDATE_PR": None}, {"CANDIDATE_PR": True}, {"HEAD": None}, {"TREE": None},
                        {"APPROVED_RUNTIME_HEAD": None}, {"PATHS": []}, {"PATHS": ["../other.py"]}):
             with self.subTest(fields=fields), patch.multiple(adapter, **fields), \
                  patch.object(adapter, "verify_source_and_candidate") as source, \
@@ -447,6 +448,35 @@ class ReconciliationTests(unittest.TestCase):
         m["contract"]["operational_acceptance"].append("No new protected-preview activation authority.")
         with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
             adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_cohort_qualification_cannot_weaken_concurrency_or_add_recovery(self):
+        for before, after in (
+                ('unique non-BEACON terminal findings', 'any missing finding'),
+                ('every duplicate key', 'some duplicate keys'),
+                ('30-second send reserve unchanged', 'shorter send reserve'),
+                ('late results cannot send', 'late results may send'),
+                ('consumed ordinary renewal and manual extension remain consumed',
+                 'consumed ordinary renewal and manual extension may repeat')):
+            m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
+            original=m['contract']['operational_acceptance']
+            changed=[value.replace(before,after) for value in original]
+            self.assertNotEqual(changed,original)
+            m['contract']['operational_acceptance']=changed
+            with self.subTest(guard=before),self.assertRaisesRegex(
+                    adapter.ReconciliationError,'approved_scope_delta_changed'):
+                adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail('unexpected connection'))
+        m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
+        m['contract']['allowed_effects'].append('manual_unsent_claim_expiry_extension')
+        with self.assertRaisesRegex(adapter.ReconciliationError,'approved_scope_delta_changed'):
+            adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail('unexpected connection'))
+
+    def test_predecessor_file_scope_is_exact_even_with_recomputed_record_digest(self):
+        m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
+        child=m['expected_child_record']
+        child['metadata_json']['mission_admission_contract']['allowed_files'].append('app.py')
+        m['expected_child_sha256']=adapter.digest(adapter.canonical(child))
+        with self.assertRaisesRegex(adapter.ReconciliationError,'predecessor_binding_invalid'):
+            adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail('unexpected connection'))
 
     def test_conversation_scope_preserves_read_only_principal_and_exact_evidence_guards(self):
         for before, after in (("read-only repeatable-read snapshot", "unbounded mutable snapshot"),
@@ -557,10 +587,13 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR, 1360)
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "a7f637e49eec1a1288e8d51d6308ec766b53b705")
-        self.assertEqual(adapter.HEAD, "a7f637e49eec1a1288e8d51d6308ec766b53b705")
-        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
+        self.assertEqual(adapter.CANDIDATE_PR, 1361)
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "2e2ba0e3c349b10662221c073787498ca41fe4e3")
+        self.assertEqual(adapter.HEAD, "270edc5a512d2f72f9b1c7341f3ef5d52d382a7d")
+        self.assertEqual(adapter.TREE, "fbe42eda3166edef4240cb96bf269622692ccf68")
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,
+            ['.github/workflows/oom-sakkie-audit-rails.yml', 'tests/test_oom_sakkie_general_manager_postgres.py'])
+        self.assertEqual(adapter.PREDECESSOR_PATHS, PREDECESSOR_PATHS)
         cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
         for case in cases:
             qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)
