@@ -894,3 +894,24 @@ def test_unbound_existing_family_card_cannot_be_edited_or_notified(retained_jour
     result = deliver_farm_manager_case(j["case"], deadline_monotonic=100.)
     assert result["status"] == "protected_delivery_existing_family_card_unbound"
     assert not j["sends"] and j["claim"].get("delivery_attempt_id") is None
+
+
+@pytest.mark.parametrize("clock,phase", [
+    (50., "before_retained_preview"), (42., "after_retained_preview")])
+def test_retained_cutoff_reports_phase_and_preserves_safe_retry(retained_journey, clock, phase):
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    j = retained_journey
+    j["clock"] = clock
+    deferred = deliver_farm_manager_case(j["case"], deadline_monotonic=80.)
+    assert deferred["status"] == "manager_cycle_deadline_deferred"
+    assert deferred["deadline_phase"] == phase
+    assert not j["sends"] and not j["events"]
+    assert not j["claim"].get("delivery_attempted_at")
+    prior_token = j["claim"].get("callback_token")
+    prior_expiry = j["claim"].get("expires_at")
+    j["clock"] = 27.
+    delivered = deliver_farm_manager_case(j["case"], deadline_monotonic=80.)
+    assert delivered["delivery_confirmed"] and len(j["sends"]) == 1
+    if prior_token:
+        assert j["claim"]["callback_token"] == prior_token
+        assert j["claim"]["expires_at"] == prior_expiry

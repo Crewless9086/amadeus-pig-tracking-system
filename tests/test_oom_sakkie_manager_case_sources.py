@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from threading import Barrier, Event
+import json
 import time
+import pytest
 
 from modules.oom_sakkie.manager_case_sources import (
     _completed_bulk_batch_findings, _project_retained_herd_report_recovery,
@@ -487,18 +489,33 @@ def test_manual_current_evidence_has_no_invented_batch_identity_or_owner_send(mo
         assert outcome["telegram_sends"] == 0
 
 
-def _report_recovery_fixture(*, cases=None, recent=(), reports=None, lifecycle=None, claims=()):
+def _report_recovery_fixture(*, cases=None, recent=(), reports=None, lifecycle=None, claims=(),
+                             targeted=False, queries=None):
     from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import Connection, report
     rows = reports if reports is not None else [report()]
     if cases is None:
         cases = [("herdmaster:retained-mortality:101",
                   ["provider_message:101", "pig:P27", "tag:27"], "exception")]
-    responses = [cases, [(value,) for value in recent]]
+    responses = [cases]
+    if not targeted:
+        responses.append([(value,) for value in recent])
     if recent or cases:
         responses += [[(row,) for row in rows],
                       [(row,) for row in (rows if lifecycle is None else lifecycle)], list(claims)]
-    responses += [[], [("P27", "27", "Active", True)], [], []]
-    return lambda: Connection(responses)
+    responses += ([[("P27", "27", "Active", True)]] if targeted else
+                  [[], [("P27", "27", "Active", True)], [], []])
+    def connect():
+        connection = Connection(responses)
+        cursor = connection.cursor()
+        execute = cursor.execute
+        def record(query, params=None):
+            if queries is not None:
+                queries.append((query, params))
+            execute(query, params)
+        cursor.execute = record
+        connection.cursor = lambda: cursor
+        return connection
+    return connect
 
 
 def test_old_exact_retained_report_keeps_key_and_stable_binding_across_refresh():
@@ -563,8 +580,8 @@ def test_retained_refresh_reuses_canonical_recovery_without_full_herd_overview(m
     sibling = {"dedupe_key": "herdmaster:retained-litter-loss:4052:2026-08-04",
                "specialist": "HERDMASTER"}
     calls = []
-    def retained(now):
-        calls.append(now)
+    def retained(now, *, claimed_cases):
+        calls.append((now, claimed_cases))
         return [case, sibling]
     def forbidden(_now):
         raise AssertionError("unrelated herd overview must not run")
@@ -572,16 +589,16 @@ def test_retained_refresh_reuses_canonical_recovery_without_full_herd_overview(m
     monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", retained)
     assert sources.collect_manager_refresh_snapshot(now=NOW, cases=[case]) == {
         (case["dedupe_key"], "HERDMASTER"): case}
-    assert calls == [NOW]
+    assert calls == [(NOW, (case,))]
     # Canonical absence cannot reuse the old candidate or invent completion.
-    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", lambda now: [])
+    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", lambda now, **kwargs: [])
     assert sources.collect_manager_refresh_snapshot(now=NOW, cases=[case]) == {}
 
 
 def test_retained_refresh_failure_is_contained_without_stale_fallback(monkeypatch):
     from modules.oom_sakkie import manager_case_sources as sources
     case = {"dedupe_key": "herdmaster:retained-mortality:5097", "specialist": "HERDMASTER"}
-    def failing(now):
+    def failing(now, *, claimed_cases):
         raise TimeoutError("private connection details")
     monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", failing)
     result = sources.collect_manager_refresh_snapshot(now=NOW, cases=[case])
@@ -598,3 +615,113 @@ def test_retained_refresh_does_not_accept_wrong_specialist(monkeypatch):
     monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", forbidden)
     monkeypatch.setattr(sources, "_herdmaster", lambda now: [])
     assert sources.collect_manager_refresh_snapshot(now=NOW, cases=[case]) == {}
+
+
+def _bound_retained_case():
+    from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_report_binding
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import report
+    return {"case_id": "CANONICAL-101", "dedupe_key": "herdmaster:retained-mortality:101",
+            "specialist": "HERDMASTER", "evidence_refs": ["provider_message:101", "pig:P27",
+                "tag:27", retained_report_binding([report()])]}
+
+
+def test_retained_refresh_runs_real_scoped_collector_and_ignores_caller_evidence(monkeypatch):
+    from modules.oom_sakkie import manager_case_sources as sources
+    canonical = _bound_retained_case()
+    cases = [(canonical["dedupe_key"], canonical["evidence_refs"], "delegated")]
+    expected = sources._retained_herd_report_recovery_candidates(NOW,
+        connect=_report_recovery_fixture(cases=cases))
+    queries = []
+    monkeypatch.setattr(sources, "connect_bounded_read",
+        _report_recovery_fixture(cases=cases, targeted=True, queries=queries))
+    requested = {**canonical, "evidence_refs": ["provider_message:999", "pig:WRONG"],
+                 "status": "completed"}
+    snapshot = sources.collect_manager_refresh_snapshot(now=NOW, cases=[requested])
+    assert list(snapshot.values()) == expected
+    assert len(queries) == 5
+    selection, params = queries[0]
+    assert "(m.case_id,m.dedupe_key) in" in selection
+    assert "m.specialist='HERDMASTER'" in selection
+    assert json.loads(params[0]) == [{"case_id": canonical["case_id"],
+                                    "dedupe_key": canonical["dedupe_key"]}]
+    assert queries[1][1][1] == ["101"]
+    sql = "\n".join(query for query, _ in queries)
+    assert "created_at >=" not in sql and "herdmaster_record_farrowing_litter" not in sql
+    assert "from public.litters" not in sql
+    assert queries[-1][0] == "select pig_id,tag_number,status,on_farm from public.current_canonical_pigs"
+
+
+@pytest.mark.parametrize("change", ["cancelled", "changed_text", "principal", "mission", "source_binding",
+                                   "missing_binding", "wrong_target", "wrong_provider"])
+def test_targeted_retained_refresh_keeps_canonical_source_and_identity_containment(change):
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import report
+    case = _bound_retained_case()
+    original = report()
+    rows, lifecycle = [original], [original]
+    refs = list(case["evidence_refs"])
+    if change == "cancelled":
+        lifecycle = [{**original, "provider_message_id": "901", "status": "contained"}, original]
+    elif change == "changed_text":
+        lifecycle = [{**original, "owner_text_verbatim": "Changed original report"}, original]
+    elif change == "principal":
+        rows = lifecycle = [report(owner_user_id="99", chat_id="99")]
+    elif change == "mission":
+        rows = lifecycle = [report(mission="OTHER")]
+    elif change == "source_binding":
+        refs[-1] = "retained_report_binding:" + "0" * 64
+    elif change == "missing_binding":
+        refs.pop()
+    elif change == "wrong_target":
+        refs[1] = "pig:WRONG"
+    elif change == "wrong_provider":
+        refs[0] = "provider_message:999"
+    result = _retained_herd_report_recovery_candidates(NOW, claimed_cases=[case],
+        connect=_report_recovery_fixture(cases=[(case["dedupe_key"], refs, "delegated")],
+            reports=rows, lifecycle=lifecycle, targeted=True))
+    assert result == []
+
+
+@pytest.mark.parametrize("status,refs", [("completed", []), ("contained", []),
+                                      ("delegated", None), ("delegated", "provider_message:101"),
+                                      ("delegated", [None])])
+def test_targeted_retained_refresh_stops_after_terminal_or_malformed_canonical_case(status, refs):
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    case = _bound_retained_case()
+    queries = []
+    assert _retained_herd_report_recovery_candidates(NOW, claimed_cases=[case],
+        connect=_report_recovery_fixture(cases=[(case["dedupe_key"], refs, status)],
+            targeted=True, queries=queries)) == []
+    assert len(queries) == 1
+
+
+@pytest.mark.parametrize("case", [None, {}, {"case_id": "", "dedupe_key": "herdmaster:retained-mortality:101",
+    "specialist": "HERDMASTER"}, {"case_id": "CANONICAL-101", "dedupe_key": "herdmaster:retained-mortality:101",
+    "specialist": "ROOTLINE"}])
+def test_targeted_retained_refresh_invalid_selector_never_starts_acquisition(case):
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    def forbidden():
+        pytest.fail("invalid identity must fail before canonical acquisition")
+    with pytest.raises(ValueError, match="retained_refresh_case_identity_invalid"):
+        _retained_herd_report_recovery_candidates(NOW, claimed_cases=[case], connect=forbidden)
+    assert _retained_herd_report_recovery_candidates(NOW, claimed_cases=[], connect=forbidden) == []
+
+
+def test_targeted_retained_litter_refresh_preserves_exact_membership_and_projection():
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_report_binding
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import report
+    reports = [report("201", "REPORT-201", owner_text_verbatim="Linda 2 kleintjies dood"),
+               report("202", "REPORT-202", owner_text_verbatim="Linda kleintjies dood op 19 Aug")]
+    case = {"case_id": "CANONICAL-LITTER", "specialist": "HERDMASTER",
+            "dedupe_key": "herdmaster:retained-litter-loss:201:2026-08-19"}
+    refs = ["provider_message:201", "provider_message:202", "incident_date:2026-08-19",
+            retained_report_binding(reports)]
+    cases = [(case["dedupe_key"], refs, "delegated")]
+    discovery = _retained_herd_report_recovery_candidates(NOW,
+        connect=_report_recovery_fixture(cases=cases, reports=reports))
+    queries = []
+    refreshed = _retained_herd_report_recovery_candidates(NOW, claimed_cases=[case],
+        connect=_report_recovery_fixture(cases=cases, reports=reports, targeted=True, queries=queries))
+    assert len(refreshed) == 1 and refreshed == discovery
+    assert queries[1][1][1] == ["201", "202"]

@@ -191,7 +191,10 @@ class PostgresManagerCaseStore:
                   refresh_batch: Callable[[Iterable[Mapping[str, Any]]],
                                           Mapping[str, Any] | _ManagerRefreshBatch] | None = None,
                   deadline_monotonic: float | None = None,
-                  brain_guard_audit: Mapping[str, Any] | None = None):
+                  brain_guard_audit: Mapping[str, Any] | None = None,
+                  source_collection_ms: int = 0):
+        store_started = time.monotonic()
+        timings = {"source_collection": source_collection_ms}
         now = _aware(now)
         brain_guard = dict(brain_guard_audit or build_scheduled_brain_guard_audit(
             source_revision=source_revision, now=now))
@@ -308,6 +311,8 @@ class PostgresManagerCaseStore:
                         self._event(cur, case, "delegated", now, cycle_id=cycle_id,
                                     specialist=case["specialist"])
                         claimed.append(case)
+            timings["reconciliation_and_claim"] = _elapsed_ms(store_started)
+            dispatch_started = time.monotonic()
             delivered = suppressed = exceptions = deadline_deferrals = 0
             case_results = []
             batch_refreshes = {}
@@ -365,6 +370,8 @@ class PostgresManagerCaseStore:
                         continue
                 case = pending.pop(case_index)
                 current_case = case
+                case_started = time.monotonic()
+                case_timings = {"dispatch_wait": _elapsed_ms(dispatch_started)}
                 specialist_failure = None
                 refresh_eligible = case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
                 if (not deadline_deferred and deliver and refresh_eligible
@@ -451,6 +458,8 @@ class PostgresManagerCaseStore:
                     }
                     if duplicate:
                         outcome["status"] = "manager_delivery_duplicate_suppressed"
+                case_timings["refresh_and_delivery"] = _elapsed_ms(case_started)
+                outcome = {**outcome, "processing_timings_ms": case_timings}
                 provider_confirmed = bool(outcome.get("success") is True
                     and outcome.get("delivery_confirmed") is True)
                 persisted = self._finish_claim(current_case, outcome,
@@ -481,7 +490,8 @@ class PostgresManagerCaseStore:
                 "candidate_replays": replayed, "cases_claimed": len(claimed),
                 "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
                 "exceptions": exceptions, "deadline_deferrals": deadline_deferrals,
-                "brain_guard": brain_guard}
+                "brain_guard": brain_guard,
+                "processing_timings_ms": {**timings, "dispatch": _elapsed_ms(dispatch_started)}}
             with self.connect_factory() as cycle_connection:
                 with cycle_connection.cursor() as cur:
                     cur.execute("""update app_private.oom_manager_worker_cycles set heartbeat_at=%s,
@@ -805,7 +815,9 @@ class PostgresManagerCaseStore:
                 self._event(cur, case, event_type, now, cycle_id=cycle_id,
                             outcome_status=str(outcome.get("status") or ""),
                             failure_kind=str(outcome.get("failure_kind") or ""),
-                            provider_ambiguity_contained=provider_ambiguity_contained)
+                            provider_ambiguity_contained=provider_ambiguity_contained,
+                            deadline_phase=str(outcome.get("deadline_phase") or ""),
+                            processing_timings_ms=outcome.get("processing_timings_ms") or {})
                 self._event(cur, case, "reassessment_scheduled", now,
                             next_reassessment_at=next_at.isoformat())
         return True
@@ -919,7 +931,8 @@ class PostgresManagerCaseStore:
 
 def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None,
                               store=None, collectors=None, deliver=None):
-    deadline_monotonic = time.monotonic() + GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS
+    collection_started = time.monotonic()
+    deadline_monotonic = collection_started + GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS
     now = _aware(now or datetime.now(timezone.utc))
     refresh = None
     refresh_batch = None
@@ -1007,7 +1020,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver,
         refresh=refresh, refresh_batch=refresh_batch,
-        deadline_monotonic=deadline_monotonic, brain_guard_audit=brain_guard)
+        deadline_monotonic=deadline_monotonic, brain_guard_audit=brain_guard,
+        source_collection_ms=_elapsed_ms(collection_started))
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None,
@@ -1044,7 +1058,8 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
                 max(PROVIDER_DELIVERY_RESERVE_SECONDS, CASE_COMPLETION_RESERVE_SECONDS)) < deadline_monotonic
         if not deadline_available():
             return {"success": False, "status": "manager_cycle_deadline_deferred",
-                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False,
+                "deadline_phase": "before_retained_preview"}
         preview = route_retained_manager_recovery(case, preview_builder=retained_recovery)
         if preview.get("success") is not True or preview.get("suppress_owner_delivery") is not False:
             return {**preview, "delivery_confirmed": False}
@@ -1065,7 +1080,8 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
                 "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
         if not deadline_available():
             return {"success": False, "status": "manager_cycle_deadline_deferred",
-                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False,
+                "deadline_phase": "after_retained_preview"}
         from modules.oom_sakkie.family_message_lifecycle import _send_telegram
         def authorized_sender(destination, text, **kwargs):
             if str(destination) != str(chat) or not retained_recipient_authorized(parsed):
@@ -1184,6 +1200,11 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
         or (outcome.get("success") is True and int(outcome.get("telegram_edits") or 0) == 1)))
     return {**outcome, "delivery_confirmed": confirmed,
             "success": outcome.get("success") is True and confirmed}
+
+
+def _elapsed_ms(started):
+    """Numeric runtime evidence only; never changes the shared deadline."""
+    return max(0, round((time.monotonic() - started) * 1000))
 
 
 def _case_row(row):
