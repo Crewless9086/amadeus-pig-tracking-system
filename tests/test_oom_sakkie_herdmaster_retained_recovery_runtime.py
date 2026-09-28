@@ -391,6 +391,8 @@ def retained_journey(monkeypatch):
                     provider_accepted_at=datetime.now(timezone.utc),delivery_confirmed_at=datetime.now(timezone.utc))
             elif "set delivery_state='delivery_ambiguous'" in q:
                 c.update(delivery_state="delivery_ambiguous",delivery_ambiguous_at=datetime.now(timezone.utc))
+            elif "set status='expired'" in q:
+                c.update(status="expired",delivery_state="expired")
             elif "set status='executing'" in q:
                 c.update(status="executing",confirmation_provider_message_id=params[0],confirmation_provider_timestamp=datetime.fromisoformat(str(params[1]).replace("Z","+00:00")))
             elif "set status='completed'" in q:
@@ -539,15 +541,20 @@ def test_elapsed_budget_progress_and_late_preparation_containment(retained_journ
     assert deliver_farm_manager_case(j["case"],deadline_monotonic=80.)["success"]
 
 
-def test_deadline_crossed_inside_family_is_contained_without_retry(retained_journey):
+def test_deadline_crossed_inside_family_defers_without_poisoning_retry(retained_journey):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j=retained_journey;j["family_cost"]=20.
     first=deliver_farm_manager_case(j["case"],deadline_monotonic=80.)
-    assert not first["success"] and not j["sends"]
-    assert j["claim"]["delivery_state"]=="delivery_ambiguous"
+    assert first["status"]=="family_message_cycle_deadline_deferred" and not j["sends"]
+    assert j["claim"]["delivery_state"]=="claim_created"
+    assert not j["claim"].get("delivery_attempt_id") and not j["events"]
+    token=j["claim"]["callback_token"];expiry=j["claim"]["expires_at"]
     j["clock"]=0.;j["family_cost"]=0.
     again=deliver_farm_manager_case(j["case"],deadline_monotonic=80.)
-    assert again["status"]=="retained_claim_delivery_outcome_unproven" and not j["sends"]
+    assert again["delivery_confirmed"] and len(j["sends"])==1
+    assert j["claim"]["callback_token"]==token and j["claim"]["expires_at"]==expiry
+    replay=deliver_farm_manager_case(j["case"],deadline_monotonic=80.)
+    assert replay["status"]=="protected_delivery_replayed_noop" and len(j["sends"])==1
 
 
 def test_other_retained_family_preserves_existing_preview_contract():
@@ -820,3 +827,65 @@ def test_typed_recovery_cannot_be_overridden_by_death_words(change):
     row = report(preview={"evaluator": assessment})
     assert _project_retained_herd_report_recovery(datetime.now(timezone.utc), [row], [],
         canonical_pigs=[{"pig_id": "P27", "tag_number": "27", "status": "Active", "on_farm": True}]) == []
+
+
+@pytest.mark.parametrize("fault", ["load_exception", "cancel_during_load", "expire_during_load"])
+def test_preparation_failure_or_late_claim_change_does_not_claim_send(retained_journey, monkeypatch, fault):
+    from modules.oom_sakkie import family_message_lifecycle as family
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    j = retained_journey
+    original = family._event_store
+    def store(action, identity, payload):
+        if action == "load":
+            if fault == "load_exception":
+                raise RuntimeError("synthetic preparation read failure")
+            if fault == "cancel_during_load":
+                j["claim"]["status"] = "cancelled"
+            else:
+                j["claim"]["expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+        return original(action, identity, payload)
+    monkeypatch.setattr(family, "_event_store", store)
+    result = deliver_farm_manager_case(j["case"], deadline_monotonic=100.)
+    expected = ("protected_delivery_preparation_unavailable" if fault == "load_exception"
+                else "protected_delivery_terminal_noop")
+    assert result["status"] == expected
+    assert not j["sends"] and not j["events"]
+    assert j["claim"].get("delivery_attempt_id") is None
+    assert result.get("provider_outcome_ambiguous") is not True
+
+
+def test_failure_after_send_gate_remains_contained_and_never_replayed(retained_journey, monkeypatch):
+    from modules.oom_sakkie import family_message_lifecycle as family
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    j = retained_journey
+    original = family._event_store
+    def store(action, identity, payload):
+        if action == "record":
+            raise RuntimeError("synthetic loss after ownership boundary")
+        return original(action, identity, payload)
+    monkeypatch.setattr(family, "_event_store", store)
+    result = deliver_farm_manager_case(j["case"], deadline_monotonic=100.)
+    assert result["provider_outcome_ambiguous"] is True
+    attempt = j["claim"]["delivery_attempt_id"]
+    assert attempt and not j["sends"]
+    monkeypatch.setattr(family, "_event_store", original)
+    replay = deliver_farm_manager_case(j["case"], deadline_monotonic=100.)
+    assert replay["status"] == "retained_claim_delivery_outcome_unproven"
+    assert j["claim"]["delivery_attempt_id"] == attempt and not j["sends"]
+
+
+def test_unbound_existing_family_card_cannot_be_edited_or_notified(retained_journey, monkeypatch):
+    from modules.oom_sakkie import family_message_lifecycle as family
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    j = retained_journey
+    original = family._event_store
+    def store(action, identity, payload):
+        if action == "load":
+            return [{"state": "delivered", "card_mission_id": identity,
+                     "telegram_message_id": "EXISTING-CARD", "text_sha256": "prior"}]
+        return original(action, identity, payload)
+    monkeypatch.setattr(family, "_event_store", store)
+    monkeypatch.setattr(family, "_edit_telegram", lambda *a, **k: pytest.fail("unexpected edit"))
+    result = deliver_farm_manager_case(j["case"], deadline_monotonic=100.)
+    assert result["status"] == "protected_delivery_existing_family_card_unbound"
+    assert not j["sends"] and j["claim"].get("delivery_attempt_id") is None

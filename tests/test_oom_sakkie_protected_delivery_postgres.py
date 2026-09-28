@@ -61,6 +61,65 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
     self.assertEqual(replay["status"],"protected_delivery_replayed_noop")
     with self.connect() as db: row=db.execute("select delivery_state,preview_card_message_id from app_private.oom_protected_action_claims where callback_token=%s",(self.token,)).fetchone()
     self.assertEqual(row,("delivery_confirmed","3688"))
+  def test_lazy_concurrent_preparation_claims_one_provider_attempt(self):
+    from threading import Barrier
+    barrier=Barrier(2); calls=[]
+    def prepared(begin):
+      barrier.wait(timeout=5)
+      denied=begin()
+      if denied is not None:return denied
+      calls.append(1)
+      return {"success":True,"telegram_message_id":"LAZY-CARD","telegram_sends":1}
+    def run():
+      return recover_protected_card(callback_token=self.token,preview_digest=self.digest,
+        owner_user_id="42",private_chat_id="42",action_kind="rootline_fertilizer_mixer_presence_refresh",
+        deliver=prepared,defer_attempt=True,connect_factory=self.connect)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+      outcomes=list(pool.map(lambda _:run(),(1,2)))
+    self.assertEqual(calls,[1])
+    self.assertTrue(any(row.get("delivery_confirmed") for row in outcomes))
+    with self.connect() as db:
+      row=db.execute("select delivery_state,preview_card_message_id from app_private.oom_protected_action_claims where callback_token=%s",(self.token,)).fetchone()
+    self.assertEqual(row,("delivery_confirmed","LAZY-CARD"))
+
+  def test_lazy_deadline_after_row_lock_writes_no_attempt_or_family_journal(self):
+    from unittest.mock import patch
+    from modules.oom_sakkie import family_message_lifecycle as family
+    clock=[0.];effects=[]
+    connections=[0]
+    class TimedCursor:
+      def __init__(self,cur,advance):self.cur,self.advance=cur,advance
+      def __enter__(self):self.cur.__enter__();return self
+      def __exit__(self,*args):return self.cur.__exit__(*args)
+      def __getattr__(self,key):return getattr(self.cur,key)
+      def execute(self,query,params=None):
+        self.cur.execute(query,params)
+        if self.advance and "for update" in query:
+          clock[0]=80.  # Time consumed acquiring the real row lock.
+    class TimedConnection:
+      def __init__(self,db,advance):self.db,self.advance=db,advance
+      def __enter__(self):self.db.__enter__();return self
+      def __exit__(self,*args):return self.db.__exit__(*args)
+      def cursor(self):return TimedCursor(self.db.cursor(),self.advance)
+    def connect():
+      connections[0]+=1
+      return TimedConnection(self.connect(),connections[0]==2)
+    def prepare(begin):
+      assert clock[0]==0.
+      denied=begin()
+      if denied is not None:return denied
+      effects.append(1)
+      return {"success":True,"telegram_message_id":"WRONG"}
+    with patch.object(family.time,"monotonic",lambda:clock[0]):
+      result=recover_protected_card(callback_token=self.token,preview_digest=self.digest,
+        owner_user_id="42",private_chat_id="42",action_kind="rootline_fertilizer_mixer_presence_refresh",
+        deliver=prepare,defer_attempt=True,deadline_monotonic=100.,connect_factory=connect)
+    self.assertEqual(result["status"],"family_message_cycle_deadline_deferred")
+    self.assertEqual(effects,[])
+    with self.connect() as db:
+      row=db.execute("select delivery_state,delivery_attempt_id,delivery_attempted_at from app_private.oom_protected_action_claims where callback_token=%s",(self.token,)).fetchone()
+    self.assertEqual(row,("claim_created",None,None))
+
   def test_interrupted_or_ambiguous_delivery_is_not_retried(self):
     with self.connect() as db:db.execute("update app_private.oom_protected_action_claims set delivery_state='delivery_pending',delivery_attempted_at=now()-interval '31 seconds' where callback_token=%s",(self.token,))
     calls=[];result=self.call(lambda:calls.append(1))

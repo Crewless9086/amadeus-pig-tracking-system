@@ -254,20 +254,31 @@ def test_invalid_structured_af_contract_falls_back_to_safe_localization():
     assert "Completed internally" not in memory.sent[0][1]
     assert "VOLTOOI" in memory.sent[0][1]
 
-def test_protected_preview_owns_durable_attempt_before_provider_send():
+def test_protected_preview_prepares_then_gates_before_journal_and_provider():
     memory=Memory(); order=[]
     protected={**RESULT,"callback_token":"TOKEN","preview_digest":"DIGEST",
         "action_kind":"rootline_device_commissioning"}
+    def store(action, identity, payload):
+        order.append("load" if action == "load" else payload["state"])
+        return memory.store(action, identity, payload)
+    def send(*args, **kwargs):
+        order.append("provider")
+        return memory.send(*args, **kwargs)
     def lifecycle(**kwargs):
-        order.append(("owned",kwargs["callback_token"],kwargs["action_kind"]))
-        delivered=kwargs["deliver"]()
-        order.append(("confirmed",delivered["telegram_message_id"]))
+        assert kwargs["defer_attempt"] is True
+        def begin():
+            assert order == ["load"]
+            assert kwargs["callback_token"] == "TOKEN"
+            assert kwargs["action_kind"] == "rootline_device_commissioning"
+            order.append("owned")
+        delivered=kwargs["deliver"](begin)
+        order.append("confirmed")
         return {**delivered,"status":"protected_delivery_confirmed",
             "delivery_confirmed":True}
     result=deliver_family_result(PARSED,protected,specialist="ROOTLINE",
-        event_store=memory.store,sender=memory.send,editor=memory.edit,
+        event_store=store,sender=send,editor=memory.edit,
         protected_delivery=lifecycle)
-    assert order==[("owned","TOKEN","rootline_device_commissioning"),("confirmed","700")]
+    assert order==["load","owned","delivery_attempted","provider","delivered","confirmed"]
     assert len(memory.sent)==1 and result["delivery_confirmed"] is True
 
 @pytest.mark.parametrize("partial",[

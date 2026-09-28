@@ -476,6 +476,46 @@ def test_actual_unattempted_prepared_claim_survives_restart_with_one_card(store,
     assert j["claim"]()["token"] == before["token"] and j["claim"]()["expires"] == before["expires"]
 
 
+def test_actual_pre_send_timeout_preserves_claim_then_normal_retry_sends_once(
+        store, delivery_journey, monkeypatch):
+    from modules.oom_sakkie import family_message_lifecycle as family
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
+    j = delivery_journey
+    clock = [0.]
+    slow = [True]
+    original_store = family._event_store
+    def event_store(action, identity, payload):
+        value = original_store(action, identity, payload)
+        if action == "load" and slow[0]:
+            clock[0] = 80.
+        return value
+    monkeypatch.setattr(family, "_event_store", event_store)
+    monkeypatch.setattr(family.time, "monotonic", lambda: clock[0])
+    first = deliver_farm_manager_case(j["case"], deadline_monotonic=100.)
+    assert first["status"] == "family_message_cycle_deadline_deferred"
+    before = claim_snapshot(store)
+    card = protected_card_mission_id(before["mission_id"], before["preview_digest"])
+    assert before["delivery_state"] == "claim_created"
+    assert before["delivery_attempt_id"] is None and before["delivery_attempted_at"] is None
+    assert original_store("load", card, None) == []
+    assert not j["sends"] and not j["edits"] and not j["effects"]
+    clock[0] = 0.
+    slow[0] = False
+    resumed = deliver_farm_manager_case(collect(store)[0], deadline_monotonic=100.)
+    assert resumed["delivery_confirmed"] and len(j["sends"]) == 1
+    after = claim_snapshot(store)
+    for key in ("callback_token", "mission_id", "preview_digest", "preview_payload", "expires_at"):
+        assert after[key] == before[key]
+    assert after["delivery_state"] == "delivery_confirmed"
+    replay = deliver_farm_manager_case(collect(store)[0], deadline_monotonic=100.)
+    assert replay["status"] == "protected_delivery_replayed_noop"
+    assert len(j["sends"]) == 1 and not j["effects"]
+    events = original_store("load", card, None)
+    assert sum(row["state"] == "delivery_attempted" for row in events) == 1
+    assert sum(row["state"] == "delivered" for row in events) == 1
+
+
 def test_actual_later_correction_blocks_old_bridge_replay(store, delivery_journey):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j = delivery_journey
