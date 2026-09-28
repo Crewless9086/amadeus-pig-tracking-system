@@ -472,6 +472,8 @@ def test_slow_first_delivery_cannot_cross_deadline_or_starve_unrelated_case(monk
             case["case_id"]: case for case in cases},
         deadline_monotonic=80.0, brain_guard_audit=audit)
 
+    assert result["processing_timings_ms"] == {
+        "source_collection": 0, "reconciliation_and_claim": 0, "dispatch": 20000}
     assert effects == ["OOM-CASE-1", "OOM-CASE-2"]
     assert deferred == ["OOM-CASE-3"]
     assert result["success"] is False
@@ -817,3 +819,30 @@ def test_retained_recovery_refresh_is_ready_while_full_herd_refresh_is_blocked(m
         collectors=(lambda _now: [],))
     assert result == {"RETAINED": retained}
     assert sorted(groups) == [("RETAINED",), ("ROUTINE",)]
+
+
+def test_deadline_phase_and_numeric_timings_survive_existing_case_event():
+    commands = []
+    case = {"case_id": "CASE-A", "generation": 1, "evidence_digest": "d" * 64,
+            "next_reassessment_at": NOW.isoformat()}
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params): commands.append((sql, params))
+        def fetchone(self):
+            return (1, "d" * 64, None, "delegated", "CYCLE-A", NOW + timedelta(minutes=4))
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+    outcome = {"success": False, "status": "manager_cycle_deadline_deferred",
+        "deadline_phase": "after_retained_preview",
+        "processing_timings_ms": {"dispatch_wait": 11000, "refresh_and_delivery": 15000}}
+    assert PostgresManagerCaseStore(connect_factory=Connection)._finish_claim(
+        case, outcome, NOW, "CYCLE-A")
+    events = [json.loads(params[4]) for sql, params in commands
+              if "insert into app_private.oom_manager_case_events" in sql]
+    failure = next(event for event in events if event["event_type"] == "exception")
+    assert failure["deadline_phase"] == "after_retained_preview"
+    assert failure["processing_timings_ms"] == outcome["processing_timings_ms"]
+    assert failure["provider_ambiguity_contained"] is False

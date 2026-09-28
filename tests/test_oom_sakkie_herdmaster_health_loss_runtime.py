@@ -1,4 +1,9 @@
-from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from modules.oom_sakkie import herdmaster_health_loss_runtime as health_loss
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import (
@@ -11,6 +16,40 @@ from modules.oom_sakkie.herdmaster_health_loss_runtime import (
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+
+
+def capture_active_context_query(monkeypatch, *, owner_user_id="", rows=()):
+    """Capture the runtime's actual SQL without connecting to a database."""
+    connection = MagicMock()
+    cursor = connection.__enter__.return_value.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = list(rows)
+    with monkeypatch.context() as scoped:
+        scoped.setenv("DATABASE_URL", "synthetic-unused-url")
+        scoped.setattr(health_loss, "welfare_case_runtime_enabled", lambda: False)
+        scoped.setattr("psycopg.connect", lambda *_args, **_kwargs: connection)
+        contexts = health_loss._load_active_contexts("42", owner_user_id=owner_user_id)
+    cursor.execute.assert_called_once()
+    query, params = cursor.execute.call_args.args
+    return contexts, query, params
+
+
+@pytest.mark.parametrize("owner_user_id", ["42", ""])
+def test_active_context_database_projection_preserves_latest_completed_source(monkeypatch, owner_user_id):
+    now = datetime.now(timezone.utc)
+    latest = {"mission_id": "REPEATED", "owner_user_id": "42", "status": "completed"}
+    contexts, _query, params = capture_active_context_query(
+        monkeypatch, owner_user_id=owner_user_id, rows=[
+            (latest, now, "UPDATED-CARD"),
+            ({**latest, "status": "waiting_for_input"}, now - timedelta(seconds=1), "UPDATED-CARD"),
+            ({**latest, "mission_id": "STALE"}, now - timedelta(days=2), "OLD-CARD"),
+            (None, now, None),
+        ])
+    expected_params = (health_loss.EVENT_SOURCE, "oom-health-42") + (("42",) if owner_user_id else ())
+    assert params == expected_params
+    assert len(contexts) == 1
+    assert contexts[0]["mission_id"] == "REPEATED"
+    assert contexts[0]["status"] == "completed"
+    assert contexts[0]["card_message_id"] == "UPDATED-CARD"
 
 
 def test_rapid_unthreaded_reply_never_binds_to_newest_open_case():
