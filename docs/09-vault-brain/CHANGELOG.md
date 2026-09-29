@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-09-29 - Owner-requested expired mortality confirmation review
+
+- Preserve the expired delivered card and original report while creating one
+  audited successor only from a genuine actor-bound expired-card request.
+- Require fresh material/source/recipient checks and a new confirmation for the
+  same canonical operation. Resume only already-requested, unattempted delivery
+  through the same manager case; never renew an attempted window automatically.
+- Keep historical tokens private, competing generations and uncertain effects
+  contained, and expired-button feedback localized and receipt-deduplicated.
+- Source and test qualification do not establish a deployed owner outcome.
+
 ## 2026-09-28 - Retained mortality first-delivery confirmation lifecycle
 
 - Recorded the specifically approved single 30-minute window at the first

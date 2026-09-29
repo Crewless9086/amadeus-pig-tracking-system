@@ -204,25 +204,27 @@ def _canonical_reader_schema(connect):
 
 
 @pytest.fixture
-def journey(base_store, monkeypatch):
+def journey(base_store, monkeypatch, request):
+    language = getattr(request, "param", "af")
     _canonical_reader_schema(base_store)
     rail = Rail(base_store)
     monkeypatch.setenv("DATABASE_URL", URL)
     monkeypatch.setenv("PIG_WELFARE_CASE_RUNTIME_ENABLED", "true")
     monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_BOT_TOKEN", "synthetic-test-token")
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_OWNER_LANGUAGE", language)
     monkeypatch.setattr(psycopg, "connect", lambda *_a, **_k: rail())
     monkeypatch.setattr(bounded, "connect_bounded_rootline_postgres", lambda **kw: rail(kw.get("read_only", True)))
     monkeypatch.setattr(retained, "connect_bounded_read", lambda: rail(True))
     monkeypatch.setattr(claims, "_connect", rail)
     monkeypatch.setattr(delivery, "_connect", rail)
     monkeypatch.setattr(welfare, "_connect", rail)
-    source = report(provider_timestamp="2026-08-20T08:00:00+00:00", output_language="af",
+    source = report(provider_timestamp="2026-08-20T08:00:00+00:00", output_language=language,
         owner_text_verbatim="Vark nr 27 is dood op 19 Aug 2026. Hy is verwyder en begrawe.")
     from modules.oom_sakkie.herdmaster_health_loss_preview import prepare_health_loss_owner_preview
     material = health.load_canonical_health_loss_evidence()
     evaluated = prepare_health_loss_owner_preview({"gateway_authority": issue_gateway_owner_authority("42", "42"),
         "provider_message_id": "101", "provider_timestamp": source["provider_timestamp"],
-        "provider_timezone": "Africa/Johannesburg", "output_language": "af",
+        "provider_timezone": "Africa/Johannesburg", "output_language": language,
         "text": source["owner_text_verbatim"]}, material)
     assert evaluated["confirmation_ready"], evaluated
     # Synthetic legacy source clarification with genuine canonical identity.

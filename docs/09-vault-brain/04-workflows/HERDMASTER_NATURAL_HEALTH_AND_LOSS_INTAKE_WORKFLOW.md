@@ -142,6 +142,26 @@ requires its exact audit chain; it is not permission to disregard real attempts.
 Window creation and attempt ownership commit together exactly once. An attempt,
 ambiguous result or prior window never starts another automatic window.
 
+An authenticated owner or authorized farm manager pressing an expired,
+verifiably delivered retained mortality card requests a fresh review; that press
+does not confirm a farm effect. Under the same source fence, the runtime may
+create one audited successor confirmation generation for the same report,
+principal, physical facts and canonical operation. The old token and expiry stay
+unchanged. The new card explains the expiry, retains the original facts and
+requires a genuine new confirmation within its own finite presentation window.
+No animal or date is requested again merely because the earlier card expired.
+
+Duplicate or racing old-card requests resolve the same successor. An older card
+cannot branch another generation or cancel/change a newer one. Changed facts,
+revoked authority, cancellation, supersession, unknown history or delivery
+ambiguity prevents continuation. Complete bounded history and immutable audit
+bindings are rechecked at admission; a caller-supplied continuation field is not
+authority. The same manager case may reconcile the audited successor evidence
+and resume its never-attempted delivery after interruption. The scheduler cannot
+create a confirmation generation or restart an attempted window. A failed or
+late callback acknowledgement has receipt-deduplicated informational feedback;
+it grants no farm authority and cannot conceal a refused preview.
+
 The genuine protected callback must match its durable owner, chat, card and
 receipt. Before recording, the existing mortality service revalidates the source
 and canonical evidence. Source completion, canonical domain effects and the

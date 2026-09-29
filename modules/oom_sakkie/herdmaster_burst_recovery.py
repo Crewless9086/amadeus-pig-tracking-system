@@ -202,6 +202,13 @@ def route_retained_manager_recovery(case, *, preview_builder=None):
                 "writes_farm_data": False, "recovery_required": True}
     result = dict(preview_builder(case) or {})
     if (result.get("success") is True
+            and result.get("status") == "retained_mortality_continuation_owner_review"
+            and result.get("suppress_owner_delivery") is True
+            and result.get("writes_farm_data") is False
+            and result.get("telegram_sends") == result.get("telegram_edits") == 0
+            and not result.get("callback_token")):
+        return result
+    if (result.get("success") is True
             and result.get("status") == "retained_mortality_prepared_not_presented"
             and not result.get("callback_token")):
         return {**result, "suppress_owner_delivery": True, "telegram_sends": 0,
