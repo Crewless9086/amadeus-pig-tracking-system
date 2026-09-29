@@ -563,6 +563,11 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                    if ref.startswith("provider_message:")}
             bound_rows = [row for row in health if row.get("provider_message_id") in ids]
             candidate["evidence_refs"].append(retained_report_binding(bound_rows))
+            for row in bound_rows:
+                bridge = row.get("retained_repreview") or {}
+                if bridge.get("owner_requested_continuation") is True:
+                    candidate["evidence_refs"].append("retained_confirmation:" + bridge["claim_preview_digest"])
+                    candidate["next_reassessment_at"] = now.isoformat()
     for key, refs, status in retained:
         if key in completed:
             candidates.append(completed[key])
@@ -588,6 +593,11 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                 ("provider_message:", "incident_date:", "pig:", "tag:"))}
             if candidate["dedupe_key"] == key and current == bound:
                 candidate["evidence_refs"].append(binding)
+                for row in rows:
+                    bridge = row.get("retained_repreview") or {}
+                    if bridge.get("owner_requested_continuation") is True:
+                        candidate["evidence_refs"].append("retained_confirmation:" + bridge["claim_preview_digest"])
+                        candidate["next_reassessment_at"] = now.isoformat()
                 candidates.append(candidate)
     return candidates
 
@@ -625,6 +635,20 @@ def _retained_mortality_completion(cursor, key, refs, evidence, now):
         return None
     related = [c for c in evidence["claims"] if str(c[2]) == mission
         or (str(c[0]), str(c[1]), str(c[3])) == (owner, chat, provider)]
+    if len(related) > 1 and (latest.get("retained_repreview") or {}).get("owner_requested_continuation") is True:
+        from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+        from modules.oom_sakkie.retained_mortality_continuation import read_claims, validate_lineage
+        try:
+            rows = source_tx.read_history(cursor, [mission])
+            claims = read_claims(cursor, latest, rows)
+            digest = latest["retained_repreview"]["claim_preview_digest"]
+            current = [c for c in claims if c["preview_digest"] == digest]
+            if len(current) != 1:
+                return None
+            validate_lineage(cursor, latest, claims, current[0], now, rows)
+            related = [c for c in related if (c[7] or {}).get("callback_token") == current[0]["callback_token"]]
+        except (source_tx.SourceConflict, KeyError, ValueError):
+            return None
     if len(related) != 1 or len(related[0]) != 8:
         return None
     c_owner, c_chat, claim_mission, c_provider, state, kind, payload, metadata = related[0]

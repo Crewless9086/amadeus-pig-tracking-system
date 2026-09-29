@@ -281,19 +281,52 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         parsed = weaning_delivery_input(parsed, action_result)
         from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import first_treatment_delivery_input
         parsed = first_treatment_delivery_input(parsed, action_result)
+        binding = action_result.get("delivery_callback_binding") or {}
+        if (str(action_result.get("mission_id") or "").startswith("OOM-HERDMASTER-MORTALITY-")
+                and action_result.get("delivery_recovery_required") is True
+                and all(str(binding.get(key) or "") == str(parsed.get(other) or "") for key, other in (
+                    ("owner_user_id", "telegram_user_id"), ("chat_id", "telegram_chat_id"),
+                    ("provider_message_id", "provider_message_id"), ("reply_to_message_id", "reply_to_message_id")))
+                and binding.get("provider_timestamp")):
+            # Reuse the consumed receipt's server time for message replay only.
+            # A retry's new ingress time is not a new owner confirmation.
+            parsed = {**parsed, "provider_timestamp": binding["provider_timestamp"]}
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
           if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
           deliver_family_result(parsed,action_result,
             specialist=str(action_result.get("specialist") or "HERDMASTER"),
             mission_id=str(action_result.get("mission_id") or ""),
             card_mission_id=str(action_result.get("card_mission_id") or action_result.get("mission_id") or "")))
-        ack_result,ack_status=acknowledge_telegram_callback(callback["callback_query_id"],environ=environ)
+        continuation = action_result.get("continuation_requested") is True
+        callback_feedback = action_result.get("callback_feedback")
+        if continuation and not callback_feedback:
+            from modules.oom_sakkie.retained_mortality_continuation import feedback, delivery_feedback_kind
+            callback_feedback = feedback(parsed, "", delivery_feedback_kind(parsed, action_result, delivery))["callback_feedback"]
+        ack_result,ack_status=acknowledge_telegram_callback(callback["callback_query_id"],environ=environ,
+            **({"text": callback_feedback, "show_alert": True} if continuation else {}))
+        feedback_delivery = None
+        if continuation and ack_status >= 400:
+            # Expired callback query IDs cannot hide a handled refusal. This
+            # ordinary, receipt-bound family message has no protected buttons
+            # or farm authority, and the existing journal contains uncertainty.
+            import hashlib
+            identity = "OOM-CONTINUATION-FEEDBACK-" + hashlib.sha256(
+                (parsed["telegram_user_id"] + "|" + parsed["callback_query_id"]).encode()).hexdigest()[:24].upper()
+            feedback_delivery = deliver_family_result(parsed, {
+                "status": "retained_confirmation_feedback", "answer": callback_feedback,
+                "recipient_render_contract": "retained_confirmation_feedback_v1",
+                "recipient_language": parsed["output_language"], "writes_farm_data": False},
+                specialist="HERDMASTER", mission_id=identity, card_mission_id=identity)
         body,_=_direct_result(action_result.get("success") is True and delivery.get("success") is True and ack_status<400,
           str(action_result.get("status") or "protected_callback_contained"),policy,action_status)
-        body.update({"protected_action":action_result,"delivery":delivery,"callback_acknowledgement":ack_result,
+        body.update({"protected_action":{k:v for k,v in action_result.items() if not k.startswith("_")},"delivery":delivery,"callback_acknowledgement":ack_result,
           "sends_telegram":int(delivery.get("telegram_sends") or 0)>0,"writes":action_result.get("writes_farm_data") is True})
+        if continuation:
+            body["feedback_delivery"] = feedback_delivery
+            body["sends_telegram"] |= int((feedback_delivery or {}).get("telegram_sends") or 0) > 0
+            return body, 200
         return body,(ack_status if ack_status>=400 else
-          503 if action_result.get("success") is True and delivery.get("success") is not True
+          200 if continuation else 503 if action_result.get("success") is True and delivery.get("success") is not True
           else action_status)
     if callback["callback_data"].startswith("sam_live_"):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
@@ -536,7 +569,7 @@ def _parse_telegram_callback_payload(payload):
     }
 
 
-def acknowledge_telegram_callback(callback_query_id, environ=None):
+def acknowledge_telegram_callback(callback_query_id, environ=None, *, text=None, show_alert=False):
     source = environ if environ is not None else os.environ
     callback_query_id = str(callback_query_id or "").strip()[:120]
     if not callback_query_id:
@@ -546,14 +579,17 @@ def acknowledge_telegram_callback(callback_query_id, environ=None):
         return {"success": False, "status": "telegram_direct_bot_token_not_configured", "sends_telegram": False}, 503
     request = urllib_request.Request(
         f"https://api.telegram.org/bot{token}/answerCallbackQuery",
-        data=json.dumps({"callback_query_id": callback_query_id}).encode("utf-8"),
+        data=json.dumps({"callback_query_id": callback_query_id,
+            **({"text": str(text)[:200], "show_alert": bool(show_alert)} if text else {})}).encode("utf-8"),
         headers={"Content-Type": "application/json"}, method="POST",
     )
     try:
         with urllib_request.urlopen(request, timeout=15) as response:
             result = json.loads(response.read().decode("utf-8") or "{}")
-        return {"success": result.get("ok") is True, "status": "telegram_callback_acknowledged", "sends_telegram": False}, 200
-    except (urllib_error.HTTPError, OSError):
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            return {"success": False, "status": "telegram_callback_acknowledgement_failed", "sends_telegram": False}, 502
+        return {"success": True, "status": "telegram_callback_acknowledged", "sends_telegram": False}, 200
+    except (urllib_error.HTTPError, OSError, ValueError, UnicodeError):
         return {"success": False, "status": "telegram_callback_acknowledgement_failed", "sends_telegram": False}, 502
 
 

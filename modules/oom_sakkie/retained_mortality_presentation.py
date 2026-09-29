@@ -150,7 +150,9 @@ def _histories(cur, claim, source, source_history, expected_case, observed_at):
 def claim_presentation(policy, *, callback_token, preview_digest, owner_user_id, private_chat_id,
                        action_kind, factory, start_attempt, deadline_monotonic):
     from modules.oom_sakkie.protected_delivery_lifecycle import _safe, _attempt_identity
-    source_tx.require(type(policy) is RetainedMortalityPresentation, "retained_mortality_policy_invalid")
+    from modules.oom_sakkie.retained_mortality_continuation import ContinuationPresentation, admission_history
+    continuation = type(policy) is ContinuationPresentation
+    source_tx.require(type(policy) is RetainedMortalityPresentation or continuation, "retained_mortality_policy_invalid")
     source, requested, case = json.loads(policy.source_json), json.loads(policy.request_json), json.loads(policy.case_json)
     source_tx.require((callback_token, preview_digest, owner_user_id, private_chat_id, action_kind) ==
         (policy.callback_token, policy.preview_digest, requested["owner_user_id"], requested["private_chat_id"], "mortality"),
@@ -190,7 +192,9 @@ def claim_presentation(policy, *, callback_token, preview_digest, owner_user_id,
                     "retained_mortality_history_future")
                 _validate_source(source, claim)
                 validate_origin(source_history, source, claim, observed_at)
-                proofs = _histories(cur, claim, source, source_history, case, observed_at)
+                proofs = (admission_history if continuation else _histories)(
+                    cur, claim, source, source_history, case, observed_at)
+                prior_windows = proofs.pop("_authorized_window_event_ids", [])
                 operation = claim["preview_payload"]["operation_id"]
                 cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))", ("herdmaster-mortality:" + operation,))
                 cur.execute("""select 1 from (
@@ -200,8 +204,9 @@ def claim_presentation(policy, *, callback_token, preview_digest, owner_user_id,
                       join public.pig_welfare_cases c using(welfare_case_id)
                       where c.pig_id=%s and e.case_state='closed' and e.closure_kind='death'
                     union all select 1 from public.operational_events where payload_json->>'operation_id'=%s
+                      and not (event_id=any(%s))
                     ) effect_evidence limit 1""", (operation, operation, claim["preview_payload"]["identity"]["pig_id"],
-                        claim["preview_payload"]["identity"]["pig_id"], operation))
+                        claim["preview_payload"]["identity"]["pig_id"], operation, prior_windows))
                 source_tx.require(cur.fetchone() is None, "retained_mortality_operation_already_exists")
                 remaining = None if deadline_monotonic is None else deadline_monotonic - time.monotonic() - 30
                 if remaining is not None and remaining <= 0:

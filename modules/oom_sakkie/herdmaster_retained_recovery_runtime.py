@@ -351,6 +351,9 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
         return _contained(failure)
     payload = payloads[0]
     owner, chat = payload["owner_user_id"], payload["chat_id"]
+    if (payload.get("retained_repreview") or {}).get("owner_requested_continuation") is True:
+        from modules.oom_sakkie.retained_mortality_continuation import resume_requested_preview
+        return resume_requested_preview(payload, case)
     target = next((value.split(":", 1)[1] for value in refs
                    if value.startswith("pig:") and ":" in value), "")
     from modules.oom_sakkie.herdmaster_health_loss_preview import (
