@@ -541,15 +541,15 @@ class PostgresManagerCaseStore:
                 connection.close()
 
     @staticmethod
-    def _lock_reconciliation_priors(cur, keys):
-        """Lock a complete existing run, or release it and return planning hints."""
+    def _lock_reconciliation_priors(cur, keys, *, terminal_absences=()):
+        """Lock a run, releasing it if a missing key can need a later lock."""
         cur.execute("savepoint oom_manager_reconciliation_prefetch")
         cur.execute("""select dedupe_key,evidence_digest,generation,status,
                 assigned_worker_id,lease_until,evidence_refs,case_id
             from app_private.oom_manager_cases
             where dedupe_key=any(%s) order by case_id for update""", (list(keys),))
         priors = {row[0]: row[1:] for row in cur.fetchall()}
-        complete = len(priors) == len(keys)
+        complete = set(keys).difference(priors).issubset(terminal_absences)
         if not complete:
             # A missing lower key might be inserted during reconciliation.
             # Higher prelocks must be released before that sorted point read.
@@ -563,14 +563,28 @@ class PostgresManagerCaseStore:
         Absent terminal findings are legitimate replays and remain absent on
         every cycle. One such key must not force every existing case back to an
         individual query. After releasing an incomplete whole-cohort prefetch,
-        use its key set only to plan contiguous existing runs. Re-lock each run
-        at its sorted position, and use the original point path for gaps or a
-        run made incomplete by concurrent deletion. Absence is never cached.
+        take a second fresh whole-cohort snapshot if every missing key is a
+        unique terminal finding with no later locking side effect. These keys
+        cannot insert a row, so this authoritative snapshot may retain their
+        absence without acquiring a lower lock after higher locks. Otherwise
+        use the last released read only to plan existing runs, re-locking each run at
+        its sorted position and using fresh point reads for insertion gaps.
         """
         if not candidates:
             return
         keys = set(item["dedupe_key"] for item in candidates)
         priors, complete = self._lock_reconciliation_priors(cur, keys)
+        if not complete and len(keys) == len(candidates):
+            terminal_absences = {item["dedupe_key"] for item in candidates
+                if item.get("terminal_state") == "completed"
+                # BEACON retirement performs a fresh locking read even after
+                # an absent terminal replay; preserve its ordered point path.
+                and item["specialist"] != "BEACON"}
+            if keys.difference(priors).issubset(terminal_absences):
+                priors, complete = self._lock_reconciliation_priors(
+                    cur, keys, terminal_absences=terminal_absences)
+                if complete:
+                    priors.update((key, None) for key in keys.difference(priors))
         if complete:
             for candidate in candidates:
                 yield candidate, priors.pop(candidate["dedupe_key"],

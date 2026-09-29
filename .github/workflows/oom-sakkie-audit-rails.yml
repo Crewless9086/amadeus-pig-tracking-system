@@ -288,7 +288,7 @@ jobs:
 
       - name: Run Oom Sakkie protected breeding claim persistence gates
         run: |
-          OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_oom_sakkie_protected_breeding_claim_postgres tests.test_rootline_protected_irrigation_postgres tests.test_oom_sakkie_general_manager_postgres
+          OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_protected_breeding_claim_postgres.py tests/test_rootline_protected_irrigation_postgres.py tests/test_oom_sakkie_general_manager_postgres.py
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_daily_farm_manager_postgres.py tests/test_oom_sakkie_protected_delivery_postgres.py
 
       - name: Run farm OpenAI budget concurrency and denial gates
