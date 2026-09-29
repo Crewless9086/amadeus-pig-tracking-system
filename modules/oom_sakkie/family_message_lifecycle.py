@@ -91,6 +91,10 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         trusted_health = (localized.get("tool_used") == "herdmaster_health_loss_preview"
             and localized.get("recipient_render_contract") == "herdmaster_health_loss_recipient_v1"
             and status in {"preview_ready", "waiting_for_input"})
+        trusted_continuation_feedback = (specialist == "HERDMASTER"
+            and status == "retained_confirmation_feedback"
+            and localized.get("recipient_render_contract") == "retained_confirmation_feedback_v1"
+            and localized.get("writes_farm_data") is False)
         trusted_farrowing = (
             localized.get("recipient_render_contract") == "herdmaster_farrowing_recipient_v1"
             and (localized.get("specialist") == "HERDMASTER" or specialist == "HERDMASTER")
@@ -106,7 +110,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             and localized.get("recipient_render_contract") == "rootline_owner_clarification_recipient_v1"
             and status in {"owner_context_clarification_required", "owner_clarification_delivery_reconciliation_required"}
             and localized.get("question_count") == 1 and localized.get("hardware_commands") == 0)
-        preserves_recipient_text = (trusted_question or trusted_health or trusted_farrowing or trusted_irrigation
+        preserves_recipient_text = (trusted_question or trusted_health or trusted_continuation_feedback or trusted_farrowing or trusted_irrigation
             or trusted_irrigation_question) and str(
             localized.get("recipient_language") or "").casefold().startswith("af")
         if preserves_recipient_text:
@@ -337,6 +341,20 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         return {"success": False, "status": "family_message_visible_text_required",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
     text_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if (result.get("status") == "retained_confirmation_feedback"
+            and result.get("recipient_render_contract") == "retained_confirmation_feedback_v1"
+            and specialist == "HERDMASTER" and result.get("writes_farm_data") is False):
+        # Receipt-bound informational fallback only: reuse its first server
+        # receipt time across webhook retries, never a farm confirmation time.
+        previous = next((row for row in events if row.get("provider_message_id") == str(parsed.get("provider_message_id") or "")
+            and row.get("owner_user_id") == str(parsed.get("telegram_user_id") or "")
+            and row.get("chat_id") == str(parsed.get("telegram_chat_id") or "")
+            and row.get("mission_id") == mission_id and row.get("card_mission_id") == card_mission_id
+            and row.get("specialist_identity") == specialist
+            and row.get("task_state") == "retained_confirmation_feedback"
+            and row.get("text_sha256") == text_sha and row.get("provider_timestamp")), None)
+        if previous:
+            parsed = {**parsed, "provider_timestamp": previous["provider_timestamp"]}
     reply_markup = result.get("reply_markup") if isinstance(result.get("reply_markup"), Mapping) else None
     exclusive_completion = (
         result.get("owner_visible_completion_policy") == "verified_edit_or_new_message"

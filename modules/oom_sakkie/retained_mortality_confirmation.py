@@ -57,7 +57,8 @@ def confirm_retained_mortality(claimed, parsed, *, gateway_authority, connect_fa
                 'retained_mortality_callback_source_terminal')
             prepared = next((row['record'] for row in rows if row['record'].get('mission_id') == mission
                 and row['record'].get('status') == 'preview_ready'
-                and (row['record'].get('retained_repreview') or {}).get('claim_mission_id') == claimed['mission_id']), None)
+                and (row['record'].get('retained_repreview') or {}).get('claim_mission_id') == claimed['mission_id']
+                and (row['record'].get('retained_repreview') or {}).get('claim_preview_digest') == claimed['preview_digest']), None)
             source_tx.require(prepared is not None, 'retained_mortality_callback_preview_missing')
             cur.execute('select to_jsonb(c),clock_timestamp() from app_private.oom_protected_action_claims c where callback_token=%s for update',
                 (claimed['callback_token'],))

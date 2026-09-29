@@ -383,6 +383,7 @@
   worker with canonical readback, fresh recipient authority and expired-lease
   recovery. It adds no scheduled pre-domain mortality execution.
   Existing protected claims and family delivery remain the only provider rails.
+- Owner-requested expired retained mortality review: `modules/oom_sakkie/retained_mortality_continuation.py`; immutable predecessor, same operation, one audited successor and fresh confirmation. Native callback and PostgreSQL qualification: `tests/test_oom_sakkie_retained_mortality_continuation_postgres.py`.
   Real transaction/concurrency and delivery-budget qualification:
   `tests/test_oom_sakkie_retained_mortality_presentation_postgres.py`.
   The health/loss workflow owns the approved finite-window rule; source presence

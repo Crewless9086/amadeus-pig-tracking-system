@@ -27,34 +27,21 @@ OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
 PREDECESSOR_PATHS = [
     '.github/workflows/oom-sakkie-audit-rails.yml',
-    'docs/02-backend/OOM_SAKKIE_SEMANTIC_MORTALITY_CONTRACT.md',
     'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md',
     'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md',
     'docs/09-vault-brain/CHANGELOG.md',
     'modules/oom_sakkie/family_message_lifecycle.py',
     'modules/oom_sakkie/herdmaster_burst_recovery.py',
-    'modules/oom_sakkie/herdmaster_health_loss_runtime.py',
     'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py',
-    'modules/oom_sakkie/herdmaster_source_transaction.py',
+    'modules/oom_sakkie/manager_case_sources.py',
     'modules/oom_sakkie/protected_action_runtime.py',
-    'modules/oom_sakkie/protected_delivery_lifecycle.py',
-    'modules/oom_sakkie/protected_payment_recovery.py',
     'modules/oom_sakkie/retained_mortality_confirmation.py',
-    'modules/oom_sakkie/retained_mortality_history.py',
+    'modules/oom_sakkie/retained_mortality_continuation.py',
     'modules/oom_sakkie/retained_mortality_presentation.py',
-    'modules/pig_weights/herdmaster_health_loss_recording.py',
-    'modules/pig_weights/pig_welfare_case_runtime.py',
-    'modules/sales/sam_live_stock_launch_control.py',
-    'tests/test_herdmaster_health_loss_recording.py',
-    'tests/test_herdmaster_mortality_journey_postgres.py',
-    'tests/test_oom_sakkie_general_manager_postgres.py',
-    'tests/test_oom_sakkie_general_manager_worker.py',
-    'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py',
-    'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py',
-    'tests/test_oom_sakkie_protected_payment_recovery.py',
-    'tests/test_oom_sakkie_retained_mortality_presentation.py',
+    'modules/oom_sakkie/telegram_direct.py',
+    'tests/test_oom_sakkie_retained_confirmation_feedback.py',
+    'tests/test_oom_sakkie_retained_mortality_continuation_postgres.py',
     'tests/test_oom_sakkie_retained_mortality_presentation_postgres.py',
-    'tests/test_oom_sakkie_retained_report_recovery_postgres.py',
 ]
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -62,6 +49,7 @@ PRESENTATION_EFFECTS = {'retained_mortality_single_first_attempt_presentation_wi
     'retained_mortality_source_fenced_atomic_confirmation',
     'canonical_completed_retained_mortality_delivery_recovery'}
 CONTINUATION_EFFECT = 'owner_requested_expired_retained_mortality_confirmation_successor'
+READ_QUERY_EFFECT = 'herdmaster_canonical_domain_scoped_read_answers'
 RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_preview_renewal'
 # Synthetic candidate identity permits pre-publication qualification only while
 # pins are pending. Final qualification uses the real pins, never owner approval.
@@ -86,7 +74,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {"repository_candidate_validation", "merge", "existing_web_application_release"}),
+        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
         "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -538,8 +526,9 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:459c6fdaa4039ae4d270ad5c8c82c1701fabb90a"})
-        self.assertEqual(adapter.ADDED_EFFECTS,{CONTINUATION_EFFECT,"application_revision_rollback:web:5c3e6dc7211bb8285acbec3987974241cc2e152f"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:5c3e6dc7211bb8285acbec3987974241cc2e152f"})
+        self.assertEqual(adapter.ADDED_EFFECTS,{READ_QUERY_EFFECT,"application_revision_rollback:web:3a8f06266552196dadebfce270bf5c4f977a29d5"})
+        self.assertNotIn(CONTINUATION_EFFECT,adapter.ADDED_EFFECTS)
         self.assertFalse(PRESENTATION_EFFECTS & adapter.ADDED_EFFECTS)
 
     def test_retired_authority_does_not_leak_into_successor_but_history_is_preserved(self):
@@ -547,7 +536,7 @@ class ReconciliationTests(unittest.TestCase):
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertNotIn(RETIRED_RENEWAL_EFFECT,prior["allowed_effects"])
         self.assertTrue(PRESENTATION_EFFECTS <= set(prior["allowed_effects"]))
-        self.assertNotIn(CONTINUATION_EFFECT,prior["allowed_effects"])
+        self.assertIn(CONTINUATION_EFFECT,prior["allowed_effects"])
         self.assertIn(CONTINUATION_EFFECT,m["contract"]["allowed_effects"])
         self.assertNotIn(RETIRED_RENEWAL_EFFECT,m["contract"]["allowed_effects"])
         self.assertTrue(PRESENTATION_EFFECTS <= set(m["contract"]["allowed_effects"]))
@@ -575,6 +564,29 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(self.db.rows[adapter.PARENT_ID],before[0][adapter.PARENT_ID])
         after=self.snapshot();self.assertEqual(apply(self.args,self.connect)["writes"],0)
         self.assertEqual(self.snapshot(),after)
+
+    def test_scoped_read_repair_cannot_add_writes_unscoped_briefs_or_spend(self):
+        for before,after in (
+                ('explicit typed read capabilities','new prose-only write dispatch'),
+                ('do not substitute a generic farm brief','substitute a generic farm brief'),
+                ('Missing, malformed or unavailable evidence must remain an explicit gap','Unavailable evidence becomes zero'),
+                ('Scope genuine HERDMASTER owner questions and supported physical tasks before presentation limits','Apply presentation limits before domain scoping'),
+                ('adds no model call, confirmation bypass, farm mutation','may add model calls and unconfirmed mutations'),
+                ('US$1 SAST-day OpenAI cap','unlimited OpenAI budget'),
+                ('tests and hosted qualification alone are not owner acceptance','hosted tests prove all owner acceptance')):
+            m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
+            original=m['contract']['operational_acceptance']
+            changed=[value.replace(before,after) for value in original]
+            self.assertNotEqual(changed,original,before)
+            m['contract']['operational_acceptance']=changed
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,'approved_scope_delta_changed'):
+                adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail('unexpected connection'))
+        m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
+        prior=m['expected_child_record']['metadata_json']['mission_admission_contract']
+        self.assertNotIn(READ_QUERY_EFFECT,prior['allowed_effects'])
+        self.assertIn(READ_QUERY_EFFECT,m['contract']['allowed_effects'])
+        self.assertTrue(PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {CONTINUATION_EFFECT} <= set(m['contract']['allowed_effects']))
+        self.assertFalse(any('this web-only expired-confirmation continuation scope' in x for x in m['contract']['operational_acceptance']))
 
     def test_cohort_qualification_cannot_weaken_concurrency_or_add_recovery(self):
         for before, after in (
@@ -709,29 +721,34 @@ class ReconciliationTests(unittest.TestCase):
                 self.fail("source verification reached candidate before rejecting checkout drift")
             with self.subTest(reason=reason),patch.object(adapter.subprocess,"check_output",side_effect=git):
                 with self.assertRaisesRegex(adapter.ReconciliationError,reason):adapter.verify_source_and_candidate(plan)
-    def test_exact_lifecycle_candidate_allows_no_qualification_successor_or_path_drift(self):
+    def test_exact_read_question_candidate_allows_no_qualification_successor_or_path_drift(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR,1363)
-        self.assertEqual(adapter.BASE,"5c3e6dc7211bb8285acbec3987974241cc2e152f")
+        self.assertEqual(adapter.CANDIDATE_PR,1364)
+        self.assertEqual(adapter.BASE,"3a8f06266552196dadebfce270bf5c4f977a29d5")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
-        self.assertEqual(adapter.HEAD,"d20bc93a24c156f7e6bb19d0cf496811d407a48d")
-        self.assertEqual(adapter.TREE,"3ab5d8bea2b29a51d88098752152598ca7f51b54")
+        self.assertEqual(adapter.HEAD,"e8af6a1d18bc76b2617f6de3a8133c8a559b5cb4")
+        self.assertEqual(adapter.TREE,"84b1b3b67fcbb8e13834fb3890192f6bb8381bba")
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1362)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"a5ea2b622f81052a564762203a876eca92d724a7")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"459c6fdaa4039ae4d270ad5c8c82c1701fabb90a")
+        self.assertEqual(adapter.PREDECESSOR_PR,1363)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"d20bc93a24c156f7e6bb19d0cf496811d407a48d")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"5c3e6dc7211bb8285acbec3987974241cc2e152f")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PATHS),16)
-        for path in ("modules/oom_sakkie/retained_mortality_presentation.py",
-                     "modules/oom_sakkie/retained_mortality_confirmation.py",
-                     "modules/oom_sakkie/retained_mortality_continuation.py",
-                     "modules/oom_sakkie/herdmaster_burst_recovery.py",
-                     "modules/oom_sakkie/telegram_direct.py",
-                     "tests/test_oom_sakkie_retained_confirmation_feedback.py",
-                     "tests/test_oom_sakkie_retained_mortality_continuation_postgres.py"):
+        self.assertEqual(len(adapter.PATHS),22)
+        for path in ("modules/oom_sakkie/herd_read_queries.py",
+                     "modules/oom_sakkie/herdmaster_request_runtime.py",
+                     "modules/oom_sakkie/semantic_front_door.py",
+                     "modules/oom_sakkie/telegram_gateway.py",
+                     "modules/oom_sakkie/farm_manager_runtime.py",
+                     "modules/pig_weights/herdmaster_breeding_attention_service.py",
+                     "modules/pig_weights/herdmaster_breeding_operating_loop.py",
+                     "modules/pig_weights/herdmaster_breeding_policy.py",
+                     "modules/pig_weights/herdmaster_daily_manager_evidence.py",
+                     "tests/test_herdmaster_breeding_chronology.py",
+                     "tests/test_herdmaster_breeding_operating_loop.py",
+                     "tests/test_oom_sakkie_herd_read_queries.py"):
             self.assertIn(path,adapter.PATHS)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
@@ -754,7 +771,7 @@ class ReconciliationTests(unittest.TestCase):
                 if args==["diff","--name-only",adapter.BASE,adapter.HEAD,"--"]:
                     paths=list(adapter.PATHS)
                     if case=="extra_path":paths.append("app.py")
-                    elif case=="missing_runtime":paths.remove("modules/oom_sakkie/retained_mortality_confirmation.py")
+                    elif case=="missing_runtime":paths.remove("modules/oom_sakkie/herd_read_queries.py")
                     return ("\n".join(sorted(paths))+"\n").encode()
                 if args==["diff","--no-ext-diff","--no-textconv","--binary","--full-index",adapter.BASE,adapter.HEAD,"--"]:
                     return b"unreviewed candidate diff" if case=="wrong_patch" else b"synthetic candidate diff"

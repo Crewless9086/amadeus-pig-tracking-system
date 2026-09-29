@@ -151,6 +151,12 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "owner_visible_completion_policy":"verified_edit_or_new_message",
           "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False},200
     if status>=400 or claimed.get("status") not in {"protected_callback_claimed","protected_callback_recovered"}:
+        if claimed.get("status") in {"protected_callback_expired", "protected_callback_stale"}:
+            from modules.oom_sakkie.retained_mortality_continuation import request_continuation
+            continuation = request_continuation(parsed, gateway_authority, data,
+                connect_factory=connect_factory)
+            if continuation is not None:
+                return continuation
         if claimed.get("status")=="protected_preview_details" and claimed.get("action_kind")=="beacon_campaign_review":
             preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
             selected=preview.get("selected_media")
