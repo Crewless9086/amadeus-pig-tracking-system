@@ -380,6 +380,20 @@ def test_actual_current_canonical_identity_excludes_superseded_pig(store):
     assert collect(store) == []
 
 
+def current_delivery_case(store):
+    candidate=collect(store)[0]
+    with store(True) as db,db.cursor() as cur:
+        cur.execute("select to_jsonb(c) from app_private.oom_manager_cases c where dedupe_key=%s",(candidate["dedupe_key"],))
+        row=cur.fetchone()[0]
+    return {**candidate,**row,"message_family":"retained_protected_recovery"}
+
+
+def ensure_prepared(journey):
+    result=recovery.build_retained_protected_preview(journey["case"])
+    assert result["success"] and result["status"] in {"retained_mortality_prepared_not_presented","preview_ready"}
+    assert not journey["sends"]
+
+
 @pytest.fixture
 def delivery_journey(store, monkeypatch, request):
     """Actual canonical SQL/recorders/claims/domain effects; fake evidence/provider edges."""
@@ -403,6 +417,8 @@ def delivery_journey(store, monkeypatch, request):
         "animals": [{"pig_id": "P27", "tag_number": "27", "name": "Synthetic",
                      "lifecycle_status": "Active", "on_farm": True, "availability": "Herd", "pen": "PEN-A"}],
         "matings": [], "litters": []}
+    from modules.oom_sakkie.herdmaster_source_transaction import digest
+    evidence["evidence_generation"]=digest({key:evidence[key] for key in ("animals","matings","litters")})
     monkeypatch.setattr(health, "load_canonical_health_loss_evidence", lambda **_k: evidence)
     with store() as db, db.cursor() as cur:
         cur.execute("update public.pigs set initial_pen_id='PEN-A' where pig_id='P27'")
@@ -436,12 +452,19 @@ def delivery_journey(store, monkeypatch, request):
         assert source["preview"]["evaluator"]["status"] == "event_date_required"
         assert source["status"] == "waiting_for_input"
     add_report(store, source); retain(store)
-    case = collect(store)[0]
+    candidate = collect(store)[0]
     # Preserve the qualified binding on the existing case, as the real manager
     # reconciliation does before invoking its delivery adapter.
     with store() as db, db.cursor() as cur:
-        cur.execute("update app_private.oom_manager_cases set evidence_refs=%s where dedupe_key=%s",
-                    (Jsonb(case["evidence_refs"]), case["dedupe_key"]))
+        normalized=normalize_candidate(candidate,now=datetime.now(timezone.utc))
+        cur.execute("update app_private.oom_manager_cases set evidence_refs=%s,evidence_digest=%s where dedupe_key=%s returning case_id",
+                    (Jsonb(candidate["evidence_refs"]),normalized["evidence_digest"],candidate["dedupe_key"]))
+        case_id=cur.fetchone()[0]
+        created=datetime.now(timezone.utc)
+        payload={"case_id":case_id,"generation":1,"event_type":"created","occurred_at":created.isoformat()}
+        cur.execute("""insert into app_private.oom_manager_case_events(event_id,case_id,generation,event_type,event_payload,occurred_at)
+            values(%s,%s,1,'created',%s,%s)""",(uuid4().hex,case_id,Jsonb(payload),created))
+    case=current_delivery_case(store)
     sends, edits, effects = [], [], []
     def send(chat, text, **kwargs):
         sends.append((chat, text, kwargs))
@@ -466,7 +489,7 @@ def delivery_journey(store, monkeypatch, request):
         assert binding["preview_sha256"] == current["payload"]["preview_sha256"]
         assert lifecycle["mission_id"] == source["mission_id"] and actor_id == "42"
         assert binding["evidence_scope"] == "animal"
-        assert kwargs["evidence_loader"]()["animal_evidence_generations"]["P27"] == binding["evidence_generation"]
+        assert evidence["animal_evidence_generations"]["P27"] == binding["evidence_generation"]
         effects.append(operation)
         return _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation, actor_id, **kwargs)
     monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._confirm_mortality_lifecycle", effect)
@@ -491,6 +514,7 @@ def test_actual_manager_preview_delivery_callback_and_exact_replays(
     if renewed_expired_claim:
         expired_renewal_inputs(store, j)
     j["evidence"]["as_of_timestamp"] = "2026-09-23T04:55:00+00:00"
+    ensure_prepared(j)
     first = deliver_farm_manager_case(j["case"])
     assert first["success"] and first["delivery_confirmed"]
     claim = j["claim"](); card = protected_card_mission_id(first["mission_id"], claim["digest"])
@@ -515,12 +539,12 @@ def test_actual_manager_preview_delivery_callback_and_exact_replays(
             return cur.fetchone()
     assert welfare_counts() == (1, 1)
     j["evidence"]["as_of_timestamp"] = "2026-09-23T05:00:00+00:00"
-    again = deliver_farm_manager_case(collect(store)[0])
+    again = deliver_farm_manager_case(current_delivery_case(store))
     assert again["success"] and again["status"] == "protected_delivery_replayed_noop"
     assert again["delivery_confirmed"] is False and len(j["sends"]) == 1
     assert j["claim"]()["token"] == claim["token"] and j["claim"]()["expires"] == claim["expires"]
     assert welfare_counts() == (1, 1)
-    parsed = {"telegram_user_id": "42", "telegram_chat_id": "42", "provider_message_id": "702",
+    parsed = {"telegram_user_id": "42", "telegram_chat_id": "42", "telegram_chat_type": "private", "provider_message_id": "702",
         "provider_timestamp": datetime.now(timezone.utc).isoformat(), "reply_to_message_id": "701",
         "text": "", "output_language": "af"}
     authority = issue_gateway_owner_authority("42", "42")
@@ -572,7 +596,7 @@ def test_actual_manager_preview_delivery_callback_and_exact_replays(
         cur.execute("select count(*) from public.pig_welfare_cases")
         assert cur.fetchone()[0] == 1
     assert len(j["effects"]) == len(j["sends"]) == len(j["edits"]) == 1
-    assert len(renewal_events(store, claim["token"])) == int(renewed_expired_claim)
+    assert not renewal_events(store,claim["token"]) and len(window_events(store,claim["token"]))==1
 
 
 @pytest.mark.parametrize("state", ["expired", "cancelled", "delivery_pending", "delivery_ambiguous"])
@@ -607,9 +631,10 @@ def test_actual_unattempted_prepared_claim_survives_restart_with_one_card(store,
     assert recovery.build_retained_protected_preview(j["case"])["success"]
     before = j["claim"]()
     assert not before["card"] and before["delivery_state"] == "claim_created" and not j["sends"]
-    result = deliver_farm_manager_case(collect(store)[0])
+    result = deliver_farm_manager_case(current_delivery_case(store))
     assert result["success"] and result["delivery_confirmed"] and len(j["sends"]) == 1
-    assert j["claim"]()["token"] == before["token"] and j["claim"]()["expires"] == before["expires"]
+    assert j["claim"]()["token"] == before["token"]
+    assert len(window_events(store,before["token"]))==1
 
 
 def test_actual_pre_send_timeout_preserves_claim_then_normal_retry_sends_once(
@@ -618,6 +643,7 @@ def test_actual_pre_send_timeout_preserves_claim_then_normal_retry_sends_once(
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
     j = delivery_journey
+    ensure_prepared(j)
     clock = [0.]
     slow = [True]
     original_store = family._event_store
@@ -638,13 +664,13 @@ def test_actual_pre_send_timeout_preserves_claim_then_normal_retry_sends_once(
     assert not j["sends"] and not j["edits"] and not j["effects"]
     clock[0] = 0.
     slow[0] = False
-    resumed = deliver_farm_manager_case(collect(store)[0], deadline_monotonic=100.)
+    resumed = deliver_farm_manager_case(current_delivery_case(store), deadline_monotonic=100.)
     assert resumed["delivery_confirmed"] and len(j["sends"]) == 1
     after = claim_snapshot(store)
-    for key in ("callback_token", "mission_id", "preview_digest", "preview_payload", "expires_at"):
+    for key in ("callback_token", "mission_id", "preview_digest", "preview_payload"):
         assert after[key] == before[key]
     assert after["delivery_state"] == "delivery_confirmed"
-    replay = deliver_farm_manager_case(collect(store)[0], deadline_monotonic=100.)
+    replay = deliver_farm_manager_case(current_delivery_case(store), deadline_monotonic=100.)
     assert replay["status"] == "protected_delivery_replayed_noop"
     assert len(j["sends"]) == 1 and not j["effects"]
     events = original_store("load", card, None)
@@ -676,7 +702,15 @@ def renewal_events(store, token):
     with store(True) as db, db.cursor() as cur:
         cur.execute("""select to_jsonb(e) from public.operational_events e
             where aggregate_type='protected_action_claim' and aggregate_id=%s
+              and event_type='retained_protected_preview_expiry_renewed'
             order by event_id""", (sha256(token.encode()).hexdigest(),))
+        return [row[0] for row in cur.fetchall()]
+
+
+def window_events(store,token):
+    with store(True) as db,db.cursor() as cur:
+        cur.execute("""select to_jsonb(e) from public.operational_events e where aggregate_id=%s
+            and event_type='retained_mortality_presentation_window_started'""",(sha256(token.encode()).hexdigest(),))
         return [row[0] for row in cur.fetchall()]
 
 
@@ -684,7 +718,7 @@ def expired_renewal_inputs(store, journey, *, expired_status="expired"):
     assert recovery.build_retained_protected_preview(journey["case"])["success"]
     with store() as db, db.cursor() as cur:
         cur.execute("""update app_private.oom_protected_action_claims
-            set status=%s,delivery_state=%s,expires_at=clock_timestamp()-interval '1 minute'""",
+            set status=%s,delivery_state=%s,created_at=clock_timestamp()-interval '2 hours',expires_at=clock_timestamp()-interval '1 minute'""",
             (expired_status, "expired" if expired_status == "expired" else "claim_created"))
     with store(True) as db, db.cursor() as cur:
         current = recovery.read_retained_health_reports(cur, ["101"])
@@ -700,62 +734,50 @@ def expired_renewal_inputs(store, journey, *, expired_status="expired"):
 
 
 @pytest.mark.parametrize("expired_status", ["active", "expired"])
-def test_actual_never_attempted_expiry_renews_once_without_rearming_on_replay(
-        store, delivery_journey, expired_status):
-    j = delivery_journey
-    rows, delivery, request = expired_renewal_inputs(store, j, expired_status=expired_status)
-    before = claim_snapshot(store)
-    with store(True) as db, db.cursor() as cur:
-        cur.execute("select clock_timestamp()")
-        lower_bound = cur.fetchone()[0]
-    # High-level recovery revalidates current evidence before entering the helper.
-    renewed = recovery.build_retained_protected_preview(collect(store)[0])
-    assert renewed["success"] and renewed["confirmation_required"]
-    after = claim_snapshot(store)
-    expiry = datetime.fromisoformat(after["expires_at"])
-    assert lower_bound + timedelta(minutes=30) <= expiry <= datetime.now(timezone.utc) + timedelta(minutes=30)
-    assert after["status"] == "active" and after["delivery_state"] == "claim_created"
-    mutable = {"status", "expires_at", "delivery_state"}
-    assert {k: v for k, v in after.items() if k not in mutable} == {
-        k: v for k, v in before.items() if k not in mutable}
-    history = renewal_events(store, before["callback_token"])
-    assert len(history) == 1
-    event = history[0]
-    assert event["event_type"] == "retained_protected_preview_expiry_renewed"
-    audit = event["payload_json"]
-    assert audit["one_time_only"] is True and audit["provider_attempts"] == audit["farm_writes"] == 0
-    assert datetime.fromisoformat(audit["old_expires_at"]) == datetime.fromisoformat(before["expires_at"])
-    assert datetime.fromisoformat(audit["new_expires_at"]) == expiry
-    assert recovery.build_retained_protected_preview(collect(store)[0])["success"]
-    assert claim_snapshot(store) == after
-    assert renewal_events(store, before["callback_token"]) == history
-    # A second elapsed TTL is not a new renewal entitlement, even with no send.
-    with store() as db, db.cursor() as cur:
+def test_actual_never_attempted_expiry_stages_then_admits_one_window(store,delivery_journey,expired_status):
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    j=delivery_journey
+    expired_renewal_inputs(store,j,expired_status=expired_status)
+    before=claim_snapshot(store)
+    staged=recovery.build_retained_protected_preview(current_delivery_case(store))
+    assert staged["success"] and staged["confirmation_required"]
+    assert claim_snapshot(store)==before and not renewal_events(store,before["callback_token"])
+    assert not window_events(store,before["callback_token"]) and not j["sends"]
+    result=deliver_farm_manager_case(current_delivery_case(store))
+    assert result["delivery_confirmed"] and len(j["sends"])==1 and not j["effects"]
+    after=claim_snapshot(store)
+    for key in ("callback_token","mission_id","preview_digest","preview_payload","evidence_generation","provider_message_id"):
+        assert after[key]==before[key]
+    assert datetime.fromisoformat(after["expires_at"])-datetime.fromisoformat(after["delivery_attempted_at"])==timedelta(minutes=30)
+    audits=window_events(store,before["callback_token"])
+    assert len(audits)==1 and audits[0]["payload_json"]["old_expires_at"]==before["expires_at"]
+    assert deliver_farm_manager_case(current_delivery_case(store))["status"]=="protected_delivery_replayed_noop"
+    assert claim_snapshot(store)==after and window_events(store,before["callback_token"])==audits
+    with store() as db,db.cursor() as cur:
         cur.execute("update app_private.oom_protected_action_claims set expires_at=clock_timestamp()-interval '1 minute'")
-    second_expiry = claim_snapshot(store)
-    repeated = recovery.build_retained_protected_preview(collect(store)[0])
-    assert not repeated["success"] and repeated["status"] == "retained_claim_renewal_already_consumed"
-    assert claim_snapshot(store) == second_expiry
-    assert renewal_events(store, before["callback_token"]) == history
-    assert not j["sends"] and not j["edits"] and not j["effects"]
+    expired=claim_snapshot(store)
+    refused=deliver_farm_manager_case(current_delivery_case(store))
+    assert refused["status"]=="retained_claim_attempt_or_terminal_requires_review"
+    assert claim_snapshot(store)==expired and window_events(store,before["callback_token"])==audits and len(j["sends"])==1
 
 
-def test_actual_renewed_claim_still_requires_confirmation_and_sends_one_card(store, delivery_journey):
+def test_actual_window_still_requires_confirmation_and_sends_one_card(store, delivery_journey):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j = delivery_journey
     expired_renewal_inputs(store, j)
     before = claim_snapshot(store)
-    first = deliver_farm_manager_case(collect(store)[0])
+    first = deliver_farm_manager_case(current_delivery_case(store))
     assert first["success"] and first["delivery_confirmed"] and first["protected_preview_card_bound"]
     after = claim_snapshot(store)
     assert after["callback_token"] == before["callback_token"]
     assert after["preview_digest"] == before["preview_digest"]
     assert after["preview_payload"] == before["preview_payload"]
     assert after["status"] == "active" and after["delivery_state"] == "delivery_confirmed"
-    replay = deliver_farm_manager_case(collect(store)[0])
+    replay = deliver_farm_manager_case(current_delivery_case(store))
     assert replay["success"] and replay["delivery_confirmed"] is False
     assert claim_snapshot(store) == after
-    assert len(renewal_events(store, before["callback_token"])) == 1
+    assert not renewal_events(store,before["callback_token"])
+    assert len(window_events(store,before["callback_token"]))==1
     assert len(j["sends"]) == 1 and not j["edits"] and not j["effects"]
     with store(True) as db, db.cursor() as cur:
         cur.execute("select status,on_farm from public.pigs where pig_id='P27'")
@@ -946,12 +968,13 @@ def test_actual_current_delegated_manager_can_receive_same_claim_once(
     assert resolve_family_principal(parsed, os.environ).role is FamilyRole.FARM_MANAGER
     if expired_claim:
         expired_renewal_inputs(store, j)
+    ensure_prepared(j)
     result = deliver_farm_manager_case(j["case"])
     assert result["success"] is True and result["delivery_confirmed"] is True
     claim = j["claim"]()
     assert claim["card"] == "701" and claim["delivery_state"] == "delivery_confirmed"
-    assert len(renewal_events(store, claim["token"])) == int(expired_claim)
-    replay = deliver_farm_manager_case(collect(store)[0])
+    assert not renewal_events(store,claim["token"]) and len(window_events(store,claim["token"]))==1
+    replay = deliver_farm_manager_case(current_delivery_case(store))
     assert replay["success"] is True and replay["status"] == "protected_delivery_replayed_noop"
     assert replay["delivery_confirmed"] is False and j["claim"]() == claim
     assert len(j["sends"]) == 1 and not j["edits"] and not j["effects"]

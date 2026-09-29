@@ -938,10 +938,10 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
         self.assertTrue(all('observed:' + newer.isoformat() in refs for _generation, refs in rows))
 
     def test_317_candidate_cycle_reaches_unexpired_protected_provider_with_full_costs(self):
-        from tests.test_oom_sakkie_general_manager_worker import (
-            NOW as claim_epoch, _prepared_retained_budget_journey)
+        from tests.test_oom_sakkie_general_manager_worker import _prepared_retained_budget_journey
         with pytest.MonkeyPatch.context() as monkeypatch:
             j = _prepared_retained_budget_journey(monkeypatch)
+            token, initial_expiry = j['claim']['callback_token'], j['claim']['expires_at']
             values = sorted([self.value('positive-budget-' + str(i)) for i in range(316)],
                 key=lambda row: normalize_candidate(row, now=self.now)['case_id'])
             absent = {(i + 1) * len(values) // 33 for i in range(32)}
@@ -950,6 +950,15 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
             retained = self.value('retained-budget', **j['case'], urgency='critical',
                 next_reassessment_at=self.now.isoformat())
             self.seed([row for i, row in enumerate(values) if i not in absent] + [retained])
+            # Admission's synthetic storage must expose the exact case actually
+            # seeded by the canonical manager, not the fixture's placeholder ID
+            # and digest. This setup read precedes the timed real cycle.
+            with self.db() as db:
+                case_binding = db.execute('''select case_id,dedupe_key,generation,evidence_digest
+                    from app_private.oom_manager_cases where dedupe_key=%s''',
+                    (retained['dedupe_key'],)).fetchone()
+            self.assertIsNotNone(case_binding)
+            j['case'].update(zip(('case_id', 'dedupe_key', 'generation', 'evidence_digest'), case_binding))
             values = [{**row, **({'terminal_state': 'completed'} if i in absent else {})}
                       for i, row in enumerate(values)] + [retained]
             by_key = {row['dedupe_key']: row for row in values}
@@ -984,7 +993,7 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
             self.assertTrue(result['success'], result)
             self.assertEqual(result['candidate_replays'], 317)
             self.assertEqual(result['cases_claimed'], 5)
-            self.assertEqual(result['deliveries_confirmed'], 1)
+            self.assertEqual(result['deliveries_confirmed'], 1, outcomes)
             self.assertEqual(result['deadline_deferrals'], 0)
             self.assertEqual(queue_counts, [(8, 2)])
             self.assertEqual(len(j['sends']), 1)
@@ -995,8 +1004,16 @@ class SchedulerRecoveryPostgresTests(unittest.TestCase):
                 j['delivery_started'] + 15.475)])
             self.assertLess(j['provider_gate_times'][0], 50.)
             self.assertLess(j['clock'], 80.)
-            self.assertEqual(j['claim']['expires_at'], claim_epoch + timedelta(minutes=30))
+            self.assertEqual(j['claim']['callback_token'], token)
+            self.assertEqual(j['claim']['expires_at'] - j['claim']['delivery_attempted_at'], timedelta(minutes=30))
+            self.assertEqual(len(j['window_audits']), 1)
+            audit = j['window_audits'][0]['payload_json']
+            self.assertEqual(audit['case_id'], case_binding[0])
+            self.assertEqual(audit['evidence_digest'], case_binding[3])
+            self.assertEqual(audit['attempt_id'], j['claim']['delivery_attempt_id'])
+            self.assertEqual(datetime.fromisoformat(audit['old_expires_at']), initial_expiry)
             self.assertEqual(j['renewal_audits'], [])
+            self.assertEqual(j['creates'], 1)
             with self.db() as db:
                 row = db.execute('''select generation,last_delivery_digest=evidence_digest,
                     assigned_worker_id,lease_until from app_private.oom_manager_cases

@@ -93,6 +93,15 @@ def telegram(j, text, *, moment=None, message_id=None):
         "provider_timestamp":moment or datetime.now(timezone.utc).isoformat()}, authority)
 
 
+def source_history(j):
+    with psycopg.connect(DSN) as db:
+        return db.execute("""select review_event_id,created_at,review_json
+            from public.sam_live_stock_conversation_review_events
+            where event_source='oom_sakkie_herdmaster_health_loss_runtime'
+              and chatwoot_conversation_id=%s order by created_at,review_event_id""",
+            ("oom-health-" + j["actor"],)).fetchall()
+
+
 def test_application_preview_restart_confirm_and_telegram_readback(journey):
     j = journey
     before = state(j)
@@ -111,10 +120,13 @@ def test_application_preview_restart_confirm_and_telegram_readback(journey):
     assert after["active_count"] == before["active_count"] - 1 and after["events"] == 1
     assert after['weights'] == before['weights'] and len(after['weights']) == 1
     assert "Preserve existing history" in after["pig"][3] and "Not buried yet" in after["pig"][3]
+    completed_history = source_history(j)
     replay, code = telegram(j, "CONFIRM " + operation)
     assert code == 200 and replay["success"], replay
     assert replay['event_date'] == '2026-09-09' and 'Afsterwedatum: 2026-09-09' in replay['answer']
     assert replay['canonical_readback']['canonical_readback_verified'] is True
+    assert source_history(j) == completed_history
+    assert replay["rows_created"] == 0 and replay["writes_farm_data"] is False
     assert state(j) == after
     profile = j["client"].get('/api/pig-weights/pig/' + j["pig"]).get_json()
     assert profile["pig"]["status"] == "Dead" and profile["pig"]["on_farm"] == "No"
@@ -125,6 +137,52 @@ def test_application_preview_restart_confirm_and_telegram_readback(journey):
     with pytest.raises(psycopg.Error), psycopg.connect(DSN) as db:
         db.execute("update public.pig_lifecycle_events set event_note='rewrite forbidden' where pig_id=%s", (j["pig"],))
     assert state(j) == after
+
+
+def test_completed_source_without_canonical_event_cannot_execute_farm_action(journey, monkeypatch):
+    j = journey
+    preview, code = web(j, phase="preview", event_date="2026-09-09")
+    assert code == 200 and preview["status"] == "preview_ready", preview
+    operation = preview["operation_id"]
+    active = next(row for row in _load_active_contexts(j["actor"], owner_user_id=j["actor"])
+                  if row.get("operation_id") == operation)
+    # Deliberately inconsistent synthetic durable source: no canonical operation
+    # exists. Insert an append-only fixture row; never disable or edit history.
+    completed = {key: value for key, value in active.items()
+                 if not key.startswith("_") and key != "card_message_id"}
+    completed.update(status="completed", event_phase="recording_completed", recording_result={
+        "success": True, "status": "mortality_lifecycle_recorded", "operation_id": operation,
+        "pig_id": j["pig"], "lifecycle_event_id": "LIFE-HL-" + hashlib.sha256(operation.encode()).hexdigest()[:24].upper(),
+        "welfare_case_id": "SYNTHETIC-ABSENT-WELFARE"})
+    with psycopg.connect(DSN) as db:
+        db.execute("""insert into public.sam_live_stock_conversation_review_events
+            (review_event_id,chatwoot_conversation_id,event_source,review_json)
+            values(%s,%s,'oom_sakkie_herdmaster_health_loss_runtime',%s::jsonb)""",
+            ("SYNTHETIC-COMPLETED-" + uuid.uuid4().hex, "oom-health-" + j["actor"],
+             json.dumps({"herdmaster_health_loss": completed})))
+    from modules.oom_sakkie import herdmaster_health_loss_runtime as runtime
+    monkeypatch.setattr(runtime, "load_canonical_health_loss_evidence",
+        lambda **_kw: pytest.fail("completed source cannot rebuild evidence or execute a new farm write"))
+    before, history = state(j), source_history(j)
+    result, code = telegram(j, "CONFIRM " + operation)
+    assert code == 409 and result["status"] == "mortality_lifecycle_replay_event_missing", result
+    assert result["success"] is False and result["writes_farm_data"] is False
+    assert state(j) == before and source_history(j) == history and before["events"] == 0
+
+
+def test_completed_source_replay_refuses_changed_canonical_readback(journey):
+    j = journey
+    preview, code = web(j, phase="preview", event_date="2026-09-09")
+    assert code == 200 and preview["status"] == "preview_ready", preview
+    completed, code = web(j, phase="confirm", operation_id=preview["operation_id"])
+    assert code == 201 and completed["success"], completed
+    with psycopg.connect(DSN) as db:
+        db.execute("update public.pigs set on_farm=true where pig_id=%s", (j["pig"],))
+    before, history = state(j), source_history(j)
+    result, code = telegram(j, "CONFIRM " + preview["operation_id"])
+    assert code == 409 and result["status"] == "mortality_lifecycle_replay_readback_mismatch", result
+    assert result["success"] is False and result["writes_farm_data"] is False
+    assert state(j) == before and source_history(j) == history and before["events"] == 1
 
 
 def test_telegram_missing_date_short_reply_correction_and_application_confirm(journey):
