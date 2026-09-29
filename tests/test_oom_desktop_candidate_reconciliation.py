@@ -25,10 +25,15 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
-PRESERVED_PREVIEW_EFFECTS = {'automatic_once_per_claim_never_attempted_retained_preview_renewal',
-    'current_recipient_authorized_protected_confirmation_delivery',
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml',
+    'modules/oom_sakkie/general_manager_worker.py', 'tests/test_oom_sakkie_general_manager_postgres.py',
+    'tests/test_oom_sakkie_general_manager_worker.py']
+PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
+PRESENTATION_EFFECTS = {'retained_mortality_single_first_attempt_presentation_window',
+    'retained_mortality_source_fenced_atomic_confirmation',
+    'canonical_completed_retained_mortality_delivery_recovery'}
+RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_preview_renewal'
 # Synthetic candidate identity permits pre-publication qualification only while
 # pins are pending. Final qualification uses the real pins, never owner approval.
 SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40,
@@ -265,7 +270,7 @@ def issue_candidate(test,connect,candidate):
                 "CHARLIE_VALIDATION_RECEIPT_KEY_B64":base64.b64encode(hashlib.sha256(b"synthetic-validation-key").digest()).decode(),
                 "CHARLIE_ADMISSION_RECEIPT_SIGNING_KEY_B64":base64.b64encode(seed).decode()})
         test.assertEqual(code,0,output.getvalue())
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=os.getenv("OOM_DESKTOP_REBIND_TEST_TEMP_ROOT")) as directory:
             event=Path(directory)/"synthetic-event.json"
             event.write_text(json.dumps({"number":candidate["pr_number"],"repository":{"full_name":"Crewless9086/amadeus-pig-tracking-system"},"pull_request":pull}))
             with patch.object(guard,"_app_check_request",return_value={"id":1}) as publish:
@@ -373,7 +378,8 @@ class ReconciliationTests(unittest.TestCase):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
     def test_pending_candidate_pins_reject_before_source_or_database_access(self):
         for fields in ({"CANDIDATE_PR": None}, {"CANDIDATE_PR": True}, {"HEAD": None}, {"TREE": None},
-                       {"APPROVED_RUNTIME_HEAD": None}, {"PATHS": []}, {"PATHS": ["../other.py"]}):
+                       {"APPROVED_RUNTIME_HEAD": None}, {"APPROVED_RUNTIME_HEAD": "a" * 40},
+                       {"QUALIFICATION_TEST_PATHS": ["tests/later.py"]}, {"PATHS": []}, {"PATHS": ["../other.py"]}):
             with self.subTest(fields=fields), patch.multiple(adapter, **fields), \
                  patch.object(adapter, "verify_source_and_candidate") as source, \
                  patch.object(store, "_connect") as connect:
@@ -425,15 +431,13 @@ class ReconciliationTests(unittest.TestCase):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
     def test_retained_preview_authority_cannot_drop_or_broaden_a_guard(self):
-        for effect in ("automatic_once_per_claim_never_attempted_retained_preview_renewal",
-                       "current_recipient_authorized_protected_confirmation_delivery",
-                       "verified_same_case_mortality_completion_projection"):
+        for effect in sorted(PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
             m["contract"]["allowed_effects"].remove(effect)
             with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        for before,after in (("once only", "without limit"),
-                             ("every send, attempt, acceptance, ambiguity, confirmation, result and card marker is absent", "card marker is absent"),
+        for before,after in (("one finite 30-minute presentation window", "unlimited presentation windows"),
+                             ("empty current markers are insufficient", "empty current markers suffice"),
                              ("immediately before sending", "only at initial intake"),
                              ("A genuine authorized confirmation remains mandatory", "No confirmation is needed"),
                              ("non-superseded current canonical operation and welfare readback", "a sent card")):
@@ -448,6 +452,70 @@ class ReconciliationTests(unittest.TestCase):
         m["contract"]["operational_acceptance"].append("No new protected-preview activation authority.")
         with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
             adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_presentation_policy_cannot_drop_history_fencing_or_atomic_completion(self):
+        changes = (
+            ("at the first admitted attempt", "at each later retry"),
+            ("complete durable history and fresh canonical facts", "cached preview alone"),
+            ("original private principal, source binding, operation, payload and digest match", "any currently available principal matches"),
+            ("exact immutable audited correction chain", "latest cleared marker fields"),
+            ("Unknown or mixed history", "Known benign history"),
+            ("one authoritative fresh canonical rebuild under the source lock", "a second cached preview outside the source lock"),
+            ("stale append predecessors are rejected", "stale append predecessors are accepted"),
+            ("in one borrowed transaction", "in separate committed transactions"),
+            ("any applicable domain, welfare, source or claim failure rolls the transaction back", "a source failure may leave the farm effect committed"),
+            ("Validate the canonical completed winner", "Trust the caller result"),
+            ("completed mortality source chronology remains immutable on replay", "completed source chronology may be replaced on replay"),
+            ("a missing or mismatched completed event must refuse without recreating a farm effect", "a missing event may be recreated"),
+            ("identity, source status, facts, false values and zero counts remain exact", "only convenient facts need match"),
+            ("Unsupported facts must raise rather than be stringified", "Unsupported facts may be stringified"),
+            ("canonically completed retained-mortality result", "unconfirmed retained-mortality request"),
+            ("Keep effect_unresolved excluded", "Include effect_unresolved"),
+            ("never automatically execute a pre-domain mortality receipt", "automatically execute any pre-domain receipt"),
+            ("including scheduled completed delivery", "excluding scheduled completed delivery"),
+            ("operation text alone and caller-supplied confirmation flags are not authority", "caller confirmation flags grant authority"),
+            ("explicit successful rollback and context exit", "assumed rollback on any error"),
+            ("Never restart the window after a real attempted, ambiguous or delivered effect or a prior window audit", "Restart an expired window after any effect"),
+        )
+        for before, after in changes:
+            m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+            original=m["contract"]["operational_acceptance"]
+            changed=[value.replace(before,after) for value in original]
+            self.assertNotEqual(changed,original,before)
+            m["contract"]["operational_acceptance"]=changed
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_retired_authority_does_not_leak_into_successor_but_history_is_preserved(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
+        self.assertIn(RETIRED_RENEWAL_EFFECT,prior["allowed_effects"])
+        self.assertNotIn(RETIRED_RENEWAL_EFFECT,m["contract"]["allowed_effects"])
+        self.assertTrue(PRESENTATION_EFFECTS <= set(m["contract"]["allowed_effects"]))
+        retired_clauses=(
+            "non-atomic concurrent source-cancellation fencing",
+            "unchanged claim identity/expiry on retry",
+            "unattempted expiry renewal remains once-only under existing guards",
+            "This application does not recover historical ambiguous claims or grant another automatic expiry renewal.",
+            "The qualification-only successor changes exactly the existing audit workflow and manager PostgreSQL tests",
+        )
+        for clause in retired_clauses:
+            self.assertFalse(any(clause in value for value in m["contract"]["operational_acceptance"]))
+            changed=deepcopy(m);changed["contract"]["operational_acceptance"].append(clause)
+            with self.subTest(retired_clause=clause),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        for effect in (RETIRED_RENEWAL_EFFECT,"manual_unsent_claim_expiry_extension",
+                       "automatic_pre_domain_mortality_execution","generic_future_candidate_release"):
+            changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
+            with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        before=self.snapshot(); result=apply(self.args,self.connect)
+        self.assertEqual(result["writes"],5)
+        event_id=adapter.prepare_reconciliation(**self.args)["event_id"]
+        self.assertEqual(self.db.events[event_id][0]["previous_record"],before[0][adapter.MISSION_ID])
+        self.assertEqual(self.db.rows[adapter.PARENT_ID],before[0][adapter.PARENT_ID])
+        after=self.snapshot();self.assertEqual(apply(self.args,self.connect)["writes"],0)
+        self.assertEqual(self.snapshot(),after)
 
     def test_cohort_qualification_cannot_weaken_concurrency_or_add_recovery(self):
         for before, after in (
@@ -582,24 +650,35 @@ class ReconciliationTests(unittest.TestCase):
                 self.fail("source verification reached candidate before rejecting checkout drift")
             with self.subTest(reason=reason),patch.object(adapter.subprocess,"check_output",side_effect=git):
                 with self.assertRaisesRegex(adapter.ReconciliationError,reason):adapter.verify_source_and_candidate(plan)
-    def test_exact_candidate_requires_approved_ancestry_and_exact_qualification_delta(self):
+    def test_exact_lifecycle_candidate_allows_no_qualification_successor_or_path_drift(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR, 1361)
-        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD, "2e2ba0e3c349b10662221c073787498ca41fe4e3")
-        self.assertEqual(adapter.HEAD, "0ea5e6ce18abdba6254ba8475558bf6415367aac")
-        self.assertEqual(adapter.TREE, "15d14989e07d831e3024e917f33e046b1260a0f3")
-        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,
-            ['.github/workflows/oom-sakkie-audit-rails.yml', 'tests/test_oom_sakkie_general_manager_postgres.py'])
-        self.assertEqual(adapter.PREDECESSOR_PATHS, PREDECESSOR_PATHS)
-        cases=("valid", "wrong_ancestor", "runtime_change", "extra_test", "wrong_test")
-        for case in cases:
-            qualification_paths=list(adapter.QUALIFICATION_TEST_PATHS)
-            if case=="runtime_change":qualification_paths.append("modules/oom_sakkie/telegram_gateway.py")
-            elif case=="extra_test":qualification_paths.append("tests/unapproved_test.py")
-            elif case=="wrong_test":qualification_paths=["tests/unapproved_test.py"]
+        self.assertEqual(adapter.CANDIDATE_PR,1362)
+        self.assertEqual(adapter.BASE,"459c6fdaa4039ae4d270ad5c8c82c1701fabb90a")
+        self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
+        self.assertEqual(adapter.HEAD,"57c973979d1bf1ec794daa34ce036fd20014c5aa")
+        self.assertEqual(adapter.TREE,"7780f3b4f42dc405614cb6c44841388acc177954")
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
+        self.assertEqual(adapter.PREDECESSOR_PR,1361)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"0ea5e6ce18abdba6254ba8475558bf6415367aac")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"fd350a80b3dd8e87b404f7ccb573efb5fa82fe05")
+        self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
+        self.assertEqual(len(adapter.PATHS),28)
+        for path in ("modules/oom_sakkie/retained_mortality_presentation.py",
+                     "modules/oom_sakkie/retained_mortality_confirmation.py",
+                     "tests/test_oom_sakkie_retained_mortality_presentation_postgres.py",
+                     "modules/pig_weights/herdmaster_health_loss_recording.py",
+                     "tests/test_herdmaster_health_loss_recording.py",
+                     "tests/test_herdmaster_mortality_journey_postgres.py"):
+            self.assertIn(path,adapter.PATHS)
+        errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
+                "runtime_delta":"qualification_only_test_paths_changed",
+                "test_delta":"qualification_only_test_paths_changed",
+                "wrong_tree":"candidate_tree_changed", "extra_path":"candidate_paths_changed",
+                "missing_runtime":"candidate_paths_changed", "wrong_patch":"candidate_diff_changed"}
+        for case in ("valid",*errors):
             def git(command,**_):
                 args=command[2:]
                 if args==["rev-parse","origin/main"]:return (adapter.BASE+"\n").encode()
@@ -608,18 +687,22 @@ class ReconciliationTests(unittest.TestCase):
                 if args==["merge-base",adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD]:
                     return (("a"*40 if case=="wrong_ancestor" else adapter.APPROVED_RUNTIME_HEAD)+"\n").encode()
                 if args==["diff","--name-only",adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD,"--"]:
-                    return ("".join(path+"\n" for path in qualification_paths)).encode()
-                if args==["rev-parse",adapter.HEAD+"^{tree}"]:return (m["candidate"]["tree_sha"]+"\n").encode()
+                    return {"runtime_delta":b"modules/oom_sakkie/telegram_gateway.py\n",
+                            "test_delta":b"tests/later.py\n"}.get(case,b"")
+                if args==["rev-parse",adapter.HEAD+"^{tree}"]:
+                    return (("a"*40 if case=="wrong_tree" else m["candidate"]["tree_sha"])+"\n").encode()
                 if args==["diff","--name-only",adapter.BASE,adapter.HEAD,"--"]:
-                    return ("\n".join(adapter.PATHS)+"\n").encode()
+                    paths=list(adapter.PATHS)
+                    if case=="extra_path":paths.append("app.py")
+                    elif case=="missing_runtime":paths.remove("modules/oom_sakkie/retained_mortality_confirmation.py")
+                    return ("\n".join(sorted(paths))+"\n").encode()
                 if args==["diff","--no-ext-diff","--no-textconv","--binary","--full-index",adapter.BASE,adapter.HEAD,"--"]:
-                    return b"synthetic candidate diff"
+                    return b"unreviewed candidate diff" if case=="wrong_patch" else b"synthetic candidate diff"
                 self.fail("unexpected Git inspection: "+repr(args))
             with self.subTest(case=case),patch.object(adapter.subprocess,"check_output",side_effect=git):
                 if case=="valid":adapter.verify_source_and_candidate(plan)
                 else:
-                    reason="approved_runtime_ancestry_changed" if case=="wrong_ancestor" else "qualification_only_test_paths_changed"
-                    with self.assertRaisesRegex(adapter.ReconciliationError,reason):
+                    with self.assertRaisesRegex(adapter.ReconciliationError,errors[case]):
                         adapter.verify_source_and_candidate(plan)
     def test_real_protected_issuer_callback_verifier_and_late_callback_chain(self):
         issuer_chain(self,self.connect,self.snapshot)
