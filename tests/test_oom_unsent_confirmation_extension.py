@@ -242,27 +242,37 @@ def test_consumed_renewal_guard_requires_exact_presend_shape_and_chronology(faul
     with pytest.raises(ValueError): inspect(proposal(original, e, now), e, now)
 
 
-def test_real_consumed_renewal_route_stops_before_preview_persistence_and_delivery(retained_journey, monkeypatch):
+def test_consumed_legacy_renewal_stays_final_while_current_policy_only_stages(retained_journey, monkeypatch):
     from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
     from modules.oom_sakkie import herdmaster_health_loss_runtime as health
     from modules.oom_sakkie import family_message_lifecycle as family
-    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "42")
     monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_OWNER_USER_ID", "42")
     monkeypatch.setenv("OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON", "[]")
     j = retained_journey
     assert recovery.build_retained_protected_preview(j["case"])["success"]
     j["claim"]["expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=5)
-    assert recovery.build_retained_protected_preview(j["case"])["success"]
+    requested = {key: deepcopy(j["claim"][key]) for key in (
+        "action_kind", "owner_user_id", "private_chat_id", "mission_id",
+        "provider_message_id", "evidence_generation", "preview_payload")}
+    rows = [deepcopy(j["history"][0])]
+    # Reconstruct the legacy audited boundary directly. Current mortality
+    # staging intentionally no longer invokes ordinary preparation-time renewal.
+    renewed, failure = recovery._renew_unattempted_claim(rows, deepcopy(j["claim"]), requested)
+    assert not failure and renewed["retained_unattempted_expiry_renewed"] is True
     assert len(j["renewal_audits"]) == 1
     j["claim"]["expires_at"] = datetime.now(timezone.utc) - timedelta(seconds=5)
     before = deepcopy((j["claim"], j["history"], j["events"], j["renewal_audits"]))
-    def forbidden(*args, **kwargs): pytest.fail("consumed renewal crossed persistence/delivery boundary")
+    def forbidden(*args, **kwargs): pytest.fail("staging crossed renewal/persistence/delivery boundary")
     monkeypatch.setattr(health, "persist_retained_health_loss_preview", forbidden)
     monkeypatch.setattr(family, "deliver_family_result", forbidden)
-    result = deliver_farm_manager_case(j["case"], deadline_monotonic=500.)
-    assert result["status"] == extension.RENEWAL_CONSUMED and result["delivery_confirmed"] is False
-    assert not j["sends"] and j["creates"] == 1
+    renewed, failure = recovery._renew_unattempted_claim(rows, deepcopy(j["claim"]), requested)
+    assert renewed is None and failure == extension.RENEWAL_CONSUMED
+    assert (j["claim"], j["history"], j["events"], j["renewal_audits"]) == before
+    monkeypatch.setattr(recovery, "_renew_unattempted_claim", forbidden)
+    staged = recovery.build_retained_protected_preview(j["case"])
+    assert staged["success"] is True and staged["callback_token"] == j["claim"]["callback_token"]
+    assert not j["sends"] and not j["window_audits"] and j["creates"] == 1
     assert (j["claim"], j["history"], j["events"], j["renewal_audits"]) == before
 
 

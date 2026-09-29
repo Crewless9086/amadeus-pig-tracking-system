@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt pytest
-      - name: Prove PR1362 lifecycle, immutable replay and web-only scope
+      - name: Prove PR1363 successor lineage, immutable replay and web-only scope
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation -v
       - name: Prove bounded pre-send metadata correction and rollback
         run: python -m pytest tests/test_oom_presend_timeout_correction.py -q

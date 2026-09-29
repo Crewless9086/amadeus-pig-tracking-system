@@ -17,21 +17,39 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = '459c6fdaa4039ae4d270ad5c8c82c1701fabb90a'
+BASE = '5c3e6dc7211bb8285acbec3987974241cc2e152f'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1362
-HEAD = 'a5ea2b622f81052a564762203a876eca92d724a7'
-TREE = '7fdbe852dfb01eca4dc0d031d136ff2f7b30dcf3'
+CANDIDATE_PR = 1363
+HEAD = 'd20bc93a24c156f7e6bb19d0cf496811d407a48d'
+TREE = '3ab5d8bea2b29a51d88098752152598ca7f51b54'
 # The complete runtime candidate is reviewed; no later qualification delta is allowed.
 APPROVED_RUNTIME_HEAD = HEAD
 QUALIFICATION_TEST_PATHS = []
-BRANCH = 'codex/oom-mortality-presentation-window-20260928'
-PREDECESSOR_PR = 1361
-PREDECESSOR_BASE = 'fd350a80b3dd8e87b404f7ccb573efb5fa82fe05'
-PREDECESSOR_HEAD = '0ea5e6ce18abdba6254ba8475558bf6415367aac'
-PREDECESSOR_BRANCH = 'codex/oom-manager-reconciliation-batch-20260928'
+BRANCH = 'codex/oom-expired-confirmation-continuation-20260929'
+PREDECESSOR_PR = 1362
+PREDECESSOR_BASE = '459c6fdaa4039ae4d270ad5c8c82c1701fabb90a'
+PREDECESSOR_HEAD = 'a5ea2b622f81052a564762203a876eca92d724a7'
+PREDECESSOR_BRANCH = 'codex/oom-mortality-presentation-window-20260928'
 PATHS = [
+    '.github/workflows/oom-sakkie-audit-rails.yml',
+    'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md',
+    'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md',
+    'docs/09-vault-brain/CHANGELOG.md',
+    'modules/oom_sakkie/family_message_lifecycle.py',
+    'modules/oom_sakkie/herdmaster_burst_recovery.py',
+    'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py',
+    'modules/oom_sakkie/manager_case_sources.py',
+    'modules/oom_sakkie/protected_action_runtime.py',
+    'modules/oom_sakkie/retained_mortality_confirmation.py',
+    'modules/oom_sakkie/retained_mortality_continuation.py',
+    'modules/oom_sakkie/retained_mortality_presentation.py',
+    'modules/oom_sakkie/telegram_direct.py',
+    'tests/test_oom_sakkie_retained_confirmation_feedback.py',
+    'tests/test_oom_sakkie_retained_mortality_continuation_postgres.py',
+    'tests/test_oom_sakkie_retained_mortality_presentation_postgres.py',
+]
+PREDECESSOR_PATHS = [
     '.github/workflows/oom-sakkie-audit-rails.yml',
     'docs/02-backend/OOM_SAKKIE_SEMANTIC_MORTALITY_CONTRACT.md',
     'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md',
@@ -62,7 +80,6 @@ PATHS = [
     'tests/test_oom_sakkie_retained_mortality_presentation_postgres.py',
     'tests/test_oom_sakkie_retained_report_recovery_postgres.py',
 ]
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'modules/oom_sakkie/general_manager_worker.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_general_manager_worker.py']
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
 # These identify retired predecessor effects, not successor authority.
@@ -76,13 +93,8 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "scripts/extend_oom_unsent_confirmation.py", "tests/test_oom_unsent_confirmation_extension.py"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {"exact_terminal_only_cohort_reconciliation_budget_repair",
-    "automatic_once_per_claim_never_attempted_retained_preview_renewal",
-    "application_revision_rollback:web:fd350a80b3dd8e87b404f7ccb573efb5fa82fe05"}
-ADDED_EFFECTS = {"retained_mortality_single_first_attempt_presentation_window",
-    "retained_mortality_source_fenced_atomic_confirmation",
-    "canonical_completed_retained_mortality_delivery_recovery",
-    f"application_revision_rollback:web:{WEB_ROLLBACK}"}
+REMOVED_EFFECTS = {'application_revision_rollback:web:459c6fdaa4039ae4d270ad5c8c82c1701fabb90a'}
+ADDED_EFFECTS = {'application_revision_rollback:web:5c3e6dc7211bb8285acbec3987974241cc2e152f', 'owner_requested_expired_retained_mortality_confirmation_successor'}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
 REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
@@ -92,18 +104,18 @@ REQUIRED_ACCEPTANCE = {
     "After releasing an incomplete initial reconciliation snapshot, take one fresh whole-cohort lock snapshot in canonical case-ID order only when all absent candidates are unique non-BEACON terminal findings. Preserve the original ordered fallback for insertion-capable gaps, every duplicate key, BEACON absences and a second-snapshot deletion that makes insertion possible; never acquire a lower follow-up lock from a retained terminal absence.",
     "Prove the real PostgreSQL 314/317-candidate cohorts with 32 absent terminal findings use two whole-cohort lookup reads while preserving material events, generations, observation epochs, canonical identities and leases. Preserve concurrent insertion between snapshots, second-snapshot deletion rollback, post-snapshot insertion containment, reversed-cohort serialization and owning current-evidence refresh before delivery.",
     "Exercise an unexpired protected confirmation through real preview, claim and family delivery gates with explicit synthetic collection, refresh and preparation costs; the slower control must remain unattempted. Keep the 80-second cycle deadline and 30-second send reserve unchanged. Collector timeout before the global cutoff must contain only that owner while ready specialists progress; late results cannot send and a later cycle must reclaim independently. Hosted timing models are qualification, not measured live latency or owner acceptance.",
-    "This exact retained-mortality lifecycle candidate supersedes preparation-time expiry renewal only for the approved retained-mortality route; no later candidate is admitted. This registration authorizes metadata reconciliation only, not an incident correction, manual expiry extension, claim rearm, new parallel claim, reused observation window or synthetic owner confirmation; consumed ordinary renewal and manual extension remain consumed.",
+    "This exact candidate adds owner-requested expired-card continuation only to the retained-mortality route; no later candidate is admitted. Registration authorizes metadata reconciliation only, not an incident correction, manual expiry extension, predecessor claim rearm, parallel active claim, reused observation window or synthetic owner confirmation; consumed ordinary renewal and manual extension remain consumed.",
     "Refresh only the exact claimed retained case identities through current canonical source, cancellation, resolution and completion checks; preserve the full canonical animal identity set for duplicate-tag rejection. Skip unrelated intake discovery during targeted retained refresh while preserving broad collection behavior.",
     "Bound health context to its existing newest 100 owner/chat/source rows and join latest eligible family cards once per distinct mission. Deduplicate the latest all-status source chronology before active projection: terminal tombstones block older preview resurrection without becoming new actionable cases or discarding existing durable cases. Preserve owner isolation and bounded numeric stage durations; no new model work, deadline extension or scheduler deployment.",
-    "Prove real loaded-revision retained preparation completes within the unchanged cycle deadline and delivers the same protected claim once. Timing and hosted equivalence tests alone do not prove delivery; any manual extension of an expired unsent claim requires separately authenticated exact recovery approval and immutable audit.",
+    "Prove real loaded-revision retained preparation completes within the unchanged cycle deadline and delivers each exact protected claim once. Timing and hosted equivalence tests alone do not prove delivery; any manual extension of an expired unsent claim requires separately authenticated exact recovery approval and immutable audit.",
     "Allow an exactly bound explicit clarification question to become its conversation protected preview only under fresh delivery ownership before edit journaling. Verify the exact edited provider message identity; all other unbound existing cards remain rejected. Prove the farrowing question, protected preview, genuine synthetic confirmation and one canonical litter journey in disposable PostgreSQL.",
-    "Preserve exact retained confirmation buttons through the manager authorized sender, bound to the existing token; keep recipient revalidation and deadline options. Prove the outgoing Confirm/Change/Cancel callback payload and genuine deployed card separately.",
+    "Preserve exact retained confirmation buttons through the manager authorized sender, bound to the exact token for that preview generation; never rebind the expired predecessor and keep recipient revalidation and deadline options. Prove the outgoing Confirm/Change/Cancel callback payload and genuine deployed card separately.",
     "Prepare the family protected message before claiming a delivery attempt. Newly prepared retained mortality reports preserve the original report, principal, claim, token, operation and material and may stage without sending until a later natural cycle. Existing prepared reports render from the stored exact preview, then perform one authoritative fresh canonical rebuild under the source lock at admission; stored preview alone is never send authority. Preserve other protected-action expiry and delivery guards.",
     "Prove load/gate/journal/provider ordering, source cancellation and supersession during preparation, actual PostgreSQL concurrent preparers and lock-delay deferral, unchanged claim identity, one bound delivery and silent replay. Claim expiry changes only at first presentation-window admission and never restarts afterward. Fence stale finalizers with a fresh attempt identity. Preserve typed pre-attempt SQL deadline deferral only after explicit successful rollback and context exit; unknown errors or uncertain commit stay closed. Hosted tests are qualification, not owner acceptance.",
     "Preserve uncertainty containment after acquiring an attempt, unbound existing-card rejection and genuine callback authority. Complete original source, claim, case and family chronology must prove eligibility; empty current markers are insufficient. A historical cleared false pre-send marker requires the exact immutable audited correction chain, including consumed renewal and any audited manual extension. Unknown or mixed history, actual provider ambiguity, cancellation, changed material and incomplete origin proof refuse admission. No private operator file or caller-controlled flag grants runtime authority.",
     "Prioritize potentially actionable owner work before known quiet dispatch paths using current canonical case fields; preserve specialist fairness within each class, active lease exclusion, expired delegated cleanup, five-claim capacity, deadlines, current-evidence refresh, protected confirmation and provider ambiguity. Do not delete quiet cases or mark them delivered or completed to free capacity.",
     "Continue canonical collection for quiet cases and allow them spare dispatch capacity; do not claim a bounded quiet waiting time under sustained actionable demand. Prove large-backlog selection, same-case promotion after material owner-relevant evidence, disjoint concurrent claims, genuine later retained-card delivery and the protected canonical outcome separately. No additional model call, cadence change or manual scheduler trigger is authorized.",
-    "Keep a protected operation stable across new canonical read timestamps while preserving chronology checks and all material evidence. An existing persisted retained preview may preserve its exact original operation only if fresh whole-preview content and global canonical generation still match; preserve the same claim, token, mission and original source binding. Only the single first-attempt presentation window may change preparation expiry. No rebind, synthetic confirmation, manual rearm or broader renewal is authorized.",
+    "Keep a protected operation stable across new canonical read timestamps while preserving chronology checks and all material evidence. An existing persisted retained preview may preserve its exact original operation only if fresh whole-preview content and global canonical generation still match; preserve its claim, token, mission and original source binding within each preview generation. Only that claim's single first-attempt presentation window may change preparation expiry. A separately requested linked successor follows the exact continuation conditions below; no predecessor rebind, synthetic confirmation, manual rearm or broader renewal is authorized.",
     "Read existing canonical health sources through one bounded consistent read-only snapshot; reject missing canonical configuration, incomplete reads and deadline exhaustion. Move the existing prepared mortality preview rebuild to final admission instead of adding another snapshot. Prove legacy unsent preview eligibility, same-card replay, genuine callback, current canonical readback and later natural manager cycles; other protected-action renewal rules remain unchanged.",
     "Preserve single-animal mortality meaning as source-bound animal/death/date/disposal facts across the semantic front door, manager-question partial replies, specialist preview and retained recovery; anchor relative dates to original provider time, reject missing sources and identity conflicts, retain uncertainty and invalidate corrected previews. No extra paid inference loop or new farm authority is granted.",
     "Separate retained-report refresh from broad herd collection; verify source and deadline containment, exact current canonical preview, genuine protected delivery/confirmation, atomic recording/readback, silent replay and a later independent manager cycle. Local or hosted simulations do not constitute owner acceptance.",
@@ -116,7 +128,7 @@ REQUIRED_ACCEPTANCE = {
     "Unpriced audio/image/model requests fail closed with text guidance. Existing protected confirmations and canonical authorization remain unchanged; budget denial grants no alternative execution authority.",
     "Verify the loaded revision, budget metadata without prompt or secret disclosure, owner-visible text behavior, natural scheduled-cycle silence and next trigger. No terminal-generated farm observation or fabricated owner acceptance.",
     f"Release only the protected merge whose application tree equals exact PR{CANDIDATE_PR} head {HEAD} to existing web {WEB_SERVICE}, only after protected merge and required checks.",
-    f"Require independently authenticated owner approval of exact candidate {HEAD}, manifest and web-only retained-mortality presentation lifecycle repair; source pins and prior PR1361 approval are not approval of this successor, and no later candidate or qualification successor is authorized.",
+    f"Require an independently authenticated attributable owner instruction bound by the coordinator to exact candidate {HEAD}, manifest and this web-only expired-confirmation continuation scope. Preserve the actual standing instruction and its original context; do not fabricate a hash-specific owner answer, infer authority from source pins, extend a consumed exact manifest or authorize a later candidate. This does not grant production transport authority.",
     f"Rollback is limited to web {WEB_SERVICE} revision {WEB_ROLLBACK}; this does not authorize another service or configuration change.",
     "Permit the deployed retained-mortality runtime to start one finite 30-minute presentation window at the first admitted attempt only after complete durable history and fresh canonical facts, original private principal, source binding, operation, payload and digest match. Atomically record the immutable per-claim window audit with attempt ownership and expiry. Never restart the window after a real attempted, ambiguous or delivered effect or a prior window audit; a preparation-only expiry is not itself an attempt. Preserve original token and chronology, and do not clear archived markers or reset consumed correction or renewal history.",
     "Require the existing current Telegram allowlist and family-principal mortality-confirmation capability before claim creation and canonical preview persistence, at presentation admission and immediately before sending to the original private recipient, including scheduled completed delivery. Recipient revocation prevents delivery without changing the canonical completed farm fact; never redirect to another owner or change family permissions.",
@@ -125,7 +137,7 @@ REQUIRED_ACCEPTANCE = {
     "The existing scheduled worker may recover delivery of an exactly bound canonically completed retained-mortality result, including expired executing or exception-pending delivery leases, only after canonical operation, actor, animal and welfare readback and fresh recipient authorization. Keep effect_unresolved excluded; never automatically execute a pre-domain mortality receipt. Preserve bounded ambiguous same-card edit recovery and silent delivered replay without requesting another owner click.",
     "Ordinary completed mortality source chronology remains immutable on replay. Validate the exact original operation, principal, pig, lifecycle event, source digest and welfare result through current canonical readback; a missing or mismatched completed event must refuse without recreating a farm effect or appending a replacement source. Preserve existing first-completion persistence recovery from a still-preview source and the retained protected-callback-only boundary.",
     "Normalize semantic container representation only through the existing persisted JSON encoding: tuples become their stored lists while identity, source status, facts, false values and zero counts remain exact. Unsupported facts must raise rather than be stringified. Preserve exact staged-source equality, predecessor comparison, terminal-state and cancellation fencing; JSON normalization grants no confirmation or provider authority.",
-    "Project mortality completion to the SAME retained manager case only from exact completed source, protected claim and non-superseded current canonical operation and welfare readback; delivery alone, expired state, missing facts and silence never close a case.",
+    "Project mortality completion to the SAME retained manager case only from exact completed source, the current protected claim in the fully validated continuation lineage and non-superseded current canonical operation and welfare readback; delivery alone, expired state, missing facts and silence never close a case.",
     "No scheduler deployment, webhook cutover, n8n workflow disablement, database migration, permission or configuration change, direct or terminal farm write, hardware command, manual cron trigger or manufactured acceptance.",
     "Answer genuine later broad-brief, responsibilities and HERDMASTER-detail questions from current bounded canonical evidence; an unrelated pending farrowing question must not capture a new read enquiry or turn it into a farm-write confirmation.",
     "Resolve an explicit animal by exact canonical Pig ID, tag or name in one bounded read-only repeatable-read snapshot; preserve Active, Sold and Dead lifecycle facts, contain ambiguous or missing identity, scope evidence before limits and report overflow rather than silently answering from an incomplete animal history.",
@@ -133,6 +145,12 @@ REQUIRED_ACCEPTANCE = {
     "Read-only conversation answers must not create farm facts, close cases, create or renew protected claims, weaken current private-principal authorization, borrow another recipient's context or retry ambiguous delivery; existing protected actions retain their separate confirmation rails.",
     "Verify exact loaded web revision and genuine subsequent provider delivery against canonical animal/case identities, read-query scope, language and durable audit; verify replay containment and later natural manager-cycle continuity. Do not substitute a terminal answer, replay historical Telegram messages, make the owner relay terminal actions or request already-pending physical facts again.",
     "Preserve bounded retained-preview limitations: missing litter/disposal facts and unproved live cold-path timing remain explicit. The shared source lock and latest all-status chronology fence retained admission and genuine confirmation against source cancellation and supersession; stale append predecessors are rejected. No global farm-writer fence is claimed: perform fresh final canonical validation and confirmation revalidation. Genuine confirmation, canonical operation/welfare readback and later independent same-case closure/replay remain required. Farrowing remains preview-only; source, tests, release or a sent card are not business completion.",
+    "Only a genuine authenticated native callback on the latest verifiably delivered, expired, never-confirmed retained mortality card may request exactly one audited linked successor. Preserve the old claim, card, token, finite window and all renewal/correction/extension history unchanged. The expired click requests review only; the successor requires its own genuine confirmation before any farm effect. Retain the original facts, private principal, source, operation and canonical material without asking for already known facts.",
+    "Create the successor claim, immutable predecessor-keyed continuation audit and source append atomically under the existing source lock and mission active-claim invariant. Race, restart and replay recover the same requested successor; an old ancestor card cannot branch or create another generation. Scheduling may resume an already audited request but must never create a new confirmation generation or automatically execute an unconfirmed farm receipt.",
+    "Validate complete bounded claim, source, family, case and operational chronology across successive expiries, with exact intermediate source edges and one linear lineage. A manager case may project only an already audited successor from that validated lineage while awaiting reconciliation; retain exact locked case identity, generation and evidence digest and reject arbitrary or root projection references. Same-timestamp event hashes are not causal order; require unique contiguous generation transitions and preserve unknown-history refusal.",
+    "Preserve one fresh canonical rebuild, source cancellation/supersession serialization, original recipient reauthorization and unchanged 80-second cycle/30-second provider reserve at successor admission; revalidate material again at genuine confirmation. Reuse the existing one-attempt window audit/CAS and atomic domain/welfare/source/claim completion. Never renew an attempted window, accept an ambiguous predecessor or infer farm confirmation from registration, release or a continuation request.",
+    "Prove native delivery, a quiet natural manager cycle, another expiry, a genuine newest-card request, its own genuine confirmation, one canonical operation/readback and closure of the same original manager case. Safe no-effect deadline rollback may resume next cycle; unknown failures remain refused. Quiet owner review must not become a false exception or claim a duplicate delivery. No terminal replay, manufactured observation or manual scheduler trigger proves this acceptance.",
+    "Return truthful localized English/Afrikaans callback alerts within Telegram limits. Failed acknowledgements may use one receipt-bound deduplicated informational family notice; preserve provider ambiguity and do not leak internal policy objects. Pending or ambiguous successor delivery must be reported as uncertain, without resending, claiming it was presented or saying the farm event was recorded; already-presented feedback requires exact provider/card binding.",
 }
 
 
