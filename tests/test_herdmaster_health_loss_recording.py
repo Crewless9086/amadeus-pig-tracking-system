@@ -2,6 +2,8 @@ import copy
 from contextlib import nullcontext
 from unittest.mock import patch
 
+import pytest
+
 from modules.pig_weights.herdmaster_health_loss_recording import confirm_health_loss_preview
 
 
@@ -227,3 +229,73 @@ def test_completed_mortality_confirmation_replay_calls_no_store():
         packet, "CONFIRM HERD-HEALTH-LOSS-ABC", actor_id="42",
         evidence_loader=lambda: (_ for _ in ()).throw(AssertionError("no reload")))
     assert status == 200 and result["rows_created"] == 0
+
+
+def completed_mortality():
+    packet = mortality_lifecycle()
+    packet.update(mission_id="SOURCE-ABC", operation_id="HERD-HEALTH-LOSS-ABC", chat_id="42")
+    state = {"pig": {"status": "Active", "on_farm": True, "notes": "history"}}
+    with patch.dict("os.environ", {"PIG_WELFARE_CASE_RUNTIME_ENABLED": "true"}):
+        result, status = confirm_health_loss_preview(packet, "CONFIRM HERD-HEALTH-LOSS-ABC", actor_id="42",
+            evidence_loader=lambda: {"evidence_generation": "GEN-11"},
+            connect_factory=lambda: MortalityConnection(state))
+    assert status == 201 and result["success"] is True
+    packet.update(status="completed", recording_result=result)
+    return packet, state
+
+
+def completed_readback(packet, state, *, actor="42"):
+    with patch.dict("os.environ", {"PIG_WELFARE_CASE_RUNTIME_ENABLED": "true"}):
+        return confirm_health_loss_preview(packet, "CONFIRM HERD-HEALTH-LOSS-ABC", actor_id=actor,
+            evidence_loader=lambda: pytest.fail("completed source must never enter preparation/write path"),
+            connect_factory=lambda: MortalityConnection(state))
+
+
+def test_completed_mortality_reads_current_canonical_result_without_writing():
+    packet, state = completed_mortality()
+    before = copy.deepcopy(state)
+    result, status = completed_readback(packet, state)
+    assert status == 200 and result["status"] == "mortality_lifecycle_replayed_withheld"
+    assert result["canonical_readback"]["canonical_readback_verified"] is True
+    assert result["lifecycle_event_id"] == packet["recording_result"]["lifecycle_event_id"]
+    assert result["rows_created"] == 0 and result["writes_farm_data"] is False and state == before
+
+
+@pytest.mark.parametrize("mutation, expected", [
+    ("missing_event", "mortality_lifecycle_replay_event_missing"),
+    ("event_identity", "mortality_lifecycle_idempotency_conflict"),
+    ("source_digest", "mortality_lifecycle_idempotency_conflict"),
+    ("welfare_identity", "mortality_lifecycle_replay_welfare_case_mismatch"),
+    ("missing_welfare", "mortality_lifecycle_replay_welfare_case_missing"),
+    ("readback", "mortality_lifecycle_replay_readback_mismatch"),
+])
+def test_completed_mortality_requires_existing_exact_canonical_readback(mutation, expected):
+    packet, state = completed_mortality()
+    if mutation == "missing_event":
+        del state["event"]
+        state["pig"].update(status="Active", on_farm=True)
+    elif mutation == "event_identity": state["event"]["id"] = "OTHER-EVENT"
+    elif mutation == "source_digest": state["event"]["payload"]["source_digest"] = "changed"
+    elif mutation == "welfare_identity": state["welfare_case"]["id"] = "OTHER-CASE"
+    elif mutation == "missing_welfare": del state["welfare_case"]
+    elif mutation == "readback": state["readback_valid"] = False
+    before = copy.deepcopy(state)
+    result, status = completed_readback(packet, state)
+    assert status == 409 and result["status"] == expected
+    assert result["success"] is False and result["writes_farm_data"] is False and state == before
+
+
+@pytest.mark.parametrize("binding", ["operation_id", "pig_id", "lifecycle_event_id", "status", "success",
+    "source_operation", "principal", "chat", "preview_digest"])
+def test_completed_mortality_rejects_changed_source_binding(binding):
+    packet, state = completed_mortality()
+    if binding == "source_operation": packet["operation_id"] = "OTHER"
+    elif binding == "principal": packet["owner_user_id"] = "99"
+    elif binding == "chat": packet["chat_id"] = "99"
+    elif binding == "preview_digest": packet["preview"]["confirmation_binding"]["preview_sha256"] = "changed"
+    elif binding == "success": packet["recording_result"][binding] = False
+    else: packet["recording_result"][binding] = "OTHER"
+    before = copy.deepcopy(state)
+    result, status = completed_readback(packet, state)
+    assert status in {403, 409} and result["success"] is False
+    assert result["writes_farm_data"] is False and state == before

@@ -370,29 +370,36 @@ def handle_authenticated_health_loss_message(
             recorded = {**recorded, "pig_name": identity.get("name"), "tag_number": identity.get("tag_number")}
             answer = _mortality_completion_message(
                 recorded, str(active.get("output_language") or "en"))
-        lifecycle = {**dict(active), "provider_message_id": provider_message_id,
-            "provider_timestamp": provider_timestamp,
-            "status": "completed" if recorded.get("success") else "contained",
-            "owner_text": answer, "recording_result": recorded,
-            "event_phase": "recording_completed" if recorded.get("success") else "recording_contained"}
-        persisted = _record_lifecycle_event(lifecycle, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
-        if persisted.get("success") is not True:
-            return {"handled": True, "success": False,
-                "status": "health_loss_completion_persistence_pending",
-                "answer": _health_loss_message(output_language, "completion_recovery"),
-                "mission_id": mission_id, "card_mission_id": mission_id,
-                "records_audit_trace": False,
-                "writes_farm_data": bool(recorded.get("writes_farm_data")),
-                "rows_created": int(recorded.get("rows_created") or 0),
-                "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, 503
+        if active_status == "completed":
+            # Terminal source chronology is immutable. The recorder must prove
+            # the existing canonical result; a replay never appends a new source
+            # merely to replace its original provider identity or result fields.
+            result_status = "completed" if recorded.get("success") else recorded.get("status")
+        else:
+            lifecycle = {**dict(active), "provider_message_id": provider_message_id,
+                "provider_timestamp": provider_timestamp,
+                "status": "completed" if recorded.get("success") else "contained",
+                "owner_text": answer, "recording_result": recorded,
+                "event_phase": "recording_completed" if recorded.get("success") else "recording_contained"}
+            persisted = _record_lifecycle_event(lifecycle, context_store=context_store, expected_sources=source_heads, connect_factory=connect_factory)
+            if persisted.get("success") is not True:
+                return {"handled": True, "success": False,
+                    "status": "health_loss_completion_persistence_pending",
+                    "answer": _health_loss_message(output_language, "completion_recovery"),
+                    "mission_id": mission_id, "card_mission_id": mission_id,
+                    "records_audit_trace": False,
+                    "writes_farm_data": bool(recorded.get("writes_farm_data")),
+                    "rows_created": int(recorded.get("rows_created") or 0),
+                    "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, 503
+            result_status = lifecycle["status"]
         return {"handled": True, "success": recorded.get("success") is True,
-            "status": lifecycle["status"], "answer": answer, "mission_id": mission_id,
+            "status": result_status, "answer": answer, "mission_id": mission_id,
             "recipient_render_contract": "specialist_structured_recipient_v1",
             "recipient_language": "af" if str(active.get("output_language") or output_language).casefold().startswith("af") else "en",
             "welfare_case_closed": recorded.get("welfare_case_closed") is True,
             "living_checks_reconciled": int(recorded.get("living_checks_reconciled") or 0),
             "preserved_distinct_work": int(recorded.get("preserved_distinct_work") or 0),
-            "card_mission_id": mission_id, "records_audit_trace": True,
+            "card_mission_id": mission_id, "records_audit_trace": active_status != "completed",
             "writes_farm_data": bool(recorded.get("writes_farm_data")),
             "rows_created": int(recorded.get("rows_created") or 0),
             "protected_actions_performed": bool(recorded.get("writes_farm_data")),

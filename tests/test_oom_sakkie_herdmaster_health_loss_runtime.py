@@ -787,12 +787,31 @@ def test_completed_context_accepts_only_exact_confirmation_replay(confirm):
         parsed("CONFIRM HERD-1","3174"),issue_gateway_owner_authority("42","42"),context_store=store)
     assert status==200 and result["status"]=="completed" and result["rows_created"]==0
     assert result["mission_id"]=="MISSION-1" and result["card_mission_id"]=="MISSION-1"
-    assert len(recorded)==1
+    assert recorded == [] and result["records_audit_trace"] is False
     confirm.assert_called_once()
 
     unrelated,status=handle_authenticated_health_loss_message(
         parsed("yes she can stand","3175"),issue_gateway_owner_authority("42","42"),context_store=store)
     assert status==200 and unrelated["handled"] is False
+
+
+@pytest.mark.parametrize("failure, code", [
+    ("mortality_lifecycle_replay_event_missing", 409),
+    ("mortality_lifecycle_recording_unavailable", 503),
+])
+def test_completed_source_replay_failure_is_truthful_and_does_not_append(monkeypatch, failure, code):
+    monkeypatch.setattr(health_loss, "confirm_health_loss_preview", lambda *_a, **_k:
+        ({"success": False, "status": failure, "writes_farm_data": False, "rows_created": 0}, code))
+    active = {"status": "completed", "operation_id": "HERD-1", "mission_id": "MISSION-1",
+        "owner_user_id": "42", "preview": {"confirmation_ready": True},
+        "provider_timestamp": "2026-08-02T07:00:00+00:00",
+        "recording_result": {"success": True}, "owner_text": "Old completion"}
+    store, recorded = memory_store(active)
+    result, status = handle_authenticated_health_loss_message(
+        parsed("CONFIRM HERD-1", "3174"), issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == code and result["success"] is False and result["status"] == failure
+    assert result["writes_farm_data"] is False and result["rows_created"] == 0
+    assert result["answer"] != "Old completion" and recorded == []
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.confirm_health_loss_preview")

@@ -455,3 +455,20 @@ def test_known_statement_status_requires_exact_safe_persisted_shape(fault):
     chain=history.validate_audit_chain(claim,case,source,audits,observed_at=BASE+timedelta(minutes=180))
     with pytest.raises(tx.SourceConflict):
         history.validate_case_history(events+[deferred],claim,case,chain,cycle,observed_at=BASE+timedelta(minutes=180))
+
+
+def test_source_body_uses_exact_persisted_json_containers_without_changing_facts():
+    from modules.oom_sakkie.herdmaster_source_transaction import record_body, digest
+    original = {"mission_id": "SYNTHETIC-SOURCE", "card_message_id": "SYNTHETIC-CARD",
+        "_source_predecessor_digest": "private",
+        "semantic_interpretation": {"breeding_actions": (),
+            "observation_facts": ({"state": "YES", "count": 0, "uncertain": False},)}}
+    normalized = record_body(original)
+    expected = {"mission_id": "SYNTHETIC-SOURCE", "semantic_interpretation": {
+        "breeding_actions": [], "observation_facts": [{"state": "YES", "count": 0, "uncertain": False}]}}
+    assert normalized == expected
+    assert isinstance(original["semantic_interpretation"]["breeding_actions"], tuple)
+    assert normalized is not original and digest(normalized) == digest(expected)
+    # Reject unsupported facts rather than stringify them into apparently valid evidence.
+    with pytest.raises(TypeError):
+        record_body({"mission_id": "SYNTHETIC-SOURCE", "fact": object()})

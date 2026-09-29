@@ -150,6 +150,11 @@ all three back together. Exact callback recovery uses the original completed
 operation without recording a second death. Source
 cancellation and append operations share an ordered fence; canonical writers
 outside that fence are checked through fresh validation, not presumed locked.
+Source comparison uses the exact JSON representation persisted by the existing
+writer, including semantic array fields. An already-completed ordinary mortality
+confirmation returns fresh canonical readback without appending another source
+completion. A missing or mismatched canonical event cannot be recreated from a
+completed source.
 
 After canonical completion, the existing scheduled recovery worker may resume
 completion delivery when its previous delivery lease has expired, including a

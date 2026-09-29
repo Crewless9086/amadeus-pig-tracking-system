@@ -3,7 +3,6 @@
 Source locks precede claim/domain locks. Borrowed connections never commit or
 close the enclosing transaction. No source snapshot grants provider authority.
 """
-from copy import deepcopy
 import hashlib
 import json
 
@@ -26,8 +25,11 @@ def digest(value):
 
 
 def record_body(value):
-    return {key: deepcopy(item) for key, item in value.items()
+    # Semantic hints may contain tuples. Compare the same JSON representation
+    # that the existing review-event writer persists, without changing facts.
+    body = {key: item for key, item in value.items()
         if not key.startswith("_") and key != "card_message_id"}
+    return json.loads(json.dumps(body, ensure_ascii=True))
 
 
 def predecessor(value):

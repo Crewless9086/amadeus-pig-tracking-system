@@ -30,14 +30,15 @@ def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text:
     actor_id = str(actor_id or "").strip()
     if not bound_owner or not lifecycle_owner or actor_id != bound_owner or actor_id != lifecycle_owner:
         return _result(False, "authenticated_owner_confirmation_required"), 403
-    prior = lifecycle.get("recording_result") if isinstance(lifecycle.get("recording_result"), Mapping) else {}
-    if (prior.get("success") is True and str(prior.get("operation_id") or "") == operation_id
-            and not str(prior.get("status") or "").startswith("mortality_lifecycle_")):
-        return _result(True, "health_loss_replayed_withheld", rows_created=0,
-                       operation_id=operation_id), 200
     evaluator = preview.get("evaluator") if isinstance(preview.get("evaluator"), Mapping) else {}
     supported = [row for row in evaluator.get("canonical_effects") or [] if row.get("supported")]
     supported_areas = {str(row.get("area") or "") for row in supported}
+    prior = lifecycle.get("recording_result") if isinstance(lifecycle.get("recording_result"), Mapping) else {}
+    if (prior.get("success") is True and str(prior.get("operation_id") or "") == operation_id
+            and "lifecycle" not in supported_areas
+            and not str(prior.get("status") or "").startswith("mortality_lifecycle_")):
+        return _result(True, "health_loss_replayed_withheld", rows_created=0,
+                       operation_id=operation_id), 200
     if "lifecycle" in supported_areas:
         allowed = {"lifecycle", "availability", "movement_pen", "downstream_work"}
         if not supported_areas or not supported_areas.issubset(allowed):
@@ -156,6 +157,18 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
     source_digest = hashlib.sha256(json.dumps(
         canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     event_id = "LIFE-HL-" + hashlib.sha256(operation_id.encode()).hexdigest()[:24].upper()
+    completed = lifecycle.get("status") == "completed"
+    prior = lifecycle.get("recording_result") if isinstance(lifecycle.get("recording_result"), Mapping) else {}
+    if completed and not (
+            prior.get("success") is True
+            and prior.get("status") in {"mortality_lifecycle_recorded", "mortality_lifecycle_replayed_withheld"}
+            and str(lifecycle.get("chat_id") or "") == str(actor_id)
+            and str(lifecycle.get("operation_id") or "") == operation_id
+            and str(prior.get("operation_id") or "") == operation_id
+            and str(prior.get("pig_id") or "") == pig_id
+            and str(prior.get("lifecycle_event_id") or "") == event_id
+            and bool(prior.get("welfare_case_id"))):
+        return _result(False, "mortality_completed_source_binding_mismatch"), 409
     try:
         connection_cm = connect_factory() if connect_factory else _connect()
         with connection_cm as connection:
@@ -169,7 +182,8 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
                 if existing:
                     payload = existing[2] if isinstance(existing[2], Mapping) else {}
                     if (str(existing[1]) != pig_id
-                            or str(payload.get("source_digest") or "") != source_digest):
+                            or str(payload.get("source_digest") or "") != source_digest
+                            or (completed and str(existing[0]) != str(prior["lifecycle_event_id"]))):
                         return _result(False, "mortality_lifecycle_idempotency_conflict"), 409
                     cursor.execute("""select current.welfare_case_id
                         from public.pig_welfare_case_current current
@@ -183,6 +197,8 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
                     if not replay_case:
                         return _result(False, "mortality_lifecycle_replay_welfare_case_missing"), 409
                     replay_case_id = str(replay_case[0])
+                    if completed and replay_case_id != str(prior["welfare_case_id"]):
+                        return _result(False, "mortality_lifecycle_replay_welfare_case_mismatch"), 409
                     readback = _readback_mortality_welfare(
                         cursor, pig_id=pig_id, event_id=str(existing[0]),
                         welfare_case_id=replay_case_id)
@@ -198,6 +214,10 @@ def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, ac
                         living_checks_reconciled=0,
                         preserved_distinct_work=readback["preserved_distinct_work"],
                         canonical_readback=readback), 200
+                if completed:
+                    # A completed source grants readback only, never permission
+                    # to recreate an absent canonical farm operation.
+                    return _result(False, "mortality_lifecycle_replay_event_missing"), 409
                 current = evidence_loader()
                 current_generation = ((current.get("animal_evidence_generations") or {}).get(pig_id, "")
                     if binding.get("evidence_scope") == "animal" else current.get("evidence_generation"))

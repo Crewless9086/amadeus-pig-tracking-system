@@ -8,6 +8,8 @@
   receipt validation and atomic canonical/source/claim completion to existing rails.
 - Reused scheduled completion delivery after expired leases, requiring canonical
   readback and fresh recipient authority; unresolved effects stay held.
+- Qualified semantic JSON-array readback and ordinary completed mortality replay;
+  terminal source history stays immutable and absent canonical effects stay held.
 - Preserved cancellation, ambiguity, expiry, idempotency and farm confirmation
   boundaries. Qualification and live acceptance remain separate from source work.
 
