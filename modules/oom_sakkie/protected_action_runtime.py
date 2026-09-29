@@ -478,6 +478,18 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         else:
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result},result_status
+    if (claimed["action_kind"] == "mortality"
+            and str(claimed.get("mission_id") or "").startswith("OOM-HERDMASTER-MORTALITY-")):
+        from modules.oom_sakkie.retained_mortality_confirmation import confirm_retained_mortality
+        result, result_status = confirm_retained_mortality(claimed, parsed,
+            gateway_authority=gateway_authority, connect_factory=connect_factory)
+        if result.get("success") is True:
+            result = {**result, "reply_markup": {"inline_keyboard": []},
+                "card_mission_id": generic_protected_card_mission_id(claimed["mission_id"], claimed["preview_digest"]),
+                "owner_visible_completion_policy": "verified_edit_or_new_message"}
+        elif result_status < 500:
+            contain_claim(claimed["callback_token"], result, connect_factory=connect_factory)
+        return {"handled": True, **result}, result_status
     operation=str((claimed.get("preview_payload") or {}).get("operation_id") or "")
     if not operation:return {"handled":True,"success":False,"status":"mortality_claim_operation_missing","writes_farm_data":False},409
     if health_handler is None:

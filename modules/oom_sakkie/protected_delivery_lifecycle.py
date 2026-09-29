@@ -19,7 +19,7 @@ def recover_protected_card(*, callback_token: str, preview_digest: str,
                            owner_user_id: str, private_chat_id: str,
                            action_kind: str, deliver: Callable[..., Mapping],
                            connect_factory=None, defer_attempt=False,
-                           deadline_monotonic=None) -> dict:
+                           deadline_monotonic=None, presentation_policy=None) -> dict:
     """Send/bind at most once, or durably contain an ambiguous provider call.
 
     With defer_attempt, deliver receives a gate called after preparation and
@@ -31,7 +31,8 @@ def recover_protected_card(*, callback_token: str, preview_digest: str,
     factory = connect_factory or _connect
     binding = dict(callback_token=callback_token, preview_digest=preview_digest,
         owner_user_id=owner_user_id, private_chat_id=private_chat_id,
-        action_kind=action_kind, factory=factory, deadline_monotonic=deadline_monotonic)
+        action_kind=action_kind, factory=factory, deadline_monotonic=deadline_monotonic,
+        presentation_policy=presentation_policy)
     owned = None
     gate_result = None
 
@@ -101,7 +102,29 @@ def recover_protected_card(*, callback_token: str, preview_digest: str,
 
 
 def _claim_delivery(*, callback_token, preview_digest, owner_user_id, private_chat_id,
-                    action_kind, factory, start_attempt, deadline_monotonic):
+                    action_kind, factory, start_attempt, deadline_monotonic, presentation_policy=None):
+    if presentation_policy is not None:
+        from modules.oom_sakkie.retained_mortality_presentation import claim_presentation, PresentationDeadline, PresendStatementDeferred
+        try:
+            return claim_presentation(presentation_policy, callback_token=callback_token,
+                preview_digest=preview_digest, owner_user_id=owner_user_id,
+                private_chat_id=private_chat_id, action_kind=action_kind, factory=factory,
+                start_attempt=start_attempt, deadline_monotonic=deadline_monotonic)
+        except PresendStatementDeferred:
+            return {**_safe("retained_mortality_presend_statement_deferred"), "success": False,
+                "failure_kind": "retained_mortality_presend_statement_deferred",
+                "delivery_definitely_not_sent": True}
+        except PresentationDeadline:
+            # This typed exception exits the transaction first. A failed or
+            # uncertain rollback raises its own error and is not retry authority.
+            return {**_safe("family_message_cycle_deadline_deferred"), "success": False,
+                "delivery_definitely_not_sent": True}
+        except Exception as exc:
+            # No provider ownership escaped; the transaction rolls back before
+            # this return. Post-gate failures still use the unchanged finalizer.
+            return {**_safe("retained_mortality_presentation_refused"), "success": False,
+                "failure_kind": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
+                "delivery_definitely_not_sent": True}
     # Phase one commits ownership before crossing the provider boundary.  A
     # worker loss after provider acceptance therefore leaves a durable pending
     # marker which restart contains instead of resending.

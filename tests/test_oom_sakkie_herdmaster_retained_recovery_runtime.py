@@ -295,6 +295,20 @@ def retained_journey(monkeypatch):
     state = {"history": [source], "claim": {}, "events": {}, "sends": [], "clock": 27.,
              "load_cost": 5., "family_cost": 1., "record_failure": False, "readback_failure": False,
              "welfare_appends": [], "creates": 0, "renewal_audits": [], "audit_failure": False}
+    from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+    from modules.oom_sakkie.retained_mortality_history import EMPTY_MARKERS
+    evidence["evidence_generation"] = source_tx.digest({k:evidence[k] for k in ("animals","matings","litters")})
+    state.update(source_times={}, window_audits=[], domain_effects=[], now=datetime.now(timezone.utc)-timedelta(seconds=2))
+    def db_now():
+        state["now"] = max(state.get("utc_now",lambda:datetime.now(timezone.utc))(),state["now"]+timedelta(microseconds=1))
+        return state["now"]
+    def source_rows():
+        rows=[]
+        for index,row in enumerate(reversed(state["history"])):
+            key=source_tx.digest(row)
+            stamp=state["source_times"].setdefault(key, state["now"]-timedelta(seconds=1))
+            rows.append(("SOURCE-"+key,stamp,copy.deepcopy(row)))
+        return sorted(rows,key=lambda row:(row[1],row[0]),reverse=True)
     case = {"case_id": "SYNTHETIC-RETAINED", "dedupe_key": "herdmaster:retained-mortality:101",
         "specialist": "HERDMASTER", "generation": 1, "evidence_digest": "b" * 64,
         "message_family": "retained_protected_recovery", "evidence_refs": [
@@ -309,7 +323,8 @@ def retained_journey(monkeypatch):
         state["creates"] += 1
         state["claim"].update(request, callback_token="SyntheticToken27", status="active",
             preview_digest=claims.canonical_preview_digest(request["action_kind"],request["preview_payload"]),
-            expires_at=datetime.now(timezone.utc)+timedelta(minutes=30), delivery_state="claim_created")
+            expires_at=datetime.now(timezone.utc)+timedelta(minutes=30), delivery_state="claim_created",
+            created_at=db_now(), **{key:None for key in EMPTY_MARKERS})
         return dict(state["claim"])
     monkeypatch.setattr(claims, "create_claim", create)
     delivery_keys=("callback_token", "preview_digest", "evidence_generation", "expires_at",
@@ -336,16 +351,18 @@ def retained_journey(monkeypatch):
             current={**current,"status":"contained"}
         return current,tuple(state["claim"].get(k) for k in read_keys)
     monkeypatch.setattr(health,"_retained_preview_readback",raw)
-    def record_event(event):
+    def record_event(event, **kwargs):
         if state["record_failure"]: return {"success":False},503
         row=copy.deepcopy(event["review_json"]["herdmaster_health_loss"])
         same=any(v.get("event_phase")==row.get("event_phase") for v in state["history"])
-        if not same:state["history"].insert(0,row)
+        if not same:
+            state["history"].insert(0,row)
+            state["source_times"][source_tx.digest(row)]=kwargs["created_at"]
         state["clock"]+=1
         return {"success":True,"created":not same},200
     monkeypatch.setattr("modules.sales.sam_live_stock_launch_control.record_sam_live_stock_review_event",record_event)
     monkeypatch.setattr(health,"welfare_case_runtime_enabled",lambda:True)
-    monkeypatch.setattr(health,"append_welfare_case_context",lambda row:state["welfare_appends"].append(copy.deepcopy(row)) or {"success":True})
+    monkeypatch.setattr(health,"append_welfare_case_context",lambda row, **_kwargs:state["welfare_appends"].append(copy.deepcopy(row)) or {"success":True})
     active_reader=health._load_active_contexts
     monkeypatch.setattr(health,"_load_active_contexts",lambda chat_id,**kwargs:active_reader(
         chat_id,owner_user_id=kwargs.get("owner_user_id",""),context_store=lambda *_a:copy.deepcopy(state["history"])))
@@ -353,19 +370,51 @@ def retained_journey(monkeypatch):
         rowcount=1
         def __init__(self): self.snapshots=[]
         def __enter__(self):
-            self.snapshots.append((copy.deepcopy(state["claim"]),copy.deepcopy(state["renewal_audits"])))
+            self.snapshots.append({key:copy.deepcopy(state[key]) for key in
+                ("claim","renewal_audits","window_audits","history","source_times","welfare_appends","domain_effects")})
             return self
         def __exit__(self,kind,*_a):
-            before,audits=self.snapshots.pop()
-            if kind:
-                state["claim"].clear();state["claim"].update(before)
-                state["renewal_audits"][:]=audits
+            before=self.snapshots.pop()
+            if kind:self.restore(before)
             return False
+        def restore(self,before):
+            for key,value in before.items():
+                if isinstance(value,dict):state[key].clear();state[key].update(value)
+                else:state[key][:]=value
+        def rollback(self):self.restore(self.snapshots[0])
         def cursor(self):return self
         def execute(self,q,params=None):
             q=" ".join(q.lower().split());c=state["claim"];self.rowcount=1
-            if q.startswith("select to_jsonb(c)"):
-                self.row=(json.loads(json.dumps(c,default=str)),datetime.now(timezone.utc))
+            if q.startswith("set ") or q.startswith("select pg_advisory"):
+                self.row=None
+            elif q=="select clock_timestamp()":self.row=(db_now(),)
+            elif q.startswith("select review_event_id,created_at,review_json->'herdmaster_health_loss'"):
+                self.rows=source_rows()
+            elif q.startswith("select distinct review_json->'herdmaster_health_loss'"):
+                self.rows=[(state["source"]["mission_id"],)]
+            elif q.startswith("select review_event_id,created_at,review_json->'family_message_lifecycle'"):
+                assert not state["events"], "admission must precede family effects"
+                self.rows=[]
+            elif q.startswith("select to_jsonb(m)"):
+                self.rows=[({**case,"status":"delegated","last_delivery_digest":None,"last_delivery_at":None},)]
+            elif q.startswith("select to_jsonb(e) from public.operational_events"):
+                self.rows=[(copy.deepcopy(row),) for row in state["window_audits"]]
+            elif q.startswith("select to_jsonb(e) from app_private.oom_manager_case_events"):
+                self.rows=[({"event_id":"CASE-CREATED","case_id":case["case_id"],"generation":1,
+                    "event_type":"created","occurred_at":c["created_at"],"event_payload":{
+                        "case_id":case["case_id"],"generation":1,"event_type":"created",
+                        "occurred_at":c["created_at"]}},)]
+            elif q.startswith("select 1 from ("):self.row=None
+            elif q.startswith("select to_jsonb(c)"):
+                value=json.loads(json.dumps(c,default=str))
+                if "clock_timestamp()" in q:self.row=(value,db_now())
+                else:self.rows=[(value,)]
+            elif q.startswith("update app_private.oom_protected_action_claims c set status='active'"):
+                expiry,attempt,started,token,prior=params
+                assert token==c["callback_token"] and json.loads(prior)==json.loads(json.dumps(c,default=str))
+                c.update(status="active",expires_at=expiry,delivery_state="delivery_pending",
+                    delivery_attempt_id=attempt,delivery_attempted_at=started)
+                self.row=(expiry,started)
             elif q.startswith("select event_id from public.operational_events"):
                 self.row=(state["renewal_audits"][0]["event_id"],) if state["renewal_audits"] else None
             elif q.startswith("select callback_token from app_private"):
@@ -378,8 +427,13 @@ def retained_journey(monkeypatch):
                 self.row=(c["expires_at"],)
             elif q.startswith("insert into public.operational_events"):
                 if state["audit_failure"]:raise RuntimeError("synthetic audit failure")
-                state["renewal_audits"].append({**params,"payload":json.loads(params["payload"])})
-                self.row=(params["event_id"],)
+                if isinstance(params,dict):
+                    state["renewal_audits"].append({**params,"payload":json.loads(params["payload"])})
+                    self.row=(params["event_id"],)
+                else:
+                    state["window_audits"].append({"event_id":params[0],"event_type":params[2],
+                        "payload_json":json.loads(params[-2])})
+                    self.row=(params[0],)
             elif q.startswith("select "):
                 names=q.split(" from ")[0].removeprefix("select ").split(",")
                 self.row=tuple(c.get(k.strip()) for k in names)
@@ -400,6 +454,7 @@ def retained_journey(monkeypatch):
             elif "set status='contained'" in q:c.update(status="contained")
             else:raise AssertionError(q)
         def fetchone(self):return self.row
+        def fetchall(self):return self.rows
     monkeypatch.setattr(delivery,"_connect",ClaimDb)
     monkeypatch.setattr(claims,"_connect",ClaimDb)
     monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_rootline_postgres",lambda **_k:ClaimDb())
@@ -414,13 +469,26 @@ def retained_journey(monkeypatch):
         state["sends"].append((chat,text,kwargs))
         return {"success":True,"telegram_message_id":"701","provider_timestamp":datetime.now(timezone.utc).isoformat()}
     monkeypatch.setattr(family,"_send_telegram",sender)
+    # Materialize the original source timestamp before claim creation.
+    source_rows()
     state.update(case=case,evidence=evidence,source=source,report_data=report_data,db=ClaimDb)
     return state
+
+
+def prepare_retained_journey(j):
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    result=deliver_farm_manager_case(j["case"])
+    assert result["success"] and result["status"]=="retained_mortality_prepared_not_presented"
+    assert not j["sends"] and j["claim"]["delivery_state"]=="claim_created"
+    assert j["claim"].get("delivery_attempt_id") is None and not j["window_audits"]
+    j["clock"]=27.
+    return result
 
 
 def test_real_retained_worker_preview_family_binding_and_replay(retained_journey):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j=retained_journey
+    prepare_retained_journey(j)
     first=deliver_farm_manager_case(j["case"],deadline_monotonic=80.)
     assert first["success"] and first["delivery_confirmed"] and first["protected_preview_card_bound"]
     assert j["creates"]==1 and len(j["sends"])==1
@@ -460,12 +528,13 @@ def test_real_protected_callback_resolves_persisted_retained_operation(retained_
             "pig_id":"P27","lifecycle_event_id":"LIFE-27","event_date":"2026-08-19",
             "canonical_readback":{"canonical_readback_verified":True},"writes_farm_data":True},200
     monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._confirm_mortality_lifecycle",effect)
-    assert deliver_farm_manager_case(j["case"])["success"] and not effects
-    callback={"telegram_user_id":"42","telegram_chat_id":"42","provider_message_id":"702",
+    prepare_retained_journey(j)
+    assert deliver_farm_manager_case(j["case"])["delivery_confirmed"] and not effects
+    callback={"telegram_user_id":"42","telegram_chat_id":"42","telegram_chat_type":"private","provider_message_id":"702",
         "provider_timestamp":datetime.now(timezone.utc).isoformat(),"reply_to_message_id":"701","text":"","output_language":"af"}
     result,status=handle_protected_action_input(callback,issue_gateway_owner_authority("42","42"),
         callback_data="oompa:"+j["claim"]["callback_token"]+":confirm")
-    assert status==200 and result["success"] and len(effects)==1
+    assert status==200 and result["success"] and len(effects)==1, result
     from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
     assert result["card_mission_id"]==protected_card_mission_id(j["claim"]["mission_id"],j["claim"]["preview_digest"])
     assert any(row["card_mission_id"]==result["card_mission_id"] and row["state"]=="delivered"
@@ -491,8 +560,8 @@ def test_real_protected_callback_resolves_persisted_retained_operation(retained_
 
 
 @pytest.mark.parametrize("change,expected",[
-    ({"status":"expired"},"retained_claim_expired_requires_current_review"),
-    ({"expires_at":datetime(2020,1,1,tzinfo=timezone.utc),"delivery_attempt_id":"earlier"},"retained_claim_expired_requires_current_review"),
+
+    ({"expires_at":datetime(2020,1,1,tzinfo=timezone.utc),"delivery_attempt_id":"earlier"},"retained_claim_attempt_or_terminal_requires_review"),
     ({"status":"cancelled"},"retained_claim_terminal_requires_current_review"),
     ({"status":"changed"},"retained_claim_terminal_requires_current_review"),
     ({"status":"completed"},"retained_claim_terminal_requires_current_review"),
@@ -533,7 +602,8 @@ def test_prepared_claim_resumes_after_record_failure_without_new_claim(retained_
     j=retained_journey;j["record_failure"]=True
     assert not deliver_farm_manager_case(j["case"])["success"]
     token=j["claim"]["callback_token"];j["record_failure"]=False
-    assert deliver_farm_manager_case(j["case"])["success"]
+    prepare_retained_journey(j)
+    assert deliver_farm_manager_case(j["case"])["delivery_confirmed"]
     assert j["claim"]["callback_token"]==token and j["creates"]==1 and len(j["sends"])==1
 
 
@@ -549,6 +619,7 @@ def test_elapsed_budget_progress_and_late_preparation_containment(retained_journ
 def test_deadline_crossed_inside_family_defers_without_poisoning_retry(retained_journey):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j=retained_journey;j["family_cost"]=20.
+    prepare_retained_journey(j)
     first=deliver_farm_manager_case(j["case"],deadline_monotonic=80.)
     assert first["status"]=="family_message_cycle_deadline_deferred" and not j["sends"]
     assert j["claim"]["delivery_state"]=="claim_created"
@@ -557,7 +628,7 @@ def test_deadline_crossed_inside_family_defers_without_poisoning_retry(retained_
     j["clock"]=0.;j["family_cost"]=0.
     again=deliver_farm_manager_case(j["case"],deadline_monotonic=80.)
     assert again["delivery_confirmed"] and len(j["sends"])==1
-    assert j["claim"]["callback_token"]==token and j["claim"]["expires_at"]==expiry
+    assert j["claim"]["callback_token"]==token and len(j["window_audits"])==1
     replay=deliver_farm_manager_case(j["case"],deadline_monotonic=80.)
     assert replay["status"]=="protected_delivery_replayed_noop" and len(j["sends"])==1
 
@@ -653,38 +724,50 @@ def test_incomplete_or_conflicting_completion_never_closes_case(completed_retain
     assert not j["sends"]
 
 
+def expire_prepared_journey(j, expired_status="active"):
+    from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+    now=datetime.now(timezone.utc)
+    j["claim"].update(status=expired_status,created_at=now-timedelta(minutes=60),
+        expires_at=now-timedelta(seconds=5),delivery_state="expired" if expired_status=="expired" else "claim_created")
+    for index,row in enumerate(j["history"]):
+        j["source_times"][source_tx.digest(row)]=now-timedelta(minutes=59+index*2)
+
+
 @pytest.mark.parametrize("expired_status", ["active", "expired"])
-def test_never_attempted_expired_claim_renews_once_preserving_identity(retained_journey, expired_status):
+def test_never_attempted_expiry_stages_without_renewal_then_starts_one_window(retained_journey, expired_status):
     from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j=retained_journey
-    assert recovery.build_retained_protected_preview(j["case"])["success"]
-    c=j["claim"]; c.update(status=expired_status,expires_at=datetime.now(timezone.utc)-timedelta(seconds=5))
-    if expired_status=="expired":c["delivery_state"]="expired"
-    preserved={k:copy.deepcopy(c[k]) for k in ("callback_token","mission_id","provider_message_id",
-        "preview_digest","preview_payload","evidence_generation")}
-    old=c["expires_at"]
-    assert recovery.build_retained_protected_preview(j["case"])["success"]
-    assert c["expires_at"]>old and c["status"]=="active" and c["delivery_state"]=="claim_created"
-    assert {k:c[k] for k in preserved}==preserved and j["creates"]==1 and not j["sends"]
-    assert len(j["renewal_audits"])==1
-    assert j["renewal_audits"][0]["payload"]["old_expires_at"]==old.isoformat()
-    renewed=c["expires_at"]
-    assert recovery.build_retained_protected_preview(j["case"])["success"]
-    assert c["expires_at"]==renewed and len(j["renewal_audits"])==1
+    prepare_retained_journey(j)
+    expire_prepared_journey(j,expired_status)
+    before=copy.deepcopy(j["claim"])
+    staged=recovery.build_retained_protected_preview(j["case"])
+    assert staged["success"] and j["claim"]==before and not j["window_audits"]
+    assert not j["renewal_audits"] and not j["sends"]
+    admitted=deliver_farm_manager_case(j["case"])
+    assert admitted["delivery_confirmed"] and len(j["sends"])==len(j["window_audits"])==1
+    c=j["claim"]
+    assert c["expires_at"]-c["delivery_attempted_at"]==timedelta(minutes=30)
+    for key in ("callback_token","mission_id","provider_message_id","preview_digest","preview_payload","evidence_generation"):
+        assert c[key]==before[key]
+    expiry=c["expires_at"];audit=copy.deepcopy(j["window_audits"])
+    assert deliver_farm_manager_case(j["case"])["status"]=="protected_delivery_replayed_noop"
+    assert c["expires_at"]==expiry and j["window_audits"]==audit and len(j["sends"])==1
     c["expires_at"]=datetime.now(timezone.utc)-timedelta(seconds=1)
-    result=recovery.build_retained_protected_preview(j["case"])
-    assert result["status"]=="retained_claim_renewal_already_consumed" and len(j["renewal_audits"])==1
+    refused=deliver_farm_manager_case(j["case"])
+    assert refused["status"]=="retained_claim_attempt_or_terminal_requires_review"
+    assert j["window_audits"]==audit and len(j["sends"])==1
 
 
-def test_expiry_cas_rolls_back_when_same_transaction_audit_fails(retained_journey):
-    from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
+def test_window_cas_rolls_back_when_same_transaction_audit_fails(retained_journey):
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j=retained_journey
-    assert recovery.build_retained_protected_preview(j["case"])["success"]
-    j["claim"]["expires_at"]=datetime.now(timezone.utc)-timedelta(seconds=5)
+    prepare_retained_journey(j)
+    expire_prepared_journey(j)
     before=copy.deepcopy(j["claim"]);j["audit_failure"]=True
-    result=recovery.build_retained_protected_preview(j["case"])
-    assert result["status"]=="retained_claim_renewal_persistence_unproven"
-    assert j["claim"]==before and not j["renewal_audits"] and not j["sends"]
+    result=deliver_farm_manager_case(j["case"])
+    assert result["status"]=="retained_mortality_presentation_refused"
+    assert j["claim"]==before and not j["window_audits"] and not j["sends"]
 
 
 @pytest.mark.parametrize("marker", ["preview_card_message_id","delivery_attempt_id","delivery_attempted_at",
@@ -721,6 +804,7 @@ def _current_manager(monkeypatch, **changes):
 def test_current_delegated_manager_can_receive_exact_retained_preview(retained_journey,monkeypatch):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     _current_manager(monkeypatch)
+    prepare_retained_journey(retained_journey)
     result=deliver_farm_manager_case(retained_journey["case"])
     assert result["success"] and len(retained_journey["sends"])==1
     assert retained_journey["sends"][0][0]=="42"
@@ -764,7 +848,9 @@ def test_recipient_revoked_during_canonical_preview_never_creates_claim(retained
 def test_recipient_revoked_after_preview_has_no_provider_attempt(retained_journey,monkeypatch):
     from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
-    j=retained_journey;build=recovery.build_retained_protected_preview
+    j=retained_journey
+    prepare_retained_journey(j)
+    build=recovery.build_retained_protected_preview
     def revoke(*args,**kwargs):
         result=build(*args,**kwargs)
         monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS","99")
@@ -779,7 +865,9 @@ def test_recipient_revoked_after_preview_has_no_provider_attempt(retained_journe
 def test_recipient_revoked_during_family_read_is_denied_at_sender_boundary(retained_journey,monkeypatch):
     from modules.oom_sakkie import family_message_lifecycle as family
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
-    j=retained_journey;store=family._event_store
+    j=retained_journey
+    prepare_retained_journey(j)
+    store=family._event_store
     def revoke(action,identity,payload):
         result=store(action,identity,payload)
         if action=="load":monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS","99")
@@ -787,7 +875,7 @@ def test_recipient_revoked_during_family_read_is_denied_at_sender_boundary(retai
     monkeypatch.setattr(family,"_event_store",revoke)
     result=deliver_farm_manager_case(j["case"])
     assert not result["success"] and not j["sends"]
-    assert j["claim"]["delivery_state"]=="delivery_ambiguous"
+    assert j["claim"]["delivery_state"]=="claim_created" and not j["claim"].get("delivery_attempt_id")
 
 
 @pytest.mark.parametrize("reply", ["15 September", "September 15th", "15 September 2026", "Pig 27 died on September 15th."])
@@ -808,6 +896,7 @@ def test_typed_short_reply_is_selected_and_worker_delivers_one_confirmation(reta
         canonical_pigs=[{"pig_id": "P27", "tag_number": "27", "status": "Active", "on_farm": True}])
     assert len(candidates) == 1
     assert candidates[0]["dedupe_key"] == j["case"]["dedupe_key"]
+    prepare_retained_journey(j)
     result = deliver_farm_manager_case(j["case"], deadline_monotonic=80.)
     assert result["success"] and result["delivery_confirmed"]
     assert len(j["sends"]) == j["creates"] == 1
@@ -839,6 +928,7 @@ def test_preparation_failure_or_late_claim_change_does_not_claim_send(retained_j
     from modules.oom_sakkie import family_message_lifecycle as family
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j = retained_journey
+    prepare_retained_journey(j)
     original = family._event_store
     def store(action, identity, payload):
         if action == "load":
@@ -852,7 +942,7 @@ def test_preparation_failure_or_late_claim_change_does_not_claim_send(retained_j
     monkeypatch.setattr(family, "_event_store", store)
     result = deliver_farm_manager_case(j["case"], deadline_monotonic=100.)
     expected = ("protected_delivery_preparation_unavailable" if fault == "load_exception"
-                else "protected_delivery_terminal_noop")
+                else "retained_mortality_presentation_refused")
     assert result["status"] == expected
     assert not j["sends"] and not j["events"]
     assert j["claim"].get("delivery_attempt_id") is None
@@ -863,6 +953,7 @@ def test_failure_after_send_gate_remains_contained_and_never_replayed(retained_j
     from modules.oom_sakkie import family_message_lifecycle as family
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j = retained_journey
+    prepare_retained_journey(j)
     original = family._event_store
     def store(action, identity, payload):
         if action == "record":
@@ -883,6 +974,7 @@ def test_unbound_existing_family_card_cannot_be_edited_or_notified(retained_jour
     from modules.oom_sakkie import family_message_lifecycle as family
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j = retained_journey
+    prepare_retained_journey(j)
     original = family._event_store
     def store(action, identity, payload):
         if action == "load":
@@ -898,9 +990,18 @@ def test_unbound_existing_family_card_cannot_be_edited_or_notified(retained_jour
 
 @pytest.mark.parametrize("clock,phase", [
     (50., "before_retained_preview"), (42., "after_retained_preview")])
-def test_retained_cutoff_reports_phase_and_preserves_safe_retry(retained_journey, clock, phase):
+def test_retained_cutoff_reports_phase_and_preserves_safe_retry(retained_journey, monkeypatch, clock, phase):
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
     j = retained_journey
+    prepare_retained_journey(j)
+    if phase=="after_retained_preview":
+        from modules.oom_sakkie import herdmaster_retained_recovery_runtime as recovery
+        build=recovery.build_retained_protected_preview
+        def slow_handoff(*args,**kwargs):
+            result=build(*args,**kwargs)
+            j["clock"]+=8.
+            return result
+        monkeypatch.setattr(recovery,"build_retained_protected_preview",slow_handoff)
     j["clock"] = clock
     deferred = deliver_farm_manager_case(j["case"], deadline_monotonic=80.)
     assert deferred["status"] == "manager_cycle_deadline_deferred"
@@ -914,4 +1015,150 @@ def test_retained_cutoff_reports_phase_and_preserves_safe_retry(retained_journey
     assert delivered["delivery_confirmed"] and len(j["sends"]) == 1
     if prior_token:
         assert j["claim"]["callback_token"] == prior_token
-        assert j["claim"]["expires_at"] == prior_expiry
+        assert len(j["window_audits"])==1 and j["claim"]["expires_at"] >= prior_expiry
+
+
+@pytest.fixture
+def admitted_callback(retained_journey, monkeypatch):
+    from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+    from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
+    j=retained_journey
+    prepare_retained_journey(j)
+    assert deliver_farm_manager_case(j["case"])["delivery_confirmed"]
+    state={"failure":None,"calls":0,"fresh_reads":0}
+    def effect(lifecycle,evaluator,binding,operation,actor_id,**kwargs):
+        from modules.oom_sakkie.herdmaster_source_transaction import TransactionReader
+        assert isinstance(kwargs["connect_factory"],TransactionReader)
+        state["calls"]+=1
+        if j["domain_effects"]:
+            return {**j["domain_effects"][0],"status":"mortality_lifecycle_replayed_withheld",
+                "writes_farm_data":False,"rows_created":0},200
+        kwargs["evidence_loader"]();state["fresh_reads"]+=1
+        recorded={"success":True,"status":"mortality_lifecycle_recorded","operation_id":operation,
+            "pig_id":"P27","lifecycle_event_id":"LIFE-27","event_date":"2026-08-19",
+            "canonical_readback":{"canonical_readback_verified":True},"writes_farm_data":True,"rows_created":1}
+        j["domain_effects"].append(recorded)
+        if state["failure"]=="returned_failure":
+            return {"success":False,"status":"synthetic_domain_rejected_after_write"},409
+        return recorded,201
+    monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._confirm_mortality_lifecycle",effect)
+    parsed={"telegram_user_id":"42","telegram_chat_id":"42","telegram_chat_type":"private",
+        "provider_message_id":"702","provider_timestamp":datetime.now(timezone.utc).isoformat(),
+        "reply_to_message_id":"701","text":"","output_language":"af"}
+    def callback():
+        return handle_protected_action_input(parsed,issue_gateway_owner_authority("42","42"),
+            callback_data="oompa:"+j["claim"]["callback_token"]+":confirm")
+    return j,state,parsed,callback
+
+
+@pytest.mark.parametrize("failure",["returned_failure","source_append","welfare_append"])
+def test_actual_callback_rolls_back_domain_and_source_on_returned_failure(admitted_callback,monkeypatch,failure):
+    j,state,parsed,callback=admitted_callback
+    before=copy.deepcopy(j["history"])
+    if failure=="returned_failure":state["failure"]=failure
+    elif failure=="source_append":j["record_failure"]=True
+    else:
+        monkeypatch.setattr("modules.oom_sakkie.herdmaster_health_loss_runtime.append_welfare_case_context",
+            lambda *args,**kwargs:{"success":False,"status":"synthetic_welfare_failure"})
+    result,status=callback()
+    assert status in {409,503} and result["success"] is False
+    assert not j["domain_effects"] and j["history"]==before
+    assert j["claim"]["status"]==("contained" if failure=="returned_failure" else "executing")
+    assert j["claim"]["confirmation_provider_message_id"]=="702"
+    assert len(j["sends"])==1 and state["calls"]==1
+
+
+def test_claim_completion_failure_rolls_back_domain_source_then_same_receipt_completes(admitted_callback,monkeypatch):
+    from modules.oom_sakkie import protected_action_claims as claims
+    j,state,parsed,callback=admitted_callback
+    before=copy.deepcopy(j["history"])
+    complete=claims.complete_claim
+    monkeypatch.setattr(claims,"complete_claim",lambda *args,**kwargs:(_ for _ in ()).throw(RuntimeError("receipt store unavailable")))
+    first,status=callback()
+    assert status==503 and first["status"]=="retained_mortality_execution_recovery_pending"
+    assert j["claim"]["status"]=="executing" and j["history"]==before
+    assert not j["domain_effects"] and state["fresh_reads"]==1
+    monkeypatch.setattr(claims,"complete_claim",complete)
+    recovered,status=callback()
+    assert status==201 and recovered["success"] and recovered["writes_farm_data"] is True
+    assert recovered["mission_id"]==j["claim"]["mission_id"]
+    assert recovered["source_mission_id"]==j["source"]["mission_id"]
+    assert j["claim"]["status"]==j["history"][0]["status"]=="completed"
+    assert len(j["domain_effects"])==len(j["sends"])==1
+    # Post-commit callback recovery uses the completed receipt, never an executor.
+    j["evidence"]["animals"][0]["lifecycle_status"]="Dead"
+    again,status=callback()
+    assert status==200 and again["writes_farm_data"] is False and state["calls"]==2
+
+
+def test_callback_already_completed_between_receipt_and_source_lock_uses_exact_winner(admitted_callback,monkeypatch):
+    from modules.oom_sakkie import protected_action_runtime as runtime
+    j,state,parsed,callback=admitted_callback
+    first,status=callback()
+    assert status==201 and first["success"]
+    claimed={key:copy.deepcopy(j["claim"][key]) for key in
+        ("callback_token","action_kind","mission_id","preview_digest","evidence_generation","preview_payload")}
+    claimed.update(success=True,status="protected_callback_recovered")
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:(claimed,200))
+    replay,status=callback()
+    assert status==200 and replay["success"] and replay["suppress_owner_delivery"]
+    assert replay["rows_created"]==0 and replay["writes_farm_data"] is False
+    assert state["fresh_reads"]==1 and len(j["domain_effects"])==1
+    j["claim"]["result_payload"]["source_mission_id"]="UNRELATED"
+    refused,status=callback()
+    assert status==409 and refused["status"]=="retained_mortality_completed_claim_unproven"
+    assert len(j["domain_effects"])==1
+
+
+@pytest.mark.parametrize("terminal",["contained","cancelled","preview_correction_pending"])
+def test_actual_callback_all_status_source_cancellation_never_resurrects_preview(admitted_callback,terminal):
+    j,state,parsed,callback=admitted_callback
+    j["history"].insert(0,{**copy.deepcopy(j["history"][0]),"status":terminal,"event_phase":"synthetic_later_stop"})
+    from modules.oom_sakkie.herdmaster_source_transaction import digest
+    j["now"]=max(datetime.now(timezone.utc),j["now"])+timedelta(microseconds=1)
+    j["source_times"][digest(j["history"][0])]=j["now"]
+    result,status=callback()
+    assert status==409 and result["success"] is False and state["calls"]==0
+    assert not j["domain_effects"] and len(j["sends"])==1
+
+
+@pytest.mark.parametrize("callback_flag",[False,True])
+def test_plain_full_operation_text_cannot_confirm_retained_preview(admitted_callback,callback_flag):
+    from modules.oom_sakkie import herdmaster_health_loss_runtime as health
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+    j,state,parsed,_=admitted_callback
+    result,status=health.handle_authenticated_health_loss_message({**parsed,
+        "text":"CONFIRM "+j["claim"]["preview_payload"]["operation_id"],"callback_confirmation":callback_flag},
+        issue_gateway_owner_authority("42","42"))
+    assert status==409 and result["status"]=="retained_mortality_protected_callback_required"
+    assert state["calls"]==0 and not j["domain_effects"]
+
+
+def test_ordinary_ambiguous_intake_with_real_no_pig_welfare_helper_still_persists(retained_journey,monkeypatch):
+    from modules.oom_sakkie import herdmaster_health_loss_runtime as health
+    from modules.pig_weights.pig_welfare_case_runtime import append_welfare_case_context
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+    from tests.test_oom_sakkie_herdmaster_health_loss_runtime import pig_125_active,parsed
+    j=retained_journey
+    first={**pig_125_active(),"owner_user_id":"42","chat_id":"42"}
+    second={**first,"mission_id":"SYNTHETIC-SECOND","operation_id":"SYNTHETIC-OTHER",
+        "preview":{"evaluator":{"identity":{"pig_id":"P11","tag_number":"11"}}}}
+    j["history"][:]=[first,second]
+    monkeypatch.setattr(health,"append_welfare_case_context",append_welfare_case_context)
+    result,status=health.handle_authenticated_health_loss_message({**parsed("Yes, found this evening","3188"),
+        "provider_timestamp":"2026-08-02T17:20:00+00:00"},issue_gateway_owner_authority("42","42"))
+    assert status==200 and result["status"]=="health_loss_context_disambiguation_required",result
+    assert j["history"][0]["status"]=="waiting_for_context" and len(j["history"])==3
+    assert result["writes_farm_data"] is False and not j["claim"] and not j["sends"]
+
+
+def test_completed_claim_winner_must_match_the_same_canonical_domain_event(admitted_callback,monkeypatch):
+    from modules.oom_sakkie import protected_action_claims as runtime
+    j,state,parsed,callback=admitted_callback
+    def conflicting_winner(token,result,**kwargs):
+        return {"completed":False,"replayed":True,"result":{**result,"lifecycle_event_id":"OTHER-LIFECYCLE"}}
+    monkeypatch.setattr(runtime,"complete_claim",conflicting_winner)
+    result,status=callback()
+    assert status==409 and result["status"]=="retained_mortality_completion_binding_unproven"
+    assert not j["domain_effects"] and j["claim"]["status"]=="contained"

@@ -18,14 +18,15 @@ from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 
 
-def capture_active_context_query(monkeypatch, *, owner_user_id="", rows=()):
+def capture_active_context_query(monkeypatch, *, owner_user_id="", rows=(), durable=()):
     """Capture the runtime's actual SQL without connecting to a database."""
     connection = MagicMock()
     cursor = connection.__enter__.return_value.cursor.return_value.__enter__.return_value
     cursor.fetchall.return_value = list(rows)
     with monkeypatch.context() as scoped:
         scoped.setenv("DATABASE_URL", "synthetic-unused-url")
-        scoped.setattr(health_loss, "welfare_case_runtime_enabled", lambda: False)
+        scoped.setattr(health_loss, "welfare_case_runtime_enabled", lambda: bool(durable))
+        scoped.setattr(health_loss, "load_open_welfare_case_contexts", lambda *_a: list(durable))
         scoped.setattr("psycopg.connect", lambda *_args, **_kwargs: connection)
         contexts = health_loss._load_active_contexts("42", owner_user_id=owner_user_id)
     cursor.execute.assert_called_once()
@@ -786,12 +787,31 @@ def test_completed_context_accepts_only_exact_confirmation_replay(confirm):
         parsed("CONFIRM HERD-1","3174"),issue_gateway_owner_authority("42","42"),context_store=store)
     assert status==200 and result["status"]=="completed" and result["rows_created"]==0
     assert result["mission_id"]=="MISSION-1" and result["card_mission_id"]=="MISSION-1"
-    assert len(recorded)==1
+    assert recorded == [] and result["records_audit_trace"] is False
     confirm.assert_called_once()
 
     unrelated,status=handle_authenticated_health_loss_message(
         parsed("yes she can stand","3175"),issue_gateway_owner_authority("42","42"),context_store=store)
     assert status==200 and unrelated["handled"] is False
+
+
+@pytest.mark.parametrize("failure, code", [
+    ("mortality_lifecycle_replay_event_missing", 409),
+    ("mortality_lifecycle_recording_unavailable", 503),
+])
+def test_completed_source_replay_failure_is_truthful_and_does_not_append(monkeypatch, failure, code):
+    monkeypatch.setattr(health_loss, "confirm_health_loss_preview", lambda *_a, **_k:
+        ({"success": False, "status": failure, "writes_farm_data": False, "rows_created": 0}, code))
+    active = {"status": "completed", "operation_id": "HERD-1", "mission_id": "MISSION-1",
+        "owner_user_id": "42", "preview": {"confirmation_ready": True},
+        "provider_timestamp": "2026-08-02T07:00:00+00:00",
+        "recording_result": {"success": True}, "owner_text": "Old completion"}
+    store, recorded = memory_store(active)
+    result, status = handle_authenticated_health_loss_message(
+        parsed("CONFIRM HERD-1", "3174"), issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == code and result["success"] is False and result["status"] == failure
+    assert result["writes_farm_data"] is False and result["rows_created"] == 0
+    assert result["answer"] != "Old completion" and recorded == []
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.confirm_health_loss_preview")
@@ -855,3 +875,20 @@ def test_pig148_month_first_report_and_retained_date_reply_reach_confirmation(lo
         assert recorded[0]["preview"]["confirmation_ready"] is True
         if context:
             assert result["mission_id"] == context["mission_id"]
+
+
+@pytest.mark.parametrize("terminal",["contained","cancelled","completed"])
+def test_old_latest_terminal_blocks_recent_and_durable_preview_resurrection(monkeypatch,terminal):
+    now=datetime.now(timezone.utc)
+    preview={"mission_id":"SYNTHETIC-OLD","owner_user_id":"42","chat_id":"42","status":"preview_ready"}
+    contexts,_,_=capture_active_context_query(monkeypatch,owner_user_id="42",durable=[preview],rows=[
+        ({**preview,"status":terminal},now-timedelta(days=2),None),
+        (preview,now-timedelta(days=3),None)])
+    assert contexts==[]
+
+
+def test_old_open_case_keeps_durable_context(monkeypatch):
+    preview={"mission_id":"SYNTHETIC-OPEN","owner_user_id":"42","chat_id":"42","status":"preview_ready"}
+    contexts,_,_=capture_active_context_query(monkeypatch,owner_user_id="42",durable=[preview],rows=[
+        (preview,datetime.now(timezone.utc)-timedelta(days=2),None)])
+    assert [row["mission_id"] for row in contexts]==[preview["mission_id"]]

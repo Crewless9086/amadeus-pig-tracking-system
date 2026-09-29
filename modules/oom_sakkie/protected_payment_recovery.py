@@ -60,6 +60,11 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
             "provider_timestamp": _provider_timestamp(
                 claim["confirmation_provider_timestamp"]), "text": ""}
         specialist = "SAM"
+        retained_mortality = (claim.get("action_kind") == "mortality"
+            and str(claim.get("mission_id") or "").startswith("OOM-HERDMASTER-MORTALITY-")
+            and bound.get("effect_kind") == "mortality")
+        if retained_mortality:
+            _verify_retained_completion(claim, result, connect_factory or store.connect)
         if claim.get("action_kind") == "mortality":
             from modules.oom_sakkie.family_access import resolve_family_principal
             from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completion_recovery_result
@@ -83,6 +88,11 @@ def run_payment_recovery_cycle(*, now=None, connect_factory=None,
                 claim["mission_id"], claim["preview_digest"])
             result["presentation_version"] = MORTALITY_PRESENTATION_VERSION
             specialist = "HERDMASTER"
+        if retained_mortality:
+            result = {**result, "protected_actions_performed": False, "reply_markup": {"inline_keyboard": []}}
+            from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_recipient_authorized
+            if not retained_recipient_authorized(parsed):
+                raise ValueError("retained_mortality_completion_recipient_revoked")
         delivery = deliverer(parsed, result, specialist=specialist,
             mission_id=claim["mission_id"], card_mission_id=str(
                 result.get("card_mission_id") or claim.get("card_mission_id") or claim["mission_id"]))
@@ -171,11 +181,52 @@ def _health_observation_completion(claim, language):
             f"The observation was recorded once. {consequence}")
 
 
+def _verify_retained_completion(claim, result, connect_factory):
+    """Read existing canonical death/welfare proof; never execute a farm action."""
+    from modules.pig_weights.herdmaster_health_loss_recording import _readback_mortality_welfare
+    preview=claim.get("preview_payload") or {}
+    identity=preview.get("identity") or {}
+    if (claim.get("status") != "completed" or result.get("success") is not True
+            or result.get("status") != "completed" or not preview.get("operation_id")
+            or result.get("operation_id") != preview["operation_id"]
+            or not identity.get("pig_id") or result.get("pig_id") != identity["pig_id"]
+            or result.get("mission_id") != claim.get("mission_id")
+            or not result.get("source_mission_id") or not result.get("lifecycle_event_id")
+            or not result.get("welfare_case_id")):
+        raise ValueError("health_loss_recovery_effect_unresolved")
+    with connect_factory() as db,db.cursor() as cur:
+        cur.execute("set local statement_timeout='5000ms'")
+        cur.execute("""select event_payload,actor_reference from public.pig_lifecycle_events
+            where lifecycle_event_id=%s and pig_id=%s and idempotency_key=%s
+              and lifecycle_event_type='exited_farm'""",
+            (result["lifecycle_event_id"],result["pig_id"],preview["operation_id"]))
+        rows=cur.fetchall()
+        if len(rows)!=1:
+            raise ValueError("health_loss_recovery_effect_unresolved")
+        payload,actor=rows[0]
+        if (actor != claim["owner_user_id"] or payload.get("operation_id") != preview["operation_id"]
+                or payload.get("pig_id") != identity["pig_id"]
+                or payload.get("preview_sha256") != preview.get("preview_sha256")):
+            raise ValueError("health_loss_recovery_effect_unresolved")
+        readback=_readback_mortality_welfare(cur,pig_id=result["pig_id"],
+            event_id=result["lifecycle_event_id"],welfare_case_id=result["welfare_case_id"])
+        if readback.get("canonical_readback_verified") is not True:
+            raise ValueError("health_loss_recovery_effect_unresolved")
+
+
 def _bound_effect_kind(bound, result):
     explicit = str((bound or {}).get("effect_kind") or "")
     canonical = str((bound or {}).get("canonical_effect_kind") or "")
     status = str((result or {}).get("status") or "")
     if explicit == "mortality":
+        if canonical == "health_observation":
+            return "unknown"
+        if status == "completed":
+            identity = (bound or {}).get("identity") or {}
+            return "mortality" if (canonical == "mortality" and result.get("success") is True
+                and bool(bound.get("operation_id")) and result.get("operation_id") == bound["operation_id"]
+                and bool(identity.get("pig_id")) and result.get("pig_id") == identity["pig_id"]
+                and bool(result.get("lifecycle_event_id"))) else "unknown"
         return "mortality" if status.startswith("mortality_lifecycle_") else "unknown"
     if explicit == "health_observation":
         return "health_observation" if status == "completed" else "unknown"
@@ -218,7 +269,7 @@ class _RecoveryStore:
                     and ((c.action_kind='sam_sale_payment' and
                           (c.status='executing' or (c.status='completed' and l.last_status='delivery_pending')))
                       or (c.action_kind='mortality' and c.status='completed' and
-                          (l.callback_token is null or l.last_status='delivery_pending'
+                          (l.callback_token is null or l.last_status in ('delivery_pending','executing','exception_pending')
                            or (l.last_status='completed' and
                                coalesce(l.last_result->>'presentation_version','')<>%s))))
                     and (l.callback_token is null or l.lease_until<=%s)
