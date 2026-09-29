@@ -2196,7 +2196,9 @@ migration, permission, provider, farm or physical change.
 
 Preserve typed semantic herd capabilities through the existing owner read path.
 Use canonical count, housing, litter, weighing eligibility and breeding services;
-filter owner-dependency questions to the requested specialist. Distinguish
+filter owner-dependency questions to the requested specialist. Give the requested
+concrete herd capability priority over accompanying owner-attention/help wording;
+retain pure pending-owner-input questions as owner dependencies. Distinguish
 recorded pen capacity from physical overcrowding and missing weights from due
 weighing. Bounded factual answers retain unknowns, totals and no-write authority.
 Source tests are not deployed operational acceptance.

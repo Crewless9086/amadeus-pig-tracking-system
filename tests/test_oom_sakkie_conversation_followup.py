@@ -395,14 +395,20 @@ def tearDownModule():
 # The aggregate question families use the same authenticated ingress, semantic
 # response validator, service, canonical renderer and durable family delivery.
 @pytest.mark.parametrize("channel", ["relay", "direct"])
-@pytest.mark.parametrize("text,capability,expected", [
-    ("How many pigs are currently on the farm?", "herd_inventory", "2 pigs recorded"),
-    ("Which pens are overcrowded?", "pen_occupancy", "North: 2 / 1"),
-    ("Which pigs need weighing, and why?", "weight_attention", "individual weighing schedule is due: 702"),
-    ("Which litters need attention or are due for weaning?", "litter_attention", "Hazel: Weaning is due"),
-    ("Ask HERDMASTER for the current breeding plan and what needs my attention.", "breeding_plan", "UPDATED BREEDING PLAN"),
+@pytest.mark.parametrize("text,capability,expected,language", [
+    ("How many pigs are currently on the farm?", "herd_inventory", "2 pigs recorded", "en"),
+    ("Which pens are overcrowded?", "pen_occupancy", "North: 2 / 1", "en"),
+    ("Which pigs need weighing, and why?", "weight_attention", "individual weighing schedule is due: 702", "en"),
+    ("Which litters need attention or are due for weaning?", "litter_attention", "Hazel: Weaning is due", "en"),
+    ("Ask HERDMASTER for the current breeding plan and what needs my attention.", "breeding_plan", "UPDATED BREEDING PLAN", "en"),
+    ("Review this week's mating priorities and tell me where you need my help.", "breeding_plan", "UPDATED BREEDING PLAN", "en"),
+    ("What is the breeding plan, including anything that I must follow up?", "breeding_plan", "UPDATED BREEDING PLAN", "en"),
+    ("Gaan die huidige teelplan na en wys wat my aandag nodig het.", "breeding_plan", "OPGEDATEERDE TEELPLAN", "af"),
+    ("Help my met die paringsplan en die volgende stappe vir my.", "breeding_plan", "OPGEDATEERDE TEELPLAN", "af"),
+    ("Check pen capacity and tell me where I should help.", "pen_occupancy", "North: 2 / 1", "en"),
+    ("Watter hokke se kapasiteit moet ek opvolg?", "pen_occupancy", "HOKKAPASITEIT", "af"),
 ])
-def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, channel, text, capability, expected):
+def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, channel, text, capability, expected, language):
     from modules.oom_sakkie import herd_read_queries as reads
     from modules.oom_sakkie import herdmaster_request_runtime as breeding
     from modules.pig_weights.herdmaster_daily_manager_evidence import build_daily_manager_evidence
@@ -426,7 +432,7 @@ def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, cha
     monkeypatch.setattr(service, "classify_intent", lambda *_a: pytest.fail("semantic selection must not be reclassified"))
     monkeypatch.setattr(service, "route_with_llm", lambda **_kw: pytest.fail("no second model router"))
     monkeypatch.setattr(service, "compose_answer_with_llm", lambda **_kw: pytest.fail("no paid read composer"))
-    model = interpretation("herd_query", capability=capability)
+    model = interpretation("herd_query", language, capability=capability)
     if channel == "relay":
         result, code = journey.send(text, model)
     else:
@@ -448,12 +454,17 @@ def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, cha
     assert any(row["state"] == "delivered" for row in journey.family.values())
 
 
-def test_scoped_waiting_from_me_returns_only_genuine_herd_owner_dependencies(journey, monkeypatch):
+@pytest.mark.parametrize("text,language,expected", [
+    ("What is HERDMASTER still waiting for from me?", "en", "Hazel's current farrowing status"),
+    ("Which information or decisions does the herd specialist need from me before it can continue?", "en", "Hazel's current farrowing status"),
+    ("Wat wag HERDMASTER nog van my af?", "af", "Hazel se huidige status"),
+    ("Watter inligting of besluite kort die kudde-agent nog van my?", "af", "Hazel se huidige status"),
+])
+def test_scoped_waiting_from_me_returns_only_genuine_herd_owner_dependencies(journey, monkeypatch, text, language, expected):
     monkeypatch.setattr(manager, "_load_rootline", lambda *_a, **_kw: pytest.fail("unrelated specialist load"))
     monkeypatch.setattr(manager, "_load_enquiry_cases", lambda *_a: pytest.fail("technical cases are not owner obligations"))
-    result, code = journey.send("What is HERDMASTER still waiting for from me?",
-        interpretation("work_split", specialist="HERDMASTER"))
-    assert code == 200 and "Hazel's current farrowing status" in result["answer"]
+    result, code = journey.send(text, interpretation("work_split", language, specialist="HERDMASTER"))
+    assert code == 200 and expected in result["answer"]
     assert all(text not in result["answer"] for text in ("SAM", "ROOTLINE", "beacon", "technical exception", "Canonical tag reconciliation"))
     assert journey.claim.call_count == 0 and len(journey.sends) == 1
 

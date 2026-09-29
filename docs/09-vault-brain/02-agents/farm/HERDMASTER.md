@@ -38,7 +38,10 @@ questions must retain that capability through Oom Sakkie and both Telegram
 adapters. A broad brief is never the fallback answer to a specific herd question.
 Unknown or unavailable evidence blocks only the unsupported claim and is stated
 for that question. Reads add no farm-write or confirmation authority and require
-no second model call to choose the same capability.
+no second model call to choose the same capability. A request for a concrete
+herd plan or worklist retains that subject when it also asks for the owner's
+attention, help or next steps. Only a request whose subject is outstanding owner
+inputs or division of responsibility selects the owner-dependency view.
 
 Answers name the relevant animals, litters or pens and explain the reason,
 date and next step supported by current canonical evidence. Bounded lists retain
