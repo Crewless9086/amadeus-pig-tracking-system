@@ -21,8 +21,8 @@ BASE = '459c6fdaa4039ae4d270ad5c8c82c1701fabb90a'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
 CANDIDATE_PR = 1362
-HEAD = '57c973979d1bf1ec794daa34ce036fd20014c5aa'
-TREE = '7780f3b4f42dc405614cb6c44841388acc177954'
+HEAD = 'a5ea2b622f81052a564762203a876eca92d724a7'
+TREE = '7fdbe852dfb01eca4dc0d031d136ff2f7b30dcf3'
 # The complete runtime candidate is reviewed; no later qualification delta is allowed.
 APPROVED_RUNTIME_HEAD = HEAD
 QUALIFICATION_TEST_PATHS = []
@@ -53,6 +53,7 @@ PATHS = [
     'modules/sales/sam_live_stock_launch_control.py',
     'tests/test_herdmaster_health_loss_recording.py',
     'tests/test_herdmaster_mortality_journey_postgres.py',
+    'tests/test_oom_sakkie_general_manager_postgres.py',
     'tests/test_oom_sakkie_general_manager_worker.py',
     'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py',
     'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py',

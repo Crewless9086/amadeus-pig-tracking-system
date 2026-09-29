@@ -658,20 +658,21 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(adapter.CANDIDATE_PR,1362)
         self.assertEqual(adapter.BASE,"459c6fdaa4039ae4d270ad5c8c82c1701fabb90a")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
-        self.assertEqual(adapter.HEAD,"57c973979d1bf1ec794daa34ce036fd20014c5aa")
-        self.assertEqual(adapter.TREE,"7780f3b4f42dc405614cb6c44841388acc177954")
+        self.assertEqual(adapter.HEAD,"a5ea2b622f81052a564762203a876eca92d724a7")
+        self.assertEqual(adapter.TREE,"7fdbe852dfb01eca4dc0d031d136ff2f7b30dcf3")
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
         self.assertEqual(adapter.PREDECESSOR_PR,1361)
         self.assertEqual(adapter.PREDECESSOR_HEAD,"0ea5e6ce18abdba6254ba8475558bf6415367aac")
         self.assertEqual(adapter.PREDECESSOR_BASE,"fd350a80b3dd8e87b404f7ccb573efb5fa82fe05")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PATHS),28)
+        self.assertEqual(len(adapter.PATHS),29)
         for path in ("modules/oom_sakkie/retained_mortality_presentation.py",
                      "modules/oom_sakkie/retained_mortality_confirmation.py",
                      "tests/test_oom_sakkie_retained_mortality_presentation_postgres.py",
                      "modules/pig_weights/herdmaster_health_loss_recording.py",
                      "tests/test_herdmaster_health_loss_recording.py",
-                     "tests/test_herdmaster_mortality_journey_postgres.py"):
+                     "tests/test_herdmaster_mortality_journey_postgres.py",
+                     "tests/test_oom_sakkie_general_manager_postgres.py"):
             self.assertIn(path,adapter.PATHS)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
