@@ -8,6 +8,7 @@ import json
 from typing import Any, Callable, Mapping
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
+from modules.oom_sakkie.owner_response_composer import _clip as clip_owner_text
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 
 CONTRACT_VERSION = "oom_sakkie_herdmaster_request_v1"
@@ -105,7 +106,7 @@ def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
     for row in selected:
         name = html.escape(str(row.get("tag_number") or "Unnamed")[:60])
         action = html.escape(str(row.get("task_group") or row.get("provisional_recommendation") or "Needs Data")[:90])
-        why = html.escape(str(row.get("why") or "")[:120])
+        why = clip_owner_text(row.get("why"), 120)
         date = str(row.get("proposed_placement_date") or "")
         male = ((row.get("male_recommendation") or {}).get("recommended") or {})
         boar = str(male.get("tag_number") or "")

@@ -8,6 +8,7 @@
 - Existing breeding request and scoped owner dependencies: `modules/oom_sakkie/herdmaster_request_runtime.py`, `modules/oom_sakkie/farm_manager_loop.py`, `modules/oom_sakkie/farm_manager_runtime.py`.
 - Failed authoritative interpretation is contained before operational handlers in `modules/oom_sakkie/telegram_gateway.py`; existing durable clarification delivery is reused.
 - Telegram ingress, receipt and adversarial proof: `tests/test_oom_sakkie_conversation_followup.py`, `tests/test_oom_sakkie_herd_read_queries.py`.
+- Breeding chronology reconciliation: `modules/pig_weights/herdmaster_breeding_operating_loop.py`, `modules/pig_weights/herdmaster_breeding_attention_service.py`, shared `herdmaster_breeding_policy.py` using the existing canonical terminal-litter predicate; proof in `tests/test_herdmaster_breeding_chronology.py`.
 - Authority: `02-agents/farm/HERDMASTER.md`; reads grant no farm writes or proof of live acceptance.
 
 ## Livestock quotation journeys

@@ -2202,3 +2202,14 @@ retain pure pending-owner-input questions as owner dependencies. Distinguish
 recorded pen capacity from physical overcrowding and missing weights from due
 weighing. Bounded factual answers retain unknowns, totals and no-write authority.
 Source tests are not deployed operational acceptance.
+
+## 2026-09-29 - Current breeding evidence reconciliation
+
+Retain near-farrowing observations as provenance while reconciling them against
+later attributable births. Ambiguous date ordering remains Unknown and cannot
+support new placement. Both existing breeding views now require governed litter
+completion and a valid actual weaning date; a past planned date or partial count
+does not complete an Active litter. Preserve recovery/condition and medical holds,
+use the farm business day, and keep all reads advisory. Owner reasons truncate at
+word boundaries. Synthetic chronology and ingress tests are qualification evidence;
+this change does not claim deployed owner acceptance.

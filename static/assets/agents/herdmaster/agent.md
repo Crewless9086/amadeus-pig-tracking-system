@@ -7,7 +7,7 @@ Status: `GENERATED / NON_DOCTRINE`
 - UI role label: `Pigs`
 - Canonical role: pigs, litters, breeding, growth, health, welfare, and purpose review.
 - Canonical doctrine: `docs/09-vault-brain/02-agents/farm/HERDMASTER.md`
-- Canonical doctrine SHA-256: `f22ac0621bda2b53b2d3e8113efd27c6790426a6e3bf7c5a802ae7c77d14647b`
+- Canonical doctrine SHA-256: `3edda3051568c396d0309807afb483f7fa5ddf7bc1cea1eda1fe14de8152af18`
 - Asset metadata: `static/assets/agents/herdmaster/agent.json`
 - Asset metadata SHA-256: `2f57ec34f78a231bb3cc7d402110c6a58d878f7c6d203f3c7a7a7e68262a9e39`
 - Central asset registry: `static/assets/agents/agent_registry.json`

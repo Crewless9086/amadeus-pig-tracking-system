@@ -69,6 +69,16 @@ daily brief's length cap, with omitted owner tasks disclosed.
 - Planned weaning is not completed weaning. The protected completion preview
   binds the litter, exact piglets, tags, weights, movement, observations and
   evidence generation before any record changes.
+- A near-farrowing observation strictly before an attributable same-sow birth
+  remains historical evidence and cannot continue upcoming-farrowing advice.
+  Same-day date precision, later overlapping observations, invalid/future times
+  or missing attribution retain unresolved chronology; no pregnancy or placement
+  is inferred. Comparison uses the farm's Africa/Johannesburg business day.
+- A breeding placement clock requires an identified litter governed as Weaned or
+  Completed and an actual nonfuture weaning date on or after its birth. An Active
+  litter's past planned date or partial weaned count is not completion. Invalid
+  completion chronology stays explicit and blocks placement; recovery, body
+  condition, medical and withdrawal holds retain precedence.
 - Mortality, natural-health and welfare intake separates observation from
   diagnosis. Unknown cause stays Unknown; corrections retain the original;
   the smallest grouped physical question is asked once and then consumed.
