@@ -1,5 +1,15 @@
 # Implementation Source Map
 
+## HERDMASTER owner read questions
+
+- Semantic capability contract: `modules/oom_sakkie/semantic_front_door.py`.
+- Shared owner read dispatch: `modules/oom_sakkie/service.py`, `modules/oom_sakkie/tools.py`.
+- Bounded canonical evidence and presentation: `modules/oom_sakkie/herd_read_queries.py`; existing `modules/agents/herdmaster.py`, `modules/pig_weights/farm_supabase_read_service.py` and `modules/pig_weights/herdmaster_daily_manager_evidence.py`.
+- Existing breeding request and scoped owner dependencies: `modules/oom_sakkie/herdmaster_request_runtime.py`, `modules/oom_sakkie/farm_manager_loop.py`, `modules/oom_sakkie/farm_manager_runtime.py`.
+- Failed authoritative interpretation is contained before operational handlers in `modules/oom_sakkie/telegram_gateway.py`; existing durable clarification delivery is reused.
+- Telegram ingress, receipt and adversarial proof: `tests/test_oom_sakkie_conversation_followup.py`, `tests/test_oom_sakkie_herd_read_queries.py`.
+- Authority: `02-agents/farm/HERDMASTER.md`; reads grant no farm writes or proof of live acceptance.
+
 ## Livestock quotation journeys
 
 - Contract/lifecycle: `modules/orders/livestock_quotation.py`

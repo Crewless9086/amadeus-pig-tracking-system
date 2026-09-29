@@ -21,6 +21,7 @@ from urllib import request as urllib_request
 from modules.oom_sakkie.llm_router import API_KEY_ENV, API_URL_ENV, DEFAULT_API_URL, MODEL_ENV, TIMEOUT_ENV
 
 ENABLED_ENV = "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED"
+HERD_READ_CAPABILITIES = frozenset({"herd_inventory", "pen_occupancy", "weight_attention", "litter_attention", "breeding_plan"})
 DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_round", "sam", "beacon", "documents", "general"})
 MESSAGE_KINDS = frozenset({"observation", "question", "request", "command", "confirmation", "correction", "general"})
 MEDIA_SUBJECT_TAGS = frozenset({"live_stock", "piglets", "litter", "weaner", "sow", "farm_life"})
@@ -169,6 +170,13 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
                 return replace(result, read_query=None, needs_clarification=True,
                     clarification_question=("Watter dier of saak bedoel jy?" if result.language.startswith("af")
                                             else "Which animal or case do you mean?"))
+        if query.get("kind") == "herd_query" and query.get("context_message_id"):
+            matches = [row for row in context.get("conversation_turns") or ()
+                if row.get("telegram_message_id") == query["context_message_id"]]
+            if len(matches) != 1:
+                return replace(result, read_query=None, needs_clarification=True,
+                    clarification_question=("Watter kuddebesonderhede wil jy nagaan?" if result.language.startswith("af")
+                                            else "Which herd details would you like me to check?"))
         if not subject and query.get("kind") != "animal_status":
             query.pop("context_message_id", None)
         result = replace(result, read_query=query)
@@ -226,11 +234,11 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         query = _read_query(value.get("read_query"), message_kind)
         if query:
             if (value.get("protected_preview_required") or value.get("recording_prohibited")
-                    or facts or mortality or welfare or clinical or breeding_actions or farrowing_litter
+                    or facts or mortality or welfare or clinical or value.get("breeding_actions") or farrowing_litter
                     or litter_first_treatment or litter_weaning or confirmation_facts
                     or commissioning_facts or irrigation):
                 raise ValueError("read_query_conflicts_with_effect_contract")
-            domain = "herd_management" if query["kind"] == "animal_status" else "manager_round"
+            domain = "herd_management" if query["kind"] in {"animal_status", "herd_query"} else "manager_round"
         return SemanticInterpretation(domain=domain,
             intent=query["kind"] if query else str(value.get("intent") or domain).strip()[:100], entity_refs=refs,
             message_kind=message_kind,
@@ -352,10 +360,10 @@ def _payload(parsed, context, source):
         "inventory, welfare, farrowing-only status, or a broad whole-farm brief. "
         "An open manager question is optional context, NEVER the default intent for the next message. "
         "A new question asking what you know, what you are handling, specialist findings or an animal status is NOT an answer to that open question; do not copy manager_question_reply from context. "
-        "For read-only questions/requests return read_query with kind farm_brief, work_split, specialist_detail, animal_status, or case_status; otherwise null. "
+        "For read-only questions/requests return read_query with kind farm_brief, work_split, specialist_detail, animal_status, herd_query, or case_status; otherwise null. "
         "read_query may contain specialist (HERDMASTER, ROOTLINE, SAM, BEACON), subject (one exact animal tag/name/Pig ID without the species prefix), case_kind (farrowing, mortality, welfare), and context_message_id. "
         "A broad request for today's farm attention or priorities has read_query={kind:farm_brief} and domain manager_round; mentioning a specialist does not turn it into work_split. "
-        "Use work_split ONLY for an explicit division of responsibility or what the owner must supply. "
+        "Use work_split ONLY for an explicit division of responsibility or what the owner must supply. Keep specialist when the question scopes that work to one specialist. "
         "Use work_split for who handles what and what the owner must supply; specialist_detail for findings/explanation; animal_status for one animal; case_status only when the case family is clear. "
         "Use domain manager_round for work_split/specialist_detail/case_status, herd_management for animal_status. Preserve English/Afrikaans meaning and explicit new animal identity over remembered subjects. "
         "For a genuinely ambiguous case word ask one targeted question naming its plausible meanings, not the generic farm-domain menu. Do not silently equate a farewell with farrowing or death. "
@@ -456,6 +464,13 @@ def _payload(parsed, context, source):
         "For information requests choose exactly ONE read_query shape below. The kind key is mandatory; specialist alone, case_status:true, and a null/string-null intent are invalid. "
         "Overall priorities/attention/follow-ups for today: {\"kind\":\"farm_brief\"}. This is not a division of responsibility. "
         "Division of work between agents and owner: {\"kind\":\"work_split\"}. "
+        "Specific herd information uses {\"kind\":\"herd_query\",\"capability\":\"herd_inventory\"}. "
+        "Choose capability herd_inventory for current animal counts; pen_occupancy for housing/crowding/capacity; "
+        "weight_attention for which animals need weighing and why; litter_attention for litters, piglets or weaning due work; "
+        "breeding_plan for current mating/breeding plans and priorities. Use herd_management for these reads. "
+        "These specific herd capabilities take precedence over generic specialist findings and farm briefs. "
+        "They request information, never record weights, complete weaning or approve breeding. Preserve the same capability in Afrikaans, paraphrases and grounded short follow-ups. "
+        "An owner-dependency question about one specialist uses {\"kind\":\"work_split\",\"specialist\":\"HERDMASTER\"}. "
         "A named specialist's findings or explanation: {\"kind\":\"specialist_detail\",\"specialist\":\"HERDMASTER\"}. "
         "One explicit animal's status: {\"kind\":\"animal_status\",\"subject\":\"702\"}. Omit case_kind and context_message_id for an explicitly named current animal. "
         "Known case-family status: {\"kind\":\"case_status\",\"case_kind\":\"farrowing\"}. "
@@ -834,10 +849,16 @@ def _read_query(value, message_kind):
     if value is None:
         return None
     if (not isinstance(value, Mapping) or message_kind not in {"question", "request"}
-            or set(value) - {"kind", "specialist", "subject", "case_kind", "context_message_id"}
-            or value.get("kind") not in {"farm_brief", "work_split", "specialist_detail", "animal_status", "case_status"}):
+            or set(value) - {"kind", "specialist", "subject", "case_kind", "context_message_id", "capability"}
+            or value.get("kind") not in {"farm_brief", "work_split", "specialist_detail", "animal_status", "case_status", "herd_query"}):
         raise ValueError("read_query_invalid")
     result = {"kind": value["kind"]}
+    if value["kind"] == "herd_query":
+        if value.get("capability") not in HERD_READ_CAPABILITIES or set(value) - {"kind", "capability", "context_message_id"}:
+            raise ValueError("herd_read_capability_invalid")
+        result["capability"] = value["capability"]
+    elif "capability" in value:
+        raise ValueError("herd_read_capability_scope_invalid")
     for key in ("subject", "context_message_id"):
         raw = value.get(key)
         if raw is not None:
@@ -852,7 +873,8 @@ def _read_query(value, message_kind):
                 raise ValueError("read_query_scope_invalid")
             result[key] = raw
     allowed_by_kind = {"farm_brief": {"kind"}, "animal_status": {"kind", "subject", "context_message_id"},
-        "work_split": {"kind", "context_message_id"},
+        "work_split": {"kind", "specialist", "context_message_id"},
+        "herd_query": {"kind", "capability", "context_message_id"},
         "specialist_detail": {"kind", "specialist", "subject", "context_message_id"},
         "case_status": {"kind", "case_kind", "subject", "context_message_id"}}
     return {key: item for key, item in result.items() if key in allowed_by_kind[result["kind"]]}

@@ -601,6 +601,8 @@ def handle_message(payload):
         "authenticated_owner": legacy_authenticated_owner,
         "gateway_authority": bound_gateway_authority,
         "semantic_language": str(semantic.get("language") or "en"),
+        **({"capability": semantic["read_query"].get("capability")}
+           if (semantic.get("read_query") or {}).get("kind") == "herd_query" else {}),
         **({"subject": semantic["read_query"].get("subject", "")}
            if (semantic.get("read_query") or {}).get("kind") == "animal_status" else {}),
     })
@@ -711,6 +713,12 @@ def semantic_intent_match(semantic):
     except (TypeError, ValueError):
         return None
     if confidence < CONFIDENCE_FLOOR:
+        return None
+    if (semantic.get("read_query") or {}).get("kind") == "herd_query":
+        from modules.oom_sakkie.semantic_front_door import HERD_READ_CAPABILITIES
+        capability = semantic["read_query"].get("capability")
+        if capability in HERD_READ_CAPABILITIES and capability != "breeding_plan" and confidence >= .8:
+            return IntentMatch(capability, "herdmaster_herd_question", confidence, "semantic:herd_read")
         return None
     if (semantic.get("read_query") or {}).get("kind") == "animal_status":
         return IntentMatch("animal_status", "herdmaster_herd_question", confidence, "semantic:animal_read")

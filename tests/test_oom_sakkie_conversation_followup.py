@@ -391,3 +391,177 @@ def setUpModule():
 
 def tearDownModule():
     _model_budget_test_scope.close()
+
+# The aggregate question families use the same authenticated ingress, semantic
+# response validator, service, canonical renderer and durable family delivery.
+@pytest.mark.parametrize("channel", ["relay", "direct"])
+@pytest.mark.parametrize("text,capability,expected", [
+    ("How many pigs are currently on the farm?", "herd_inventory", "2 pigs recorded"),
+    ("Which pens are overcrowded?", "pen_occupancy", "North: 2 / 1"),
+    ("Which pigs need weighing, and why?", "weight_attention", "individual weighing schedule is due: 702"),
+    ("Which litters need attention or are due for weaning?", "litter_attention", "Hazel: Weaning is due"),
+    ("Ask HERDMASTER for the current breeding plan and what needs my attention.", "breeding_plan", "UPDATED BREEDING PLAN"),
+])
+def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, channel, text, capability, expected):
+    from modules.oom_sakkie import herd_read_queries as reads
+    from modules.oom_sakkie import herdmaster_request_runtime as breeding
+    from modules.pig_weights.herdmaster_daily_manager_evidence import build_daily_manager_evidence
+    from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
+    pigs = [{"Pig_ID": f"P{i}", "Tag_Number": str(701+i), "Status": "Active", "On_Farm": "Yes",
+             "Animal_Type": "Grower", "Current_Pen_ID": "PEN-N"} for i in (1, 2)]
+    weights = build_daily_manager_evidence(pigs=[{"pig_id": "P1", "tag_number": "702", "status": "Active",
+        "on_farm": True, "animal_type": "Grower"}], window_weights=[], prior_weights=[],
+        lifecycle_events=[{"pig_id": "P1", "event_type": "individual_weighing_due", "effective_at": NOW.date().isoformat()}],
+        analysis_date=NOW.date())
+    evidence = {"pig_rows": pigs, "pens": [{"pen_id": "PEN-N", "pen_name": "North", "capacity": 1}],
+        "litter_attention": {"count": 1, "items": [{"sow_name": "Hazel", "reason": "Weaning is due",
+            "recommended_action": "Review current litter readiness", "estimated_wean_date": "2026-09-30"}]}}
+    monkeypatch.setattr(reads, "load_herd_read_evidence", lambda selected: weights if selected == "weight_attention" else evidence)
+    def herd_request(parsed, authority):
+        return breeding.handle_herdmaster_request(parsed, authority, canonical_loader=lambda: {
+            "success": True, "worklist_id": "SYNTHETIC-WEEK", "generated_at": NOW.isoformat(),
+            "tasks": [{"task_id": "T1", "tag_number": "Hazel", "proposed_placement_date": "2026-10-01",
+                       "male_recommendation": {"recommended": {"tag_number": "Oak"}}}]}, event_store=manager._event_store)
+    monkeypatch.setattr(gateway, "handle_herdmaster_request", herd_request)
+    monkeypatch.setattr(service, "classify_intent", lambda *_a: pytest.fail("semantic selection must not be reclassified"))
+    monkeypatch.setattr(service, "route_with_llm", lambda **_kw: pytest.fail("no second model router"))
+    monkeypatch.setattr(service, "compose_answer_with_llm", lambda **_kw: pytest.fail("no paid read composer"))
+    model = interpretation("herd_query", capability=capability)
+    if channel == "relay":
+        result, code = journey.send(text, model)
+    else:
+        journey.model = model
+        monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED", "1")
+        monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED", "1")
+        monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_BOT_TOKEN", "inert")
+        monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET", "s"*40)
+        result, code = handle_telegram_direct_webhook({"message": {"message_id": 8001,
+            "date": int(NOW.timestamp())+1, "text": text,
+            "from": {"id": "42"}, "chat": {"id": "42", "type": "private"}}},
+            headers={"X-Telegram-Bot-Api-Secret-Token": "s"*40})
+    assert code == 200, result
+    assert expected in result["answer"], result
+    assert "TODAY'S FARM BRIEF" not in result["answer"]
+    assert "SAM:" not in result["answer"] and "ROOTLINE" not in result["answer"]
+    assert len(journey.sends) == 1 and journey.claim.call_count == 0
+    assert len(journey.payloads) == 1
+    assert any(row["state"] == "delivered" for row in journey.family.values())
+
+
+def test_scoped_waiting_from_me_returns_only_genuine_herd_owner_dependencies(journey, monkeypatch):
+    monkeypatch.setattr(manager, "_load_rootline", lambda *_a, **_kw: pytest.fail("unrelated specialist load"))
+    monkeypatch.setattr(manager, "_load_enquiry_cases", lambda *_a: pytest.fail("technical cases are not owner obligations"))
+    result, code = journey.send("What is HERDMASTER still waiting for from me?",
+        interpretation("work_split", specialist="HERDMASTER"))
+    assert code == 200 and "Hazel's current farrowing status" in result["answer"]
+    assert all(text not in result["answer"] for text in ("SAM", "ROOTLINE", "beacon", "technical exception", "Canonical tag reconciliation"))
+    assert journey.claim.call_count == 0 and len(journey.sends) == 1
+
+@pytest.mark.parametrize("text,capability,language,expected", [
+    ("Hoeveel varke is tans op die plaas?", "herd_inventory", "af", "varke as op die plaas"),
+    ("How many are here now, and don't tell me about breeding?", "herd_inventory", "en", "pigs recorded"),
+    ("Watter hokke kort ruimte?", "pen_occupancy", "af", "HOKKAPASITEIT"),
+    ("Please check housing capacity, excluding the mating plan.", "pen_occupancy", "en", "PEN CAPACITY"),
+    ("Watter werpsels moet ons speen?", "litter_attention", "af", "werpsel(s)"),
+    ("Check the litters' next work, not farm priorities", "litter_attention", "en", "litter(s)"),
+])
+def test_aggregate_paraphrases_and_afrikaans_keep_one_model_and_real_delivery(journey, monkeypatch, text, capability, language, expected):
+    from modules.oom_sakkie import herd_read_queries as reads
+    monkeypatch.setattr(reads, "load_herd_read_evidence", lambda _cap: {
+        "pig_rows": [{"Pig_ID": "P1", "Status": "Active", "On_Farm": "Yes", "Current_Pen_ID": "A"}],
+        "pens": [{"pen_id": "A", "pen_name": "Noord", "capacity": None}],
+        "litter_attention": {"count": 0, "items": []}})
+    result, code = journey.send(text, interpretation("herd_query", language, capability=capability))
+    assert code == 200 and expected in result["answer"], result
+    assert len(journey.sends) == 1 and len(journey.payloads) == 1 and journey.claim.call_count == 0
+
+
+def test_aggregate_reference_requires_delivered_context_and_new_input_wins(journey, monkeypatch):
+    from modules.oom_sakkie import herd_read_queries as reads
+    loader = Mock(return_value={"pig_rows": [{"Pig_ID": "P1", "Status": "Active", "On_Farm": "Yes"}]})
+    monkeypatch.setattr(reads, "load_herd_read_evidence", loader)
+    unclear, _ = journey.send("And that count?", interpretation("herd_query", capability="herd_inventory", context_message_id="missing"))
+    assert "Which herd details" in unclear["answer"] and loader.call_count == 0
+    first, _ = journey.send("Count the herd", interpretation("herd_query", capability="herd_inventory"), 8002)
+    second, _ = journey.send("And now?", interpretation("herd_query", capability="herd_inventory", context_message_id="9502"), 8003)
+    assert "pigs recorded" in second["answer"] and loader.call_count == 2
+    assert journey.claim.call_count == 0
+
+
+def test_weight_only_producer_skips_mortality_but_uses_the_same_canonical_eligibility(monkeypatch):
+    from modules.pig_weights import herdmaster_daily_manager_evidence as daily
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_a): pass
+        def execute(self, sql, args=()):
+            assert "mortality_consumption" not in sql and "farm_manager_round" not in sql
+            assert sql.lstrip().startswith(("select", "with", "set transaction"))
+            self.description = []
+        def fetchall(self): return []
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_a): pass
+        def cursor(self): return Cursor()
+    monkeypatch.setattr(daily, "connect_bounded_rootline_postgres", lambda **_kw: Connection())
+    monkeypatch.setattr(daily, "connect_bounded_read", lambda **_kw: pytest.fail("transaction-local bounds required"))
+    result = daily.load_daily_manager_evidence(analysis_date=NOW.date(), include_mortality=False,
+        mortality_evidence_loader=lambda **_kw: pytest.fail("unrelated mortality read"))
+    assert result["weight"]["eligibility_rule_version"] == daily.ELIGIBILITY_VERSION
+    assert result["weight"]["current_snapshot"]["eligible_tagged"] == 0
+
+
+def test_aggregate_read_failure_is_delivered_as_relevant_unknown_not_silence(journey, monkeypatch):
+    from modules.oom_sakkie import herd_read_queries as reads
+    monkeypatch.setattr(reads, "load_herd_read_evidence", Mock(side_effect=TimeoutError("bounded read")))
+    result, code = journey.send("How many pigs are currently on the farm?",
+        interpretation("herd_query", capability="herd_inventory"))
+    assert code == 200 and "cannot read" in result["answer"], result
+    assert "HERD COUNT" in result["answer"] and "0 pigs" not in result["answer"]
+    assert len(journey.sends) == 1 and journey.claim.call_count == 0
+    assert any(row["state"] == "delivered" for row in journey.family.values())
+
+
+@pytest.mark.parametrize("agent_count,owner_count", [(3, 1), (0, 5)])
+def test_owner_dependencies_are_selected_before_daily_brief_limit(journey, monkeypatch, agent_count, owner_count):
+    proof = Provenance("herdmaster", "synthetic-current", ("herd:canonical",), NOW, 1)
+    items = [SpecialistWorkItem(f"A{i}", f"herd:agent:{i}", "herd", "Agent reconciliation",
+        "Technical evidence refresh", "Reconcile records", "charl", WorkState.URGENT,
+        Authority.READ_ONLY, proof) for i in range(agent_count)]
+    items += [SpecialistWorkItem(f"Q{i}", f"herd:owner:{i}", "herd", "Physical observation",
+        "Observation unavailable", f"What is sow {i}'s physical condition?", "charl", WorkState.WAITING_EVIDENCE,
+        Authority.READ_ONLY, proof, genuine_question=f"What is sow {i}'s physical condition?", question_for="charl")
+        for i in range(owner_count)]
+    monkeypatch.setattr(manager, "_load_herdmaster", lambda *_a, **_kw:
+        SpecialistResult("herdmaster", "synthetic-current", NOW, work_items=tuple(items)))
+    result, code = journey.send("What is HERDMASTER still waiting for from me?",
+        interpretation("work_split", specialist="HERDMASTER"))
+    assert code == 200 and "sow 0's physical condition" in result["answer"], result
+    assert "Agent reconciliation" not in result["answer"]
+    if owner_count > 3:
+        assert "sow 2's physical condition" in result["answer"]
+        assert "Another 2 owner-dependent task(s)" in result["answer"]
+    assert journey.claim.call_count == 0 and len(journey.sends) == 1
+
+
+@pytest.mark.parametrize("failure", ["unconfigured", "malformed", "low_confidence", "budget"])
+def test_herd_question_semantic_failure_never_enters_other_work(journey, monkeypatch, failure):
+    from modules.oom_sakkie import herd_read_queries as reads
+    from modules.oom_sakkie.model_budget import ModelBudgetError
+    monkeypatch.setattr(reads, "load_herd_read_evidence", lambda *_a: pytest.fail("unsupported read"))
+    monkeypatch.setattr(manager, "_load_herdmaster", lambda *_a, **_kw: pytest.fail("not a generic brief"))
+    monkeypatch.setattr(service, "route_with_llm", lambda **_kw: pytest.fail("no second model"))
+    monkeypatch.setattr(service, "compose_answer_with_llm", lambda **_kw: pytest.fail("no paid fallback"))
+    value = interpretation("herd_query", capability="herd_inventory")
+    if failure == "unconfigured":
+        monkeypatch.setenv("OPENAI_API_KEY", "")
+    elif failure == "malformed":
+        value["read_query"]["capability"] = "invent_animal_count"
+    elif failure == "low_confidence":
+        value["confidence"] = .2
+    else:
+        monkeypatch.setattr(semantic, "budgeted_urlopen", Mock(side_effect=ModelBudgetError("farm_model_daily_budget_exhausted")))
+    result, code = journey.send("How many pigs are currently on the farm?", value)
+    assert code == 200 and result["answer"], result
+    assert "TODAY'S FARM BRIEF" not in result["answer"] and "farrowing status" not in result["answer"]
+    assert "AI COST CONTROL" in result["answer"] if failure == "budget" else result["message"]["needs_clarification"]
+    assert journey.claim.call_count == 0 and len(journey.sends) == 1 and len(journey.payloads) <= 1

@@ -2190,3 +2190,13 @@ migration, permission, provider, farm or physical change.
 - Added canonical restart discovery and renewable cross-process writer claims so one native execution resumes its exact worktree after a gateway replacement without overlapping writers.
 - Bound native execution to the authenticated deployed `RENDER_GIT_COMMIT`, enforced cumulative context limits, rejected symlinked worktree paths before resolution, and expanded packager credential-separation tests.
 - Required authenticated exact-head SECURITY and FUNCTIONAL review roles from distinct GitHub reviewers; comment text cannot spoof a verdict, and native owner notification remains blocked until a genuine SEND_BACK correction has occurred.
+
+
+## 2026-09-29 — Specific HERDMASTER read-question contract
+
+Preserve typed semantic herd capabilities through the existing owner read path.
+Use canonical count, housing, litter, weighing eligibility and breeding services;
+filter owner-dependency questions to the requested specialist. Distinguish
+recorded pen capacity from physical overcrowding and missing weights from due
+weighing. Bounded factual answers retain unknowns, totals and no-write authority.
+Source tests are not deployed operational acceptance.

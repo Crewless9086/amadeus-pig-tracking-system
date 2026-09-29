@@ -12,7 +12,7 @@ import hashlib
 import json
 import os
 
-from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read, connect_bounded_rootline_postgres
 
 PACKET_TYPE = "herdmaster.daily_manager_evidence.v1"
 ELIGIBILITY_VERSION = "HERDMASTER_WEEKLY_WEIGHT_ELIGIBILITY_V1"
@@ -213,14 +213,17 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                                 owner_user_id=None,
                                 owner_user_ids=None,
                                 mortality_evidence_loader=None,
-                                mortality_packet_builder=None):
+                                mortality_packet_builder=None, include_mortality=True):
     """Load canonical Supabase truth through bounded read-only sessions."""
     analysis_date = _day(analysis_date)
     window_start, window_end = _weight_window(analysis_date)
-    with connect_bounded_read(
+    reader = connect_bounded_read if include_mortality else connect_bounded_rootline_postgres
+    with reader(
             database_url=database_url or os.environ.get("DATABASE_URL"),
             connect=connect) as connection:
         with connection.cursor() as cursor:
+            if not include_mortality:
+                cursor.execute("set transaction isolation level repeatable read")
             pigs = _rows(cursor, """select pig_id,tag_number,pig_name,status,on_farm,animal_type,purpose
                 from public.current_canonical_pigs order by pig_id limit 5001""")
             window_weights = _rows(cursor, """select weight_event_id,pig_id,weight_date,weight_kg
@@ -239,6 +242,9 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
             if (len(pigs) > 5000 or len(window_weights) > 10000
                     or len(prior_weights) > 10000 or len(lifecycle) > 5000):
                 raise RuntimeError("herdmaster_daily_evidence_row_bound_exceeded")
+            if not include_mortality:
+                return build_daily_manager_evidence(pigs=pigs, window_weights=window_weights,
+                    prior_weights=prior_weights, lifecycle_events=lifecycle, analysis_date=analysis_date)
             owners = tuple(dict.fromkeys(str(value) for value in
                 (owner_user_ids or (owner_user_id,)) if str(value or "").strip()))
             owner_hashes = [hashlib.sha256(value.encode()).hexdigest() for value in owners]
