@@ -247,6 +247,9 @@ DECLARE
   latest_id text;
   current_admission jsonb;
   operational_row jsonb;
+  expected_operational_row jsonb;
+  registration_created_at timestamptz := transaction_timestamp();
+  existing_history_created_at timestamptz;
   n integer;
   is_replay boolean := false;
 BEGIN
@@ -257,6 +260,15 @@ BEGIN
     OR a->>'desktop_task_id' IS DISTINCT FROM m->'desktop'->>'task_id'
     OR m->'desktop'->>'principal' IS DISTINCT FROM 'codex_desktop:' || (a->>'desktop_task_id')
     THEN RAISE EXCEPTION 'package_identity_mismatch'; END IF;
+  -- This omitted insert field is a canonical database-owned transaction clock.
+  -- Refuse a different schema/default rather than excluding it from row checks.
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute c
+      JOIN pg_catalog.pg_attrdef d ON d.adrelid=c.attrelid AND d.adnum=c.attnum
+      WHERE c.attrelid='public.operational_events'::regclass AND c.attname='created_at'
+      AND NOT c.attisdropped AND c.atttypid='timestamptz'::regtype AND c.atttypmod=-1 AND c.attnotnull
+      AND c.attgenerated='' AND c.attidentity=''
+      AND pg_catalog.pg_get_expr(d.adbin,d.adrelid)='now()')
+    THEN RAISE EXCEPTION 'operational_created_at_schema_mismatch'; END IF;
   -- Same lock used by canonical hold creation; ordering is shared by both missions.
   FOR locked_id IN SELECT value FROM unnest(ARRAY[parent_id,child_id]) AS u(value) ORDER BY value LOOP
     PERFORM pg_advisory_xact_lock(hashtextextended(locked_id,0));
@@ -277,8 +289,8 @@ BEGIN
   SELECT to_jsonb(x) INTO parent_row FROM public.charlie_missions x WHERE x.mission_id=parent_id;
   SELECT to_jsonb(x) INTO before_row FROM public.charlie_missions x WHERE x.mission_id=child_id;
   IF before_row IS NULL THEN RAISE EXCEPTION 'mission_record_unavailable'; END IF;
-  SELECT x.metadata_json,x.recorded_by,x.event_type
-    INTO existing_history,existing_actor,existing_kind
+  SELECT x.metadata_json,x.recorded_by,x.event_type,x.created_at
+    INTO existing_history,existing_actor,existing_kind,existing_history_created_at
     FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_id=registration_event_id;
   IF p ? 'expected_parent_pg_sha256' THEN
     IF encode(sha256(convert_to(parent_row::text,'UTF8')),'hex') IS DISTINCT FROM p->>'expected_parent_pg_sha256'
@@ -328,7 +340,15 @@ BEGIN
       AND current_admission->>'head_sha'=m->'candidate'->>'head_sha'
       AND jsonb_typeof(current_admission->'signed_receipt')='object') IS NOT TRUE
       THEN RAISE EXCEPTION 'replay_admission_conflict'; END IF;
-    IF operational_row IS DISTINCT FROM to_jsonb(jsonb_populate_record(NULL::public.operational_events,p->'operational_row'))
+    registration_created_at := existing_history_created_at;
+    IF registration_created_at IS NULL
+      OR registration_created_at < (a->>'issued_at')::timestamptz
+      OR registration_created_at >= (a->>'expires_at')::timestamptz
+      OR registration_created_at > clock_timestamp()
+      THEN RAISE EXCEPTION 'replay_registration_timestamp_conflict'; END IF;
+    expected_operational_row := to_jsonb(jsonb_populate_record(NULL::public.operational_events,
+      (p->'operational_row') || jsonb_build_object('created_at',registration_created_at)));
+    IF operational_row IS DISTINCT FROM expected_operational_row
       THEN RAISE EXCEPTION 'replay_operational_audit_conflict'; END IF;
     is_replay := true;
   ELSE
@@ -341,6 +361,11 @@ BEGIN
     IF operational_row IS NOT NULL OR EXISTS(SELECT 1 FROM public.charlie_mission_events x
       WHERE x.event_id IN (registration_event_id,p->'correction'->>'event_id'))
       THEN RAISE EXCEPTION 'partial_audit_conflict'; END IF;
+    IF registration_created_at < (a->>'issued_at')::timestamptz
+      OR registration_created_at >= (a->>'expires_at')::timestamptz
+      THEN RAISE EXCEPTION 'registration_timestamp_outside_approval'; END IF;
+    expected_operational_row := to_jsonb(jsonb_populate_record(NULL::public.operational_events,
+      (p->'operational_row') || jsonb_build_object('created_at',registration_created_at)));
 
     INSERT INTO public.charlie_mission_events(event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
       VALUES(p->'correction'->>'event_id',child_id,'owner_correction_recorded',p->'correction'->>'summary',
@@ -363,6 +388,7 @@ BEGIN
     SELECT to_jsonb(x) INTO intermediate_row FROM public.charlie_missions x WHERE x.mission_id=child_id;
     IF intermediate_row - ARRAY['metadata_json','updated_at'] IS DISTINCT FROM before_row - ARRAY['metadata_json','updated_at']
       OR intermediate_row->'metadata_json' IS DISTINCT FROM p->'intermediate_metadata'
+      OR (intermediate_row->>'updated_at')::timestamptz IS DISTINCT FROM registration_created_at
       THEN RAISE EXCEPTION 'invalidation_readback_mismatch'; END IF;
     UPDATE public.charlie_missions x SET metadata_json=p->'updated_metadata',updated_at=now()
       WHERE x.mission_id=child_id AND to_jsonb(x)=intermediate_row;
@@ -375,20 +401,22 @@ BEGIN
   END IF;
   SELECT to_jsonb(x) INTO after_row FROM public.charlie_missions x WHERE x.mission_id=child_id;
   IF after_row - ARRAY['metadata_json','updated_at'] IS DISTINCT FROM before_row - ARRAY['metadata_json','updated_at']
-    OR (NOT is_replay AND after_row->'metadata_json' IS DISTINCT FROM p->'updated_metadata')
+    OR (NOT is_replay AND (after_row->'metadata_json' IS DISTINCT FROM p->'updated_metadata'
+      OR (after_row->>'updated_at')::timestamptz IS DISTINCT FROM registration_created_at))
     OR (is_replay AND after_row IS DISTINCT FROM before_row)
     OR (SELECT to_jsonb(x) FROM public.charlie_missions x WHERE x.mission_id=parent_id) IS DISTINCT FROM parent_row
     OR NOT EXISTS(SELECT 1 FROM public.charlie_mission_events x WHERE x.event_id=registration_event_id AND x.mission_id=child_id
-      AND x.event_type='workflow_updated' AND x.recorded_by=owner_id AND x.metadata_json=p->'history')
+      AND x.event_type='workflow_updated' AND x.recorded_by=owner_id AND x.metadata_json=p->'history'
+      AND x.created_at=registration_created_at)
     OR NOT EXISTS(SELECT 1 FROM public.charlie_mission_events x WHERE x.event_id=p->'correction'->>'event_id'
       AND x.mission_id=child_id AND x.event_type='owner_correction_recorded' AND x.recorded_by=owner_id
-      AND x.metadata_json=p->'correction')
+      AND x.metadata_json=p->'correction' AND x.created_at=(p->'correction'->>'recorded_at')::timestamptz)
     OR (SELECT jsonb_build_object('event_id',x.event_id,'metadata',x.metadata_json,'recorded_by',x.recorded_by)
       FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_type='owner_correction_recorded'
       ORDER BY x.created_at DESC,x.event_id DESC LIMIT 1) IS DISTINCT FROM jsonb_build_object(
         'event_id',p->'correction'->>'event_id','metadata',p->'correction','recorded_by',owner_id)
     OR (SELECT to_jsonb(x) FROM public.operational_events x WHERE x.idempotency_key=p->'operational_row'->>'idempotency_key')
-      IS DISTINCT FROM to_jsonb(jsonb_populate_record(NULL::public.operational_events,p->'operational_row'))
+      IS DISTINCT FROM expected_operational_row
     THEN RAISE EXCEPTION 'final_readback_mismatch'; END IF;
   PERFORM set_config('amadeus.registration_result',jsonb_build_object('status',
     CASE WHEN is_replay THEN 'exact_replay' ELSE 'candidate_reconciled' END,

@@ -810,12 +810,32 @@ class ReconciliationPostgresTests(unittest.TestCase):
                 event_id text primary key,mission_id text references public.charlie_missions(mission_id),
                 event_type text,notes text,recorded_by text,metadata_json jsonb,
                 created_at timestamptz default now());
+                -- Rebuild only this synthetic owned table so reused disposable
+                -- databases cannot retain the formerly incomplete fixture.
+                drop table if exists public.operational_events;
                 create table if not exists public.operational_events (
-                event_id text primary key,idempotency_key text unique,schema_version text,event_type text,domain text,
-                aggregate_type text,aggregate_id text,source_system text,source_record_id text,authority_tier text,
-                privacy_class text,actor_type text,actor_id text,correlation_id text,causation_id text,
-                occurred_at timestamptz,recorded_at timestamptz,freshness_at timestamptz,
-                payload_json jsonb,provenance_json jsonb);""")
+                    event_id text primary key,
+                    idempotency_key text not null unique,
+                    schema_version text not null default '1',
+                    event_type text not null,
+                    domain text not null check (domain in ('leads','conversations','orders','payments','animals','campaigns','missions','incidents','approvals','outcomes')),
+                    aggregate_type text not null,
+                    aggregate_id text not null,
+                    source_system text not null,
+                    source_record_id text not null default '',
+                    authority_tier text not null check (authority_tier in ('read','observe','draft','owner_approved','bounded_auto','red_zone')),
+                    privacy_class text not null check (privacy_class in ('internal','owner_private','customer_personal','sensitive_business')),
+                    actor_type text not null default 'system',
+                    actor_id text not null default '',
+                    correlation_id text not null default '',
+                    causation_id text not null default '',
+                    occurred_at timestamptz not null,
+                    recorded_at timestamptz not null default now(),
+                    freshness_at timestamptz not null,
+                    payload_json jsonb not null,
+                    provenance_json jsonb not null check (provenance_json ? 'source_ref'),
+                    created_at timestamptz not null default now()
+                );""")
     def setUp(self):
         use_synthetic_candidate(self)
         child,parent,correction=fixtures()

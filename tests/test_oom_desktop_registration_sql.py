@@ -88,9 +88,11 @@ class DashboardPostgresTests(f.ReconciliationPostgresTests):
                 (json.dumps(package['plan']['manifest']['expected_'+k+'_record']),)).fetchone()[0] for k in ('parent','child')}
         return prototype.compact_package(package, expected_parent_pg_sha256=hashes['parent'],expected_child_pg_sha256=hashes['child'])
 
-    def run_sql(self, sql=None):
+    def run_sql(self, sql=None, *, timezone=None):
         result = None
         with self.pg.connect(self.url, autocommit=True) as db:
+            if timezone is not None:
+                db.execute("select set_config('TimeZone',%s,false)",(timezone,))
             cur = db.execute(sql or self.sql, prepare=False)
             while True:
                 if cur.description:
@@ -115,6 +117,104 @@ class DashboardPostgresTests(f.ReconciliationPostgresTests):
         self.assertEqual(parent_before,[row for row in applied[0] if row[0]['mission_id']==a.PARENT_ID])
         self.assertEqual(len(applied[1])-len(before[1]),2)
         self.assertEqual(len(applied[2])-len(before[2]),1)
+
+    def test_database_owned_timestamp_matches_registration_and_first_child_write(self):
+        self.assertEqual(self.run_sql()['writes'],5)
+        with self.pg.connect(self.url) as db:
+            operational=db.execute('select created_at from public.operational_events').fetchone()[0]
+            history=db.execute("select created_at from public.charlie_mission_events where event_type='workflow_updated'").fetchone()[0]
+            child=db.execute('select updated_at from public.charlie_missions where mission_id=%s',(a.MISSION_ID,)).fetchone()[0]
+            correction=db.execute('select created_at from public.charlie_mission_events where event_id=%s',
+                (self.package['correction']['event_id'],)).fetchone()[0]
+        self.assertIsNotNone(operational)
+        self.assertEqual(operational,history)
+        self.assertEqual(operational,child)
+        self.assertEqual(correction,prototype.datetime.fromisoformat(self.package['correction']['recorded_at']))
+        self.assertLessEqual(prototype.datetime.fromisoformat(self.package['plan']['approval']['issued_at']),operational)
+        self.assertLess(operational,prototype.datetime.fromisoformat(self.package['plan']['approval']['expires_at']))
+        before=self.snapshot()
+        self.assertEqual(self.run_sql()['writes'],0)
+        self.assertEqual(before,self.snapshot())
+
+    def test_replay_rejects_audit_timestamp_and_payload_tampering(self):
+        changes=(
+            ("update public.operational_events set created_at=created_at+interval '1 second'",'replay_operational_audit_conflict'),
+            ("update public.charlie_mission_events set created_at=created_at-interval '1 second' where event_type='workflow_updated'",'replay_operational_audit_conflict'),
+            ("update public.charlie_mission_events set created_at=created_at+interval '1 second' where event_id=%s",'final_readback_mismatch'),
+            ("update public.operational_events set payload_json=payload_json || '{\"tampered\":true}'::jsonb",'replay_operational_audit_conflict'),
+        )
+        for statement,reason in changes:
+            with self.subTest(statement=statement):
+                self.setUp()
+                self.run_sql()
+                with self.pg.connect(self.url) as db:
+                    db.execute(statement,(self.package['correction']['event_id'],) if '%s' in statement else None)
+                self.fail_unchanged(self.sql,reason)
+
+    def test_replay_registration_time_must_be_nonnull_and_within_original_approval(self):
+        for value in (None,'2001-01-01T00:00:00+00:00','2099-01-01T00:00:00+00:00'):
+            with self.subTest(value=value):
+                self.setUp()
+                self.run_sql()
+                with self.pg.connect(self.url) as db:
+                    db.execute("update public.charlie_mission_events set created_at=%s where event_type='workflow_updated'",(value,))
+                    if value is not None:
+                        db.execute('update public.operational_events set created_at=%s',(value,))
+                self.fail_unchanged(self.sql,'replay_registration_timestamp_conflict')
+
+    def test_wrong_operational_timestamp_schema_is_rejected_before_writes(self):
+        cases=(
+            ('alter column created_at drop default','alter column created_at set default now()'),
+            ("alter column created_at set default clock_timestamp()",'alter column created_at set default now()'),
+            ('alter column created_at drop not null','alter column created_at set not null'),
+            ('alter column created_at type timestamp','alter column created_at type timestamptz'),
+            ('alter column created_at type timestamptz(0)','alter column created_at type timestamptz'),
+            ('drop column created_at','add column created_at timestamptz not null default now()'),
+        )
+        for change,restore in cases:
+            with self.subTest(change=change):
+                with self.pg.connect(self.url) as db:
+                    db.execute('alter table public.operational_events '+change)
+                try:
+                    self.fail_unchanged(self.sql,'operational_created_at_schema_mismatch')
+                finally:
+                    with self.pg.connect(self.url) as db:
+                        db.execute('alter table public.operational_events '+restore)
+
+    def test_tampered_fresh_default_result_rolls_back_all_five_writes(self):
+        with self.pg.connect(self.url) as db:
+            db.execute("""create function public.test_registration_timestamp_tamper() returns trigger language plpgsql as
+                $test$ BEGIN NEW.created_at := NEW.created_at + interval '1 second'; RETURN NEW; END $test$;
+                create trigger test_registration_timestamp_tamper before insert on public.operational_events
+                for each row execute function public.test_registration_timestamp_tamper()""")
+        try:
+            self.fail_unchanged(self.sql,'final_readback_mismatch')
+        finally:
+            with self.pg.connect(self.url) as db:
+                db.execute('drop trigger test_registration_timestamp_tamper on public.operational_events')
+                db.execute('drop function public.test_registration_timestamp_tamper()')
+
+    def test_nonutc_session_preserves_exact_preimage_and_typed_timestamp_contract(self):
+        def pinned_for(timezone):
+            with self.pg.connect(self.url) as db:
+                db.execute("select set_config('TimeZone',%s,true)",(timezone,))
+                rows={r[0]['mission_id']:r[0] for r in db.execute('select to_jsonb(m) from public.charlie_missions m')}
+            args=f.arguments(rows[a.MISSION_ID],rows[a.PARENT_ID],self.package['plan']['manifest']['expected_correction']['metadata'])
+            with patch.object(a,'verify_source_and_candidate'):
+                package=prototype.capture_plan(args,authenticated_owner_principal=f.OWNER,authenticated_desktop_principal=f.PRINCIPAL)
+            return prototype.render_sql(self.compact_for(package))
+        utc_sql=pinned_for('UTC')
+        local_sql=pinned_for('Africa/Johannesburg')
+        before=self.snapshot()
+        with self.assertRaisesRegex(psycopg.Error,'parent_state_changed'):
+            self.run_sql(utc_sql,timezone='Africa/Johannesburg')
+        self.assertEqual(before,self.snapshot())
+        # The package must be pinned from the exact same session representation;
+        # the renderer never silently rewrites approved preimage hashes.
+        self.assertEqual(self.run_sql(local_sql,timezone='Africa/Johannesburg')['writes'],5)
+        applied=self.snapshot()
+        self.assertEqual(self.run_sql(local_sql,timezone='Africa/Johannesburg')['writes'],0)
+        self.assertEqual(applied,self.snapshot())
 
     def test_dashboard_payloads_match_original_python_semantics(self):
         initial = self.snapshot()
