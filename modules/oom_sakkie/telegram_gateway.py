@@ -572,6 +572,16 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
         return body, 200 if delivery.get("success") else 503
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
+    elif semantic_authoritative:
+        # A failed authoritative interpretation is not permission to fall into
+        # legacy operational context or guess a different farm capability.
+        af = str(parsed.get("output_language") or "en").casefold().startswith("af")
+        question = ("Ek kon hierdie versoek nie betroubaar vertolk nie. Kan jy die vraag weer stuur?" if af else
+                    "I could not interpret this request reliably. Could you send the question again?")
+        clarification = build_owner_clarification({**parsed, "semantic": {
+            "language": "af" if af else "en", "clarification_question": question}})
+        return _protected_gateway_response(parsed, policy,
+            {**clarification, "specialist": "OOM_SAKKIE"}, 200)
 
     treatment_result, treatment_status = handle_litter_first_treatment_message(parsed, gateway_authority)
     if treatment_result.get("handled"):

@@ -459,7 +459,7 @@ def test_recorded_boar_reservation_excludes_while_unknown_negative_coverage_does
 def test_later_attributable_farrowing_and_weaning_close_historical_cycle_for_placement():
     result = build(
         matings=[{"mating_id":"MAT-1", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "mating_date":"2026-03-20", "pregnancy_check_result":"Pregnant"}],
-        litters=[{"litter_id":"LIT-1", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "farrowing_date":"2026-07-10", "wean_date":"2026-07-27"}],
+        litters=[{"litter_id":"LIT-1", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "farrowing_date":"2026-07-10", "litter_status":"Weaned", "wean_date":"2026-07-27"}],
         projected_observations={"PIG-MS":{"body_condition_score":3}},
     )
     classification = result["cases"][0]["classification"]
@@ -804,7 +804,7 @@ def test_prince_trial_capacity_is_two_and_does_not_absorb_more_females():
     prince = male("BOAR-PRINCE", "Prince", mother_id="DAM-P", father_id="SIRE-P")
     attention_rows = [attention(pig_id=row["pig_id"], tag_number=row["tag_number"]) for row in females]
     litters = [{"litter_id":f"LIT-{index}", "sow_pig_id":row["pig_id"],
-        "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"} for index, row in enumerate(females)]
+        "farrowing_date":"2026-06-01", "litter_status":"Weaned", "wean_date":"2026-07-20"} for index, row in enumerate(females)]
     trees = {"success":True, "by_pig":{row["pig_id"]:{"lineage_status":"complete",
         "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*females, prince]}}
     result = build_breeding_operating_loop({"success":True, "animals":attention_rows},
@@ -841,9 +841,9 @@ def test_prince_receives_one_purposeful_trial_with_an_interpretable_maternal_his
     attention_rows = [attention(pig_id=row["pig_id"], tag_number=row["tag_number"]) for row in sows]
     litters = [
         {"litter_id":"LIT-STRONG", "sow_pig_id":"SOW-STRONG", "boar_pig_id":"BOAR-BOLA",
-         "farrowing_date":"2026-06-01", "wean_date":"2026-07-20", "born_alive":11, "weaned_count":9},
+         "farrowing_date":"2026-06-01", "litter_status":"Weaned", "wean_date":"2026-07-20", "born_alive":11, "weaned_count":9},
         {"litter_id":"LIT-WEAK", "sow_pig_id":"SOW-WEAK", "boar_pig_id":"BOAR-BOLA",
-         "farrowing_date":"2026-06-01", "wean_date":"2026-07-20", "born_alive":5, "weaned_count":2},
+         "farrowing_date":"2026-06-01", "litter_status":"Weaned", "wean_date":"2026-07-20", "born_alive":5, "weaned_count":2},
     ]
     trees = {"success":True, "by_pig":{row["pig_id"]:{"lineage_status":"complete",
         "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*sows, bola, prince]}}
@@ -867,12 +867,12 @@ def test_prince_receives_one_purposeful_trial_with_an_interpretable_maternal_his
 def test_same_week_rebuild_keeps_schedule_and_dedup_identity_stable():
     tuesday = build_breeding_operating_loop({"success":True, "animals":[attention()]},
         readiness={"success":True, "pigs":[female(), male()]}, matings=[],
-        litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"}],
+        litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "litter_status":"Weaned", "wean_date":"2026-07-20"}],
         observations=[], projected_observations={"PIG-MS":{"body_condition_score":3}}, family_trees={"success":True, "by_pig":{}},
         generated_at="2026-07-27T06:00:00+00:00", today=date(2026, 7, 28))
     thursday = build_breeding_operating_loop({"success":True, "animals":[attention()]},
         readiness={"success":True, "pigs":[female(), male()]}, matings=[],
-        litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"}],
+        litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "litter_status":"Weaned", "wean_date":"2026-07-20"}],
         observations=[], projected_observations={"PIG-MS":{"body_condition_score":3}}, family_trees={"success":True, "by_pig":{}},
         generated_at="2026-07-27T06:00:00+00:00", today=date(2026, 7, 30))
     schedule_fields = lambda result: [

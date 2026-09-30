@@ -13,6 +13,7 @@ import json
 import re
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from modules.pig_weights.pregnancy_evidence import (
     pregnancy_recommendation,
@@ -21,6 +22,7 @@ from modules.pig_weights.pregnancy_evidence import (
 from modules.pig_weights.herdmaster_breeding_policy import (
     BREEDING_BODY_CONDITION_MAX,
     BREEDING_BODY_CONDITION_MIN,
+    governed_weaning_evidence,
 )
 
 
@@ -29,6 +31,7 @@ REPEAT_SERVICE_REVIEW_COUNT = 2
 WEIGHT_FRESH_DAYS = 30
 IMMEDIATE_BOAR_GROUP_CAPACITY = 3
 EXPOSURE_DAYS = 17
+FARM_TIMEZONE = ZoneInfo("Africa/Johannesburg")
 
 
 def build_breeding_operating_loop(
@@ -45,8 +48,9 @@ def build_breeding_operating_loop(
     today=None,
 ):
     """Create one deterministic weekly breeding worklist and plan-only loop."""
-    today = today or date.today()
     generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+    as_of = _aware_timestamp(generated_at)
+    today = today or (as_of or datetime.now(timezone.utc)).astimezone(FARM_TIMEZONE).date()
     if not _valid(attention, readiness, matings, litters, observations):
         return _unavailable(generated_at)
     week_start = today - timedelta(days=today.weekday())
@@ -87,7 +91,7 @@ def build_breeding_operating_loop(
             attention_row, readiness_row, female_matings, female_litters,
             female_observations, today,
             projected_observations.get(pig_id, {}),
-            exposure_by_female.get(pig_id, []),
+            exposure_by_female.get(pig_id, []), as_of=generated_at,
         )
         male_recommendation = _rank_males(
             readiness_row, male_rows, matings, litters, classification, family_trees
@@ -525,7 +529,7 @@ def _owner_words(value):
 
 def _classify(
     attention, readiness, matings, litters, observations, today,
-    projected_observation, exposures,
+    projected_observation, exposures, *, as_of=None,
 ):
     latest_mating = matings[0] if matings else {}
     latest_litter = litters[0] if litters else {}
@@ -593,8 +597,10 @@ def _classify(
         (today - litter_date).days if litter_date and today >= litter_date
         else None
     )
-    recorded_wean_date = _date(latest_litter.get("wean_date"))
-    wean_date = recorded_wean_date if recorded_wean_date and recorded_wean_date <= today else None
+    weaning_evidence = governed_weaning_evidence(latest_litter, today=today)
+    wean_date = _date(weaning_evidence["completed_wean_date"])
+    farrowing_evidence = _near_farrowing_chronology(
+        projected_observation, latest_litter, weaning_evidence, today, as_of=as_of)
     litter_closes_latest_mating = _litter_closes_mating(
         latest_mating, latest_litter, litters, mating_date
     )
@@ -639,18 +645,25 @@ def _classify(
             "Time alone does not clear recovery."
         )
         hold_reasons.append("body condition outside governed range")
-    elif near_farrowing == "observed":
-        state, action, priority = (
-            "Near farrowing observation", "prepare and monitor for farrowing", 6,
-        )
-        reason = "An attributable owner observation reports that this sow appears close to farrowing; father and historical mating date remain Unknown."
-        hold_reasons.append("near farrowing")
     elif hold_reasons:
         state, action, priority = (
             "Hold for medical/withdrawal evidence",
             "review medical or withdrawal hold", 5,
         )
         reason = "A current medical, withdrawal or availability hold is evidenced."
+    elif farrowing_evidence["state"] == "unresolved":
+        state, action, priority = "Needs Data", "reconcile farrowing observation with litter chronology", 7
+        reason = farrowing_evidence["reason"]
+        hold_reasons.append("farrowing observation chronology unresolved")
+    elif farrowing_evidence["state"] == "active":
+        state, action, priority = (
+            "Near farrowing observation", "prepare and monitor for farrowing", 6,
+        )
+        reason = "An attributable owner observation reports that this sow appears close to farrowing; father and historical mating date remain Unknown."
+        hold_reasons.append("near farrowing")
+    elif weaning_evidence["state"] == "unresolved":
+        state, action, priority = "Needs Data", "resolve actual weaning chronology", 17
+        reason = weaning_evidence["reason"]
     elif litter_closes_latest_mating and pregnancy["state"] != "conflicting" and not wean_date:
         state, action, priority = "Nursing", "continue nursing until governed weaning", 20
         reason = "An attributable current litter closes the prior mating cycle and remains unweaned."
@@ -752,6 +765,8 @@ def _classify(
     else:
         readiness_status = "Needs Data"
         readiness_reason = reason
+    chronology_conflicts = [evidence["reason"] for evidence in (farrowing_evidence, weaning_evidence)
+                          if evidence["state"] == "unresolved"]
     placement_supported = state == "Ready for mating review" and wean_date is not None
     return {
         "state": state,
@@ -792,14 +807,66 @@ def _classify(
         ),
         "recovery_hold": recovery_hold or "unknown",
         "near_farrowing": near_farrowing or "unknown",
+        "near_farrowing_evidence": farrowing_evidence,
+        "weaning_evidence": weaning_evidence,
         "active_exposure": active_exposure,
         "observed_checks": observed_checks,
         "hold_reasons": hold_reasons,
         "missing": list(attention.get("missing_facts") or []),
-        "conflicting": list(attention.get("conflicting_facts") or []),
+        "conflicting": list(attention.get("conflicting_facts") or []) + chronology_conflicts,
         "confidence": attention.get("confidence") or "Limited",
         "projected_observation": projected_observation,
     }
+
+
+def _aware_timestamp(value):
+    try:
+        result = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return result if result.tzinfo is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _near_farrowing_chronology(projected, litter, weaning, today, *, as_of=None):
+    """Reconcile the retained observation without rewriting a physical fact."""
+    raw = projected.get("near_farrowing_observed_at")
+    result = {"state": "not_reported", "observed_at": raw,
+        "observation_event_id": projected.get("near_farrowing_observation_event_id"),
+        "litter_id": litter.get("litter_id"),
+        "farrowing_date": litter.get("farrowing_date") or litter.get("birth_date")}
+    if projected.get("near_farrowing") != "observed":
+        return result
+    observed_day = None
+    observed_instant = None
+    try:
+        if isinstance(raw, date) and not isinstance(raw, datetime):
+            observed_day = raw
+        elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(raw or "")):
+            observed_day = date.fromisoformat(raw)
+        else:
+            observed_instant = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if observed_instant.tzinfo is None:
+                raise ValueError("unbound observation timezone")
+            observed_day = observed_instant.astimezone(FARM_TIMEZONE).date()
+        cutoff = as_of if isinstance(as_of, datetime) else datetime.fromisoformat(str(as_of).replace("Z", "+00:00")) if as_of else None
+        future_instant = observed_instant and cutoff and cutoff.tzinfo and observed_instant > cutoff
+    except (ValueError, TypeError):
+        future_instant = False
+        observed_day = None
+    result["observed_local_date"] = observed_day.isoformat() if observed_day else None
+    if not observed_day or observed_day > today or future_instant:
+        return {**result, "state": "unresolved", "reason": "Near-farrowing observation time is missing, invalid or future-dated; current reproductive status is Unknown."}
+    if not litter:
+        return {**result, "state": "active"}
+    birth = _date(litter.get("farrowing_date") or litter.get("birth_date"))
+    if not birth or birth > today or not _text(litter.get("litter_id")):
+        return {**result, "state": "unresolved", "reason": "The near-farrowing observation cannot be ordered against an attributable current litter; reproductive chronology remains Unknown."}
+    if observed_day < birth:
+        return {**result, "state": "historical_birth", "reason": "A later attributable birth closes this earlier near-farrowing observation."}
+    actual_wean = _date(weaning.get("completed_wean_date"))
+    if actual_wean and actual_wean < observed_day:
+        return {**result, "state": "active"}
+    return {**result, "state": "unresolved", "reason": "The near-farrowing observation cannot be separated from the recorded litter cycle at the available date precision; current reproductive status is Unknown until the chronology is reconciled."}
 
 
 def _litter_closes_mating(mating, latest_litter, litters, mating_date):
@@ -871,6 +938,8 @@ def _task(
         "male_recommendation_state": male_recommendation["status"],
         "male_recommendation": male_recommendation,
         "weaning_date": classification.get("weaning_date"),
+        "weaning_evidence": classification.get("weaning_evidence"),
+        "near_farrowing_evidence": classification.get("near_farrowing_evidence"),
         "days_since_weaning": classification.get("days_since_weaning"),
         "proposed_placement_date": classification.get("proposed_placement_date"),
         "exposure_start_date": classification.get("exposure_start_date"),
@@ -1121,6 +1190,8 @@ def _required_checks(classification):
         # question.  Volunteered heat facts are still parsed and retained.
         "observe for standing heat": [],
         "pregnancy check due": ["governed pregnancy check result"],
+        "reconcile farrowing observation with litter chronology": ["attributable farrowing observation chronology"],
+        "resolve actual weaning chronology": ["governed actual weaning date"],
         "repeat-service review": [
             "service chronology", "body condition", "owner decision"
         ],

@@ -6,6 +6,8 @@ from collections import Counter
 from datetime import date, datetime, timezone
 from time import monotonic
 
+from modules.pig_weights.herdmaster_breeding_policy import governed_weaning_evidence
+
 CONTRACT_VERSION = "herdmaster_breeding_attention_v2"
 FILTERS = (
     "Ready for review",
@@ -253,6 +255,7 @@ def _attention_row(row, mating, litter, metric, tree, observation, today, observ
         conflicts.append("purpose is not affirmatively Breeding")
     mating_date = _date((mating or {}).get("mating_date"))
     litter_date = _date((litter or {}).get("farrowing_date") or (litter or {}).get("birth_date"))
+    weaning = governed_weaning_evidence(litter, today=today)
     if pregnancy in {"pregnant", "confirmed", "confirmed_pregnant"} and not mating_date:
         conflicts.append("pregnancy evidence has no mating chronology")
 
@@ -269,9 +272,12 @@ def _attention_row(row, mating, litter, metric, tree, observation, today, observ
         state, action, rank = "Pregnancy evidence", "no action currently required", 30
     elif mating_date and (today - mating_date).days <= 35:
         state, action, rank = "Recently mated", "verify mating history", 35
-    elif litter_date and not (litter or {}).get("wean_date"):
+    elif weaning["state"] == "unresolved":
+        state, action, rank = "Needs Data", "resolve actual weaning chronology", 39
+        missing.append(weaning["reason"])
+    elif litter_date and weaning["state"] != "completed":
         state, action, rank = "Post-litter recovery", "continue nursing until governed weaning", 40
-    elif (litter or {}).get("wean_date"):
+    elif weaning["state"] == "completed":
         state, action, rank = "Ready for review", "schedule boar placement from governed weaning", 45
     elif missing:
         state, action, rank = "Needs Data", "resolve only the attributable governed evidence", 50
@@ -302,7 +308,8 @@ def _attention_row(row, mating, litter, metric, tree, observation, today, observ
             "legs_movement": observation.get("legs_movement") or observation.get("feet_legs_movement") or "Unknown",
             "visible_concern": observation.get("visible_concern") or observation.get("visible_injury") or "Unknown",
         },
-        "weaning_date": str((litter or {}).get("wean_date") or "") or None,
+        "weaning_date": weaning["completed_wean_date"],
+        "weaning_evidence": weaning,
         "freshness": _freshness(observed_at, today),
         "confidence": "High" if not missing and not conflicts else ("Low" if conflicts else "Limited"),
         "missing_facts": sorted(set(missing)),
