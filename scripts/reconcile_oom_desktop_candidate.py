@@ -20,19 +20,19 @@ PARENT_ID = "OMQ-20260813-03"
 BASE = '9bef22336a98fa92f5ee2a419ab4cbafc781c163'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = None
-HEAD = None
-TREE = None
+CANDIDATE_PR = 1365
+HEAD = '6f500dacf805f1d749c7e353e407f83288a38dc4'
+TREE = '8cfdc5f8e98d18d8d14aed53a87ba375b816dd98'
 # Candidate pins remain inert until the coordinator binds the reviewed complete tree.
 # Synthetic qualification pins live only in tests; no later runtime delta is allowed.
-APPROVED_RUNTIME_HEAD = None
+APPROVED_RUNTIME_HEAD = '6f500dacf805f1d749c7e353e407f83288a38dc4'
 QUALIFICATION_TEST_PATHS = []
 BRANCH = 'codex/herdmaster-case-disposition-20261001'
 PREDECESSOR_PR = 1364
 PREDECESSOR_BASE = '3a8f06266552196dadebfce270bf5c4f977a29d5'
 PREDECESSOR_HEAD = 'e8af6a1d18bc76b2617f6de3a8133c8a559b5cb4'
 PREDECESSOR_BRANCH = 'codex/herdmaster-question-routing-20260929'
-PATHS = None
+PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/02-agents/farm/HERDMASTER.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/protected_action_runtime.py', 'modules/oom_sakkie/protected_payment_recovery.py', 'modules/oom_sakkie/retained_mortality_confirmation.py', 'modules/oom_sakkie/retained_mortality_continuation.py', 'modules/oom_sakkie/retained_mortality_orphan_recovery.py', 'modules/oom_sakkie/retained_mortality_presentation.py', 'static/assets/agents/herdmaster/agent.md', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_retained_mortality_orphan_postgres.py']
 PREDECESSOR_PATHS = [
     '.github/workflows/oom-sakkie-audit-rails.yml',
     'docs/09-vault-brain/02-agents/farm/HERDMASTER.md',
