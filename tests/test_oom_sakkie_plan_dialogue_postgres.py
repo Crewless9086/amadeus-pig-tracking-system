@@ -129,7 +129,8 @@ def test_group_plan_partial_restart_answer_retirement_and_next_cycle(journey,lan
     partial,status=reply(j,actor,language,'Hy eet.' if language=='af' else 'He is eating.',
         701,NOW+timedelta(minutes=1),question['telegram_message_id'],partial=True)
     assert status==200 and partial['status']=='manager_question_partial_reply_recorded',partial
-    assert j['provider'][-1]['body']['text']==j['semantic']['value'].clarification_question
+    assert j['provider'][-1]['body']['text']==(
+        '<b>🌿 Oom Sakkie</b>\n\n' + j['semantic']['value'].clarification_question)
     delivered_count=len(j['provider'])
     duplicate,status=reply(j,actor,language,'Hy eet.' if language=='af' else 'He is eating.',
         701,NOW+timedelta(minutes=1),question['telegram_message_id'],partial=True)
