@@ -263,3 +263,16 @@ budget, including canonical identity reassessment; advisory acquisition has one
 six-second budget. Exhaustion preserves unresolved work. Exact source, generation,
 digest, observation epoch and lease checks remain required, and presentation and
 protected confirmation retain their own governed boundaries.
+
+An expired retained farrowing report remains attributed to its original
+principal and delivered claim. An informational owner-review handoff may reuse
+the same manager case only after exact claim/source, current sow/litter and
+related-history validation. Resolve the actual configured owner through current
+family authority at preparation and provider send/edit; the first allowlisted
+user and the old reporter are not substitutes. Label all retained dates and
+counts historical and unconfirmed. Ask for a fresh authenticated owner report
+through the existing farrowing flow; do not replay the old intake, fabricate a
+provider timestamp, create a new claim, imply an informational card records a
+birth, or reuse mortality permission for farrowing. Preserve same-card dedupe
+and contain stale, foreign, cancelled, completed, superseded or incomplete
+evidence. This handoff grants no new decision type or farm-writing authority.

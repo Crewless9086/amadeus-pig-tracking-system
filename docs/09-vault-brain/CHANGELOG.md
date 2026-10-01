@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-10-01 - Exact retained farrowing owner-review handoff
+
+- Keep expired farrowing refresh bound to its durable case and original claim.
+- Present historical unconfirmed facts to the actual currently authorized owner
+  through the existing manager/family card. Preserve source attribution and
+  deduplication; require fresh owner input through the existing farrowing flow.
+- Remove old intake replay and recovery-claim creation from this retained path.
+  No new decision type, recipient role, protected approval or farm effect is
+  authorized. Current canonical state and complete bounded source history remain
+  required. Qualification and deployed acceptance are recorded separately.
+
 ## 2026-10-01 - Bounded herd reassessment and preparation continuation
 
 - Separate retained-report and exact advisory acquisition from broad herd reads

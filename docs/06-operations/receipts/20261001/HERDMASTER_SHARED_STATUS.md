@@ -10,48 +10,46 @@ Protected PR1341 integrated the original eighteen commits at
 before that integration and is retained as history. Local coordination records
 advanced separately; this bounded update does not publish that entire history.
 
-PR1365 merged as `1339358e50ff4d04983390cbb26c35b78063d014`. Its existing web
-service deployment `dep-dav3efd9fdbs73b3opsg` became live on October1; provider
-and loaded-revision readback agreed. Registration and deployment are complete
-and must not be repeated. Other service deployments and configuration remained
-unchanged. This dated checkpoint precedes the bounded reassessment successor.
+PR1366 merged as `59dca3dad630e3ac2a7f3bae7af4129540aba135`. The existing web
+service deployment `dep-dav4munlk1mc73eques0` became live on October1 at12:02:25Z;
+provider and loaded-revision readback agreed. PR1365 and PR1366 registration and
+deployment are complete and must not be repeated. Ten other service deployments
+and configuration remained unchanged. This dated checkpoint precedes release
+of the farrowing owner-review continuation.
 
 | Journey | Evidence and remaining gap |
 | --- | --- |
 | Inventory, pen capacity, weighing, litter/weaning, breeding and owner dependencies | All six loaded canonical readers passed September30 read-only checks. Fresh owner-origin Telegram delivery remains to be verified. |
-| Protected mortality | One genuine owner confirmation was verified with one canonical death effect, welfare closure and original manager-case completion. Expired and completed confirmation history is preserved. This is bounded success, not every herd action. |
-| Retained litter loss | The stable-identity repair produced a protected card with matching provider acknowledgement and lifecycle delivery proof. Genuine confirmation remains outstanding; delivery did not record farm facts. |
-| Older herd advisories | Current evidence must explicitly prove completion or lifecycle exit. Absence from a bounded candidate list cannot retire a case. Exact generation, owner and source proof are required. |
-| Expired legacy mortality preview | The old claim was never attempted; its material differs from the current complete preview. The repair must preserve it and audit a distinct replacement. A fresh genuine confirmation remains necessary before any farm effect. |
-| Independent follow-up | Natural cycles on PR1365 still hit the broad collector and preparation deadlines. An isolated advisory read succeeds, but that diagnostic does not close cases. Reliable unattended progress is not accepted. |
+| Protected mortality | One genuine confirmation has exactly one canonical death effect, welfare closure and manager-case completion. Later snapshots preserve it and both legitimate claim records. This does not prove every herd action. |
+| Retained litter loss | Card5190 has matching provider acknowledgement and family receipt. It expired unconfirmed; no farm effect is inferred or renewed manually. |
+| Older herd advisories | Natural cycles completed three exact advisories once using canonical confirmation or terminal off-farm evidence. Current generation, digest and owning proof are retained. |
+| Retained mortality successor | Natural cycles uniquely prepared the audited successor and delivered card5191 at12:21:20Z. It reached the original authorized reporting principal. It remains unconfirmed and the animal remains Active/on-farm. |
+| Retained farrowing report | The original August report was delivered but never confirmed. Its reporter differs from the configured owner. Refresh routing and a truthful owner-review handoff are being repaired; no birth is recorded. |
+| Independent follow-up |12:25 completed cleanly, but12:30 repeated the farrowing refresh exception. Two consecutive fully healthy cycles are not yet proved. |
 
-The current implementation is in the existing application worktree, branch
-`codex/herdmaster-bounded-reassessment-20261001`, based on main1339358e. The
-continuation separates bounded family acquisition from the wider overview,
-retains current-work collision guards and avoids a duplicate orphan evidence
-rebuild before the protected transaction. Focused tests
-and independent review are qualification only. This receipt grants no source,
-provider, production or farm authority beyond the owner's existing instructions.
+The same mission continues in the existing application worktree, branch
+`codex/herdmaster-farrowing-refresh-20261001`, based on main59dca3da. The repair
+binds the exact retained report to its existing case and presents historical
+unconfirmed facts to the actual configured owner. It removes the old intake
+replay/recovery-claim path. Current source, sow/litter, related-claim, role,
+recipient and duplicate checks remain required. It creates no farm fact or new
+protected approval. No new candidate is established as deployed here.
 
 ## Required finish and protected boundaries
 
-1. Qualify stable identity and exact terminal evidence, cancellation, incomplete
-   history, concurrent cycles and stale-generation refusal in real disposable
-   PostgreSQL. Preserve the existing successful mortality result.
-2. Qualify the legacy claim replacement atomically: original source, all related
-   claims, complete bounded history, immutable predecessor evidence and current
-   canonical material. First preparation sends nothing; presentation and later
-   confirmation retain their original authority, deadline and recipient gates.
-3. Finish independent review and exact-head hosted checks, then use the normal
-   protected release lane for the bounded reassessment successor. PR1365 is
-   already live; the successor is not yet established as deployed by this
-   checkpoint. Rollback binds the currently live web revision1339358e. Held
-   PR1340 is not released as part of this work.
-4. Verify the exact loaded revision, genuine owner-visible results, canonical
-   and provider readback, duplicate safety and a later independent cycle.
-   A sent card is not a recorded farm fact; tests or a healthy release are not
-   full agent autonomy. Existing physical facts and owner retests remain pending
-   without repeated requests or manufactured observations.
+1. Qualify exact claim and source identity, stale/foreign/cancelled/completed
+   histories, canonical conflicts, configured-owner selection and same-card
+   replay behavior in disposable PostgreSQL. Preserve successful mortality.
+2. Finish independent source review and hosted checks, then use the normal
+   protected release lane. Rollback binds the current live web revision59dca3da.
+   Held PR1340 is not released as part of this work.
+3. Observe the exact loaded revision, natural owner-review delivery and later
+   independent cycles. Confirm provider and family receipts, no duplicate card,
+   and unchanged canonical birth/claim state until genuine owner input.
+4. Complete genuine fresh Telegram acceptance and protected farm journeys when
+   the actual authorized person supplies/approves the facts. A sent card, test
+   suite or healthy deployment is not full autonomy. Do not manufacture farm
+   observations or repeatedly ask for facts already pending with Charl.
 
 No model call is added by this reconciliation. The existing US$1 SAST-day OpenAI
 API cap, confirmation protections and provider ambiguity containment remain.
