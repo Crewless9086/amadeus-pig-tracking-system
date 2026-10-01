@@ -17,46 +17,23 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = '9bef22336a98fa92f5ee2a419ab4cbafc781c163'
+BASE = '1339358e50ff4d04983390cbb26c35b78063d014'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1365
-HEAD = '6f500dacf805f1d749c7e353e407f83288a38dc4'
-TREE = '8cfdc5f8e98d18d8d14aed53a87ba375b816dd98'
+CANDIDATE_PR = None
+HEAD = None
+TREE = None
 # Candidate pins remain inert until the coordinator binds the reviewed complete tree.
 # Synthetic qualification pins live only in tests; no later runtime delta is allowed.
-APPROVED_RUNTIME_HEAD = '6f500dacf805f1d749c7e353e407f83288a38dc4'
+APPROVED_RUNTIME_HEAD = None
 QUALIFICATION_TEST_PATHS = []
-BRANCH = 'codex/herdmaster-case-disposition-20261001'
-PREDECESSOR_PR = 1364
-PREDECESSOR_BASE = '3a8f06266552196dadebfce270bf5c4f977a29d5'
-PREDECESSOR_HEAD = 'e8af6a1d18bc76b2617f6de3a8133c8a559b5cb4'
-PREDECESSOR_BRANCH = 'codex/herdmaster-question-routing-20260929'
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/02-agents/farm/HERDMASTER.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/protected_action_runtime.py', 'modules/oom_sakkie/protected_payment_recovery.py', 'modules/oom_sakkie/retained_mortality_confirmation.py', 'modules/oom_sakkie/retained_mortality_continuation.py', 'modules/oom_sakkie/retained_mortality_orphan_recovery.py', 'modules/oom_sakkie/retained_mortality_presentation.py', 'static/assets/agents/herdmaster/agent.md', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_retained_mortality_orphan_postgres.py']
-PREDECESSOR_PATHS = [
-    '.github/workflows/oom-sakkie-audit-rails.yml',
-    'docs/09-vault-brain/02-agents/farm/HERDMASTER.md',
-    'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md',
-    'docs/09-vault-brain/CHANGELOG.md',
-    'modules/agents/herdmaster.py',
-    'modules/oom_sakkie/farm_manager_loop.py',
-    'modules/oom_sakkie/farm_manager_runtime.py',
-    'modules/oom_sakkie/herd_read_queries.py',
-    'modules/oom_sakkie/herdmaster_request_runtime.py',
-    'modules/oom_sakkie/semantic_front_door.py',
-    'modules/oom_sakkie/service.py',
-    'modules/oom_sakkie/telegram_gateway.py',
-    'modules/oom_sakkie/tools.py',
-    'modules/pig_weights/herdmaster_breeding_attention_service.py',
-    'modules/pig_weights/herdmaster_breeding_operating_loop.py',
-    'modules/pig_weights/herdmaster_breeding_policy.py',
-    'modules/pig_weights/herdmaster_daily_manager_evidence.py',
-    'static/assets/agents/herdmaster/agent.md',
-    'tests/test_herdmaster_breeding_chronology.py',
-    'tests/test_herdmaster_breeding_operating_loop.py',
-    'tests/test_oom_sakkie_conversation_followup.py',
-    'tests/test_oom_sakkie_herd_read_queries.py',
-]
+BRANCH = 'codex/herdmaster-bounded-reassessment-20261001'
+PREDECESSOR_PR = 1365
+PREDECESSOR_BASE = '9bef22336a98fa92f5ee2a419ab4cbafc781c163'
+PREDECESSOR_HEAD = '6f500dacf805f1d749c7e353e407f83288a38dc4'
+PREDECESSOR_BRANCH = 'codex/herdmaster-case-disposition-20261001'
+PATHS = None
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/02-agents/farm/HERDMASTER.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/protected_action_runtime.py', 'modules/oom_sakkie/protected_payment_recovery.py', 'modules/oom_sakkie/retained_mortality_confirmation.py', 'modules/oom_sakkie/retained_mortality_continuation.py', 'modules/oom_sakkie/retained_mortality_orphan_recovery.py', 'modules/oom_sakkie/retained_mortality_presentation.py', 'static/assets/agents/herdmaster/agent.md', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_retained_mortality_orphan_postgres.py']
 
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
@@ -73,20 +50,18 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "scripts/render_oom_desktop_registration_sql.py", "tests/test_oom_desktop_registration_sql.py"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {'application_revision_rollback:web:3a8f06266552196dadebfce270bf5c4f977a29d5'}
-ADDED_EFFECTS = {
-    'herdmaster_exact_canonical_advisory_case_disposition',
-    'herdmaster_stable_sow_litter_identity_reassessment',
-    'retained_mortality_original_report_identity_reassessment',
-    'retained_mortality_audited_never_attempted_orphan_claim_replacement',
-    'application_revision_rollback:web:9bef22336a98fa92f5ee2a419ab4cbafc781c163',
-}
+REMOVED_EFFECTS = {'application_revision_rollback:web:9bef22336a98fa92f5ee2a419ab4cbafc781c163'}
+ADDED_EFFECTS = {'application_revision_rollback:web:1339358e50ff4d04983390cbb26c35b78063d014'}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
 REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
     "Playwright real-browser behavior gate", "Unit tests with disposable Postgres audit rails",
     "charlie-core", "mission-admission"}
 REQUIRED_ACCEPTANCE = {
+    'Separate bounded retained mortality and proven advisory family collection and refresh from the broad HERDMASTER collector. A broad timeout must not discard independently complete family evidence. Preserve exact canonical selectors, duplicate-tag and cross-principal containment, current-candidate precedence independent of collector order, sibling failure attribution, and the unchanged total retained-read budget and cycle/send deadlines.',
+    'Use one fresh bounded canonical health preview for early never-attempted orphan preparation. Reuse it only within the same preparation attempt and existing source/principal/claim/history locks; retain all no-attempt markers, complete material comparison, predecessor snapshot audit, atomic replacement and zero-send first preparation. Do not reuse an unbound preview, skip genuine-confirmation revalidation or revive a delivered, uncertain, cancelled or competing claim.',
+    'Suppress an obsolete withdrawal advisory only for conclusively departed canonical animals. Missing, unknown or conflicting lifecycle evidence remains unresolved. Preserve current work and every existing source, claim, case, farm and provider history; later normal manager cycles must independently prove progress and protected delivery.',
+
     'Retire only the exact old HERDMASTER advisory case whose current canonical completion or lifecycle evidence proves that advisory obsolete. Bind the locked case identity, evidence digest and generation to the specialist-owned disposition, revalidate before commit and preserve its entire event history. Missing candidates, silence, similar animal labels, partial reads and delivery alone never authorize retirement; unrelated cases remain open.',
     'Resolve sow and litter by stable canonical sow and litter IDs, incident chronology and eligible active-litter status. A missing or changed display name cannot defeat an otherwise exact identity, and a name-only match cannot authorize a litter. Ambiguous identity, multiple eligible litters, conflicting or incomplete history and unavailable evidence refuse protected preparation without inventing farrowing, loss or litter facts.',
     'Reassess an original unresolved retained mortality identity only from its existing original report text and original source time against current canonical identities through the existing deterministic specialist assessment. Use no new AI call, invented observation or owner replay. Preserve the original report and all source history, record attributable reassessment, reject contrary typed evidence and require a current protected preview and fresh genuine confirmation for any farm effect.',
@@ -98,12 +73,12 @@ REQUIRED_ACCEPTANCE = {
     "Route inventory counts, pen capacity, weighing attention, litter/weaning attention, breeding plans and HERDMASTER owner dependencies through explicit typed read capabilities and the existing canonical services. Preserve the selected capability through the existing front door and gateway; do not substitute a generic farm brief or an unrelated pending question. Reuse existing breeding execution and scoped follow-up rails rather than create another worker, data owner or queue.",
     "Keep canonical reads bounded and read-only. Missing, malformed or unavailable evidence must remain an explicit gap, never a zero count or no-work assertion. Identify relevant animals, litters and pens from current evidence, disclose bounded-list remainders and distinguish recorded farm status from a verified physical count. Pen capacity is a records comparison; do not diagnose physical overcrowding or calculate maternity headcount excess from undefined capacity units.",
     "Preserve the existing weighing eligibility and schedule rules, sale/order and lifecycle reconciliation, pregnancy evidence and litter identity. Planned weaning never becomes completed weaning. A recorded completed litter must supersede an earlier near-farrowing observation for the same cycle; unknown or inconsistent later chronology remains explicit. Current nursing classification requires confirmed farrowing evidence, and proposed placements must not treat a planned weaning date as completed weaning. Qualify the exact breeding chronology and operating-loop tests alongside the canonical read journey tests. Scope genuine HERDMASTER owner questions and supported physical tasks before presentation limits; unrelated specialist failures and agent-owned technical work must not become owner obligations.",
-    "This successor adds no model call, confirmation bypass, direct farm mutation, broad mission closure, provider replay, scheduler deployment, configuration change or schema change. The only new retained-coordination effects are stable-identity reassessment, the exact proven advisory disposition and audited never-attempted legacy-claim replacement described here. Preserve the existing durable US$1 SAST-day OpenAI cap and all protected confirmation, mortality, delivery and current recipient controls. Any actual farm update still uses its existing separately authorized protected path.",
+    "This successor adds no model call, confirmation bypass, direct farm mutation, broad mission closure, provider replay, scheduler deployment, configuration change or schema change. Preserve the already released stable-identity reassessment, exact proven advisory disposition and audited never-attempted legacy-claim replacement; this continuation changes bounded collection and preparation ordering without adding a protected effect. Preserve the existing durable US$1 SAST-day OpenAI cap and all protected confirmation, mortality, delivery and current recipient controls. Any actual farm update still uses its existing separately authorized protected path.",
     "Prove the exact deployed six owner question journeys with current canonical readback and provider-bound responses; tests and hosted qualification alone are not owner acceptance. Check distinct domain answers, truthful failures, Afrikaans/English behavior and preserved general briefs. Do not fabricate a genuine owner test or mark full fleet autonomy from successful read questions.",
     "After releasing an incomplete initial reconciliation snapshot, take one fresh whole-cohort lock snapshot in canonical case-ID order only when all absent candidates are unique non-BEACON terminal findings. Preserve the original ordered fallback for insertion-capable gaps, every duplicate key, BEACON absences and a second-snapshot deletion that makes insertion possible; never acquire a lower follow-up lock from a retained terminal absence.",
     "Prove the real PostgreSQL 314/317-candidate cohorts with 32 absent terminal findings use two whole-cohort lookup reads while preserving material events, generations, observation epochs, canonical identities and leases. Preserve concurrent insertion between snapshots, second-snapshot deletion rollback, post-snapshot insertion containment, reversed-cohort serialization and owning current-evidence refresh before delivery.",
     "Exercise an unexpired protected confirmation through real preview, claim and family delivery gates with explicit synthetic collection, refresh and preparation costs; the slower control must remain unattempted. Keep the 80-second cycle deadline and 30-second send reserve unchanged. Collector timeout before the global cutoff must contain only that owner while ready specialists progress; late results cannot send and a later cycle must reclaim independently. Hosted timing models are qualification, not measured live latency or owner acceptance.",
-    "This exact candidate repairs shared HERDMASTER identity, exact advisory disposition and retained mortality confirmation preparation through existing canonical services; preserve domain-scoped read questions and admit no later candidate. Registration authorizes metadata reconciliation only, not an incident correction, manual expiry extension, predecessor claim rearm, parallel active claim, reused observation window or synthetic owner confirmation; consumed ordinary renewal and manual extension remain consumed. Existing delivered expired-card continuation and genuine confirmation restrictions remain; only the separately described audited never-attempted orphan replacement adds a preparation exception.",
+    "This exact candidate repairs shared HERDMASTER identity, exact advisory disposition and retained mortality confirmation preparation through existing canonical services; preserve domain-scoped read questions and admit no later candidate. Registration authorizes metadata reconciliation only, not an incident correction, manual expiry extension, predecessor claim rearm, parallel active claim, reused observation window or synthetic owner confirmation; consumed ordinary renewal and manual extension remain consumed. Existing delivered expired-card continuation and genuine confirmation restrictions remain; the already released audited never-attempted orphan replacement remains the only scheduler preparation exception.",
     "Refresh only the exact claimed retained case identities through current canonical source, cancellation, resolution and completion checks; preserve the full canonical animal identity set for duplicate-tag rejection. Skip unrelated intake discovery during targeted retained refresh while preserving broad collection behavior.",
     "Bound health context to its existing newest 100 owner/chat/source rows and join latest eligible family cards once per distinct mission. Deduplicate the latest all-status source chronology before active projection: terminal tombstones block older preview resurrection without becoming new actionable cases or discarding existing durable cases. Preserve owner isolation and bounded numeric stage durations; no new model work, deadline extension or scheduler deployment.",
     "Prove real loaded-revision retained preparation completes within the unchanged cycle deadline and delivers each exact protected claim once. Timing and hosted equivalence tests alone do not prove delivery; any manual extension of an expired unsent claim requires separately authenticated exact recovery approval and immutable audit.",
