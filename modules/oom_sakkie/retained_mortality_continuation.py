@@ -101,6 +101,9 @@ def _window(cur, claim):
 def validate_lineage(cur, source, claims, current, now, source_history):
     """Complete, bounded, linear generations; no other related claim is allowed."""
     from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    if (source.get("retained_repreview") or {}).get("orphan_predecessor"):
+        from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+        claims, _audit = orphan.validate_lineage(cur, source, claims, current, now, source_history)
     by_hash = {history._sha(c["callback_token"]): c for c in claims}
     tx.require(len(by_hash) == len(claims), "retained_continuation_duplicate_claim")
     seen, links, windows = set(), [], []
@@ -178,11 +181,24 @@ def validate_lineage(cur, source, claims, current, now, source_history):
 
 
 def _case_history(cur, source_history, claims, case, now, validated_links):
+    source = source_history[0]["record"]
+    orphan_recovery = bool((source.get("retained_repreview") or {}).get("orphan_predecessor"))
+    if orphan_recovery:
+        from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+        current = history._one([c for c in claims if c["preview_digest"] == source["retained_repreview"]["claim_preview_digest"]],
+            "retained_orphan_current_claim")
+        claims, _audit = orphan.validate_lineage(cur, source, claims, current, now, source_history)
     root = next(c for c in claims if FIELD not in c["preview_payload"])
     window = _window(cur, root)
     p, started = window["payload_json"], history._time(window["occurred_at"])
-    events = _rows(cur, """select to_jsonb(e) from app_private.oom_manager_case_events e
-        where case_id=%s order by occurred_at,event_id limit 4097""", (case["case_id"],))
+    quiet_proof = None
+    if orphan_recovery:
+        case_bound = orphan.CASE_BOUND + history.CASE_HISTORY_BOUND
+        events, quiet_proof = orphan.continuation_events(cur, case, started, int(p["generation"]), now)
+    else:
+        case_bound = history.CASE_HISTORY_BOUND
+        events = _rows(cur, """select to_jsonb(e) from app_private.oom_manager_case_events e
+            where case_id=%s order by occurred_at,event_id limit 4097""", (case["case_id"],))
     links = _rows(cur, """select to_jsonb(e) from public.operational_events e
         where event_type=%s and correlation_id=%s order by occurred_at,event_id limit 129""",
         (EVENT, root["mission_id"]))
@@ -195,7 +211,7 @@ def _case_history(cur, source_history, claims, case, now, validated_links):
     # locked case may therefore still project an earlier *audited successor* in
     # this exact validated chain; it cannot name an arbitrary or root digest.
     projected = {"retained_confirmation:" + c["preview_digest"] for c in claims if FIELD in c["preview_payload"]}
-    tx.require(len(events) <= history.CASE_HISTORY_BOUND and len(links) <= BOUND
+    tx.require(len(events) <= case_bound and len(links) <= BOUND
         and p.get("case_id") == case["case_id"] and 0 <= generations <= len(links)
         and (p.get("evidence_digest") == case["evidence_digest"] if generations == 0 else
             len(refs) == 1 and refs[0] in projected)
@@ -246,11 +262,14 @@ def _case_history(cur, source_history, claims, case, now, validated_links):
                 or (kind in {"delivery_suppressed", "reassessment_scheduled"}
                     and outcome in {"manager_delivery_duplicate_suppressed", "retained_mortality_continuation_owner_review"})),
         "retained_continuation_unsafe_case_history")
-    return events
+    return events + ([quiet_proof] if quiet_proof is not None else [])
 
 
 def _family(cur, source, source_history, claims, current, now):
     from modules.oom_sakkie.protected_action_claims import protected_card_mission_id
+    if (source.get("retained_repreview") or {}).get("orphan_predecessor"):
+        from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+        claims, _audit = orphan.validate_lineage(cur, source, claims, current, now, source_history)
     cards = {protected_card_mission_id(c["mission_id"], c["preview_digest"]): c for c in claims}
     scopes = list(cards) + [source["mission_id"], current["mission_id"]]
     cur.execute("""select review_event_id,created_at,review_json->'family_message_lifecycle'

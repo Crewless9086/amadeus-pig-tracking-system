@@ -1,5 +1,15 @@
 # Implementation Source Map
 
+## HERDMASTER retained advisory and identity reconciliation
+
+- Owning read-only dispositions: `modules/oom_sakkie/herdmaster_case_disposition.py`.
+- Source collection and original per-item provenance: `modules/oom_sakkie/manager_case_sources.py`, `modules/oom_sakkie/farm_manager_runtime.py`.
+- Locked generation/lease reconciliation and existing completion events: `modules/oom_sakkie/general_manager_worker.py`.
+- Stable sow/litter selection and pure retained identity reassessment: `modules/oom_sakkie/herdmaster_retained_recovery_runtime.py`, reusing the existing health/loss evaluator and protected rails.
+- Audited never-attempted orphan claim replacement: `modules/oom_sakkie/retained_mortality_orphan_recovery.py`, integrated with existing preparation, presentation, confirmation, continuation and manager completion rails; actual isolated proof in `tests/test_oom_sakkie_retained_mortality_orphan_postgres.py`.
+- Actual PostgreSQL proof, replay and competing cycles: `tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py`, `tests/test_oom_sakkie_general_manager_postgres.py`.
+- Authority: `02-agents/farm/HERDMASTER.md`, `04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`. Internal advisory completion does not authorize a farm write or establish live acceptance.
+
 ## HERDMASTER owner read questions
 
 - Semantic capability contract: `modules/oom_sakkie/semantic_front_door.py`.

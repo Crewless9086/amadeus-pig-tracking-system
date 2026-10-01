@@ -165,6 +165,46 @@ def retained_mortality_tag(row):
     return match.group(1) if match and "dood" in text.casefold() else ""
 
 
+def retained_identity_reassessment_needed(row):
+    """An unresolved old identity may be reevaluated; contrary facts may not."""
+    evaluator = (row.get("preview") or {}).get("evaluator") or {}
+    identity = evaluator.get("identity") or {}
+    return (row.get("status") == "waiting_for_input"
+        and not (row.get("semantic_interpretation") or {}).get("recording_prohibited")
+        and evaluator.get("status") == "identity_required"
+        and evaluator.get("event_family") == "unknown"
+        and identity.get("resolved") is False and not identity.get("pig_id")
+        and not row.get("correction_digest") and not row.get("invalidated_operation_ids"))
+
+
+def _prepare_retained_report(payload, evidence):
+    from modules.oom_sakkie.herdmaster_health_loss_preview import prepare_health_loss_owner_preview
+    return prepare_health_loss_owner_preview({
+        "gateway_authority": issue_gateway_owner_authority(payload["owner_user_id"], payload["chat_id"]),
+        "provider_message_id": str(payload.get("provider_message_id") or ""),
+        "provider_timestamp": str(payload.get("provider_timestamp") or ""),
+        "provider_timezone": "Africa/Johannesburg",
+        "output_language": payload.get("output_language") or "af",
+        "text": str(payload.get("combined_text") or payload.get("owner_text_verbatim") or ""),
+        **({"report_parts": payload["report_parts"]} if payload.get("report_parts") else {}),
+        **{key: value for key, value in (payload.get("semantic_interpretation") or {}).items()
+           if key in {"mortality_observation", "welfare_observation", "clinical_observation"}},
+    }, evidence)
+
+
+def reassess_retained_mortality_identity(row, evidence):
+    if not retained_identity_reassessment_needed(row):
+        return {}
+    if not retained_recipient_authorized(_delivery_context(row)):
+        return {}
+    evaluated = _prepare_retained_report(row, evidence).get("evaluator") or {}
+    identity = evaluated.get("identity") or {}
+    if (evaluated.get("event_family") != "found_dead" or identity.get("resolved") is not True
+            or not identity.get("pig_id") or not identity.get("tag_number")):
+        return {}
+    return identity
+
+
 def retained_report_binding(rows):
     """Stable source identity, not a claim that the report facts are current."""
     identities = sorted({(str(row.get("provider_message_id") or ""),
@@ -190,8 +230,10 @@ def _validated_report_case(case, provider_ids, *, claims_out=None):
     if key.startswith("herdmaster:retained-mortality:"):
         tags = {v.split(":", 1)[1] for v in refs if v.startswith("tag:")}
         reported = {retained_mortality_tag(row) for row in rows} - {""}
+        reassess = ("retained_identity_reassessment:required" in refs and len(rows) == 1
+                    and retained_identity_reassessment_needed(rows[0]))
         if (len(provider_ids) != 1 or key != "herdmaster:retained-mortality:" + provider_ids[0]
-                or len(tags) != 1 or tags != reported):
+                or len(tags) != 1 or (tags != reported and not reassess)):
             return [], "retained_mortality_exact_identity_unproven"
     else:
         incidents = {v.split(":", 1)[1] for v in refs if v.startswith("incident_date:")}
@@ -243,7 +285,7 @@ def _litter_loss(provider_ids, refs, recovery_identity, case, deadline_monotonic
             cur.execute("""select l.litter_id
                 from public.current_canonical_litters l
                 join public.current_canonical_pigs s on s.pig_id=l.sow_pig_id
-                where s.pig_id=%s and lower(s.pig_name)='linda'
+                where s.pig_id=%s
                   and lower(coalesce(l.litter_status,''))='active'
                   and l.farrowing_date<=%s::date
                 order by l.farrowing_date desc,l.litter_id desc limit 2""",
@@ -257,7 +299,7 @@ def _litter_loss(provider_ids, refs, recovery_identity, case, deadline_monotonic
         litter_id, incident, "Unknown", count=count, changed_by="oom_sakkie", dry_run=True)
     if status >= 400 or preview.get("success") is not True:
         return {**_contained("retained_litter_loss_selection_required"),
-                "answer": "HERDMASTER retained Linda, the date and the three deaths. "
+                "answer": "HERDMASTER retained the resolved sow, incident date and reported loss count. "
                           + " ".join(str(value) for value in preview.get("errors") or ())}
     operation_id = "HERD-LITTER-LOSS-" + hashlib.sha256(
         (recovery_identity + "|" + "|".join(provider_ids) + "|" + litter_id
@@ -356,9 +398,6 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
         return resume_requested_preview(payload, case)
     target = next((value.split(":", 1)[1] for value in refs
                    if value.startswith("pig:") and ":" in value), "")
-    from modules.oom_sakkie.herdmaster_health_loss_preview import (
-        prepare_health_loss_owner_preview,
-    )
     from modules.oom_sakkie.herdmaster_health_loss_runtime import (
         load_canonical_health_loss_evidence,
     )
@@ -375,18 +414,13 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
     else:
         evidence = load_canonical_health_loss_evidence()
         provider = str(payload.get("provider_message_id") or "")
-        preview = prepare_health_loss_owner_preview({
-            "gateway_authority": issue_gateway_owner_authority(owner, chat),
-            "provider_message_id": provider,
-            "provider_timestamp": str(payload.get("provider_timestamp") or ""),
-            "provider_timezone": "Africa/Johannesburg",
-            "output_language": payload.get("output_language") or "af",
-            "text": str(payload.get("combined_text") or payload.get("owner_text_verbatim") or ""),
-            **({"report_parts": payload["report_parts"]} if payload.get("report_parts") else {}),
-            **{key: value for key, value in (payload.get("semantic_interpretation") or {}).items()
-               if key in {"mortality_observation", "welfare_observation", "clinical_observation"}},
-        }, evidence)
+        preview = _prepare_retained_report(payload, evidence)
     identity = dict((preview.get("evaluator") or {}).get("identity") or {})
+    reassessed = "retained_identity_reassessment:required" in refs
+    if reassessed and (identity.get("resolved") is not True
+            or (preview.get("evaluator") or {}).get("event_family") != "found_dead"
+            or {v for v in refs if v.startswith("tag:")} != {"tag:" + str(identity.get("tag_number") or "")}):
+        return _contained("retained_mortality_exact_identity_unproven")
     if not target or str(identity.get("pig_id") or "") != target:
         return _contained("retained_mortality_exact_identity_unproven")
     if int(preview.get("question_count") or 0):
@@ -409,8 +443,19 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
             "identity": identity,
             "event_family": str((preview.get("evaluator") or {}).get("event_family") or ""),
             "effect_kind": "mortality"})
-    claim, failure = _same_or_new_claim(payloads, claims, deadline_monotonic, staged_mortality=prepared, **request)
+    from modules.oom_sakkie.herdmaster_source_transaction import SourceConflict
+    try:
+        claim, failure = _same_or_new_claim(payloads, claims, deadline_monotonic, staged_mortality=prepared, **request)
+    except SourceConflict as exc:
+        return _contained(str(exc))
     if failure:
+        if failure == "retained_claim_current_preview_mismatch" and retained_identity_reassessment_needed(payload):
+            from modules.oom_sakkie.retained_mortality_orphan_recovery import prepare
+            from modules.oom_sakkie.herdmaster_source_transaction import SourceConflict
+            try:
+                return prepare(payload, case, deadline_monotonic=deadline_monotonic)
+            except SourceConflict as exc:
+                return _contained(str(exc))
         return _contained(failure)
     from modules.oom_sakkie.herdmaster_health_loss_runtime import persist_retained_health_loss_preview
     if not prepared:
@@ -482,10 +527,10 @@ def _litter_preview_text(payload, language):
     piglets = ", ".join(html.escape(str(value)) for value in payload["pig_ids"])
     date = html.escape(str(payload["event_date"]))
     if af:
-        return (f"<b>HERDMASTER - BESKERMDE VOORSKOU</b>\nLinda se werpsel {litter}; "
+        return (f"<b>HERDMASTER - BESKERMDE VOORSKOU</b>\nWerpsel {litter}; "
             f"{payload['count']} kleintjies dood op {date}.\nPresiese kleintjies: {piglets}. "
             "Rede: Onbekend. Bevestig slegs indien korrek. Niks is nog aangeteken nie.")
-    return (f"<b>HERDMASTER - PROTECTED PREVIEW</b>\nLinda's litter {litter}; "
+    return (f"<b>HERDMASTER - PROTECTED PREVIEW</b>\nLitter {litter}; "
         f"{payload['count']} piglets died on {date}.\nExact piglets: {piglets}. "
         "Reason: Unknown. Confirm only if correct. Nothing has been recorded yet.")
 
@@ -522,6 +567,19 @@ def _same_or_new_claim(rows, claims, deadline_monotonic, *, staged_mortality=Fal
     related = [claim for claim in claims if str(claim[2]) in missions or
         ((str(claim[0]), str(claim[1])) == (owner, chat) and
          (str(claim[3]) in ids or ids.intersection((claim[6] or {}).get("provider_message_ids") or ())))]
+    if len(rows) == 1 and (rows[0].get("retained_repreview") or {}).get("orphan_predecessor"):
+        from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+        from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+        with connect_bounded_read() as db, db.cursor() as cur:
+            history_rows = source_tx.read_history(cur, [rows[0]["mission_id"]])
+            source_tx.require_current(history_rows, rows[0])
+            full = orphan.read_claims(cur, rows[0])
+            current = [c for c in full if c["preview_digest"] == rows[0]["retained_repreview"]["claim_preview_digest"]]
+            source_tx.require(len(current) == 1, "retained_orphan_current_claim_missing")
+            cur.execute("select clock_timestamp()")
+            active, _audit = orphan.validate_lineage(cur, rows[0], full, current[0], cur.fetchone()[0], history_rows)
+            source_tx.require(active == current, "retained_orphan_competing_claim")
+            related = [c for c in related if (c[7] or {}).get("callback_token") == current[0]["callback_token"]]
     if deadline_monotonic is not None:
         from modules.oom_sakkie.family_message_lifecycle import PROVIDER_DELIVERY_RESERVE_SECONDS
         if time.monotonic() + PROVIDER_DELIVERY_RESERVE_SECONDS >= deadline_monotonic:

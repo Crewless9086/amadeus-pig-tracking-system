@@ -84,6 +84,15 @@ def confirm_retained_mortality(claimed, parsed, *, gateway_authority, connect_fa
                 and str(claim['delivery_result'].get('telegram_message_id') or '') == card,
                 'retained_mortality_callback_receipt_unproven')
             _validate_source(prepared, claim)
+            if any((row['record'].get('retained_repreview') or {}).get('orphan_predecessor') for row in rows):
+                from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+                related = orphan.read_claims(cur, prepared)
+                if (prepared.get('retained_repreview') or {}).get('owner_requested_continuation'):
+                    from modules.oom_sakkie.retained_mortality_continuation import validate_lineage
+                    validate_lineage(cur, prepared, related, claim, observed, rows)
+                else:
+                    active, _audit = orphan.validate_lineage(cur, prepared, related, claim, observed, rows)
+                    source_tx.require(active == [claim], 'retained_orphan_competing_claim')
             source_tx.require(all(current.get(key) == prepared.get(key) for key in
                 ('mission_id','owner_user_id','chat_id','preview','operation_id','retained_repreview'))
                 and not any(current.get(key) for key in ('invalidated_operation_ids','correction_digest',
