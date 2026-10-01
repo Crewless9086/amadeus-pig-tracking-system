@@ -45,7 +45,9 @@ def test_gateway_budget_denial_is_visible_localized_and_same_receipt_is_silent(j
     assert first['model_budget_denied'] is True and first['status'] == code
     assert first['request_interpreted'] is False and first['writes'] is False
     assert first['records_audit_trace'] is True
-    assert len(journey.sends) == 1 and journey.sends[0][1] == first['answer']
+    expected_heading = 'AI-KOSTEBEHEER' if language == 'af' else 'AI COST CONTROL'
+    assert first['answer'].startswith('<b>' + expected_heading + '</b>')
+    assert journey.sends == [('42', first['answer'].replace('<b>', '<b>🌿 ', 1))]
     assert ('AI-KOSTEBEHEER' if language == 'af' else 'AI COST CONTROL') in first['answer']
     if code == 'farm_model_daily_budget_exhausted':
         assert 'US$1' in first['answer']

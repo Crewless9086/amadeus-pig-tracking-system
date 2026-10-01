@@ -31,103 +31,99 @@ TAGS = (
     "5, 56, 6, 61, 7, 83, 86, 89, 9, 98"
 ).split(", ")
 
-EXPECTED = {'en': "<b>TODAY'S FARM PLAN</b>\n"
-       '<b>ACTION NEEDED</b>\n'
-       '1. <b>Weaning overdue — Molly</b>\n'
-       'Molly&#x27;s litter was due for weaning on 2026-09-11 and is 2 days overdue; the canonical litter is '
+EXPECTED = {'en': "<b>🌿 Today's farm plan</b>\n\n"
+       '<b>Action needed</b>\n'
+       '• <b>Weaning overdue — Molly</b>\n'
+       '  Molly&#x27;s litter was due for weaning on 2026-09-11 and is 2 days overdue; the canonical litter is '
        'still Active and no weaned count proves completion.\n'
-       'Has Molly&#x27;s litter been weaned? If so, give the date and count; I will ask for missing details '
+       '  Has Molly&#x27;s litter been weaned? If so, give the date and count; I will ask for missing details '
        'and prepare the confirmation.\n'
-       '2. <b>Current farrowing status — Mysikind and Mona</b>\n'
-       'The projected window 2026-08-22 to 2026-08-26 has passed. Current records do not confirm the outcome '
+       '• <b>Current farrowing status — Mysikind and Mona</b>\n'
+       '  The projected window 2026-08-22 to 2026-08-26 has passed. Current records do not confirm the outcome '
        'of these matings.\n'
-       'Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and '
+       '  Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and '
        'prepare the confirmation.\n'
        '\n'
-       '<b>OOM SAKKIE IS CHECKING AUTOMATICALLY</b>\n'
+       "<b>I'm following up</b>\n"
        '• <b>Mortality records — 34 deaths for review</b>\n'
-       'Recorded deaths: 2026-09-13. HERDMASTER is reviewing these records for unresolved current follow-up; '
+       '  Recorded deaths: 2026-09-13. HERDMASTER is reviewing these records for unresolved current follow-up; '
        'this total does not report new deaths today.\n'
-       'HERDMASTER will check the related records and reopen a follow-up only when new or unresolved '
+       '  HERDMASTER will check the related records and reopen a follow-up only when new or unresolved '
        'evidence requires it.\n'
        '• <b>Weighing: 0 of 74 recorded; 74 tag(s) need status reconciliation</b>\n'
-       'For 2026-09-07 to 2026-09-13, 0/74 pigs in the current cohort have weights. Missing weights first '
+       '  For 2026-09-07 to 2026-09-13, 0/74 pigs in the current cohort have weights. Missing weights first '
        'require a check of sale, order and current farm status.\n'
-       'HERDMASTER will reconcile the cohort&#x27;s current status before any new weighing instruction.\n'
+       '  HERDMASTER will reconcile the cohort&#x27;s current status before any new weighing instruction.\n'
        '\n'
-       '<b>ONE QUESTION</b>\n'
        'What is the current status of Mysikind and Mona: already farrowed, returned to heat, or no clear '
        'change yet?',
- 'af': '<b>VANDAG SE PLAASPLAN</b>\n'
-       '<b>AKSIE NODIG</b>\n'
-       '1. <b>Speenwerk laat — Molly</b>\n'
-       'Molly se werpsel moes op 2026-09-11 gespeen word en is 2 dae laat; die huidige werpsel is steeds '
+ 'af': '<b>🌿 Vandag se plaasplan</b>\n\n'
+       '<b>Aksie nodig</b>\n'
+       '• <b>Speenwerk laat — Molly</b>\n'
+       '  Molly se werpsel moes op 2026-09-11 gespeen word en is 2 dae laat; die huidige werpsel is steeds '
        'Aktief en geen gespeende telling bewys voltooiing nie.\n'
-       'Is Molly se werpsel reeds gespeen? Indien wel, gee die datum en aantal; ek sal die ontbrekende '
+       '  Is Molly se werpsel reeds gespeen? Indien wel, gee die datum en aantal; ek sal die ontbrekende '
        'besonderhede vra en die bevestiging voorberei.\n'
-       '2. <b>Huidige werpstatus — Mysikind en Mona</b>\n'
-       'Die verwagte tydperk 2026-08-22 tot 2026-08-26 is verby. Die huidige rekords bevestig nie die '
+       '• <b>Huidige werpstatus — Mysikind en Mona</b>\n'
+       '  Die verwagte tydperk 2026-08-22 tot 2026-08-26 is verby. Die huidige rekords bevestig nie die '
        'uitkoms van hierdie parings nie.\n'
-       'Gee die huidige uitkoms; as daar &#x27;n werpsel was, sal ek die datum en geboortetellings vra en '
+       '  Gee die huidige uitkoms; as daar &#x27;n werpsel was, sal ek die datum en geboortetellings vra en '
        'die bevestiging voorberei.\n'
        '\n'
-       '<b>OOM SAKKIE KONTROLEER OUTOMATIES</b>\n'
+       '<b>Ek volg op</b>\n'
        '• <b>Sterfterekords — 34 sterftes vir hersiening</b>\n'
-       'Aangetekende sterftes: 2026-09-13. HERDMASTER hersien hierdie rekords vir enige onopgeloste huidige '
+       '  Aangetekende sterftes: 2026-09-13. HERDMASTER hersien hierdie rekords vir enige onopgeloste huidige '
        'opvolg; die totaal is nie &#x27;n verslag van nuwe sterftes vandag nie.\n'
-       'HERDMASTER gaan die verwante rekords na en heropen slegs &#x27;n opvolg wanneer nuwe of onopgeloste '
+       '  HERDMASTER gaan die verwante rekords na en heropen slegs &#x27;n opvolg wanneer nuwe of onopgeloste '
        'bewyse dit vereis.\n'
        '• <b>Weging: 0 van 74 aangeteken; 74 oormerk(e) se status moet nagegaan word</b>\n'
-       'Vir 2026-09-07 tot 2026-09-13 het 0/74 varke in die huidige groep gewigte. Ontbrekende gewigte '
+       '  Vir 2026-09-07 tot 2026-09-13 het 0/74 varke in die huidige groep gewigte. Ontbrekende gewigte '
        'vereis eers &#x27;n kontrole van verkoop-, bestel- en huidige plaasstatus.\n'
-       'HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag.\n'
+       '  HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag.\n'
        '\n'
-       '<b>EEN VRAAG</b>\n'
        'Wat is Mysikind en Mona se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike '
        'verandering nie?'}
 
-EXPECTED_REPLACEMENT = {'en': "<b>TODAY'S FARM PLAN</b>\n"
-       '<b>ACTION NEEDED</b>\n'
-       '1. <b>Current farrowing status — Mysikind and Mona</b>\n'
-       'The projected window 2026-08-22 to 2026-08-26 has passed. Current records do not confirm the outcome '
+EXPECTED_REPLACEMENT = {'en': "<b>🌿 Today's farm plan</b>\n\n"
+       '<b>Action needed</b>\n'
+       '• <b>Current farrowing status — Mysikind and Mona</b>\n'
+       '  The projected window 2026-08-22 to 2026-08-26 has passed. Current records do not confirm the outcome '
        'of these matings.\n'
-       'Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and '
+       '  Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and '
        'prepare the confirmation.\n'
        '\n'
-       '<b>OOM SAKKIE IS CHECKING AUTOMATICALLY</b>\n'
+       "<b>I'm following up</b>\n"
        '• <b>Mortality records — 34 deaths for review</b>\n'
-       'Recorded deaths: 2026-09-13. HERDMASTER is reviewing these records for unresolved current follow-up; '
+       '  Recorded deaths: 2026-09-13. HERDMASTER is reviewing these records for unresolved current follow-up; '
        'this total does not report new deaths today.\n'
-       'HERDMASTER will check the related records and reopen a follow-up only when new or unresolved '
+       '  HERDMASTER will check the related records and reopen a follow-up only when new or unresolved '
        'evidence requires it.\n'
        '• <b>Weighing: 0 of 74 recorded; 74 tag(s) need status reconciliation</b>\n'
-       'For 2026-09-07 to 2026-09-13, 0/74 pigs in the current cohort have weights. Missing weights first '
+       '  For 2026-09-07 to 2026-09-13, 0/74 pigs in the current cohort have weights. Missing weights first '
        'require a check of sale, order and current farm status.\n'
-       'HERDMASTER will reconcile the cohort&#x27;s current status before any new weighing instruction.\n'
+       '  HERDMASTER will reconcile the cohort&#x27;s current status before any new weighing instruction.\n'
        '\n'
-       '<b>ONE QUESTION</b>\n'
        'What is the current status of Mysikind and Mona: already farrowed, returned to heat, or no clear '
        'change yet?',
- 'af': '<b>VANDAG SE PLAASPLAN</b>\n'
-       '<b>AKSIE NODIG</b>\n'
-       '1. <b>Huidige werpstatus — Mysikind en Mona</b>\n'
-       'Die verwagte tydperk 2026-08-22 tot 2026-08-26 is verby. Die huidige rekords bevestig nie die '
+ 'af': '<b>🌿 Vandag se plaasplan</b>\n\n'
+       '<b>Aksie nodig</b>\n'
+       '• <b>Huidige werpstatus — Mysikind en Mona</b>\n'
+       '  Die verwagte tydperk 2026-08-22 tot 2026-08-26 is verby. Die huidige rekords bevestig nie die '
        'uitkoms van hierdie parings nie.\n'
-       'Gee die huidige uitkoms; as daar &#x27;n werpsel was, sal ek die datum en geboortetellings vra en '
+       '  Gee die huidige uitkoms; as daar &#x27;n werpsel was, sal ek die datum en geboortetellings vra en '
        'die bevestiging voorberei.\n'
        '\n'
-       '<b>OOM SAKKIE KONTROLEER OUTOMATIES</b>\n'
+       '<b>Ek volg op</b>\n'
        '• <b>Sterfterekords — 34 sterftes vir hersiening</b>\n'
-       'Aangetekende sterftes: 2026-09-13. HERDMASTER hersien hierdie rekords vir enige onopgeloste huidige '
+       '  Aangetekende sterftes: 2026-09-13. HERDMASTER hersien hierdie rekords vir enige onopgeloste huidige '
        'opvolg; die totaal is nie &#x27;n verslag van nuwe sterftes vandag nie.\n'
-       'HERDMASTER gaan die verwante rekords na en heropen slegs &#x27;n opvolg wanneer nuwe of onopgeloste '
+       '  HERDMASTER gaan die verwante rekords na en heropen slegs &#x27;n opvolg wanneer nuwe of onopgeloste '
        'bewyse dit vereis.\n'
        '• <b>Weging: 0 van 74 aangeteken; 74 oormerk(e) se status moet nagegaan word</b>\n'
-       'Vir 2026-09-07 tot 2026-09-13 het 0/74 varke in die huidige groep gewigte. Ontbrekende gewigte '
+       '  Vir 2026-09-07 tot 2026-09-13 het 0/74 varke in die huidige groep gewigte. Ontbrekende gewigte '
        'vereis eers &#x27;n kontrole van verkoop-, bestel- en huidige plaasstatus.\n'
-       'HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag.\n'
+       '  HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag.\n'
        '\n'
-       '<b>EEN VRAAG</b>\n'
        'Wat is Mysikind en Mona se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike '
        'verandering nie?'}
 
@@ -374,7 +370,9 @@ def test_rootline_refresh_failure_localizes_mixed_daily_brief_without_changing_a
         ).get("recipient_language_render_unrecognized")
         answer = delivery["input"]["answer"]
         assert projections[language].work_items[0].why in answer
-        assert ("EEN VRAAG" if language == "af" else "ONE QUESTION") in answer
+        expected_question = EXPECTED[language].split("\n\n")[-1]
+        assert answer.endswith("\n\n" + expected_question)
+        assert answer.count(expected_question) == 1
         assert ("Mysikind en Mona" if language == "af" else "Mysikind and Mona") in answer
     assert afrikaans.title == "Werk vandag se besproeiingsbesluit by"
     assert afrikaans.why == (
@@ -478,7 +476,8 @@ def test_both_welfare_projection_paths_preserve_exact_af_question_and_localize_g
     text = memory.sends[0][1]
     assert "<b>Vark Prince se welstandsopvolging</b>\n" in text
     assert "\n" + RAW_AF_QUESTION in text
-    assert text.endswith("<b>EEN VRAAG</b>\n" + RAW_AF_QUESTION)
+    assert text.endswith("\n\n" + RAW_AF_QUESTION)
+    assert text.count(RAW_AF_QUESTION) == 1
     assert "Pig Prince" not in text and "standing and drinking" not in text
     assert family._looks_afrikaans(text) is True
 
@@ -522,7 +521,7 @@ def test_reported_dead_suppresses_stale_live_question_without_changing_followup_
     text = memory.sends[0][1]
     assert "Vark Prince se sterfterekordopvolging" in text
     assert RAW_EN_QUESTION not in text and RAW_AF_QUESTION not in text
-    assert ("EEN VRAAG" not in text) if failed else ("Wat is Mysikind en Mona se huidige status" in text)
+    assert ("Wat is Mysikind en Mona se huidige status" not in text) if failed else ("Wat is Mysikind en Mona se huidige status" in text)
     assert "welstandsopvolging" not in text
     assert outcome["writes_farm_data"] is False and outcome["hardware_commands"] == 0
 

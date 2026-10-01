@@ -114,7 +114,7 @@ def test_all_runtime_status_fragments_follow_recipient_language_and_are_html_saf
     assert "A&lt;B &amp; C" in completion and "A<B" not in completion
     af_completion = _mortality_completion_message({"tag_number": "126",
         "welfare_case_closed": True, "living_checks_reconciled": 1}, "af")
-    assert af_completion.startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert af_completion.startswith("<b>🐷 126 — afsterwe aangeteken</b>")
     assert "SE AFSTERWE AANGETEKEN" not in af_completion
 
 
@@ -841,7 +841,7 @@ def test_mortality_write_success_with_lifecycle_store_failure_is_visible_and_rec
         message, issue_gateway_owner_authority("42", "42"), context_store=good_store)
     assert recovered_status == 200 and recovered["status"] == "completed"
     assert recovered["rows_created"] == 0
-    assert "DEATH RECORDED" in recovered["answer"] and "no longer available on farm" in recovered["answer"]
+    assert " — death recorded</b>" in recovered["answer"] and "No longer available on farm" in recovered["answer"]
     assert recorded[0]["status"] == "completed"
     assert confirm.call_count == 2
 

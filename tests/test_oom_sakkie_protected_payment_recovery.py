@@ -154,7 +154,7 @@ def test_completed_mortality_is_automatically_recomposed_and_delivered_without_w
     assert outcome["status"]=="payment_recovery_completed" and writes==[]
     parsed,result,kwargs=delivered[0]
     assert parsed["output_language"]=="af" and kwargs["specialist"]=="HERDMASTER"
-    assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert result["answer"].startswith("<b>🐷 126 — afsterwe aangeteken</b>")
     assert "Die vark SE AFSTERWE" not in result["answer"]
     assert result["writes_farm_data"] is False and result["rows_created"]==0
     assert outcome["presentation_version"]=="health_loss_completion_factual_v3"
@@ -252,7 +252,7 @@ def test_unresolved_legacy_claim_does_not_starve_later_typed_recoveries(monkeypa
         for _ in range(3)]
     assert [row["status"] for row in outcomes] == ["payment_recovery_pending",
         "payment_recovery_completed","payment_recovery_completed"]
-    assert "DEATH RECORDED" in delivered[0]
+    assert delivered[0].startswith("<b>🐷 126 — death recorded</b>")
     assert delivered[1].startswith("<b>Prince — OBSERVATION RECORDED</b>")
 
 
