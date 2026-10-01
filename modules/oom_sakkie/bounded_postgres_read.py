@@ -13,6 +13,23 @@ ROOTLINE_CONNECT_DEADLINE_SECONDS = 5
 _FALLBACK_CONNECT_SLOTS = threading.BoundedSemaphore(8)
 
 
+class ReadBudgetCursor:
+    """Apply one wall-clock read budget across every statement in a snapshot."""
+    def __init__(self, cursor, deadline, *, failure_kind="bounded_read_deadline"):
+        self.cursor, self.deadline, self.failure_kind = cursor, deadline, failure_kind
+
+    def execute(self, statement, params=None):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(self.failure_kind)
+        self.cursor.execute("select set_config('statement_timeout',%s,true)",
+            (str(max(1, min(STATEMENT_TIMEOUT_MS, int(remaining * 1000)))),))
+        return self.cursor.execute(statement, params)
+
+    def __getattr__(self, name):
+        return getattr(self.cursor, name)
+
+
 class RootlineConnectionDeadlineExceeded(TimeoutError):
     """Hard wall-clock connection boundary reached before PostgreSQL was usable."""
 

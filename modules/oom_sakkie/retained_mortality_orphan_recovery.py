@@ -6,7 +6,7 @@ The fresh successor requires the ordinary presentation and confirmation gates.
 """
 from copy import deepcopy
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import time
@@ -63,6 +63,51 @@ def _original(source):
         and not source.get("retained_repreview")
         and bool(source.get("provider_timestamp")) and bool(source.get("owner_text_verbatim"))
         and not tx.superseded_missions(source), "retained_orphan_original_source_unproven")
+
+
+
+class ExactClaimRequiresReuse(tx.SourceConflict):
+    """A locked, fully identical claim must use the existing renewal rail."""
+
+
+def prefer_transactional_preparation(source, claims, *, now=None):
+    """Route only a likely orphan; locked preparation still proves everything.
+
+    The discovery tuple omits full chronology. It cannot authorize replacement,
+    and no outside canonical snapshot is passed to the transaction.
+    """
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    try:
+        _original(source)
+        owner, chat, provider = (source[k] for k in
+            ("owner_user_id", "chat_id", "provider_message_id"))
+        related = []
+        for claim in claims:
+            if len(claim) != 8:
+                return False
+            c_owner, c_chat, mission, c_provider, status, kind, payload, delivery = claim
+            if not isinstance(payload, dict) or not isinstance(delivery, dict):
+                return False
+            if mission == source["mission_id"] or ((c_owner, c_chat) == (owner, chat)
+                    and (c_provider == provider or provider in (payload.get("provider_message_ids") or ()))):
+                related.append(claim)
+        if len(related) != 1:
+            return False
+        c_owner, c_chat, _mission, c_provider, status, kind, payload, delivery = related[0]
+        identity = payload.get("identity") or {}
+        return bool((c_owner, c_chat, c_provider) == (owner, chat, provider)
+            and status == "active" and kind == "mortality"
+            and delivery.get("delivery_state") == "claim_created"
+            and delivery.get("callback_token") and delivery.get("evidence_generation")
+            and all(k in delivery and delivery[k] is None for k in history.EMPTY_MARKERS)
+            and history._time(delivery.get("expires_at")) <= (now or datetime.now(timezone.utc))
+            and set(payload) == {"operation_id", "preview_sha256", "identity", "event_family", "effect_kind"}
+            and payload.get("operation_id") and payload.get("preview_sha256")
+            and payload.get("event_family") == "found_dead" and payload.get("effect_kind") == "mortality"
+            and identity.get("resolved") is True and identity.get("pig_id") and identity.get("tag_number")
+            and delivery.get("preview_digest") == canonical_preview_digest("mortality", payload))
+    except (tx.SourceConflict, KeyError, TypeError, ValueError):
+        return False
 
 
 def _unattempted(claim, source, now):
@@ -334,6 +379,13 @@ def _prepare(source, case, *, deadline_monotonic=None, connect_factory=None):
             "mission_id": mission, "provider_message_id": source["provider_message_id"], "evidence_generation": evidence["evidence_generation"],
             "preview_payload": {"operation_id": operation, "preview_sha256": binding["preview_sha256"], "identity": identity,
                 "event_family": "found_dead", "effect_kind": "mortality"}}
+        # Roll back before returning to the existing exact-claim renewal path.
+        # Payload equality alone cannot prove an unchanged claim.
+        from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+        if (all(predecessor.get(key) == value for key, value in request.items())
+                and predecessor["preview_digest"] == canonical_preview_digest(
+                    request["action_kind"], request["preview_payload"])):
+            raise ExactClaimRequiresReuse("retained_orphan_exact_claim_requires_reuse")
         tx.require(mission != predecessor["mission_id"], "retained_orphan_successor_mission_not_distinct")
         tx.require(request["preview_payload"] != predecessor["preview_payload"], "retained_orphan_exact_claim_requires_reuse")
         lock_material = hashlib.sha256(("protected-claim|" + mission).encode()).hexdigest()

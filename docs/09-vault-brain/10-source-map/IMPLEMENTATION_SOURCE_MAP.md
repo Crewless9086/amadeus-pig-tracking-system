@@ -10,6 +10,42 @@
 - Actual PostgreSQL proof, replay and competing cycles: `tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py`, `tests/test_oom_sakkie_general_manager_postgres.py`.
 - Authority: `02-agents/farm/HERDMASTER.md`, `04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`. Internal advisory completion does not authorize a farm write or establish live acceptance.
 
+### Bounded reassessment and preparation continuation
+
+- Independent retained-report and advisory acquisition starts before broad
+  collectors in `modules/oom_sakkie/manager_case_sources.py`. Shared statement
+  budgets are enforced by `modules/oom_sakkie/bounded_postgres_read.py`: nine
+  seconds total for retained acquisition, including identity reassessment, and
+  six seconds for advisory proof.
+- `modules/oom_sakkie/herdmaster_case_disposition.py` reads exact durable
+  case-id/key pairs and returns proved dispositions separately from ordinary
+  identities requiring current-work refresh. Missing proof cannot replace a
+  current question. Its canonical departure predicate is also used by the
+  withdrawal producer; unknown or conflicting state retains the hold.
+- `modules/oom_sakkie/general_manager_worker.py` isolates each claimed advisory
+  refresh, so current-work fallback cannot delay a terminal sibling. Current
+  same-key work wins before reconciliation; existing generation, digest,
+  observation epoch and foreign-lease fences remain in force.
+- `modules/oom_sakkie/herdmaster_retained_recovery_runtime.py` routes only an
+  eligible unresolved original and expired never-attempted orphan directly to
+  the existing locked transaction in
+  `modules/oom_sakkie/retained_mortality_orphan_recovery.py`. Fresh canonical
+  evidence is loaded there once. Exact same-preview renewal rolls back to the
+  existing renewal path; other conflicts remain contained. No cached preview
+  supplies authority and fresh protected confirmation remains mandatory.
+- Actual collection, current-question stability, source selectors, blocked
+  siblings and concurrent PostgreSQL cycles are covered by
+  `tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py`,
+  `tests/test_oom_sakkie_manager_case_sources.py`,
+  `tests/test_oom_sakkie_general_manager_worker.py`, and
+  `tests/test_oom_sakkie_retained_report_recovery_postgres.py`. Early preparation
+  is covered by
+  `tests/test_oom_sakkie_retained_mortality_early_preparation_postgres.py`.
+- Additional authority: `04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`.
+  This map records implementation and qualified local tests. The mission
+  register owns deployed status; exact release and independent scheduled-cycle
+  acceptance remain separate evidence gates.
+
 ## HERDMASTER owner read questions
 
 - Semantic capability contract: `modules/oom_sakkie/semantic_front_door.py`.

@@ -509,6 +509,8 @@ def _report_recovery_fixture(*, cases=None, recent=(), reports=None, lifecycle=N
         cursor = connection.cursor()
         execute = cursor.execute
         def record(query, params=None):
+            if query.startswith(("set transaction", "select set_config(")):
+                return
             if queries is not None:
                 queries.append((query, params))
             execute(query, params)
@@ -648,7 +650,7 @@ def test_retained_refresh_runs_real_scoped_collector_and_ignores_caller_evidence
     sql = "\n".join(query for query, _ in queries)
     assert "created_at >=" not in sql and "herdmaster_record_farrowing_litter" not in sql
     assert "from public.litters" not in sql
-    assert queries[-1][0] == "select pig_id,tag_number,status,on_farm from public.current_canonical_pigs"
+    assert queries[-1][0] == "select pig_id,tag_number,status,on_farm from public.current_canonical_pigs limit 5001"
 
 
 @pytest.mark.parametrize("change", ["cancelled", "changed_text", "principal", "mission", "source_binding",
@@ -725,3 +727,82 @@ def test_targeted_retained_litter_refresh_preserves_exact_membership_and_project
         connect=_report_recovery_fixture(cases=cases, reports=reports, targeted=True, queries=queries))
     assert len(refreshed) == 1 and refreshed == discovery
     assert queries[1][1][1] == ["201", "202"]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_current_key_wins_before_reconcile_independent_of_collector_order(reverse):
+    current = {"dedupe_key": "herdmaster:herdmaster:PIG-A", "specialist": "HERDMASTER"}
+    retired = {**current, "message_family": "herdmaster_disposition", "terminal_state": "completed"}
+    readers = (lambda now: [current], lambda now: [retired])
+    assert collect_manager_candidates(now=NOW, collectors=readers[::-1] if reverse else readers) == [current]
+
+
+@pytest.mark.parametrize("status,on_farm,suppressed", [
+    ("Sold", "No", True), ("Dead", False, True), ("Culled", "No", True),
+    ("Sold", "Yes", False), ("Active", "No", False), ("Unknown", "No", False),
+    ("Sold", "Unknown", False), ("Sold", None, False)])
+def test_withdrawal_producer_only_retires_conclusive_departure(monkeypatch, status, on_farm, suppressed):
+    from types import SimpleNamespace
+    from modules.oom_sakkie import manager_case_sources as sources
+    monkeypatch.setattr(sources, "_configured_owner", lambda: "42")
+    monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
+                        lambda *args: SimpleNamespace(work_items=()))
+    monkeypatch.setattr(sources, "_completed_bulk_batch_findings", lambda now: [])
+    monkeypatch.setattr(sources, "_retained_litter_followup_candidates", lambda *args: [])
+    monkeypatch.setattr(sources, "_purpose_review_candidates", lambda *args, **kwargs: [])
+    monkeypatch.setattr("modules.pig_weights.pig_welfare_case_runtime.welfare_case_runtime_enabled", lambda: False)
+    row = {"Pig_ID": "PIG-151", "Tag_Number": "151", "Status": status, "On_Farm": on_farm,
+           "Withdrawal_Evidence_State": "unknown"}
+    snapshot = {"overview_rows": [row]}
+    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
+                        lambda **kwargs: snapshot)
+    key = "herdmaster:pig-151-withdrawal-sales"
+    assert (key not in [v["dedupe_key"] for v in sources._herdmaster(NOW)]) is suppressed
+    # Another canonical identity with the same tag makes suppression unproven.
+    snapshot["overview_rows"].append({**row, "Pig_ID": "PIG-OTHER"})
+    assert key in [v["dedupe_key"] for v in sources._herdmaster(NOW)]
+
+
+def test_bounded_advisory_failure_is_not_missing_or_poisoned_by_broad_failure(monkeypatch):
+    from modules.oom_sakkie import manager_case_sources as sources
+    case = {"case_id": "A", "dedupe_key": "herdmaster:herdmaster:PIG-A", "specialist": "HERDMASTER"}
+    def fail(*args, **kwargs):
+        raise TimeoutError("private details")
+    monkeypatch.setattr("modules.oom_sakkie.herdmaster_case_disposition.collect_advisory_refresh", fail)
+    result = sources.collect_manager_refresh_snapshot(now=NOW, cases=[case])
+    assert str(result[(case["dedupe_key"], "HERDMASTER")]) == "collector:herdmaster_advisories:TimeoutError"
+    with pytest.raises(sources.ManagerCollectorRefreshError, match="herdmaster_advisories:TimeoutError"):
+        sources.collect_manager_candidate(now=NOW, dedupe_key=case["dedupe_key"], specialist="HERDMASTER")
+
+
+def test_retained_total_budget_includes_identity_reassessment(monkeypatch):
+    from modules.oom_sakkie import manager_case_sources as sources
+    from tests.test_oom_sakkie_herdmaster_retained_recovery_runtime import report
+    from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_report_binding
+    source = report(preview={"evaluator": {"status": "identity_required", "event_family": "unknown",
+        "identity": {"resolved": False}}})
+    case = _bound_retained_case()
+    refs = ["provider_message:101", "pig:P27", "tag:27", retained_report_binding([source])]
+    elapsed = [100.0]
+    monkeypatch.setattr(sources.time, "monotonic", lambda: elapsed[0])
+    connector = _report_recovery_fixture(cases=[(case["dedupe_key"], refs, "delegated")],
+                                        reports=[source], targeted=True)
+    def connect():
+        elapsed[0] += 4
+        return connector()
+    def evidence(**kwargs):
+        assert kwargs["deadline_seconds"] == 5
+        elapsed[0] += 6
+        return {}
+    monkeypatch.setattr("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence", evidence)
+    with pytest.raises(TimeoutError, match="retained_report_read_deadline"):
+        sources._retained_herd_report_recovery_candidates(NOW, connect=connect, claimed_cases=[case])
+
+
+def test_single_retained_refresh_preserves_owning_failure(monkeypatch):
+    from modules.oom_sakkie import manager_case_sources as sources
+    def failing(*args, **kwargs):
+        raise TimeoutError("private details")
+    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", failing)
+    with pytest.raises(sources.ManagerCollectorRefreshError, match="herdmaster_retained:TimeoutError"):
+        sources.collect_manager_candidate(now=NOW, dedupe_key="herdmaster:retained-mortality:101", specialist="HERDMASTER")

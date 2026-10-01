@@ -12,11 +12,13 @@ and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md)
 The register names the sole coordinator, current work, holds and next gate.
 
 The [1 October shared status](docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md)
-records the HERDMASTER work and its acceptance limits. PR1364 is merged at
-`9bef22336a98fa92f5ee2a419ab4cbafc781c163`; that web revision was verified live
-on 1 October. Six deployed question readers passed the 30 September checks and
-one genuine protected mortality journey is proven. Retained follow-up repair
-and fresh Telegram acceptance remain open. Full agent autonomy is not proven.
+records the HERDMASTER work and its acceptance limits. PR1365 is merged at
+`1339358e50ff4d04983390cbb26c35b78063d014`; that web revision was verified live
+on 1 October. A retained protected card reached Telegram and the previously
+confirmed mortality record remains intact. Natural cycles still hit collection
+and preparation deadlines, so bounded reassessment is being repaired. Six
+question readers passed earlier read-only checks; fresh Telegram acceptance
+and full agent autonomy remain unproven.
 ROOTLINE is the next proposed focus after HERDMASTER readiness.
 
 Local cleanup is verified and all original eighteen commits were integrated by

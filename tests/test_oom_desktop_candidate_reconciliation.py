@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/02-agents/farm/HERDMASTER.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/protected_action_runtime.py', 'modules/oom_sakkie/protected_payment_recovery.py', 'modules/oom_sakkie/retained_mortality_confirmation.py', 'modules/oom_sakkie/retained_mortality_continuation.py', 'modules/oom_sakkie/retained_mortality_orphan_recovery.py', 'modules/oom_sakkie/retained_mortality_presentation.py', 'static/assets/agents/herdmaster/agent.md', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_retained_mortality_orphan_postgres.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/02-agents/farm/HERDMASTER.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md', 'docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/bounded_postgres_read.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/retained_mortality_orphan_recovery.py', 'static/assets/agents/herdmaster/agent.md', 'tests/test_oom_sakkie_general_manager_worker.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_retained_mortality_early_preparation_postgres.py', 'tests/test_oom_sakkie_retained_report_recovery_postgres.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -40,6 +40,8 @@ SUCCESSOR_EFFECTS = {
     'retained_mortality_original_report_identity_reassessment',
     'retained_mortality_audited_never_attempted_orphan_claim_replacement',
 }
+FARROWING_REVIEW_EFFECTS = {'herdmaster_exact_retained_farrowing_refresh',
+    'retained_farrowing_configured_owner_informational_review'}
 RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_preview_renewal'
 # Synthetic candidate identity permits pre-publication qualification only while
 # pins are pending. Final qualification uses the real pins, never owner approval.
@@ -526,12 +528,42 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:9bef22336a98fa92f5ee2a419ab4cbafc781c163"})
-        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:1339358e50ff4d04983390cbb26c35b78063d014"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:1339358e50ff4d04983390cbb26c35b78063d014"})
+        self.assertEqual(adapter.ADDED_EFFECTS, FARROWING_REVIEW_EFFECTS | {"application_revision_rollback:web:59dca3dad630e3ac2a7f3bae7af4129540aba135"})
         self.assertFalse(SUCCESSOR_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertNotIn(READ_QUERY_EFFECT,adapter.ADDED_EFFECTS)
         self.assertNotIn(CONTINUATION_EFFECT,adapter.ADDED_EFFECTS)
         self.assertFalse(PRESENTATION_EFFECTS & adapter.ADDED_EFFECTS)
+
+    def test_farrowing_review_preserves_owner_authority_claims_and_unconfirmed_facts(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
+        self.assertFalse(FARROWING_REVIEW_EFFECTS & set(prior["allowed_effects"]))
+        self.assertTrue(FARROWING_REVIEW_EFFECTS <= set(m["contract"]["allowed_effects"]))
+        changes = (
+            ("one preserved expired never-attempted recovery claim", "any stale claim"),
+            ("Do not replace, renew, rearm or mutate the protected claim", "Automatically renew the protected claim"),
+            ("currently configured owner", "first allowlisted recipient"),
+            ("owner-role and allowlist authorization", "original claimant authority"),
+            ("immediately before existing delivery or edit admission", "only when first collected"),
+            ("historical farrowing counts as unconfirmed original report information", "historical farrowing counts as confirmed farm facts"),
+            ("no approval buttons, protected callback token or executable farm authority", "a protected confirmation button"),
+            ("existing fresh protected preview and genuine confirmation", "historical stale claim confirmation"),
+            ("nonterminal disposition only", "terminal case closure"),
+            ("Missing, conflicting or unavailable supersession evidence stays unresolved", "Missing supersession evidence means complete"),
+        )
+        for before,after in changes:
+            changed=deepcopy(m)
+            original=changed["contract"]["operational_acceptance"]
+            changed["contract"]["operational_acceptance"]=[value.replace(before,after) for value in original]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],original,before)
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        for effect in ("farrowing_review_protected_claim_renewal", "farrowing_owner_role_grant",
+                       "farrowing_review_unconfirmed_birth_recording"):
+            changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
+            with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
     def test_retired_authority_does_not_leak_into_successor_but_history_is_preserved(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
@@ -570,7 +602,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(self.snapshot(),after)
 
     def test_successor_scope_refuses_missing_effects_and_unbounded_replacement(self):
-        for effect in sorted(SUCCESSOR_EFFECTS):
+        for effect in sorted(SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
             m["contract"]["allowed_effects"].remove(effect)
             with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
@@ -782,16 +814,16 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.BASE,"1339358e50ff4d04983390cbb26c35b78063d014")
-        self.assertEqual(adapter.BRANCH,"codex/herdmaster-bounded-reassessment-20261001")
+        self.assertEqual(adapter.BASE,"59dca3dad630e3ac2a7f3bae7af4129540aba135")
+        self.assertEqual(adapter.BRANCH,"codex/herdmaster-farrowing-refresh-20261001")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1365)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"6f500dacf805f1d749c7e353e407f83288a38dc4")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"9bef22336a98fa92f5ee2a419ab4cbafc781c163")
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herdmaster-case-disposition-20261001")
+        self.assertEqual(adapter.PREDECESSOR_PR,1366)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"1ccadf4ed985727e600062751d382e5fcee8bc12")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"1339358e50ff4d04983390cbb26c35b78063d014")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herdmaster-bounded-reassessment-20261001")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),25)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),21)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",

@@ -109,7 +109,8 @@ def test_terminal_advisory_reconciles_existing_case_once_without_farm_or_provide
 
 @pytest.mark.parametrize("status,on_farm", [("Active", True), ("Dead", True), ("Active", False), ("Unknown", False)])
 def test_unproved_exit_stays_open_without_owner_debugging_message(store, status, on_farm):
-    case = advisory(store, status=status, on_farm=on_farm)
+    case = advisory(store, status=status, on_farm=on_farm, refs=["pig:PIG-SYNTHETIC-A",
+        "manager_message_family:herdmaster_disposition"])
     row = collect_dispositions(store)[0]
     assert not row.get("terminal_state") and row["unknowns"]
     sent = Mock(side_effect=AssertionError("must not send technical reconciliation"))
@@ -151,9 +152,11 @@ def test_current_candidate_wins_and_crossed_identity_cannot_close(store):
 @pytest.mark.parametrize("tag", ["A", "OTHER"])
 def test_withdrawal_advisory_retirement_requires_bound_canonical_identity(store, tag):
     advisory(store, status="Sold", on_farm=False, key="herdmaster:pig-" + tag + "-withdrawal-sales")
-    row = collect_dispositions(store)[0]
-    assert (row.get("terminal_state") == "completed") == (tag == "A")
-    assert "eligibility" not in row["summary"]
+    rows = collect_dispositions(store)
+    assert bool(rows) == (tag == "A")
+    if rows:
+        assert rows[0]["terminal_state"] == "completed"
+        assert "eligibility" not in rows[0]["summary"]
 
 
 def test_read_failure_is_not_terminal_absence(store):
@@ -227,7 +230,7 @@ def test_completed_prose_cannot_replace_proven_effect(store, change):
             cur.execute("""insert into public.pig_observation_events(observation_event_id,pig_id,observed_at,
                 observer_reference,observation_category,factual_note,source_system,idempotency_key,supersedes_observation_event_id)
                 values('OBS-2','PIG-SYNTHETIC-A',%s,'42','welfare','Synthetic correction','owner','CORRECTION','OBS-1')""", (NOW,))
-    assert not collect_dispositions(store)[0].get("terminal_state")
+    assert collect_dispositions(store) == []
 
 
 def unresolved_report():
@@ -314,9 +317,11 @@ def test_legacy_packet_requires_exact_delivered_asof_source_and_verified_effect(
                     "card_mission_id": source["mission_id"], "state": "delivered", "telegram_message_id": "CARD-1",
                     "owner_user_id": "99" if fault == "wrong_card_owner" else "42", "chat_id": "42"}}),
                  observed - timedelta(minutes=9)))
-    row = collect_dispositions(store)[0]
-    assert (row.get("terminal_state") == "completed") == (fault in {"", "same_principal_older"})
-    assert ("advisory_source_observed:" + observed.isoformat() in row["evidence_refs"]) == (fault != "wrong_packet")
+    rows = collect_dispositions(store)
+    assert bool(rows) == (fault in {"", "same_principal_older"})
+    if rows:
+        assert rows[0]["terminal_state"] == "completed"
+        assert "advisory_source_observed:" + observed.isoformat() in rows[0]["evidence_refs"]
 
 
 def test_whole_herd_composition_retains_exact_question_and_card_provenance():
@@ -439,3 +444,239 @@ def test_disposition_budget_stops_queries_after_elapsed_deadline(store, monkeypa
     with store() as db, db.cursor() as cur:
         cur.execute("select status,generation from app_private.oom_manager_cases")
         assert cur.fetchone() == ("exception", 1)
+
+
+@pytest.mark.parametrize("change", ["caller_refs", "caller_status", "crossed_case", "wrong_specialist", "terminal_row"])
+def test_exact_advisory_refresh_uses_only_durable_selector_and_source(store, monkeypatch, change):
+    from modules.oom_sakkie import manager_case_sources as sources
+    case = advisory(store, status="Sold", on_farm=False)
+    selector = dict(case)
+    if change == "caller_refs": selector["evidence_refs"] = ["pig:WRONG"]
+    if change == "caller_status": selector["status"] = "completed"
+    if change == "crossed_case": selector["case_id"] = "OTHER"
+    if change == "wrong_specialist": selector["specialist"] = "ROOTLINE"
+    if change == "terminal_row":
+        with store() as db, db.cursor() as cur:
+            cur.execute("update app_private.oom_manager_cases set status='completed'")
+    if change == "wrong_specialist":
+        with pytest.raises(ValueError, match="advisory_refresh_case_identity_invalid"):
+            collect_dispositions(store, claimed_cases=[selector])
+        return
+    monkeypatch.setattr(disposition, "connect_bounded_read", lambda: store(True))
+    forbidden = Mock(side_effect=AssertionError("exact advisory refresh must not acquire full herd"))
+    monkeypatch.setattr(sources, "_herdmaster", forbidden)
+    rows = sources.collect_manager_refresh_snapshot(now=NOW, cases=[selector])
+    if change in {"crossed_case", "terminal_row"}:
+        assert rows == {}
+    else:
+        assert rows[(case["dedupe_key"], "HERDMASTER")]["terminal_state"] == "completed"
+    forbidden.assert_not_called()
+
+
+def test_withdrawal_duplicate_canonical_tag_cannot_retire_hold(store):
+    advisory(store, status="Sold", on_farm=False, key="herdmaster:pig-A-withdrawal-sales")
+    with store() as db, db.cursor() as cur:
+        cur.execute("insert into public.pigs(pig_id,tag_number,status,on_farm) values('PIG-OTHER','A','Active',true)")
+    assert collect_dispositions(store) == []
+
+
+def test_different_principal_active_source_prevents_live_observation_closure(store):
+    source = completed_observation(store)
+    older = deepcopy(source)
+    older.update(mission_id="OOM-HERDMASTER-OTHER", owner_user_id="99", chat_id="99", status="waiting_for_input")
+    add_report(store, older, at=NOW - timedelta(days=2))
+    add_report(store, source, at=NOW - timedelta(days=1))
+    assert collect_dispositions(store) == []
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_current_key_collision_never_records_complete_then_reopen(store, reverse):
+    from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
+    case = advisory(store, status="Sold", on_farm=False)
+    proposed = collect_dispositions(store)
+    current = {**proposed[0], "terminal_state": "", "message_family": "",
+        "evidence_refs": ["pig:PIG-SYNTHETIC-A", "source:current"],
+        "next_reassessment_at": (NOW + timedelta(hours=1)).isoformat()}
+    collectors = (lambda now: proposed, lambda now: [current])
+    merged = collect_manager_candidates(now=NOW, collectors=collectors[::-1] if reverse else collectors)
+    forbidden = Mock(side_effect=AssertionError("future current work must not dispatch"))
+    result = PostgresManagerCaseStore(connect_factory=store).run_cycle(merged, now=NOW,
+        source_revision="test-current-precedence", refresh=forbidden, deliver=forbidden)
+    assert result["status"] == "general_manager_cycle_completed"
+    with store() as db, db.cursor() as cur:
+        cur.execute("select count(*) from app_private.oom_manager_case_events where event_type='completed'")
+        assert cur.fetchone()[0] == 0
+        cur.execute("select status from app_private.oom_manager_cases where case_id=%s", (case["case_id"],))
+        assert cur.fetchone()[0] != "completed"
+    forbidden.assert_not_called()
+
+
+@pytest.mark.parametrize("race", [False, True])
+def test_default_cycle_collects_bounded_reports_and_three_dispositions_while_all_overviews_block(store, monkeypatch, race):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timezone
+    from threading import Event, Barrier
+    import time
+    from modules.oom_sakkie import manager_case_sources as sources, general_manager_worker as worker
+    source = completed_observation(store)
+    add_report(store, source)
+    for pig, tag in (("PIG-151", "151"), ("PIG-148", "148")):
+        with store() as db, db.cursor() as cur:
+            cur.execute("insert into public.pigs(pig_id,tag_number,status,on_farm) values(%s,%s,'Sold',false)", (pig, tag))
+        retain(store, key=("herdmaster:pig-151-withdrawal-sales" if tag == "151" else "herdmaster:herdmaster:" + pig), refs=["pig:" + pig])
+    original = report("202", "OOM-HERDMASTER-RETAINED")
+    add_report(store, original)
+    retained = retain(store, key="herdmaster:retained-mortality:202", refs=[
+        "provider_message:202", "pig:P27", "tag:27", recovery.retained_report_binding([original])])
+    monkeypatch.setattr(sources, "connect_bounded_read", lambda: store(True))
+    monkeypatch.setattr(disposition, "connect_bounded_read", lambda: store(True))
+    monkeypatch.setattr("modules.telemetry.rootline_mixer_readiness_observer.collect_mixer_readiness", lambda **kwargs: [])
+    monkeypatch.setattr(sources, "COLLECTOR_DEADLINE_SECONDS", .5)
+    monkeypatch.setattr(worker, "REFRESH_SNAPSHOT_DEADLINE_SECONDS", .2)
+    release = Event()
+    for name in ("_rootline", "_herdmaster", "_sam", "_beacon", "_delivery_gaps", "_runtime"):
+        def blocked(now):
+            assert release.wait(8), "test must release blocked overviews"
+            return []
+        blocked.__name__ = name
+        monkeypatch.setattr(sources, name, blocked)
+    delivered = []
+    def deliver(case, **kwargs):
+        assert case.get("message_family") != "herdmaster_disposition"
+        delivered.append(case["dedupe_key"])
+        return {"success": True, "status": "synthetic_no_send", "telegram_sends": 0,
+                "delivery_confirmed": False, "writes_farm_data": False}
+    barrier = Barrier(2) if race else None
+    def cycle():
+        if barrier: barrier.wait(3)
+        return worker.run_general_manager_cycle(now=datetime.now(timezone.utc),
+            source_revision="test-bounded-reassessment", store=PostgresManagerCaseStore(connect_factory=store), deliver=deliver)
+    started = time.monotonic()
+    try:
+        if race:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: cycle(), range(2)))
+        else:
+            results = [cycle()]
+        assert time.monotonic() - started < 6
+        assert all(result["status"] == "general_manager_cycle_completed" for result in results)
+    finally:
+        release.set()
+    with store() as db, db.cursor() as cur:
+        cur.execute("select count(*) from app_private.oom_manager_cases where status='completed'")
+        assert cur.fetchone()[0] == 3
+        cur.execute("select count(*) from app_private.oom_manager_case_events where event_type='completed'")
+        assert cur.fetchone()[0] == 3
+        cur.execute("select generation,evidence_refs from app_private.oom_manager_cases where case_id=%s", (retained["case_id"],))
+        generation, refs = cur.fetchone()
+        assert generation == 2 and recovery.retained_report_binding([original]) in refs
+        for table in ("pig_lifecycle_events", "oom_protected_action_claims", "pig_welfare_case_events"):
+            cur.execute("select count(*) from " + ("app_private." if table.startswith("oom_") else "public.") + table)
+            assert cur.fetchone()[0] == 0
+    assert delivered.count(retained["dedupe_key"]) <= 1
+
+
+@pytest.mark.parametrize("blocked_overview", [False, True])
+def test_default_cycles_preserve_genuine_current_question_without_disposition_churn(store, monkeypatch, blocked_overview):
+    from datetime import datetime, timezone
+    from threading import Event
+    from modules.oom_sakkie import manager_case_sources as sources, general_manager_worker as worker
+    from modules.oom_sakkie.farm_manager_runtime import _active_welfare_result
+    source = completed_observation(store)
+    add_report(store, source)
+    question = "Is A standing now?"
+    later = deepcopy(source)
+    later.update(mission_id="OOM-HERDMASTER-CURRENT", status="waiting_for_input", owner_text_verbatim=question,
+                 provider_message_id="303", recording_result={})
+    later["preview"]["evaluator"]["smallest_missing_follow_up_question"] = question
+    add_report(store, later, at=NOW)
+    active = [{"pig_id": "PIG-SYNTHETIC-A", "tag_number": "A", "lifecycle_id": later["mission_id"],
+        "state": "waiting_for_input", "card_message_id": "CARD-CURRENT", "current_question": question,
+        "provider_timestamp": NOW.isoformat()}]
+    monkeypatch.setattr(sources, "connect_bounded_read", lambda: store(True))
+    monkeypatch.setattr(disposition, "connect_bounded_read", lambda: store(True))
+    monkeypatch.setattr(sources, "_configured_owner", lambda: "42")
+    monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
+        lambda _authority, _owner, now: _active_welfare_result(active, now))
+    monkeypatch.setattr(sources, "_completed_bulk_batch_findings", lambda now: [])
+    monkeypatch.setattr(sources, "_retained_litter_followup_candidates", lambda *args: [])
+    monkeypatch.setattr(sources, "_purpose_review_candidates", lambda *args, **kwargs: [])
+    monkeypatch.setattr("modules.pig_weights.pig_welfare_case_runtime.welfare_case_runtime_enabled", lambda: False)
+    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows", lambda **kwargs: {})
+    monkeypatch.setattr("modules.telemetry.rootline_mixer_readiness_observer.collect_mixer_readiness", lambda **kwargs: [])
+    for name in ("_rootline", "_sam", "_beacon", "_delivery_gaps", "_runtime"):
+        def empty(now): return []
+        empty.__name__ = name
+        monkeypatch.setattr(sources, name, empty)
+    now = datetime.now(timezone.utc)
+    current = sources._herdmaster(now)[0]
+    expected = normalize_candidate(current, now=now)
+    manager = PostgresManagerCaseStore(connect_factory=store)
+    with store() as db, db.cursor() as cur:
+        manager._reconcile(cur, expected, now)
+    # These remain ordinary work even if callers forge disposition metadata.
+    with store() as db, db.cursor() as cur:
+        cur.execute("select case_id,generation from app_private.oom_manager_cases")
+        case_id, generation = cur.fetchone()
+    selector = {"case_id": case_id, "dedupe_key": current["dedupe_key"], "specialist": "HERDMASTER",
+        "message_family": "herdmaster_disposition", "evidence_refs": ["manager_message_family:herdmaster_disposition"]}
+    rows, fallback = disposition.collect_advisory_refresh(now, claimed_cases=[selector], connect=lambda: store(True))
+    assert rows == [] and fallback == ((current["dedupe_key"], "HERDMASTER"),)
+    release = Event()
+    if blocked_overview:
+        def _herdmaster(now):
+            assert release.wait(8)
+            return []
+        monkeypatch.setattr(sources, "_herdmaster", _herdmaster)
+    monkeypatch.setattr(sources, "COLLECTOR_DEADLINE_SECONDS", .2)
+    monkeypatch.setattr(worker, "REFRESH_SNAPSHOT_DEADLINE_SECONDS", .2)
+    sent = []
+    def deliver(case, **kwargs):
+        assert case["next_action"] == question
+        assert case.get("message_family") != "herdmaster_disposition"
+        sent.append(case["case_id"])
+        return {"success": True, "status": "synthetic_no_send", "delivery_confirmed": False, "telegram_sends": 0}
+    try:
+        for index in range(2):
+            worker.run_general_manager_cycle(now=now + timedelta(minutes=5 * index),
+                source_revision="test-current-question", store=manager, deliver=deliver)
+    finally:
+        release.set()
+    with store() as db, db.cursor() as cur:
+        cur.execute("select generation,evidence_digest,next_action from app_private.oom_manager_cases where case_id=%s", (case_id,))
+        assert cur.fetchone() == (generation, expected["evidence_digest"], question)
+        cur.execute("select count(*) from app_private.oom_manager_case_events where case_id=%s and event_type='completed'", (case_id,))
+        assert cur.fetchone()[0] == 0
+    assert bool(sent) is not blocked_overview
+
+
+def test_terminal_advisory_refresh_is_ready_beside_blocked_current_question_fallback(store, monkeypatch):
+    from threading import Event
+    from modules.oom_sakkie import manager_case_sources as sources, general_manager_worker as worker
+    current = advisory(store)
+    with store() as db, db.cursor() as cur:
+        cur.execute("insert into public.pigs(pig_id,tag_number,status,on_farm) values('PIG-SOLD','SOLD','Sold',false)")
+    terminal = retain(store, key="herdmaster:herdmaster:PIG-SOLD", refs=["pig:PIG-SOLD"])
+    monkeypatch.setattr(disposition, "connect_bounded_read", lambda: store(True))
+    monkeypatch.setattr("modules.telemetry.rootline_mixer_readiness_observer.collect_mixer_readiness", lambda **kwargs: [])
+    release, blocked = Event(), Event()
+    def collect(**kwargs):
+        if kwargs.get("collectors"):
+            blocked.set()
+            assert release.wait(3)
+        return []
+    monkeypatch.setattr(sources, "collect_manager_candidates", collect)
+    class Store:
+        def run_cycle(self, candidates, **kwargs):
+            batch = kwargs["refresh_batch"]([current, terminal])
+            try:
+                assert blocked.wait(1)
+                batch.wait_for_ready()
+                ready = batch.poll()
+                assert ready[terminal["case_id"]]["terminal_state"] == "completed"
+                assert current["case_id"] not in ready
+                return ready
+            finally:
+                release.set()
+                batch.close()
+    worker.run_general_manager_cycle(now=NOW, source_revision="test-independent-fallback", store=Store())
