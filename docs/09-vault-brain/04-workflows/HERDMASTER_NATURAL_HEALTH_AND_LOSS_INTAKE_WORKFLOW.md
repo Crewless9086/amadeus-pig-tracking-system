@@ -175,6 +175,14 @@ facts and protected authority. A flag or missing old card alone proves nothing.
 Any uncertainty retains the case for engineering reconciliation. A changed or
 attempted successor cannot trigger repeated automatic replacement.
 
+For an unresolved original report with a unique expired, never-attempted orphan,
+the runtime may route directly into that existing locked replacement transaction.
+It loads fresh canonical evidence there once; earlier cached evidence grants no
+authority. If the exact request proves ordinary same-preview renewal instead,
+the replacement attempt rolls back before returning to the normal renewal rail.
+All other conflicts remain contained. This ordering changes no source, ancestry,
+recipient, confirmation, delivery or farm-effect requirement.
+
 An authenticated owner or authorized farm manager pressing an expired,
 verifiably delivered retained mortality card requests a fresh review; that press
 does not confirm a farm effect. Under the same source fence, the runtime may

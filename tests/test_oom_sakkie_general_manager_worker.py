@@ -988,3 +988,45 @@ def test_deadline_phase_and_numeric_timings_survive_existing_case_event():
     assert failure["deadline_phase"] == "after_retained_preview"
     assert failure["processing_timings_ms"] == outcome["processing_timings_ms"]
     assert failure["provider_ambiguity_contained"] is False
+
+
+def test_exact_advisory_refresh_and_retained_refresh_do_not_wait_for_full_herd(monkeypatch):
+    from threading import Event
+    from modules.oom_sakkie import manager_case_sources as sources
+    from modules.oom_sakkie import herdmaster_case_disposition as disposition
+    release, blocked, advisory_ready, retained_ready = Event(), Event(), Event(), Event()
+    advisory = {"case_id": "ADVISORY", "dedupe_key": "herdmaster:herdmaster:PIG-A", "specialist": "HERDMASTER"}
+    retained = {"case_id": "RETAINED", "dedupe_key": "herdmaster:retained-mortality:101", "specialist": "HERDMASTER"}
+    routine = {"case_id": "ROUTINE", "dedupe_key": "herdmaster:welfare:OTHER", "specialist": "HERDMASTER"}
+    monkeypatch.setattr("modules.telemetry.rootline_mixer_readiness_observer.collect_mixer_readiness", lambda **kwargs: [])
+    def collect(**kwargs):
+        if kwargs.get("collectors"):
+            blocked.set()
+            assert release.wait(3)
+        return []
+    monkeypatch.setattr(sources, "collect_manager_candidates", collect)
+    def exact_advisory(now, *, claimed_cases):
+        assert claimed_cases == (advisory,)
+        advisory_ready.set()
+        return [advisory], ()
+    def exact_retained(now, *, claimed_cases):
+        assert claimed_cases == (retained,)
+        retained_ready.set()
+        raise TimeoutError("isolated retained failure")
+    monkeypatch.setattr(disposition, "collect_advisory_refresh", exact_advisory)
+    monkeypatch.setattr(sources, "_retained_herd_report_recovery_candidates", exact_retained)
+    class Store:
+        def run_cycle(self, candidates, **kwargs):
+            batch = kwargs["refresh_batch"]([routine, advisory, retained])
+            try:
+                assert blocked.wait(1) and advisory_ready.wait(1) and retained_ready.wait(1)
+                batch.wait_for_ready()
+                result = batch.poll()
+                assert result["ADVISORY"] == advisory
+                assert isinstance(result["RETAINED"], sources.ManagerCollectorRefreshError)
+                assert "ROUTINE" not in result
+                return result
+            finally:
+                release.set()
+                batch.close()
+    run_general_manager_cycle(now=NOW, source_revision="test", store=Store())

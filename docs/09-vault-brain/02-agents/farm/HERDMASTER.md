@@ -42,6 +42,21 @@ Repeated reconciliation completes the same advisory once. Technical reconciliati
 stays assigned to the agents and does not become another question for the owner.
 Bounded read failure preserves unresolved work.
 
+Retained reports and these two advisory families use independent bounded owning
+reads in the existing manager cycle and exact claimed-case refresh. They do not
+wait for the broad herd overview. A failed overview is never proof of no current
+work: the narrow reader must prove the owning producer's exact canonical exit or
+latest attributable completed observation. A current non-disposition item with
+the same key always wins before reconciliation, regardless of collector order.
+An unproved narrow disposition cannot rewrite an ordinary current question, even
+when the overview fails. It retains that durable generation. Ordinary current
+work keeps its existing owning refresh; each claimed advisory refresh is isolated
+so its fallback cannot delay a sibling with proved completion. Only a durable
+prior disposition may retain the silent reconciliation projection.
+Withdrawal holds stop being produced only for a unique canonical animal with
+both terminal status and off-farm state; unknown, conflicting or duplicate
+identity retains the hold. These reads do not clear withdrawal or sale authority.
+
 ## Historical Bounded Read Contract
 
 Herdmaster reads canonical Supabase pig current state, lifecycle identity, pens and litter attention. It owns farm-language interpretation and returns direct answers, aggregated facts, breakdowns, anomalies, source provenance, freshness and confidence. Current skills cover herd inventory, herd overview, pen occupancy, weight attention, breeding inventory, a read-only breeding planner, litter attention and individual pig profiles.

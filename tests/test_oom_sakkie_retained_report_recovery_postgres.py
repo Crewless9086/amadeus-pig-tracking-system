@@ -253,6 +253,13 @@ def test_actual_scoped_refresh_selects_exact_pair_and_omits_unrelated_discovery(
     with monkeypatch.context() as scoped:
         scoped.setattr(Cursor, "execute", observe)
         assert collect(store, claimed_cases=[{**claimed, "evidence_refs": ["provider_message:103"]}]) == [expected]
+    controls = [(query, params) for query, params in calls
+                if query.startswith(("set transaction", "select set_config("))]
+    assert controls[0][0] == "set transaction isolation level repeatable read read only"
+    assert len(controls) == 6
+    assert all(0 < int(params[0]) <= 3000 for query, params in controls[1:])
+    calls = [(query, params) for query, params in calls
+             if not query.startswith(("set transaction", "select set_config("))]
     assert len(calls) == 5
     assert calls[1][1][1] == ["101"]
     assert all("created_at >=" not in query and "herdmaster_record_farrowing_litter" not in query

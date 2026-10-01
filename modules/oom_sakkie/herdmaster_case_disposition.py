@@ -11,10 +11,16 @@ import json
 import re
 import time
 
-from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read, ReadBudgetCursor
 
 FENCE = "herdmaster_case_fence:"
 FAMILY = "herdmaster_disposition"
+
+
+def conclusively_departed(status, on_farm):
+    """Unknown or contradictory canonical state cannot retire an advisory."""
+    return (str(status or "").strip().casefold() in
+            {"dead", "deceased", "died", "sold", "culled"} and on_farm is False)
 
 
 def _digest(value):
@@ -34,35 +40,48 @@ def advisory_target(key, refs):
     return None
 
 
-class _ReadBudgetCursor:
-    def __init__(self, cursor, deadline):
-        self.cursor, self.deadline = cursor, deadline
-
-    def execute(self, statement, params=None):
-        remaining = self.deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("herdmaster_disposition_read_deadline")
-        self.cursor.execute("select set_config('statement_timeout',%s,true)",
-                            (str(max(1, min(3000, int(remaining * 1000)))),))
-        return self.cursor.execute(statement, params)
-
-    def __getattr__(self, name):
-        return getattr(self.cursor, name)
+def collect_advisory_dispositions(now, *, current_keys=(), connect=None, claimed_cases=None):
+    rows, _current = _collect_advisory_snapshot(now, current_keys=current_keys,
+        connect=connect, claimed_cases=claimed_cases)
+    return rows
 
 
-def collect_advisory_dispositions(now, *, current_keys=(), connect=None):
+def collect_advisory_refresh(now, *, claimed_cases=None, connect=None):
+    """Return owning proof and exact durable ordinary cases needing current work."""
+    return _collect_advisory_snapshot(now, connect=connect, claimed_cases=claimed_cases)
+
+
+def _collect_advisory_snapshot(now, *, current_keys=(), connect=None, claimed_cases=None):
     """Acquire one consistent, bounded snapshot; omission is never completion."""
-    from modules.oom_sakkie.manager_case_sources import _candidate
+    from modules.oom_sakkie.manager_case_sources import _candidate, is_advisory_herd_refresh_case
+    selectors = None
+    if claimed_cases is not None:
+        selectors = []
+        for case in claimed_cases:
+            if (not isinstance(case, dict) or not is_advisory_herd_refresh_case(case)
+                    or not isinstance(case.get("case_id"), str) or not case["case_id"].strip()):
+                raise ValueError("advisory_refresh_case_identity_invalid")
+            selectors.append({"case_id": case["case_id"], "dedupe_key": case["dedupe_key"]})
+        if not selectors:
+            return [], ()
+        if len(selectors) > 64:
+            raise ValueError("herdmaster_disposition_case_bound_exceeded")
     deadline = time.monotonic() + 6
     with (connect or connect_bounded_read)() as db, db.cursor() as raw_cur:
         raw_cur.execute("set transaction isolation level repeatable read read only")
-        cur = _ReadBudgetCursor(raw_cur, deadline)
+        cur = ReadBudgetCursor(raw_cur, deadline, failure_kind="herdmaster_disposition_read_deadline")
+        # Caller data select only identities; source, status and fences always
+        # come from the durable manager row within this read-only snapshot.
+        selection = ("" if selectors is None else """and (case_id,dedupe_key) in (
+            select i.case_id,i.dedupe_key from jsonb_to_recordset(%s::jsonb)
+              as i(case_id text,dedupe_key text))""")
         cur.execute("""select case_id,dedupe_key,generation,evidence_digest,evidence_refs
             from app_private.oom_manager_cases where specialist='HERDMASTER'
               and status in ('open','delegated','waiting_reassessment','exception')
               and (dedupe_key like 'herdmaster:herdmaster:PIG-%%'
                 or dedupe_key ~ '^herdmaster:pig-[A-Za-z0-9-]+-withdrawal-sales$')
-            order by case_id limit 65""")
+            """ + selection + " order by case_id limit 65",
+            () if selectors is None else (json.dumps(selectors),))
         retained = cur.fetchall()
         if len(retained) > 64:
             raise ValueError("herdmaster_disposition_case_bound_exceeded")
@@ -76,21 +95,26 @@ def collect_advisory_dispositions(now, *, current_keys=(), connect=None):
             if target:
                 selected.append((case_id, key, generation, digest, refs, target))
         if not selected:
-            return []
+            return [], ()
         ids = sorted({row[-1][0] for row in selected})
+        tags = sorted({row[-1][1].casefold() for row in selected if row[-1][1]})
         cur.execute("""select pig_id,tag_number,status,on_farm
-            from public.current_canonical_pigs where pig_id=any(%s)
-            order by pig_id limit 65""", (ids,))
+            from public.current_canonical_pigs where pig_id=any(%s) or lower(tag_number)=any(%s)
+            order by pig_id limit 65""", (ids, tags))
         pigs = cur.fetchall()
         if len(pigs) != len({row[0] for row in pigs}) or len(pigs) > 64:
             raise ValueError("herdmaster_disposition_identity_ambiguous")
         by_id = {row[0]: row for row in pigs}
-        result = []
+        result, current = [], []
         for case_id, key, generation, digest, refs, (pig, tag) in selected:
             row = by_id.get(pig)
-            terminal = bool(row and (not tag or str(row[1]).casefold() == tag.casefold())
-                and str(row[2] or "").casefold() in {"dead", "deceased", "died", "sold", "culled"}
-                and row[3] is False)
+            terminal = bool(row and (not tag or (str(row[1]).casefold() == tag.casefold()
+                and len([v for v in pigs if str(v[1]).casefold() == tag.casefold()]) == 1))
+                and conclusively_departed(row[2], row[3]))
+            # These exact keys have two owning producers: active welfare and
+            # the withdrawal hold. Canonical departure suppresses both. For a
+            # live animal, original completed observation proof below also
+            # verifies the latest lifecycle, never absence from an overview.
             proof = "canonical_off_farm" if terminal else "source_reconciliation_required"
             proof_refs = []
             if not terminal and not tag and row:
@@ -98,6 +122,12 @@ def collect_advisory_dispositions(now, *, current_keys=(), connect=None):
                 terminal = bool(proof_refs)
                 if terminal:
                     proof = "confirmed_observation_recorded"
+            if not terminal and "manager_message_family:" + FAMILY not in refs:
+                # A failed overview or unproved disposition cannot replace a
+                # genuine current question. Only a durable prior disposition
+                # retains the silent technical reconciliation projection.
+                current.append((key, "HERDMASTER"))
+                continue
             # Preserve original attribution, but replace previous disposition
             # metadata so an unresolved reassessment does not grow its own refs.
             source_refs = [v for v in refs if not v.startswith((FENCE, "observed:",
@@ -117,7 +147,7 @@ def collect_advisory_dispositions(now, *, current_keys=(), connect=None):
                  if terminal else "Verify the original advisory source and current canonical outcome before closure; do not ask the owner to debug internal records."),
                 now + timedelta(minutes=30), message_family=FAMILY,
                 **({"terminal_state": "completed"} if terminal else {})))
-        return result
+        return result, tuple(current)
 
 
 def _completed_observation(cur, pig, refs):
@@ -147,7 +177,7 @@ def _completed_observation(cur, pig, refs):
     if any(missions & superseded_missions(row[0] or {}) for row in history):
         return []
     if len({(row[0].get("owner_user_id"), row[0].get("chat_id"))
-            for row in history if row[0].get("mission_id") in missions}) != 1:
+            for row in history}) != 1:
         return []
     preview = latest.get("preview") or {}
     evaluator, binding = preview.get("evaluator") or {}, preview.get("confirmation_binding") or {}

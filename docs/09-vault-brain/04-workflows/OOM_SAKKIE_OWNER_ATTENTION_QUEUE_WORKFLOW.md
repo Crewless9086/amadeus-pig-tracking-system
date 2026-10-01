@@ -252,3 +252,14 @@ unavailable specialist blocks only dependent conclusions. Priorities favour
 welfare, time-sensitive farm work and money/customer exceptions over internal
 housekeeping. Every surfaced item names its usable completion path or states
 truthfully that no current action exists.
+
+The same manager collection and refresh loop starts bounded HERDMASTER retained
+report and advisory acquisition independently of broad herd reads. Each family
+owns its failure and exact persisted case identity. Ready work survives a sibling
+timeout, while a failed or late read never substitutes empty current evidence.
+Current work takes precedence over an older same-key disposition before any
+manager event is recorded. Retained report acquisition has one total nine-second
+budget, including canonical identity reassessment; advisory acquisition has one
+six-second budget. Exhaustion preserves unresolved work. Exact source, generation,
+digest, observation epoch and lease checks remain required, and presentation and
+protected confirmation retain their own governed boundaries.
