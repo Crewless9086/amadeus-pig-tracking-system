@@ -1,5 +1,6 @@
 from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+import pytest
 
 def test_english_and_afrikaans_natural_groups_share_preview_boundary():
     readiness=lambda:{"success":True,"pigs":[
@@ -33,3 +34,40 @@ def test_exact_compound_message_previews_all_four_shared_date_and_pen():
     assert {row["moved_to_pen_id"] for row in captured["rows"]}=={"PEN-017"}
     assert all(name in result["answer"] for name in names)
     assert "D3" in result["answer"] and "11 August 2026" in result["answer"]
+
+
+@pytest.mark.parametrize('label',['','Mona'])
+def test_visible_identity_failure_is_contained_before_any_claim(label):
+    readiness={'success':True,'pigs':[{'pig_id':pid,'name':pid,'tag_number':label,'status':'Active','on_farm':'Yes'}
+        for pid in ('PIG-1','PIG-2')]}
+    parsed={'text':'PIG-1 47.2 kg, PIG-2 118 kg.','telegram_user_id':'42','telegram_chat_id':'42',
+        'provider_message_id':'5001','provider_timestamp':'2026-10-01T12:00:00+00:00',
+        'semantic':{'domain':'herd_management','language':'en'}}
+    result,status=handle_grouped_weight_message(parsed,issue_gateway_owner_authority('42','42'),
+        readiness_loader=lambda:readiness,pen_loader=lambda:[],
+        preflight=lambda payload:({'success':True,'accepted_count':2,'accepted_rows':payload['rows']},200),
+        claim_creator=lambda **_:pytest.fail('ambiguous visible identity created a claim'))
+    assert status==200 and result['status']=='weight_visible_identity_required'
+    assert result['question_count']==1 and 'visible name or tag' in result['clarification_question']
+    assert result['writes_weights'] is False and result['protected_actions_performed'] is False
+
+
+def test_configured_af_recipient_keeps_full_typed_weights_from_english_input():
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    from tests.test_oom_sakkie_family_message_lifecycle import Memory,PARSED
+    parsed={**PARSED,'text':'Mona 47.2 kg, Linda 118 kg.','output_language':'af',
+        'provider_timestamp':'2026-10-01T12:00:00+00:00','semantic':{'domain':'herd_management','language':'en'}}
+    readiness={'success':True,'pigs':[{'pig_id':pid,'tag_number':tag,'status':'Active','on_farm':'Yes'}
+        for pid,tag in [('PIG-A','Mona'),('PIG-B','Linda')]]}
+    result,status=handle_grouped_weight_message(parsed,issue_gateway_owner_authority('42','42'),
+        readiness_loader=lambda:readiness,pen_loader=lambda:[],
+        preflight=lambda payload:({'success':True,'accepted_count':2,'accepted_rows':payload['rows']},200),
+        claim_creator=lambda **kw:{'callback_token':'T','preview_digest':'d'*64})
+    assert status==200 and result['recipient_language']=='af'
+    memory=Memory()
+    delivered=deliver_family_result(parsed,result,specialist='HERDMASTER',event_store=memory.store,
+        sender=memory.send,protected_delivery=lambda **kw:kw['deliver']())
+    assert delivered['telegram_sends']==1
+    text=memory.sent[0][1]
+    assert all(value in text for value in ['Mona','Linda','47.2 kg','118 kg','Gewigte'])
+    assert 'PIG-' not in text and len(result['mappings'])==2

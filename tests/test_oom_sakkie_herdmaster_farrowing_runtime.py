@@ -70,6 +70,42 @@ def test_duplicate_readback_contains_recovery_without_claim():
     assert result["writes_farm_data"] is False
 
 
+def test_exact_unnamed_sow_keeps_protected_identity_in_preview():
+    canonical=evidence()
+    canonical['animals'][0].update(name='',tag_number='')
+    facts={**parsed()['semantic']['farrowing_litter'],'sow_ref':'PIG-2026-5AA8'}
+    captured={}
+    def create(**kwargs):
+        captured.update(kwargs); return {'callback_token':'opaque','preview_digest':'digest'}
+    result,status=handle_farrowing_litter_message(parsed(facts),issue_gateway_owner_authority('42','42'),
+        evidence_loader=lambda **_:canonical,claim_creator=create)
+    assert status==200 and result['status']=='farrowing_litter_preview_ready'
+    assert captured['preview_payload']['sow_pig_id']=='PIG-2026-5AA8'
+    assert 'PIG-2026-5AA8' in result['answer'] and 'Unknown animal' not in result['answer']
+    assert result['writes_farm_data'] is False
+    assert result['reply_markup']['inline_keyboard'][0][0]['callback_data']=='oompa:opaque:confirm'
+
+
+@pytest.mark.parametrize('distinct_tags',[True,False])
+def test_duplicate_sow_and_father_names_use_distinct_protected_labels(distinct_tags):
+    canonical=evidence(animals=[{'pig_id':pid,'name':'Mona','tag_number':tag if distinct_tags else '',
+        'status':'Active','on_farm':True,'sex':sex} for pid,tag,sex in
+        [('PIG-2026-5AA8','S-A','Female'),('PIG-OTHER','S-B','Female'),('PIG-BOAR','B-A','Male')]],
+        matings=[{'mating_id':'MAT-1','sow_pig_id':'PIG-2026-5AA8','boar_pig_id':'PIG-BOAR',
+            'mating_date':'2026-05-02','outcome':'Mated'}])
+    facts={**parsed()['semantic']['farrowing_litter'],'sow_ref':'PIG-2026-5AA8'}
+    captured={}
+    result,status=handle_farrowing_litter_message(parsed(facts),issue_gateway_owner_authority('42','42'),
+        evidence_loader=lambda **_:canonical,claim_creator=lambda **kw:captured.update(kw) or {'callback_token':'T','preview_digest':'D'})
+    assert status==200 and result['status']=='farrowing_litter_preview_ready'
+    assert ('S-A' if distinct_tags else 'PIG-2026-5AA8') in result['answer']
+    assert ('Father: B-A' if distinct_tags else 'Father: PIG-BOAR') in result['answer']
+    assert 'Mona' not in result['answer'] and '2 May 2026' in result['answer']
+    assert captured['preview_payload']['sow_pig_id']=='PIG-2026-5AA8'
+    assert captured['preview_payload']['father_pig_id']=='PIG-BOAR'
+    assert result['writes_farm_data'] is False
+
+
 def test_non_litter_semantic_intent_is_not_claimed():
     message = parsed()
     message["semantic"]["intent"] = "breeding_plan"

@@ -302,7 +302,7 @@ def _sow_state(sow, language):
 
 
 def _preview_answer(preview, language='af'):
-    from modules.oom_sakkie.family_presentation import animal_label, date_label
+    from modules.oom_sakkie.family_presentation import animal_label, date_label, protected_animal_labels
     af = str(language).startswith('af')
     sow = preview['sow']
     lines = [escape(animal_label(sow,language=language)),
@@ -310,6 +310,10 @@ def _preview_answer(preview, language='af'):
         f"{'Werklik gespeen' if af else 'Actual weaning'}: {date_label(preview['wean_date'],language=language)} — {preview['weaned_count']} {'varkies' if af else 'piglets'}."]
     unmarked = {}
     display_labels = {}
+    named_labels = protected_animal_labels([pig for pig in preview['piglet_effects']
+        if animal_label(pig,language=language) not in {'Unknown animal','Onbekende dier'}])
+    packet = preview['confirmation_binding']['packet']
+    observations = (packet.get('observation_action') or {}).get('observations', [])
     for pig in preview['piglet_effects']:
         facts = []
         if pig.get('weight_kg') is not None:
@@ -326,16 +330,26 @@ def _preview_answer(preview, language='af'):
         if label in {'Unknown animal','Onbekende dier'}:
             label = ('Ongemerkte varkies' if af else 'Untagged piglets')
             group = (str(pig.get('from_pen_id') or ''), str(pig.get('sex') or ''))
-            signature = tuple(facts)
+            if group[0]:
+                label += (' in hok ' if af else ' in pen ') + group[0]
+            if group[1]:
+                sex_label = ({'Male':'manlik','Female':'vroulik','Castrated_Male':'gekastreerde mannetjie'}.get(group[1],group[1]) if af else group[1])
+                label += ' (' + sex_label + ')'
+            own_observations = [{key:value for key,value in item.items() if key != 'pig_id'}
+                for item in observations if item.get('pig_id') == pig['pig_id']]
+            signature = (tuple(facts), tuple(sorted(json.dumps(item,sort_keys=True,default=str)
+                for item in own_observations)))
             if group in unmarked and unmarked[group][1] != signature:
                 raise WeaningClarification('Gee die verskillende varkies se sigbare oornommers sodat elke gewig en verandering duidelik is.' if af else
                     'Give the different piglets visible tags so each weight and change is clear.')
             count = unmarked.get(group,(0,signature))[0]+1
             unmarked[group]=(count,signature)
         else:
+            label = named_labels[pig['pig_id']]
             lines.append('• ' + escape(label) + (': ' + ', '.join(facts) if facts else ''))
         display_labels[pig['pig_id']] = label
-    for (pen,_sex),(count,facts) in unmarked.items():
+    for (pen,_sex),(count,signature) in unmarked.items():
+        facts = signature[0]
         label = f"{count} " + ('ongemerkte varkies' if af else 'untagged piglets')
         if pen: label += (' in hok ' if af else ' in pen ') + escape(pen)
         lines.append('• '+label+(': '+', '.join(facts) if facts else ''))
@@ -343,7 +357,6 @@ def _preview_answer(preview, language='af'):
         tally = preview['reported_sex_counts']
         lines.append(f"Opgegewe telling: {tally['male_count']} manlik, {tally['female_count']} vroulik; individuele geslagte bly soos aangeteken." if af else
             f"Reported tally: {tally['male_count']} male, {tally['female_count']} female; individual sexes remain as recorded.")
-    packet = preview['confirmation_binding']['packet']
     for row in packet.get('treatment_rows', []):
         lines.append(('Behandeling: ' if af else 'Treatment: ') + escape(f"{display_labels.get(row[1], 'Current piglet')}: {row[5]}, {row[6]} {row[7]}, {row[8]}, lot {row[10]}"))
         if row[16]:

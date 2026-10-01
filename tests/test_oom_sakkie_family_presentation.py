@@ -18,6 +18,19 @@ def test_canonical_tag_precedes_legacy_display_and_internal_identity_is_not_pros
     assert animal_label({'pig_id':'PIG-INTERNAL','label':'PIG-INTERNAL'}) == 'Unknown animal'
 
 
+def test_protected_label_map_handles_casefold_name_tag_and_fallback_collisions():
+    from modules.oom_sakkie.family_presentation import protected_animal_labels
+    rows=[{'pig_id':'A','name':'Mona','tag_number':'S-1'},
+        {'pig_id':'B','name':'mona','tag_number':'S-2'},
+        {'pig_id':'C','tag_number':'s-1'}]
+    labels=protected_animal_labels(rows)
+    assert labels=={'A':'A','B':'S-2','C':'C'}
+    assert protected_animal_labels(rows+rows)==labels
+    assert protected_animal_labels([{'pig_id':'PIG-1','name':'PIG-1','tag_number':'146'}])=={'PIG-1':'146'}
+    with pytest.raises(ValueError,match='identity_conflict'):
+        protected_animal_labels(rows+[{'pig_id':'A','name':'Different'}])
+
+
 def test_calendar_dates_and_escaped_typed_facts_keep_unknown_distinct_from_zero():
     assert date_label('2026-08-26') == '26 August 2026'
     assert date_label('2026-08-26', language='af') == '26 Augustus 2026'

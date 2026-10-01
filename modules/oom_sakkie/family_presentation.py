@@ -41,6 +41,38 @@ def animal_label(row: Mapping, *, language="en"):
     return "Onbekende dier" if str(language).startswith("af") else "Unknown animal"
 
 
+def protected_animal_labels(rows):
+    """Distinct labels for already-bound protected IDs; no action mutation."""
+    animals={}
+    for row in rows:
+        identity=str(row.get('pig_id') or row.get('Pig_ID') or '').strip()
+        if not identity:
+            raise ValueError('protected_display_identity_required')
+        name=str(row.get('name') or row.get('Name') or row.get('pig_name') or row.get('Pig_Name') or '').strip()
+        tag=str(row.get('tag_number') or row.get('Tag_Number') or '').strip()
+        if name==identity or name.upper().startswith('PIG-'):
+            name=''
+        if tag==identity or tag.upper().startswith('PIG-'):
+            tag=''
+        value=(name,tag)
+        if identity in animals and animals[identity]!=value:
+            raise ValueError('protected_display_identity_conflict')
+        animals[identity]=value
+    labels={identity:name or tag or identity for identity,(name,tag) in animals.items()}
+    def collisions():
+        groups={}
+        for identity,label in labels.items():
+            groups.setdefault(label.casefold(),[]).append(identity)
+        return [identity for group in groups.values() if len(group)>1 for identity in group]
+    for identity in collisions():
+        labels[identity]=animals[identity][1] or identity
+    for identity in collisions():
+        labels[identity]=identity
+    if collisions():
+        raise ValueError('protected_display_identity_conflict')
+    return labels
+
+
 def heading(title, *, emoji="🌿"):
     return f"<b>{emoji} {html.escape(str(title), quote=False)}</b>"
 

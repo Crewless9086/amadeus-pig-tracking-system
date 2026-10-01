@@ -75,7 +75,8 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
                 **_zero()}, 200
     language = 'af' if str(parsed.get('output_language') or semantic.get('language') or 'en').startswith('af') else 'en'
     try:
-        owner_text = _summary(preview['preview']['rows'], language=language, display_rows=rows)
+        owner_text = _summary(preview['preview']['rows'], language=language,
+            display_animals=(evidence.get('allocation_inputs') or {}).get('pig_master_rows') or [])
     except ValueError:
         return {'handled':True,'success':False,'status':'breeding_identity_clarification_required',
             'question_count':1, 'answer':('Wat is elke dier se unieke naam of sigbare oornommer?' if language=='af' else
@@ -122,21 +123,14 @@ def _production_connect():
     return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
 
 
-def _summary(rows, *, language='en', display_rows=None):
-    from modules.oom_sakkie.family_presentation import date_label, heading
+def _summary(rows, *, language='en', display_animals=()):
+    from modules.oom_sakkie.family_presentation import date_label, heading, protected_animal_labels
     af = language == 'af'
     lines = [heading('Teelgroep om te bevestig' if af else 'Breeding group to confirm',emoji='🐷'), ""]
     # The canonical preview intentionally omits presentation fields. Resolve
     # its exact IDs through the already-resolved source rows; never alter the
     # signed packet or lose a protected identity if a visible label is absent.
-    labels = {}
-    for source in display_rows or rows:
-        for identity,label in ((source.get('pig_id'),source.get('label')),
-                (source.get('boar_pig_id'),source.get('boar_label'))):
-            if identity and label:
-                if identity in labels and labels[identity] != label:
-                    raise ValueError('visible_animal_identity_ambiguous')
-                labels[identity]=label
+    labels = protected_animal_labels(display_animals)
     def visible(identity, fallback=''):
         return html.escape(str(labels.get(identity) or fallback or identity))
     day = lambda value: html.escape(date_label(value,language=language))

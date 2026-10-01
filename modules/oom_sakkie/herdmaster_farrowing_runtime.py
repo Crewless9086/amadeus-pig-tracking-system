@@ -241,11 +241,12 @@ def handle_farrowing_litter_message(parsed: Mapping, authority, *, connect_facto
                                  "Which part of the birth report needs clarifying?")}
             if prepared.get("success") is True:
                 preview = prepared["preview"]
+                owner_text = _preview_answer(prepared, canonical=canonical)
                 claim = (claim_creator or create_claim)(action_kind=ACTION_KIND,
                     owner_user_id=owner, private_chat_id=chat, mission_id=context_id,
                     provider_message_id=provider, evidence_generation=str(preview["evidence_generation"]),
                     preview_payload=preview, connect_factory=conversation.connection, ttl_minutes=15)
-                result = _reply(language, "farrowing_litter_preview_ready", _preview_answer(prepared, canonical=canonical),
+                result = _reply(language, "farrowing_litter_preview_ready", owner_text,
                     success=True, mission_id=context_id, card_mission_id=context_id,
                     callback_token=claim["callback_token"], preview_digest=claim["preview_digest"],
                     action_kind=ACTION_KIND, reply_markup=build_buttons(claim["callback_token"], language=language))
@@ -480,14 +481,15 @@ def _hold_answer(result, *, language="en"):
 
 
 def _preview_answer(result, *, canonical=None):
-    from modules.oom_sakkie.family_presentation import animal_label, birth_counts, date_label, message
+    from modules.oom_sakkie.family_presentation import protected_animal_labels, birth_counts, date_label, message
     p, c = result["preview"], result["counts"]
     af = str(p.get("language") or "").startswith("af")
     language = 'af' if af else 'en'
+    labels = protected_animal_labels((canonical or {}).get('animals',[]))
+    sow_label = labels.get(p.get('sow_pig_id')) or html.unescape(_sow_label(p))
     linkage = 'Paring en vader bly Onbekend.' if af else 'Mating and father remain Unknown.'
     if p.get('mating_id'):
-        animals = [row for row in (canonical or {}).get('animals',[]) if row.get('pig_id') == p.get('father_pig_id')]
-        father = animal_label(animals[0],language=language) if len(animals)==1 else ''
+        father = labels.get(p.get('father_pig_id')) or ''
         if father in {'','Unknown animal','Onbekende dier'}:
             # A protected linkage cannot lose its sole identity to meet style.
             father = str(p.get('father_pig_id') or ('Onbekend' if af else 'Unknown'))
@@ -496,7 +498,7 @@ def _preview_answer(result, *, canonical=None):
             if len(matings)==1 and matings[0].get('mating_date') else str(p['mating_id']))
         linkage = (f'Vader: {father}; paring: {mating}. Hierdie koppeling sal gestoor word.' if af else
             f'Father: {father}; mating: {mating}. This link will be saved.')
-    return message(html.unescape(_sow_label(p)) + (' — geboortevoorskou' if af else ' — birth preview'),
+    return message(sow_label + (' — geboortevoorskou' if af else ' — birth preview'),
         bullets=[date_label(p['farrowing_date'], language=language),
                  *birth_counts(c, language=language, include_zero_details=True), linkage],
         status='Nog nie aangeteken nie.' if af else 'Not recorded yet.',
@@ -506,4 +508,8 @@ def _preview_answer(result, *, canonical=None):
 
 def _sow_label(preview):
     from modules.oom_sakkie.family_presentation import animal_label
-    return html.escape(animal_label(preview, language=preview.get('language') or 'en'))
+    label=animal_label(preview, language=preview.get('language') or 'en')
+    if label in {'Unknown animal','Onbekende dier'}:
+        # Protected confirmation must retain its sole exact identity.
+        label=str(preview.get('sow_pig_id') or label)
+    return html.escape(label)
