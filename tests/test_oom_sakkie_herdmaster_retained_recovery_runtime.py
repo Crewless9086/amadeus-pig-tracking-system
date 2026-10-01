@@ -409,6 +409,11 @@ def retained_journey(monkeypatch):
                 value=json.loads(json.dumps(c,default=str))
                 if "clock_timestamp()" in q:self.row=(value,db_now())
                 else:self.rows=[(value,)]
+            elif q.startswith("select event_payload,actor_reference from public.pig_lifecycle_events"):
+                self.rows=[({"operation_id":effect["operation_id"],"pig_id":effect["pig_id"],
+                    "preview_sha256":effect["preview_sha256"]},effect["actor_reference"])
+                    for effect in state["domain_effects"] if
+                    (effect["lifecycle_event_id"],effect["pig_id"],effect["operation_id"])==params]
             elif q.startswith("update app_private.oom_protected_action_claims c set status='active'"):
                 expiry,attempt,started,token,prior=params
                 assert token==c["callback_token"] and json.loads(prior)==json.loads(json.dumps(c,default=str))
@@ -457,6 +462,13 @@ def retained_journey(monkeypatch):
         def fetchall(self):return self.rows
     monkeypatch.setattr(delivery,"_connect",ClaimDb)
     monkeypatch.setattr(claims,"_connect",ClaimDb)
+    def canonical_readback(_cur,*,pig_id,event_id,welfare_case_id):
+        # Domain effects are this fixture's transactional canonical store. The
+        # completion retry must match a stored lifecycle AND welfare identity.
+        matches=[row for row in state["domain_effects"] if
+            (row["pig_id"],row["lifecycle_event_id"],row["welfare_case_id"])==(pig_id,event_id,welfare_case_id)]
+        return {"canonical_readback_verified":len(matches)==1}
+    monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._readback_mortality_welfare",canonical_readback)
     monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_rootline_postgres",lambda **_k:ClaimDb())
     def family_store(action,identity,payload):
         state["clock"]+=state["family_cost"]
@@ -524,9 +536,12 @@ def test_real_protected_callback_resolves_persisted_retained_operation(retained_
         assert lifecycle["mission_id"]==j["source"]["mission_id"] and actor_id=="42"
         assert kwargs["evidence_loader"]()["evidence_generation"]==binding["evidence_generation"]
         effects.append(operation)
-        return {"success":True,"status":"mortality_lifecycle_recorded","operation_id":operation,
+        recorded={"success":True,"status":"mortality_lifecycle_recorded","operation_id":operation,
             "pig_id":"P27","lifecycle_event_id":"LIFE-27","event_date":"2026-08-19",
+            "welfare_case_id":"WELFARE-27","preview_sha256":binding["preview_sha256"],"actor_reference":actor_id,
             "canonical_readback":{"canonical_readback_verified":True},"writes_farm_data":True},200
+        j["domain_effects"].append(recorded[0])
+        return recorded
     monkeypatch.setattr("modules.pig_weights.herdmaster_health_loss_recording._confirm_mortality_lifecycle",effect)
     prepare_retained_journey(j)
     assert deliver_farm_manager_case(j["case"])["delivery_confirmed"] and not effects
@@ -1037,6 +1052,7 @@ def admitted_callback(retained_journey, monkeypatch):
         kwargs["evidence_loader"]();state["fresh_reads"]+=1
         recorded={"success":True,"status":"mortality_lifecycle_recorded","operation_id":operation,
             "pig_id":"P27","lifecycle_event_id":"LIFE-27","event_date":"2026-08-19",
+            "welfare_case_id":"WELFARE-27","preview_sha256":binding["preview_sha256"],"actor_reference":actor_id,
             "canonical_readback":{"canonical_readback_verified":True},"writes_farm_data":True,"rows_created":1}
         j["domain_effects"].append(recorded)
         if state["failure"]=="returned_failure":

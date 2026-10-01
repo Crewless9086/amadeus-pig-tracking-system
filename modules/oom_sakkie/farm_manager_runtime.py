@@ -562,7 +562,9 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
             provenance=provenance, business_value=110, genuine_question=question, question_for="charl",
             metadata={"notification_decision_identity": "matings:" + ":".join(
                 sorted(str(row["mating_id"]) for row in group)) if all(row.get("mating_id") for row in group) else ""}))
-    rebound = tuple(replace(item, provenance=provenance) for item in items)
+    rebound = tuple(replace(item, provenance=replace(provenance,
+        source_refs=tuple(dict.fromkeys((*provenance.source_refs, *item.provenance.source_refs)))))
+        for item in items)
     return SpecialistResult("herdmaster", result_id, observed,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
 

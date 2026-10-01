@@ -11,21 +11,25 @@ Follow [AGENTS.md](AGENTS.md), the
 and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md).
 The register names the sole coordinator, current work, holds and next gate.
 
-The final old checkout has been moved to recovery and its full preservation
-audit passed. **Local cleanup is verified; admission repair PR1342 is merged and live.**
-The [current integration receipt](docs/06-operations/receipts/20260921/CONSOLIDATION_ADMISSION_REPAIR.md)
-records the verified repair release and the remaining paused mission transition
-required before integrating consolidation PR1341.
-Docker/n8n were unavailable at the September 20 post-restart check; historical
-health results must not be treated as current service health.
-Temporary work and output belong in `C:\Amadeus\.runtime`; recovery belongs in
-`C:\Amadeus\recovery\20260919`.
+The [1 October shared status](docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md)
+records the HERDMASTER work and its acceptance limits. PR1364 is merged at
+`9bef22336a98fa92f5ee2a419ab4cbafc781c163`; that web revision was verified live
+on 1 October. Six deployed question readers passed the 30 September checks and
+one genuine protected mortality journey is proven. Retained follow-up repair
+and fresh Telegram acceptance remain open. Full agent autonomy is not proven.
+ROOTLINE is the next proposed focus after HERDMASTER readiness.
 
-Keep `codex/workspace-consolidation-20260919` current until governed review and
-integration. These local changes are unreleased; new worktrees from
-`origin/main` do not yet contain them. The saved project and current cleanup
-task both use this checkout. No operational continuation or release follows
-from local cleanup.
+Local cleanup is verified and all original eighteen commits were integrated by
+[PR1341](https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/1341).
+The protected merge is `3e77d3434b071078a41917a68fa63f2fa7b314ec`.
+Temporary work and output belong in `C:\Amadeus\.runtime`; recovery belongs in
+`C:\Amadeus\recovery\20260919`. Preserved history is not permission to delete
+or restart old runtimes.
+
+The daily checkout retains local coordination history on its documentation
+branch. Use fetched `origin/main` or the registered application worktree for
+released-source review. Do not publish the accumulated coordination branch
+wholesale. Shared status is a dated checkpoint, not a live fleet dashboard.
 
 Use the [workspace lifecycle rules](docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md);
 add `--require-clean` to the guard at closeout. Keep secrets out of Git.

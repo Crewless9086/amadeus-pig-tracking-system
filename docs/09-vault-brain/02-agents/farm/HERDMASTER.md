@@ -22,6 +22,26 @@ An inventory answer, dashboard, due count or morning-brief line is not completio
 Silent omission is prohibited: an unavailable animal such as one under a medical
 withdrawal hold must remain explainable with the exact blocker and review date.
 
+## Retained advisory reconciliation
+
+A completed canonical outcome must be consumed by its owning follow-up. Ordinary
+per-animal and withdrawal/sales advisories may retire when their exact canonical
+animal is recorded off-farm with a terminal lifecycle state. Retiring that advisory
+does not clear a medical hold, certify sale eligibility, complete a mortality
+report, or close unrelated welfare work.
+
+For an on-farm animal, recorded observation completion requires the original
+source mission and exact canonical observation, operation, actor and source digest.
+A completion sentence or absence from a current worklist is insufficient. Preserve
+these proof references in the manager completion event. Historical projections
+that lost item references require uniquely attributable, delivered source history
+at the original observation time; ambiguous principal or chronology stays held.
+
+Fresh evidence and other workers' leases take precedence over an older disposition.
+Repeated reconciliation completes the same advisory once. Technical reconciliation
+stays assigned to the agents and does not become another question for the owner.
+Bounded read failure preserves unresolved work.
+
 ## Historical Bounded Read Contract
 
 Herdmaster reads canonical Supabase pig current state, lifecycle identity, pens and litter attention. It owns farm-language interpretation and returns direct answers, aggregated facts, breakdowns, anomalies, source provenance, freshness and confidence. Current skills cover herd inventory, herd overview, pen occupancy, weight attention, breeding inventory, a read-only breeding planner, litter attention and individual pig profiles.
