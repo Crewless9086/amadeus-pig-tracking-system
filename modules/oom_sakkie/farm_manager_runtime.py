@@ -69,7 +69,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     query = semantic.get("read_query") or {}
     if query.get("kind") == "farm_brief":
         query = {}
-    if query.get("kind") == "animal_status":
+    if query.get("kind") in {"animal_status", "herd_query"}:
         return {"handled": False}, 200
     if (semantic and semantic.get("needs_clarification")
             and not (query and _enquiry_clarification(query, str(semantic.get("language") or "en")))):
@@ -148,7 +148,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     results = []
     exceptions = {}
     specialists = ((str(query["specialist"]).lower(),)
-        if query.get("kind") == "specialist_detail" and query.get("specialist")
+        if query.get("kind") in {"specialist_detail", "work_split"} and query.get("specialist")
         else ("herdmaster", "rootline", "sam", "beacon"))
     # Independent specialist evidence loads run concurrently so one slow source
     # cannot consume the synchronous Telegram delivery budget. HERDMASTER may
@@ -184,7 +184,8 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     # Validate freshness against composition time, not the earlier inbound or
     # invocation instant. Explicit test/replay clocks remain deterministic.
     composition_now = now if explicit_now else clock().astimezone(timezone.utc)
-    brief = build_family_brief(results, now=composition_now)
+    brief = build_family_brief(results, now=composition_now,
+        owner_dependencies_only=query.get("kind") == "work_split" and bool(query.get("specialist")))
     try:
         answer = (_render_enquiry(brief, query,
                     language=str(semantic.get("language") or "en"), now=composition_now,
@@ -848,8 +849,10 @@ def _load_enquiry_cases(query=None):
                    unknowns,next_reassessment_at,lease_until,last_heartbeat_at
             from app_private.oom_manager_cases where status <> 'completed'
               and (%s or dedupe_key like any(%s))
+              and (%s = '' or upper(specialist) = %s)
             order by next_reassessment_at,case_id limit 65""",
-            (not bool(prefixes), [prefix + '%' for prefix in prefixes]))
+            (not bool(prefixes), [prefix + '%' for prefix in prefixes],
+             query.get("specialist", ""), query.get("specialist", "")))
         rows = cursor.fetchall()
     return {"cases": [dict(zip(columns, row)) for row in rows[:64]], "truncated": len(rows) > 64}
 
@@ -861,7 +864,8 @@ def _render_enquiry(brief, query, *, language, now, case_loader=None):
     if clarification:
         return clarification
     lines = ["<b>OOM SAKKIE — OPVOLG</b>" if af else "<b>OOM SAKKIE — FOLLOW-UP</b>"]
-    if kind in {"work_split", "case_status"}:
+    scoped_owner_work = kind == "work_split" and bool(query.get("specialist"))
+    if kind in {"work_split", "case_status"} and not scoped_owner_work:
         try:
             cases = (case_loader or _load_enquiry_cases)(query)
         except Exception:
@@ -873,6 +877,8 @@ def _render_enquiry(brief, query, *, language, now, case_loader=None):
         else:
             truncated = bool(cases.get("truncated")) if isinstance(cases, dict) else False
             selected = cases.get("cases", []) if isinstance(cases, dict) else cases
+            if query.get("specialist"):
+                selected = [row for row in selected if str(row.get("specialist") or "").upper() == query["specialist"]]
             for row in selected[:6]:
                 state = str(row.get("status") or "unknown")
                 lease = _time(row.get("lease_until"), datetime.min.replace(tzinfo=timezone.utc))
@@ -898,16 +904,25 @@ def _render_enquiry(brief, query, *, language, now, case_loader=None):
             lines.append("• " + _read_text(finding, 660, af))
         if not items:
             lines.append("Geen ondersteunde aksie in die huidige spesialispakket nie." if af else "No supported action in the current specialist packet.")
-    if kind == "work_split":
+    if kind == "work_split" and not scoped_owner_work:
         lines += ["", "<b>Wat ek kan hanteer</b>" if af else "<b>What I can handle</b>",
             "Ek lees en vergelyk spesialisbewyse. Die saakstatus hierbo onderskei beplande opvolg van werk wat werklik aan 'n werker toegewys is." if af else
             "I read and compare specialist evidence. The case status above distinguishes queued follow-up from work actually assigned to a worker."]
-    questions = [q for values in brief.questions.values() for q in values]
+    questions = ([item.genuine_question for item in items if item.genuine_question]
+        if scoped_owner_work else [q for values in brief.questions.values() for q in values])
     if kind != "case_status":
         lines += ["", "<b>Wat ek van jou nodig het</b>" if af else "<b>What I need from you</b>"]
         owner_steps = list(dict.fromkeys(questions + [item.next_action for item in items
             if not item.genuine_question and item.metadata.get("physical_work_ready") is True]))
         lines.extend("• " + _read_text(step, 260, af) for step in owner_steps[:4])
+        if scoped_owner_work:
+            if brief.suppressed.get("stale_refreshed"):
+                lines.append("Sommige eienaar-afhanklike bewyse is verouderd; huidige uitstaande werk bly onbevestig." if af else
+                    "Some owner-dependency evidence is stale; current outstanding work remains unverified.")
+            remainder = max(0, len(owner_steps)-4) + len(brief.suppressed.get("lower_ranked", ()))
+            if remainder:
+                lines.append((f"Nog {remainder} eienaar-afhanklike taak/take is buite hierdie beperkte aansig aangeteken." if af else
+                    f"Another {remainder} owner-dependent task(s) are recorded beyond this bounded view."))
         if not owner_steps:
             lines.append("Geen bewys-gesteunde nuwe vraag in die huidige pakket nie." if af else "No supported new owner question in the current packet.")
     for specialist, gap in brief.specialist_gaps.items():

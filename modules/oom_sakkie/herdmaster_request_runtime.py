@@ -8,6 +8,7 @@ import json
 from typing import Any, Callable, Mapping
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
+from modules.oom_sakkie.owner_response_composer import _clip as clip_owner_text
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 
 CONTRACT_VERSION = "oom_sakkie_herdmaster_request_v1"
@@ -23,8 +24,11 @@ def handle_herdmaster_request(parsed: Mapping[str, Any], authority: Any, *,
         event_store=None, now=None):
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     if (semantic.get("domain") != "herd_management"
-            or str(semantic.get("intent") or "").strip().casefold() not in BREEDING_PLAN_INTENTS
+            or not (str(semantic.get("intent") or "").strip().casefold() in BREEDING_PLAN_INTENTS
+                or (semantic.get("read_query") or {}) == {"kind": "herd_query", "capability": "breeding_plan"})
             or semantic.get("needs_clarification") is True):
+        return {"handled": False}, 200
+    if (semantic.get("read_query") or {}).get("kind") == "herd_query" and float(semantic.get("confidence") or 0) < .8:
         return {"handled": False}, 200
     provider_id = str(parsed.get("provider_message_id") or "")
     provider_time = str(parsed.get("provider_timestamp") or "")
@@ -91,42 +95,45 @@ def handle_herdmaster_request(parsed: Mapping[str, Any], authority: Any, *,
 def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
     tasks = [dict(row) for row in packet.get("tasks") or ()
              if isinstance(row, Mapping) and not row.get("completed")]
-    tasks.sort(key=lambda row: (0 if row.get("days_since_weaning") == 0 else 1,
+    tasks.sort(key=lambda row: (int(row.get("priority") or 99),
         int(row.get("placement_cohort_number") or 99),
         str(row.get("proposed_placement_date") or "9999-12-31"),
-        -int(row.get("priority") or 0), str(row.get("tag_number") or "")))
-    groups = []
-    for row in tasks:
-        male = ((row.get("male_recommendation") or {}).get("recommended") or {})
-        key = (str(row.get("proposed_placement_date") or "Needs Data"),
-               str(male.get("tag_number") or "Needs Data"),
-               str(row.get("placement_cohort") or "review"))
-        existing = next((group for group in groups if group[0] == key), None)
-        if existing is None:
-            existing = [key, []]; groups.append(existing)
-        existing[1].append(row)
+        str(row.get("tag_number") or "")))
     af = str(language).casefold().startswith("af")
     lines = ["<b>HERDMASTER — OPGEDATEERDE TEELPLAN</b>" if af
              else "<b>HERDMASTER — UPDATED BREEDING PLAN</b>", ""]
-    selected=[]
-    for index, (key, rows) in enumerate(groups[:3], 1):
-        date, male, _cohort = key
-        names = ", ".join(html.escape(str(row.get("tag_number") or "Unnamed")) for row in rows)
-        selected.extend(rows)
-        if af:
-            lines.append(f"• <b>{index}. {names}</b> — beplande plasing {html.escape(date)}; "
-                         f"huidige bewys-gesteunde beer: {html.escape(male)}.")
+    selected = tasks[:6]
+    for row in selected:
+        name = html.escape(str(row.get("tag_number") or "Unnamed")[:60])
+        action = html.escape(str(row.get("task_group") or row.get("provisional_recommendation") or "Needs Data")[:90])
+        why = clip_owner_text(row.get("why"), 120)
+        date = str(row.get("proposed_placement_date") or "")
+        male = ((row.get("male_recommendation") or {}).get("recommended") or {})
+        boar = str(male.get("tag_number") or "")
+        if date and boar:
+            lines.append(f"• <b>{name}</b> — " +
+                (f"beplande plasing {html.escape(date)}; beer {html.escape(boar)}." if af else
+                 f"planned placement {html.escape(date)}; boar {html.escape(boar)}."))
         else:
-            lines.append(f"• <b>{index}. {names}</b> — planned placement {html.escape(date)}; "
-                         f"current evidence-supported boar: {html.escape(male)}.")
+            lines.append(f"• <b>{name}</b> — " +
+                (f"opvolg: {action}. Geen bewys-gesteunde plasing is bevestig nie." if af else
+                 f"next: {action}. No evidence-supported placement is confirmed."))
+        if why:
+            lines.append(("  Bronrede: " if af else "  Reason: ") + why)
+        checks = [html.escape(str(value)[:40]) for value in row.get("required_checks") or []]
+        if checks:
+            lines.append(("  Ontbrekende waarnemings: " if af else "  Missing observations: ") + ", ".join(checks[:3]))
     if not selected:
         lines.append("• Geen huidige teeltaak is uit die kanonieke kuddebewyse verskuldig nie." if af
                      else "• No current breeding task is due from the canonical herd evidence.")
+    if len(tasks) > len(selected):
+        lines.append((f"Nog {len(tasks)-len(selected)} teeltaak/-take bly aangeteken." if af else
+                      f"Another {len(tasks)-len(selected)} breeding task(s) remain recorded."))
     today_names = [html.escape(str(row.get("tag_number") or "Unnamed")) for row in tasks
                    if row.get("days_since_weaning") == 0]
     if today_names:
         lines += ["", "<b>VANDAG SE SPEENWERK</b>" if af else "<b>TODAY'S WEANINGS</b>",
-                  ("Ingesluit: " if af else "Included: ") + ", ".join(today_names) + "."]
+                  ("Ingesluit: " if af else "Included: ") + ", ".join(today_names[:6]) + (f" (+{len(today_names)-6})" if len(today_names) > 6 else "") + "."]
     lines += ["", "Geen paring is uitgevoer nie; finale plasing bly beskerm." if af
               else "No mating was performed; final placement remains protected.",
               "HERDMASTER herbeoordeel wanneer kuddebewyse verander." if af

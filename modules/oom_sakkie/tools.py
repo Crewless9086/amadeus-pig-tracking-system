@@ -1482,6 +1482,13 @@ def herdmaster_herd_question_handler(args):
             "raw": {},
         }
     try:
+        if (args or {}).get("capability"):
+            from modules.oom_sakkie.herd_read_queries import answer_herd_read_query
+            result = answer_herd_read_query(args["capability"],
+                language=args.get("semantic_language") or "en")
+            return {"success": result["success"], "status": result["status"],
+                "summary": result["answer"], "links": [], "stale_warnings": [],
+                "safety_notes": [], "raw": result}
         subject = (args or {}).get("subject")
         if subject is not None:
             from contextlib import nullcontext

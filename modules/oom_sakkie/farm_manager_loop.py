@@ -451,6 +451,7 @@ def build_family_brief(
     *,
     now: datetime | None = None,
     existing_follow_ups: Sequence[FollowUp] = (),
+    owner_dependencies_only: bool = False,
 ) -> FamilyBrief:
     """Reconcile structured results without invoking or mutating any system."""
 
@@ -486,6 +487,13 @@ def build_family_brief(
     queue = _reconcile_cross_domain(
         tuple(sorted(kept.values(), key=_priority_key)), accepted_results
     )
+    if owner_dependencies_only:
+        stale_ids = set(suppressed["stale_refreshed"])
+        queue = tuple(item for item in queue if item.item_id not in stale_ids and (
+            (item.genuine_question.strip() and item.question_for in FAMILY_MEMBERS
+                and item.state in {WorkState.URGENT, WorkState.DUE_TODAY, WorkState.WAITING_EVIDENCE})
+            or (item.metadata.get("physical_work_ready") is True
+                and item.state in {WorkState.URGENT, WorkState.DUE_TODAY, WorkState.PLANNED})))
     selected: list[SpecialistWorkItem] = []
     counts = {member: 0 for member in FAMILY_MEMBERS}
     for item in queue:

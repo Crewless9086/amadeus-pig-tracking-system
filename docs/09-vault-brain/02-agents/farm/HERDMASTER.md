@@ -30,6 +30,35 @@ The breeding planner reads canonical mating, family-tree and breeding-performanc
 
 Herdmaster does not expose raw records to the owner when an aggregate answer is sufficient. It flags contradictions such as `on_farm` versus Active status rather than silently choosing one. It has no write authority.
 
+## Specific owner questions
+
+A validated semantic read selects a typed canonical capability before a general
+farm brief. Counts, housing/capacity, weighing, litter/weaning and breeding-plan
+questions must retain that capability through Oom Sakkie and both Telegram
+adapters. A broad brief is never the fallback answer to a specific herd question.
+Unknown or unavailable evidence blocks only the unsupported claim and is stated
+for that question. Reads add no farm-write or confirmation authority and require
+no second model call to choose the same capability. A request for a concrete
+herd plan or worklist retains that subject when it also asks for the owner's
+attention, help or next steps. Only a request whose subject is outstanding owner
+inputs or division of responsibility selects the owner-dependency view.
+
+Answers name the relevant animals, litters or pens and explain the reason,
+date and next step supported by current canonical evidence. Bounded lists retain
+the total and disclose the remainder. Weighing uses the existing HERDMASTER
+eligibility/schedule contract; missing weights do not independently authorize
+reweighing or override breeding, tagging, lifecycle or sale/order reconciliation.
+Pen headcount against recorded capacity is a records comparison, not proof of
+physical overcrowding: capacity units and sow-with-litter accommodation remain
+unresolved unless governed evidence defines them. Farrowing/maternity pens show
+recorded composition and capacity separately, without calculating headcount excess.
+Planned weaning is not completed
+weaning. A question about what HERDMASTER needs from the owner returns its genuine
+owner questions and supported physical tasks; unrelated specialist failures and
+agent-owned technical work are not owner obligations. Eligible owner dependencies
+are selected after freshness/state/deduplication checks and before the ordinary
+daily brief's length cap, with omitted owner tasks disclosed.
+
 ## Lifecycle And Evidence Contract
 
 - Exposure start, exposure end, exact service, conception evidence, pregnancy,
@@ -40,6 +69,16 @@ Herdmaster does not expose raw records to the owner when an aggregate answer is 
 - Planned weaning is not completed weaning. The protected completion preview
   binds the litter, exact piglets, tags, weights, movement, observations and
   evidence generation before any record changes.
+- A near-farrowing observation strictly before an attributable same-sow birth
+  remains historical evidence and cannot continue upcoming-farrowing advice.
+  Same-day date precision, later overlapping observations, invalid/future times
+  or missing attribution retain unresolved chronology; no pregnancy or placement
+  is inferred. Comparison uses the farm's Africa/Johannesburg business day.
+- A breeding placement clock requires an identified litter governed as Weaned or
+  Completed and an actual nonfuture weaning date on or after its birth. An Active
+  litter's past planned date or partial weaned count is not completion. Invalid
+  completion chronology stays explicit and blocks placement; recovery, body
+  condition, medical and withdrawal holds retain precedence.
 - Mortality, natural-health and welfare intake separates observation from
   diagnosis. Unknown cause stays Unknown; corrections retain the original;
   the smallest grouped physical question is asked once and then consumed.

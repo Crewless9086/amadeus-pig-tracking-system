@@ -74,6 +74,9 @@ def run_herdmaster(request, *, readers=None, force_broad=False):
 def _select_capability(question, requested, subject):
     if str((subject or {}).get("pig_id") or "").strip():
         return "pig_profile"
+    # A validated typed request owns selection; language fallback is legacy only.
+    if requested in HERDMASTER_DEFINITION.capabilities:
+        return requested
     lower = str(question or "").lower()
     if re.search(r"\b(how many|count|total|number of)\b", lower) and re.search(r"\b(pig|pigs|herd|animals)\b", lower):
         return "herd_inventory"
