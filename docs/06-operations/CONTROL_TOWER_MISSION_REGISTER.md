@@ -1,5 +1,56 @@
 # Control Tower Mission Register
 
+Lifecycle: `active` current-state evidence; non-doctrine.
+Updated: 2026-10-01; HERDMASTER retained-follow-up repair is WORKING.
+Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
+Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
+Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
+
+Latest shared handover: [HERDMASTER status and acceptance checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md).
+This compact shared checkpoint supersedes current-state claims in the
+September21 section below. That section remains historical evidence; its old
+approval requests, next gates and unreleased-consolidation statements must not
+be executed again. Detailed private working evidence stays in the assigned
+sibling mission directory, not in the public repository.
+
+## Current work and authority
+
+- The original eighteen consolidation commits were integrated through protected
+  PR1341 at `3e77d3434b071078a41917a68fa63f2fa7b314ec`. Cleanup and retention are
+  verified; consolidation itself did not activate farm agents.
+- PR1364 is merged at `9bef22336a98fa92f5ee2a419ab4cbafc781c163`, verified as the
+  loaded web revision on October1. Six canonical question paths passed loaded
+  read-only checks on September30. One genuine mortality confirmation, its
+  canonical effect, welfare closure and same-case completion are preserved.
+- Five older HERDMASTER follow-ups still need reconciliation. Current work
+  repairs stable litter identity, specialist-owned advisory disposition and one
+  expired never-attempted legacy confirmation. A new preview requires fresh
+  protected confirmation; old and new material must not be called equivalent.
+- Charl continued HERDMASTER under existing repair/release authority. The
+  existing application worktree continues from main9bef on
+  `codex/herdmaster-case-disposition-20261001`. Source and local tests are work
+  in progress, not a new deployment or accepted farm outcome.
+- Fresh genuine Telegram acceptance and later independent manager continuity
+  remain open. Do not manufacture messages, replay historical owner events or
+  ask for farm observations already pending with Charl.
+- ROOTLINE is the proposed next focus after HERDMASTER readiness. Its separate
+  commissioning, water and shutdown gates remain; no hardware action follows
+  from this repair. Other mission identities, held PR1340 and three registered
+  worktrees are preserved. The expired desktop observer remains PAUSED.
+
+Only this coordinator may dispatch or operate the release lane. Continue exact
+qualification, protected release and operational acceptance; do not repeat
+consumed approvals or bypass branch protection. Real farm writes still require
+their existing protected confirmation. No new paid AI work, permission change,
+hardware activation, scheduler deployment or direct farm correction is included.
+
+OWNER ACTION: NONE.
+
+## Historical checkpoint — 21 September 2026
+
+The complete earlier register follows as dated evidence. The current checkpoint
+above controls navigation; active doctrine is selected only by the source map.
+
 Status: current-state evidence; non-doctrine.
 Updated: 2026-09-21 09:59 UTC; repair PR1342 merged and web revision verified.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.

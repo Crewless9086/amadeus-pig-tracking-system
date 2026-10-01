@@ -111,6 +111,10 @@ def _histories(cur, claim, source, source_history, expected_case, observed_at):
           and (provider_message_id=any(%s) or preview_payload->'provider_message_ids' ?| %s))
         order by callback_token limit 129""",
         (missions, claim["owner_user_id"], claim["private_chat_id"], providers, providers))
+    orphan_audit = None
+    if (source.get("retained_repreview") or {}).get("orphan_predecessor"):
+        from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+        related, orphan_audit = orphan.validate_lineage(cur, source, related, claim, observed_at, source_history)
     source_tx.require(related == [claim], "retained_mortality_competing_claim")
     cases = _read_rows(cur, "select to_jsonb(m) from app_private.oom_manager_cases m where case_id=%s for update",
         (expected_case["case_id"],))
@@ -135,14 +139,20 @@ def _histories(cur, claim, source, source_history, expected_case, observed_at):
         where aggregate_type='protected_action_claim' and aggregate_id=%s
         order by occurred_at,event_id limit 129""", (claim_hash,))
     chain = history.validate_audit_chain(claim, case, source, audits, observed_at=observed_at)
-    events = _read_rows(cur, """select to_jsonb(e) from app_private.oom_manager_case_events e
-        where case_id=%s order by occurred_at,event_id limit 4097""", (case["case_id"],))
+    if orphan_audit is not None:
+        events = orphan._case_events(cur, case)
+    else:
+        events = _read_rows(cur, """select to_jsonb(e) from app_private.oom_manager_case_events e
+            where case_id=%s order by occurred_at,event_id limit 4097""", (case["case_id"],))
     cycle = None
     if chain[0]:
         cycles = _read_rows(cur, "select to_jsonb(c) from app_private.oom_manager_worker_cycles c where cycle_id=%s",
             (chain[0]["causation_id"],))
         cycle = history._one(cycles, "historical_presend_cycle")
-    history.validate_case_history(events, claim, case, chain, cycle, observed_at=observed_at)
+    if orphan_audit is not None:
+        orphan.validate_case_history(events, case, observed_at)
+    else:
+        history.validate_case_history(events, claim, case, chain, cycle, observed_at=observed_at)
     return {"source_history_sha256": source_tx.digest(source_history), "family_history_sha256": source_tx.digest(family),
         "claim_history_sha256": source_tx.digest(audits), "case_history_sha256": source_tx.digest(events)}
 

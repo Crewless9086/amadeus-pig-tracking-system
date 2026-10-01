@@ -415,9 +415,12 @@ def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, cha
     from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
     pigs = [{"Pig_ID": f"P{i}", "Tag_Number": str(701+i), "Status": "Active", "On_Farm": "Yes",
              "Animal_Type": "Grower", "Current_Pen_ID": "PEN-N"} for i in (1, 2)]
+    # Place the synthetic due event in the governed Tuesday/Wednesday cycle,
+    # even when this conversation test runs later in the week.
+    weighing_day = NOW.date() - timedelta(days=(NOW.weekday() - 1) % 7)
     weights = build_daily_manager_evidence(pigs=[{"pig_id": "P1", "tag_number": "702", "status": "Active",
         "on_farm": True, "animal_type": "Grower"}], window_weights=[], prior_weights=[],
-        lifecycle_events=[{"pig_id": "P1", "event_type": "individual_weighing_due", "effective_at": NOW.date().isoformat()}],
+        lifecycle_events=[{"pig_id": "P1", "event_type": "individual_weighing_due", "effective_at": weighing_day.isoformat()}],
         analysis_date=NOW.date())
     evidence = {"pig_rows": pigs, "pens": [{"pen_id": "PEN-N", "pen_name": "North", "capacity": 1}],
         "litter_attention": {"count": 1, "items": [{"sow_name": "Hazel", "reason": "Weaning is due",

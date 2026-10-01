@@ -196,6 +196,8 @@ def _verify_retained_completion(claim, result, connect_factory):
         raise ValueError("health_loss_recovery_effect_unresolved")
     with connect_factory() as db,db.cursor() as cur:
         cur.execute("set local statement_timeout='5000ms'")
+        from modules.oom_sakkie.retained_mortality_orphan_recovery import verify_completed_ancestry
+        verify_completed_ancestry(cur, claim, result)
         cur.execute("""select event_payload,actor_reference from public.pig_lifecycle_events
             where lifecycle_event_id=%s and pig_id=%s and idempotency_key=%s
               and lifecycle_event_type='exited_farm'""",

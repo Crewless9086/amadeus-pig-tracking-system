@@ -174,7 +174,7 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
     digest_material = {key: value for key, value in material.items()
                        if key != "next_reassessment_at"}
     digest_material["evidence_refs"] = [ref for ref in refs
-                                        if not str(ref).startswith("observed:")]
+                                        if not str(ref).startswith(("observed:", "herdmaster_case_fence:"))]
     digest = _digest(digest_material)
     return {**material, "case_id": "OOM-CASE-" + hashlib.sha256(dedupe.encode()).hexdigest()[:24].upper(),
             "evidence_digest": digest}
@@ -626,6 +626,13 @@ class PostgresManagerCaseStore:
         # Never trust a caller-supplied case_id or rename the writer's task.
         if prior and len(prior) > 6:
             candidate = {**candidate, "case_id": str(prior[6])}
+        fences = [ref for ref in candidate["evidence_refs"]
+                  if ref.startswith("herdmaster_case_fence:")]
+        if fences and not (prior and prior[2] == "completed"
+                           and prior[0] == candidate["evidence_digest"]):
+            expected = ("herdmaster_case_fence:" + str(prior[1]) + ":" + str(prior[0])) if prior else ""
+            if fences != [expected]:
+                return "stale"
         if candidate.get("terminal_state") == "completed":
             if not prior:
                 return "replayed"
@@ -652,7 +659,13 @@ class PostgresManagerCaseStore:
                  candidate["summary"], candidate["next_action"],
                  _time(candidate["next_reassessment_at"], "next_reassessment_at"),
                  generation, now, candidate["dedupe_key"]))
-            self._event(cur, {**candidate, "generation": generation}, "completed", now)
+            # Keep the closure proof after later case generations replace the
+            # mutable projection. Other specialists retain their event shape.
+            proof = ({"evidence_digest": candidate["evidence_digest"],
+                "evidence_refs": candidate["evidence_refs"],
+                "prior_generation": int(prior[1]), "prior_evidence_digest": prior[0]}
+                if candidate.get("message_family") == "herdmaster_disposition" else {})
+            self._event(cur, {**candidate, "generation": generation}, "completed", now, **proof)
             return "changed"
         if (prior and candidate["specialist"] == "BEACON"
                 and prior[0] != candidate["evidence_digest"]):
@@ -1051,6 +1064,9 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     if specialist not in {"HERDMASTER", "ROOTLINE", "BEACON"}:
         return {"success": True, "status": "non_farm_case_delivery_suppressed",
                 "delivery_confirmed": False, "telegram_sends": 0}
+    if str(case.get("message_family") or "") == "herdmaster_disposition":
+        return {"success": True, "status": "herdmaster_owning_reconciliation_pending",
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
     if str(case.get("message_family") or "") == "retained_protected_recovery":
         from modules.oom_sakkie.herdmaster_burst_recovery import (
             route_retained_manager_recovery,

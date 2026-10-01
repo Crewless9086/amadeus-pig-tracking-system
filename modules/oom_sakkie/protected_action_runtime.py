@@ -79,12 +79,24 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             return {"handled":True, **result, "delivery_recovery_required":True}, result_status
         if claimed.get("action_kind")=="mortality":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            if str(claimed.get("mission_id") or "").startswith("OOM-HERDMASTER-MORTALITY-"):
+                from modules.oom_sakkie.retained_mortality_orphan_recovery import verify_completed_callback
+                try:
+                    verify_completed_callback(claimed, owner, chat, connect_factory=connect_factory)
+                except Exception:
+                    return {"handled":True,"success":False,"status":"retained_mortality_completion_unproven",
+                        "suppress_owner_delivery":True,"delivery_recovery_required":False,
+                        "writes_farm_data":False,"telegram_sends":0,"telegram_edits":0},409
             from modules.oom_sakkie.herdmaster_health_loss_runtime import mortality_completion_recovery_result
             result=mortality_completion_recovery_result(result,
                 claimed.get("preview_payload") or {},
                 str(parsed.get("output_language") or "en"))
+            callback_binding = dict(claimed.get("delivery_callback_binding") or {})
+            if callback_binding.get("provider_timestamp"):
+                from modules.oom_sakkie.retained_mortality_history import _time
+                callback_binding["provider_timestamp"] = _time(callback_binding["provider_timestamp"]).isoformat()
             return {"handled":True,**result,"specialist":"HERDMASTER",
-              "delivery_callback_binding":claimed.get("delivery_callback_binding") or {},
+              "delivery_callback_binding":callback_binding,
               "mission_id":claimed["mission_id"],
               "card_mission_id":generic_protected_card_mission_id(
                   claimed["mission_id"], claimed["preview_digest"]),

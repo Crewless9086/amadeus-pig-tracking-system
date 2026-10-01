@@ -2690,7 +2690,7 @@ def test_changed_confirmed_case_with_missing_refresh_advances_exception_cadence(
     assert row[1] != row[2] and row[2] == confirmed_digest
     assert row[3] is not None and row[4] > retry_at
     assert row[5:] == (None, None)
-    assert event["next_reassessment_at"] == row[4].isoformat()
+    assert datetime.fromisoformat(event["next_reassessment_at"]) == row[4]
     immediate = store.run_cycle([changed, later], now=retry_at + timedelta(seconds=1),
         source_revision="test", refresh=lambda _case: None,
         deliver=lambda _case: sends.append("unexpected"))

@@ -102,6 +102,21 @@ question, while mortality assessment, removal and disposal remain separate
 work with their own lifecycle and owner. Unknown death, disposal or cause stays
 Unknown and blocks only the dependent conclusion.
 
+## Retained identity and litter selection
+
+Reassess an old unresolved identity against the unchanged authenticated report
+and current canonical identities. A date number must not become a competing pig
+when the report explicitly identifies another tag. Reassessment cannot override a
+resolved contrary identity, a correction, cancellation, prohibited recording or
+ambiguous current match. The same protected preview must independently verify the
+exact animal and supplied facts before confirmation.
+
+Select a retained piglet-loss litter through the resolved sow's stable Pig ID,
+active litter state and attributable incident date. Display names may be empty or
+changed and must not act as identity predicates. Missing or multiple eligible
+litters remain unresolved. The confirmation names the exact litter and selected
+piglets without substituting a hard-coded sow name; no loss is recorded by selection.
+
 ## Complete-effect preview
 
 One consolidated preview enumerates each potentially affected domain and marks
@@ -142,6 +157,24 @@ requires its exact audit chain; it is not permission to disregard real attempts.
 Window creation and attempt ownership commit together exactly once. An attempt,
 ambiguous result or prior window never starts another automatic window.
 
+An expired orphan claim that was never presented or attempted may require a
+replacement preview when current canonical material no longer matches its old
+claim. This is not same-preview renewal or confirmation. Permit at most one
+audited automatic replacement for the unchanged authenticated original report,
+exact same resolved animal and mortality event family, after independently
+rebuilding a complete current preview. The predecessor remains immutable history
+with an explicit retired state; its token cannot become current again.
+
+The replacement transaction locks and revalidates the original source, unique
+predecessor and manager case. It requires complete bounded histories, current
+recipient authority, no attempted/ambiguous delivery, cancellation, correction,
+confirmation, competing claim or canonical effect. The audit binds the old claim,
+source and manager history to the new preview and successor. Preparation sends
+nothing. Presentation and confirmation independently verify that ancestry, current
+facts and protected authority. A flag or missing old card alone proves nothing.
+Any uncertainty retains the case for engineering reconciliation. A changed or
+attempted successor cannot trigger repeated automatic replacement.
+
 An authenticated owner or authorized farm manager pressing an expired,
 verifiably delivered retained mortality card requests a fresh review; that press
 does not confirm a farm effect. Under the same source fence, the runtime may
@@ -157,8 +190,9 @@ revoked authority, cancellation, supersession, unknown history or delivery
 ambiguity prevents continuation. Complete bounded history and immutable audit
 bindings are rechecked at admission; a caller-supplied continuation field is not
 authority. The same manager case may reconcile the audited successor evidence
-and resume its never-attempted delivery after interruption. The scheduler cannot
-create a confirmation generation or restart an attempted window. A failed or
+and resume its never-attempted delivery after interruption. Except for the strictly bounded never-attempted orphan replacement above, the
+scheduler cannot create a confirmation generation. It can never restart an
+attempted window. A failed or
 late callback acknowledgement has receipt-deduplicated informational feedback;
 it grants no farm authority and cannot conceal a refused preview.
 

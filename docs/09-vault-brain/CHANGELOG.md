@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-10-01 - Retained herd identity and advisory reconciliation
+
+- Bind retained litter selection to canonical sow identity and incident chronology.
+- Reassess unresolved old identities without changing authenticated source facts.
+- Permit one audited replacement of an expired never-attempted orphan mortality
+  preview only under complete source, claim and manager history checks. Preserve
+  its predecessor and require a fresh protected confirmation for the rebuilt facts.
+- Preserve per-item provenance and retire only exact, owning-evidence advisories
+  under current generation and lease fences, with attributable completion events.
+- Keep technical reconciliation out of owner questions and keep farm confirmation
+  independent. Source qualification does not establish a deployed owner outcome.
+
 ## 2026-09-29 - Owner-requested expired mortality confirmation review
 
 - Preserve the expired delivered card and original report while creating one

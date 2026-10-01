@@ -405,6 +405,9 @@ def _herdmaster(now):
                 message_family=("litter_first_treatment" if treatment_due else "litter_care"),
                 presentation_identity={"human_name": identity,
                                        "stable_reference": litter_id}))
+    from modules.oom_sakkie.herdmaster_case_disposition import collect_advisory_dispositions
+    candidates.extend(collect_advisory_dispositions(
+        now, current_keys={row["dedupe_key"] for row in candidates}))
     return candidates
 
 
@@ -568,6 +571,7 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                 if bridge.get("owner_requested_continuation") is True:
                     candidate["evidence_refs"].append("retained_confirmation:" + bridge["claim_preview_digest"])
                     candidate["next_reassessment_at"] = now.isoformat()
+    reassessment_evidence = None
     for key, refs, status in retained:
         if key in completed:
             candidates.append(completed[key])
@@ -583,7 +587,18 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
         prior_bindings = {str(ref) for ref in refs if str(ref).startswith("retained_report_binding:")}
         if (prior_bindings or selected is not None) and prior_bindings != {binding}:
             continue
-        projected = _project_retained_herd_report_recovery(now, rows, [], canonical_pigs=pigs)
+        reassessed = {}
+        from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
+            retained_identity_reassessment_needed, reassess_retained_mortality_identity)
+        if key.startswith("herdmaster:retained-mortality:") and len(rows) == 1 and retained_identity_reassessment_needed(rows[0]):
+            from modules.oom_sakkie.herdmaster_health_loss_runtime import load_canonical_health_loss_evidence
+            if reassessment_evidence is None:
+                reassessment_evidence = load_canonical_health_loss_evidence(deadline_seconds=6)
+            identity = reassess_retained_mortality_identity(rows[0], reassessment_evidence)
+            if identity:
+                reassessed[str(rows[0]["provider_message_id"])] = identity
+        projected = _project_retained_herd_report_recovery(now, rows, [], canonical_pigs=pigs,
+            mortality_reassessments=reassessed)
         # Preserve the exact retained incident set and canonical target. A changed
         # group/identity needs its owning reconciliation, never a new manager key.
         bound = {str(ref) for ref in refs if str(ref).startswith(
@@ -635,7 +650,7 @@ def _retained_mortality_completion(cursor, key, refs, evidence, now):
         return None
     related = [c for c in evidence["claims"] if str(c[2]) == mission
         or (str(c[0]), str(c[1]), str(c[3])) == (owner, chat, provider)]
-    if len(related) > 1 and (latest.get("retained_repreview") or {}).get("owner_requested_continuation") is True:
+    if (latest.get("retained_repreview") or {}).get("owner_requested_continuation") is True:
         from modules.oom_sakkie import herdmaster_source_transaction as source_tx
         from modules.oom_sakkie.retained_mortality_continuation import read_claims, validate_lineage
         try:
@@ -646,6 +661,21 @@ def _retained_mortality_completion(cursor, key, refs, evidence, now):
             if len(current) != 1:
                 return None
             validate_lineage(cursor, latest, claims, current[0], now, rows)
+            related = [c for c in related if (c[7] or {}).get("callback_token") == current[0]["callback_token"]]
+        except (source_tx.SourceConflict, KeyError, ValueError):
+            return None
+    elif any((r.get("retained_repreview") or {}).get("orphan_predecessor") for r in [latest, *reports]):
+        from modules.oom_sakkie import herdmaster_source_transaction as source_tx
+        from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+        try:
+            rows = source_tx.read_history(cursor, [mission])
+            claims = orphan.read_claims(cursor, {**latest, "provider_message_id": provider})
+            current = [c for c in claims if c["preview_digest"] == latest["retained_repreview"]["claim_preview_digest"]]
+            if len(current) != 1:
+                return None
+            remaining, _audit = orphan.validate_lineage(cursor, latest, claims, current[0], now, rows)
+            if remaining != current:
+                return None
             related = [c for c in related if (c[7] or {}).get("callback_token") == current[0]["callback_token"]]
         except (source_tx.SourceConflict, KeyError, ValueError):
             return None
@@ -709,16 +739,17 @@ def _retained_mortality_completion(cursor, key, refs, evidence, now):
 
 
 def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pigs=(),
-                                            canonical_litters=(), farrowing_claims=()):
+                                            canonical_litters=(), farrowing_claims=(), mortality_reassessments=None):
     candidates = []
     pig_by_tag = {str(row.get("tag_number") or "").casefold(): row for row in canonical_pigs}
     for row in health or ():
         from modules.oom_sakkie.herdmaster_retained_recovery_runtime import retained_mortality_tag
-        tag = retained_mortality_tag(row)
+        reassessed = (mortality_reassessments or {}).get(str(row.get("provider_message_id") or "")) or {}
+        tag = str(reassessed.get("tag_number") or "") or retained_mortality_tag(row)
         if not tag:
             continue
         pig = pig_by_tag.get(tag.casefold()) or {}
-        assessed = ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
+        assessed = reassessed or ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
         if assessed and str(assessed.get("pig_id") or "") != str(pig.get("pig_id") or ""):
             continue
         if str(pig.get("status") or "").casefold() in {"dead", "deceased", "culled"} or pig.get("on_farm") is False:
@@ -730,7 +761,8 @@ def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pi
         candidates.append(_candidate(
             "herdmaster:retained-mortality:" + provider, "HERDMASTER", "urgent",
             [f"provider_message:{provider}", f"pig:{pig.get('pig_id') or tag}",
-             f"tag:{tag}", "canonical_effect:none"],
+             f"tag:{tag}", "canonical_effect:none",
+             *(["retained_identity_reassessment:required"] if reassessed else [])],
             ["fresh_canonical_mortality_preview"],
             f"Retained mortality report for pig {tag} remains unresolved.",
             "Route retained evidence to the protected mortality re-preview adapter; never send a generic manager card.",
