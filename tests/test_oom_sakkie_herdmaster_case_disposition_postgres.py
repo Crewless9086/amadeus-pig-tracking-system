@@ -342,11 +342,21 @@ def test_unresolved_identity_recovers_date_number_without_selecting_it_as_pig(st
 
 
 @pytest.mark.parametrize("race", [False, True])
-def test_full_cycles_complete_advisory_once_without_dispatch(store, race):
+@pytest.mark.parametrize("proof_kind", ["lifecycle", "observation"])
+def test_full_cycles_complete_advisory_once_without_dispatch(store, race, proof_kind):
     from concurrent.futures import ThreadPoolExecutor
     from datetime import datetime, timezone
     import threading
-    case = advisory(store, status="Sold", on_farm=False)
+    if proof_kind == "observation":
+        add_report(store, completed_observation(store))
+        with store() as db, db.cursor() as cur:
+            cur.execute("select to_jsonb(c) from app_private.oom_manager_cases c")
+            case = cur.fetchone()[0]
+    else:
+        case = advisory(store, status="Sold", on_farm=False)
+        with store() as db, db.cursor() as cur:
+            cur.execute("select to_jsonb(c) from app_private.oom_manager_cases c where case_id=%s", (case["case_id"],))
+            case = cur.fetchone()[0]
     now = datetime.now(timezone.utc)
     rows = disposition.collect_advisory_dispositions(now, connect=lambda: store(True))
     forbidden = Mock(side_effect=AssertionError("completed advisory must not dispatch"))
@@ -366,8 +376,25 @@ def test_full_cycles_complete_advisory_once_without_dispatch(store, race):
     with store() as db, db.cursor() as cur:
         cur.execute("select status,generation from app_private.oom_manager_cases where case_id=%s", (case["case_id"],))
         assert cur.fetchone() == ("completed", 2)
-        cur.execute("select event_type from app_private.oom_manager_case_events where case_id=%s", (case["case_id"],))
-        assert cur.fetchall() == [("completed",)]
+        cur.execute("select event_type,event_payload from app_private.oom_manager_case_events where case_id=%s", (case["case_id"],))
+        events = cur.fetchall()
+        assert len(events) == 1 and events[0][0] == "completed"
+        completion = events[0][1]
+        expected = normalize_candidate(rows[0], now=now)
+        assert completion["evidence_digest"] == expected["evidence_digest"]
+        assert completion["evidence_refs"] == expected["evidence_refs"]
+        assert completion["prior_generation"] == 1
+        assert completion["prior_evidence_digest"] == case["evidence_digest"]
+        if proof_kind == "observation":
+            assert "advisory_proof_observation:OBS-1" in completion["evidence_refs"]
+        # Reopening cannot erase the original completion's canonical proof.
+        later = normalize_candidate({**rows[0], "terminal_state": "", "message_family": "",
+            "summary": "A new independent advisory", "evidence_refs": ["pig:PIG-SYNTHETIC-A", "source:new"]},
+            now=now + timedelta(minutes=1))
+        assert PostgresManagerCaseStore(connect_factory=store)._reconcile(cur, later, now + timedelta(minutes=1)) == "changed"
+        cur.execute("select event_payload from app_private.oom_manager_case_events where case_id=%s and event_type='completed'",
+            (case["case_id"],))
+        assert cur.fetchall() == [(completion,)]
         for table in ("pig_lifecycle_events", "oom_protected_action_claims", "pig_welfare_case_events"):
             cur.execute("select count(*) from " + ("app_private." if table.startswith("oom_") else "public.") + table)
             assert cur.fetchone()[0] == 0

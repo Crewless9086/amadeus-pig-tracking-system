@@ -659,7 +659,13 @@ class PostgresManagerCaseStore:
                  candidate["summary"], candidate["next_action"],
                  _time(candidate["next_reassessment_at"], "next_reassessment_at"),
                  generation, now, candidate["dedupe_key"]))
-            self._event(cur, {**candidate, "generation": generation}, "completed", now)
+            # Keep the closure proof after later case generations replace the
+            # mutable projection. Other specialists retain their event shape.
+            proof = ({"evidence_digest": candidate["evidence_digest"],
+                "evidence_refs": candidate["evidence_refs"],
+                "prior_generation": int(prior[1]), "prior_evidence_digest": prior[0]}
+                if candidate.get("message_family") == "herdmaster_disposition" else {})
+            self._event(cur, {**candidate, "generation": generation}, "completed", now, **proof)
             return "changed"
         if (prior and candidate["specialist"] == "BEACON"
                 and prior[0] != candidate["evidence_digest"]):
