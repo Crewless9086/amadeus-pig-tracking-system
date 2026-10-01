@@ -91,6 +91,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
         trusted_health = (localized.get("tool_used") == "herdmaster_health_loss_preview"
             and localized.get("recipient_render_contract") == "herdmaster_health_loss_recipient_v1"
             and status in {"preview_ready", "waiting_for_input"})
+        trusted_canonical_read = _canonical_read_result(localized)
         trusted_continuation_feedback = (specialist == "HERDMASTER"
             and status == "retained_confirmation_feedback"
             and localized.get("recipient_render_contract") == "retained_confirmation_feedback_v1"
@@ -110,7 +111,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             and localized.get("recipient_render_contract") == "rootline_owner_clarification_recipient_v1"
             and status in {"owner_context_clarification_required", "owner_clarification_delivery_reconciliation_required"}
             and localized.get("question_count") == 1 and localized.get("hardware_commands") == 0)
-        preserves_recipient_text = (trusted_question or trusted_health or trusted_continuation_feedback or trusted_farrowing or trusted_irrigation
+        preserves_recipient_text = (trusted_question or trusted_health or trusted_canonical_read or trusted_continuation_feedback or trusted_farrowing or trusted_irrigation
             or trusted_irrigation_question) and str(
             localized.get("recipient_language") or "").casefold().startswith("af")
         if preserves_recipient_text:
@@ -188,6 +189,27 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
     if answer and answer == original_answer and not preserves_recipient_text and not structured_treatment and not _looks_afrikaans(answer):
         localized["recipient_language_render_unrecognized"] = True
     return localized
+
+
+def _canonical_read_result(result):
+    return (result.get("tool_used") == "herdmaster_herd_question"
+        and result.get("recipient_render_contract") == "canonical_read_answer_v1"
+        and result.get("canonical_read_status") in {
+            "herd_question_answer_ready", "herd_read_answer_ready"}
+        and result.get("success") is True and result.get("read_only") is True
+        and result.get("writes_performed") is False)
+
+
+def _canonical_read_subject(result):
+    value = result.get("canonical_read_subject")
+    if (not _canonical_read_result(result)
+            or result.get("canonical_read_status") != "herd_question_answer_ready"
+            or not isinstance(value, Mapping)
+            or not {"pig_id", "tag_number"} <= set(value) <= {"pig_id", "tag_number", "pig_name"}
+            or not all(isinstance(v, str) and len(v) <= 128 for v in value.values())
+            or not value.get("pig_id", "").strip()):
+        return {}
+    return dict(value)
 
 
 def _afrikaans_campaign_objective(value: Any) -> str:
@@ -470,6 +492,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     if result.get("read_only") is True or result.get("status") in {"farm_manager_round_ready", "farm_manager_round_replay_suppressed"}:
         payload["conversation_question"] = str(parsed.get("text") or "")[:500]
         payload["conversation_answer"] = text[:2400]
+        canonical_subject = _canonical_read_subject(result)
+        if canonical_subject:
+            payload["canonical_read_subject"] = canonical_subject
+            payload["canonical_read_status"] = "herd_question_answer_ready"
     for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
                 "confirmation_prompt_sha256", "operation_id", "preview_hash",
                 "evidence_generation", "confirmation_token",

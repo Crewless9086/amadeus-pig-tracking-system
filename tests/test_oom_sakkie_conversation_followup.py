@@ -25,6 +25,22 @@ def interpretation(kind=None, language="en", **query):
         "read_query": {"kind": kind, **query} if kind else None}
 
 
+def assert_canonical_animal(journey, result, pig_id, tag):
+    expected = {"pig_id": pig_id, "tag_number": tag,
+        "pig_name": next(row["pig_name"] for row in journey.connection.rows if row["pig_id"] == pig_id)}
+    assert result["message"]["canonical_read_subject"] == expected
+    delivered = [row for row in journey.family.values() if row["state"] == "delivered"]
+    assert delivered[-1]["canonical_read_subject"] == expected
+    assert any("where state.pig_id = %s" in sql and args == (pig_id,)
+               for sql, args in journey.connection.calls)
+
+
+def weight_date(language):
+    month = ("Januarie", "Februarie", "Maart", "April", "Mei", "Junie", "Julie",
+        "Augustus", "September", "Oktober", "November", "Desember")[NOW.month-1] if language == "af" else NOW.strftime("%B")
+    return f"{NOW.day} {month} {NOW.year}"
+
+
 class Response:
     def __init__(self, value): self.value = value
     def __enter__(self): return self
@@ -153,7 +169,8 @@ def test_complete_question_family_uses_real_gateway_readers_and_family_delivery(
     assert code == 200 and ("farrowing" if language == "en" else "werpsaak") in farewell["answer"]
     assert ("death/farewell" if language == "en" else "sterfte-/afskeidsaak") in farewell["answer"]
     pig, code = j.send("What is the status of Pig702?", interpretation("animal_status", language, subject="702", case_kind="farrowing", context_message_id="9001"), 8005)
-    assert code == 200 and "PIG-SYNTHETIC-702" in pig["answer"] and ("Active" if language == "en" else "Aktief") in pig["answer"] and "87 kg" in pig["answer"]
+    assert code == 200 and "Hazel" in pig["answer"] and ("Active" if language == "en" else "Aktief") in pig["answer"] and "87 kg" in pig["answer"]
+    assert_canonical_animal(j, pig, "PIG-SYNTHETIC-702", "702")
     assert "current farrowing status" not in pig["answer"] and len(j.sends) == 5
     replay, code = j.send("What is the status of Pig702?", interpretation("animal_status", language, subject="702"), 8005)
     assert len(j.sends) == 5 and replay["delivery"]["telegram_sends"] == 0
@@ -163,7 +180,7 @@ def test_complete_question_family_uses_real_gateway_readers_and_family_delivery(
     assert delivered[0]["conversation_answer"] != delivered[0]["clarification_question"]
     context = json.loads(j.payloads[1]["messages"][1]["content"])["context"]
     assert context["conversation_turns"][0]["telegram_message_id"] == "9501"
-    assert "TODAY" in context["conversation_turns"][0]["assistant_answer"] or "VANDAG" in context["conversation_turns"][0]["assistant_answer"]
+    assert context["conversation_turns"][0]["assistant_answer"] == first
     assert context["recent_turns"][-1]["semantic_intent"] == "pending_manager_question"
 
 
@@ -201,7 +218,9 @@ def test_no_canonical_reader_or_provider_for_unallowed_private_principal(journey
     {"state": "superseded"}, {"delivery_provider_timestamp": (NOW-timedelta(hours=8)).isoformat()}, {"telegram_message_id": ""}])
 def test_context_requires_exact_private_confirmed_current_card(override):
     row = {"owner_user_id": "42", "chat_id": "42", "state": "delivered", "card_mission_id": "C",
-        "telegram_message_id": "9501", "delivery_provider_timestamp": NOW.isoformat(), "conversation_answer": "Hazel follow-up", **override}
+        "telegram_message_id": "9501", "delivery_provider_timestamp": NOW.isoformat(), "conversation_answer": "Hazel follow-up",
+        "canonical_read_status": "herd_question_answer_ready",
+        "canonical_read_subject": {"pig_id": "PIG-SYNTHETIC-702", "tag_number": "702"}, **override}
     parsed = {"telegram_user_id": "42", "telegram_chat_id": "42", "provider_timestamp": (NOW+timedelta(seconds=1)).isoformat()}
     assert semantic._eligible_conversation_context([row], parsed) == []
 
@@ -281,13 +300,15 @@ def test_animal_specific_case_request_never_returns_unrelated_cases(journey, mon
     assert "Canonical tag reconciliation" not in result["answer"] and reader.call_count == 0
     assert result["message"]["question_count"] == 1 and journey.claim.call_count == 0
     followup, code = journey.send("Its current status please", interpretation("animal_status", subject="702", context_message_id="9501"), 8002)
-    assert code == 200 and "PIG-SYNTHETIC-702" in journey.sends[-1][1]
+    assert code == 200 and "Hazel" in journey.sends[-1][1]
+    assert_canonical_animal(journey, followup, "PIG-SYNTHETIC-702", "702")
     assert reader.call_count == 0 and journey.claim.call_count == 0
 
 
 def test_valid_semantic_animal_read_overrides_farm_status_phrase(journey):
     result, code = journey.send("Farm status: specifically Pig702", interpretation("animal_status", subject="702"))
-    assert code == 200 and "PIG-SYNTHETIC-702" in result["answer"]
+    assert code == 200 and "Hazel" in result["answer"]
+    assert_canonical_animal(journey, result, "PIG-SYNTHETIC-702", "702")
     assert not journey.rounds and len(journey.sends) == 1
 
 
@@ -295,7 +316,8 @@ def test_work_split_does_not_promote_recommendation_or_expired_lease_to_executio
     journey.cases = {"cases": [{"specialist": "HERDMASTER", "summary": "Canonical tag reconciliation", "dedupe_key": "herdmaster:weights:X",
         "status": "delegated", "lease_until": (NOW-timedelta(minutes=1)).isoformat()}], "truncated": True}
     result, code = journey.send("Which jobs are yours and mine?", interpretation("work_split"))
-    assert code == 200 and "worker lease expired; execution unconfirmed" in result["answer"]
+    assert code == 200 and "<b>Status:</b> follow-up unconfirmed." in result["answer"]
+    assert "being followed up" not in result["answer"]
     assert "bounded partial case snapshot" in result["answer"]
     owner_part = result["answer"].split("What I need from you", 1)[1]
     assert "tag reconciliation" not in owner_part
@@ -345,10 +367,13 @@ def test_delivered_animal_context_resolves_followup_and_explicit_subject_overrid
     first, code = journey.send("Status Pig702", interpretation("animal_status", language, subject="702"))
     assert code == 200
     followup, code = journey.send("When was it weighed?", interpretation("animal_status", language, subject="702", context_message_id="9501"), 8002)
-    assert code == 200 and "87 kg" in journey.sends[-1][1] and NOW.date().isoformat() in journey.sends[-1][1]
+    assert code == 200 and "87 kg" in journey.sends[-1][1] and weight_date(language) in journey.sends[-1][1]
+    assert_canonical_animal(journey, followup, "PIG-SYNTHETIC-702", "702")
     journey.connection.rows.append({**journey.connection.rows[0], "pig_id": "PIG-SYNTHETIC-703", "tag_number": "703"})
     new, code = journey.send("Now show Pig703", interpretation("animal_status", language, subject="703", context_message_id="9501"), 8003)
-    assert code == 200 and "PIG-SYNTHETIC-703" in journey.sends[-1][1]
+    assert code == 200 and "Hazel" in journey.sends[-1][1]
+    assert_canonical_animal(journey, new, "PIG-SYNTHETIC-703", "703")
+    assert "PIG-SYNTHETIC-703" not in journey.sends[-1][1]
     assert "PIG-SYNTHETIC-702" not in journey.sends[-1][1]
     assert journey.claim.call_count == 0
 
@@ -366,8 +391,87 @@ def test_qualified_model_full_shape_stays_read_only_through_gateway(journey):
         "read_query": {"kind": "animal_status", "subject": "702"}, "requested_action": "",
         "language": "en", "confidence": .99, "needs_clarification": False, "clarification_question": ""}
     result, code = journey.send("What is the status of Pig702?", raw)
-    assert code == 200 and "PIG-SYNTHETIC-702" in journey.sends[-1][1]
+    assert code == 200 and "Hazel" in journey.sends[-1][1]
+    assert_canonical_animal(journey, result, "PIG-SYNTHETIC-702", "702")
     assert journey.claim.call_count == 0
+
+
+@pytest.mark.parametrize("subject", ["70", "1702", "PIG-SYNTHETIC-70", "702-extra", "87", "recorded"])
+def test_context_alias_requires_exact_canonical_identity(journey, subject):
+    first, code = journey.send("Status Pig702", interpretation("animal_status", subject="702"))
+    assert code == 200
+    journey.connection.calls.clear()
+    result, code = journey.send("When was she weighed?", interpretation(
+        "animal_status", subject=subject, context_message_id="9501"), 8002)
+    assert code == 200 and "Which animal or case" in result["answer"]
+    assert journey.connection.calls == [] and journey.claim.call_count == 0
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+@pytest.mark.parametrize("alias", ["702", "Hazel"])
+def test_implicit_tag_context_stays_on_original_animal_but_explicit_tag_is_current(journey, language, alias):
+    first, code = journey.send("Status Pig702", interpretation("animal_status", language, subject="702"))
+    assert code == 200
+    journey.connection.rows[0]["tag_number"] = "OLD-702"
+    journey.connection.rows[0]["pig_name"] = "Old Hazel"
+    journey.connection.rows[0]["current_weight_kg"] = 88
+    journey.connection.rows.append({**journey.connection.rows[0], "pig_id": "PIG-SYNTHETIC-703",
+        "tag_number": "702", "pig_name": "Hazel", "current_weight_kg": 95})
+    journey.connection.calls.clear()
+    followup, code = journey.send("When was she weighed?", interpretation(
+        "animal_status", language, subject=alias, context_message_id="9501"), 8002)
+    assert code == 200 and "88 kg" in journey.sends[-1][1] and "Old Hazel" in journey.sends[-1][1]
+    assert_canonical_animal(journey, followup, "PIG-SYNTHETIC-702", "OLD-702")
+    journey.connection.calls.clear()
+    explicit, code = journey.send("Now show " + alias, interpretation(
+        "animal_status", language, subject=alias, context_message_id="9501"), 8003)
+    assert code == 200 and "95 kg" in journey.sends[-1][1] and "Hazel" in journey.sends[-1][1]
+    assert_canonical_animal(journey, explicit, "PIG-SYNTHETIC-703", "702")
+    assert journey.claim.call_count == 0
+
+
+@pytest.mark.parametrize("changes", [{"success": False}, {"tool_used": "unrelated"},
+    {"read_only": False}, {"writes_performed": True}, {"canonical_read_status": "held"},
+    {"recipient_render_contract": "untyped"},
+    {"canonical_read_subject": {"pig_id": "PIG-SYNTHETIC-702", "tag_number": "702", "extra": "forged"}}])
+def test_unproven_canonical_subject_never_enters_delivered_context(journey, changes):
+    result = {"answer": "Hazel status", "success": True, "read_only": True, "writes_performed": False,
+        "tool_used": "herdmaster_herd_question", "recipient_render_contract": "canonical_read_answer_v1",
+        "canonical_read_status": "herd_question_answer_ready",
+        "canonical_read_subject": {"pig_id": "PIG-SYNTHETIC-702", "tag_number": "702"}, **changes}
+    delivered = family.deliver_family_result({"telegram_user_id": "42", "telegram_chat_id": "42",
+        "provider_message_id": "8001", "provider_timestamp": NOW.isoformat(), "text": "Status?"},
+        result, specialist="HERDMASTER")
+    assert delivered["success"] is True
+    assert all("canonical_read_subject" not in row for row in journey.family.values())
+
+
+@pytest.mark.parametrize("changes", [{"success": False}, {"tool_used": "unrelated"},
+    {"read_only": False}, {"writes_performed": True}, {"canonical_read_status": "held"},
+    {"recipient_render_contract": "untyped"}, {"recipient_language": "en"}])
+def test_canonical_af_language_exception_rejects_unproven_result(changes):
+    result = {"answer": "<b>AF opskrif</b>\nThe animal is recorded and the instruction is English.",
+        "success": True, "read_only": True, "writes_performed": False,
+        "tool_used": "herdmaster_herd_question", "recipient_render_contract": "canonical_read_answer_v1",
+        "canonical_read_status": "herd_question_answer_ready", "recipient_language": "af", **changes}
+    localized = family.localize_recipient_result({"output_language": "af"}, result, "HERDMASTER")
+    assert localized.get("recipient_language_render_unrecognized") is True
+
+
+def test_typed_fragment_language_metadata_does_not_change_daily_material():
+    from dataclasses import replace
+    from modules.oom_sakkie.daily_farm_manager import _material
+    proof = Provenance("herdmaster", "current", ("canonical",), NOW, 1)
+    item = SpecialistWorkItem("I", "K", "herd", "Huidige werpstatus — Hazel", "Die huidige uitkoms is onbekend.",
+        "Gee die datum en geboortetellings.", "charl", WorkState.WAITING_EVIDENCE, Authority.READ_ONLY, proof)
+    typed = replace(item, metadata={"recipient_render_contract": "herdmaster_whole_herd_recipient_v1", "recipient_language": "af"})
+    assert _material(typed) == _material(item)
+    assert manager._read_text(typed.title, 130, True, item=typed) == typed.title
+    for invalid in (replace(typed, metadata={"recipient_language": "af"}),
+                    replace(typed, metadata={"recipient_render_contract": "untyped", "recipient_language": "af"}),
+                    replace(typed, metadata={"recipient_render_contract": "herdmaster_whole_herd_recipient_v1", "recipient_language": "en"}),
+                    replace(typed, provenance=Provenance("rootline", "current", ("canonical",), NOW, 1))):
+        assert "nog nie in jou taal beskikbaar" in manager._read_text(invalid.title, 130, True, item=invalid)
 
 
 @pytest.mark.parametrize("language", ["en", "af"])
@@ -400,11 +504,11 @@ def tearDownModule():
     ("Which pens are overcrowded?", "pen_occupancy", "North: 2 / 1", "en"),
     ("Which pigs need weighing, and why?", "weight_attention", "individual weighing schedule is due: 702", "en"),
     ("Which litters need attention or are due for weaning?", "litter_attention", "Hazel: Weaning is due", "en"),
-    ("Ask HERDMASTER for the current breeding plan and what needs my attention.", "breeding_plan", "UPDATED BREEDING PLAN", "en"),
-    ("Review this week's mating priorities and tell me where you need my help.", "breeding_plan", "UPDATED BREEDING PLAN", "en"),
-    ("What is the breeding plan, including anything that I must follow up?", "breeding_plan", "UPDATED BREEDING PLAN", "en"),
-    ("Gaan die huidige teelplan na en wys wat my aandag nodig het.", "breeding_plan", "OPGEDATEERDE TEELPLAN", "af"),
-    ("Help my met die paringsplan en die volgende stappe vir my.", "breeding_plan", "OPGEDATEERDE TEELPLAN", "af"),
+    ("Ask HERDMASTER for the current breeding plan and what needs my attention.", "breeding_plan", "<b>🐷 Current breeding plan</b>", "en"),
+    ("Review this week's mating priorities and tell me where you need my help.", "breeding_plan", "<b>🐷 Current breeding plan</b>", "en"),
+    ("What is the breeding plan, including anything that I must follow up?", "breeding_plan", "<b>🐷 Current breeding plan</b>", "en"),
+    ("Gaan die huidige teelplan na en wys wat my aandag nodig het.", "breeding_plan", "<b>🐷 Huidige teelplan</b>", "af"),
+    ("Help my met die paringsplan en die volgende stappe vir my.", "breeding_plan", "<b>🐷 Huidige teelplan</b>", "af"),
     ("Check pen capacity and tell me where I should help.", "pen_occupancy", "North: 2 / 1", "en"),
     ("Watter hokke se kapasiteit moet ek opvolg?", "pen_occupancy", "HOKKAPASITEIT", "af"),
 ])
@@ -450,7 +554,7 @@ def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, cha
             headers={"X-Telegram-Bot-Api-Secret-Token": "s"*40})
     assert code == 200, result
     assert expected in result["answer"], result
-    assert "TODAY'S FARM BRIEF" not in result["answer"]
+    assert "Today's farm brief" not in result["answer"]
     assert "SAM:" not in result["answer"] and "ROOTLINE" not in result["answer"]
     assert len(journey.sends) == 1 and journey.claim.call_count == 0
     assert len(journey.payloads) == 1

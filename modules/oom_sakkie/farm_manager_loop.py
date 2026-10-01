@@ -138,6 +138,8 @@ class SpecialistWorkItem:
             "pig_id": str,
             "owner_followup": str,
             "notification_decision_identity": str,
+            "recipient_render_contract": str,
+            "recipient_language": str,
         }
         unknown = set(self.metadata) - set(allowed_metadata)
         if unknown:

@@ -302,8 +302,8 @@ def test_shared_plan_projects_once_per_owner_with_language_and_scoped_identity()
     assert outcome["recipient_count"] == 2 and outcome["telegram_sends"] == 2
     assert loads == ["herd"]
     by_owner = {row[0]: row for row in deliveries}
-    assert "TODAY'S FARM PLAN" in by_owner["42"][1]
-    assert "VANDAG SE PLAASPLAN" in by_owner["77"][1]
+    assert by_owner["42"][1].startswith("<b>🌿 Today's farm plan</b>\n")
+    assert by_owner["77"][1].startswith("<b>🌿 Vandag se plaasplan</b>\n")
     assert by_owner["42"][2] != by_owner["77"][2]
     assert all(":OWNER:" in row[2] for row in deliveries)
 

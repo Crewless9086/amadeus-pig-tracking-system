@@ -223,7 +223,8 @@ def molly():
 def structural_item(item):
     structural = {key: value for key, value in item.__dict__.items()
             if key not in {"title", "why", "next_action", "genuine_question"}}
-    structural["metadata"] = {key: value for key, value in item.metadata.items() if key != "owner_followup"}
+    structural["metadata"] = {key: value for key, value in item.metadata.items()
+        if key not in {"owner_followup", "recipient_language"}}
     return structural
 
 
@@ -387,6 +388,10 @@ def test_real_retained_shape_projects_recipient_wording_with_same_facts_and_bind
     en, af = project("en"), project("af")
     assert en.result_id == af.result_id and en.observed_at == af.observed_at
     assert [structural_item(row) for row in en.work_items] == [structural_item(row) for row in af.work_items]
+    for result, language in ((en, "en"), (af, "af")):
+        typed = [row for row in result.work_items if row.metadata.get("recipient_render_contract")]
+        assert typed and all(row.metadata["recipient_render_contract"] == "herdmaster_whole_herd_recipient_v1"
+            and row.metadata["recipient_language"] == language for row in typed)
     far = next(row for row in af.work_items if row.dedupe_key.startswith("herdmaster:reproductive-status:"))
     assert far.title == "Huidige werpstatus — Mysikind en Mona"
     assert far.why == (

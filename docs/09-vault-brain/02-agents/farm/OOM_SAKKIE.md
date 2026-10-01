@@ -57,6 +57,11 @@ family text. If the available name or tag is missing or ambiguous, say so and
 ask the smallest necessary identification question; never invent a label or
 silently choose a different animal. Preserve any detail required to distinguish
 the animal or action before confirmation.
+For new canonical replies, keep the conversation subject in structured
+delivered context and use that identity for follow-ups, independent of displayed
+wording. Older receipts without a structured subject retain only their existing
+bounded compatibility checks. Preserve the language of validated typed results
+without treating arbitrary text as trusted language evidence.
 
 Omit irrelevant zero counts and repeated technical disclaimers in summaries.
 Preserve material uncertainty, conflicting evidence, safety limits, quantities,

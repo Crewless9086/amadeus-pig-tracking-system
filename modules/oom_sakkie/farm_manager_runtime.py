@@ -541,7 +541,9 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
             next_action="Berei hul werpareas in gepaste mate voor." if is_af else "Prepare their farrowing areas proportionally.",
             assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
             provenance=provenance, business_value=110,
-            metadata={"owner_followup": (f"HERDMASTER volg {labels} op wanneer nuwe werp- of dragtigheidsbewyse inkom."
+            metadata={"recipient_render_contract": "herdmaster_whole_herd_recipient_v1",
+                "recipient_language": "af" if is_af else "en",
+                "owner_followup": (f"HERDMASTER volg {labels} op wanneer nuwe werp- of dragtigheidsbewyse inkom."
                 if is_af else f"HERDMASTER will follow up on {labels} when new farrowing or pregnancy evidence arrives.")}))
     expired_groups = {}
     for row in expired:
@@ -560,7 +562,9 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
                 if is_af else "Tell me the current outcome; if there was a litter, I will ask for its date and birth counts and prepare the confirmation."),
             assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
             provenance=provenance, business_value=110, genuine_question=question, question_for="charl",
-            metadata={"notification_decision_identity": "matings:" + ":".join(
+            metadata={"recipient_render_contract": "herdmaster_whole_herd_recipient_v1",
+                "recipient_language": "af" if is_af else "en",
+                "notification_decision_identity": "matings:" + ":".join(
                 sorted(str(row["mating_id"]) for row in group)) if all(row.get("mating_id") for row in group) else ""}))
     rebound = tuple(replace(item, provenance=replace(provenance,
         source_refs=tuple(dict.fromkeys((*provenance.source_refs, *item.provenance.source_refs)))))
@@ -903,9 +907,9 @@ def _render_enquiry(brief, query, *, language, now, case_loader=None):
     if kind == "specialist_detail":
         lines += ["", "<b>Huidige spesialisbevindinge</b>" if af else "<b>Current specialist findings</b>"]
         for item in items[:5]:
-            lines.append("• <b>" + _read_text(item.title, 130, af) + "</b>\n  " +
-                _read_text(item.why, 300, af) + "\n  " +
-                ("Volgende stap: " if af else "Next: ") + _read_text(item.next_action, 260, af))
+            lines.append("• <b>" + _read_text(item.title, 130, af, item=item) + "</b>\n  " +
+                _read_text(item.why, 300, af, item=item) + "\n  " +
+                ("Volgende stap: " if af else "Next: ") + _read_text(item.next_action, 260, af, item=item))
         if not items:
             lines.append("Geen ondersteunde aksie in die huidige spesialispakket nie." if af else "No supported action in the current specialist packet.")
     if kind == "work_split" and not scoped_owner_work:
@@ -918,7 +922,8 @@ def _render_enquiry(brief, query, *, language, now, case_loader=None):
         lines += ["", "<b>Wat ek van jou nodig het</b>" if af else "<b>What I need from you</b>"]
         owner_steps = list(dict.fromkeys(questions + [item.next_action for item in items
             if not item.genuine_question and item.metadata.get("physical_work_ready") is True]))
-        lines.extend("• " + _read_text(step, 260, af) for step in owner_steps[:4])
+        lines.extend("• " + _read_text(step, 260, af, item=next((item for item in items
+            if step in {item.genuine_question, item.next_action}), None)) for step in owner_steps[:4])
         if scoped_owner_work:
             if brief.suppressed.get("stale_refreshed"):
                 lines.append("Sommige eienaar-afhanklike bewyse is verouderd; huidige uitstaande werk bly onbevestig." if af else
@@ -958,8 +963,11 @@ def _enquiry_clarification(query, language):
     return ""
 
 
-def _read_text(value, limit, af):
-    if af:
+def _read_text(value, limit, af, *, item=None):
+    typed_af = (item is not None and item.provenance.specialist == "herdmaster"
+        and item.metadata.get("recipient_render_contract") == "herdmaster_whole_herd_recipient_v1"
+        and item.metadata.get("recipient_language") == "af")
+    if af and not typed_af:
         from modules.oom_sakkie.family_message_lifecycle import _looks_afrikaans
         if not _looks_afrikaans(str(value)):
             return "Die besonderhede is nog nie in jou taal beskikbaar nie; geen gevolgtrekking word bygevoeg nie."

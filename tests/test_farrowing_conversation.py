@@ -32,7 +32,8 @@ def test_short_date_reply_keeps_counts_and_immediately_builds_exact_preview():
         provider=2, seconds=1, continuation=True, text="22 August"))
     assert code == 200 and ready["status"] == "farrowing_litter_preview_ready"
     assert ready["question_count"] == 0 and ready["retained_facts"]["born_alive"] == 8
-    assert "Linda (SOW-LINDA)" in ready["answer"]
+    assert ready["answer"].startswith("<b>🌿 Linda — birth preview</b>")
+    assert store.claims[ready["callback_token"]]["preview_payload"]["sow_pig_id"] == "SOW-LINDA"
     assert len(store.claims) == 1 and ready["writes_farm_data"] is False
 
 
@@ -89,7 +90,8 @@ def test_two_sow_contexts_require_identity_and_a_foreign_card_cannot_bind():
     wrong, code = turn(store, message({"farrowing_date": "2026-08-22"}, provider=4, seconds=3, continuation=True, reply="other"))
     assert code == 409 and wrong["status"] == "farrowing_reply_context_mismatch"
     selected, code = turn(store, message({"farrowing_date": "2026-08-22"}, provider=5, seconds=4, continuation=True, reply="7002"))
-    assert code == 200 and "Bonnie (SOW-BONNIE)" in selected["answer"]
+    assert code == 200 and selected["answer"].startswith("<b>🌿 Bonnie — birth preview</b>")
+    assert store.claims[selected["callback_token"]]["preview_payload"]["sow_pig_id"] == "SOW-BONNIE"
     assert selected["retained_facts"]["sow_ref"] == "Bonnie"
 
 
@@ -136,7 +138,8 @@ def test_prior_confirmed_linda_counts_are_explained_without_new_claim_or_overwri
     before = deepcopy(evidence)
     result, code = turn(store, message(complete_facts(total_born=8, born_alive=7)), evidence)
     assert code == 409 and result["status"] == "canonical_litter_count_conflict"
-    assert "Linda (SOW-LINDA)" in result["answer"]
+    assert "Linda's litter on 2026-08-22 is already saved (LIT-SAVED)" in result["answer"]
+    assert evidence["litters"][0]["sow_pig_id"] == "SOW-LINDA"
     assert "total 9, born alive 8" in result["answer"] and "total 8, born alive 7" in result["answer"]
     assert "unchanged" in result["answer"] and result["question_count"] == 0
     assert evidence == before and not store.claims and result["writes_farm_data"] is False

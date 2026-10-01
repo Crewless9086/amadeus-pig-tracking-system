@@ -166,10 +166,19 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
         elif subject or (query.get("context_message_id") and query.get("kind") == "animal_status"):
             matches = [row for row in context.get("conversation_turns") or ()
                 if row.get("telegram_message_id") == query.get("context_message_id")]
-            if len(matches) != 1 or (subject and not _subject_mentioned(subject, matches[0].get("assistant_answer", ""))):
+            canonical_subject = (matches[0].get("canonical_read_subject") or {}) if len(matches) == 1 else {}
+            canonical_alias = (bool(canonical_subject) and (not subject or subject.strip().casefold() in {
+                str(value).strip().casefold() for value in canonical_subject.values()
+                if str(value).strip().casefold() not in {"", "unknown"}}))
+            if len(matches) != 1 or (canonical_subject and not canonical_alias) or (subject and not canonical_subject
+                    and not _subject_mentioned(subject, matches[0].get("assistant_answer", ""))):
                 return replace(result, read_query=None, needs_clarification=True,
                     clarification_question=("Watter dier of saak bedoel jy?" if result.language.startswith("af")
                                             else "Which animal or case do you mean?"))
+            if query.get("kind") == "animal_status" and canonical_alias:
+                # Resolve the retained canonical animal again; a reused tag
+                # must not silently redirect an implicit follow-up.
+                query["subject"] = canonical_subject["pig_id"]
         if query.get("kind") == "herd_query" and query.get("context_message_id"):
             matches = [row for row in context.get("conversation_turns") or ()
                 if row.get("telegram_message_id") == query["context_message_id"]]
@@ -923,6 +932,13 @@ def _eligible_conversation_context(rows, parsed):
             "owner_question": str(row.get("conversation_question") or "")[:500],
             "assistant_answer": answer[:2400], "truncated": len(answer) > 2400,
             "context_kind": "delivered_read_only_dialogue"})
+        subject = row.get("canonical_read_subject")
+        if (row.get("canonical_read_status") == "herd_question_answer_ready"
+                and isinstance(subject, Mapping)
+                and {"pig_id", "tag_number"} <= set(subject) <= {"pig_id", "tag_number", "pig_name"}
+                and all(isinstance(v, str) and len(v) <= 128 for v in subject.values())
+                and subject.get("pig_id", "").strip()):
+            selected[-1]["canonical_read_subject"] = dict(subject)
         if len(selected) == 4:
             break
     return list(reversed(selected))
