@@ -24,15 +24,13 @@ def test_retained_anton_reports_become_automatic_recovery_cases_without_replay()
     expired = [{"mission_id": "OOM-MONA", "provider_message_id": "4051",
         "preview_payload": {"sow_pig_id": "PIG-MONA"}}]
     rows = _project_retained_herd_report_recovery(NOW, health, expired)
-    assert len(rows) == 2
+    assert len(rows) == 1
     linda = next(row for row in rows if "litter-loss" in row["dedupe_key"])
     assert "provider_message:4052" in linda["evidence_refs"]
     assert "provider_message:4054" in linda["evidence_refs"]
     assert linda["unknowns"] == ["fresh_canonical_litter_loss_preview"]
     assert "repeat known facts" in linda["next_action"]
-    mona = next(row for row in rows if "expired-farrowing" in row["dedupe_key"])
-    assert mona["unknowns"] == ["fresh_canonical_farrowing_preview"]
-    assert "replay" in mona["next_action"]
+    assert not any("expired-farrowing" in row["dedupe_key"] for row in rows)
 
 
 def test_retained_recovery_never_cross_groups_principal_or_chat():
@@ -77,7 +75,7 @@ def test_pig_146_projects_but_terminal_138_is_suppressed():
     assert "tag:146" in rows[0]["evidence_refs"]
 
 
-def test_mona_expired_projection_terminalizes_on_effect_or_newer_claim():
+def test_generic_health_projection_never_manufactures_a_farrowing_handoff():
     expired = [{"mission_id": "OLD", "provider_message_id": "4051",
         "preview_payload": {"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}}]
     assert _project_retained_herd_report_recovery(NOW, [], expired,
@@ -90,7 +88,7 @@ def test_mona_expired_projection_terminalizes_on_effect_or_newer_claim():
         farrowing_claims=[{"mission_id": "NEW", "status": "active",
             "preview_card_message_id": None, "delivery_state": "claim_created",
             "preview_payload": {"sow_pig_id": "MONA", "farrowing_date": "2026-08-26"}}])
-    assert len(rows) == 1 and "expired-farrowing" in rows[0]["dedupe_key"]
+    assert rows == []  # Only the exact durable farrowing source collector owns this family.
 
 
 def test_retained_case_never_delivers_generic_manager_card_before_preview():
@@ -498,12 +496,12 @@ def _report_recovery_fixture(*, cases=None, recent=(), reports=None, lifecycle=N
                   ["provider_message:101", "pig:P27", "tag:27"], "exception")]
     responses = [cases]
     if not targeted:
+        responses.append([])  # No legacy farrowing originals in this health fixture.
         responses.append([(value,) for value in recent])
     if recent or cases:
         responses += [[(row,) for row in rows],
                       [(row,) for row in (rows if lifecycle is None else lifecycle)], list(claims)]
-    responses += ([[("P27", "27", "Active", True)]] if targeted else
-                  [[], [("P27", "27", "Active", True)], [], []])
+    responses += [[("P27", "27", "Active", True)]]
     def connect():
         connection = Connection(responses)
         cursor = connection.cursor()

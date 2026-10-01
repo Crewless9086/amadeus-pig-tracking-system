@@ -430,6 +430,15 @@
   disposable-database delivery/confirmation/replay proof:
   `tests/test_oom_sakkie_retained_report_recovery_postgres.py`. Source existence
   does not establish deployed model or owner-outcome acceptance.
+- Exact retained farrowing owner review: `manager_case_sources.py` routes the
+  persisted expired-farrowing case through bounded retained refresh;
+  `herdmaster_retained_recovery_runtime.py` checks original claim/source and
+  current sow/litter evidence without replaying intake or creating a claim.
+  `general_manager_worker.py` uses the current configured owner and existing
+  family card lifecycle for an informational handoff. Source modules are under
+  `modules/oom_sakkie/`. PostgreSQL proof is in
+  `tests/test_oom_sakkie_retained_farrowing_review_postgres.py`. Source and tests
+  do not establish provider delivery, owner confirmation or canonical birth.
 - Retained mortality first-attempt window: `modules/oom_sakkie/retained_mortality_presentation.py`
   performs current-source/material and complete-history admission;
   `retained_mortality_history.py` validates retained audit and no-effect history;

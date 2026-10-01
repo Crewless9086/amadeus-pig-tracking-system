@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import hashlib
 import html
 import time
@@ -258,7 +258,7 @@ def build_retained_protected_preview(case, *, deadline_monotonic=None):
     if "litter-loss" in str((case or {}).get("dedupe_key") or ""):
         return _litter_loss(provider_ids, refs, str((case or {}).get("evidence_digest") or ""), case, deadline_monotonic)
     if "expired-farrowing" in str((case or {}).get("dedupe_key") or ""):
-        return _farrowing(provider_ids, str((case or {}).get("evidence_digest") or ""))
+        return _contained("retained_farrowing_owner_review_required")
     if "retained-mortality" in str((case or {}).get("dedupe_key") or ""):
         return _mortality(provider_ids, refs, case, deadline_monotonic)
     return _contained("retained_recovery_case_kind_unsupported")
@@ -333,57 +333,269 @@ def _litter_loss(provider_ids, refs, recovery_identity, case, deadline_monotonic
             {"text": "Cancel", "callback_data": f"oompa:{claim['callback_token']}:cancel"}]]}})
 
 
-def _farrowing(provider_ids, recovery_identity):
-    with connect_bounded_read() as connection:
-        with connection.cursor() as cur:
-            cur.execute("""select owner_user_id,private_chat_id,provider_message_id,preview_payload,
-                callback_token,mission_id,preview_digest,status,preview_card_message_id
-                from app_private.oom_protected_action_claims
-                where action_kind='herdmaster_record_farrowing_litter'
-                  and provider_message_id=any(%s) order by created_at desc limit 1""",
-                (list(provider_ids),))
-            row = cur.fetchone()
-    if not row or str(row[0] or "") != str(row[1] or ""):
-        return _contained("retained_farrowing_principal_unproven")
-    owner, chat, provider, preview = str(row[0]), str(row[1]), str(row[2]), dict(row[3] or {})
-    if str(row[7] or "") == "active" and not str(row[8] or ""):
-        counts = dict(preview.get("counts") or {})
-        return _protected({"success": True, "status": "farrowing_litter_preview_ready",
-            "answer": (f"HERDMASTER protected preview: {counts.get('total_born')} total born; "
-                       f"{counts.get('stillborn')} stillborn on {preview.get('farrowing_date')}. "
-                       "Confirm only if correct."),
-            "mission_id": str(row[5]), "card_mission_id": str(row[5]),
-            "callback_token": str(row[4]), "preview_digest": str(row[6]),
-            "action_kind": "herdmaster_record_farrowing_litter",
-            "reply_markup": {"inline_keyboard": [[
-                {"text": "Confirm and record", "callback_data": f"oompa:{row[4]}:confirm"},
-                {"text": "Change", "callback_data": f"oompa:{row[4]}:change"},
-                {"text": "Cancel", "callback_data": f"oompa:{row[4]}:cancel"}]]}})
-    counts = dict(preview.get("counts") or {})
-    parsed = {"telegram_user_id": owner, "telegram_chat_id": chat,
-        "provider_message_id": provider, "output_language": preview.get("language") or "af",
-        "semantic": {"intent": "record_farrowing_litter",
-            "language": preview.get("language") or "af", "farrowing_litter": {
-                "sow_ref": preview.get("sow_pig_id"),
-                "farrowing_date": preview.get("farrowing_date"),
-                "total_born": counts.get("total_born"), "born_alive": counts.get("born_alive"),
-                "stillborn": counts.get("stillborn"), "mummified": counts.get("mummified"),
-                "mating_ref": preview.get("requested_mating_ref"),
-                "father_ref": preview.get("requested_father_ref")}}}
-    from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_litter_message
-    from modules.oom_sakkie.protected_action_claims import create_claim
-    recovery_suffix = hashlib.sha256(
-        (recovery_identity + "|" + provider).encode()).hexdigest()[:12].upper()
-    created = {}
-    def recovery_claim(**kwargs):
-        created["mission_id"] = str(kwargs["mission_id"]) + "-RECOVERY-" + recovery_suffix
-        return create_claim(**{**kwargs, "mission_id": created["mission_id"]})
-    result, _status = handle_farrowing_litter_message(
-        parsed, issue_gateway_owner_authority(owner, chat), claim_creator=recovery_claim)
-    if created.get("mission_id") and result.get("callback_token"):
-        result = {**result, "mission_id": created["mission_id"],
-                  "card_mission_id": created["mission_id"]}
-    return _protected(result)
+FARROWING_KEY = "herdmaster:expired-farrowing:"
+FARROWING_REVIEW_FAMILY = "retained_farrowing_owner_review"
+FARROWING_KIND = "herdmaster_record_farrowing_litter"
+
+
+def read_retained_farrowing_reviews(cur, now, retained, *, discovery=False):
+    """Attribute an informational owner handoff to the original stored claim.
+
+    This is not a protected preview or claim succession. Legacy claims are the
+    retained report source; absent conversation receipts grant no owner authority.
+    """
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    from modules.oom_sakkie.manager_case_sources import _candidate
+    owned = {key: (refs, status) for key, refs, status in retained if key.startswith(FARROWING_KEY)}
+    missions = [key[len(FARROWING_KEY):] for key in owned]
+    if not discovery and not missions:
+        return []
+    cur.execute("""select case when octet_length(c.preview_payload::text)<=32768
+          then to_jsonb(c)-'callback_token' end
+        from app_private.oom_protected_action_claims c
+        where c.action_kind=%s and (c.mission_id=any(%s) or (%s
+          and c.status='active' and c.expires_at<%s
+          and c.preview_card_message_id is not null
+          and position('-RECOVERY-' in c.mission_id)=0))
+        order by c.mission_id,c.created_at,c.callback_token limit 65""",
+        (FARROWING_KIND, missions, discovery, now))
+    originals = [row[0] for row in cur.fetchall()]
+    if len(originals)>64 or any(not isinstance(c, dict) or not isinstance(c.get('preview_payload'), dict) for c in originals):
+        raise ValueError("retained_farrowing_source_read_bound")
+    if not originals:
+        return []
+    missions = [c['mission_id'] for c in originals]
+    providers = list({c['provider_message_id'] for c in originals})
+    sows = list({str(c['preview_payload'].get('sow_pig_id') or '') for c in originals})
+    cur.execute("""select case when octet_length(c.preview_payload::text)<=32768
+          then to_jsonb(c)-'callback_token' end
+        from app_private.oom_protected_action_claims c
+        where c.action_kind=%s and (c.mission_id=any(%s)
+          or c.provider_message_id=any(%s) or c.preview_payload->>'sow_pig_id'=any(%s))
+        order by c.mission_id,c.created_at,c.callback_token limit 129""", (FARROWING_KIND, missions, providers, sows))
+    claims = [row[0] for row in cur.fetchall()]
+    if len(claims)>128 or any(not isinstance(c, dict) or not isinstance(c.get('preview_payload'), dict) for c in claims):
+        raise ValueError("retained_farrowing_claim_read_bound")
+    cur.execute("""select pig_id,tag_number,status,on_farm,pig_name from public.current_canonical_pigs
+        where pig_id=any(%s) order by pig_id limit 129""", (sows,))
+    pigs = cur.fetchall()
+    cur.execute("""select litter_id,sow_pig_id,farrowing_date from public.litters
+        where sow_pig_id=any(%s) order by litter_id limit 129""", (sows,))
+    litters = cur.fetchall()
+    if len(pigs)>128 or len(litters)>128:
+        raise ValueError("retained_farrowing_canonical_read_bound")
+    aliases = sorted(set(sows + [str(p[1]) for p in pigs if p[1]]
+        + [str(p[4]) for p in pigs if p[4]]
+        + [str(c['preview_payload'].get('sow_display_name')) for c in originals
+           if c['preview_payload'].get('sow_display_name')]))
+    cur.execute("""select review_json->'farrowing_litter'
+        from public.sam_live_stock_conversation_review_events
+        where event_source='oom_sakkie_farrowing_litter' and (
+          review_json->'farrowing_litter'->>'provider_message_id'=any(%s)
+          or review_json->'farrowing_litter'->>'context_id'=any(%s)
+          or review_json->'farrowing_litter'->'sow_refs' ?| %s)
+        order by created_at,review_event_id limit 129""", (providers, missions, aliases))
+    conversations = [row[0] for row in cur.fetchall()]
+    if len(conversations)>128:
+        raise ValueError('retained_farrowing_conversation_read_bound')
+    result = []
+    for original in originals:
+        mission, provider = original['mission_id'], original['provider_message_id']
+        key = FARROWING_KEY + mission
+        if sum(c['mission_id'] == mission for c in originals) != 1:
+            continue
+        refs, status = owned.get(key, ([], 'open'))
+        if status not in {'open','delegated','waiting_reassessment','exception'}:
+            continue
+        preview = original['preview_payload']
+        owner, chat = original['owner_user_id'], original['private_chat_id']
+        sow, event_date = str(preview.get('sow_pig_id') or ''), str(preview.get('farrowing_date') or '')
+        expected = {f'mission:{mission}', f'provider_message:{provider}', f'sow:{sow}'}
+        prior = {r for r in refs if r.startswith(('mission:', 'provider_message:', 'sow:'))}
+        if owned.get(key) and prior != expected:
+            continue
+        try:
+            expired = datetime.fromisoformat(original['expires_at']) < now
+            event_day = datetime.fromisoformat(event_date).date()
+        except (ValueError, TypeError):
+            continue
+        binding = 'retained_farrowing_source:' + _farrowing_digest(original)
+        previous = {r for r in refs if r.startswith('retained_farrowing_source:')}
+        def park(reason, evidence):
+            if key not in owned:
+                return
+            lineage = sorted(expected | (previous or {binding}))
+            result.append(_candidate(key, 'HERDMASTER', 'watch',
+                lineage + ['farrowing_reconciliation:' + reason,
+                    'farrowing_current_evidence:' + _farrowing_digest(evidence)], [],
+                'The retained farrowing report needs reconciliation with current owning evidence: '
+                    + reason.replace('_', ' ') + '. The historical report is not an owner confirmation.',
+                'Follow the current birth conversation or canonical birth result. Preserve the old '
+                    'report and claims; do not replay or confirm them automatically.',
+                now + timedelta(minutes=30), task_class='status_reconciliation',
+                message_family='herdmaster_disposition'))
+        if (not owner or owner != chat or not str(provider).isdigit() or not sow
+                or event_day > now.date() or '-RECOVERY-' in mission
+                or preview.get('principal_id') not in (None, owner)
+                or preview.get('provider_message_id') not in (None, provider)
+                or original['preview_digest'] != canonical_preview_digest(FARROWING_KIND, preview)):
+            continue
+        if previous and previous != {binding}:
+            park('retained_source_changed', original)
+            continue
+        if original['status'] != 'active':
+            park('original_claim_' + original['status'], original)
+            continue
+        if (not expired or not original.get('preview_card_message_id')
+                or original.get('delivery_state') != 'delivery_confirmed'
+                or not original.get('provider_accepted_at') or not original.get('delivery_confirmed_at')
+                or original.get('delivery_ambiguous_at') or original.get('result_payload') is not None
+                or original.get('completed_at') or original.get('confirmation_provider_message_id')
+                or original.get('confirmation_provider_timestamp')):
+            continue
+        conversations_for_birth = [r for r in conversations if isinstance(r, dict) and (
+                r.get('context_id') == mission or r.get('provider_message_id') == provider
+                or (set(r.get('sow_refs') or ()) & {sow, str(preview.get('sow_display_name') or ''),
+                     *[str(p[i]) for p in pigs for i in (1,4) if p[0] == sow and p[i]]}
+                    and (r.get('facts') or {}).get('farrowing_date') in (None, '', event_date)))]
+        if conversations_for_birth:
+            if all(r.get('owner_user_id') and r.get('owner_user_id') == r.get('private_chat_id')
+                    and r.get('context_id') and r.get('provider_message_id')
+                    for r in conversations_for_birth):
+                park('current_birth_conversation_present', conversations_for_birth)
+            continue
+        same_pigs = [p for p in pigs if p[0] == sow]
+        if len(same_pigs)!=1 or same_pigs[0][2] != 'Active' or same_pigs[0][3] is not True:
+            continue
+        current_births = [p for p in litters if p[1] == sow and str(p[2]) == event_date]
+        if current_births:
+            park('canonical_birth_present', current_births)
+            continue
+        related = [c for c in claims if c['mission_id'] == mission or c['provider_message_id'] == provider
+            or (c['preview_payload'].get('sow_pig_id') == sow
+                and str(c['preview_payload'].get('farrowing_date') or '') == event_date)]
+        successors = [c for c in related if c != original]
+        # One old, never-attempted duplicate recovery may be reported alongside
+        # its source. It is preserved, never selected as a new actionable claim.
+        if len([c for c in related if c == original]) != 1 or len(successors)>1:
+            continue
+        if any(not (c['mission_id'].startswith(mission + '-RECOVERY-')
+                and c['owner_user_id']==owner and c['private_chat_id']==chat
+                and c['provider_message_id']==provider and c['preview_payload']==preview
+                and c['preview_digest']==original['preview_digest'] and c['status']=='active'
+                and c['created_at'] >= original['created_at']
+                and datetime.fromisoformat(c['expires_at']) < now
+                and c.get('delivery_state') in (None, 'claim_created')
+                and all(c.get(k) is None for k in (
+                    'preview_card_message_id','delivery_attempt_id','delivery_attempted_at',
+                    'provider_accepted_at','delivery_confirmed_at','delivery_ambiguous_at',
+                    'delivery_result','confirmation_provider_message_id',
+                    'confirmation_provider_timestamp','completed_at','result_payload')))
+                for c in successors):
+            # A uniquely attributable later claim transfers attention to its
+            # owning journey; a foreign/ambiguous claim cannot grant a handoff.
+            current_owner = current_farrowing_review_owner()
+            if len(successors)==1:
+                successor = successors[0]
+                if (successor['owner_user_id'] in {owner, current_owner}
+                        and successor['private_chat_id'] == successor['owner_user_id']
+                        and successor['preview_payload'].get('sow_pig_id') == sow
+                        and str(successor['preview_payload'].get('farrowing_date') or '') == event_date
+                        and successor['preview_digest'] == canonical_preview_digest(
+                            FARROWING_KIND, successor['preview_payload'])
+                        and successor['created_at'] >= original['created_at']):
+                    park('later_claim_requires_owning_reconciliation', successor)
+            continue
+        counts = preview.get('counts') or {}
+        names = ('total_born','born_alive','stillborn','mummified','died_after_live_birth')
+        if not isinstance(counts, dict) or any(type(counts.get(n)) is not int or not 0 <= counts[n] <= 100 for n in names):
+            continue
+        if (counts['total_born'] != counts['born_alive'] + counts['stillborn'] + counts['mummified']
+                or counts['died_after_live_birth'] > counts['born_alive']):
+            continue
+        label = str(same_pigs[0][4] or preview.get('sow_display_name') or sow)
+        if len(label)>120:
+            continue
+        candidate = _candidate(key, 'HERDMASTER', 'due',
+            sorted(expected) + [binding, 'retained_farrowing_context:' + _farrowing_digest(related),
+                'canonical_effect:none', 'owner_authorization:fresh_farrowing_report_required'],
+            ['fresh_authenticated_owner_farrowing_report'],
+            f'Historical UNCONFIRMED farrowing report for {label} on {event_date}: '
+            f"total born {counts['total_born']}, born alive {counts['born_alive']}, "
+            f"stillborn {counts['stillborn']}, mummified {counts['mummified']}, "
+            f"died after live birth {counts['died_after_live_birth']}. "
+            'The older report from the farm reporter is retained. This birth has not been recorded.',
+            'Owner review required: send the verified sow, date and birth counts, or corrections, '
+            'here. Then review the confirmation before saving. This notice has no approval buttons '
+            'and does not record the birth.',
+            now + timedelta(minutes=30), task_class='protected_owner_decision',
+            message_family=FARROWING_REVIEW_FAMILY, owner_question_eligible=True,
+            irreducible_owner_exception=True)
+        candidate['_farrowing_review'] = {'label':label,'date':event_date,'counts':counts}
+        result.append(candidate)
+    return result
+
+
+def _farrowing_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), default=str).encode()).hexdigest()
+
+
+def current_farrowing_review_owner():
+    """Resolve the configured owner, never the first allowlisted recipient."""
+    import os
+    from modules.oom_sakkie.family_access import _owner_id, resolve_family_principal
+    owner = _owner_id(os.environ)
+    allowed = {s.strip() for s in os.getenv('OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS', '').split(',')}
+    parsed = {'telegram_user_id':owner,'telegram_chat_id':owner,'telegram_chat_type':'private'}
+    return owner if owner and owner in allowed and resolve_family_principal(parsed, os.environ).is_owner else ''
+
+
+def build_retained_farrowing_owner_review(case, *, now=None, deadline_monotonic=None):
+    """Revalidate the durable exact case immediately before informational delivery."""
+    from modules.oom_sakkie.manager_case_sources import _retained_herd_report_recovery_candidates
+    from modules.oom_sakkie.general_manager_worker import normalize_candidate
+    if deadline_monotonic is not None and time.monotonic()+6 >= deadline_monotonic:
+        return _contained('manager_cycle_deadline_deferred')
+    now = now or datetime.now(timezone.utc)
+    try:
+        candidates = _retained_herd_report_recovery_candidates(now, claimed_cases=[dict(case)],
+            deadline_monotonic=deadline_monotonic, delivery_case=case)
+        normalized = [normalize_candidate(c, now=now) for c in candidates]
+        if (len(normalized)!=1 or normalized[0]['evidence_digest'] != case.get('evidence_digest')
+                or normalized[0].get('message_family') != FARROWING_REVIEW_FAMILY
+                or not current_farrowing_review_owner()):
+            return _contained('retained_farrowing_owner_review_binding_changed')
+        row = normalized[0]
+        import os
+        from modules.oom_sakkie.family_access import resolve_family_principal
+        owner = current_farrowing_review_owner()
+        principal = resolve_family_principal({'telegram_user_id':owner,
+            'telegram_chat_id':owner,'telegram_chat_type':'private'}, os.environ)
+        language = principal.language
+        facts = candidates[0]['_farrowing_review']
+        counts, label, day = facts['counts'], html.escape(facts['label']), facts['date']
+        if language == 'af':
+            answer = (f'<b>HERDMASTER — EIENAAR SE HERSIENING</b>\n\n'
+                f'Historiese ONBEVESTIGDE werpselverslag vir {label} op {day}: '
+                f"totaal gebore {counts['total_born']}, lewend gebore {counts['born_alive']}, "
+                f"doodgebore {counts['stillborn']}, gemummifiseer {counts['mummified']}, "
+                f"dood na lewende geboorte {counts['died_after_live_birth']}.\n\n"
+                'Die ouer verslag van die plaasverslaggewer is behou. Geen geboorte is hiermee aangeteken nie.\n\n'
+                'Stuur asseblief die geverifieerde sog, datum en geboortegetalle, of regstellings, hier. '
+                'Hersien daarna die bevestiging voordat dit gestoor word. Hierdie kennisgewing het '
+                'geen goedkeuringsknoppies nie en teken nie die geboorte aan nie.')
+        else:
+            answer = ('<b>HERDMASTER — OWNER REVIEW</b>\n\n' + html.escape(row['summary'])
+                + '\n\n' + html.escape(row['next_action']))
+        return {'success':True, 'status':'retained_farrowing_owner_attention',
+            'answer':answer, 'recipient_language':language,
+            'recipient_render_contract':'specialist_structured_recipient_v1',
+            'result_digest':row['evidence_digest'], 'writes_farm_data':False}
+    except Exception as exc:
+        from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
+        if isinstance(exc, (ValueError, RuntimeError, OSError)) or is_database_unavailable(exc):
+            return _contained('retained_farrowing_owner_review_unavailable')
+        raise
 
 
 def _mortality(provider_ids, refs, case, deadline_monotonic=None):
