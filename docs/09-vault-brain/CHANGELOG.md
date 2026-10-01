@@ -1,5 +1,26 @@
 # Vault Brain Changelog
 
+## 2026-10-01 - Bounded herd reassessment and preparation continuation
+
+- Separate retained-report and exact advisory acquisition from broad herd reads
+  within the existing manager cycle, with total read budgets and isolated refresh
+  failures. Preserve ready sibling results and existing source and claim fences.
+- Give current same-key work precedence before reconciliation. An unproved narrow
+  disposition cannot replace a genuine current question or change its generation,
+  including when the broad overview times out.
+- Stop obsolete withdrawal advisory production only for a unique canonical animal
+  with terminal status and off-farm state. Unknown or conflicting evidence keeps
+  the hold and does not establish withdrawal clearance or sale eligibility.
+- Route the bounded expired, never-attempted orphan case directly into its existing
+  locked replacement transaction for one fresh canonical read. Same-preview
+  renewal uses the normal path after rollback; every replacement still requires
+  audited ancestry, current recipient authority and fresh protected confirmation.
+- Extend actual PostgreSQL default-cycle, current-question, concurrency, selector
+  and preparation tests, and map them to the existing runtime. These are source
+  and local qualification changes; the prior deployed repair and this continuation
+  have separate release and independent-cycle acceptance evidence. No deployed
+  outcome or owner-work reduction follows from this changelog entry.
+
 ## 2026-10-01 - Retained herd identity and advisory reconciliation
 
 - Bind retained litter selection to canonical sow identity and incident chronology.

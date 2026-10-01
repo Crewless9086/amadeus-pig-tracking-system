@@ -396,6 +396,18 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
     if (payload.get("retained_repreview") or {}).get("owner_requested_continuation") is True:
         from modules.oom_sakkie.retained_mortality_continuation import resume_requested_preview
         return resume_requested_preview(payload, case)
+    from modules.oom_sakkie import retained_mortality_orphan_recovery as orphan
+    from modules.oom_sakkie.herdmaster_source_transaction import SourceConflict
+    orphan_checked = orphan.prefer_transactional_preparation(payload, claims)
+    if orphan_checked:
+        try:
+            return orphan.prepare(payload, case, deadline_monotonic=deadline_monotonic)
+        except orphan.ExactClaimRequiresReuse:
+            # Its read-only attempt rolled back. Rebuild normally and use the
+            # existing audited renewal; never retry replacement from this path.
+            pass
+        except SourceConflict as exc:
+            return _contained(str(exc))
     target = next((value.split(":", 1)[1] for value in refs
                    if value.startswith("pig:") and ":" in value), "")
     from modules.oom_sakkie.herdmaster_health_loss_runtime import (
@@ -449,7 +461,8 @@ def _mortality(provider_ids, refs, case, deadline_monotonic=None):
     except SourceConflict as exc:
         return _contained(str(exc))
     if failure:
-        if failure == "retained_claim_current_preview_mismatch" and retained_identity_reassessment_needed(payload):
+        if (failure == "retained_claim_current_preview_mismatch" and not orphan_checked
+                and retained_identity_reassessment_needed(payload)):
             from modules.oom_sakkie.retained_mortality_orphan_recovery import prepare
             from modules.oom_sakkie.herdmaster_source_transaction import SourceConflict
             try:

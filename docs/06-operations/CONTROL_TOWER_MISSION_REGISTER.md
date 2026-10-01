@@ -18,18 +18,18 @@ sibling mission directory, not in the public repository.
 - The original eighteen consolidation commits were integrated through protected
   PR1341 at `3e77d3434b071078a41917a68fa63f2fa7b314ec`. Cleanup and retention are
   verified; consolidation itself did not activate farm agents.
-- PR1364 is merged at `9bef22336a98fa92f5ee2a419ab4cbafc781c163`, verified as the
-  loaded web revision on October1. Six canonical question paths passed loaded
-  read-only checks on September30. One genuine mortality confirmation, its
-  canonical effect, welfare closure and same-case completion are preserved.
-- Five older HERDMASTER follow-ups still need reconciliation. Current work
-  repairs stable litter identity, specialist-owned advisory disposition and one
-  expired never-attempted legacy confirmation. A new preview requires fresh
-  protected confirmation; old and new material must not be called equivalent.
-- Charl continued HERDMASTER under existing repair/release authority. The
-  existing application worktree continues from main9bef on
-  `codex/herdmaster-case-disposition-20261001`. Source and local tests are work
-  in progress, not a new deployment or accepted farm outcome.
+- PR1365 is merged at `1339358e50ff4d04983390cbb26c35b78063d014`, verified
+  live on October1. Its registration and web deployment are complete; do not
+  execute them again. The prior successful mortality journey is preserved.
+- A retained protected card has matching provider and lifecycle delivery proof.
+  That is presentation, not confirmation or a farm record. Subsequent natural
+  manager cycles still fail with broad-collection and preparation deadlines.
+- The same mission continues on `codex/herdmaster-bounded-reassessment-20261001`
+  from main1339358e in the existing application worktree. Bounded advisory and
+  retained-report reads must progress independently of slow overview reads;
+  protected orphan preparation must avoid a redundant preliminary rebuild.
+  Exact current-work, source, generation, transaction and confirmation guards
+  remain mandatory. Local qualification is not a live result.
 - Fresh genuine Telegram acceptance and later independent manager continuity
   remain open. Do not manufacture messages, replay historical owner events or
   ask for farm observations already pending with Charl.

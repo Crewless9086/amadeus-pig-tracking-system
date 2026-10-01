@@ -7,12 +7,14 @@ import hashlib
 import json
 import os
 import re
+import time
 from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
 
-from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read, ReadBudgetCursor
 
 COLLECTOR_DEADLINE_SECONDS = 20
+RETAINED_REPORT_READ_SECONDS = 9
 
 
 class ManagerCollectorRefreshError(RuntimeError):
@@ -39,13 +41,23 @@ def _project_refresh_rows(rows, requested):
         prefix = identity[0].split(":", 1)[0].casefold()
         owner = {"herdmaster-litter-follow-up": "herdmaster",
                  "delivery": "delivery_gaps"}.get(prefix, prefix)
+        if (is_advisory_herd_refresh_case({"dedupe_key": identity[0], "specialist": identity[1]})
+                and ("herdmaster_advisories" in failures
+                     or (result.get(identity) or {}).get("message_family") == "herdmaster_disposition")):
+            owner = "herdmaster_advisories"
+        elif (is_retained_herd_refresh_case({"dedupe_key": identity[0], "specialist": identity[1]})
+                and ("herdmaster_retained" in failures
+                     or (result.get(identity) or {}).get("message_family") == "retained_protected_recovery")):
+            owner = "herdmaster_retained"
         if owner in failures:
             result[identity] = failures[owner]
     return result
 
 
 def collect_manager_candidates(*, now: datetime, collectors=None):
-    selected = collectors or (_rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime)
+    # Start bounded owning reads before slow overview collectors can fill the pool.
+    selected = collectors or (_herdmaster_retained, _herdmaster_advisories,
+        _rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime)
     selected = tuple(selected)
 
     def collect(collector):
@@ -87,7 +99,11 @@ def collect_manager_candidates(*, now: datetime, collectors=None):
     result = []
     for group in groups:
         result.extend(group)
-    return result
+    # Current work wins before reconciliation, independent of future order.
+    current = {(row.get("dedupe_key"), row.get("specialist")) for row in result
+               if row.get("message_family") != "herdmaster_disposition"}
+    return [row for row in result if row.get("message_family") != "herdmaster_disposition"
+            or (row.get("dedupe_key"), row.get("specialist")) not in current]
 
 
 def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str,
@@ -110,6 +126,19 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
         if len(parts) < 3 or parts[1].upper() != claimed_specialist:
             return None
     collector = selected[0]
+    if collectors is None and is_advisory_herd_refresh_case({
+            "dedupe_key": dedupe_key, "specialist": specialist}):
+        from modules.oom_sakkie.herdmaster_case_disposition import collect_advisory_refresh
+        try:
+            rows, current = collect_advisory_refresh(now)
+        except Exception as exc:
+            raise ManagerCollectorRefreshError("herdmaster_advisories", exc.__class__.__name__) from exc
+        identity = (str(dedupe_key), claimed_specialist)
+        if identity not in current:
+            return _project_refresh_rows(rows, {identity}).get(identity)
+    elif collectors is None and is_retained_herd_refresh_case({
+            "dedupe_key": dedupe_key, "specialist": specialist}):
+        collector = _herdmaster_retained
     if collectors is not None:
         expected_name = {"delivery": "delivery_gaps",
                          "herdmaster-litter-follow-up": "herdmaster"}.get(prefix, prefix)
@@ -132,6 +161,23 @@ def is_retained_herd_refresh_case(case):
             "herdmaster:retained-mortality:", "herdmaster:retained-litter-loss:")))
 
 
+def is_advisory_herd_refresh_case(case):
+    """Only the two existing advisory keys belong to the bounded owning read."""
+    key = str(case.get("dedupe_key") or "")
+    return (str(case.get("specialist") or "").upper() == "HERDMASTER" and bool(
+        re.fullmatch(r"herdmaster:herdmaster:PIG-[A-Za-z0-9-]+", key)
+        or re.fullmatch(r"herdmaster:pig-[A-Za-z0-9-]+-withdrawal-sales", key)))
+
+
+def _herdmaster_retained(now):
+    return _retained_herd_report_recovery_candidates(now)
+
+
+def _herdmaster_advisories(now):
+    from modules.oom_sakkie.herdmaster_case_disposition import collect_advisory_dispositions
+    return collect_advisory_dispositions(now)
+
+
 def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
     """Refresh every claimed case from one read per owning specialist.
 
@@ -149,6 +195,21 @@ def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
     requested.discard(("", ""))
     if not requested:
         return {}
+    if collectors is None and all(is_advisory_herd_refresh_case(case) for case in cases):
+        from modules.oom_sakkie.herdmaster_case_disposition import collect_advisory_refresh
+        try:
+            rows, current = collect_advisory_refresh(now, claimed_cases=cases)
+        except Exception as exc:
+            failure = ManagerCollectorRefreshError("herdmaster_advisories", exc.__class__.__name__)
+            return {identity: failure for identity in requested}
+        result = _project_refresh_rows(rows, requested)
+        if current:
+            # Current work keeps its normal owning refresh. The worker submits
+            # each advisory independently so this fallback cannot hide a ready
+            # terminal sibling behind another overview timeout.
+            result.update(_project_refresh_rows(collect_manager_candidates(
+                now=now, collectors=(_herdmaster,)), set(current) & requested))
+        return result
     if collectors is None and all(is_retained_herd_refresh_case(case) for case in cases):
         # Reuse the same canonical chronology, claim, identity and completion
         # checks as intake. The unrelated herd overview must not consume this
@@ -250,7 +311,6 @@ def _herdmaster(now):
     from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster
     result = _load_herdmaster(None, owner, now)
     candidates = []
-    candidates.extend(_retained_herd_report_recovery_candidates(now))
     candidates.extend(_completed_bulk_batch_findings(now))
     from modules.pig_weights.pig_welfare_case_runtime import (
         load_open_welfare_attention_cases,
@@ -337,8 +397,18 @@ def _herdmaster(now):
     candidates.extend(_purpose_review_candidates(
         snapshot, now=now, today=farm_today, observed_at=snapshot_observed,
     ))
-    for row in snapshot.get("overview_rows") or ():
+    overview = tuple(snapshot.get("overview_rows") or ())
+    from modules.oom_sakkie.herdmaster_case_disposition import conclusively_departed
+    for row in overview:
         if str(row.get("Tag_Number") or "").strip().casefold() != "151":
+            continue
+        # The canonical adapter renders a database boolean as Yes/No. Only a
+        # unique, exact terminal identity retires this obsolete sales hold.
+        pig = str(row.get("Pig_ID") or "")
+        if (pig and len([v for v in overview if str(v.get("Pig_ID") or "") == pig
+                         or str(v.get("Tag_Number") or "").strip().casefold() == "151"]) == 1
+                and conclusively_departed(row.get("Status"),
+                    False if row.get("On_Farm") == "No" else row.get("On_Farm"))):
             continue
         withdrawal = str(row.get("Withdrawal_Evidence_State") or "unknown").casefold()
         if withdrawal not in {"cleared", "not_applicable"}:
@@ -405,9 +475,6 @@ def _herdmaster(now):
                 message_family=("litter_first_treatment" if treatment_due else "litter_care"),
                 presentation_identity={"human_name": identity,
                                        "stable_reference": litter_id}))
-    from modules.oom_sakkie.herdmaster_case_disposition import collect_advisory_dispositions
-    candidates.extend(collect_advisory_dispositions(
-        now, current_keys={row["dedupe_key"] for row in candidates}))
     return candidates
 
 
@@ -458,6 +525,7 @@ def _retained_litter_followup_candidates(now, litter_rows, *, connect=None):
 
 def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_cases=None):
     """Discover reports, or refresh exact durable cases through the same checks."""
+    deadline = time.monotonic() + RETAINED_REPORT_READ_SECONDS
     selected = None
     if claimed_cases is not None:
         selected = []
@@ -473,7 +541,9 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
             raise ValueError("retained_report_case_read_bound_exceeded")
     connector = connect or connect_bounded_read
     with connector() as connection:
-        with connection.cursor() as cur:
+        with connection.cursor() as raw_cur:
+            raw_cur.execute("set transaction isolation level repeatable read read only")
+            cur = ReadBudgetCursor(raw_cur, deadline, failure_kind="retained_report_read_deadline")
             from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
                 read_retained_health_reports, resolve_retained_health_reports, retained_report_binding)
             if selected is None:
@@ -531,26 +601,34 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                 cur.execute("""select action_kind,mission_id,provider_message_id,status,expires_at,preview_payload
                     from app_private.oom_protected_action_claims
                     where action_kind='herdmaster_record_farrowing_litter'
-                      and status='active' and expires_at < %s order by created_at""", (now,))
+                      and status='active' and expires_at < %s order by created_at limit 5001""", (now,))
                 expired = [{"action_kind": row[0], "mission_id": row[1],
                     "provider_message_id": row[2], "status": row[3],
                     "expires_at": row[4], "preview_payload": row[5] or {}}
                     for row in cur.fetchall()]
-            cur.execute("select pig_id,tag_number,status,on_farm from public.current_canonical_pigs")
+                if len(expired) > 5000:
+                    raise ValueError("retained_farrowing_read_bound_exceeded")
+            cur.execute("select pig_id,tag_number,status,on_farm from public.current_canonical_pigs limit 5001")
             pigs = [{"pig_id": row[0], "tag_number": row[1], "status": row[2],
                      "on_farm": row[3]} for row in cur.fetchall()]
+            if len(pigs) > 5000:
+                raise ValueError("retained_pig_read_bound_exceeded")
             if selected is None:
-                cur.execute("select litter_id,sow_pig_id,farrowing_date from public.litters")
+                cur.execute("select litter_id,sow_pig_id,farrowing_date from public.litters limit 5001")
                 litters = [{"litter_id": row[0], "sow_pig_id": row[1],
                             "farrowing_date": row[2]} for row in cur.fetchall()]
+                if len(litters) > 5000:
+                    raise ValueError("retained_litter_read_bound_exceeded")
                 cur.execute("""select mission_id,provider_message_id,status,expires_at,preview_payload,
                     preview_card_message_id,coalesce(delivery_state,'claim_created')
                     from app_private.oom_protected_action_claims
-                    where action_kind='herdmaster_record_farrowing_litter' order by created_at""")
+                    where action_kind='herdmaster_record_farrowing_litter' order by created_at limit 5001""")
                 claims = [{"mission_id": row[0], "provider_message_id": row[1],
                     "status": row[2], "expires_at": row[3], "preview_payload": row[4] or {},
                     "preview_card_message_id": row[5], "delivery_state": row[6]}
                     for row in cur.fetchall()]
+                if len(claims) > 5000:
+                    raise ValueError("retained_farrowing_read_bound_exceeded")
             completed = {}
             for key, refs, status in retained:
                 if status in {"open", "delegated", "waiting_reassessment", "exception"}:
@@ -593,7 +671,10 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
         if key.startswith("herdmaster:retained-mortality:") and len(rows) == 1 and retained_identity_reassessment_needed(rows[0]):
             from modules.oom_sakkie.herdmaster_health_loss_runtime import load_canonical_health_loss_evidence
             if reassessment_evidence is None:
-                reassessment_evidence = load_canonical_health_loss_evidence(deadline_seconds=6)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("retained_report_read_deadline")
+                reassessment_evidence = load_canonical_health_loss_evidence(deadline_seconds=min(6, remaining))
             identity = reassess_retained_mortality_identity(rows[0], reassessment_evidence)
             if identity:
                 reassessed[str(rows[0]["provider_message_id"])] = identity
@@ -614,6 +695,8 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                         candidate["evidence_refs"].append("retained_confirmation:" + bridge["claim_preview_digest"])
                         candidate["next_reassessment_at"] = now.isoformat()
                 candidates.append(candidate)
+    if time.monotonic() >= deadline:
+        raise TimeoutError("retained_report_read_deadline")
     return candidates
 
 

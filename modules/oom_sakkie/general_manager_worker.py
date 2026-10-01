@@ -966,7 +966,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
     if candidates is None:
         from modules.oom_sakkie.manager_case_sources import (
             collect_manager_candidate, collect_manager_candidates,
-            collect_manager_refresh_snapshot, is_retained_herd_refresh_case)
+            collect_manager_refresh_snapshot, is_retained_herd_refresh_case,
+            is_advisory_herd_refresh_case)
         if collectors is None:
             from modules.telemetry.rootline_mixer_readiness_observer import (
                 collect_mixer_readiness,
@@ -1022,6 +1023,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                 prefix = str(case.get("dedupe_key") or "").split(":", 1)[0].casefold()
                 if is_retained_herd_refresh_case(case):
                     prefix = "herdmaster-retained"
+                elif is_advisory_herd_refresh_case(case):
+                    prefix = "herdmaster-advisories:" + str(case["case_id"])
                 by_owner.setdefault(prefix, []).append(case)
             groups = []
             for owner, owned_cases in by_owner.items():
