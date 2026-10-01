@@ -942,7 +942,8 @@ class PostgresManagerCaseStore:
                     self._event(cur, current, "claimed", now, cycle_id=cycle_id)
                     self._event(cur, current, "delegated", now, cycle_id=cycle_id,
                                 specialist=current["specialist"])
-        return {**current, "_refreshed_generation": refreshed_generation}
+        return {**current, "_refreshed_generation": refreshed_generation,
+                "_manager_cycle_id": cycle_id}
 
     @staticmethod
     def _event(cur, case, event_type, now, **payload):
@@ -1139,13 +1140,26 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
             and bool(outcome.get("telegram_message_id")))
         return {**outcome, "success": confirmed, "delivery_confirmed": confirmed,
             "writes_farm_data": False}
-    owners = [value.strip() for value in str(
-        os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",")
-        if value.strip()]
-    if not owners:
-        return {"success": False, "status": "manager_owner_binding_unavailable",
-                "delivery_confirmed": False, "telegram_sends": 0}
-    owner = owners[0]
+    farrowing_review = str(case.get("message_family") or "") == "retained_farrowing_owner_review"
+    if farrowing_review:
+        from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
+            build_retained_farrowing_owner_review, current_farrowing_review_owner)
+        owner = current_farrowing_review_owner()
+        if not owner:
+            return {"success":False,"status":"manager_owner_binding_unavailable",
+                "delivery_confirmed":False,"telegram_sends":0,"writes_farm_data":False}
+        result = build_retained_farrowing_owner_review(case, now=now,
+            deadline_monotonic=deadline_monotonic)
+        if result.get("success") is not True:
+            return {**result,"delivery_confirmed":False,"telegram_sends":0}
+    else:
+        owners = [value.strip() for value in str(
+            os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",") if value.strip()]
+        if not owners:
+            return {"success":False,"status":"manager_owner_binding_unavailable",
+                "delivery_confirmed":False,"telegram_sends":0}
+        owner = owners[0]
+        result = None
     observed = _generation_timestamp(case["case_id"], int(case["generation"]))
     mission_id = f"{case['case_id']}:G{int(case['generation'])}"
     if specialist == "BEACON":
@@ -1176,8 +1190,6 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
                     "failure_kind": exc.__class__.__name__, "delivery_confirmed": False,
                     "telegram_sends": 0, "customer_sends": 0, "publishes": False,
                     "spends_money": False, "writes_farm_data": False}
-    else:
-        result = None
     unknowns = tuple(str(value) for value in case.get("unknowns") or ())
     if result is None and not unknowns:
         reassess_at = _aware(now or datetime.now(timezone.utc)) + CADENCE
@@ -1198,6 +1210,8 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     parsed = {"telegram_user_id": owner, "telegram_chat_id": owner,
               "provider_message_id": "scheduled:" + mission_id,
               "provider_timestamp": observed.isoformat(), "text": "General Manager case"}
+    if farrowing_review:
+        parsed.update(telegram_chat_type="private", output_language=result["recipient_language"])
     if deliver is None:
         from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
         deliver = deliver_family_result
@@ -1208,9 +1222,29 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
                 "delivery_confirmed": False, "telegram_sends": 0,
                 "customer_sends": 0, "provider_actions": 0,
                 "hardware_commands": 0, "writes_farm_data": False}
+    delivery_options = {"deadline_monotonic": deadline_monotonic}
+    if farrowing_review:
+        # The current configured owner must remain the recipient at the actual
+        # provider boundary. No old reporter identity or protected token is used.
+        from modules.oom_sakkie.family_message_lifecycle import _send_telegram, _edit_telegram
+        def owner_review_current():
+            return (current_farrowing_review_owner() == owner and
+                build_retained_farrowing_owner_review(case, now=now,
+                    deadline_monotonic=deadline_monotonic).get("success") is True)
+        def owner_review_sender(destination, text, **kwargs):
+            if str(destination) != owner or not owner_review_current():
+                return {"success":False,"status":"manager_owner_binding_changed",
+                        "delivery_definitely_not_sent":True}
+            return _send_telegram(destination, text, **kwargs)
+        def owner_review_editor(destination, message_id, text, **kwargs):
+            if str(destination) != owner or not owner_review_current():
+                return {"success":False,"status":"manager_owner_binding_changed",
+                        "delivery_definitely_not_sent":True}
+            return _edit_telegram(destination, message_id, text, **kwargs)
+        delivery_options.update(sender=owner_review_sender, editor=owner_review_editor)
     outcome = dict(deliver(parsed, result, specialist=specialist,
                            mission_id=mission_id, card_mission_id=case["case_id"],
-                           deadline_monotonic=deadline_monotonic) or {})
+                           **delivery_options) or {})
     if result.get("callback_token") and outcome.get("telegram_message_id"):
         from modules.oom_sakkie.protected_action_claims import bind_claim_card
         if not bind_claim_card(result["callback_token"], outcome["telegram_message_id"]):

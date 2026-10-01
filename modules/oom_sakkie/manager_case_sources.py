@@ -158,7 +158,8 @@ def is_retained_herd_refresh_case(case):
     """These cases are owned by the existing retained-report collector."""
     return (str(case.get("specialist") or "").upper() == "HERDMASTER"
         and str(case.get("dedupe_key") or "").startswith((
-            "herdmaster:retained-mortality:", "herdmaster:retained-litter-loss:")))
+            "herdmaster:retained-mortality:", "herdmaster:retained-litter-loss:",
+            "herdmaster:expired-farrowing:")))
 
 
 def is_advisory_herd_refresh_case(case):
@@ -523,9 +524,11 @@ def _retained_litter_followup_candidates(now, litter_rows, *, connect=None):
     return result
 
 
-def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_cases=None):
+def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_cases=None, deadline_monotonic=None, delivery_case=None):
     """Discover reports, or refresh exact durable cases through the same checks."""
     deadline = time.monotonic() + RETAINED_REPORT_READ_SECONDS
+    if deadline_monotonic is not None:
+        deadline = min(deadline, deadline_monotonic)
     selected = None
     if claimed_cases is not None:
         selected = []
@@ -550,7 +553,8 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                 cur.execute("""select dedupe_key,evidence_refs,status
                     from app_private.oom_manager_cases where specialist='HERDMASTER'
                       and (dedupe_key like 'herdmaster:retained-mortality:%%'
-                        or dedupe_key like 'herdmaster:retained-litter-loss:%%')
+                        or dedupe_key like 'herdmaster:retained-litter-loss:%%'
+                        or dedupe_key like 'herdmaster:expired-farrowing:%%')
                     order by case_id limit 65""")
             else:
                 # Caller fields select identities only. Evidence and status come
@@ -564,6 +568,18 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                           as i(case_id text,dedupe_key text))
                     order by m.case_id limit 65""", (json.dumps(selected),))
             retained = cur.fetchall()
+            if delivery_case is not None:
+                cur.execute("""select status,generation,evidence_digest,assigned_worker_id,lease_until
+                    from app_private.oom_manager_cases where case_id=%s and dedupe_key=%s
+                      and specialist='HERDMASTER'""", (delivery_case.get('case_id'), delivery_case.get('dedupe_key')))
+                current = cur.fetchone()
+                if (not current or current[0] not in {'open','delegated','waiting_reassessment','exception'}
+                        or current[1] != delivery_case.get('generation')
+                        or current[2] != delivery_case.get('evidence_digest')
+                        or (current[0] == 'delegated' and (not delivery_case.get('_manager_cycle_id')
+                            or current[3] != delivery_case['_manager_cycle_id']
+                            or not current[4] or current[4] <= now))):
+                    return []
             if len(retained) > 64:
                 raise ValueError("retained_report_case_read_bound_exceeded")
             if selected is not None:
@@ -573,6 +589,15 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                     and all(isinstance(ref, str) for ref in refs)]
                 if not retained:
                     return []
+            from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
+                read_retained_farrowing_reviews, FARROWING_KEY)
+            farrowing_reviews = read_retained_farrowing_reviews(cur, now, retained,
+                discovery=selected is None)
+            retained = [r for r in retained if not r[0].startswith(FARROWING_KEY)]
+            if selected is not None and not retained:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("retained_report_read_deadline")
+                return farrowing_reviews
             retained_ids = {str(ref).split(":", 1)[1]
                 for _key, refs, _status in retained for ref in refs
                 if str(ref).startswith("provider_message:")}
@@ -597,45 +622,18 @@ def _retained_herd_report_recovery_candidates(now, *, connect=None, claimed_case
                 if not failure:
                     health.extend(rows)
             expired, litters, claims = [], [], []
-            if selected is None:
-                cur.execute("""select action_kind,mission_id,provider_message_id,status,expires_at,preview_payload
-                    from app_private.oom_protected_action_claims
-                    where action_kind='herdmaster_record_farrowing_litter'
-                      and status='active' and expires_at < %s order by created_at limit 5001""", (now,))
-                expired = [{"action_kind": row[0], "mission_id": row[1],
-                    "provider_message_id": row[2], "status": row[3],
-                    "expires_at": row[4], "preview_payload": row[5] or {}}
-                    for row in cur.fetchall()]
-                if len(expired) > 5000:
-                    raise ValueError("retained_farrowing_read_bound_exceeded")
             cur.execute("select pig_id,tag_number,status,on_farm from public.current_canonical_pigs limit 5001")
             pigs = [{"pig_id": row[0], "tag_number": row[1], "status": row[2],
                      "on_farm": row[3]} for row in cur.fetchall()]
             if len(pigs) > 5000:
                 raise ValueError("retained_pig_read_bound_exceeded")
-            if selected is None:
-                cur.execute("select litter_id,sow_pig_id,farrowing_date from public.litters limit 5001")
-                litters = [{"litter_id": row[0], "sow_pig_id": row[1],
-                            "farrowing_date": row[2]} for row in cur.fetchall()]
-                if len(litters) > 5000:
-                    raise ValueError("retained_litter_read_bound_exceeded")
-                cur.execute("""select mission_id,provider_message_id,status,expires_at,preview_payload,
-                    preview_card_message_id,coalesce(delivery_state,'claim_created')
-                    from app_private.oom_protected_action_claims
-                    where action_kind='herdmaster_record_farrowing_litter' order by created_at limit 5001""")
-                claims = [{"mission_id": row[0], "provider_message_id": row[1],
-                    "status": row[2], "expires_at": row[3], "preview_payload": row[4] or {},
-                    "preview_card_message_id": row[5], "delivery_state": row[6]}
-                    for row in cur.fetchall()]
-                if len(claims) > 5000:
-                    raise ValueError("retained_farrowing_read_bound_exceeded")
             completed = {}
             for key, refs, status in retained:
                 if status in {"open", "delegated", "waiting_reassessment", "exception"}:
                     terminal = _retained_mortality_completion(cur, key, refs, evidence, now)
                     if terminal:
                         completed[key] = terminal
-    candidates = _project_retained_herd_report_recovery(
+    candidates = farrowing_reviews + _project_retained_herd_report_recovery(
         now, health, expired, canonical_pigs=pigs, canonical_litters=litters,
         farrowing_claims=claims)
     for candidate in candidates:
@@ -888,37 +886,6 @@ def _project_retained_herd_report_recovery(now, health, expired, *, canonical_pi
             message_family="retained_protected_recovery",
             presentation_identity={"human_name": "Linda" if linda else "Retained litter",
                                    "stable_reference": provider_ids[0]}))
-    for claim in expired or ():
-        preview = claim.get("preview_payload") if isinstance(claim.get("preview_payload"), dict) else {}
-        mission = str(claim.get("mission_id") or "")
-        provider = str(claim.get("provider_message_id") or "")
-        if not mission or not provider:
-            continue
-        sow, event_date = str(preview.get("sow_pig_id") or ""), str(preview.get("farrowing_date") or "")
-        if any(str(row.get("sow_pig_id") or "") == sow
-               and str(row.get("farrowing_date") or "") == event_date
-               for row in canonical_litters):
-            continue
-        if any(str(row.get("mission_id") or "") != mission
-               and str((row.get("preview_payload") or {}).get("sow_pig_id") or "") == sow
-               and str((row.get("preview_payload") or {}).get("farrowing_date") or "") == event_date
-               and (str(row.get("status") or "") == "completed"
-                    or (str(row.get("status") or "") == "active"
-                        and bool(str(row.get("preview_card_message_id") or "").strip())
-                        and str(row.get("delivery_state") or "") == "delivery_confirmed"))
-               for row in farrowing_claims):
-            continue
-        candidates.append(_candidate(
-            "herdmaster:expired-farrowing:" + mission, "HERDMASTER", "urgent",
-            [f"mission:{mission}", f"provider_message:{provider}",
-             f"sow:{preview.get('sow_pig_id') or 'unknown'}", "canonical_effect:none"],
-            ["fresh_canonical_farrowing_preview"],
-            "A delivered farrowing preview expired without a canonical litter result.",
-            "Route retained evidence to the protected farrowing re-preview adapter; never send a generic manager card or replay the original report.",
-            now + timedelta(minutes=5), task_class="status_reconciliation",
-            message_family="retained_protected_recovery",
-            presentation_identity={"familiar_meaning": "Retained farrowing report",
-                                   "stable_reference": mission}))
     return candidates
 
 

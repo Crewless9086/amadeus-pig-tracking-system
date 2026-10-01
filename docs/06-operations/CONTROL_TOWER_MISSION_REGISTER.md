@@ -18,18 +18,20 @@ sibling mission directory, not in the public repository.
 - The original eighteen consolidation commits were integrated through protected
   PR1341 at `3e77d3434b071078a41917a68fa63f2fa7b314ec`. Cleanup and retention are
   verified; consolidation itself did not activate farm agents.
-- PR1365 is merged at `1339358e50ff4d04983390cbb26c35b78063d014`, verified
-  live on October1. Its registration and web deployment are complete; do not
-  execute them again. The prior successful mortality journey is preserved.
-- A retained protected card has matching provider and lifecycle delivery proof.
-  That is presentation, not confirmation or a farm record. Subsequent natural
-  manager cycles still fail with broad-collection and preparation deadlines.
-- The same mission continues on `codex/herdmaster-bounded-reassessment-20261001`
-  from main1339358e in the existing application worktree. Bounded advisory and
-  retained-report reads must progress independently of slow overview reads;
-  protected orphan preparation must avoid a redundant preliminary rebuild.
-  Exact current-work, source, generation, transaction and confirmation guards
-  remain mandatory. Local qualification is not a live result.
+- PR1366 is merged at `59dca3dad630e3ac2a7f3bae7af4129540aba135`, verified
+  live on October1. PR1365 and PR1366 registration/deployment are complete; do
+  not execute them again. The prior successful mortality journey is preserved.
+- Natural cycles completed three exact obsolete advisories and automatically
+  prepared and delivered a retained mortality card, with matching provider and
+  family receipts. No unconfirmed report became a farm record. Later snapshots
+  preserved these outcomes, but a retained farrowing refresh still failed.
+- The same mission continues on `codex/herdmaster-farrowing-refresh-20261001`
+  from main59dca3da in the existing application worktree. The exact old report
+  must remain attached to its case and reach the actual configured owner as
+  historical unconfirmed evidence. Fresh authenticated owner input and normal
+  protected confirmation remain necessary for a birth record. No old report is
+  replayed as a new owner statement; no role or permission is expanded.
+  This candidate is not yet established as deployed by this checkpoint.
 - Fresh genuine Telegram acceptance and later independent manager continuity
   remain open. Do not manufacture messages, replay historical owner events or
   ask for farm observations already pending with Charl.

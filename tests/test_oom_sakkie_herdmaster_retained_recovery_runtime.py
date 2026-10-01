@@ -109,7 +109,7 @@ def test_pig138_unknown_case_kind_is_suppressed_before_any_claim():
     assert result["success"] is False and result["suppress_owner_delivery"] is True
 
 
-def test_mona_existing_undelivered_claim_is_routed_without_duplicate_claim():
+def test_legacy_farrowing_provider_only_adapter_cannot_reuse_or_create_a_claim():
     row = [("ANTON", "ANTON", "4051", {"counts": {"total_born": 12,
         "stillborn": 1}, "farrowing_date": "2026-08-26"}, "TOKEN", "MISSION",
         "DIGEST", "active", None)]
@@ -119,8 +119,9 @@ def test_mona_existing_undelivered_claim_is_routed_without_duplicate_claim():
                return_value=Connection([row])), \
          patch("modules.oom_sakkie.protected_action_claims.create_claim") as create:
         result = build_retained_protected_preview(case)
-    assert result["success"] is True and result["callback_token"] == "TOKEN"
-    assert result["mission_id"] == "MISSION"
+    assert result["success"] is False
+    assert result["status"] == "retained_farrowing_owner_review_required"
+    assert "callback_token" not in result
     create.assert_not_called()
 
 
