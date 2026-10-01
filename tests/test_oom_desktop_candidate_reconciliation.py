@@ -27,22 +27,29 @@ OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
 PREDECESSOR_PATHS = [
     '.github/workflows/oom-sakkie-audit-rails.yml',
-    'docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md',
+    'docs/09-vault-brain/02-agents/farm/HERDMASTER.md',
     'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md',
     'docs/09-vault-brain/CHANGELOG.md',
-    'modules/oom_sakkie/family_message_lifecycle.py',
-    'modules/oom_sakkie/herdmaster_burst_recovery.py',
-    'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py',
-    'modules/oom_sakkie/manager_case_sources.py',
-    'modules/oom_sakkie/protected_action_runtime.py',
-    'modules/oom_sakkie/retained_mortality_confirmation.py',
-    'modules/oom_sakkie/retained_mortality_continuation.py',
-    'modules/oom_sakkie/retained_mortality_presentation.py',
-    'modules/oom_sakkie/telegram_direct.py',
-    'tests/test_oom_sakkie_retained_confirmation_feedback.py',
-    'tests/test_oom_sakkie_retained_mortality_continuation_postgres.py',
-    'tests/test_oom_sakkie_retained_mortality_presentation_postgres.py',
+    'modules/agents/herdmaster.py',
+    'modules/oom_sakkie/farm_manager_loop.py',
+    'modules/oom_sakkie/farm_manager_runtime.py',
+    'modules/oom_sakkie/herd_read_queries.py',
+    'modules/oom_sakkie/herdmaster_request_runtime.py',
+    'modules/oom_sakkie/semantic_front_door.py',
+    'modules/oom_sakkie/service.py',
+    'modules/oom_sakkie/telegram_gateway.py',
+    'modules/oom_sakkie/tools.py',
+    'modules/pig_weights/herdmaster_breeding_attention_service.py',
+    'modules/pig_weights/herdmaster_breeding_operating_loop.py',
+    'modules/pig_weights/herdmaster_breeding_policy.py',
+    'modules/pig_weights/herdmaster_daily_manager_evidence.py',
+    'static/assets/agents/herdmaster/agent.md',
+    'tests/test_herdmaster_breeding_chronology.py',
+    'tests/test_herdmaster_breeding_operating_loop.py',
+    'tests/test_oom_sakkie_conversation_followup.py',
+    'tests/test_oom_sakkie_herd_read_queries.py',
 ]
+
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
 PRESENTATION_EFFECTS = {'retained_mortality_single_first_attempt_presentation_window',
@@ -50,11 +57,17 @@ PRESENTATION_EFFECTS = {'retained_mortality_single_first_attempt_presentation_wi
     'canonical_completed_retained_mortality_delivery_recovery'}
 CONTINUATION_EFFECT = 'owner_requested_expired_retained_mortality_confirmation_successor'
 READ_QUERY_EFFECT = 'herdmaster_canonical_domain_scoped_read_answers'
+SUCCESSOR_EFFECTS = {
+    'herdmaster_exact_canonical_advisory_case_disposition',
+    'herdmaster_stable_sow_litter_identity_reassessment',
+    'retained_mortality_original_report_identity_reassessment',
+    'retained_mortality_audited_never_attempted_orphan_claim_replacement',
+}
 RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_preview_renewal'
 # Synthetic candidate identity permits pre-publication qualification only while
 # pins are pending. Final qualification uses the real pins, never owner approval.
-SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40,
-    "PATHS": ["scripts/oom_sakkie_morning_scheduler.py", "tests/test_oom_sakkie_morning_scheduler.py"]}
+SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40, "TREE": "c" * 40,
+    "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
 def use_synthetic_candidate(test):
@@ -62,6 +75,12 @@ def use_synthetic_candidate(test):
                if getattr(adapter, key) is None or getattr(adapter, key) == []}
     if not pending:
         return  # Final qualification exercises the real frozen pins.
+    # Import-time release clauses bind the same synthetic pins as the fixture.
+    pending["REQUIRED_ACCEPTANCE"] = {
+        value.replace(f"PR{adapter.CANDIDATE_PR}", f"PR{pending.get('CANDIDATE_PR', adapter.CANDIDATE_PR)}")
+             .replace(f"head {adapter.HEAD}", f"head {pending.get('HEAD', adapter.HEAD)}")
+             .replace(f"candidate {adapter.HEAD}", f"candidate {pending.get('HEAD', adapter.HEAD)}")
+        for value in adapter.REQUIRED_ACCEPTANCE}
     pins = patch.multiple(adapter, **pending)
     pins.start()
     test.addCleanup(pins.stop)
@@ -74,7 +93,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
+        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
         "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -396,7 +415,7 @@ class ReconciliationTests(unittest.TestCase):
     def test_pending_candidate_pins_reject_before_source_or_database_access(self):
         for fields in ({"CANDIDATE_PR": None}, {"CANDIDATE_PR": True}, {"HEAD": None}, {"TREE": None},
                        {"APPROVED_RUNTIME_HEAD": None}, {"APPROVED_RUNTIME_HEAD": "a" * 40},
-                       {"QUALIFICATION_TEST_PATHS": ["tests/later.py"]}, {"PATHS": []}, {"PATHS": ["../other.py"]}):
+                       {"QUALIFICATION_TEST_PATHS": ["tests/later.py"]}, {"PATHS": None}, {"PATHS": []}, {"PATHS": ["../other.py"]}):
             with self.subTest(fields=fields), patch.multiple(adapter, **fields), \
                  patch.object(adapter, "verify_source_and_candidate") as source, \
                  patch.object(store, "_connect") as connect:
@@ -526,8 +545,9 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:5c3e6dc7211bb8285acbec3987974241cc2e152f"})
-        self.assertEqual(adapter.ADDED_EFFECTS,{READ_QUERY_EFFECT,"application_revision_rollback:web:3a8f06266552196dadebfce270bf5c4f977a29d5"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:3a8f06266552196dadebfce270bf5c4f977a29d5"})
+        self.assertEqual(adapter.ADDED_EFFECTS, SUCCESSOR_EFFECTS | {"application_revision_rollback:web:9bef22336a98fa92f5ee2a419ab4cbafc781c163"})
+        self.assertNotIn(READ_QUERY_EFFECT,adapter.ADDED_EFFECTS)
         self.assertNotIn(CONTINUATION_EFFECT,adapter.ADDED_EFFECTS)
         self.assertFalse(PRESENTATION_EFFECTS & adapter.ADDED_EFFECTS)
 
@@ -565,13 +585,64 @@ class ReconciliationTests(unittest.TestCase):
         after=self.snapshot();self.assertEqual(apply(self.args,self.connect)["writes"],0)
         self.assertEqual(self.snapshot(),after)
 
+    def test_successor_scope_refuses_missing_effects_and_unbounded_replacement(self):
+        for effect in sorted(SUCCESSOR_EFFECTS):
+            m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+            m["contract"]["allowed_effects"].remove(effect)
+            with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        for effect in ("automatic_any_expired_claim_replacement", "terminal_farm_write",
+                       "advisory_case_closure_from_absence", "unconfirmed_mortality_recording"):
+            m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+            m["contract"]["allowed_effects"].append(effect)
+            with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_successor_scope_requires_exact_proof_audit_and_fresh_confirmation(self):
+        changes = (
+            ("locked case identity, evidence digest and generation", "similar animal label"),
+            ("current canonical completion or lifecycle evidence", "missing refreshed candidate"),
+            ("stable canonical sow and litter IDs", "matching display names"),
+            ("existing original report text and original source time", "new guessed owner text"),
+            ("Use no new AI call", "Use paid AI reassessment"),
+            ("expired, active and claim_created", "any expired claim"),
+            ("every delivery attempt, card, provider result and confirmation marker null", "current attempt marker null"),
+            ("no earlier presentation, continuation, replacement, correction or renewal audit", "an earlier delivered card"),
+            ("original private principal, original report, canonical pig and found_dead meaning must match", "a similar report is enough"),
+            ("complete current canonical preview material must differ", "cached preview may match"),
+            ("retained_mortality_orphan_replacement.v1", "unversioned_replacement"),
+            ("change only its status to changed", "delete the old claim"),
+            ("full old-claim audit plus source before/after evidence", "latest source alone"),
+            ("retained_repreview.orphan_predecessor", "arbitrary_source_reference"),
+            ("replacement event ID and predecessor claim hash", "a caller flag"),
+            ("Retain both material digests without asserting equivalence", "Treat changed material as equivalent authority"),
+            ("first orphan replacement preparation sends nothing", "first orphan replacement preparation sends immediately"),
+            ("A later normal manager cycle", "A manual cron invocation"),
+            ("The successor requires its own genuine confirmation", "The stale claim confirms the successor"),
+            ("complete bounded source, claim, case, farm and provider history", "latest source only"),
+            ("Cancelled, uncertain, attempted, confirmed, completed, competing or incomplete histories refuse replacement", "Any history permits replacement"),
+            ("except the single audited never-attempted legacy orphan replacement defined here", "except any convenient renewal"),
+        )
+        for before,after in changes:
+            m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+            original=m["contract"]["operational_acceptance"]
+            changed=[value.replace(before,after) for value in original]
+            self.assertNotEqual(changed,original,before)
+            m["contract"]["operational_acceptance"]=changed
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        clauses=json.loads(self.args["manifest_bytes"])["contract"]["operational_acceptance"]
+        self.assertFalse(any("This read-routing repair" in value for value in clauses))
+        self.assertFalse(any("this web-only HERDMASTER read-question routing repair scope" in value for value in clauses))
+        self.assertFalse(any("must never create a new confirmation generation or automatically" in value for value in clauses))
+
     def test_scoped_read_repair_cannot_add_writes_unscoped_briefs_or_spend(self):
         for before,after in (
                 ('explicit typed read capabilities','new prose-only write dispatch'),
                 ('do not substitute a generic farm brief','substitute a generic farm brief'),
                 ('Missing, malformed or unavailable evidence must remain an explicit gap','Unavailable evidence becomes zero'),
                 ('Scope genuine HERDMASTER owner questions and supported physical tasks before presentation limits','Apply presentation limits before domain scoping'),
-                ('adds no model call, confirmation bypass, farm mutation','may add model calls and unconfirmed mutations'),
+                ('adds no model call, confirmation bypass, direct farm mutation','may add model calls and unconfirmed mutations'),
                 ('US$1 SAST-day OpenAI cap','unlimited OpenAI budget'),
                 ('tests and hosted qualification alone are not owner acceptance','hosted tests prove all owner acceptance')):
             m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
@@ -583,7 +654,7 @@ class ReconciliationTests(unittest.TestCase):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail('unexpected connection'))
         m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
         prior=m['expected_child_record']['metadata_json']['mission_admission_contract']
-        self.assertNotIn(READ_QUERY_EFFECT,prior['allowed_effects'])
+        self.assertIn(READ_QUERY_EFFECT,prior['allowed_effects'])
         self.assertIn(READ_QUERY_EFFECT,m['contract']['allowed_effects'])
         self.assertTrue(PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {CONTINUATION_EFFECT} <= set(m['contract']['allowed_effects']))
         self.assertFalse(any('this web-only expired-confirmation continuation scope' in x for x in m['contract']['operational_acceptance']))
@@ -656,7 +727,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(self.snapshot(),after)
 
     def test_consistently_rebound_but_wrong_predecessor_fails_before_connection(self):
-        for field in ("pr", "head", "base", "branch", "status"):
+        for field in ("pr", "head", "base", "branch", "paths", "status"):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
             row=m["expected_child_record"];md=row["metadata_json"]
             packet,contract,admission=md["review_packet"],md["mission_admission_contract"],md["mission_admission"]
@@ -664,6 +735,7 @@ class ReconciliationTests(unittest.TestCase):
             elif field=="head":packet["candidate_revision"]=admission["head_sha"]="b"*40
             elif field=="base":contract["base_sha"]=admission["base_sha"]="a"*40
             elif field=="branch":packet["branch_name"]=contract["branch"]="synthetic-other-branch"
+            elif field=="paths":contract["allowed_files"]=PREDECESSOR_PATHS[:-1]
             else:admission["status"]="consumed"
             m["expected_child_sha256"]=adapter.digest(adapter.canonical(row))
             with self.subTest(field=field),self.assertRaisesRegex(adapter.ReconciliationError,"predecessor_binding_invalid"):
@@ -721,35 +793,21 @@ class ReconciliationTests(unittest.TestCase):
                 self.fail("source verification reached candidate before rejecting checkout drift")
             with self.subTest(reason=reason),patch.object(adapter.subprocess,"check_output",side_effect=git):
                 with self.assertRaisesRegex(adapter.ReconciliationError,reason):adapter.verify_source_and_candidate(plan)
-    def test_exact_read_question_candidate_allows_no_qualification_successor_or_path_drift(self):
+    def test_exact_candidate_allows_no_qualification_successor_or_path_drift(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR,1364)
-        self.assertEqual(adapter.BASE,"3a8f06266552196dadebfce270bf5c4f977a29d5")
+        self.assertEqual(adapter.BASE,"9bef22336a98fa92f5ee2a419ab4cbafc781c163")
+        self.assertEqual(adapter.BRANCH,"codex/herdmaster-case-disposition-20261001")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
-        self.assertEqual(adapter.HEAD,"e8af6a1d18bc76b2617f6de3a8133c8a559b5cb4")
-        self.assertEqual(adapter.TREE,"84b1b3b67fcbb8e13834fb3890192f6bb8381bba")
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1363)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"d20bc93a24c156f7e6bb19d0cf496811d407a48d")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"5c3e6dc7211bb8285acbec3987974241cc2e152f")
+        self.assertEqual(adapter.PREDECESSOR_PR,1364)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"e8af6a1d18bc76b2617f6de3a8133c8a559b5cb4")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"3a8f06266552196dadebfce270bf5c4f977a29d5")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herdmaster-question-routing-20260929")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PATHS),22)
-        for path in ("modules/oom_sakkie/herd_read_queries.py",
-                     "modules/oom_sakkie/herdmaster_request_runtime.py",
-                     "modules/oom_sakkie/semantic_front_door.py",
-                     "modules/oom_sakkie/telegram_gateway.py",
-                     "modules/oom_sakkie/farm_manager_runtime.py",
-                     "modules/pig_weights/herdmaster_breeding_attention_service.py",
-                     "modules/pig_weights/herdmaster_breeding_operating_loop.py",
-                     "modules/pig_weights/herdmaster_breeding_policy.py",
-                     "modules/pig_weights/herdmaster_daily_manager_evidence.py",
-                     "tests/test_herdmaster_breeding_chronology.py",
-                     "tests/test_herdmaster_breeding_operating_loop.py",
-                     "tests/test_oom_sakkie_herd_read_queries.py"):
-            self.assertIn(path,adapter.PATHS)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),22)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
@@ -771,7 +829,7 @@ class ReconciliationTests(unittest.TestCase):
                 if args==["diff","--name-only",adapter.BASE,adapter.HEAD,"--"]:
                     paths=list(adapter.PATHS)
                     if case=="extra_path":paths.append("app.py")
-                    elif case=="missing_runtime":paths.remove("modules/oom_sakkie/herd_read_queries.py")
+                    elif case=="missing_runtime":paths.pop(0)
                     return ("\n".join(sorted(paths))+"\n").encode()
                 if args==["diff","--no-ext-diff","--no-textconv","--binary","--full-index",adapter.BASE,adapter.HEAD,"--"]:
                     return b"unreviewed candidate diff" if case=="wrong_patch" else b"synthetic candidate diff"

@@ -16,6 +16,9 @@ a = prototype.adapter
 
 
 class OfflineTests(unittest.TestCase):
+    def setUp(self):
+        f.use_synthetic_candidate(self)
+
     def test_real_source_verification_is_not_disabled_by_renderer(self):
         args = f.arguments()
         with patch.object(a, 'verify_source_and_candidate', side_effect=ValueError('required_source_gate')) as check:
