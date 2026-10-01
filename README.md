@@ -12,14 +12,16 @@ and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md)
 The register names the sole coordinator, current work, holds and next gate.
 
 The [1 October shared status](docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md)
-records the HERDMASTER work and its acceptance limits. PR1366 is merged at
-`59dca3dad630e3ac2a7f3bae7af4129540aba135`; that web revision was verified live
-on 1 October. Normal cycles completed three old advisories and automatically
-prepared and delivered a retained mortality confirmation card. The previously
-confirmed mortality record remains intact. One expired farrowing report still
-needs a reliable handoff to the configured owner; that repair is in progress.
-Six question readers passed earlier read-only checks. Fresh confirmations,
-Telegram acceptance and full agent autonomy remain unproven.
+records the HERDMASTER work and its acceptance limits. PR1367 is merged at
+`bc35db71a653677b11e8b03ca6d9eda965edfba7`; that web revision was verified live
+on 1 October. Its historical birth-review card reached the configured owner,
+and two later natural cycles completed without duplicate delivery or exceptions.
+Previous advisory completions and the confirmed mortality record remain intact.
+The owner has now requested concise, names-first formatting across Oom Sakkie's
+family messages and a supported conversational reply to review cards; this
+continuation is being qualified. Six question readers passed earlier read-only
+checks. Fresh protected confirmations, broader Telegram acceptance and full
+agent autonomy remain unproven.
 ROOTLINE is the next proposed focus after HERDMASTER readiness.
 
 Local cleanup is verified and all original eighteen commits were integrated by

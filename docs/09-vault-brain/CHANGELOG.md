@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-10-01 - Owner-approved concise family messages
+
+- Apply one readable style across Oom Sakkie's family-facing questions,
+  specialist answers, scheduled follow-ups and protected review/completion
+  messages: familiar names or visible tags, short bullets, readable dates,
+  clear status, one supported next step and restrained heading emoji.
+- Preserve material uncertainty and protected action details while removing
+  avoidable technical wording and irrelevant zero counts from summaries.
+- Keep presentation separate from authority and material-change detection.
+  Restyling never renews a claim, repeats an old notification or records a farm
+  fact. Informational report replies require current delivered context and
+  the existing protected confirmation journey before any farm write.
+- This is a durable owner preference. Exact implementation qualification,
+  release and genuine family-message acceptance are separate mission evidence.
+
 ## 2026-10-01 - Exact retained farrowing owner-review handoff
 
 - Keep expired farrowing refresh bound to its durable case and original claim.

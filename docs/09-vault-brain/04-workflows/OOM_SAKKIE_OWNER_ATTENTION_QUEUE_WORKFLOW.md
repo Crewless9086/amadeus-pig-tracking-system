@@ -9,6 +9,30 @@ Telegram, GateKeeper, SAM owner-card and decision-evidence infrastructure.
 This workflow adds no bot, trigger, customer router, callback namespace owner,
 decision ledger or runtime scheduler.
 
+## Family presentation
+
+All family-facing messages follow the concise presentation contract in
+`02-agents/farm/OOM_SAKKIE.md`: familiar names or visible tags, useful short
+bullets, readable dates, a clear status, one supported next step, and at most
+one optional heading emoji. Apply this to ordinary questions, scheduled
+follow-ups, specialist results and protected previews/completions. Render typed
+facts through the existing channel adapters; do not reinterpret meaning or
+change protected payloads merely to make the text shorter.
+
+Keep historical reported facts visibly unconfirmed until the normal protected
+journey records them. A short reply to an informational review must bind to the
+exact delivered message and its current authorized owner, case, generation and
+source facts. If that context is absent, stale or ambiguous, ask one precise
+clarification. A verified reply can prepare the existing protected preview; it
+cannot consume an old claim or bypass its confirmation. Preserve the original
+reporter's attribution in the audit record.
+
+Do not resend or renew a card because its format or familiar label improved.
+Material work, recipient/claim validity and provider delivery remain governed
+by the existing case and message lifecycle. Presentation tests cover both
+languages, safe escaping, missing or duplicate names, protected quantities and
+uncertainty, unchanged callbacks and formatting-only replay suppression.
+
 ## Shared Attention Projection
 
 The attention queue is the single typed owner-attention decision projection

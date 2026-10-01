@@ -418,13 +418,13 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Reserve reason: sunny forecast", response["summary"])
         self.assertIn("ROOTLINE recommends now: borehole", response["summary"])
         self.assertIn("<b>Borehole:</b> Recommend", response["summary"])
-        self.assertIn("Next reassessment", response["summary"])
+        self.assertIn("new_canonical_evidence", response["summary"])
         af_response = rootline_water_energy_plan_handler(
             {"date": "2026-07-29", "semantic_language": "af"}
         )
         self.assertIn("WATER &amp; KRAG", af_response["summary"])
         self.assertIn("Plaasbesluite", af_response["summary"])
-        self.assertEqual(response["summary"].count("What I need from you"), 1)
+        self.assertEqual(response["summary"].count("Are the storage tanks LOW, OK or FULL?"), 1)
         self.assertNotIn("command_authority", response["summary"])
         self.assertFalse(response["raw"]["authority"]["command_authority"])
         self.assertFalse(response["raw"]["authority"]["hardware_control"])
@@ -673,7 +673,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         })
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "herd_question_answer_ready")
-        self.assertIn("Facts — Shupe", result["summary"])
+        self.assertIn("Shupe — recorded status", result["summary"])
         self.assertFalse(result["raw"]["writes_performed"])
         self.assertFalse(result["raw"]["protected_actions_performed"])
 
@@ -726,8 +726,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["tool_used"], "herdmaster_herd_question")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
         self.assertIn("72.2 kg", result["answer"])
-        self.assertIn("evidence date 2026-07-20", result["answer"])
-        self.assertIn("Recommendation", result["answer"])
+        self.assertIn("20 July 2026", result["answer"])
+        self.assertIn("Next: Review for retention.", result["answer"])
 
     @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
     @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
@@ -1645,7 +1645,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "session_id": "telegram-12345",
         })
         self.assertIn("Brief answer.", result["telegram_text"])
-        self.assertIn("Check: jarvis_daily_command_brief", result["telegram_text"])
+        self.assertNotIn("jarvis_daily_command_brief", result["telegram_text"])
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -1973,8 +1973,8 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertIn("Oom Sakkie", text)
         self.assertIn("Farm status is calm.", text)
-        self.assertIn("Check: farm_attention_summary", text)
-        self.assertIn("- No write.", text)
+        self.assertNotIn("farm_attention_summary", text)
+        self.assertIn("• No write.", text)
         self.assertIn("No farm/control write", text)
 
     def test_telegram_daily_brief_format_uses_compact_structured_sections(self):

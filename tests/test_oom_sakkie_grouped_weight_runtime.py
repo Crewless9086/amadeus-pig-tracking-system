@@ -32,4 +32,4 @@ def test_exact_compound_message_previews_all_four_shared_date_and_pen():
     assert result["weight_date"]=="2026-08-11"
     assert {row["moved_to_pen_id"] for row in captured["rows"]}=={"PEN-017"}
     assert all(name in result["answer"] for name in names)
-    assert "D3" in result["answer"] and "2026-08-11" in result["answer"]
+    assert "D3" in result["answer"] and "11 August 2026" in result["answer"]

@@ -336,7 +336,9 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "telegram_sends":0,"telegram_edits":0}
     store = event_store or _event_store
     events = list(store("load", card_mission_id, None) or [])
-    text = str(result.get("answer") or "").strip()
+    from modules.oom_sakkie.family_presentation import envelope
+    source_text = str(result.get("answer") or "").strip()
+    text = envelope(source_text)
     if not text:
         return {"success": False, "status": "family_message_visible_text_required",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
@@ -356,9 +358,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         if previous:
             parsed = {**parsed, "provider_timestamp": previous["provider_timestamp"]}
     reply_markup = result.get("reply_markup") if isinstance(result.get("reply_markup"), Mapping) else None
-    exclusive_completion = (
-        result.get("owner_visible_completion_policy") == "verified_edit_or_new_message"
-        and str(result.get("status") or "") in {
+    completion_states = {
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded",
             "payment_state_recorded", "payment_state_replay_noop",
             "weaning_day_committed", "weaning_day_replayed_withheld",
@@ -368,7 +368,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             "segment_started", "active_segment_owned", "private_media_review_recorded",
             "private_media_review_presented"
         }
-    )
+    exclusive_completion = (result.get("owner_visible_completion_policy") == "verified_edit_or_new_message"
+        and str(result.get("status") or "") in completion_states)
     if exclusive_completion and reply_markup is None:
         reply_markup={"inline_keyboard":[]}
     delivered = next((row for row in events if row.get("state") == "delivered"), None)
@@ -461,7 +462,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                      str(result.get("status") or "working"), text_sha)
     if int(result.get("question_count") or 0) == 1:
         payload["clarification_question"] = str(
-            result.get("clarification_question") or (text if result.get("status") in {
+            result.get("clarification_question") or (source_text if result.get("status") in {
                 "owner_context_clarification_required", "waiting_for_input",
                 "manager_question_partial_reply_recorded"} else ""))[:240]
     if str(result.get("clarification_question") or "").strip():
@@ -501,8 +502,17 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
+    # A legacy delivered completion is already the requested outcome. Adding a
+    # heading must not restore/edit it as though another preview displaced it.
+    source_text_sha = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    same_completed_receipt = bool(provider_replay and latest
+        and latest.get("task_state") in completion_states
+        and latest.get("task_state") == provider_replay.get("task_state")
+        and all(str(latest.get(key) or "") == str(provider_replay.get(key) or "")
+            for key in (*inbound_binding, "mission_id", "card_mission_id", "telegram_message_id")))
     exclusive_completion_restore = bool(provider_replay and exclusive_completion
-        and str((latest or {}).get("text_sha256") or "") != text_sha)
+        and not same_completed_receipt
+        and str((latest or {}).get("text_sha256") or "") not in {text_sha, source_text_sha})
     if provider_replay and exclusive_completion and not exclusive_completion_restore:
         return {"success": True, "status": "family_message_completion_replayed_noop",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -720,7 +730,9 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0,
             "hardware_commands": 0, "writes_farm_data": False,
             "delivery_definitely_not_sent": True}
-    text = str(result.get("answer") or "").strip()
+    from modules.oom_sakkie.family_presentation import envelope
+    source_text = str(result.get("answer") or "").strip()
+    text = envelope(source_text)
     digest = str(generation_digest or "").lower()
     prior_id = str(previous_message_id or "").strip()
     if (result.get("status") != "daily_farm_manager_ready"
@@ -754,6 +766,12 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                             ("oom-current-brief:" + card_mission_id,))
     store = event_store or _event_store
     events = list(store("load", card_mission_id, None) or [])
+    # Resume an admitted legacy generation using its original byte projection;
+    # formatting cannot manufacture another generation or invalidate a receipt.
+    source_sha = hashlib.sha256(source_text.encode()).hexdigest()
+    if any(row.get("rendered_text_sha256") == source_sha
+           and row.get("generation_digest") == digest for row in events):
+        text = source_text
     owner_scope = hashlib.sha256((str(parsed.get("telegram_user_id") or "") + "|"
         + str(parsed.get("telegram_chat_id") or "")).encode()).hexdigest()[:16].upper()
     rendered_sha = hashlib.sha256(text.encode()).hexdigest()
@@ -791,8 +809,12 @@ def replace_current_brief(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                   and any(row.get("state") == "brief_generation_superseded" for row in legacy_events)):
             return {"success": False, "status": "brief_replacement_delivery_ambiguous",
                 "telegram_sends": 0, "telegram_edits": 0, "telegram_deletes": 0}
+    recorded_shas = {str(row.get("rendered_text_sha256") or "") for row in generation_events}
+    completed_projection = bool(generation_events and len(recorded_shas) == 1 and "" not in recorded_shas
+        and any(row.get("state") == "brief_generation_delivered" for row in generation_events)
+        and any(row.get("state") == "brief_generation_superseded" for row in generation_events))
     if any(not owned(row) or str(row.get("generation_digest") or "") != digest
-            or str(row.get("rendered_text_sha256") or "") != rendered_sha
+            or (not completed_projection and str(row.get("rendered_text_sha256") or "") != rendered_sha)
             or str(row.get("previous_telegram_message_id") or "") != prior_id
             for row in generation_events):
         return {"success": False, "status": "brief_replacement_generation_binding_conflict",

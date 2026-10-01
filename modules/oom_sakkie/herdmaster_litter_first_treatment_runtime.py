@@ -148,11 +148,13 @@ def _prepare(facts, actor, stamp, language, *, connect_factory=None):
 
 
 def _preview_answer(preview, language='af'):
+    from modules.oom_sakkie.family_presentation import date_label, animal_label
     af = language == 'af'
-    lines = [escape(str(preview.get('sow_name') or preview['sow_pig_id'])) + ' (' + escape(preview['sow_pig_id']) + ')',
+    label = animal_label({'name':preview.get('sow_name'),'pig_id':preview['sow_pig_id']},language=language)
+    lines = [escape(label),
         ('Werpsel: ' if af else 'Litter: ') + escape(preview['litter_id']),
-        ('Werklik behandel: ' if af else 'Actually treated: ') + preview['action_date'],
-        str(preview['total_count']) + (' huidige varkies: ' if af else ' current piglets: ') + ', '.join(map(escape, preview['pig_ids'])),
+        ('Werklik behandel: ' if af else 'Actually treated: ') + date_label(preview['action_date'],language=language),
+        str(preview['total_count']) + (' huidige varkies in hierdie werpsel' if af else ' current piglets in this litter'),
         ', '.join(escape(row['product_name']) + ' (' + escape(row['product_id']) + ')' for row in preview['products']),
         escape(f"{preview['dose']} {preview['dose_unit']}, {preview['route']}, lot {preview['batch_lot_number']}")]
     if preview.get('earmarked') is not None:
@@ -163,7 +165,7 @@ def _preview_answer(preview, language='af'):
     if preview.get('notes'):
         lines.append(('Nota: ' if af else 'Note: ') + escape(preview['notes']))
     lines.append('Bevestig hierdie presiese eerste behandeling om dit een keer te stoor.' if af else 'Confirm this exact first treatment to save it once.')
-    return '\n'.join(lines)
+    return '\n'.join(['• '+line for line in lines[:-1]]+["",lines[-1]])
 
 
 def handle_litter_first_treatment_message(parsed, authority, *, connect_factory=None):

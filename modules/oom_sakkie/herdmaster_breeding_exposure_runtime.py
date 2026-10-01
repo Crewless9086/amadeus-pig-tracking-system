@@ -73,6 +73,13 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
                 "errors": preview["errors"], "question_count": 1,
                 "answer": "I could not bind the complete group. Please correct the listed facts once; nothing was recorded.",
                 **_zero()}, 200
+    language = 'af' if str(parsed.get('output_language') or semantic.get('language') or 'en').startswith('af') else 'en'
+    try:
+        owner_text = _summary(preview['preview']['rows'], language=language, display_rows=rows)
+    except ValueError:
+        return {'handled':True,'success':False,'status':'breeding_identity_clarification_required',
+            'question_count':1, 'answer':('Wat is elke dier se unieke naam of sigbare oornommer?' if language=='af' else
+                'What is each animal’s unique name or visible tag?'), **_zero()},200
     creator = claim_creator or create_claim
     try:
         claim = creator(action_kind=ACTION_KIND, owner_user_id=owner, private_chat_id=chat,
@@ -94,7 +101,8 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
             "preview_digest":str(claim.get("preview_digest") or canonical_preview_digest(ACTION_KIND,preview)),
             "action_kind":str(claim.get("action_kind") or ACTION_KIND),
             "reply_markup": build_buttons(claim["callback_token"], grouped=True),
-            "answer": _summary(preview["preview"]["rows"]), **_zero()}, 200
+            "answer": owner_text, 'recipient_render_contract':'specialist_structured_recipient_v1',
+            'recipient_language':language, **_zero()}, 200
 
 
 def execute_claimed_group(claimed, *, actor_id, connect_factory):
@@ -114,30 +122,46 @@ def _production_connect():
     return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
 
 
-def _summary(rows):
-    lines = ["<b>HERDMASTER — GROUPED BREEDING PREVIEW</b>", ""]
+def _summary(rows, *, language='en', display_rows=None):
+    from modules.oom_sakkie.family_presentation import date_label, heading
+    af = language == 'af'
+    lines = [heading('Teelgroep om te bevestig' if af else 'Breeding group to confirm',emoji='🐷'), ""]
+    # The canonical preview intentionally omits presentation fields. Resolve
+    # its exact IDs through the already-resolved source rows; never alter the
+    # signed packet or lose a protected identity if a visible label is absent.
+    labels = {}
+    for source in display_rows or rows:
+        for identity,label in ((source.get('pig_id'),source.get('label')),
+                (source.get('boar_pig_id'),source.get('boar_label'))):
+            if identity and label:
+                if identity in labels and labels[identity] != label:
+                    raise ValueError('visible_animal_identity_ambiguous')
+                labels[identity]=label
+    def visible(identity, fallback=''):
+        return html.escape(str(labels.get(identity) or fallback or identity))
+    day = lambda value: html.escape(date_label(value,language=language))
     for row in rows:
-        label = html.escape(str(row.get("label") or row.get("pig_id")))
+        label = visible(row.get('pig_id'),row.get('label'))
         if row.get("action") == "exposure":
-            boar = html.escape(str(row.get("boar_label") or row.get("boar_pig_id")))
-            lines.append(f"• <b>{label}</b> — with {boar} from {row['exposure_started_on']} "
-                         f"to {row['planned_removal_on']} (exposure only).")
+            boar = visible(row.get('boar_pig_id'),row.get('boar_label'))
+            lines.append(f"• <b>{label}</b> — " +
+                (f"by {boar}, {day(row['exposure_started_on'])} tot {day(row['planned_removal_on'])}; slegs blootstelling." if af else
+                 f"with {boar}, {day(row['exposure_started_on'])} to {day(row['planned_removal_on'])}; exposure only."))
         elif row.get("action") == "exposure_removal":
-            boar = html.escape(str(row.get("boar_label") or row.get("boar_pig_id")))
-            lines.append(f"• <b>{label}</b> — remove from {boar} on {row['actual_removed_on']}; "
-                         f"possible service window {row['service_window_start']} to {row['service_window_end']}; "
-                         f"expected farrowing window {row['expected_farrowing_window_start']} to "
-                         f"{row['expected_farrowing_window_end']}. Exact service and conception remain Unknown.")
+            boar = visible(row.get('boar_pig_id'),row.get('boar_label'))
+            lines.append(f"• <b>{label}</b> — " +
+                (f"weg van {boar} op {day(row['actual_removed_on'])}." if af else f"remove from {boar} on {day(row['actual_removed_on'])}."))
+            lines.append(('  Moontlike dektyd: ' if af else '  Possible service window: ')+day(row['service_window_start'])+' — '+day(row['service_window_end']))
+            lines.append(('  Verwagte kraamtyd: ' if af else '  Expected farrowing window: ')+day(row['expected_farrowing_window_start'])+' — '+day(row['expected_farrowing_window_end']))
+            lines.append('  Presiese dekking en bevrugting bly Onbekend.' if af else '  Exact service and conception remain Unknown.')
         elif row.get("action") == "recovery_hold":
-            lines.append(f"• <b>{label}</b> — recovery hold; body condition "
-                         f"{float(row['body_condition_score']):g}.")
+            lines.append(f"• <b>{label}</b> — "+('herstelwaarneming; liggaamskondisie ' if af else 'recovery hold; body condition ')+f"{float(row['body_condition_score']):g}.")
         elif row.get("action") == "near_farrowing":
-            lines.append(f"• <b>{label}</b> — appears close to farrowing; previous mating date "
-                         "and father Unknown.")
+            lines.append(f"• <b>{label}</b> — "+('lyk naby kraam; vorige paringsdatum en vader Onbekend.' if af else 'appears close to farrowing; previous mating date and father Unknown.'))
         else:
             lines.append(f"• <b>{label}</b> — {html.escape(str(row.get('action') or 'review'))}.")
-    lines += ["", "Nothing has been recorded yet. Confirm this complete group to record it once.",
-              "This does not record mating, conception, pregnancy, movement or a litter."]
+    lines += ["", ('Nog nie aangeteken nie. Bevestig hierdie volledige groep om dit een keer te stoor.' if af else 'Nothing has been recorded yet. Confirm this complete group to record it once.'),
+              ('Dit teken geen paring, bevrugting, dragtigheid, skuif of werpsel aan nie.' if af else 'This does not record mating, conception, pregnancy, movement or a litter.')]
     return "\n".join(lines)
 
 

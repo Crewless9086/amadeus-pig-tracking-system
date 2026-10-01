@@ -83,6 +83,8 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
         "canonical_preview_digest":canonical["preview_digest"],
         "protected_claim_digest":str(claim.get("preview_digest") or canonical_preview_digest("grouped_weights",payload)),
         "action_kind":str(claim.get("action_kind") or "grouped_weights"),
+        "recipient_render_contract":"specialist_structured_recipient_v1",
+        "recipient_language":"af" if str(semantic.get("language")).startswith("af") else "en",
         "canonical_preview":canonical,"evidence_generation":generation,
         "callback_token":claim["callback_token"],"reply_markup":build_buttons(claim["callback_token"],grouped=True),
         "answer": compose_weight_preview(preview["rows"],

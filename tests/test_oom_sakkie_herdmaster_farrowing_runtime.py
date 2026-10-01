@@ -57,7 +57,7 @@ def test_corrected_linda_report_creates_dedicated_litter_claim_without_write():
     assert captured["preview_payload"]["counts"]["arithmetic"] == "9=8+0+1"
     assert captured["preview_payload"]["mating_id"] is None
     assert captured["preview_payload"]["sow_display_name"] == "Linda"
-    assert "Linda (PIG-2026-5AA8)" in result["answer"]
+    assert "Linda" in result["answer"] and "PIG-2026-5AA8" not in result["answer"]
     assert result["writes_farm_data"] is False
 
 
@@ -118,7 +118,7 @@ def test_execute_preserves_correction_metadata_through_digest_refresh(monkeypatc
         "correction_of_litter_id": "LIT-OLD", "correction_reason": "Corrected birth counts"}
     result, status = _execute(monkeypatch, facts, canonical)
     assert status == 201 and result["success"] is True
-    assert result["answer"].startswith("Litter recorded for Linda (PIG-2026-5AA8)")
+    assert result["answer"].startswith("<b>🐷 Linda — birth recorded</b>")
 
 
 def test_preview_and_completion_use_escaped_name_in_afrikaans(monkeypatch):
@@ -131,11 +131,12 @@ def test_preview_and_completion_use_escaped_name_in_afrikaans(monkeypatch):
         issue_gateway_owner_authority("42", "42"), evidence_loader=lambda **_: canonical,
         claim_creator=lambda **_: {"callback_token": "opaque", "preview_digest": "digest"})
     assert preview_status == 200
-    assert "Linda &lt;Hoof&gt; (PIG-2026-5AA8)" in preview_result["answer"]
-    assert "Bevestig die presiese beskermde rekord" in preview_result["answer"]
+    assert "Linda &lt;Hoof&gt;" in preview_result["answer"] and "PIG-2026-5AA8" not in preview_result["answer"]
+    assert "Gebruik Bevestig om hierdie besonderhede te stoor" in preview_result["answer"]
     result, status = _execute(monkeypatch, facts, canonical, language="af")
     assert status == 201
-    assert result["answer"].startswith("Linda &lt;Hoof&gt; (PIG-2026-5AA8) se werpsel")
+    assert result["answer"].startswith("<b>🐷 Linda &lt;Hoof&gt; — geboorte aangeteken</b>")
+    assert "PIG-2026-5AA8" not in result["answer"]
 
 
 def test_execute_resolves_matching_father_uuid_tag_and_name(monkeypatch):

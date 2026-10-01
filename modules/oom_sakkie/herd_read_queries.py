@@ -38,6 +38,7 @@ def load_herd_read_evidence(capability):
 
 
 def answer_herd_read_query(capability, *, language="en", loader=None):
+    from modules.oom_sakkie.family_presentation import heading
     af = str(language).casefold().startswith("af")
     titles = {
         "herd_inventory": ("HERDMASTER — HERD COUNT", "HERDMASTER — KUDDETELLING"),
@@ -72,8 +73,7 @@ def answer_herd_read_query(capability, *, language="en", loader=None):
         success, status = False, "herd_read_evidence_unavailable"
         lines = [("Ek kan die huidige kanonieke bewyse vir hierdie vraag nie lees nie. Dit beteken nie daar is geen diere of werk nie." if af else
                   "I cannot read the current canonical evidence for this question. This does not mean there are no animals or no work due.")]
-    answer = "\n\n".join([title, "\n".join(lines),
-        "Geen plaasrekord is verander nie." if af else "No farm record was changed."])
+    answer = "\n\n".join([heading(title), "\n".join(lines)])
     return {"success": success, "status": status, "answer": answer,
         "capability": capability, "read_only": True, "writes_performed": False,
         "protected_actions_performed": False, "confirmation_required": False}

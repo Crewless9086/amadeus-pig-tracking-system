@@ -681,19 +681,19 @@ def preview_daily_brief_for_allowed_owners(environ=None):
 
 
 def format_telegram_owner_reply(message_result, title="Oom Sakkie", footer=None):
+    from modules.oom_sakkie.family_presentation import plain_text
     message_result = message_result or {}
+    title = '🌿 ' + title
     compact = _compact_telegram_reply(message_result, title=title, footer=footer)
     if compact:
         return compact[:MAX_REPLY_CHARS]
     answer = str(message_result.get("answer") or "").strip()
     tool_used = str(message_result.get("tool_used") or "").strip()
     safety_notes = [str(note).strip() for note in (message_result.get("safety_notes") or []) if str(note).strip()]
-    lines = [title, ""]
-    lines.append(answer or "I could not build a useful answer for that yet.")
-    if tool_used:
-        lines.extend(["", f"Check: {tool_used}"])
+    lines = ([plain_text(answer)] if answer.startswith('<b>') else
+        [title, "", answer or "I could not build a useful answer for that yet."])
     if safety_notes:
-        lines.extend(["", "Safety:", *[f"- {note}" for note in safety_notes[:3]]])
+        lines.extend(["", "Checks:", *[f"• {note}" for note in safety_notes[:3]]])
     lines.extend(["", footer or "No farm/control write, dispatch, runtime change, or physical action was performed."])
     return "\n".join(lines).strip()[:MAX_REPLY_CHARS]
 
@@ -744,16 +744,16 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
         if needs_you:
             lines.append("Needs you")
         for item in needs_you:
-            lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('specialist_owner', 'specialist')}")
+            lines.append(f"• {item.get('title', 'Current work')} — {item.get('specialist_owner', 'specialist')}")
             lines.append(f"  Next: {_clip(str(item.get('exact_owner_action') or 'No supported owner action.'), 220)}")
         if farm_ready:
             lines.append("Farm work ready")
         for item in farm_ready:
-            lines.append(f"- {item.get('semantic_emoji', '•')} {item.get('title', 'Current work')} — {item.get('assigned_to', 'Farm team')}")
+            lines.append(f"• {item.get('title', 'Current work')} — {item.get('assigned_to', 'Farm team')}")
             lines.append(f"  Next: {_clip(str(item.get('exact_owner_action') or 'No supported action.'), 220)}")
         hidden = int(attention.get("hidden_count") or 0)
         if hidden:
-            lines.append(f"- ➕ {hidden} more in What needs attention")
+            lines.append(f"• {hidden} more in What needs attention")
             lines.append("  View all: Amadeus Farm → Owner attention")
         lines.append("")
     checking = list(groups.get("oom_sakkie_checking") or [])
