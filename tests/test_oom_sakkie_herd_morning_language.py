@@ -53,7 +53,7 @@ EXPECTED = {'en': "<b>🌿 Today's farm plan</b>\n\n"
        '• <b>Weighing: 0 of 74 recorded; 74 tag(s) need status reconciliation</b>\n'
        '  For 2026-09-07 to 2026-09-13, 0/74 pigs in the current cohort have weights. Missing weights first '
        'require a check of sale, order and current farm status.\n'
-       '  HERDMASTER will reconcile the cohort&#x27;s current status before any new weighing instruction.\n'
+       '  Current records could not be checked; no new weighing instruction is established.\n'
        '\n'
        'What is the current status of Mysikind and Mona: already farrowed, returned to heat, or no clear '
        'change yet?',
@@ -79,7 +79,7 @@ EXPECTED = {'en': "<b>🌿 Today's farm plan</b>\n\n"
        '• <b>Weging: 0 van 74 aangeteken; 74 oormerk(e) se status moet nagegaan word</b>\n'
        '  Vir 2026-09-07 tot 2026-09-13 het 0/74 varke in die huidige groep gewigte. Ontbrekende gewigte '
        'vereis eers &#x27;n kontrole van verkoop-, bestel- en huidige plaasstatus.\n'
-       '  HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag.\n'
+       '  Huidige rekords kon nie nagegaan word nie; geen nuwe weegopdrag is bewys nie.\n'
        '\n'
        'Wat is Mysikind en Mona se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike '
        'verandering nie?'}
@@ -101,7 +101,7 @@ EXPECTED_REPLACEMENT = {'en': "<b>🌿 Today's farm plan</b>\n\n"
        '• <b>Weighing: 0 of 74 recorded; 74 tag(s) need status reconciliation</b>\n'
        '  For 2026-09-07 to 2026-09-13, 0/74 pigs in the current cohort have weights. Missing weights first '
        'require a check of sale, order and current farm status.\n'
-       '  HERDMASTER will reconcile the cohort&#x27;s current status before any new weighing instruction.\n'
+       '  Current records could not be checked; no new weighing instruction is established.\n'
        '\n'
        'What is the current status of Mysikind and Mona: already farrowed, returned to heat, or no clear '
        'change yet?',
@@ -122,7 +122,7 @@ EXPECTED_REPLACEMENT = {'en': "<b>🌿 Today's farm plan</b>\n\n"
        '• <b>Weging: 0 van 74 aangeteken; 74 oormerk(e) se status moet nagegaan word</b>\n'
        '  Vir 2026-09-07 tot 2026-09-13 het 0/74 varke in die huidige groep gewigte. Ontbrekende gewigte '
        'vereis eers &#x27;n kontrole van verkoop-, bestel- en huidige plaasstatus.\n'
-       '  HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag.\n'
+       '  Huidige rekords kon nie nagegaan word nie; geen nuwe weegopdrag is bewys nie.\n'
        '\n'
        'Wat is Mysikind en Mona se huidige status: reeds gewerp, weer op hitte, of nog geen duidelike '
        'verandering nie?'}
@@ -160,6 +160,7 @@ def no_external_io(monkeypatch):
 
 
 def daily_packet():
+    # Retained pre-reconciliation evidence cannot claim a current status check.
     assert len(TAGS) == 74
     return {
         "packet_type": "herdmaster.daily_manager_evidence.v1",
@@ -403,7 +404,8 @@ def test_real_retained_shape_projects_recipient_wording_with_same_facts_and_bind
     weights = next(row for row in af.work_items if row.dedupe_key == "herdmaster:weekly-weight-evidence")
     assert weights.title == "Weging: 0 van 74 aangeteken; 74 oormerk(e) se status moet nagegaan word"
     assert "0/74" in weights.why and "2026-09-07 tot 2026-09-13" in weights.why
-    assert ", ".join(TAGS) in weights.next_action
+    assert ", ".join(TAGS[:6]) + " (+68)" in weights.next_action
+    assert ", ".join(TAGS) not in weights.next_action
     assert "moenie hulle vir herweging aanwys voordat daardie bewyse bestaan nie" in weights.next_action
     assert weights.authority is Authority.READ_ONLY and weights.metadata["routine_weekly_weighing"] is True
     deaths = next(row for row in af.work_items if ":mortality-cluster:" in row.dedupe_key)
