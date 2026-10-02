@@ -195,52 +195,54 @@ def _weighing(packet, af):
     snapshot, window = weight["current_snapshot"], weight["window"]
     covered, eligible = snapshot["covered"], snapshot["eligible_tagged"]
     start, end = (date_label(window[key], language="af" if af else "en") for key in ("start", "end"))
-    lines = [(f"Vir {start} tot {end}: {covered}/{eligible} van die huidige geskikte groep het gewigte." if af else
-              f"For {start} to {end}: {covered}/{eligible} of the current eligible cohort have weights.")]
-    due = weight["individual_weighing_due_now"]
-    conflicts = {row["pig_id"] for row in weight["conflicting_weight_evidence"]}
-    actionable = [row for row in due if row["pig_id"] not in conflicts]
-    if actionable:
-        lines.append(("Weeg nou — 'n individuele weegtaak is verskuldig: " if af else
-                      "Weigh now — an individual weighing schedule is due: ") + _names(actionable, af=af) + ".")
-    else:
-        lines.append("Geen afsonderlike weegtaak is nou as verskuldig bewys nie." if af else
-                     "No individual weighing task is currently proven due.")
-    due_ids = {row["pig_id"] for row in actionable}
-    pending = [row for row in weight["missing_eligible_tagged"] if row["pig_id"] not in due_ids | conflicts]
     reconciliation = weight.get("reconciliation") or {}
-    if reconciliation.get("state") == "checked":
-        rows = reconciliation["rows"]
-        counts = reconciliation["counts"]
-        lines.append((f"Huidige plaas-, verkoop-, bestel- en toewysingsrekords nagegaan: {len(rows)} diere; "
-                      f"{counts.get('allocation_hold', 0)} voorbehou, {counts.get('off_farm', 0)} van die plaas, "
-                      f"{counts.get('unresolved', 0)} onopgelos." if af else
-                      f"Current farm, sale, order and outlet records checked: {len(rows)} animals; "
-                      f"{counts.get('allocation_hold', 0)} on hold, {counts.get('off_farm', 0)} off-farm, "
-                      f"{counts.get('unresolved', 0)} unresolved."))
-        weighted = [row for row in rows if row.get("latest_weight") and row["state"] != "off_farm"]
-        lines.append((f"{len(weighted)} het 'n jongste gewig op rekord; dit verskil van dekking in dié tydperk." if af else
-                      f"{len(weighted)} have a latest weight on record; this is separate from coverage in this window."))
-        for row in weighted[:3]:
-            last = row["latest_weight"]
-            lines.append(f"• {_names([row], af=af)}: {last['kg']:g} kg — " + date_label(last["date"], language="af" if af else "en"))
-        if pending:
-            lines.append("Ontbrekende gewigte in dié tydperk magtig nie 'n nuwe roetine-weegopdrag nie." if af else
-                         "Missing weights in this window do not authorize a new routine weighing instruction.")
-    elif pending:
-        lines.append((f"{len(pending)} gewig(te) ontbreek; verkoop-/bestellingstatus moet eers versoen word: " if af else
-                      f"{len(pending)} weight(s) are missing; reconcile sale/order status before instructing reweighing: ") + _names(pending, af=af) + ".")
+    checked = reconciliation.get("state") == "checked"
+    conflicts = {row["pig_id"] for row in weight["conflicting_weight_evidence"]}
+    # Only the specialist producer can establish an individually due task.
+    # Window coverage, old weights and display order cannot create one here.
+    actionable = [row for row in weight["individual_weighing_due_now"]
+                  if row["pig_id"] not in conflicts] if checked else []
+    if actionable:
+        lines = [("Weeg nou — 'n individuele weegtaak is verskuldig: " if af else
+                  "Weigh now — an individual weighing schedule is due: ") + _names(actionable, af=af) + "."]
+    elif checked:
+        lines = ["Geen individuele weegtaak is tans as verskuldig bevestig nie." if af else
+                 "No individual weighing task is currently confirmed due."]
+    else:
+        lines = ["Ek kan nie bevestig watter varke nou geweeg moet word terwyl plaas-/verkooprekordkontroles onbeskikbaar is nie." if af else
+                 "I cannot confirm which pigs need weighing while farm/sale record checks are unavailable."]
+    lines += ["", (f"• Verslagtydperk: {start} tot {end} — {covered}/{eligible} van die huidige groep het gewigte in dié tydperk." if af else
+                    f"• Reporting window: {start} to {end} — {covered}/{eligible} of the current group have weights in that window.")]
+    if covered < eligible:
+        lines.append("• Ontbrekende inskrywings vir dié tydperk beteken nie op hul eie dat weegwerk nou verskuldig is nie." if af else
+                     "• Missing entries for that window alone do not make weighing due now.")
+    if checked:
+        rows, counts = reconciliation["rows"], reconciliation["counts"]
+        lines.append((f"• Plaas-/verkooprekords nagegaan: {len(rows)} dierrekords in die volledige register; " if af else
+                      f"• Farm/sale records checked: {len(rows)} animal records across the full register; ") +
+                     (f"{counts.get('unresolved', 0)} is nog onopgelos." if af else
+                      f"{counts.get('unresolved', 0)} {'remains' if counts.get('unresolved', 0) == 1 else 'remain'} unresolved."))
+        holds = counts.get("allocation_hold", 0)
+        if holds:
+            lines.append((f"• {holds} dier(e) in die volledige register is vir bestaande toewysings teruggehou." if af else
+                          f"• {holds} animal(s) across the full register are held for existing allocations."))
     for key, en, af_label in (
         ("conflicting_weight_evidence", "Conflicting weights need evidence review", "Teenstrydige gewigte benodig bewysversoening"),
-        ("unknown_eligibility", "Eligibility unknown", "Geskiktheid onbekend"),
-        ("untagged_excluded", "No usable visible tag; excluded from individual cohort", "Geen bruikbare sigbare tag; uitgesluit van individuele groep")):
+        ("unknown_eligibility", "Eligibility unknown", "Geskiktheid onbekend")):
         rows = weight[key]
         if rows:
-            lines.append(f"{af_label if af else en}: {len(rows)} — {_names(rows, af=af)}.")
-    excluded = len(weight["breeding_excluded"])
-    if excluded:
-        lines.append((f"{excluded} teeldier(e) sonder individuele weegskedule is uitgesluit." if af else
-                      f"{excluded} breeding animal(s) without an individual weighing schedule are excluded."))
+            lines.append(f"• {af_label if af else en}: {len(rows)} — {_names(rows, af=af)}.")
+    untagged, breeding = len(weight["untagged_excluded"]), len(weight["breeding_excluded"])
+    exclusions = []
+    if untagged:
+        exclusions.append(f"{untagged} sonder bruikbare sigbare tags" if af else
+                          f"{untagged} without usable visible tags")
+    if breeding:
+        exclusions.append(f"{breeding} teeldiere sonder individuele weegskedules" if af else
+                          f"{breeding} breeding {'animal' if breeding == 1 else 'animals'} without individual schedules")
+    if exclusions:
+        lines.append(("• Uitgesluit van hierdie individuele groep: " if af else
+                      "• Excluded from this individual group: ") + "; ".join(exclusions) + ".")
     return lines
 
 

@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Lifecycle: `active` current-state evidence; non-doctrine.
-Updated: 2026-10-02; PR1370 live with natural reconciliation; cancelled-history correction WORKING.
+Updated: 2026-10-02; PR1371 live; genuine weighing/breeding replies verified; clearer answers in qualification.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
@@ -15,22 +15,25 @@ sibling mission directory, not in the public repository.
 
 ## Current work and authority
 
-- The [current operational checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md#current-checkpoint--2-october-operational-continuation)
+- The [current operational checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md#current-checkpoint--2-october-direct-owner-replies)
   supersedes the PR1369 presentation work described below. PR1369 is merged
   at`d840bdecb66b1f4cae6c47806a7a05e09a9abd5a` and verified live. Its exact
   owner-visible concise reply is accepted; its release actions must not repeat.
   Fresh herd-count and pen-capacity replies also match provider-acknowledged
   family receipts and current canonical records. Physical pen capacity units
   and full agent autonomy are not inferred from those comparisons.
-- The same mission continues in the existing application worktree on
-  `codex/herd-weighing-retired-order-20261002`, based on main`59c5b50f`.
-  PR1370 is merged and verified live; its natural manager cycle recorded the
-  canonical weighing comparison. Its registration/deployment must not repeat.
-  A current read matched that comparison and traced eleven eligible identity
-  warnings to explicitly cancelled order lines retaining historical tags.
-  The narrow successor retains this history without making it current identity
-  work. Active/unknown states, source contradictions and confirmation fences
-  remain contained. Genuine successor conversations remain open.
+- PR1371 is protected-merged and verified live at `c0387dad`. Its eleven false
+  cancelled-order identity warnings cleared with original source history intact.
+  Its registration and deployment are consumed. The owner's two fresh weighing
+  and breeding replies match retained answers, typed context and stored provider
+  acknowledgements; two later natural cycles completed without errors.
+- The same mission continues on `codex/herd-owner-attention-answers-20261002`,
+  based on main `c0387dad`, in the existing application worktree. One bounded
+  correction clarifies weighing scopes, recovery needs and recorded exposure
+  while preserving task selection, animal identities and protected farm actions.
+  The existing individual-weighing scheduling limitation remains; presentation
+  cannot create a due task. Full HERDMASTER readiness and genuine acceptance of
+  the successor format remain open. Do not repeat the already supplied tests.
   There is one coordinator, one application branch and one protected release lane.
 
 ## Prior checkpoint — superseded presentation work
@@ -79,6 +82,7 @@ The complete earlier register follows as dated evidence. The current checkpoint
 above controls navigation; active doctrine is selected only by the source map.
 
 Status: current-state evidence; non-doctrine.
+
 Updated: 2026-09-21 09:59 UTC; repair PR1342 merged and web revision verified.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
