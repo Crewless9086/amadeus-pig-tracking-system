@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'modules/oom_sakkie/farm_manager_loop.py', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/herdmaster_daily_manager_adapter.py', 'modules/oom_sakkie/owner_response_composer.py', 'modules/oom_sakkie/rootline_daily_presentation.py', 'tests/test_oom_sakkie_farm_brief_concise.py', 'tests/test_oom_sakkie_rootline_daily_presentation.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/breeding_read_context.py', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/herd_read_queries.py', 'modules/oom_sakkie/herdmaster_daily_manager_adapter.py', 'modules/oom_sakkie/herdmaster_request_runtime.py', 'modules/oom_sakkie/owner_conversation_front_door.py', 'modules/oom_sakkie/owner_response_composer.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/pig_weights/herdmaster_daily_manager_evidence.py', 'modules/pig_weights/herdmaster_weighing_reconciliation.py', 'tests/test_herdmaster_daily_manager_evidence.py', 'tests/test_herdmaster_weighing_reconciliation.py', 'tests/test_herdmaster_weighing_reconciliation_postgres.py', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_farm_brief_concise.py', 'tests/test_oom_sakkie_herd_morning_language.py', 'tests/test_oom_sakkie_herd_read_queries.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -76,7 +76,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | CONCISE_BRIEF_EFFECTS | FAMILY_STYLE_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
+        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | READINESS_EFFECTS | CONCISE_BRIEF_EFFECTS | FAMILY_STYLE_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
         "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -532,8 +532,9 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:67f465477f31fced2ffa127bc1314d0403612764"})
-        self.assertEqual(adapter.ADDED_EFFECTS, READINESS_EFFECTS | {"application_revision_rollback:web:d840bdecb66b1f4cae6c47806a7a05e09a9abd5a"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:d840bdecb66b1f4cae6c47806a7a05e09a9abd5a"})
+        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:59c5b50f69830eb5b0f77b218343b013f74f070e"})
+        self.assertFalse(READINESS_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(CONCISE_BRIEF_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FAMILY_STYLE_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FARROWING_REVIEW_EFFECTS & adapter.ADDED_EFFECTS)
@@ -637,9 +638,13 @@ class ReconciliationTests(unittest.TestCase):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertTrue(CONCISE_BRIEF_EFFECTS <= set(prior["allowed_effects"]))
-        self.assertFalse(READINESS_EFFECTS & set(prior["allowed_effects"]))
+        self.assertTrue(READINESS_EFFECTS <= set(prior["allowed_effects"]))
         self.assertTrue(READINESS_EFFECTS <= set(m["contract"]["allowed_effects"]))
         changes=(
+            ("only order lines explicitly normalized to cancelled", "any terminal parent order"),
+            ("original line, pig ID, historical tag snapshot, parent order and source digest", "only current display values"),
+            ("a terminal parent order alone does not retire its lines", "a terminal parent order retires every line"),
+            ("Parent-state validation, separate sales, active allocations and outlet conflicts remain unchanged", "other commercial conflicts are ignored"),
             ("subjects actually displayed in a successfully delivered read-only breeding plan", "subjects guessed from any undelivered plan"),
             ("configured private owner and current recipient", "any allowlisted user"),
             ("A read answer or historical plan is not a new observation", "A read answer is a fresh farm observation"),
@@ -912,19 +917,20 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR,1370)
-        self.assertEqual(adapter.HEAD,"7fbbecdee1baf6c780906c23bb65f3de9ca37a58")
-        self.assertEqual(adapter.TREE,"2301c01f91797ea4e58f9830e121ae2a9511d203")
-        self.assertEqual(adapter.BASE,"d840bdecb66b1f4cae6c47806a7a05e09a9abd5a")
-        self.assertEqual(adapter.BRANCH,"codex/herdmaster-operational-readiness-20261002")
+        self.assertEqual(adapter.CANDIDATE_PR,1371)
+        self.assertEqual(adapter.HEAD,"97a89cb0c2aad3179d54c62b995751af405a17bd")
+        self.assertEqual(adapter.TREE,"a02dbc16d5485d4b1dc390063245db2925ec609f")
+        self.assertEqual(adapter.BASE,"59c5b50f69830eb5b0f77b218343b013f74f070e")
+        self.assertEqual(adapter.BRANCH,"codex/herd-weighing-retired-order-20261002")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1369)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"0336ca6f257ec1c03b0a2ac38296321ba98d7951")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"67f465477f31fced2ffa127bc1314d0403612764")
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/oom-farm-brief-concise-20261002")
+        self.assertEqual(adapter.PREDECESSOR_PR,1370)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"7fbbecdee1baf6c780906c23bb65f3de9ca37a58")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"d840bdecb66b1f4cae6c47806a7a05e09a9abd5a")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herdmaster-operational-readiness-20261002")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),11)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),23)
+        self.assertEqual(len(adapter.PATHS),7)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
