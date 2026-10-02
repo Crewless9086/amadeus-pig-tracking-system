@@ -531,7 +531,14 @@ def read_retained_farrowing_reviews(cur, now, retained, *, discovery=False):
             now + timedelta(minutes=30), task_class='protected_owner_decision',
             message_family=FARROWING_REVIEW_FAMILY, owner_question_eligible=True,
             irreducible_owner_exception=True)
-        candidate['_farrowing_review'] = {'label':label,'date':event_date,'counts':counts}
+        # Display corrections do not alter the durable case's material digest.
+        from modules.oom_sakkie.family_presentation import animal_label
+        display_label = animal_label({'pig_id':sow, 'pig_name':same_pigs[0][4],
+            'tag_number':same_pigs[0][1], 'sow_display_name':preview.get('sow_display_name')})
+        candidate['_farrowing_review'] = {'label':display_label,'date':event_date,'counts':counts,
+            'sow_aliases': sorted({str(value) for value in (sow,same_pigs[0][4],same_pigs[0][1]) if value}),
+            'sow_pig_id':sow, 'source_principal':owner, 'source_provider':provider,
+            'source_mission':mission}
         result.append(candidate)
     return result
 
@@ -573,20 +580,7 @@ def build_retained_farrowing_owner_review(case, *, now=None, deadline_monotonic=
             'telegram_chat_id':owner,'telegram_chat_type':'private'}, os.environ)
         language = principal.language
         facts = candidates[0]['_farrowing_review']
-        counts, label, day = facts['counts'], html.escape(facts['label']), facts['date']
-        if language == 'af':
-            answer = (f'<b>HERDMASTER — EIENAAR SE HERSIENING</b>\n\n'
-                f'Historiese ONBEVESTIGDE werpselverslag vir {label} op {day}: '
-                f"totaal gebore {counts['total_born']}, lewend gebore {counts['born_alive']}, "
-                f"doodgebore {counts['stillborn']}, gemummifiseer {counts['mummified']}, "
-                f"dood na lewende geboorte {counts['died_after_live_birth']}.\n\n"
-                'Die ouer verslag van die plaasverslaggewer is behou. Geen geboorte is hiermee aangeteken nie.\n\n'
-                'Stuur asseblief die geverifieerde sog, datum en geboortegetalle, of regstellings, hier. '
-                'Hersien daarna die bevestiging voordat dit gestoor word. Hierdie kennisgewing het '
-                'geen goedkeuringsknoppies nie en teken nie die geboorte aan nie.')
-        else:
-            answer = ('<b>HERDMASTER — OWNER REVIEW</b>\n\n' + html.escape(row['summary'])
-                + '\n\n' + html.escape(row['next_action']))
+        answer = render_retained_farrowing_review(facts, language=language)
         return {'success':True, 'status':'retained_farrowing_owner_attention',
             'answer':answer, 'recipient_language':language,
             'recipient_render_contract':'specialist_structured_recipient_v1',
@@ -596,6 +590,25 @@ def build_retained_farrowing_owner_review(case, *, now=None, deadline_monotonic=
         if isinstance(exc, (ValueError, RuntimeError, OSError)) or is_database_unavailable(exc):
             return _contained('retained_farrowing_owner_review_unavailable')
         raise
+
+
+def render_retained_farrowing_review(facts, *, language='en'):
+    from modules.oom_sakkie.family_presentation import date_label, heading
+    af = language == 'af'
+    counts = facts['counts']
+    lines = [heading(f"{facts['label']} — " + ('geboorteverslag om na te gaan' if af else 'birth report to check'), emoji='🐷'),
+        '', '<b>' + ('Datum' if af else 'Date') + ':</b> ' + date_label(facts['date'], language=language), '',
+        f"• <b>{counts['total_born']}</b> " + ('kleintjies gebore' if af else 'piglets born'),
+        f"• <b>{counts['born_alive']}</b> " + ('lewend gebore' if af else 'born alive')]
+    for key, en, local in [('stillborn', 'stillborn', 'doodgebore'),
+                            ('mummified', 'mummified', 'gemummifiseer'),
+                            ('died_after_live_birth', 'died after live birth', 'dood na lewende geboorte')]:
+        if counts[key]:
+            lines.append(f"• <b>{counts[key]}</b> {local if af else en}")
+    lines += ['', '<b>Status:</b> ' + ('Onbevestig — nog nie aangeteken nie.' if af else 'Unconfirmed — not yet recorded.'),
+        '', 'Is hierdie besonderhede korrek, of wat moet ek verander?' if af else
+        'Are these details correct, or what should I change?']
+    return '\n'.join(lines)
 
 
 def _mortality(provider_ids, refs, case, deadline_monotonic=None):

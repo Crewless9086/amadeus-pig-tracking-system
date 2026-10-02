@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Lifecycle: `active` current-state evidence; non-doctrine.
-Updated: 2026-10-01; HERDMASTER retained-follow-up repair is WORKING.
+Updated: 2026-10-01; Oom Sakkie family-message presentation is WORKING.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
@@ -18,22 +18,24 @@ sibling mission directory, not in the public repository.
 - The original eighteen consolidation commits were integrated through protected
   PR1341 at `3e77d3434b071078a41917a68fa63f2fa7b314ec`. Cleanup and retention are
   verified; consolidation itself did not activate farm agents.
-- PR1366 is merged at `59dca3dad630e3ac2a7f3bae7af4129540aba135`, verified
-  live on October1. PR1365 and PR1366 registration/deployment are complete; do
+- PR1367 is merged at `bc35db71a653677b11e8b03ca6d9eda965edfba7`, verified
+  live on October1. PR1365 through PR1367 registration/deployment are complete; do
   not execute them again. The prior successful mortality journey is preserved.
 - Natural cycles completed three exact obsolete advisories and automatically
   prepared and delivered a retained mortality card, with matching provider and
   family receipts. No unconfirmed report became a farm record. Later snapshots
-  preserved these outcomes, but a retained farrowing refresh still failed.
-- The same mission continues on `codex/herdmaster-farrowing-refresh-20261001`
-  from main59dca3da in the existing application worktree. The exact old report
-  must remain attached to its case and reach the actual configured owner as
-  historical unconfirmed evidence. Fresh authenticated owner input and normal
-  protected confirmation remain necessary for a birth record. No old report is
-  replayed as a new owner statement; no role or permission is expanded.
+  preserved these outcomes. PR1367 then delivered one historical birth review
+  to the configured owner; two later natural cycles were healthy and silent.
+- The same mission continues on `codex/oom-family-message-style-20261001`
+  from mainbc35db71 in the existing application worktree. The owner approved
+  concise family messages: familiar names/tags, short bullets, clear status,
+  readable dates, one supported next step and restrained heading emoji.
+  Informational review replies must bind exact current delivered context before
+  entering the existing protected preview. No old report is replayed as a new
+  owner statement, no farm fact is inferred and no role or permission expands.
   This candidate is not yet established as deployed by this checkpoint.
-- Fresh genuine Telegram acceptance and later independent manager continuity
-  remain open. Do not manufacture messages, replay historical owner events or
+- Fresh genuine Telegram acceptance of the new style and later independent
+  continuity remain open. Do not manufacture messages, replay historical owner events or
   ask for farm observations already pending with Charl.
 - ROOTLINE is the proposed next focus after HERDMASTER readiness. Its separate
   commissioning, water and shutdown gates remain; no hardware action follows

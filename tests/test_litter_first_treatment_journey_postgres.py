@@ -65,7 +65,12 @@ def test_runtime_retains_short_correction_and_commits_exact_card(litter):
     assert 'datum' in result['answer'] and result['retained_facts']['dose'] == '1 ml'
     preview, code = runtime.handle_litter_first_treatment_message(parsed(actor,1002,{'action_date':'gister'},continuation=True),authority)
     assert code == 200 and preview.get('callback_token'), preview
-    assert j['date'] in preview['answer'] and '1.0 ml' in preview['answer'] and '1 manlik' in preview['answer']
+    treated = datetime.fromisoformat(j['date'])
+    month = ('Januarie', 'Februarie', 'Maart', 'April', 'Mei', 'Junie',
+             'Julie', 'Augustus', 'September', 'Oktober', 'November', 'Desember')[treated.month - 1]
+    assert f'Werklik behandel: {treated.day} {month} {treated.year}' in preview['answer']
+    assert preview['retained_facts']['action_date'] == j['date']
+    assert '1.0 ml' in preview['answer'] and '1 manlik' in preview['answer']
     assert preview['retained_facts']['earmarked'] is True and state(j) == before
     bound = bind_claim_card(preview['callback_token'], '1003')
     assert bound

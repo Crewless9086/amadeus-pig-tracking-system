@@ -123,7 +123,7 @@ def test_application_preview_restart_confirm_and_telegram_readback(journey):
     completed_history = source_history(j)
     replay, code = telegram(j, "CONFIRM " + operation)
     assert code == 200 and replay["success"], replay
-    assert replay['event_date'] == '2026-09-09' and 'Afsterwedatum: 2026-09-09' in replay['answer']
+    assert replay['event_date'] == '2026-09-09' and 'Afsterwedatum: 9 September 2026' in replay['answer']
     assert replay['canonical_readback']['canonical_readback_verified'] is True
     assert source_history(j) == completed_history
     assert replay["rows_created"] == 0 and replay["writes_farm_data"] is False

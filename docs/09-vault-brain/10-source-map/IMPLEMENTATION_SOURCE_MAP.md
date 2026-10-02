@@ -1,5 +1,44 @@
 # Implementation Source Map
 
+## Oom Sakkie family message presentation
+
+- Authority: `02-agents/farm/OOM_SAKKIE.md` and
+  `04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`.
+- Pure calendar-date, familiar-label, HTML and plain-text layout helpers:
+  `modules/oom_sakkie/family_presentation.py`. Typed specialist producers retain
+  ownership of facts, uncertainty and protected effect details.
+- Shared manager, water/power and weight presentation:
+  `modules/oom_sakkie/owner_response_composer.py`; herd read, animal status and
+  breeding presentation: `herd_read_queries.py`, `herd_question.py`,
+  `herdmaster_request_runtime.py` in the same directory.
+- Daily plans, follow-up summaries and scheduled cases:
+  `modules/oom_sakkie/daily_farm_manager.py`, `farm_manager_runtime.py`, and
+  `general_manager_worker.py` in that directory.
+- Existing delivery and localization:
+  `modules/oom_sakkie/family_message_lifecycle.py`, `owner_task_lifecycle.py`,
+  `telegram_direct.py`, and `rootline_physical_acceptance.py`. Recipient,
+  provider, callback and immutable completion-artifact boundaries are preserved.
+- Typed birth, health/loss, first-treatment and weaning presentation:
+  `modules/oom_sakkie/herdmaster_farrowing_runtime.py`,
+  `herdmaster_health_loss_runtime.py`, `herdmaster_litter_first_treatment_runtime.py`,
+  and `herdmaster_litter_weaning_runtime.py` in that directory. Grouped weights
+  and breeding use `grouped_weight_runtime.py` and
+  `herdmaster_breeding_exposure_runtime.py` there; display labels remain separate
+  from exact protected identities and effects.
+- Retained historical review presentation:
+  `modules/oom_sakkie/herdmaster_retained_recovery_runtime.py`. Current delivered
+  review context is read by `retained_farrowing_review_context.py` in that same
+  directory. Discovery supplies historical data only; locked validation may
+  prepare the existing protected preview following a genuine owner statement.
+  Neither path grants farm-write or old-claim consumption authority.
+- Focused qualification: `tests/test_oom_sakkie_family_presentation.py`,
+  `tests/test_oom_sakkie_family_style_farrowing_postgres.py`, and the existing
+  producer, family-delivery, owner-task, direct-channel and protected-litter
+  suites. Hosted coverage is in `.github/workflows/oom-sakkie-audit-rails.yml`.
+- Formatting does not establish a material change, renew a confirmation or
+  authorize a resend. Source qualification, exact deployed revision and genuine
+  family-message acceptance remain separate evidence in the mission register.
+
 ## HERDMASTER retained advisory and identity reconciliation
 
 - Owning read-only dispositions: `modules/oom_sakkie/herdmaster_case_disposition.py`.

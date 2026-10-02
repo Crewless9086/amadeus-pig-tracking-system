@@ -230,8 +230,8 @@ def test_structured_mortality_completion_survives_actual_en_and_af_delivery_boun
     stored={"success":True,"status":"completed","answer":"old stored prose",
         "lifecycle_event_id":"LIFE-1","welfare_case_closed":True}
     preview={"identity":{"tag_number":"126"}}
-    for language,heading in (("af","<b>VARK 126 AANGETEKEN</b>"),
-                             ("en","<b>126 - DEATH RECORDED</b>")):
+    for language,heading in (("af","<b>🐷 126 — afsterwe aangeteken</b>"),
+                             ("en","<b>🐷 126 — death recorded</b>")):
         memory=Memory()
         result=mortality_completion_recovery_result(stored,preview,language)
         delivered=deliver_family_result({**PARSED,"output_language":language},result,
@@ -446,7 +446,7 @@ def test_claim_bound_recovery_restores_earlier_truth_after_false_latest_edit_onc
         card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
     assert first["telegram_edits"]==1 and restored["telegram_edits"]==1
     assert restored["status"]=="family_message_completion_card_updated"
-    assert memory.edited[-1][2]=="<b>HERDMASTER OBSERVATION RECORDED</b>"
+    assert memory.edited[-1][2]=="<b>🌿 HERDMASTER OBSERVATION RECORDED</b>"
     assert replay["telegram_edits"]==0 and len(memory.sent)==1 and len(memory.edited)==3
 
 

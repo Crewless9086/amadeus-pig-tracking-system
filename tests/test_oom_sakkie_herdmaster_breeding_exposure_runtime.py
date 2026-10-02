@@ -7,6 +7,7 @@ from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import (
 )
 from pathlib import Path
 from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
+import pytest
 
 
 def _parsed(rows):
@@ -25,6 +26,40 @@ def _evidence():
         {"Pig_ID":"SOW-2","Tag_Number":"Linda"},
         {"Pig_ID":"BOAR-1","Tag_Number":"Bola","Current_Pen_ID":"PEN-18"},
     ],"pen_lookup":{"PEN-003":{"pen_id":"PEN-003","pen_name":"Kraam Saal 03"}}}}
+
+
+@pytest.mark.parametrize('distinct_tags',[True,False])
+@pytest.mark.parametrize('different_dates',[True,False])
+def test_same_names_keep_each_protected_sow_and_boar_distinct(distinct_tags,different_dates):
+    evidence=_evidence(); master=evidence['allocation_inputs']['pig_master_rows']
+    for row,tag in zip(master,['S-A','S-B','B-A']):
+        row.update(Name='Mona',Tag_Number=tag if distinct_tags else 'Mona')
+    actions=[{'animal_ref':pid,'action':'exposure','boar_ref':'BOAR-1',
+        'exposure_started_on':'2026-08-13' if different_dates and pid=='SOW-2' else '2026-08-12',
+        'planned_days':17} for pid in ['SOW-1','SOW-2']]
+    captured={}
+    result,status=handle_grouped_breeding_message(_parsed(actions),issue_gateway_owner_authority('42','42'),
+        evidence_loader=lambda:evidence,claim_creator=lambda **kw:captured.update(kw) or {'callback_token':'T'})
+    assert status==200 and result['status']=='breeding_grouped_preview_ready'
+    expected=['S-A','S-B','B-A'] if distinct_tags else ['SOW-1','SOW-2','BOAR-1']
+    assert all(label in result['answer'] for label in expected) and 'Mona' not in result['answer']
+    rows=captured['preview_payload']['preview']['rows']
+    assert {row['pig_id'] for row in rows}=={'SOW-1','SOW-2'}
+    assert {row['boar_pig_id'] for row in rows}=={'BOAR-1'}
+    assert result['writes_farm_data'] is False
+
+
+def test_unselected_duplicate_name_still_disambiguates_selected_sow():
+    evidence=_evidence(); master=evidence['allocation_inputs']['pig_master_rows']
+    master[0].update(Name='Mona',Tag_Number='S-A')
+    master[1].update(Name='Mona',Tag_Number='S-B')
+    result,status=handle_grouped_breeding_message(_parsed([{'animal_ref':'SOW-1','action':'exposure',
+        'boar_ref':'BOAR-1','exposure_started_on':'2026-08-12','planned_days':17}]),
+        issue_gateway_owner_authority('42','42'),evidence_loader=lambda:evidence,
+        claim_creator=lambda **kw:{'callback_token':'T'})
+    assert status==200 and result['status']=='breeding_grouped_preview_ready'
+    assert '<b>S-A</b>' in result['answer'] and 'Mona' not in result['answer'] and 'S-B' not in result['answer']
+    assert len(result['preview']['rows'])==1 and result['preview']['rows'][0]['pig_id']=='SOW-1'
 
 
 def test_semantic_placement_resolves_one_pen_and_unified_movement_preview():

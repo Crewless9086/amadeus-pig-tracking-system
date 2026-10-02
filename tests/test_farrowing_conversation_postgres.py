@@ -116,7 +116,8 @@ def test_question_card_short_reply_confirms_one_canonical_litter_and_replays_wit
     confirmation = callback(row, preview)
     saved, code = confirm(row, confirmation)
     assert code == 201 and saved["canonical_readback_verified"] is True, saved
-    assert "total 9, 8 born alive, 0 stillborn, 1 mummified" in saved["answer"]
+    assert "\n".join(("• 9 piglets born", "• 8 born alive", "• 0 stillborn",
+                      "• 1 mummified", "• 0 died after live birth")) in saved["answer"]
     assert saved["mission_id"] == preview["mission_id"]
     deliver(row, confirmation, saved)
     context = runtime.load_farrowing_context(parsed(row, {}, provider="200"), connect_factory=connect)

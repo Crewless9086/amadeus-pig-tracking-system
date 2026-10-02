@@ -1197,12 +1197,13 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
                 "delivery_confirmed": False, "telegram_sends": 0,
                 "writes_farm_data": False, "hardware_commands": 0,
                 "next_reassessment_at": reassess_at.isoformat()}
-    lines = [f"<b>OOM SAKKIE — {specialist} CURRENT CASE</b>", "",
-             html.escape(str(case.get("summary") or "Current farm case.")), "",
+    from modules.oom_sakkie.family_presentation import heading
+    lines = [heading("Farm follow-up"), "",
+             "• " + html.escape(str(case.get("summary") or "Current farm case.")), "",
              "<b>Next:</b> " + html.escape(str(case.get("next_action") or "Reassess current canonical evidence.")),
-             "Oom Sakkie will check this again automatically."]
+             "Status: waiting for follow-up. I'll check this again automatically."]
     if unknowns:
-        lines.extend(("", "<b>Still unproven:</b> " + html.escape("; ".join(unknowns))))
+        lines.extend(("", "<b>Still unknown:</b>", *["• " + html.escape(item) for item in unknowns]))
     if result is None:
         result = {"success": True, "status": "general_manager_case_ready",
                   "answer": "\n".join(lines), "result_digest": case["evidence_digest"],

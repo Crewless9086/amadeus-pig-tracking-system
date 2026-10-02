@@ -93,9 +93,10 @@ def test_answer_separates_dated_facts_missing_evidence_and_recommendation():
     assert result["recommendation"]["action"].startswith("Review for retention")
     assert result["writes_performed"] is False
     assert result["protected_actions_performed"] is False
-    assert "Facts — Shupe" in result["answer"]
-    assert "Missing or stale evidence —" in result["answer"]
-    assert "Recommendation —" in result["answer"]
+    assert "Shupe — recorded status" in result["answer"]
+    assert "No mating recorded." in result["answer"]
+    assert "No pregnancy check is recorded." in result["answer"]
+    assert "Next:" in result["answer"]
 
 
 def test_latest_mating_and_worklist_task_override_generic_readiness_action():

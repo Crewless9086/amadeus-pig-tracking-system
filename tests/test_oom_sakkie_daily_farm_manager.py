@@ -49,7 +49,7 @@ def test_canonical_morning_briefs_cross_family_delivery_once(language, watchers)
     assert len(sends) == 1 and events
     assert first["writes_farm_data"] is False and first["hardware_commands"] == 0
     if language == "af" and watchers != "empty":
-        assert "AKSIE NODIG" in sends[0][1]
+        assert "Aksie nodig" in sends[0][1]
 
 
 @pytest.mark.parametrize("answer,accepted", [
@@ -187,7 +187,7 @@ def test_maximum_three_priorities_retains_watch_and_one_question():
     packet=build_daily_management_packet([result(items=items)],now=NOW)
     assert len(packet["priorities"])==3 and len(packet["watch"])==3
     assert len(packet["all_tasks"])==7 and packet["question"]=="One grouped question?"
-    assert packet["answer"].count("<b>ONE QUESTION</b>")==1
+    assert packet["answer"].count(packet["question"])==1
 
 
 def test_daily_order_is_deterministic_and_never_calls_injected_ranker():
@@ -208,9 +208,9 @@ def test_agent_owned_reconciliation_is_not_presented_as_owner_work_or_raw_pollin
                 next_action="Reconcile tags " + ", ".join(str(value) for value in range(1, 76))),
     ]
     answer = build_daily_management_packet([result(items=rows)], now=NOW)["answer"]
-    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
+    assert "I'm following up" in answer
     assert "Mortality follow-up" in answer
-    assert "ACTION NEEDED" not in answer
+    assert "Action needed" not in answer
     assert "Reconcile tags" not in answer
     assert "within 15 minutes" not in answer
 
@@ -237,9 +237,9 @@ def test_exact_owner_decision_is_the_only_action_section():
     automatic = item("ROOTLINE", "Irrigation: Checking safely")
     answer = build_daily_management_packet([result(items=[protected, automatic])],
                                            now=NOW)["answer"]
-    assert "ACTION NEEDED" in answer
+    assert "Action needed" in answer
     assert "Review the protected preview." in answer
-    assert "OOM SAKKIE IS CHECKING AUTOMATICALLY" in answer
+    assert "I'm following up" in answer
     assert "No action required from you." not in answer
 
 
@@ -248,7 +248,7 @@ def test_every_protected_authority_remains_owner_visible(authority):
     protected = replace(item("PROTECTED", "Governed action", WorkState.DUE_TODAY),
                         authority=authority, next_action="Review the exact governed action.")
     answer = build_daily_management_packet([result(items=[protected])], now=NOW)["answer"]
-    assert "ACTION NEEDED" in answer
+    assert "Action needed" in answer
     assert "Review the exact governed action." in answer
     assert "No action required from you." not in answer
 
@@ -258,7 +258,7 @@ def test_exact_ready_physical_work_remains_owner_visible():
                        authority=Authority.ADVISORY,
                        metadata={"physical_work_ready": True})
     answer = build_daily_management_packet([result(items=[physical])], now=NOW)["answer"]
-    assert "ACTION NEEDED" in answer and "Weigh Pig 146 now" in answer
+    assert "Action needed" in answer and "Weigh Pig 146 now" in answer
     assert "No action required from you." not in answer
 
 
@@ -314,7 +314,7 @@ def test_before_morning_boundary_is_silent_and_durably_due():
 def test_afrikaans_uses_same_evidence_and_authority():
     packet=build_daily_management_packet([result(items=[item("R-1","Reën hou besproeiing")])],
         now=NOW,language="af")
-    assert "OOM SAKKIE KONTROLEER OUTOMATIES" in packet["answer"]
+    assert "Ek volg op" in packet["answer"]
     assert "Re" in packet["answer"]
     assert packet["all_tasks"][0]["authority"]=="read_only"
 
@@ -434,9 +434,9 @@ def test_actual_delivery_boundary_preserves_complete_en_af_brief_without_mixed_l
             mission_id="BRIEF-"+user,card_mission_id="BRIEF-CARD-"+user,
             event_store=event_store,sender=sender)
         assert delivered["success"] is True and delivered["telegram_sends"] == 1
-    assert "TODAY'S FARM PLAN" in visible["42"] and "ONE QUESTION" in visible["42"]
+    assert "Today's farm plan" in visible["42"] and visible["42"].count(packets["42"]["question"])==1
     assert "Prince welfare update" in visible["42"] and "standing and drinking" in visible["42"]
-    assert "VANDAG SE PLAASPLAN" in visible["77"] and "EEN VRAAG" in visible["77"]
+    assert "Vandag se plaasplan" in visible["77"] and visible["77"].count(packets["77"]["question"])==1
     assert "welstandsopdatering" in visible["77"] and "Staan Prince" in visible["77"]
     assert not any(word in visible["77"].casefold() for word in
                    ("today's", "one question", "supported action", "next check"))

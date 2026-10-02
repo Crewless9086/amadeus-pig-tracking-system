@@ -11,6 +11,7 @@ import html
 import math
 from numbers import Real
 from typing import Any, Iterable, Mapping
+from modules.oom_sakkie.family_presentation import animal_label, date_label, heading
 
 from modules.oom_sakkie.rootline_daily_presentation import (
     owner_reason, owner_window, owner_zone_decision,
@@ -66,7 +67,7 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
             reason = reason.replace("B-Camp plan", "camp plan").replace("B Camp plan", "camp plan")
         rendered_reason = owner_reason(reason, language=language)
         window = owner_window(item.get("preferred_window"))
-        decisions.append(f"{_icon(decision)} <b>{labels[subject]}:</b> {_safe(decision)}" +
+        decisions.append(f"• <b>{labels[subject]}:</b> {_safe(decision)}" +
                          (f" · {_safe(window)}" if window else "") +
                          (f" — {_safe(rendered_reason)}" if reason else ""))
     soc = _value(power.get("battery_soc_pct"), "%", af=af)
@@ -92,7 +93,7 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
         ((("Huidige besluit" if af else "Current decision"),
           (("ROOTLINE beveel nou aan: " if af else "ROOTLINE recommends now: ") + _safe(rendered_current) + ".",)),
          (("Krag" if af else "Power"),
-          (f"🔋 SOC {soc} · ☀️ {'Sonkrag' if af else 'Solar'} {solar} · {'Las' if af else 'Load'} {load} · {'Netwerk' if af else 'Grid'} {grid}",
+          (f"SOC {soc} · {'Sonkrag' if af else 'Solar'} {solar} · {'Las' if af else 'Load'} {load} · {'Netwerk' if af else 'Grid'} {grid}",
            reserve_line,
            (("Reserwerede: " if af else "Reserve reason: ") +
             _safe(owner_reason(reserve_reason, language=language))) if reserve_reason else "")),
@@ -106,10 +107,10 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
 
 def compose_manager_brief(brief, *, language="en") -> str:
     af = str(language).casefold().startswith("af")
-    section_names = ({"herd": "🐷 Welsyn & Kudde", "water_energy": "💧 Besproeiing",
-                      "sales": "💬 Verkope", "marketing": "📣 Bemarking"} if af else
-                     {"herd": "🐷 Welfare & Herd", "water_energy": "💧 Irrigation",
-                      "sales": "💬 Sales", "marketing": "📣 Marketing"})
+    section_names = ({"herd": "Welsyn & Kudde", "water_energy": "Besproeiing",
+                      "sales": "Verkope", "marketing": "Bemarking"} if af else
+                     {"herd": "Welfare & Herd", "water_energy": "Irrigation",
+                      "sales": "Sales", "marketing": "Marketing"})
     rows: dict[str, list[str]] = {}
     for item in brief.queue[:3]:
         domain = str(getattr(item, "domain", "") or "herd")
@@ -125,7 +126,7 @@ def compose_manager_brief(brief, *, language="en") -> str:
             label = "Spesialis se volgende stap (bronwoorde)" if af else "Next"
             text += f"\n  {label}: {next_action}"
         rows.setdefault(domain, []).append(text)
-    sections = tuple((section_names.get(domain, "🌱 Plaaswerk" if af else "🌱 Farm work"), tuple(values))
+    sections = tuple((section_names.get(domain, "Plaaswerk" if af else "Farm work"), tuple(values))
                      for domain, values in rows.items())
     if not sections:
         sections = ((("Huidige werk" if af else "Current work"),
@@ -144,13 +145,20 @@ def compose_manager_brief(brief, *, language="en") -> str:
 def compose_weight_preview(rows: Iterable[Mapping[str, Any]], *, language="en", weight_date="",
                            movement_pen_label="") -> str:
     lines = []
+    labels = set()
     for row in rows:
         label = str(row.get("label") or row.get("tag_number") or "").strip()
         pig_id = str(row.get("pig_id") or "").strip()
         weight = row.get("weight_kg")
         if not label or not pig_id or not isinstance(weight, (int, float)) or weight <= 0:
             raise ValueError("invalid_weight_preview_row")
-        lines.append(f"• <b>{_safe(label)}</b> ({_safe(pig_id)}): {weight:g} kg")
+        visible = animal_label(row, language=language)
+        if visible in {"Unknown animal", "Onbekende dier"}:
+            raise ValueError("weight_preview_visible_identity_required")
+        if visible.casefold() in labels:
+            raise ValueError("weight_preview_visible_identity_ambiguous")
+        labels.add(visible.casefold())
+        lines.append(f"• <b>{_safe(visible)}</b>: {weight:g} kg")
     if not lines:
         raise ValueError("weight_preview_rows_required")
     title = "HERDMASTER — WEIGHT PREVIEW" if language != "af" else "HERDMASTER — GEWIG VOORSKOU"
@@ -158,7 +166,7 @@ def compose_weight_preview(rows: Iterable[Mapping[str, Any]], *, language="en", 
               if language != "af" else "Bevestig hierdie gegroepeerde voorskou voordat enige gewig aangeteken word.")
     sections=[("Weights" if language != "af" else "Gewigte",tuple(lines))]
     shared=[]
-    if weight_date:shared.append(("Datum" if language=="af" else "Date")+f": {weight_date}")
+    if weight_date:shared.append(("Datum" if language=="af" else "Date")+f": {date_label(weight_date, language=language)}")
     if movement_pen_label:shared.append(("Skuif almal na" if language=="af" else "Move all to")+f": {movement_pen_label}")
     if shared:sections.append(("Shared details" if language!="af" else "Gedeelde besonderhede",tuple(shared)))
     return _render(OwnerResponse(title, tuple(sections),
@@ -166,17 +174,15 @@ def compose_weight_preview(rows: Iterable[Mapping[str, Any]], *, language="en", 
 
 
 def _render(response: OwnerResponse) -> str:
-    lines = [f"<b>{_safe(response.title)}</b>"]
-    for heading, values in response.sections:
+    lines = [heading(response.title)]
+    for section_heading, values in response.sections:
         clean = tuple(value for value in values if str(value).strip())
         if clean:
-            lines += ["", f"<b>{_safe(heading)}</b>", *clean]
+            lines += ["", f"<b>{_safe(section_heading)}</b>", *clean]
     if response.owner_action:
-        heading = "Wat ek van jou nodig het" if response.language == "af" else "What I need from you"
-        lines += ["", f"<b>❓ {heading}</b>", _safe(response.owner_action)]
+        lines += ["", _safe(response.owner_action)]
     if response.reassessment:
-        heading = "Volgende herbeoordeling" if response.language == "af" else "Next reassessment"
-        lines += ["", f"<b>🔄 {heading}</b>", _safe(response.reassessment)]
+        lines += ["", _safe(response.reassessment)]
     rendered = "\n".join(lines)
     if len(rendered) > MAX_TELEGRAM_CHARS:
         raise ValueError("owner_response_exceeds_telegram_budget")

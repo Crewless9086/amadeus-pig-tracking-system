@@ -103,7 +103,12 @@ def test_real_ingress_and_provider_delivery_commit_once_in_afrikaans(ingress, mo
     result = action(response)
     assert response.status_code == 200 and result['status'] == 'litter_weaning_preview_ready', response.get_json()
     assert len(j['deliveries']) == 1 and 'Bevestig hierdie presiese' in j['deliveries'][0]['body']['text']
-    assert j['pigs'][0] in j['deliveries'][0]['body']['text'] and state(j) == before
+    assert '2 ongemerkte varkies' in j['deliveries'][0]['body']['text']
+    assert j['name'] in j['deliveries'][0]['body']['text'] and state(j) == before
+    with psycopg.connect(database_url()) as db:
+        bound = db.execute('select preview_payload from app_private.oom_protected_action_claims where callback_token=%s',
+            (result['callback_token'],)).fetchone()[0]
+    assert sorted(row['pig_id'] for row in bound['confirmation_binding']['packet']['piglets']) == sorted(j['pigs'][:2])
     replay, _ = post(j, transport, envelope=original)
     assert replay.status_code == 200 and len(j['deliveries']) == 1, replay.get_json()
     callback = {'callback_query': {'id':'SIMULATED-CB-'+uuid.uuid4().hex, 'from': {'id':int(j['actor'])},
@@ -171,7 +176,7 @@ def test_configured_english_preserves_exact_preview_and_dead_sow_wording(ingress
     response,_=post(j,transport,'I weaned the whole litter yesterday.')
     assert response.status_code == 200, response.get_json()
     text=j['deliveries'][-1]['body']['text']
-    assert j['litter'] in text and all(pig in text for pig in j['pigs'][:2])
+    assert j['litter'] in text and '2 untagged piglets' in text and j['name'] in text
     assert 'Confirm this exact' in text and 'Dead, not on farm' in text
     semantic(monkeypatch,{},continuation=True,message_kind='confirmation')
     response,_=post(j,transport,'Please save that exact record.',reply=j['deliveries'][-1]['message_id'])
@@ -261,10 +266,13 @@ def test_actual_farm_login_legacy_route_exact_weights_csrf_and_revocation(ingres
 
 
 @pytest.mark.parametrize('transport', ['gateway', 'direct'])
-def test_incomplete_optional_treatment_retains_weight_and_actual_date(ingress,monkeypatch,transport):
+@pytest.mark.parametrize('visible_tag', [True, False])
+def test_incomplete_optional_treatment_retains_weight_and_actual_date(ingress,monkeypatch,transport,visible_tag):
     j=ingress; product='PRODUCT-'+j['litter']
     with psycopg.connect(database_url()) as db:
         db.execute("insert into public.farm_products(product_id,product_name,dose_unit,default_dose) values(%s,'Synthetic dewormer','ml','999')",(product,))
+        if visible_tag:
+            db.execute('update public.pigs set tag_number=%s where pig_id=%s',('VISIBLE-1',j['pigs'][0]))
     semantic(monkeypatch,{'sow_ref':j['sow'],'action_date':'gister','scope':'all_current',
         'assignments':[{'pig_ref':j['pigs'][0],'wean_weight_kg':8.1}],
         'medicine':{'deworming_product_id':product,'notes':'Reported actual treatment.'}})
@@ -274,6 +282,14 @@ def test_incomplete_optional_treatment_retains_weight_and_actual_date(ingress,mo
     semantic(monkeypatch,{'medicine':{'dose':1.2,'route':'Oral','batch_lot_number':'TEST-BATCH'}},continuation=True)
     response,_=post(j,transport,'1.2 ml per mond, lot TEST-BATCH.')
     preview=action(response)
+    if not visible_tag:
+        assert preview['status']=='litter_weaning_clarification_required'
+        assert preview['retained_facts']['assignments']==retained['assignments']
+        assert 'sigbare oornommers' in preview['answer']
+        with psycopg.connect(database_url()) as db:
+            assert db.execute('select count(*) from app_private.oom_protected_action_claims where owner_user_id=%s',(j['actor'],)).fetchone()[0]==0
+        assert state(j)['receipts']==0
+        return
     assert preview['status'] == 'litter_weaning_preview_ready',response.get_json()
     assert preview['retained_facts']['action_date'] == retained['action_date']
     assert '8.1 kg' in preview['answer'] and '1.2 ml' in preview['answer'] and 'Reported actual treatment.' in preview['answer']
@@ -299,3 +315,53 @@ def test_semantic_confirmation_recovers_crash_after_commit_before_claim_completi
     response,_=post(j,transport,envelope=envelope)
     assert response.status_code == 200 and action(response)['canonical_readback_verified'],response.get_json()
     assert state(j) == after
+
+
+@pytest.mark.parametrize('transport',['gateway','direct'])
+@pytest.mark.parametrize('visible_group',[False,True])
+def test_different_untagged_observations_are_contained_before_claim(ingress,monkeypatch,transport,visible_group):
+    j=ingress
+    if visible_group:
+        with psycopg.connect(database_url()) as db:
+            for pig,sex in zip(j['pigs'][:2],['Male','Female']):
+                db.execute('update public.pigs set sex=%s where pig_id=%s',(sex,pig))
+    before=state(j)
+    assignments=[{'pig_ref':pid,'observation':{'factual_note':note,'traits':['good_build'],
+        'sentiment':'neutral'}} for pid,note in zip(j['pigs'][:2],['Broad shoulders.','Strong legs.'])]
+    semantic(monkeypatch,{'sow_ref':j['sow'],'action_date':'gister','scope':'all_current','assignments':assignments})
+    response,_=post(j,transport,'Die hele werpsel is gespeen; die twee varkies se waarnemings verskil.')
+    result=action(response)
+    if visible_group:
+        assert response.status_code==200 and result['status']=='litter_weaning_preview_ready',response.get_json()
+        observation_lines=[line for line in result['answer'].splitlines() if 'Waarneming:' in line]
+        assert len(observation_lines)==2
+        assert any('(manlik)' in line and 'Broad shoulders.' in line for line in observation_lines)
+        assert any('(vroulik)' in line and 'Strong legs.' in line for line in observation_lines)
+        assert state(j)==before
+        return
+    assert response.status_code==200 and result['status']=='litter_weaning_clarification_required',response.get_json()
+    assert result['retained_facts']['assignments']==assignments
+    assert 'sigbare oornommers' in result['answer']
+    with psycopg.connect(database_url()) as db:
+        assert db.execute('select count(*) from app_private.oom_protected_action_claims where owner_user_id=%s',(j['actor'],)).fetchone()[0]==0
+    assert state(j)==before
+
+
+@pytest.mark.parametrize('transport',['gateway','direct'])
+def test_duplicate_piglet_tags_keep_different_bound_weights_distinct(ingress,monkeypatch,transport):
+    j=ingress
+    with psycopg.connect(database_url()) as db:
+        db.execute('update public.pigs set tag_number=%s where pig_id=any(%s)',('Same tag',j['pigs'][:2]))
+    before=state(j)
+    semantic(monkeypatch,{'sow_ref':j['sow'],'action_date':'gister','scope':'all_current',
+        'assignments':[{'pig_ref':pid,'wean_weight_kg':weight} for pid,weight in zip(j['pigs'][:2],[8.1,9.2])]})
+    response,_=post(j,transport,'Albei gespeen; die eerste weeg 8.1 kg en die tweede 9.2 kg.')
+    result=action(response)
+    assert response.status_code==200 and result['status']=='litter_weaning_preview_ready',response.get_json()
+    assert any(j['pigs'][0] in line and '8.1 kg' in line for line in result['answer'].splitlines())
+    assert any(j['pigs'][1] in line and '9.2 kg' in line for line in result['answer'].splitlines())
+    with psycopg.connect(database_url()) as db:
+        bound=db.execute('select preview_payload from app_private.oom_protected_action_claims where callback_token=%s',
+            (result['callback_token'],)).fetchone()[0]
+    assert {row['pig_id']:float(row['weight_kg']) for row in bound['confirmation_binding']['packet']['piglets']}==dict(zip(j['pigs'][:2],[8.1,9.2]))
+    assert state(j)==before

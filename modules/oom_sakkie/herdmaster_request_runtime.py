@@ -93,6 +93,7 @@ def handle_herdmaster_request(parsed: Mapping[str, Any], authority: Any, *,
 
 
 def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
+    from modules.oom_sakkie.family_presentation import animal_label, date_label, heading
     tasks = [dict(row) for row in packet.get("tasks") or ()
              if isinstance(row, Mapping) and not row.get("completed")]
     tasks.sort(key=lambda row: (int(row.get("priority") or 99),
@@ -100,14 +101,13 @@ def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
         str(row.get("proposed_placement_date") or "9999-12-31"),
         str(row.get("tag_number") or "")))
     af = str(language).casefold().startswith("af")
-    lines = ["<b>HERDMASTER — OPGEDATEERDE TEELPLAN</b>" if af
-             else "<b>HERDMASTER — UPDATED BREEDING PLAN</b>", ""]
+    lines = [heading("Huidige teelplan" if af else "Current breeding plan", emoji="🐷"), ""]
     selected = tasks[:6]
     for row in selected:
-        name = html.escape(str(row.get("tag_number") or "Unnamed")[:60])
+        name = html.escape(animal_label(row, language=language)[:60])
         action = html.escape(str(row.get("task_group") or row.get("provisional_recommendation") or "Needs Data")[:90])
         why = clip_owner_text(row.get("why"), 120)
-        date = str(row.get("proposed_placement_date") or "")
+        date = date_label(row["proposed_placement_date"], language=language) if row.get("proposed_placement_date") else ""
         male = ((row.get("male_recommendation") or {}).get("recommended") or {})
         boar = str(male.get("tag_number") or "")
         if date and boar:
@@ -132,7 +132,7 @@ def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
     today_names = [html.escape(str(row.get("tag_number") or "Unnamed")) for row in tasks
                    if row.get("days_since_weaning") == 0]
     if today_names:
-        lines += ["", "<b>VANDAG SE SPEENWERK</b>" if af else "<b>TODAY'S WEANINGS</b>",
+        lines += ["", "<b>Speenwerk vandag</b>" if af else "<b>Today's weanings</b>",
                   ("Ingesluit: " if af else "Included: ") + ", ".join(today_names[:6]) + (f" (+{len(today_names)-6})" if len(today_names) > 6 else "") + "."]
     lines += ["", "Geen paring is uitgevoer nie; finale plasing bly beskerm." if af
               else "No mating was performed; final placement remains protected.",
@@ -144,13 +144,15 @@ def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
     return answer, selected
 
 
-def delivery_retry_authority_for(result: Mapping[str, Any]):
+def delivery_retry_authority_for(result: Mapping[str, Any], *, parsed=None):
     """Authorize retry two only after durable proof that attempt one sent nothing."""
     from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
-    from modules.oom_sakkie.family_message_lifecycle import load_family_lifecycle
+    from modules.oom_sakkie.family_message_lifecycle import load_family_lifecycle, localize_recipient_result
+    from modules.oom_sakkie.family_presentation import envelope
     mission_id=str(result.get("mission_id") or "")
     card_id=str(result.get("card_mission_id") or mission_id)
-    answer=str(result.get("answer") or "")
+    localized = localize_recipient_result(parsed or {}, result, 'HERDMASTER')
+    answer=envelope(localized.get("answer"))
     if not mission_id or not card_id or not answer:
         return None
     try:

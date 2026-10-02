@@ -111,7 +111,9 @@ def test_actual_ingress_provider_delivery_and_canonical_readback_once(ingress,mo
     assert response.status_code == 200 and result['status'] == 'litter_first_treatment_preview_ready',response.get_json()
     assert state(j) == before and len(j['deliveries']) == 1
     text = j['deliveries'][-1]['body']['text']
-    assert all(value in text for value in (j['litter'],j['date'],'1.0 ml','1 manlik','1 vroulik','Oormerke aangebring: ja','SYNTHETIC-LOT'))
+    from modules.oom_sakkie.family_presentation import date_label
+    assert result['retained_facts']['action_date']==j['date']
+    assert all(value in text for value in (j['litter'],date_label(j['date'],language='af'),'1.0 ml','1 manlik','1 vroulik','Oormerke aangebring: ja','SYNTHETIC-LOT')),text
     repeated,_ = post(j,transport,envelope=original)
     assert repeated.status_code == 200 and len(j['deliveries']) == 1, repeated.get_json()
     envelope = callback(j,result)

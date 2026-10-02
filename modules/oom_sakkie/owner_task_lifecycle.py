@@ -429,7 +429,9 @@ def _dispatch_once(task_id, request, envelope, items, existing, record, dispatch
     if not attempted:
         claimed = record(_event(task_id, request, "assigned", envelope, event_id=attempted_id,
             detail={"dispatch_state": "attempted", "dispatch_binding": dict(request.get("dispatch_binding") or {})}))
-        attempted = claimed.get("created") is False
+        if claimed.get("created") is False:
+            # The next fresh load can reconcile the winner's durable receipt.
+            return {}, 0, False
     packet = None
     if attempted:
         if reconciler is None:
@@ -539,11 +541,21 @@ def _deliver_once(task_id, request, envelope, existing, record, sender, reconcil
         provider_id = str(delivered.get("detail", {}).get("telegram_message_id") or "")
         return 0, bool(provider_id)
     attempted = any(row.get("event_id") == attempt_id for row in existing)
+    # Render before claiming provider bytes. Historical attempts retain their
+    # original projection; completed deliveries already returned above.
+    prior_attempt = next((row for row in existing if row.get("event_id") == attempt_id), None)
+    if not attempted or (prior_attempt.get("detail") or {}).get("presentation_version") == "family_heading_v1":
+        from modules.oom_sakkie.family_presentation import envelope as present
+        text = present(text)
     if not attempted:
         claimed = record(_event(task_id, request, state, envelope, event_id=attempt_id,
             detail={**detail, "delivery_purpose": purpose, "delivery_state": "attempted",
-                    "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}))
-        attempted = claimed.get("created") is False
+                    "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    "presentation_version": "family_heading_v1"}))
+        if claimed.get("created") is False:
+            # Reload the winner's persisted bytes/version before reconciliation.
+            # This losing snapshot cannot prove whether a legacy sender won.
+            return 0, False
     if attempted:
         if reconciler is None:
             return 0, False

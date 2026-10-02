@@ -195,10 +195,12 @@ def _send_owner_closure(chat_id, text):
 
 
 def _closure_text(_packet):
-    return ("ROOTLINE acceptance complete: C Camp and B Camp irrigated with normal water "
-            "flow and both stopped normally. Provider evidence confirmed each shutdown OFF; "
-            "Charl confirms both camps are physically OFF now. "
-            "Each bounded segment ran exactly once for 3,599 seconds. RMQ-20260813-04 is complete.")
+    return ("💧 Irrigation complete\n\n"
+            "• C Camp and B Camp irrigated with normal water flow and both stopped normally.\n"
+            "• Provider evidence confirmed each shutdown OFF.\n"
+            "• Charl confirms both camps are physically OFF now.\n"
+            "• Each bounded segment ran exactly once for 3,599 seconds.\n\n"
+            "Status: RMQ-20260813-04 is complete.")
 
 
 def _allowed_owner_ids():

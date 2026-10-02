@@ -307,6 +307,12 @@ jobs:
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_retained_report_recovery_postgres.py tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py tests/test_oom_sakkie_retained_mortality_orphan_postgres.py tests/test_oom_sakkie_retained_mortality_early_preparation_postgres.py tests/test_oom_sakkie_retained_farrowing_review_postgres.py
           DATABASE_URL="" PYTHON_DOTENV_DISABLED="1" python -m pytest -q tests/test_oom_sakkie_manager_case_sources.py tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py tests/test_oom_sakkie_general_manager_worker.py tests/test_oom_sakkie_mortality_semantic_journey.py tests/test_oom_sakkie_retained_preview_identity.py tests/test_farm_supabase_read_service.py
 
+      - name: Prove family presentation and historical-review continuation
+        env:
+          OOM_PROTECTED_ACTION_POSTGRES_URL: ${{ env.DATABASE_URL }}
+          PGTZ: UTC
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_oom_sakkie_family_presentation.py tests/test_oom_sakkie_family_style_farrowing_postgres.py tests/test_oom_sakkie_family_message_lifecycle.py tests/test_oom_sakkie_owner_task_lifecycle.py tests/test_oom_sakkie_herdmaster_farrowing_runtime.py
+
       - name: Run canonical conversational follow-up gates
         run: |
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_conversation_followup_postgres.py

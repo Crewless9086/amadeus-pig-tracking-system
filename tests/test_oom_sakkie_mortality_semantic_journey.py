@@ -315,6 +315,7 @@ def test_authenticated_telegram_gateway_delivers_the_semantic_preview_and_button
     def protected(lifecycle, **_):
         return real_protected(lifecycle, claim_creator=journey.claim)
     with patch.dict("os.environ", env, clear=True), patch(
+            "modules.oom_sakkie.owner_task_lifecycle._load_active_request", return_value=None), patch(
             "modules.oom_sakkie.semantic_front_door.budgeted_urlopen", return_value=Response(meaning)), patch(
             "modules.oom_sakkie.semantic_front_door.load_bounded_owner_context", return_value={}), patch(
             "modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay", return_value=None), patch(
@@ -332,6 +333,9 @@ def test_authenticated_telegram_gateway_delivers_the_semantic_preview_and_button
     assert result["sends_telegram"] is True
     delivered = delivery.call_args.args[1]
     assert "2026-07-31" in delivered["answer"]
+    retained_preview = journey.history[-1]["preview"]
+    assert retained_preview["evaluator"]["preview"]["event_date"] == "2026-07-31"
+    assert journey.claims[0]["preview_payload"]["preview_sha256"] == retained_preview["confirmation_binding"]["preview_sha256"]
     buttons = delivered["reply_markup"]["inline_keyboard"][0]
     assert [button["callback_data"].rsplit(":", 1)[-1] for button in buttons] == ["confirm", "change", "cancel"]
     assert result["message"]["writes_farm_data"] is False

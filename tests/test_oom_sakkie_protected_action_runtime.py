@@ -236,7 +236,7 @@ def test_completed_mortality_callback_reuses_canonical_result_without_farm_write
       {**parsed(""),"callback_data":"oompa:opaque:confirm","output_language":"af"},authority(),
       health_handler=lambda *args,**kwargs:writes.append(args))
     assert status==200 and writes==[]
-    assert result["answer"].startswith("<b>VARK 126 AANGETEKEN</b>")
+    assert result["answer"].startswith("<b>🐷 126 — afsterwe aangeteken</b>")
     assert "Die vark SE AFSTERWE" not in result["answer"]
     assert result["lifecycle_event_id"]=="LIFE-1"
     assert result["delivery_recovery_required"] is True
