@@ -39,6 +39,16 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
     exceptional_due = weight.get("individual_weighing_due_now") or []
     findings = weight["material_weight_findings"]
     conflicts = weight["conflicting_weight_evidence"]
+    reconciliation = weight.get("reconciliation") or {}
+    reconciled = reconciliation.get("state") == "checked"
+    checked_rows = {row["pig_id"]: row for row in reconciliation.get("rows", ())}
+    excluded_ids = {row["pig_id"] for key in ("unknown_eligibility", "inactive_off_farm",
+        "breeding_excluded", "untagged_excluded") for row in weight.get(key, ())}
+    unresolved_eligible = [row for row in reconciliation.get("rows", ())
+        if row["state"] == "unresolved" and row["pig_id"] not in excluded_ids]
+    if reconciled:
+        provenance = replace(provenance, source_refs=(*provenance.source_refs,
+            "weighing-reconciliation:" + reconciliation["digest"]))
     if conflicts:
         items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-conflict",
             dedupe_key="herdmaster:weekly-weight-evidence", domain="herd",
@@ -49,7 +59,7 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                          "Resolve the canonical evidence conflict; do not select a biological interpretation."),
             assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.READ_ONLY,
             provenance=provenance, business_value=120))
-    elif missing:
+    elif missing or exceptional_due or unresolved_eligible:
         for row in exceptional_due:
             pig_id = str(row["pig_id"])
             tag = str(row["tag"])
@@ -71,35 +81,59 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     "exceptional_weighing_due_now": True, "pig_id": pig_id,
                     "notification_decision_identity": "weighing:" + pig_id + ":" + str(window.get("start") or "") + ":" + str(window.get("end") or "")}))
         routine_missing = [row for row in missing if row not in exceptional_due]
+        current_ids = {row["pig_id"] for row in routine_missing}
+        routine_missing.extend(row for row in unresolved_eligible if row["pig_id"] not in current_ids)
         if not routine_missing:
             routine_missing = []
         if routine_missing:
-            tags = ", ".join(str(row["tag"]) for row in routine_missing)
+            tags = ", ".join(str(row["tag"])[:24] for row in routine_missing[:6])
+            if len(routine_missing) > 6:
+                tags += f" (+{len(routine_missing)-6})"
+            checked = [checked_rows[row["pig_id"]] for row in routine_missing] if reconciled else []
+            unresolved = sum(row["state"] == "unresolved" for row in checked)
+            held = sum(row["state"] == "allocation_hold" for row in checked)
+            latest = sum(row.get("latest_weight") is not None for row in checked)
+            review_facts = {"kind": "weight_status_review",
+                "covered": snapshot.get("covered"), "eligible": snapshot.get("eligible_tagged"),
+                "status_checks": len(routine_missing), "window_start": window.get("start"),
+                "window_end": window.get("end")}
+            if reconciled:
+                review_facts.update(reconciliation="checked", unresolved=unresolved,
+                    held=held, current_weights=latest, checked=len(checked))
+            action = ((f"Hersien {unresolved} onopgeloste rekordbotsing(s); behou {held} toewysingsvoorbehoud(e). "
+                       "Geen nuwe roetine-weegopdrag word hierdeur gemagtig nie.") if is_af else
+                      (f"Review {unresolved} unresolved record issue(s); retain {held} allocation hold(s). "
+                       "This check does not authorize a new routine weighing.")) if reconciled else (
+                      (f"Kontroleer die verkoop-, bestel- of ander kanonieke status vir oormerke {tags}; "
+                       "moenie hulle vir herweging aanwys voordat daardie bewyse bestaan nie.") if is_af else
+                      (f"Reconcile sale/order or other canonical status for tags {tags}; "
+                       "do not classify them for reweighing until that evidence exists."))
             items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-missing",
             dedupe_key="herdmaster:weekly-weight-evidence", domain="herd",
-            title=((f"Weging: {snapshot['covered']} van {snapshot['eligible_tagged']} aangeteken; "
+            title=((f"Weging: {snapshot['covered']} van {snapshot['eligible_tagged']} aangeteken; rekords nagegaan" if is_af else
+                    f"Weighing: {snapshot['covered']} of {snapshot['eligible_tagged']} recorded; records checked") if reconciled else
+                   ((f"Weging: {snapshot['covered']} van {snapshot['eligible_tagged']} aangeteken; "
                     f"{len(routine_missing)} oormerk(e) se status moet nagegaan word") if is_af else
                    (f"Weighing: {snapshot['covered']} of {snapshot['eligible_tagged']} recorded; "
-                    f"{len(routine_missing)} tag(s) need status reconciliation")),
-            why=((f"Vir {period} het {snapshot['covered']}/{snapshot['eligible_tagged']} varke in die huidige groep gewigte. "
+                    f"{len(routine_missing)} tag(s) need status reconciliation"))),
+            why=((f"Vir {period}: {snapshot['covered']}/{snapshot['eligible_tagged']}. "
+                  f"Huidige plaas-, verkoop-, bestel- en toewysingsrekords is nagegaan; {unresolved} bly onopgelos." if is_af else
+                  f"For {period}: {snapshot['covered']}/{snapshot['eligible_tagged']}. "
+                  f"Current farm, sale, order and outlet records checked; {unresolved} remain unresolved.") if reconciled else
+                 ((f"Vir {period} het {snapshot['covered']}/{snapshot['eligible_tagged']} varke in die huidige groep gewigte. "
                   "Ontbrekende gewigte vereis eers 'n kontrole van verkoop-, bestel- en huidige plaasstatus.") if is_af else
                  (f"For {period}, {snapshot['covered']}/{snapshot['eligible_tagged']} pigs in the current cohort have weights. "
-                  "Missing weights first require a check of sale, order and current farm status.")),
-            next_action=((f"Kontroleer die verkoop-, bestel- of ander kanonieke status vir oormerke {tags}; "
-                          "moenie hulle vir herweging aanwys voordat daardie bewyse bestaan nie.") if is_af else
-                         (f"Reconcile sale/order or other canonical status for tags {tags}; "
-                          "do not classify them for reweighing until that evidence exists.")),
-            assignee="charl", state=WorkState.WAITING_EVIDENCE,
+                  "Missing weights first require a check of sale, order and current farm status."))),
+            next_action=action,
+            assignee="charl", state=(WorkState.WAITING_EVIDENCE if not reconciled or unresolved else WorkState.PLANNED),
             authority=Authority.READ_ONLY,
             provenance=provenance, business_value=110,
             metadata={"routine_weekly_weighing": True,
-                "brief_facts": {"kind": "weight_status_review",
-                    "covered": snapshot.get("covered"),
-                    "eligible": snapshot.get("eligible_tagged"),
-                    "status_checks": len(routine_missing),
-                    "window_start": window.get("start"), "window_end": window.get("end")},
-                "owner_followup": ("HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag."
-                    if is_af else "HERDMASTER will reconcile the cohort's current status before any new weighing instruction.")}))
+                "brief_facts": review_facts,
+                "owner_followup": (("Huidige rekords is nagegaan; geen nuwe roetine-weegtaak is bewys nie."
+                    if is_af else "Current records checked; no new routine weighing task is established.") if reconciled else
+                    ("Huidige rekords kon nie nagegaan word nie; geen nuwe weegopdrag is bewys nie." if is_af else
+                     "Current records could not be checked; no new weighing instruction is established."))}))
     elif snapshot["status"] == "complete":
         finding_text = _findings(findings, language=language)
         window = weight.get("window") or {}

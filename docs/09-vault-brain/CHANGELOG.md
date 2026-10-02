@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-10-02 - HERDMASTER operational repair source navigation
+
+- Register the existing weighing producer's canonical commercial reconciliation
+  helper and its unit/PostgreSQL qualification paths. Missing weekly weights
+  remain evidence gaps, not automatic weighing or departure authority.
+- Register bounded breeding-plan identity retention through acknowledged family
+  context, fresh canonical follow-up and bilingual clarification. Names/tags may
+  change; implicit references must not silently switch animals.
+- Refresh the shared operational checkpoint with genuine herd-count and pen
+  Telegram evidence and explicit remaining acceptance limits. Candidate tests,
+  release and complete autonomy remain distinct. No role, schema or approval
+  boundary changes, and no promotion of old reports into new farm observations.
+
 ## 2026-10-01 - Owner-approved concise family messages
 
 - Apply one readable style across Oom Sakkie's family-facing questions,

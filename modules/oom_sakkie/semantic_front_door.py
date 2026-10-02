@@ -54,6 +54,7 @@ class SemanticInterpretation:
     protected_preview_required: bool = False
     recording_prohibited: bool = False
     read_query: dict | None = None
+    read_reference_clarification: str = ""
     requested_action: str = ""
     language: str = "unknown"
     confidence: float = 0.0
@@ -166,13 +167,28 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
         elif subject or (query.get("context_message_id") and query.get("kind") == "animal_status"):
             matches = [row for row in context.get("conversation_turns") or ()
                 if row.get("telegram_message_id") == query.get("context_message_id")]
-            canonical_subject = (matches[0].get("canonical_read_subject") or {}) if len(matches) == 1 else {}
+            retained_breeding_subject = {}
+            if (query.get("kind") == "animal_status" and len(matches) == 1
+                    and "canonical_breeding_subjects" in matches[0]):
+                candidates = {row["pig_id"] for row in matches[0]["canonical_breeding_subjects"]
+                    if not subject or subject.strip().casefold() in {
+                        row["pig_id"].casefold(), row["display_alias"].casefold()}}
+                if len(candidates) != 1:
+                    return replace(result, read_query=None, needs_clarification=True,
+                        read_reference_clarification="animal",
+                        clarification_question=("Watter dier of saak bedoel jy?" if result.language.startswith("af")
+                                                else "Which animal or case do you mean?"))
+                query["subject"] = next(iter(candidates))
+                subject = query["subject"]
+                retained_breeding_subject = {"pig_id": subject}
+            canonical_subject = retained_breeding_subject or ((matches[0].get("canonical_read_subject") or {}) if len(matches) == 1 else {})
             canonical_alias = (bool(canonical_subject) and (not subject or subject.strip().casefold() in {
                 str(value).strip().casefold() for value in canonical_subject.values()
                 if str(value).strip().casefold() not in {"", "unknown"}}))
             if len(matches) != 1 or (canonical_subject and not canonical_alias) or (subject and not canonical_subject
                     and not _subject_mentioned(subject, matches[0].get("assistant_answer", ""))):
                 return replace(result, read_query=None, needs_clarification=True,
+                    read_reference_clarification="animal",
                     clarification_question=("Watter dier of saak bedoel jy?" if result.language.startswith("af")
                                             else "Which animal or case do you mean?"))
             if query.get("kind") == "animal_status" and canonical_alias:
@@ -184,6 +200,7 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
                 if row.get("telegram_message_id") == query["context_message_id"]]
             if len(matches) != 1:
                 return replace(result, read_query=None, needs_clarification=True,
+                    read_reference_clarification="herd",
                     clarification_question=("Watter kuddebesonderhede wil jy nagaan?" if result.language.startswith("af")
                                             else "Which herd details would you like me to check?"))
         if not subject and query.get("kind") != "animal_status":
@@ -939,6 +956,11 @@ def _eligible_conversation_context(rows, parsed):
                 and all(isinstance(v, str) and len(v) <= 128 for v in subject.values())
                 and subject.get("pig_id", "").strip()):
             selected[-1]["canonical_read_subject"] = dict(subject)
+        from modules.oom_sakkie.breeding_read_context import READY_STATES, validated_subjects
+        if (row.get("task_state") in READY_STATES or "canonical_breeding_context" in row):
+            # Old prose-only breeding receipts must not authorize alias rebinding.
+            selected[-1]["canonical_breeding_subjects"] = validated_subjects(
+                row.get("canonical_breeding_context")) if row.get("specialist_identity") == "HERDMASTER" else []
         if len(selected) == 4:
             break
     return list(reversed(selected))

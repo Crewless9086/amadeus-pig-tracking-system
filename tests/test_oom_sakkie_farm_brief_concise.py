@@ -102,9 +102,10 @@ def test_real_producers_to_farm_round_and_family_delivery_are_compact_and_truthf
     assert ("Recommendation: one limited gravity-fed run" if language == "en" else
             "Aanbeveling: een beperkte swaartekragbeurt") in answer
     assert not any(text in answer.lower() for text in ("watering completed", "73 pigs today", "weigh every", "start irrigation"))
-    # All detailed rows and original questions remain available beneath the brief.
+    # The case projection is bounded; the owning packet retains detailed rows.
     weights = next(item for item in brief.queue if item.dedupe_key == "herdmaster:weekly-weight-evidence")
-    assert "SYNTHETIC-TAG-072" in weights.next_action
+    assert "SYNTHETIC-TAG-005 (+67)" in weights.next_action
+    assert "SYNTHETIC-TAG-072" not in weights.next_action and len(weights.next_action) < 500
     assert result["clarification_question"] in {item.genuine_question for item in brief.queue}
     assert all(result[key] is False for key in runtime.ZERO_AUTHORITY)
     transport = []

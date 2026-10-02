@@ -8,6 +8,7 @@ import json
 from typing import Any, Callable, Mapping
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
+from modules.oom_sakkie.breeding_read_context import selected_subjects
 from modules.oom_sakkie.owner_response_composer import _clip as clip_owner_text
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 
@@ -69,14 +70,17 @@ def handle_herdmaster_request(parsed: Mapping[str, Any], authority: Any, *,
         return {"handled": True, "success": False,
             "status": "herdmaster_request_evidence_unavailable",
             "mission_id": mission_id, **ZERO}, 503
+    subjects = selected_subjects(selected, language=str(semantic.get("language") or "en"))
     output = {"handled": True, "success": True, "status": "herdmaster_request_ready",
         "specialist_identity": "HERDMASTER", "mission_id": mission_id,
         "card_mission_id": mission_id, "answer": answer, "binding": binding,
+        "read_only": True,
+        "canonical_breeding_context": subjects,
         "canonical_worklist_id": str(packet.get("worklist_id") or ""),
         "canonical_generated_at": str(packet.get("generated_at") or ""),
         "selected_task_ids": [str(row.get("task_id") or "") for row in selected],
         "result_digest": _digest({"binding": binding, "worklist": packet.get("worklist_id"),
-                                  "answer": answer}), **ZERO}
+                                  "answer": answer, "canonical_breeding_context": subjects}), **ZERO}
     recorded = store("record", mission_id, {"binding": binding, "result": output})
     if not isinstance(recorded, Mapping) or recorded.get("success") is not True:
         return {"handled": True, "success": False,

@@ -204,6 +204,19 @@ def _typed_brief_row(item, af):
         unknown = "onbekend" if af else "unknown"
         coverage = "/".join(unknown if value is None else str(value) for value in (covered, eligible))
         period = _brief_date_range(facts.get("window_start"), facts.get("window_end"), af)
+        if facts.get("reconciliation") == "checked":
+            checked_counts = [facts.get(key) for key in ("checked", "unresolved", "held", "current_weights")]
+            if any(type(value) is not int or value < 0 for value in checked_counts):
+                return ""
+            checked, unresolved, held, current = checked_counts
+            if checked != checks or any(value > checked for value in (unresolved, held, current)):
+                return ""
+            return (f"• <b>{'Gewigte' if af else 'Weights'}:</b> {coverage} " +
+                ("in dié tydperk" if af else "in this window") + f" ({_safe(period)}).\n  " +
+                (f"{checked} se huidige rekords nagegaan; {held} voorbehou, {unresolved} onopgelos. "
+                 f"{current} het 'n jongste gewig op rekord. Geen nuwe roetine-weegopdrag nie." if af else
+                 f"{checked} current records checked; {held} on hold, {unresolved} unresolved. "
+                 f"{current} have a latest weight on record. No new routine weighing instruction."))
         check_text = (f"HERDMASTER sal dié {checks} varke se plaas-/verkoopstatus nagaan voor 'n nuwe weegopdrag."
                       if af else f"HERDMASTER will check farm/sale records for these {checks} pigs before requesting weights.") if checks is not None else (
                       "HERDMASTER sal plaas-/verkoopstatus nagaan; die aantal is onbekend." if af else

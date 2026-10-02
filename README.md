@@ -19,11 +19,14 @@ and two later natural cycles completed without duplicate delivery or exceptions.
 Previous advisory completions and the confirmed mortality record remain intact.
 PR1368's family-message update is merged at
 `67f465477f31fced2ffa127bc1314d0403612764` and verified live on 2 October.
-The owner's fresh farm-brief test still exposed dense paragraphs and a long tag
-list. A bounded typed-summary correction is being qualified; concise presentation
-acceptance is not yet complete. Six question readers passed earlier read-only
-checks. Fresh protected confirmations, broader Telegram acceptance and full
-agent autonomy remain unproven.
+PR1369's concise farm brief is merged at
+`d840bdecb66b1f4cae6c47806a7a05e09a9abd5a` and verified live on 2 October.
+The owner's fresh Telegram reply matched the retained delivery exactly.
+Fresh owner-origin herd-count and pen-capacity questions also have matching
+delivery receipts, typed context and current canonical counts. Weighing
+reconciliation and breeding follow-up identity repairs are being qualified
+together from this revision. Fresh protected confirmations, remaining genuine
+conversation journeys and full agent autonomy remain unproven.
 ROOTLINE is the next proposed focus after HERDMASTER readiness.
 
 Local cleanup is verified and all original eighteen commits were integrated by

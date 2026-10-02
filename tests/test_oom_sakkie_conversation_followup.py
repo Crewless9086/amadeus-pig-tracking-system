@@ -519,12 +519,13 @@ def test_herd_capabilities_through_both_real_ingresses(journey, monkeypatch, cha
     from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
     pigs = [{"Pig_ID": f"P{i}", "Tag_Number": str(701+i), "Status": "Active", "On_Farm": "Yes",
              "Animal_Type": "Grower", "Current_Pen_ID": "PEN-N"} for i in (1, 2)]
-    # Place the synthetic due event in the governed Tuesday/Wednesday cycle,
-    # even when this conversation test runs later in the week.
+    # Pure compatibility fixture for an explicit due item. The deployed
+    # lifecycle schema does not currently provide these scheduling events.
     weighing_day = NOW.date() - timedelta(days=(NOW.weekday() - 1) % 7)
     weights = build_daily_manager_evidence(pigs=[{"pig_id": "P1", "tag_number": "702", "status": "Active",
         "on_farm": True, "animal_type": "Grower"}], window_weights=[], prior_weights=[],
         lifecycle_events=[{"pig_id": "P1", "event_type": "individual_weighing_due", "effective_at": weighing_day.isoformat()}],
+        reconciliation_rows={},
         analysis_date=NOW.date())
     evidence = {"pig_rows": pigs, "pens": [{"pen_id": "PEN-N", "pen_name": "North", "capacity": 1}],
         "litter_attention": {"count": 1, "items": [{"sow_name": "Hazel", "reason": "Weaning is due",
@@ -683,3 +684,114 @@ def test_herd_question_semantic_failure_never_enters_other_work(journey, monkeyp
     assert "TODAY'S FARM BRIEF" not in result["answer"] and "farrowing status" not in result["answer"]
     assert "AI COST CONTROL" in result["answer"] if failure == "budget" else result["message"]["needs_clarification"]
     assert journey.claim.call_count == 0 and len(journey.sends) == 1 and len(journey.payloads) <= 1
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_delivered_breeding_plan_retains_context_for_a_specific_animal_followup(journey, monkeypatch, language):
+    from modules.oom_sakkie import herdmaster_request_runtime as breeding
+    loader = Mock(return_value={"success": True, "worklist_id": "SYNTHETIC-BREEDING",
+        "generated_at": NOW.isoformat(), "tasks": [{"task_id": "BREEDING-HAZEL",
+            "pig_id": "PIG-SYNTHETIC-702", "tag_number": "702", "pig_name": "Hazel",
+            "proposed_placement_date": NOW.date().isoformat(),
+            "male_recommendation": {"recommended": {"tag_number": "Oak"}}}]})
+    monkeypatch.setattr(gateway, "handle_herdmaster_request", lambda parsed, authority:
+        breeding.handle_herdmaster_request(parsed, authority, canonical_loader=loader,
+            event_store=manager._event_store))
+    first, status = journey.send("Show the current breeding plan" if language == "en" else
+        "Wys die huidige teelplan", interpretation("herd_query", language,
+            capability="breeding_plan"), 8101)
+    assert status == 200 and "Hazel" in journey.sends[-1][1]
+    delivered_plan = journey.sends[-1][1]
+    second, status = journey.send("What do you know about that sow?" if language == "en" else
+        "Wat weet jy van daardie sog?", interpretation("animal_status", language,
+            subject="Hazel", context_message_id="9501"), 8102)
+    assert status == 200 and "87 kg" in second["answer"], second
+    context = json.loads(journey.payloads[-1]["messages"][1]["content"])["context"]
+    assert context["conversation_turns"][-1]["assistant_answer"] == delivered_plan
+    assert context["conversation_turns"][-1]["telegram_message_id"] == "9501"
+    assert_canonical_animal(journey, second, "PIG-SYNTHETIC-702", "702")
+    assert loader.call_count == 1 and len(journey.sends) == 2 and journey.claim.call_count == 0
+    replay, _ = journey.send("Show the current breeding plan" if language == "en" else
+        "Wys die huidige teelplan", interpretation("herd_query", language,
+            capability="breeding_plan"), 8101)
+    assert replay["delivery"]["telegram_sends"] == 0 and len(journey.sends) == 2
+    assert loader.call_count == 1
+
+
+@pytest.mark.parametrize("changed", ["foreign_owner", "unacknowledged", "stale"])
+def test_breeding_followup_cannot_use_foreign_unacknowledged_or_stale_plan(journey, monkeypatch, changed):
+    from modules.oom_sakkie import herdmaster_request_runtime as breeding
+    monkeypatch.setattr(gateway, "handle_herdmaster_request", lambda parsed, authority:
+        breeding.handle_herdmaster_request(parsed, authority, canonical_loader=lambda: {
+            "success": True, "worklist_id": "SYNTHETIC-BREEDING", "generated_at": NOW.isoformat(),
+            "tasks": [{"task_id": "BREEDING-HAZEL", "tag_number": "Hazel"}]},
+            event_store=manager._event_store))
+    first, status = journey.send("Show the breeding plan",
+        interpretation("herd_query", capability="breeding_plan"), 8201)
+    assert status == 200
+    for row in journey.family.values():
+        if changed == "foreign_owner": row["owner_user_id"] = "43"
+        elif changed == "unacknowledged": row["state"] = "delivery_attempted"
+        else: row["delivery_provider_timestamp"] = (NOW-timedelta(days=10)).isoformat()
+    second, status = journey.send("What do you know about that sow?",
+        interpretation("animal_status", subject="Hazel", context_message_id="9501"), 8202)
+    assert status == 200 and "Which animal or case" in second["answer"], second
+    assert not journey.connection.calls and journey.claim.call_count == 0
+
+
+def _install_breeding_read(journey, monkeypatch, tasks):
+    from modules.oom_sakkie import herdmaster_request_runtime as breeding
+    loader = Mock(return_value={"success": True, "worklist_id": "SYNTHETIC-BREEDING",
+        "generated_at": NOW.isoformat(), "tasks": tasks})
+    monkeypatch.setattr(gateway, "handle_herdmaster_request", lambda parsed, authority:
+        breeding.handle_herdmaster_request(parsed, authority, canonical_loader=loader,
+            event_store=manager._event_store))
+    return loader
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+@pytest.mark.parametrize("display", ["tag", "name"])
+@pytest.mark.parametrize("explicit", [False, True])
+def test_breeding_followup_preserves_original_identity_after_alias_reuse(journey, monkeypatch, language, display, explicit):
+    original = journey.connection.rows[0]
+    selected = {"task_id": "BREEDING-702", "pig_id": original["pig_id"], "tag_number": "702"}
+    if display == "name": selected["pig_name"] = "Hazel"
+    loader = _install_breeding_read(journey, monkeypatch, [selected])
+    first, status = journey.send("Show the breeding plan", interpretation("herd_query", language,
+        capability="breeding_plan"), 8301)
+    assert status == 200
+    alias = "Hazel" if display == "name" else "702"
+    assert alias in journey.sends[-1][1]
+    original.update(tag_number="703", pig_name="Renamed sow", current_weight_kg=88)
+    replacement = {**original, "pig_id": "PIG-SYNTHETIC-REPLACEMENT", "tag_number": "702",
+        "pig_name": "Hazel", "current_weight_kg": 95}
+    journey.connection.rows.append(replacement)
+    text = (("What is the status of " if language == "en" else "Wat is die status van ") + alias
+        if explicit else ("What do you know about that sow?" if language == "en" else "Wat weet jy van daardie sog?"))
+    second, status = journey.send(text, interpretation("animal_status", language,
+        subject=alias, context_message_id="9501"), 8302)
+    assert status == 200 and ("95 kg" if explicit else "88 kg") in second["answer"], second
+    expected = replacement if explicit else original
+    assert_canonical_animal(journey, second, expected["pig_id"], expected["tag_number"])
+    assert loader.call_count == 1 and journey.claim.call_count == 0
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+@pytest.mark.parametrize("fault", ["legacy", "malformed", "ambiguous", "unmapped", "missing_id", "too_many"])
+def test_breeding_implicit_reference_requires_unambiguous_typed_identity(journey, monkeypatch, language, fault):
+    tasks = [{"task_id": "BREEDING-702", "pig_id": "PIG-SYNTHETIC-702", "tag_number": "702"}]
+    if fault == "missing_id": tasks[0].pop("pig_id")
+    if fault == "ambiguous": tasks.append({**tasks[0], "task_id": "OTHER", "pig_id": "OTHER"})
+    _install_breeding_read(journey, monkeypatch, tasks)
+    first, status = journey.send("Show the breeding plan", interpretation("herd_query", language,
+        capability="breeding_plan"), 8401)
+    assert status == 200
+    for row in journey.family.values():
+        if fault == "legacy": row.pop("canonical_breeding_context", None)
+        elif fault == "malformed": row["canonical_breeding_context"] = {"contract": "wrong", "subjects": []}
+        elif fault == "too_many": row["canonical_breeding_context"]["subjects"] *= 7
+    second, status = journey.send("What do you know about that sow?" if language == "en" else
+        "Wat weet jy van daardie sog?", interpretation("animal_status", language,
+            subject="unmapped" if fault == "unmapped" else "702", context_message_id="9501"), 8402)
+    assert status == 200 and ("Which animal or case" if language == "en" else "Watter dier of saak") in second["answer"], second
+    assert not journey.connection.calls and journey.claim.call_count == 0
