@@ -564,6 +564,9 @@ def _whole_herd_specialist_result(canonical, observations, active, now, language
             provenance=provenance, business_value=110, genuine_question=question, question_for="charl",
             metadata={"recipient_render_contract": "herdmaster_whole_herd_recipient_v1",
                 "recipient_language": "af" if is_af else "en",
+                "brief_facts": {"kind": "farrowing_outcome_unconfirmed",
+                    "labels": [str(row["tag_number"]) for row in group],
+                    "window_start": start, "window_end": end},
                 "notification_decision_identity": "matings:" + ":".join(
                 sorted(str(row["mating_id"]) for row in group)) if all(row.get("mating_id") for row in group) else ""}))
     rebound = tuple(replace(item, provenance=replace(provenance,
@@ -684,7 +687,7 @@ def _project_rootline_snapshot(snapshot, now, language="en"):
     observed = _time(((raw.get("evidence") or {}).get("generated_at") or raw.get("generated_at")), now)
     result_id = str(raw.get("result_id") or raw.get("plan_id") or "rootline-current")
     provenance = Provenance("rootline", result_id, ("canonical_rootline_specialist_result",), observed, 1.0)
-    from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_manager_item
+    from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_manager_item, manager_brief_facts
     projection = compose_daily_rootline_manager_item(raw, language=language)
     state = WorkState.WAITING_EVIDENCE if "needs data" in projection["title"].lower() else WorkState.PLANNED
     item = SpecialistWorkItem(
@@ -695,6 +698,7 @@ def _project_rootline_snapshot(snapshot, now, language="en"):
         business_value=80, genuine_question=projection["question"],
         question_for="charl" if projection["question"] else "",
         metadata={"owner_followup": projection["next_action"],
+                  "brief_facts": manager_brief_facts(raw),
                   "notification_decision_identity": projection.get("notification_decision_identity", "")},
     )
     return SpecialistResult("rootline", result_id, observed,

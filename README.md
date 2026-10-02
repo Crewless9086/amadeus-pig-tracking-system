@@ -17,9 +17,11 @@ records the HERDMASTER work and its acceptance limits. PR1367 is merged at
 on 1 October. Its historical birth-review card reached the configured owner,
 and two later natural cycles completed without duplicate delivery or exceptions.
 Previous advisory completions and the confirmed mortality record remain intact.
-The owner has now requested concise, names-first formatting across Oom Sakkie's
-family messages and a supported conversational reply to review cards; this
-continuation is being qualified. Six question readers passed earlier read-only
+PR1368's family-message update is merged at
+`67f465477f31fced2ffa127bc1314d0403612764` and verified live on 2 October.
+The owner's fresh farm-brief test still exposed dense paragraphs and a long tag
+list. A bounded typed-summary correction is being qualified; concise presentation
+acceptance is not yet complete. Six question readers passed earlier read-only
 checks. Fresh protected confirmations, broader Telegram acceptance and full
 agent autonomy remain unproven.
 ROOTLINE is the next proposed focus after HERDMASTER readiness.

@@ -311,7 +311,7 @@ jobs:
         env:
           OOM_PROTECTED_ACTION_POSTGRES_URL: ${{ env.DATABASE_URL }}
           PGTZ: UTC
-        run: python -B -m pytest -q -p no:cacheprovider tests/test_oom_sakkie_family_presentation.py tests/test_oom_sakkie_family_style_farrowing_postgres.py tests/test_oom_sakkie_family_message_lifecycle.py tests/test_oom_sakkie_owner_task_lifecycle.py tests/test_oom_sakkie_herdmaster_farrowing_runtime.py
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_oom_sakkie_family_presentation.py tests/test_oom_sakkie_family_style_farrowing_postgres.py tests/test_oom_sakkie_family_message_lifecycle.py tests/test_oom_sakkie_owner_task_lifecycle.py tests/test_oom_sakkie_herdmaster_farrowing_runtime.py tests/test_oom_sakkie_farm_brief_concise.py tests/test_oom_sakkie_rootline_daily_presentation.py
 
       - name: Run canonical conversational follow-up gates
         run: |

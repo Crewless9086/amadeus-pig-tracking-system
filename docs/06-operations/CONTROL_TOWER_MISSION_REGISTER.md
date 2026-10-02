@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Lifecycle: `active` current-state evidence; non-doctrine.
-Updated: 2026-10-01; Oom Sakkie family-message presentation is WORKING.
+Updated: 2026-10-02; concise farm-brief correction is WORKING.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
@@ -26,14 +26,17 @@ sibling mission directory, not in the public repository.
   family receipts. No unconfirmed report became a farm record. Later snapshots
   preserved these outcomes. PR1367 then delivered one historical birth review
   to the configured owner; two later natural cycles were healthy and silent.
-- The same mission continues on `codex/oom-family-message-style-20261001`
-  from mainbc35db71 in the existing application worktree. The owner approved
-  concise family messages: familiar names/tags, short bullets, clear status,
-  readable dates, one supported next step and restrained heading emoji.
-  Informational review replies must bind exact current delivered context before
-  entering the existing protected preview. No old report is replayed as a new
-  owner statement, no farm fact is inferred and no role or permission expands.
-  This candidate is not yet established as deployed by this checkpoint.
+- PR1368 is registered, normally protected-merged as
+  `67f465477f31fced2ffa127bc1314d0403612764` and verified live on October2.
+  Its registration and deployment are consumed. The real owner farm brief still
+  failed the approved concise style: dense source paragraphs and a long tag list.
+  The same mission continues on `codex/oom-farm-brief-concise-20261002` from
+  main67f46547 in the existing application worktree. The correction projects
+  typed facts into short bullets, retaining historical dates, quantities,
+  uncertainty and the distinction between verified state and proposed action.
+  Presentation metadata must not change material notification identity.
+  No old report is replayed as a new owner statement, no farm fact is inferred
+  and no role or permission expands. This correction is not yet deployed.
 - Fresh genuine Telegram acceptance of the new style and later independent
   continuity remain open. Do not manufacture messages, replay historical owner events or
   ask for farm observations already pending with Charl.

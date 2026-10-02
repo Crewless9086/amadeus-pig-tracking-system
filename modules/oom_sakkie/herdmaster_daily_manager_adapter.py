@@ -93,6 +93,11 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
             authority=Authority.READ_ONLY,
             provenance=provenance, business_value=110,
             metadata={"routine_weekly_weighing": True,
+                "brief_facts": {"kind": "weight_status_review",
+                    "covered": snapshot.get("covered"),
+                    "eligible": snapshot.get("eligible_tagged"),
+                    "status_checks": len(routine_missing),
+                    "window_start": window.get("start"), "window_end": window.get("end")},
                 "owner_followup": ("HERDMASTER kontroleer die groep se huidige status voor enige nuwe weegopdrag."
                     if is_af else "HERDMASTER will reconcile the cohort's current status before any new weighing instruction.")}))
     elif snapshot["status"] == "complete":
