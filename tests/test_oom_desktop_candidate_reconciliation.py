@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_herdmaster_retained_recovery_runtime.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_retained_farrowing_review_postgres.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md', 'docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/daily_farm_manager.py', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/family_presentation.py', 'modules/oom_sakkie/farm_manager_loop.py', 'modules/oom_sakkie/farm_manager_runtime.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/grouped_weight_runtime.py', 'modules/oom_sakkie/herd_question.py', 'modules/oom_sakkie/herd_read_queries.py', 'modules/oom_sakkie/herdmaster_breeding_exposure_runtime.py', 'modules/oom_sakkie/herdmaster_farrowing_runtime.py', 'modules/oom_sakkie/herdmaster_health_loss_runtime.py', 'modules/oom_sakkie/herdmaster_litter_first_treatment_runtime.py', 'modules/oom_sakkie/herdmaster_litter_weaning_runtime.py', 'modules/oom_sakkie/herdmaster_request_runtime.py', 'modules/oom_sakkie/herdmaster_retained_recovery_runtime.py', 'modules/oom_sakkie/owner_response_composer.py', 'modules/oom_sakkie/owner_task_lifecycle.py', 'modules/oom_sakkie/retained_farrowing_review_context.py', 'modules/oom_sakkie/rootline_physical_acceptance.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/oom_sakkie/service.py', 'modules/oom_sakkie/telegram_direct.py', 'modules/oom_sakkie/telegram_gateway.py', 'static/assets/agents/oom-sakkie/agent.md', 'tests/test_farrowing_conversation.py', 'tests/test_farrowing_conversation_postgres.py', 'tests/test_herdmaster_mortality_journey_postgres.py', 'tests/test_herdmaster_ordinary_herd_question.py', 'tests/test_litter_first_treatment_ingress_postgres.py', 'tests/test_litter_first_treatment_journey_postgres.py', 'tests/test_litter_weaning_ingress_postgres.py', 'tests/test_oom_sakkie_conversation_followup.py', 'tests/test_oom_sakkie_daily_farm_manager.py', 'tests/test_oom_sakkie_family_message_lifecycle.py', 'tests/test_oom_sakkie_family_presentation.py', 'tests/test_oom_sakkie_family_style_farrowing_postgres.py', 'tests/test_oom_sakkie_grouped_weight_runtime.py', 'tests/test_oom_sakkie_herd_morning_language.py', 'tests/test_oom_sakkie_herdmaster_breeding_exposure_runtime.py', 'tests/test_oom_sakkie_herdmaster_farrowing_runtime.py', 'tests/test_oom_sakkie_herdmaster_health_loss_runtime.py', 'tests/test_oom_sakkie_herdmaster_request_runtime.py', 'tests/test_oom_sakkie_model_budget_denials.py', 'tests/test_oom_sakkie_morning_runtime.py', 'tests/test_oom_sakkie_mortality_semantic_journey.py', 'tests/test_oom_sakkie_owner_response_composer.py', 'tests/test_oom_sakkie_plan_dialogue_postgres.py', 'tests/test_oom_sakkie_protected_action_runtime.py', 'tests/test_oom_sakkie_protected_payment_recovery.py', 'tests/test_oom_sakkie_retained_confirmation_feedback.py', 'tests/test_oom_sakkie_retained_farrowing_review_postgres.py', 'tests/test_oom_sakkie_service.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -44,6 +44,7 @@ FARROWING_REVIEW_EFFECTS = {'herdmaster_exact_retained_farrowing_refresh',
     'retained_farrowing_configured_owner_informational_review'}
 FAMILY_STYLE_EFFECTS = {'oom_sakkie_shared_family_message_presentation',
     'authenticated_historical_farrowing_review_reply_protected_preview'}
+CONCISE_BRIEF_EFFECTS = {'rootline_proven_no_send_retry_presented_text_binding', 'oom_sakkie_typed_concise_farm_brief_presentation'}
 RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_preview_renewal'
 # Synthetic candidate identity permits pre-publication qualification only while
 # pins are pending. Final qualification uses the real pins, never owner approval.
@@ -74,7 +75,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
+        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | FAMILY_STYLE_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
         "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -530,8 +531,9 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:59dca3dad630e3ac2a7f3bae7af4129540aba135"})
-        self.assertEqual(adapter.ADDED_EFFECTS, FAMILY_STYLE_EFFECTS | {"application_revision_rollback:web:bc35db71a653677b11e8b03ca6d9eda965edfba7"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:bc35db71a653677b11e8b03ca6d9eda965edfba7"})
+        self.assertEqual(adapter.ADDED_EFFECTS, CONCISE_BRIEF_EFFECTS | {"application_revision_rollback:web:67f465477f31fced2ffa127bc1314d0403612764"})
+        self.assertFalse(FAMILY_STYLE_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FARROWING_REVIEW_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(SUCCESSOR_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertNotIn(READ_QUERY_EFFECT,adapter.ADDED_EFFECTS)
@@ -571,7 +573,7 @@ class ReconciliationTests(unittest.TestCase):
     def test_family_presentation_and_genuine_review_reply_cannot_grant_farm_authority(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
-        self.assertFalse(FAMILY_STYLE_EFFECTS & set(prior["allowed_effects"]))
+        self.assertTrue(FAMILY_STYLE_EFFECTS <= set(prior["allowed_effects"]))
         self.assertTrue(FAMILY_STYLE_EFFECTS <= set(m["contract"]["allowed_effects"]))
         changes = (
             ("safe text escaping", "raw provider markup"),
@@ -596,6 +598,35 @@ class ReconciliationTests(unittest.TestCase):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
         for effect in ("family_presentation_claim_renewal", "historical_review_automatic_confirmation",
                        "historical_farrowing_report_replay_write"):
+            changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
+            with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_concise_brief_and_proven_no_send_retry_preserve_existing_authority(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
+        self.assertFalse(CONCISE_BRIEF_EFFECTS & set(prior["allowed_effects"]))
+        self.assertTrue(FAMILY_STYLE_EFFECTS <= set(prior["allowed_effects"]))
+        self.assertTrue(CONCISE_BRIEF_EFFECTS <= set(m["contract"]["allowed_effects"]))
+        changes=(
+            ("typed canonical brief facts", "parsed opaque prose"),
+            ("Preserve exact canonical identity, quantities, dates, coverage counts, provenance and uncertainty", "Invent omitted facts for brevity"),
+            ("outside material digests, notification keys, case identities and protected authority", "inside material digests and claim authority"),
+            ("preserve its already stored answer and result digest without recomposition", "recompose a previously delivered answer"),
+            ("exact final localized presentation text", "raw unformatted stored packet text"),
+            ("Preserve the stored packet, material identity and current recipient", "Rewrite the stored packet and recipient"),
+            ("Changed text, missing zero-send proof, uncertain or delivered outcomes refuse retry", "Ambiguous and delivered outcomes permit retry"),
+            ("no manual retry, message or broader attempt authority is permitted", "manual retry and extra messages are permitted"),
+            ("Do not alter protected confirmation lifecycles", "Alter protected confirmation lifecycles"),
+            ("tests/test_oom_sakkie_farm_brief_concise.py and tests/test_oom_sakkie_rootline_daily_presentation.py", "optional unrecorded local examples"),
+        )
+        for before,after in changes:
+            changed=deepcopy(m);original=changed["contract"]["operational_acceptance"]
+            changed["contract"]["operational_acceptance"]=[value.replace(before,after) for value in original]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],original,before)
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        for effect in ("manual_rootline_retry", "ambiguous_delivery_retry", "concise_brief_farm_write"):
             changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
             with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
@@ -637,7 +668,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(self.snapshot(),after)
 
     def test_successor_scope_refuses_missing_effects_and_unbounded_replacement(self):
-        for effect in sorted(SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | FAMILY_STYLE_EFFECTS):
+        for effect in sorted(SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | FAMILY_STYLE_EFFECTS | CONCISE_BRIEF_EFFECTS):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
             m["contract"]["allowed_effects"].remove(effect)
             with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
@@ -849,16 +880,16 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.BASE,"bc35db71a653677b11e8b03ca6d9eda965edfba7")
-        self.assertEqual(adapter.BRANCH,"codex/oom-family-message-style-20261001")
+        self.assertEqual(adapter.BASE,"67f465477f31fced2ffa127bc1314d0403612764")
+        self.assertEqual(adapter.BRANCH,"codex/oom-farm-brief-concise-20261002")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1367)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"e636905bc48bca845702ad579442709a94fe6949")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"59dca3dad630e3ac2a7f3bae7af4129540aba135")
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herdmaster-farrowing-refresh-20261001")
+        self.assertEqual(adapter.PREDECESSOR_PR,1368)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"29919d55e08db4a81631b1609682afcca3daf7b9")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"bc35db71a653677b11e8b03ca6d9eda965edfba7")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/oom-family-message-style-20261001")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),13)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),61)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
