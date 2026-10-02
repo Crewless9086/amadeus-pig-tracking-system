@@ -18,6 +18,12 @@ def build_owner_clarification(parsed: Mapping[str, Any]) -> dict[str, Any]:
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     question = str(semantic.get("clarification_question") or "").strip()
     af = str(semantic.get("language") or parsed.get("output_language") or "en").startswith("af")
+    reference = semantic.get("read_reference_clarification")
+    typed_reference = reference in {"animal", "herd"} and semantic.get("needs_clarification") is True
+    if typed_reference:
+        question = (("Watter dier of saak bedoel jy?" if af else "Which animal or case do you mean?")
+            if reference == "animal" else ("Watter kuddebesonderhede wil jy nagaan?" if af
+                else "Which herd details would you like me to check?"))
     if not question:
         question = ("Oor watter huidige plaasitem gaan dit: 'n dier of tag, water, verkope of bemarking?" if af else
                     "Which current farm item is this about: an animal or tag, water/irrigation, a customer or sale, or marketing?")
@@ -32,7 +38,7 @@ def build_owner_clarification(parsed: Mapping[str, Any]) -> dict[str, Any]:
         "mission_id": mission,
         "card_mission_id": mission,
         "question_count": 1, "read_only": True, "writes_performed": False,
-        "recipient_render_contract": "canonical_read_answer_v1",
+        "recipient_render_contract": ("owner_read_reference_clarification_v1" if typed_reference else "canonical_read_answer_v1"),
         "recipient_language": str(semantic.get("language") or "en"),
         "needs_clarification": True,
         "writes_farm_data": False,

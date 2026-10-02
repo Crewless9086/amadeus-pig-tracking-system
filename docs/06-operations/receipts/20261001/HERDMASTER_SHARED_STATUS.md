@@ -3,6 +3,50 @@
 Lifecycle: `active` current-state evidence; non-doctrine. This is a dated shared
 checkpoint, not runtime authority or certification of every repository file.
 
+## Current checkpoint — 2 October, operational continuation
+
+This checkpoint supersedes the open PR1369 presentation/release instructions
+in the historical section below; those actions are complete and must not repeat.
+PR1369 merged at `d840bdecb66b1f4cae6c47806a7a05e09a9abd5a`. The existing web
+deployment `dep-davm9us9v7es738bmbbg` became live at08:03:06Z. Exact provider,
+health and loaded-source checks agree. The other ten deployments and all eleven
+service settings were unchanged. Its registration and deployment are consumed.
+
+The genuine owner farm-brief reply matched the concise delivery exactly.
+Postrelease08:05 and08:10 natural cycles had no errors, deferrals or sends and
+preserved prior protected outcomes. They preceded the08:11 owner question and
+therefore do not prove an unattended continuation of that new conversation.
+
+| Current journey | Established result and limit |
+| --- | --- |
+| Herd count | Fresh owner-origin Telegram question and delivered reply match exactly. A later verified read confirms118 on-farm and118Active. |
+| Pen capacity | Fresh owner-origin question and delivered reply match exactly. Current records confirm the two reported ordinary-pen excesses and the ten maternity groups. Maternity capacity units and physical overcrowding remain unproven. |
+| Weighing | Live evidence confirms73 current eligible tags and no weight in the29–30September capture window. The deployed producer still promises reconciliation without reading sales/orders/outlets. The combined candidate adds that bounded comparison, reports checked classifications and does not authorize routine reweighing from missing records. |
+| Breeding conversation | The combined candidate retains the acknowledged plan and the immutable identities behind its displayed subjects, then rereads current facts. It contains ambiguous, old, malformed or reused aliases and fixes delivery of the corresponding Afrikaans clarification. This candidate is not yet released. |
+
+Both fresh question deliveries have the exact owner/input/card/answer binding
+and retained typed context. Current canonical readback is separate from a
+historical database snapshot at delivery time. No manual replay, worker trigger,
+Telegram API call, model call or farm write was used for these checks.
+Private evidence and owner copies remain in the assigned sibling runtime.
+
+The current branch is `codex/herdmaster-operational-readiness-20261002`, based
+on main`d840bdec`. Finish its focused and disposable-PostgreSQL qualification,
+independent review, hosted checks, encrypted release registration and normal
+protected existing-web release. Rollback binds the live revision`d840bdec`.
+Then verify actual owner conversations and later natural cycles on that release.
+The deployed lifecycle schema does not provide the legacy individual-weighing
+schedule event names; pure compatibility tests do not prove that scheduling rail
+is operational. No migration or new scheduling authority is introduced here.
+
+Protected mortality remains the earlier proven farm-change journey. Fresh
+farrowing, treatment, movement, weighing and weaning effects require real facts
+and their existing protected confirmation before any outcome can be accepted.
+Full HERDMASTER autonomy is not yet established. Charl's outstanding physical
+observations are still pending; engineering work continues independently.
+
+## Historical checkpoint through PR1368
+
 ## Established progress and limits
 
 Protected PR1341 integrated the original eighteen commits at

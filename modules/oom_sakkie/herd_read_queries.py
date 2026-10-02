@@ -186,6 +186,7 @@ def _litters(packet, af):
 
 def _weighing(packet, af):
     from modules.pig_weights.herdmaster_daily_manager_evidence import PACKET_TYPE, ELIGIBILITY_VERSION
+    from modules.oom_sakkie.family_presentation import date_label
     if packet.get("packet_type") != PACKET_TYPE:
         raise ValueError("weight_read_evidence_invalid")
     weight = packet["weight"]
@@ -193,29 +194,49 @@ def _weighing(packet, af):
         raise ValueError("weight_read_eligibility_unproven")
     snapshot, window = weight["current_snapshot"], weight["window"]
     covered, eligible = snapshot["covered"], snapshot["eligible_tagged"]
-    lines = [(f"Vir {window['start']} tot {window['end']}: {covered}/{eligible} van die huidige geskikte groep het gewigte." if af else
-              f"For {window['start']} to {window['end']}: {covered}/{eligible} of the current eligible cohort have weights.")]
+    start, end = (date_label(window[key], language="af" if af else "en") for key in ("start", "end"))
+    lines = [(f"Vir {start} tot {end}: {covered}/{eligible} van die huidige geskikte groep het gewigte." if af else
+              f"For {start} to {end}: {covered}/{eligible} of the current eligible cohort have weights.")]
     due = weight["individual_weighing_due_now"]
     conflicts = {row["pig_id"] for row in weight["conflicting_weight_evidence"]}
     actionable = [row for row in due if row["pig_id"] not in conflicts]
     if actionable:
         lines.append(("Weeg nou — 'n individuele weegtaak is verskuldig: " if af else
-                      "Weigh now — an individual weighing schedule is due: ") + _names(actionable) + ".")
+                      "Weigh now — an individual weighing schedule is due: ") + _names(actionable, af=af) + ".")
     else:
         lines.append("Geen afsonderlike weegtaak is nou as verskuldig bewys nie." if af else
                      "No individual weighing task is currently proven due.")
     due_ids = {row["pig_id"] for row in actionable}
     pending = [row for row in weight["missing_eligible_tagged"] if row["pig_id"] not in due_ids | conflicts]
-    if pending:
+    reconciliation = weight.get("reconciliation") or {}
+    if reconciliation.get("state") == "checked":
+        rows = reconciliation["rows"]
+        counts = reconciliation["counts"]
+        lines.append((f"Huidige plaas-, verkoop-, bestel- en toewysingsrekords nagegaan: {len(rows)} diere; "
+                      f"{counts.get('allocation_hold', 0)} voorbehou, {counts.get('off_farm', 0)} van die plaas, "
+                      f"{counts.get('unresolved', 0)} onopgelos." if af else
+                      f"Current farm, sale, order and outlet records checked: {len(rows)} animals; "
+                      f"{counts.get('allocation_hold', 0)} on hold, {counts.get('off_farm', 0)} off-farm, "
+                      f"{counts.get('unresolved', 0)} unresolved."))
+        weighted = [row for row in rows if row.get("latest_weight") and row["state"] != "off_farm"]
+        lines.append((f"{len(weighted)} het 'n jongste gewig op rekord; dit verskil van dekking in dié tydperk." if af else
+                      f"{len(weighted)} have a latest weight on record; this is separate from coverage in this window."))
+        for row in weighted[:3]:
+            last = row["latest_weight"]
+            lines.append(f"• {_names([row], af=af)}: {last['kg']:g} kg — " + date_label(last["date"], language="af" if af else "en"))
+        if pending:
+            lines.append("Ontbrekende gewigte in dié tydperk magtig nie 'n nuwe roetine-weegopdrag nie." if af else
+                         "Missing weights in this window do not authorize a new routine weighing instruction.")
+    elif pending:
         lines.append((f"{len(pending)} gewig(te) ontbreek; verkoop-/bestellingstatus moet eers versoen word: " if af else
-                      f"{len(pending)} weight(s) are missing; reconcile sale/order status before instructing reweighing: ") + _names(pending) + ".")
+                      f"{len(pending)} weight(s) are missing; reconcile sale/order status before instructing reweighing: ") + _names(pending, af=af) + ".")
     for key, en, af_label in (
         ("conflicting_weight_evidence", "Conflicting weights need evidence review", "Teenstrydige gewigte benodig bewysversoening"),
         ("unknown_eligibility", "Eligibility unknown", "Geskiktheid onbekend"),
         ("untagged_excluded", "No usable visible tag; excluded from individual cohort", "Geen bruikbare sigbare tag; uitgesluit van individuele groep")):
         rows = weight[key]
         if rows:
-            lines.append(f"{af_label if af else en}: {len(rows)} — {_names(rows)}.")
+            lines.append(f"{af_label if af else en}: {len(rows)} — {_names(rows, af=af)}.")
     excluded = len(weight["breeding_excluded"])
     if excluded:
         lines.append((f"{excluded} teeldier(e) sonder individuele weegskedule is uitgesluit." if af else
@@ -223,8 +244,10 @@ def _weighing(packet, af):
     return lines
 
 
-def _names(rows):
-    shown = ", ".join(_text(row.get("tag") or row.get("pig_id")) for row in rows[:6])
+def _names(rows, *, af=False):
+    from modules.oom_sakkie.family_presentation import animal_label
+    shown = ", ".join(_text(animal_label({**row, "tag_number": row.get("tag")},
+        language="af" if af else "en")) for row in rows[:6])
     return shown + (f" (+{len(rows)-6})" if len(rows) > 6 else "")
 
 

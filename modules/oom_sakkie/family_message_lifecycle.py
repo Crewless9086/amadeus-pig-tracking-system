@@ -92,6 +92,12 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             and localized.get("recipient_render_contract") == "herdmaster_health_loss_recipient_v1"
             and status in {"preview_ready", "waiting_for_input"})
         trusted_canonical_read = _canonical_read_result(localized)
+        trusted_read_reference = (localized.get("tool_used") == "owner_context_front_door"
+            and status == "owner_context_clarification_required"
+            and localized.get("recipient_render_contract") == "owner_read_reference_clarification_v1"
+            and localized.get("question_count") == 1 and localized.get("read_only") is True
+            and localized.get("writes_farm_data") is False
+            and localized.get("protected_actions_performed") is False)
         trusted_continuation_feedback = (specialist == "HERDMASTER"
             and status == "retained_confirmation_feedback"
             and localized.get("recipient_render_contract") == "retained_confirmation_feedback_v1"
@@ -111,7 +117,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             and localized.get("recipient_render_contract") == "rootline_owner_clarification_recipient_v1"
             and status in {"owner_context_clarification_required", "owner_clarification_delivery_reconciliation_required"}
             and localized.get("question_count") == 1 and localized.get("hardware_commands") == 0)
-        preserves_recipient_text = (trusted_question or trusted_health or trusted_canonical_read or trusted_continuation_feedback or trusted_farrowing or trusted_irrigation
+        preserves_recipient_text = (trusted_question or trusted_health or trusted_canonical_read or trusted_read_reference or trusted_continuation_feedback or trusted_farrowing or trusted_irrigation
             or trusted_irrigation_question) and str(
             localized.get("recipient_language") or "").casefold().startswith("af")
         if preserves_recipient_text:
@@ -496,6 +502,12 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         if canonical_subject:
             payload["canonical_read_subject"] = canonical_subject
             payload["canonical_read_status"] = "herd_question_answer_ready"
+        from modules.oom_sakkie.breeding_read_context import CONTRACT, READY_STATES, validated_subjects
+        if (specialist == "HERDMASTER" and result.get("status") in READY_STATES
+                and result.get("success") is True and result.get("writes_farm_data") is False
+                and result.get("protected_actions_performed") is False):
+            payload["canonical_breeding_context"] = {"contract": CONTRACT,
+                "subjects": validated_subjects(result.get("canonical_breeding_context"))}
     for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
                 "confirmation_prompt_sha256", "operation_id", "preview_hash",
                 "evidence_generation", "confirmation_token",

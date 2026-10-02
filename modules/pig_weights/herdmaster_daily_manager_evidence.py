@@ -8,11 +8,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 import hashlib
 import json
 import os
+import time
 
-from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read, connect_bounded_rootline_postgres
+from modules.oom_sakkie.bounded_postgres_read import ReadBudgetCursor, connect_bounded_read, connect_bounded_rootline_postgres
+from modules.pig_weights.herdmaster_weighing_reconciliation import _positive_finite, load_reconciliation_rows, reconcile_weighing
 
 PACKET_TYPE = "herdmaster.daily_manager_evidence.v1"
 ELIGIBILITY_VERSION = "HERDMASTER_WEEKLY_WEIGHT_ELIGIBILITY_V1"
@@ -29,23 +32,41 @@ INDIVIDUAL_WEIGHING_CANCEL_EVENTS = {
 
 def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
                                  lifecycle_events=(), mortality_packet=None,
+                                 reconciliation_rows=None,
                                  prior_mortality_digest="", prior_mortality_event_fingerprints=None,
                                  prior_mortality_consumed_at=None,
                                  analysis_date):
     """Build one deterministic zero-I/O specialist contract."""
     analysis_date = _day(analysis_date)
     window_start, window_end = _weight_window(analysis_date)
+    pigs = list(pigs or ())
+    reconciliation = reconcile_weighing(pigs, reconciliation_rows, analysis_date=analysis_date)
+    reconciled_by_id = {row["pig_id"]: row for row in reconciliation["rows"]}
     schedule_state = {}
-    for row in sorted(lifecycle_events or (), key=lambda value: (
-            _day(value.get("effective_at")), str(value.get("effective_at") or ""))):
+    schedule_rows = defaultdict(list)
+    future_scheduled = set()
+    for row in lifecycle_events or ():
         event_type = str(row.get("event_type") or "").strip().casefold()
         if (event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS
-                or event_type in INDIVIDUAL_WEIGHING_CANCEL_EVENTS) \
-                and window_start <= _day(row.get("effective_at")) <= window_end:
-            schedule_state[str(row.get("pig_id") or "")] = (
-                event_type, _day(row.get("effective_at")))
+                or event_type in INDIVIDUAL_WEIGHING_CANCEL_EVENTS):
+            pig_id = str(row.get("pig_id") or "")
+            if _lifecycle_instant(row["effective_at"]).date() <= analysis_date:
+                schedule_rows[pig_id].append(dict(row))
+            elif event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS and _lifecycle_instant(row["effective_at"]).date() <= window_end:
+                future_scheduled.add(pig_id)
+    schedule_conflicts = set()
+    current_schedule_sources = []
+    for pig_id, rows in sorted(schedule_rows.items()):
+        latest = max(_lifecycle_instant(row["effective_at"]) for row in rows)
+        rows = [row for row in rows if _lifecycle_instant(row["effective_at"]) == latest]
+        current_schedule_sources.extend(sorted(rows, key=_digest))
+        kinds = {str(row["event_type"]).strip().casefold() for row in rows}
+        if len(kinds) != 1:
+            schedule_conflicts.add(pig_id)
+        else:
+            schedule_state[pig_id] = (next(iter(kinds)), latest.date())
     scheduled = {pig_id for pig_id, (event_type, _effective_day) in schedule_state.items()
-                 if event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS}
+                 if event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS} | future_scheduled
     individually_due = {pig_id for pig_id, (event_type, effective_day) in schedule_state.items()
                         if event_type == "individual_weighing_due"
                         and effective_day <= analysis_date}
@@ -61,7 +82,11 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
         stage = str(row.get("animal_type") or "").strip().casefold()
         purpose = str(row.get("purpose") or "").strip().casefold()
         item = _identity(row)
-        if (status and status != "active") or on_farm is False:
+        check = reconciled_by_id.get(pig_id, {})
+        if pig_id in schedule_conflicts or "canonical_identity_conflict" in check.get("reasons", ()):
+            item["reason"] = "canonical identity or current weighing schedule conflicts"
+            groups["unknown"].append(item)
+        elif (status and status != "active") or on_farm is False:
             item["reason"] = "canonical pig is not both Active and on-farm"
             groups["inactive_off_farm"].append(item)
         elif not status or on_farm is None or not stage:
@@ -103,7 +128,8 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
         for row in rows:
             daily[_day(row.get("weight_date"))].append(row)
         conflict_days = [day for day, values in daily.items()
-                         if len({value.get("weight_kg") for value in values}) > 1]
+                         if len({value.get("weight_kg") for value in values}) > 1
+                         or any(not _positive_finite(value.get("weight_kg")) for value in values)]
         if conflict_days:
             conflicts.append({**_identity(pig_by_id[pig_id]),
                               "dates": [day.isoformat() for day in sorted(conflict_days)]})
@@ -121,7 +147,7 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
     findings = []
     for pig_id, current in governed_current.items():
         prior = _latest_unconflicted(prior_by_pig.get(pig_id, ()))
-        if prior is None or prior.get("weight_kg") in (None, 0) or current.get("weight_kg") is None:
+        if prior is None or not _positive_finite(prior.get("weight_kg")) or not _positive_finite(current.get("weight_kg")):
             continue
         change = float(current["weight_kg"]) - float(prior["weight_kg"])
         pct = 100 * change / float(prior["weight_kg"])
@@ -149,8 +175,13 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
             "status": "conflicting" if conflicts else "complete" if denominator and not missing
                       else "unknown" if not denominator and groups["unknown"] else "partial"},
         "missing_eligible_tagged": missing,
-        "individual_weighing_due_now": [row for row in missing
-                                         if row["pig_id"] in individually_due],
+        "individual_weighing_due_now": [row for row in groups["eligible"]
+            if row["pig_id"] in individually_due and row["pig_id"] not in schedule_conflicts
+            and reconciliation["state"] == "checked"
+            and reconciled_by_id.get(row["pig_id"], {}).get("state") == "current_on_farm"],
+        "individual_schedule_sources": current_schedule_sources,
+        "individual_schedule_conflicts": sorted(schedule_conflicts),
+        "reconciliation": reconciliation,
         "breeding_excluded": groups["breeding_excluded"],
         "untagged_excluded": groups["untagged"],
         "inactive_off_farm": groups["inactive_off_farm"],
@@ -217,13 +248,15 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
     """Load canonical Supabase truth through bounded read-only sessions."""
     analysis_date = _day(analysis_date)
     window_start, window_end = _weight_window(analysis_date)
+    deadline = time.monotonic() + 10
     reader = connect_bounded_read if include_mortality else connect_bounded_rootline_postgres
     with reader(
             database_url=database_url or os.environ.get("DATABASE_URL"),
             connect=connect) as connection:
-        with connection.cursor() as cursor:
-            if not include_mortality:
-                cursor.execute("set transaction isolation level repeatable read")
+        with connection.cursor() as raw_cursor:
+            raw_cursor.execute("set transaction isolation level repeatable read")
+            raw_cursor.execute("set transaction read only")
+            cursor = ReadBudgetCursor(raw_cursor, deadline, failure_kind="herdmaster_daily_read_deadline")
             pigs = _rows(cursor, """select pig_id,tag_number,pig_name,status,on_farm,animal_type,purpose
                 from public.current_canonical_pigs order by pig_id limit 5001""")
             window_weights = _rows(cursor, """select weight_event_id,pig_id,weight_date,weight_kg
@@ -236,15 +269,33 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                 from public.pig_weight_events event join latest_day
                   on latest_day.pig_id=event.pig_id and latest_day.weight_date=event.weight_date
                 order by event.pig_id,event.weight_event_id limit 10001""", (window_start,))
-            lifecycle = _rows(cursor, """select pig_id,lifecycle_event_type as event_type,effective_at
-                from public.pig_lifecycle_events where effective_at::date between %s and %s
-                order by effective_at,lifecycle_event_id limit 5001""", (window_start, window_end))
+            lifecycle = _rows(cursor, """with current_events as (
+                select lifecycle_event_id,pig_id,lifecycle_event_type as event_type,effective_at,
+                  dense_rank() over (partition by pig_id order by effective_at desc) as recency
+                from public.pig_lifecycle_events
+                where lifecycle_event_type=any(%s) and effective_at < %s), future_events as (
+                select lifecycle_event_id,pig_id,lifecycle_event_type as event_type,effective_at
+                from public.pig_lifecycle_events
+                where lifecycle_event_type=any(%s) and effective_at >= %s and effective_at < %s)
+              select lifecycle_event_id,pig_id,event_type,effective_at from current_events where recency=1
+              union all select * from future_events
+              order by effective_at,lifecycle_event_id limit 5001""",
+                (sorted(INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS | INDIVIDUAL_WEIGHING_CANCEL_EVENTS),
+                 datetime.combine(analysis_date + timedelta(days=1), datetime.min.time(),
+                     tzinfo=ZoneInfo('Africa/Johannesburg')),
+                 sorted(INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS),
+                 datetime.combine(analysis_date + timedelta(days=1), datetime.min.time(),
+                     tzinfo=ZoneInfo('Africa/Johannesburg')),
+                 datetime.combine(max(window_end, analysis_date) + timedelta(days=1), datetime.min.time(),
+                     tzinfo=ZoneInfo('Africa/Johannesburg'))))
             if (len(pigs) > 5000 or len(window_weights) > 10000
                     or len(prior_weights) > 10000 or len(lifecycle) > 5000):
                 raise RuntimeError("herdmaster_daily_evidence_row_bound_exceeded")
+            reconciliation_rows = load_reconciliation_rows(cursor, pigs, analysis_date)
             if not include_mortality:
                 return build_daily_manager_evidence(pigs=pigs, window_weights=window_weights,
-                    prior_weights=prior_weights, lifecycle_events=lifecycle, analysis_date=analysis_date)
+                    prior_weights=prior_weights, lifecycle_events=lifecycle,
+                    reconciliation_rows=reconciliation_rows, analysis_date=analysis_date)
             owners = tuple(dict.fromkeys(str(value) for value in
                 (owner_user_ids or (owner_user_id,)) if str(value or "").strip()))
             owner_hashes = [hashlib.sha256(value.encode()).hexdigest() for value in owners]
@@ -293,6 +344,7 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
     return build_daily_manager_evidence(pigs=pigs,
         window_weights=window_weights, prior_weights=prior_weights,
         lifecycle_events=lifecycle, mortality_packet=mortality,
+        reconciliation_rows=reconciliation_rows,
         prior_mortality_digest=prior_digest,
         prior_mortality_event_fingerprints=prior_event_fingerprints,
         prior_mortality_consumed_at=prior_consumption_at,
@@ -390,6 +442,14 @@ def _instant(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
+
+
+def _lifecycle_instant(value):
+    instant = _instant(value)
+    if instant is None:
+        raise ValueError("weighing_lifecycle_timestamp_invalid")
+    zone = ZoneInfo("Africa/Johannesburg")
+    return instant.replace(tzinfo=zone) if instant.tzinfo is None else instant.astimezone(zone)
 
 
 def _digest(value):

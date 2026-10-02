@@ -1105,6 +1105,23 @@ Current Stage 4 surface:
 - Human daily rendering: `modules/oom_sakkie/rootline_daily_presentation.py`
 # Oom Sakkie daily farm management
 
+- `modules/pig_weights/herdmaster_weighing_reconciliation.py` — bounded,
+  read-only current pig/weight/sale/order/outlet comparison used by the existing
+  daily producer and direct weighing reader. It retains source identities,
+  allocation holds and contradictions; it does not infer exits or authorize
+  weighing from absent weekly records. The same weekly manager case owns the
+  result. Unit and isolated PostgreSQL coverage live in
+  `tests/test_herdmaster_weighing_reconciliation.py` and
+  `tests/test_herdmaster_weighing_reconciliation_postgres.py`.
+- `modules/oom_sakkie/breeding_read_context.py` — bounded canonical identities
+  behind the selected breeding-plan subjects. The request runtime and family
+  lifecycle retain these only with the read-only result; the semantic front
+  door uses current acknowledged owner/card context and rereads canonical truth.
+  Implicit follow-ups keep the original identity after alias reuse; ambiguous
+  or legacy prose-only references clarify. Explicit current references still
+  resolve normally. No farm-action authority comes from conversation context.
+  Bilingual end-to-end regressions are in
+  `tests/test_oom_sakkie_conversation_followup.py`.
 - `modules/pig_weights/herdmaster_daily_manager_evidence.py` — versioned,
   read-only HERDMASTER producer for weekly tagged-cohort coverage, separate
   breeding/untagged/inactive/Unknown classifications, descriptive material
