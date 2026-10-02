@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Lifecycle: `active` current-state evidence; non-doctrine.
-Updated: 2026-10-02; concise brief and two fresh herd readers verified; operational continuation WORKING.
+Updated: 2026-10-02; PR1370 live with natural reconciliation; cancelled-history correction WORKING.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
@@ -23,10 +23,14 @@ sibling mission directory, not in the public repository.
   family receipts and current canonical records. Physical pen capacity units
   and full agent autonomy are not inferred from those comparisons.
 - The same mission continues in the existing application worktree on
-  `codex/herdmaster-operational-readiness-20261002`, based on main`d840bdec`.
-  The combined candidate performs read-only weighing reconciliation and retains
-  canonical animal identity in breeding follow-ups, including delivered bilingual
-  clarification. Qualification and genuine postrelease continuity remain open.
+  `codex/herd-weighing-retired-order-20261002`, based on main`59c5b50f`.
+  PR1370 is merged and verified live; its natural manager cycle recorded the
+  canonical weighing comparison. Its registration/deployment must not repeat.
+  A current read matched that comparison and traced eleven eligible identity
+  warnings to explicitly cancelled order lines retaining historical tags.
+  The narrow successor retains this history without making it current identity
+  work. Active/unknown states, source contradictions and confirmation fences
+  remain contained. Genuine successor conversations remain open.
   There is one coordinator, one application branch and one protected release lane.
 
 ## Prior checkpoint — superseded presentation work

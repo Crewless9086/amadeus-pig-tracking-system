@@ -23,9 +23,13 @@ PR1369's concise farm brief is merged at
 `d840bdecb66b1f4cae6c47806a7a05e09a9abd5a` and verified live on 2 October.
 The owner's fresh Telegram reply matched the retained delivery exactly.
 Fresh owner-origin herd-count and pen-capacity questions also have matching
-delivery receipts, typed context and current canonical counts. Weighing
-reconciliation and breeding follow-up identity repairs are being qualified
-together from this revision. Fresh protected confirmations, remaining genuine
+delivery receipts, typed context and current canonical counts. PR1370's weighing
+comparison and breeding follow-up identity repair are live at
+`59c5b50f69830eb5b0f77b218343b013f74f070e`. Natural cycles picked up the new
+weighing comparison, and an independent canonical read matched its evidence.
+A narrow follow-up corrects cancelled order lines with historical tags being
+treated as current identity problems; their source history is preserved.
+Fresh protected confirmations, remaining genuine
 conversation journeys and full agent autonomy remain unproven.
 ROOTLINE is the next proposed focus after HERDMASTER readiness.
 

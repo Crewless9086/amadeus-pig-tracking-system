@@ -46,11 +46,13 @@ def row(packet, pig_id="PIG-SYNTHETIC-1"):
     return next(row for row in packet["weight"]["reconciliation"]["rows"] if row["pig_id"] == pig_id)
 
 
-def test_real_snapshot_checks_cancelled_completed_parent_orders_without_inventing_exit(weighing_store):
+@pytest.mark.parametrize("parent,tag", [("Completed", "T1"), ("Completed", "OLD-TAG"),
+                                     ("Cancelled", "OLD-TAG")])
+def test_real_snapshot_checks_cancelled_completed_parent_orders_without_inventing_exit(weighing_store, parent, tag):
     store = weighing_store
     with store() as db, db.cursor() as cur:
-        cur.execute("insert into public.orders values('O1','Completed',%s)", (NOW,))
-        cur.execute("insert into public.order_lines values('OL1','O1','PIG-SYNTHETIC-1','T1','Cancelled','Not_Reserved',%s)", (NOW,))
+        cur.execute("insert into public.orders values('O1',%s,%s)", (parent, NOW))
+        cur.execute("insert into public.order_lines values('OL1','O1','PIG-SYNTHETIC-1',%s,'Cancelled','Not_Reserved',%s)", (tag, NOW))
         cur.execute("insert into public.pig_weight_events values('W1','PIG-SYNTHETIC-1','2026-10-01',42)")
     first, second = load(store), load(store)
     assert first["material_digest"] == second["material_digest"]
@@ -58,6 +60,8 @@ def test_real_snapshot_checks_cancelled_completed_parent_orders_without_inventin
     assert row(first)["state"] == "current_on_farm"
     assert row(first)["latest_weight"]["kg"] == 42
     assert row(first)["sources"]["orders"][0]["order_line_id"] == "OL1"
+    assert row(first)["sources"]["orders"][0]["tag_number"] == tag
+    assert row(first)["reasons"] == []
     assert first["weight"]["individual_weighing_due_now"] == []
     with store() as db, db.cursor() as cur:
         for table in ("pig_lifecycle_events", "oom_protected_action_claims", "oom_manager_cases"):

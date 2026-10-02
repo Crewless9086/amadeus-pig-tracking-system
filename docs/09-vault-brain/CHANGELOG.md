@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-10-02 - Cancelled order history in weighing comparisons
+
+- Retain old order rows and tag snapshots without promoting explicitly cancelled
+  lines into current identity work. Preserve active/unknown-state containment,
+  canonical conflicts, outlet checks and protected weighing authority.
+- Record PR1370's verified web release, natural reconciliation and remaining
+  genuine conversation gates in the shared operational checkpoint.
+
 ## 2026-10-02 - HERDMASTER operational repair source navigation
 
 - Register the existing weighing producer's canonical commercial reconciliation

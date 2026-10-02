@@ -105,6 +105,47 @@ def test_exact_reservation_is_a_hold_and_cancelled_reservation_with_active_outle
     assert "reservation_source_conflict" in packet(rows=rows)["weight"]["reconciliation"]["rows"][0]["reasons"]
 
 
+@pytest.mark.parametrize("parent", ["Cancelled", "Completed", "Approved"])
+def test_cancelled_order_keeps_historical_tag_without_creating_current_identity_work(parent):
+    order = {"pig_id": pig()["pig_id"], "tag_number": "OLD-TAG", "order_id": "O1",
+             "order_line_id": "OL1", "line_status": "Cancelled", "order_status": parent}
+    before = deepcopy(order)
+    value = packet(rows={"orders": [order]})
+    check = value["weight"]["reconciliation"]["rows"][0]
+    assert check["state"] == "current_on_farm" and check["reasons"] == []
+    assert check["sources"]["orders"] == [before] and order == before
+    assert check["canonical"]["on_farm"] is True
+    assert check["authorizes_routine_weighing"] is False
+    assert "0 unresolved" in consume_daily_manager_evidence(value, observed_at=NOW).work_items[0].next_action
+    changed_history = {**order, "tag_number": "DIFFERENT-OLD-TAG"}
+    assert packet(rows={"orders": [changed_history]})["material_digest"] != value["material_digest"]
+
+
+@pytest.mark.parametrize("line,parent", [("Reserved", "Approved"), ("Confirmed", "Cancelled"),
+    ("Reserved", "Rejected"), ("Collected", "Completed"), (None, "Approved"),
+    ("Unsupported", "Approved")])
+def test_non_cancelled_old_tag_remains_unresolved_even_with_terminal_parent(line, parent):
+    order = {"pig_id": pig()["pig_id"], "tag_number": "OLD-TAG", "order_id": "O1",
+             "order_line_id": "OL1", "line_status": line, "order_status": parent}
+    check = packet(rows={"orders": [order]})["weight"]["reconciliation"]["rows"][0]
+    assert check["state"] == "unresolved" and "orders_identity_unproven" in check["reasons"]
+
+
+def test_cancelled_history_does_not_hide_unknown_status_active_allocation_or_outlet_conflict():
+    old = {"pig_id": pig()["pig_id"], "tag_number": "OLD-TAG", "order_id": "O1",
+           "order_line_id": "OL1", "line_status": "Cancelled", "order_status": "Unsupported"}
+    check = packet(rows={"orders": [old]})["weight"]["reconciliation"]["rows"][0]
+    assert check["state"] == "unresolved" and "order_status_unknown" in check["reasons"]
+    old["order_status"] = "Cancelled"
+    active = {**old, "tag_number": "T1", "order_id": "O2", "order_line_id": "OL2",
+              "line_status": "Reserved", "order_status": "Approved"}
+    assert packet(rows={"orders": [old, active]})["weight"]["reconciliation"]["rows"][0]["state"] == "allocation_hold"
+    outlet = {"pig_id": pig()["pig_id"], "outlet_assignment_id": "OUT1",
+              "outlet_type": "reservation", "source_record_id": "OL1", "active": True}
+    check = packet(rows={"orders": [old], "outlets": [outlet]})["weight"]["reconciliation"]["rows"][0]
+    assert check["state"] == "unresolved" and "reservation_source_conflict" in check["reasons"]
+
+
 @pytest.mark.parametrize("foreign", [None, "PIG-FOREIGN"])
 def test_tag_only_or_foreign_sale_identity_remains_unresolved(foreign):
     value = packet(rows={"sales": [{"pig_id": foreign, "tag_number": "T1",
