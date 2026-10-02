@@ -55,7 +55,7 @@ def test_prebirth_observation_becomes_historical_after_same_sow_canonical_birth(
     assert row["latest_mating_id"] is None and row["expected_farrowing"] is None
     assert row["proposed_placement_date"] is None
     assert "prepare and monitor" not in render_breeding_plan(result)[0]
-    assert "continue nursing" in render_breeding_plan(result)[0]
+    assert "Still nursing; wait for recorded weaning" in render_breeding_plan(result)[0]
 
 
 @pytest.mark.parametrize("when", [
@@ -172,7 +172,9 @@ def test_owner_breeding_reason_uses_word_boundaries_and_escapes_markup():
     answer, _ = render_breeding_plan({"tasks": [{"tag_number": "Sow One", "task_group": "review evidence", "why": reason}]})
     assert "&lt;unknown&gt;" in answer and "<unknown>" not in answer
     why_line = next(line for line in answer.splitlines() if "&lt;unknown&gt;" in line)
-    assert why_line.rstrip().endswith("attributable.")
+    source_note = why_line.split("Source note: ", 1)[1].split(" Complete placement evidence", 1)[0]
+    assert source_note.rstrip().endswith("attributable.")
+    assert "Complete placement evidence is unavailable." in why_line
     assert "attribu." not in why_line
 
 

@@ -9,7 +9,7 @@ from typing import Any, Callable, Mapping
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.breeding_read_context import selected_subjects
-from modules.oom_sakkie.owner_response_composer import _clip as clip_owner_text
+from modules.oom_sakkie.breeding_plan_presentation import breeding_task_lines
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 
 CONTRACT_VERSION = "oom_sakkie_herdmaster_request_v1"
@@ -97,7 +97,7 @@ def handle_herdmaster_request(parsed: Mapping[str, Any], authority: Any, *,
 
 
 def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
-    from modules.oom_sakkie.family_presentation import animal_label, date_label, heading
+    from modules.oom_sakkie.family_presentation import animal_label, heading
     tasks = [dict(row) for row in packet.get("tasks") or ()
              if isinstance(row, Mapping) and not row.get("completed")]
     tasks.sort(key=lambda row: (int(row.get("priority") or 99),
@@ -107,41 +107,29 @@ def render_breeding_plan(packet: Mapping[str, Any], *, language="en"):
     af = str(language).casefold().startswith("af")
     lines = [heading("Huidige teelplan" if af else "Current breeding plan", emoji="🐷"), ""]
     selected = tasks[:6]
+    question = None
+    aliases = [animal_label(row, language=language)[:60].casefold() for row in tasks]
     for row in selected:
-        name = html.escape(animal_label(row, language=language)[:60])
-        action = html.escape(str(row.get("task_group") or row.get("provisional_recommendation") or "Needs Data")[:90])
-        why = clip_owner_text(row.get("why"), 120)
-        date = date_label(row["proposed_placement_date"], language=language) if row.get("proposed_placement_date") else ""
-        male = ((row.get("male_recommendation") or {}).get("recommended") or {})
-        boar = str(male.get("tag_number") or "")
-        if date and boar:
-            lines.append(f"• <b>{name}</b> — " +
-                (f"beplande plasing {html.escape(date)}; beer {html.escape(boar)}." if af else
-                 f"planned placement {html.escape(date)}; boar {html.escape(boar)}."))
-        else:
-            lines.append(f"• <b>{name}</b> — " +
-                (f"opvolg: {action}. Geen bewys-gesteunde plasing is bevestig nie." if af else
-                 f"next: {action}. No evidence-supported placement is confirmed."))
-        if why:
-            lines.append(("  Bronrede: " if af else "  Reason: ") + why)
-        checks = [html.escape(str(value)[:40]) for value in row.get("required_checks") or []]
-        if checks:
-            lines.append(("  Ontbrekende waarnemings: " if af else "  Missing observations: ") + ", ".join(checks[:3]))
+        task_lines, next_question = breeding_task_lines(packet, row, language=language)
+        lines.extend(task_lines)
+        alias = animal_label(row, language=language)[:60].casefold()
+        if alias not in {"unknown animal", "onbekende dier"} and aliases.count(alias) == 1:
+            question = question or next_question
     if not selected:
         lines.append("• Geen huidige teeltaak is uit die kanonieke kuddebewyse verskuldig nie." if af
                      else "• No current breeding task is due from the canonical herd evidence.")
     if len(tasks) > len(selected):
         lines.append((f"Nog {len(tasks)-len(selected)} teeltaak/-take bly aangeteken." if af else
                       f"Another {len(tasks)-len(selected)} breeding task(s) remain recorded."))
-    today_names = [html.escape(str(row.get("tag_number") or "Unnamed")) for row in tasks
+    today_names = [html.escape(animal_label(row, language=language)[:60]) for row in tasks
                    if row.get("days_since_weaning") == 0]
     if today_names:
         lines += ["", "<b>Speenwerk vandag</b>" if af else "<b>Today's weanings</b>",
                   ("Ingesluit: " if af else "Included: ") + ", ".join(today_names[:6]) + (f" (+{len(today_names)-6})" if len(today_names) > 6 else "") + "."]
-    lines += ["", "Geen paring is uitgevoer nie; finale plasing bly beskerm." if af
-              else "No mating was performed; final placement remains protected.",
-              "HERDMASTER herbeoordeel wanneer kuddebewyse verander." if af
-              else "HERDMASTER will reassess when herd evidence changes."]
+    lines += ["", "Blootstelling bevestig nie dekking of dragtigheid nie. Geen nuwe paring is aangeteken nie." if af
+              else "Exposure does not confirm mating or pregnancy. No new mating was recorded."]
+    if question:
+        lines += ["", question]
     answer="\n".join(lines)
     if len(answer) > 3900:
         raise ValueError("herdmaster_request_render_budget_exceeded")

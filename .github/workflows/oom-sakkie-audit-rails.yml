@@ -319,7 +319,7 @@ jobs:
       - name: Run canonical conversational follow-up gates
         run: |
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_conversation_followup_postgres.py
-          DATABASE_URL="" PYTHON_DOTENV_DISABLED="1" python -m pytest -q tests/test_oom_sakkie_conversation_followup.py tests/test_oom_sakkie_manager_question_runtime.py tests/test_herdmaster_ordinary_herd_question.py tests/test_oom_sakkie_herd_read_queries.py tests/test_herdmaster_breeding_chronology.py tests/test_herdmaster_breeding_operating_loop.py tests/test_herdmaster_breeding_exposure_recovery.py tests/test_herdmaster_breeding_attention_service.py tests/test_oom_sakkie_herdmaster_request_runtime.py tests/test_oom_sakkie_farm_manager_loop.py
+          DATABASE_URL="" PYTHON_DOTENV_DISABLED="1" python -m pytest -q tests/test_oom_sakkie_conversation_followup.py tests/test_oom_sakkie_manager_question_runtime.py tests/test_herdmaster_ordinary_herd_question.py tests/test_oom_sakkie_herd_read_queries.py tests/test_herdmaster_breeding_chronology.py tests/test_herdmaster_breeding_operating_loop.py tests/test_herdmaster_breeding_exposure_recovery.py tests/test_herdmaster_breeding_attention_service.py tests/test_oom_sakkie_herdmaster_request_runtime.py tests/test_oom_sakkie_farm_manager_loop.py tests/test_oom_sakkie_weighing_presentation.py tests/test_oom_sakkie_breeding_plan_presentation.py
 
       - name: Run mortality conversation and confirmation gates
         env:

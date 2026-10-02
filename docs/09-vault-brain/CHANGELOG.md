@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-10-02 - Clear HERDMASTER weighing and breeding answers
+
+- Apply the existing concise family-message standard to specific weighing and
+  breeding answers. Separate reporting coverage from due work and wider
+  record-reconciliation issues; preserve recorded exposure, proposed placement,
+  missing facts and protected decisions as distinct states.
+- Keep the canonical task selection, subject context and farm-write boundaries.
+  Generic owner review is not itself a missing physical observation.
+- Reconcile the shared status with PR1371 live proof and the newly received
+  owner conversations; presentation tests do not prove full agent autonomy.
+
 ## 2026-10-02 - Cancelled order history in weighing comparisons
 
 - Retain old order rows and tag snapshots without promoting explicitly cancelled

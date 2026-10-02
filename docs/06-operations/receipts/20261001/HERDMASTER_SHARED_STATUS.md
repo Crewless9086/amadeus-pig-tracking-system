@@ -3,7 +3,37 @@
 Lifecycle: `active` current-state evidence; non-doctrine. This is a dated shared
 checkpoint, not runtime authority or certification of every repository file.
 
-## Current checkpoint — 2 October, operational continuation
+## Current checkpoint — 2 October, direct owner replies
+
+PR1371 is merged and verified live at
+`c0387dad99ca07732294d1d9d5d5a742f43e1992`. Its bounded live canonical comparison
+cleared eleven false cancelled-order identity warnings and preserved their
+original source history. Two natural cycles retained the corrected evidence
+without exceptions or duplicate messages. That release is consumed.
+
+The owner's new weighing and breeding questions received relevant specialist
+answers. Both match retained answer text, typed context and stored provider
+acknowledgements. Two later natural cycles completed without exceptions.
+This proves these read journeys, not complete autonomy. The weighing answer
+mixed current-group coverage with wider register totals and unrelated latest
+weights; the breeding answer repeated generic review and placement wording.
+The correction presents the existing typed evidence in concise English/Afrikaans
+bullets and retains selected animal identities, material uncertainty and holds.
+It cannot create a task from an old reporting gap, invent a physical observation,
+confirm pregnancy from exposure, or record a protected farm action.
+
+Local tests, hosted qualification, release and a later genuine conversation are
+separate gates. Full HERDMASTER readiness remains open. In particular, the
+previously documented individual-weighing scheduling limitation remains; a
+clearer answer does not establish a working schedule or routine-weighing authority.
+Existing physical observations and protected journeys retain their own gates.
+Displayed breeding subject context supports bounded read follow-up; a bare numeric
+body-condition reply is not a newly proven observation or save flow. Any physical
+report must retain its animal, date, provenance and existing confirmation rules.
+
+The following PR1370/PR1371 preparation checkpoints are preserved as history.
+
+## Earlier checkpoint — 2 October, operational continuation
 
 PR1370 is now merged at `59c5b50f69830eb5b0f77b218343b013f74f070e` and the
 existing web service is verified live. Exact hosted tests, encrypted registration,

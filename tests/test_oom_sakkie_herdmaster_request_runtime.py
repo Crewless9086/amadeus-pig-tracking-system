@@ -155,3 +155,54 @@ def test_definitely_not_sent_delivery_gets_one_content_bound_retry(monkeypatch):
     assert first["delivery_definitely_not_sent"] is True
     assert second["telegram_sends"]==1 and third["telegram_sends"]==0
     assert attempts==["first","second"]
+
+
+def test_producer_display_keeps_exact_selected_context_and_delivered_replay_in_both_languages():
+    from copy import deepcopy
+    from tests.test_oom_sakkie_breeding_plan_presentation import production_packet
+    for language in ('en', 'af'):
+        source = production_packet(); before = deepcopy(source)
+        incoming = parsed(language=language); incoming['output_language'] = language
+        events = store()
+        result, status = handle_herdmaster_request(incoming, issue_gateway_owner_authority(OWNER, OWNER),
+            canonical_loader=lambda: source, event_store=events)
+        assert status == 200 and result['read_only'] is True
+        assert result['selected_task_ids'] == [r['task_id'] for r in source['tasks'][:6]]
+        assert result['canonical_breeding_context']['subjects'] == [
+            {'pig_id': r['pig_id'], 'display_alias': r['tag_number']} for r in source['tasks'][:6]]
+        assert source == before
+        instruction = ("Include her name and the observation date in your reply." if language == "en" else
+                       "Sluit haar naam en die waarnemingsdatum by jou antwoord in.")
+        assert result["answer"].count(instruction) == 1
+        assert len(result["canonical_breeding_context"]["subjects"]) == 6
+        lifecycle, rows = family_store(); sends = []
+        delivered = deliver_family_result(incoming, result, specialist='HERDMASTER',
+            mission_id=result['mission_id'], card_mission_id=result['card_mission_id'], event_store=lifecycle,
+            sender=lambda chat,text: (sends.append(text) or {'success': True, 'telegram_message_id': '4003'}))
+        assert delivered['telegram_sends'] == 1 and sends == [result['answer']]
+        replay, _ = handle_herdmaster_request(incoming, issue_gateway_owner_authority(OWNER, OWNER),
+            canonical_loader=lambda: (_ for _ in ()).throw(AssertionError('replay must not recompute')), event_store=events)
+        assert replay['answer'] == result['answer'] and replay['canonical_breeding_context'] == result['canonical_breeding_context']
+        duplicate = deliver_family_result(incoming, replay, specialist='HERDMASTER',
+            mission_id=result['mission_id'], card_mission_id=result['card_mission_id'], event_store=lifecycle,
+            sender=lambda *_: (_ for _ in ()).throw(AssertionError('must not resend')))
+        assert duplicate['telegram_sends'] == 0
+        assert result['writes_mating'] is False and result['writes_farm_data'] is False
+        assert result['protected_actions_performed'] is False
+
+
+
+def test_persisted_old_format_answer_and_digest_remain_unchanged_on_same_inbound(monkeypatch):
+    import modules.oom_sakkie.herdmaster_request_runtime as runtime
+    original = runtime.render_breeding_plan
+    old_answer = "<b>Current breeding plan</b>\n\n• Amber — next: owner review."
+    monkeypatch.setattr(runtime, "render_breeding_plan", lambda *_a, **_kw: (old_answer, []))
+    memory = store()
+    first, _ = handle_herdmaster_request(parsed(), issue_gateway_owner_authority(OWNER, OWNER),
+        canonical_loader=packet, event_store=memory)
+    monkeypatch.setattr(runtime, "render_breeding_plan", original)
+    replay, _ = handle_herdmaster_request(parsed(), issue_gateway_owner_authority(OWNER, OWNER),
+        canonical_loader=lambda: (_ for _ in ()).throw(AssertionError("no recompute")), event_store=memory)
+    assert replay["answer"] == first["answer"] == old_answer
+    assert replay["result_digest"] == first["result_digest"]
+    assert replay["selected_task_ids"] == first["selected_task_ids"]
