@@ -92,9 +92,13 @@ def reconcile_weighing(pigs, evidence, *, analysis_date):
         if not pig_id or len({_digest(row) for row in copies}) != 1 or len(by_tag[tag]) > 1:
             reasons.append("canonical_identity_conflict")
         for kind in ("sales", "orders"):
+            # Cancelled lines retain their original tag snapshot as history.
+            # They cannot create a current identity task or allocation hold.
+            identity_rows = [row for row in sources[kind]
+                if kind != "orders" or _text(row.get("line_status")) != "cancelled"]
             if any(str(row.get("pig_id") or "") != pig_id or
                    (_text(row.get("tag_number")) not in {"", "unknown", "onbekend", tag})
-                   for row in sources[kind]):
+                   for row in identity_rows):
                 reasons.append(kind + "_identity_unproven")
         status, on_farm = _text(pig.get("status")), pig.get("on_farm")
         if status == "active" and on_farm is True:
