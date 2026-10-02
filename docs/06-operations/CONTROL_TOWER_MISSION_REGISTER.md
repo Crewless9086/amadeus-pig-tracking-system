@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Lifecycle: `active` current-state evidence; non-doctrine.
-Updated: 2026-10-02; concise farm-brief correction is WORKING.
+Updated: 2026-10-02; concise brief and two fresh herd readers verified; operational continuation WORKING.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
@@ -14,6 +14,22 @@ be executed again. Detailed private working evidence stays in the assigned
 sibling mission directory, not in the public repository.
 
 ## Current work and authority
+
+- The [current operational checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md#current-checkpoint--2-october-operational-continuation)
+  supersedes the PR1369 presentation work described below. PR1369 is merged
+  at`d840bdecb66b1f4cae6c47806a7a05e09a9abd5a` and verified live. Its exact
+  owner-visible concise reply is accepted; its release actions must not repeat.
+  Fresh herd-count and pen-capacity replies also match provider-acknowledged
+  family receipts and current canonical records. Physical pen capacity units
+  and full agent autonomy are not inferred from those comparisons.
+- The same mission continues in the existing application worktree on
+  `codex/herdmaster-operational-readiness-20261002`, based on main`d840bdec`.
+  The combined candidate performs read-only weighing reconciliation and retains
+  canonical animal identity in breeding follow-ups, including delivered bilingual
+  clarification. Qualification and genuine postrelease continuity remain open.
+  There is one coordinator, one application branch and one protected release lane.
+
+## Prior checkpoint — superseded presentation work
 
 - The original eighteen consolidation commits were integrated through protected
   PR1341 at `3e77d3434b071078a41917a68fa63f2fa7b314ec`. Cleanup and retention are

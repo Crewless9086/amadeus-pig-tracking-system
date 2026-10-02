@@ -102,11 +102,13 @@ def test_weight_question_uses_governed_schedules_conflict_and_eligibility():
     pigs = [{"pig_id": f"P{i}", "tag_number": str(100+i), "status": "Active", "on_farm": True,
         "animal_type": "Sow" if i == 3 else "Grower"} for i in range(1, 5)]
     packet = build_daily_manager_evidence(pigs=pigs, analysis_date=date(2026,9,29), prior_weights=[],
+        reconciliation_rows={},
         window_weights=[{"pig_id": "P4", "weight_date": "2026-09-29", "weight_kg": kg} for kg in (10,11)],
         lifecycle_events=[{"pig_id": "P1", "event_type": "individual_weighing_due", "effective_at": "2026-09-29"}])
     result = answer("weight_attention", packet)
     assert "schedule is due: 101" in result["answer"]
-    assert "reconcile sale/order status before instructing reweighing: 102" in result["answer"]
+    assert "records checked" in result["answer"]
+    assert "do not authorize a new routine weighing instruction" in result["answer"]
     assert "Conflicting weights need evidence review: 1 — 104" in result["answer"]
     assert "1 breeding animal(s)" in result["answer"]
     assert "schedule is due: 104" not in result["answer"]

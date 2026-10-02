@@ -26,6 +26,7 @@ def build(*, pigs=None, weights=None, prior=(), lifecycle=(), mortality=None,
     return build_daily_manager_evidence(pigs=pigs or [pig()],
         window_weights=weights or [], prior_weights=prior,
         lifecycle_events=lifecycle, mortality_packet=mortality,
+        reconciliation_rows={} if lifecycle else None,
         prior_mortality_digest=prior_mortality,
         prior_mortality_event_fingerprints=prior_mortality_event_fingerprints,
         prior_mortality_consumed_at=prior_mortality_consumed_at,
@@ -388,7 +389,13 @@ def test_loader_uses_bounded_read_only_queries_and_latest_prior_day_only():
     assert calls["kwargs"]["connect_timeout"] == 3
     assert any("weight_date between" in sql for sql, _ in calls["queries"])
     assert any("with latest_day" in sql for sql, _ in calls["queries"])
-    assert all(sql.lstrip().casefold().startswith(("select", "with")) for sql, _ in calls["queries"])
+    assert all(sql.lstrip().casefold().startswith(("select", "with")) or sql in {
+        "set transaction isolation level repeatable read", "set transaction read only"}
+        for sql, _ in calls["queries"])
+    assert any("from public.sales_transaction_items" in sql for sql, _ in calls["queries"])
+    assert any("from public.order_lines" in sql for sql, _ in calls["queries"])
+    assert any("from public.pig_active_outlets" in sql for sql, _ in calls["queries"])
+    assert packet["weight"]["reconciliation"]["state"] == "checked"
     assert packet["weight"]["current_snapshot"]["status"] == "complete"
     assert packet["mortality"]["digest_changed"] is False
 
