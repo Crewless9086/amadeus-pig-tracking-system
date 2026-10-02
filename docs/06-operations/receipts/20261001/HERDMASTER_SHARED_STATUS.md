@@ -5,6 +5,28 @@ checkpoint, not runtime authority or certification of every repository file.
 
 ## Current checkpoint — 2 October, operational continuation
 
+PR1370 is now merged at `59c5b50f69830eb5b0f77b218343b013f74f070e` and the
+existing web service is verified live. Exact hosted tests, encrypted registration,
+protected admission and normal merge passed. Ten other deployments and all
+eleven service settings remained unchanged. Its release actions are consumed.
+The first natural cycle picked up the new weighing comparison. A later current
+canonical read matched the stored reconciliation digest. All73 eligible animals
+have a latest recorded weight, while none has one in the29–30September window;
+these are different statements and do not create a new weighing instruction.
+
+Live verification also found eleven eligible identity warnings caused solely by
+historical tags in explicitly cancelled order lines. Their immutable animal IDs
+match. The narrow follow-up preserves the original rows/digests and exempts only
+cancelled lines from current order-identity warnings. Unknown statuses, other
+active allocations, canonical conflicts and active outlets referencing cancelled
+lines remain unresolved. Focused tests passed102, including16 PostgreSQL cases,
+without skips. This successor still needs hosted/release and live verification.
+Genuine new weighing and breeding-follow-up conversations have been requested;
+neither this comparison nor natural-cycle history proves complete autonomy.
+
+The following earlier PR1370 implementation checkpoint is retained as history;
+its unreleased-candidate instructions are superseded by the paragraph above.
+
 This checkpoint supersedes the open PR1369 presentation/release instructions
 in the historical section below; those actions are complete and must not repeat.
 PR1369 merged at `d840bdecb66b1f4cae6c47806a7a05e09a9abd5a`. The existing web
