@@ -7,6 +7,7 @@ specialist facts; it cannot invent evidence or acquire specialist authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import html
 import math
 from numbers import Real
@@ -114,16 +115,21 @@ def compose_manager_brief(brief, *, language="en") -> str:
     rows: dict[str, list[str]] = {}
     for item in brief.queue[:3]:
         domain = str(getattr(item, "domain", "") or "herd")
+        compact = _typed_brief_row(item, af)
+        if compact:
+            rows.setdefault(domain, []).append(compact)
+            continue
+        native = _native_brief_language(item, af)
         title = _clip(_local_text(getattr(item, "title", ""), af), 120)
-        if af and _local_text(getattr(item, "title", ""), af) == str(getattr(item, "title", "")):
+        if af and not native and _local_text(getattr(item, "title", ""), af) == str(getattr(item, "title", "")):
             title = "Bronitem (bronwoorde): " + title
         why = _clip(_local_text(getattr(item, "why", ""), af), 260)
         next_action = _clip(_local_text(getattr(item, "next_action", ""), af), 360)
         text = f"• <b>{title}</b>"
         if why:
-            text += f" — <i>Spesialisbewys (bronwoorde):</i> {why}" if af else f" — {why}"
-        if next_action and next_action != getattr(item, "genuine_question", ""):
-            label = "Spesialis se volgende stap (bronwoorde)" if af else "Next"
+            text += f" — <i>Spesialisbewys (bronwoorde):</i> {why}" if af and not native else f" — {why}"
+        if next_action and str(item.next_action).strip() != str(item.genuine_question).strip():
+            label = ("Volgende stap" if native else "Spesialis se volgende stap (bronwoorde)") if af else "Next"
             text += f"\n  {label}: {next_action}"
         rows.setdefault(domain, []).append(text)
     sections = tuple((section_names.get(domain, "Plaaswerk" if af else "Farm work"), tuple(values))
@@ -133,13 +139,119 @@ def compose_manager_brief(brief, *, language="en") -> str:
                      (("Geen ondersteunde familietaak is volgens huidige bewyse nodig nie." if af else
                        "No supported family action is due from current evidence."),)),)
     questions = [q for values in brief.questions.values() for q in values]
-    owner_question = (("Spesialisvraag (bronwoorde): " + str(questions[0])) if af and questions else
-                      (questions[0] if questions else ""))
+    question_item = next((item for item in brief.queue
+                         if questions and item.genuine_question == questions[0]), None)
+    native_question = bool(question_item and _native_brief_language(question_item, af))
+    owner_question = (("Spesialisvraag (bronwoorde): " + str(questions[0]))
+                      if af and questions and not native_question else (questions[0] if questions else ""))
     return _render(OwnerResponse("OOM SAKKIE — VANDAG SE PLAASBRIEF" if af else "OOM SAKKIE — TODAY'S FARM BRIEF", sections,
         owner_action=owner_question,
         reassessment=("Oom Sakkie sal herbeoordeel wanneer spesialisbewyse of 'n plaaswaarneming verander." if af else
                       "Oom Sakkie will reassess when specialist evidence or a farm observation changes."),
         language=language))
+
+
+def _native_brief_language(item, af):
+    return (item.provenance.specialist == "herdmaster"
+        and item.metadata.get("recipient_render_contract") == "herdmaster_whole_herd_recipient_v1"
+        and item.metadata.get("recipient_language") == ("af" if af else "en"))
+
+
+def _brief_date_range(start, end, af):
+    """Calendar dates only; never relabel a historical measurement as today."""
+    language = "af" if af else "en"
+    try:
+        first, last = date.fromisoformat(str(start)), date.fromisoformat(str(end))
+        if first > last:
+            raise ValueError("reversed_date_range")
+    except (TypeError, ValueError):
+        return "tydperk onbekend" if af else "period unknown"
+    if first == last:
+        return date_label(first, language=language)
+    if (first.year, first.month) == (last.year, last.month):
+        return f"{first.day}–{date_label(last, language=language)}"
+    return f"{date_label(first, language=language)} – {date_label(last, language=language)}"
+
+
+def _typed_brief_row(item, af):
+    """Small summaries of producer facts, never a parser of specialist prose."""
+    facts = item.metadata.get("brief_facts")
+    if not isinstance(facts, Mapping):
+        return ""
+    kind = facts.get("kind")
+    if kind == "farrowing_outcome_unconfirmed" and item.provenance.specialist == "herdmaster" \
+            and item.dedupe_key.startswith("herdmaster:reproductive-status:"):
+        labels = facts.get("labels")
+        if not isinstance(labels, list) or not labels or any(
+                not isinstance(label, str) or not label.strip() or len(label) > 80
+                or label.upper().startswith("PIG-") for label in labels):
+            return ""
+        names = (" en " if af else " & ").join(labels[:3])
+        if len(labels) > 3:
+            names += (f" en nog {len(labels)-3}" if af else f" and {len(labels)-3} more")
+        period = _brief_date_range(facts.get("window_start"), facts.get("window_end"), af)
+        return (f"• <b>{_safe(names)}:</b> " +
+                ("werpuitkoms onbevestig." if af else "farrowing outcome unconfirmed.") +
+                f"\n  {'Verwagte tydperk' if af else 'Expected window'}: {_safe(period)}.")
+    if kind == "weight_status_review" and item.provenance.specialist == "herdmaster" \
+            and item.dedupe_key == "herdmaster:weekly-weight-evidence":
+        counts = [facts.get(key) for key in ("covered", "eligible", "status_checks")]
+        if any(value is not None and (type(value) is not int or value < 0) for value in counts):
+            return ""
+        covered, eligible, checks = counts
+        if eligible is not None and any(value is not None and value > eligible for value in (covered, checks)):
+            return ""
+        unknown = "onbekend" if af else "unknown"
+        coverage = "/".join(unknown if value is None else str(value) for value in (covered, eligible))
+        period = _brief_date_range(facts.get("window_start"), facts.get("window_end"), af)
+        check_text = (f"HERDMASTER sal dié {checks} varke se plaas-/verkoopstatus nagaan voor 'n nuwe weegopdrag."
+                      if af else f"HERDMASTER will check farm/sale records for these {checks} pigs before requesting weights.") if checks is not None else (
+                      "HERDMASTER sal plaas-/verkoopstatus nagaan; die aantal is onbekend." if af else
+                      "HERDMASTER will check farm/sale records; the number needing checks is unknown.")
+        return (f"• <b>{'Gewigte' if af else 'Weights'}:</b> {coverage} " +
+                ("van die huidige groep aangeteken" if af else "of the current group recorded") +
+                f" ({_safe(period)}).\n  {_safe(check_text)}")
+    if kind == "irrigation_status" and item.provenance.specialist == "rootline" \
+            and item.dedupe_key == "rootline:daily-plan":
+        return _irrigation_brief(facts, af)
+    return ""
+
+
+def _irrigation_brief(facts, af):
+    statuses = {
+        "Currently running": "Loop tans", "Ready — starting safely": "Gereed — begin veilig",
+        "Ready after the final safety check": "Gereed na die finale veiligheidskontrole",
+        "Checking safely": "Kontroleer veiligheid", "Needs watering": "Moet natgemaak word",
+        "Not running": "Loop nie", "Not running — does not need watering": "Loop nie — het nie water nodig nie",
+        "Held safely — problem under automatic review": "Veilig teruggehou — probleem word outomaties nagegaan",
+        "Controller OFF verified": "Beheerder AF geverifieer", "Needs Data": "Data nodig",
+    }
+    zones = facts.get("zones")
+    if not isinstance(zones, list) or len(zones) != 2 or [row.get("zone") for row in zones
+            if isinstance(row, Mapping)] != ["B12345", "C12345"] \
+            or any(row.get("status") not in statuses for row in zones):
+        return ""
+    groups = [zones] if zones[0]["status"] == zones[1]["status"] else [[row] for row in zones]
+    lines = []
+    for group in groups:
+        label = " & ".join(row["zone"][0] for row in group) + (" kampe" if af and len(group) > 1 else
+                " kamp" if af else " camps" if len(group) > 1 else " camp")
+        status = statuses[group[0]["status"]] if af else group[0]["status"]
+        lines.append(f"• <b>{_safe(label)}:</b> {_safe(status)}.")
+    reasons = list(dict.fromkeys(str(row.get("reason") or "") for row in zones))
+    # This is one exact output of the existing deterministic need classifier,
+    # not prose inference. Other reasons keep the safe existing projection.
+    weekly = "Weekly irrigation demand, water and dry observed weather support one bounded gravity-fed segment."
+    recommended = all(str(row.get("recommendation") or "").casefold() in {
+        "recommend", "run", "proceed", "eligible"} for row in zones)
+    if reasons == [weekly] and recommended:
+        lines.append("  " + ("Aanbeveling: een beperkte swaartekragbeurt; weekbehoefte, beskikbare water en droë weer ondersteun dit."
+                     if af else "Recommendation: one limited gravity-fed run, supported by weekly need, available water and dry weather."))
+    elif any(reasons):
+        # Unknown/other recommendation facts must not disappear behind an OFF
+        # status. Use the existing bounded source-word fallback for the item.
+        return ""
+    return "\n".join(lines)
 
 
 def compose_weight_preview(rows: Iterable[Mapping[str, Any]], *, language="en", weight_date="",

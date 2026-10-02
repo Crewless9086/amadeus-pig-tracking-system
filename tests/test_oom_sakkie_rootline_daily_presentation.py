@@ -1,5 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import hashlib
+import pytest
 
 from modules.oom_sakkie.rootline_daily_presentation import (
     compose_daily_rootline_manager_item, compose_daily_rootline_plan,
@@ -168,7 +170,8 @@ def test_contained_or_unknown_delivery_is_ambiguous_and_never_retried():
         assert len(calls) == 1 and replay["telegram_sends"] == 0
 
 
-def test_known_zero_retry_executes_through_real_family_delivery_lifecycle_once():
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_known_zero_retry_executes_through_real_family_delivery_lifecycle_once(language):
     from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
     daily_rows, daily_state = store(); lifecycle_rows = {}; sender_calls = []
     now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
@@ -179,26 +182,68 @@ def test_known_zero_retry_executes_through_real_family_delivery_lifecycle_once()
             created = identity not in lifecycle_rows
             lifecycle_rows.setdefault(identity, dict(payload)); return {"success": True, "created": created}
     def sender(chat, text):
-        sender_calls.append(1)
+        sender_calls.append(text)
         if len(sender_calls) == 1:
             return {"success": False, "status": "provider_rejected_before_send",
                     "delivery_definitely_not_sent": True}
         return {"success": True, "telegram_message_id": "5003",
                 "provider_timestamp": "2026-08-09T05:16:00+00:00"}
     def real_delivery(parsed, packet, **kwargs):
+        authority = kwargs.get("delivery_retry_authority")
+        if authority:
+            from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
+            from modules.oom_sakkie.family_presentation import envelope
+            final_text = envelope(localize_recipient_result(parsed, packet, "ROOTLINE")["answer"])
+            assert authority.text_sha256 == hashlib.sha256(final_text.encode()).hexdigest()
+            assert final_text.startswith("<b>🌿 ROOTLINE")
         return deliver_family_result(parsed, packet, event_store=event_store, sender=sender, **kwargs)
     first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
-        state_store=daily_state, deliver=real_delivery, now=now)
+        state_store=daily_state, deliver=real_delivery, now=now, language=language)
+    original_packet = next(iter(daily_rows.values())).copy()
     second = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
-        state_store=daily_state, deliver=real_delivery, now=now)
+        state_store=daily_state, deliver=real_delivery, now=now, language=language)
     replay = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
-        state_store=daily_state, deliver=real_delivery, now=now)
+        state_store=daily_state, deliver=real_delivery, now=now, language=language)
     assert first["status"] == "rootline_daily_delivery_failed_retryable"
     assert second["status"] == "rootline_daily_delivered"
     assert replay["status"] == "rootline_daily_replayed_noop"
     assert len(sender_calls) == 2
+    assert sender_calls[0] == sender_calls[1]
+    assert ("VANDAG SE WATERPLAN" if language == "af" else "TODAY’S WATER PLAN") in sender_calls[1]
+    assert next(iter(daily_rows.values()))["answer"] == original_packet["answer"]
+    assert next(iter(daily_rows.values()))["material_digest"] == original_packet["material_digest"]
     assert any(key.endswith("-DELIVERY-ATTEMPT") for key in lifecycle_rows)
     assert any(key.endswith("-DELIVERY-RETRY-2") for key in lifecycle_rows)
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_daily_retry_authority_cannot_authorize_changed_text_or_ambiguous_delivery(language):
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    for ambiguous in (False, True):
+        _, state = store(); events = {}; sends = []
+        now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
+        def event_store(action, identity, payload):
+            if action == "load":
+                return list(events.values())
+            created = identity not in events
+            events.setdefault(identity, dict(payload))
+            return {"success": True, "created": created}
+        def sender(chat, text):
+            sends.append(text)
+            return {"success": False, "status": "synthetic_provider_failure",
+                    **({} if ambiguous else {"delivery_definitely_not_sent": True})}
+        def deliver(parsed, packet, **kwargs):
+            if kwargs.get("delivery_retry_authority"):
+                packet = {**packet, "answer": packet["answer"] + "\nChanged after authority."}
+            return deliver_family_result(parsed, packet, event_store=event_store, sender=sender, **kwargs)
+        first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+            state_store=state, deliver=deliver, now=now, language=language)
+        again = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+            state_store=state, deliver=deliver, now=now, language=language)
+        assert first["status"] == ("rootline_daily_delivery_ambiguous" if ambiguous else
+                                   "rootline_daily_delivery_failed_retryable")
+        assert again["status"] == "rootline_daily_delivery_ambiguous"
+        assert len(sends) == 1
 
 
 def test_started_completed_and_intervention_are_separate_visible_event_words():

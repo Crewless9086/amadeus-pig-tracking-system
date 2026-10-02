@@ -77,11 +77,7 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
                     "daily_identity": identity}
         packet = {**existing, "delivery_state": "pending", "attempt_count": attempt}
         claimed = state_store(f"claim_retry_{attempt}", identity, packet)
-        retry_authority = issue_delivery_retry_authority(mission_id=identity,
-            card_mission_id=identity, text=str(packet.get("answer") or ""),
-            proof_identity=f"{identity}-MARK_FAILED-1")
     else:
-        retry_authority = None
         try:
             result = specialist_loader()
         except Exception:
@@ -111,8 +107,16 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
     parsed = {"telegram_user_id": owner_user_id, "telegram_chat_id": chat_id,
         "provider_message_id": f"scheduled:{identity}", "provider_timestamp": now.isoformat(),
         "semantic": {"domain": "water_energy", "intent": "rootline_daily_plan", "language": language}}
-    delivery = deliver(parsed, {"success": True, "status": "rootline_daily_plan",
-        "answer": packet["answer"]}, specialist="ROOTLINE", mission_id=identity,
+    visible_result = {"success": True, "status": "rootline_daily_plan", "answer": packet["answer"]}
+    retry_authority = None
+    if existing.get("delivery_state") == "failed":
+        from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
+        from modules.oom_sakkie.family_presentation import envelope
+        localized = localize_recipient_result(parsed, visible_result, "ROOTLINE")
+        retry_authority = issue_delivery_retry_authority(mission_id=identity,
+            card_mission_id=identity, text=envelope(localized.get("answer")),
+            proof_identity=f"{identity}-MARK_FAILED-1")
+    delivery = deliver(parsed, visible_result, specialist="ROOTLINE", mission_id=identity,
         card_mission_id=identity, delivery_retry_authority=retry_authority)
     if delivery.get("success") is True and delivery.get("telegram_message_id"):
         proof = {**packet, "delivery_state": "delivered",
@@ -200,6 +204,18 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
         "question": question,
         "notification_decision_identity": _owner_question_identity(result, brief),
     }
+
+
+def manager_brief_facts(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Display-only facts; the existing textual/material projection is intact."""
+    recommendations = {str(row.get("subject") or ""): row
+        for row in result.get("recommendations") or () if isinstance(row, Mapping)}
+    return {"kind": "irrigation_status", "zones": [{"zone": zone,
+        "status": owner_zone_decision(result, recommendations.get(zone, {}), zone=zone, language="en"),
+        "recommendation": str(recommendations.get(zone, {}).get("status") or
+                              recommendations.get(zone, {}).get("recommendation") or ""),
+        "reason": str(recommendations.get(zone, {}).get("reason") or result.get("reason") or "").strip()}
+        for zone in ZONES]}
 
 
 def _fresh_result(result: Any, now: datetime) -> bool:
