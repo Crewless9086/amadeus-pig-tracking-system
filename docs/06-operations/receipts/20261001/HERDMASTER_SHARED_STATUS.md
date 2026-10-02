@@ -1,4 +1,4 @@
-# HERDMASTER shared status — 1 October 2026
+# HERDMASTER shared status — updated 2 October 2026
 
 Lifecycle: `active` current-state evidence; non-doctrine. This is a dated shared
 checkpoint, not runtime authority or certification of every repository file.
@@ -14,8 +14,7 @@ PR1367 merged as `bc35db71a653677b11e8b03ca6d9eda965edfba7`. The existing web
 service deployment `dep-dav6ba97lnhs73b2q8k0` became live on October1 at13:53:46Z;
 provider and loaded-revision readback agreed. PR1365 through PR1367 registration
 and deployment are complete and must not be repeated. Ten other service
-deployments and configuration remained unchanged. This dated checkpoint follows
-the owner-review delivery and precedes release of the family presentation change.
+deployments and configuration remained unchanged. The following PR1367 results remain historical bounded outcome evidence.
 
 | Journey | Evidence and remaining gap |
 | --- | --- |
@@ -27,14 +26,34 @@ the owner-review delivery and precedes release of the family presentation change
 | Retained farrowing report | The historical unconfirmed report reached the configured owner through one informational card. The owner confirmed receiving it and requested clearer formatting. No birth is recorded; review is not farm confirmation. |
 | Independent follow-up | Natural14:30 and14:35 UTC cycles completed without exceptions, deadline deferrals or additional delivery. Prior claim and farm-state preservation passed. |
 
-The same mission continues in the existing application worktree, branch
-`codex/oom-family-message-style-20261001`, based on mainbc35db71. The owner
-approved a concise style for all Oom Sakkie family messages: familiar names or
-visible tags, short bullets, readable dates, clear status, one supported next
-step and restrained heading emoji. The same work repairs the delivered-context
-binding needed for a short reply to a historical report review. Fresh owner
-input may prepare the existing protected preview; it does not save the farm
-record. No new presentation candidate is established as deployed here.
+PR1368 subsequently merged as `67f465477f31fced2ffa127bc1314d0403612764`.
+Its existing-web deployment `dep-davjlelg1s2s73apfa60` was verified live on
+October2 at 05:02:39Z; ten other deployments remained unchanged. Required hosted
+checks and the normal protected merge passed. Registration used verified TLS
+and five release-metadata writes; the qualification helper was not merged.
+This registration and deployment are complete and must not be repeated.
+
+The owner's genuine 07:04 SAST farm-brief test was received but failed the
+approved concise style: dense specialist paragraphs and a long tag list remain.
+A bounded typed-summary correction continues on `codex/oom-farm-brief-concise-20261002`
+from main67f46547. Short bullets must retain material counts, readable historical
+dates and uncertainty, distinguish controller state from irrigation proposals,
+and end with one supported question. Presentation-only facts remain outside
+material hashes and case deduplication; no style-only notification is warranted.
+
+The first read-only postdeployment snapshot preserved protected claims, canonical
+sow/litter state, three completed advisories and the existing mortality outcome.
+One natural cycle completed with no exception or deadline deferral, one delivery
+and four suppressions. A second cycle and the delivery's cause still need
+verification; this evidence does not prove silent two-cycle continuity or a
+new-style owner outcome. Fresh protected review/confirmation journeys remain open.
+
+An isolated check also reproduced a PR1368 presentation regression on the
+standalone irrigation daily reply: a proven-no-send retry bound its permission
+to the stored text before the common heading was applied. The correction binds
+only that existing retry permission to the exact localized delivery text. The
+stored packet, strict content check and refusal to retry ambiguous sends remain.
+This engineering check does not authorize a live replay or irrigation action.
 
 ## Required finish and protected boundaries
 
@@ -43,7 +62,7 @@ record. No new presentation candidate is established as deployed here.
    context, stale/foreign/ambiguous reports and formatting-only replay suppression.
    Use disposable PostgreSQL for context/claim checks; preserve prior outcomes.
 2. Finish independent source review and hosted checks, then use the normal
-   protected release lane. Rollback binds the current live web revisionbc35db71.
+   protected release lane. Rollback binds the current live web revision67f46547.
    Held PR1340 is not released as part of this work.
 3. Observe the exact loaded revision, fresh genuine messages and later independent
    cycles. Confirm provider/family receipts and no restyling of old cards.

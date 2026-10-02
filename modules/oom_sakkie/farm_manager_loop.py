@@ -140,6 +140,9 @@ class SpecialistWorkItem:
             "notification_decision_identity": str,
             "recipient_render_contract": str,
             "recipient_language": str,
+            # Display-only facts. Material/delivery projections deliberately
+            # whitelist their own fields and never include this summary.
+            "brief_facts": dict,
         }
         unknown = set(self.metadata) - set(allowed_metadata)
         if unknown:
