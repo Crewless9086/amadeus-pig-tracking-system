@@ -67,6 +67,18 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
     payload={key:canonical[key] for key in
              ("contract_version","effective_date","rows","confirmation_required")}
     generation=hashlib.sha256(json.dumps(readiness,sort_keys=True,default=str).encode()).hexdigest()
+    language="af" if str(parsed.get("output_language") or semantic.get("language") or "en").startswith("af") else "en"
+    try:
+        owner_text=compose_weight_preview(preview["rows"],language=language,
+            weight_date=preview["weight_date"],movement_pen_label=preview.get("movement_pen_label") or "")
+    except ValueError as exc:
+        if str(exc) not in {"weight_preview_visible_identity_required","weight_preview_visible_identity_ambiguous"}:
+            raise
+        question=("Gee elke vark se unieke sigbare naam of oornommer sodat ek die gewigte kan onderskei."
+            if language=="af" else "Give each pig's unique visible name or tag so I can distinguish the weights.")
+        return {"handled":True,"success":False,"status":"weight_visible_identity_required",
+            "mission_id":mission,"card_mission_id":mission,"answer":question,
+            "clarification_question":question,"question_count":1,**_zero()},200
     creator=claim_creator or create_claim
     try:
         claim=creator(action_kind="grouped_weights",owner_user_id=owner,private_chat_id=chat,
@@ -83,11 +95,11 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
         "canonical_preview_digest":canonical["preview_digest"],
         "protected_claim_digest":str(claim.get("preview_digest") or canonical_preview_digest("grouped_weights",payload)),
         "action_kind":str(claim.get("action_kind") or "grouped_weights"),
+        "recipient_render_contract":"specialist_structured_recipient_v1",
+        "recipient_language":language,
         "canonical_preview":canonical,"evidence_generation":generation,
         "callback_token":claim["callback_token"],"reply_markup":build_buttons(claim["callback_token"],grouped=True),
-        "answer": compose_weight_preview(preview["rows"],
-            language="af" if str(semantic.get("language")).startswith("af") else "en",
-            weight_date=preview["weight_date"],movement_pen_label=preview.get("movement_pen_label") or ""),
+        "answer":owner_text,
         **_zero()}, 200
 
 def _zero():

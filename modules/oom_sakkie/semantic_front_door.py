@@ -166,10 +166,19 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
         elif subject or (query.get("context_message_id") and query.get("kind") == "animal_status"):
             matches = [row for row in context.get("conversation_turns") or ()
                 if row.get("telegram_message_id") == query.get("context_message_id")]
-            if len(matches) != 1 or (subject and not _subject_mentioned(subject, matches[0].get("assistant_answer", ""))):
+            canonical_subject = (matches[0].get("canonical_read_subject") or {}) if len(matches) == 1 else {}
+            canonical_alias = (bool(canonical_subject) and (not subject or subject.strip().casefold() in {
+                str(value).strip().casefold() for value in canonical_subject.values()
+                if str(value).strip().casefold() not in {"", "unknown"}}))
+            if len(matches) != 1 or (canonical_subject and not canonical_alias) or (subject and not canonical_subject
+                    and not _subject_mentioned(subject, matches[0].get("assistant_answer", ""))):
                 return replace(result, read_query=None, needs_clarification=True,
                     clarification_question=("Watter dier of saak bedoel jy?" if result.language.startswith("af")
                                             else "Which animal or case do you mean?"))
+            if query.get("kind") == "animal_status" and canonical_alias:
+                # Resolve the retained canonical animal again; a reused tag
+                # must not silently redirect an implicit follow-up.
+                query["subject"] = canonical_subject["pig_id"]
         if query.get("kind") == "herd_query" and query.get("context_message_id"):
             matches = [row for row in context.get("conversation_turns") or ()
                 if row.get("telegram_message_id") == query["context_message_id"]]
@@ -418,6 +427,11 @@ def _payload(parsed, context, source):
         " For a natural request to record a real farrowing/litter, use herd_management with stable intent record_farrowing_litter and return farrowing_litter. "
         "Allowed farrowing_litter keys are sow_ref,farrowing_date,total_born,born_alive,stillborn,mummified,died_after_live_birth,mating_ref,father_ref,correction_of_litter_id,correction_reason. "
         "When farrowing_litter_context supplies a current question, a short answer to that question uses the same record_farrowing_litter intent and continuation=true. "
+        "A historical_unconfirmed_owner_review contains an older reporter's facts, not a protected preview. "
+        "A clear yes/ja saying those exact details are correct is message_kind observation, continuation=true, "
+        "intent record_farrowing_litter and farrowing_litter={}; a correction carries only the changed facts. "
+        "This only prepares a fresh confirmation preview: never classify this informational agreement as protected confirmation or claim a birth was saved. "
+        "A bare no/nee or uncertain answer asks what should change; never assume unchanged historical facts were accepted. "
         "Return only the non-null facts supplied or corrected in this message; retain earlier facts through context, never invent a missing count, date, or zero. "
         "A complete natural birth report belongs to this typed farrowing path even when the user says log this litter. "
         "For an already-born litter's first treatment, use herd_management with stable intent record_litter_first_treatment and return litter_first_treatment, never farrowing_litter. "
@@ -918,6 +932,13 @@ def _eligible_conversation_context(rows, parsed):
             "owner_question": str(row.get("conversation_question") or "")[:500],
             "assistant_answer": answer[:2400], "truncated": len(answer) > 2400,
             "context_kind": "delivered_read_only_dialogue"})
+        subject = row.get("canonical_read_subject")
+        if (row.get("canonical_read_status") == "herd_question_answer_ready"
+                and isinstance(subject, Mapping)
+                and {"pig_id", "tag_number"} <= set(subject) <= {"pig_id", "tag_number", "pig_name"}
+                and all(isinstance(v, str) and len(v) <= 128 for v in subject.values())
+                and subject.get("pig_id", "").strip()):
+            selected[-1]["canonical_read_subject"] = dict(subject)
         if len(selected) == 4:
             break
     return list(reversed(selected))

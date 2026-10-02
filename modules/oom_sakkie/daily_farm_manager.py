@@ -627,6 +627,7 @@ def _load_answered_questions(binding):
 
 
 def _render(priorities, watch, question, now, language, *, known_decisions=()):
+    from modules.oom_sakkie.family_presentation import heading
     af = str(language).lower().startswith("af")
     visible = list(priorities) + list(watch)
     owner_work = [row for row in visible if _owner_action_required(row)]
@@ -634,26 +635,23 @@ def _render(priorities, watch, question, now, language, *, known_decisions=()):
     # Keep the daily projection useful without turning every reassessment into
     # owner work. Detailed unchanged cycles remain silent on the manager rail.
     automatic_work = automatic_work[:3]
-    lines = ["<b>VANDAG SE PLAASPLAN</b>" if af
-             else "<b>TODAY'S FARM PLAN</b>"]
+    lines = [heading("Vandag se plaasplan" if af else "Today's farm plan")]
     if owner_work:
-        lines.append("<b>AKSIE NODIG</b>" if af else "<b>ACTION NEEDED</b>")
-        lines.extend(f"{index}. <b>{html.escape(_compact(row.title, 130))}</b>\n"
-                     f"{html.escape(_compact(row.why, 300))}\n"
-                     f"{html.escape(_compact(_pending_decision_text(af) if _decision_key(row.domain, row.dedupe_key, _decision_identity(row)) in known_decisions else row.next_action, 300))}"
+        lines.extend(("", "<b>Aksie nodig</b>" if af else "<b>Action needed</b>"))
+        lines.extend(f"• <b>{html.escape(_compact(row.title, 130))}</b>\n"
+                     f"  {html.escape(_compact(row.why, 300))}\n"
+                     f"  {html.escape(_compact(_pending_decision_text(af) if _decision_key(row.domain, row.dedupe_key, _decision_identity(row)) in known_decisions else ('Beantwoord die vraag hieronder.' if af else 'Answer the question below.') if row.next_action == question else row.next_action, 300))}"
                      for index, row in enumerate(owner_work, 1))
     if automatic_work:
-        lines.extend(("", "<b>OOM SAKKIE KONTROLEER OUTOMATIES</b>" if af
-                      else "<b>OOM SAKKIE IS CHECKING AUTOMATICALLY</b>"))
+        lines.extend(("", "<b>Ek volg op</b>" if af else "<b>I'm following up</b>"))
         lines.extend(f"• <b>{html.escape(_compact(row.title, 130))}</b>\n"
-                     f"{html.escape(_compact(row.why, 300))}\n"
-                     f"{html.escape(_automatic_followup(row, af))}"
+                     f"  {html.escape(_compact(row.why, 300))}\n"
+                     f"  {html.escape(_automatic_followup(row, af))}"
                      for row in automatic_work)
     if not owner_work and not automatic_work:
         lines.append("Geen nuwe werk nie." if af else "No new work.")
     if question:
-        lines.extend(("", "<b>EEN VRAAG</b>" if af else "<b>ONE QUESTION</b>",
-                      html.escape(question)))
+        lines.extend(("", html.escape(question)))
     elif not owner_work and not question:
         lines.extend(("", "Geen aksie word nou van jou benodig nie."
                       if af else "No action required from you."))

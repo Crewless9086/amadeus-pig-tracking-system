@@ -233,7 +233,7 @@ def test_failed_ack_uses_one_receipt_bound_localized_family_message(monkeypatch,
     assert first["feedback_delivery"]["success"] is replay["feedback_delivery"]["success"] is True
     assert first["sends_telegram"] is True and replay["sends_telegram"] is False
     assert first["writes"] is replay["writes"] is False
-    assert journal.sends == [(OWNER, result["callback_feedback"])]
+    assert journal.sends == [(OWNER, "<b>🌿 Oom Sakkie</b>\n\n" + result["callback_feedback"])]
     assert journal.rows == rows and len(requests) == 2
     assert sorted(row["state"] for row in rows.values()) == ["delivered", "delivery_attempted"]
     for row in rows.values():

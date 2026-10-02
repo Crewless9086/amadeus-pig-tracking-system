@@ -67,9 +67,9 @@ def answer_herd_question(
             **_failure(
                 status,
                 (
-                    "More than one pig matches. Please use one exact Pig ID."
+                    "More than one pig matches. What is the visible tag, or the name and pen, of the pig you mean?"
                     if matches
-                    else "I could not match that name or Pig ID to a canonical pig."
+                    else "I could not match that animal. What name or visible tag is on its record?"
                 ),
             ),
             "candidates": candidates,
@@ -178,7 +178,8 @@ def answer_herd_question(
             ),
         },
     }
-    answer = _compose(tag, facts, missing, recommendation, language=language)
+    from modules.oom_sakkie.family_presentation import animal_label
+    answer = _compose(animal_label(pig, language=language), facts, missing, recommendation, language=language)
     fingerprint = hashlib.sha256(
         repr((CONTRACT_VERSION, pig_id, facts, missing, recommendation)).encode()
     ).hexdigest()[:24]
@@ -186,7 +187,8 @@ def answer_herd_question(
         "success": True,
         "status": "herd_question_answer_ready",
         "contract_version": CONTRACT_VERSION,
-        "subject": {"tag_number": tag, "pig_id": pig_id},
+        "subject": {"tag_number": tag, "pig_id": pig_id,
+            **({"pig_name": str(pig["pig_name"])} if pig.get("pig_name") else {})},
         "facts": facts,
         "missing_or_stale_evidence": missing,
         "recommendation": recommendation,
@@ -433,6 +435,7 @@ def _case_gap_is_superseded(item, pregnancy):
 
 
 def _compose(tag, facts, missing, recommendation, *, language="en"):
+    from modules.oom_sakkie.family_presentation import date_label, message
     identity = facts["identity"]
     weight = facts["latest_weight"]
     breeding = facts["breeding"]
@@ -443,38 +446,52 @@ def _compose(tag, facts, missing, recommendation, *, language="en"):
         if isinstance(weight["weight_kg"], (int, float))
         else f"{weight['weight_kg']} kg"
     )
-    if str(language).casefold().startswith("af"):
+    af = str(language).casefold().startswith("af")
+    dated = lambda value: 'Onbekend' if af and value == 'Unknown' else date_label(value, language=language)
+    if af:
         labels = {"Active": "Aktief", "Sold": "Verkoop", "Dead": "Dood", "Removed": "Verwyder",
                   "Slaughtered": "Geslag", "Breeding": "Teel", "Sale": "Verkope", "Meat": "Vleis",
                   "Yes": "Ja", "No": "Nee", "Unknown": "Onbekend", "Pregnant": "Dragtig",
                   "Not Pregnant": "Nie dragtig nie"}
         local = lambda value: labels.get(str(value), "Onbekend")
-        dated = lambda value: "Onbekend" if value == "Unknown" else str(value)
-        return (f"Feite — {tag} ({identity['pig_id']}): lewensiklus {local(identity['lifecycle_status'])}; "
-            f"op plaas: {local(identity['on_farm'])}; doel: {local(identity['purpose'])}. "
-            f"Laaste aangetekende gewig: {dated(weight_text)}, bewysdatum {dated(weight['evidence_date'])}. "
-            f"Laaste paring: {dated(breeding['latest_mating_date'])}; dragtigheidsbewys: {local(breeding['pregnancy_check_result'])}.\n\n"
-            + ("Die gewigsbewys is verouderd of ontbreek. " if weight['stale'] else "")
-            + "Hierdie antwoord bevestig net aangetekende feite; dit bewys nie 'n nuwe fisiese uitkoms nie. Geen plaasrekord is verander nie.")
-    return (
-        f"Facts — {tag} ({identity['pig_id']}): lifecycle "
-        f"{identity['lifecycle_status']}; on farm {identity['on_farm']}; purpose {identity['purpose']}. "
-        f"Latest recorded weight {weight_text}, evidence date "
-        f"{weight['evidence_date']}, observation time Unknown. Breeding status: "
-        f"{breeding['status']}. Latest mating date: "
-        f"{breeding['latest_mating_date']}; pregnancy-check result: "
-        f"{breeding['pregnancy_check_result']}; result date: "
-        f"{breeding['pregnancy_result_date']}; method: "
-        f"{breeding['pregnancy_check_method']}; assessor: "
-        f"{breeding['pregnancy_check_assessor']}; observation time: "
-        f"{breeding['pregnancy_result_time']}; freshness: "
-        f"{breeding['pregnancy_evidence_freshness']}.\n\n"
-        f"Missing or stale evidence — {' '.join(missing)}\n\n"
-        f"Recommendation — {recommendation['action']} "
-        f"(basis: {recommendation['basis']}; priority: "
-        f"{recommendation['priority']}; due date: "
-        f"{recommendation['due_date']}). No farm record was changed."
-    )
+        bullets = [f"Status: {local(identity['lifecycle_status'])}; op plaas: {local(identity['on_farm'])}; doel: {local(identity['purpose'])}.",
+            f"Gewig: {'Onbekend' if weight_text == 'Unknown' else weight_text} — {dated(weight['evidence_date'])}; waarnemingstyd onbekend.",
+            f"Laaste paring: {dated(breeding['latest_mating_date'])}.",
+            f"Dragtigheid: {local(breeding['pregnancy_check_result'])} — {dated(breeding['pregnancy_result_date'])}."]
+    else:
+        bullets = [f"Status: {identity['lifecycle_status']}; on farm: {identity['on_farm']}; purpose: {identity['purpose']}.",
+            f"Weight: {weight_text} — {dated(weight['evidence_date'])}; observation time Unknown.",
+            ("No mating recorded." if breeding['latest_mating_date']=='Unknown' and breeding.get('mating_event_count')==0 else
+             f"Breeding status: {breeding['status']}; latest mating: {dated(breeding['latest_mating_date'])}."),
+            f"Pregnancy: {breeding['pregnancy_check_result']} — {dated(breeding['pregnancy_result_date'])}."]
+    # Keep attributable check details and exact observation time, never a date-only
+    # rendering of a timestamp. Unknown remains unknown rather than a negative.
+    check_keys = ('pregnancy_check_result','pregnancy_result_date','pregnancy_check_method',
+                  'pregnancy_check_assessor','pregnancy_result_time')
+    absent = (breeding.get('pregnancy_evidence_state') in {'no_mating','no_governed_result','not_applicable'}
+        and all(breeding.get(key) in {'',None,'Unknown'} for key in check_keys))
+    if absent:
+        bullets[-1] = "Geen dragtigheidskontrole is aangeteken nie." if af else "No pregnancy check is recorded."
+    else:
+        details = [str(breeding[key]) for key in ('pregnancy_check_method','pregnancy_check_assessor',
+            'pregnancy_result_time','pregnancy_evidence_freshness') if breeding.get(key) not in {'',None,'Unknown'}]
+        if details:
+            bullets.append(("Kontrole (bronwoorde): " if af else "Check: ") + '; '.join(details))
+    redundant = {'Latest weight date is Unknown.','Weight observation time is Unknown.',
+        'No canonical mating chronology is recorded.'}
+    if absent:
+        redundant.add('Pregnancy-check result is Unknown.')
+    gaps = [item for item in missing if item not in redundant]
+    if gaps:
+        bullets.append(("Ontbreek/verouderd (bronwoorde): " if af else "Missing or stale: ") + ' '.join(gaps))
+    bullets.append(("Aanbeveel (bronwoorde): " if af else "Next: ") + str(recommendation['action']))
+    if recommendation['priority'] not in {'Not on current worklist','Unknown','',None}:
+        bullets.append(("Prioriteit: " if af else "Priority: ") + str(recommendation['priority']))
+    if recommendation['due_date'] != 'Unknown':
+        bullets.append(("Teen: " if af else "Due: ") + dated(recommendation['due_date']))
+    return message(f"{tag} — {'aangetekende status' if af else 'recorded status'}",
+        bullets=bullets, status=("Geen plaasrekord is verander nie." if af else "No farm record was changed."),
+        language=language, emoji="🐷")
 
 
 def _known(value, fallback="Unknown"):

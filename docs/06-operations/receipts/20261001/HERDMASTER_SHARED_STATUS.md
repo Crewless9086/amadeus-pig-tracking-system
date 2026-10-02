@@ -10,12 +10,12 @@ Protected PR1341 integrated the original eighteen commits at
 before that integration and is retained as history. Local coordination records
 advanced separately; this bounded update does not publish that entire history.
 
-PR1366 merged as `59dca3dad630e3ac2a7f3bae7af4129540aba135`. The existing web
-service deployment `dep-dav4munlk1mc73eques0` became live on October1 at12:02:25Z;
-provider and loaded-revision readback agreed. PR1365 and PR1366 registration and
-deployment are complete and must not be repeated. Ten other service deployments
-and configuration remained unchanged. This dated checkpoint precedes release
-of the farrowing owner-review continuation.
+PR1367 merged as `bc35db71a653677b11e8b03ca6d9eda965edfba7`. The existing web
+service deployment `dep-dav6ba97lnhs73b2q8k0` became live on October1 at13:53:46Z;
+provider and loaded-revision readback agreed. PR1365 through PR1367 registration
+and deployment are complete and must not be repeated. Ten other service
+deployments and configuration remained unchanged. This dated checkpoint follows
+the owner-review delivery and precedes release of the family presentation change.
 
 | Journey | Evidence and remaining gap |
 | --- | --- |
@@ -24,28 +24,30 @@ of the farrowing owner-review continuation.
 | Retained litter loss | Card5190 has matching provider acknowledgement and family receipt. It expired unconfirmed; no farm effect is inferred or renewed manually. |
 | Older herd advisories | Natural cycles completed three exact advisories once using canonical confirmation or terminal off-farm evidence. Current generation, digest and owning proof are retained. |
 | Retained mortality successor | Natural cycles uniquely prepared the audited successor and delivered card5191 at12:21:20Z. It reached the original authorized reporting principal. It remains unconfirmed and the animal remains Active/on-farm. |
-| Retained farrowing report | The original August report was delivered but never confirmed. Its reporter differs from the configured owner. Refresh routing and a truthful owner-review handoff are being repaired; no birth is recorded. |
-| Independent follow-up |12:25 completed cleanly, but12:30 repeated the farrowing refresh exception. Two consecutive fully healthy cycles are not yet proved. |
+| Retained farrowing report | The historical unconfirmed report reached the configured owner through one informational card. The owner confirmed receiving it and requested clearer formatting. No birth is recorded; review is not farm confirmation. |
+| Independent follow-up | Natural14:30 and14:35 UTC cycles completed without exceptions, deadline deferrals or additional delivery. Prior claim and farm-state preservation passed. |
 
 The same mission continues in the existing application worktree, branch
-`codex/herdmaster-farrowing-refresh-20261001`, based on main59dca3da. The repair
-binds the exact retained report to its existing case and presents historical
-unconfirmed facts to the actual configured owner. It removes the old intake
-replay/recovery-claim path. Current source, sow/litter, related-claim, role,
-recipient and duplicate checks remain required. It creates no farm fact or new
-protected approval. No new candidate is established as deployed here.
+`codex/oom-family-message-style-20261001`, based on mainbc35db71. The owner
+approved a concise style for all Oom Sakkie family messages: familiar names or
+visible tags, short bullets, readable dates, clear status, one supported next
+step and restrained heading emoji. The same work repairs the delivered-context
+binding needed for a short reply to a historical report review. Fresh owner
+input may prepare the existing protected preview; it does not save the farm
+record. No new presentation candidate is established as deployed here.
 
 ## Required finish and protected boundaries
 
-1. Qualify exact claim and source identity, stale/foreign/cancelled/completed
-   histories, canonical conflicts, configured-owner selection and same-card
-   replay behavior in disposable PostgreSQL. Preserve successful mortality.
+1. Qualify shared presentation and typed producer paths in English/Afrikaans,
+   exact display-label provenance, protected facts and callbacks, short-reply
+   context, stale/foreign/ambiguous reports and formatting-only replay suppression.
+   Use disposable PostgreSQL for context/claim checks; preserve prior outcomes.
 2. Finish independent source review and hosted checks, then use the normal
-   protected release lane. Rollback binds the current live web revision59dca3da.
+   protected release lane. Rollback binds the current live web revisionbc35db71.
    Held PR1340 is not released as part of this work.
-3. Observe the exact loaded revision, natural owner-review delivery and later
-   independent cycles. Confirm provider and family receipts, no duplicate card,
-   and unchanged canonical birth/claim state until genuine owner input.
+3. Observe the exact loaded revision, fresh genuine messages and later independent
+   cycles. Confirm provider/family receipts and no restyling of old cards.
+   Farm and claim state must remain unchanged until genuine authorized input.
 4. Complete genuine fresh Telegram acceptance and protected farm journeys when
    the actual authorized person supplies/approves the facts. A sent card, test
    suite or healthy deployment is not full autonomy. Do not manufacture farm

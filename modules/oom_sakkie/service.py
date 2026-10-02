@@ -658,12 +658,25 @@ def handle_message(payload):
         }
         else True
     )
+    canonical_read = tool_result.get("raw") or {}
+    canonical_subject = {}
+    if (tool.name == "herdmaster_herd_question"
+            and protected_tool_succeeded and canonical_read.get("success") is True
+            and canonical_read.get("status") == "herd_question_answer_ready"
+            and canonical_read.get("read_only") is True
+            and canonical_read.get("writes_performed") is False):
+        subject = canonical_read.get("subject") or {}
+        if isinstance(subject, dict) and str(subject.get("pig_id") or "").strip():
+            canonical_subject = {key: str(subject.get(key) or "")
+                for key in ("pig_id", "tag_number", "pig_name") if key in subject}
     return {
         "success": protected_tool_succeeded,
         "answer": answer,
         "tool_used": tool.name,
         **({"read_only": True, "answer_available": bool(answer),
             "writes_performed": False, "recipient_render_contract": "canonical_read_answer_v1",
+            "canonical_read_status": str(canonical_read.get("status") or ""),
+            "canonical_read_subject": canonical_subject,
             "recipient_language": str(semantic.get("language") or "en")}
            if tool.name == "herdmaster_herd_question" else {}),
         "trace_id": trace_id,

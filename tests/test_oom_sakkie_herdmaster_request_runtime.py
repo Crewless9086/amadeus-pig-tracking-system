@@ -46,7 +46,7 @@ def test_specific_breeding_request_returns_current_herdmaster_plan_and_replay_is
     first,status=handle_herdmaster_request(parsed(),authority,canonical_loader=packet,event_store=state)
     replay,_=handle_herdmaster_request(parsed(),authority,canonical_loader=packet,event_store=state)
     assert status==200 and first["specialist_identity"]=="HERDMASTER"
-    assert "UPDATED BREEDING PLAN" in first["answer"] and "TODAY'S FARM BRIEF" not in first["answer"]
+    assert "Current breeding plan" in first["answer"] and "TODAY'S FARM BRIEF" not in first["answer"]
     assert all(name in first["answer"] for name in ("Shupe","Sophie","Teena","Waki","Zigay"))
     assert "Pig 127" not in first["answer"] and "PIG-" not in first["answer"]
     assert replay["status"]=="herdmaster_request_replay_recovered"
@@ -55,7 +55,7 @@ def test_specific_breeding_request_returns_current_herdmaster_plan_and_replay_is
 def test_afrikaans_paraphrase_and_broad_manager_boundary():
     result,_=handle_herdmaster_request(parsed(language="af"),
         issue_gateway_owner_authority(OWNER,OWNER),canonical_loader=packet,event_store=store())
-    assert "OPGEDATEERDE TEELPLAN" in result["answer"] and "VANDAG SE SPEENWERK" in result["answer"]
+    assert "Huidige teelplan" in result["answer"] and "Speenwerk vandag" in result["answer"]
     broad,_=handle_herdmaster_request(parsed(domain="manager_round",message="3529"),
         issue_gateway_owner_authority(OWNER,OWNER),canonical_loader=packet,event_store=store())
     assert broad=={"handled":False}

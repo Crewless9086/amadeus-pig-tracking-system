@@ -26,7 +26,7 @@ def test_verbose_rootline_packet_becomes_compact_farm_message_without_b_camp_cop
     packet["recommendations"][1]["reason"]=("Not selected for today's proportional B-Camp plan; "
         "retain the four-day weekly target.")
     answer=compose_rootline(packet)
-    assert "<b>ROOTLINE — WATER &amp; POWER</b>" in answer
+    assert "<b>🌿 ROOTLINE — WATER &amp; POWER</b>" in answer
     assert "<b>B Camp:</b> Not running" in answer and "<b>C Camp:</b> Not running" in answer
     assert "B-Camp plan" not in answer and "authority" not in answer.lower()
     assert "today's proportional camp plan" in answer
@@ -117,8 +117,8 @@ def test_manager_sections_and_afrikaans_layout_preserve_supported_facts():
         suppressed={},follow_ups=(),specialist_gaps={})
     answer=compose_manager_brief(brief,language="af")
     assert "Pig 127-sterfterekord" in answer and "breathing" not in answer.lower()
-    assert "vermoedelik dragtig" in answer and "<b>🐷 Welsyn &amp; Kudde</b>" in answer
-    assert "Volgende herbeoordeling" in answer
+    assert "vermoedelik dragtig" in answer and "<b>Welsyn &amp; Kudde</b>" in answer
+    assert "Oom Sakkie sal herbeoordeel" in answer
 
 def test_production_shaped_afrikaans_brief_marks_dynamic_specialist_source_words():
     p=Provenance("herdmaster","ROUND-20260804",("canonical",),NOW,1)
@@ -132,7 +132,7 @@ def test_production_shaped_afrikaans_brief_marks_dynamic_specialist_source_words
     assert "Spesialisbewys (bronwoorde)" in answer
     assert "Bronitem (bronwoorde): Prepare Mona" in answer
     assert "Spesialisvraag (bronwoorde): Are both farrowing areas ready?" in answer
-    assert "Wat ek van jou nodig het" in answer and "Welsyn &amp; Kudde" in answer
+    assert answer.count("Are both farrowing areas ready?") == 1 and "Welsyn &amp; Kudde" in answer
 
 def test_production_shaped_rootline_afrikaans_marks_every_dynamic_source_fragment():
     packet=rootline(); packet["overall_status"]="Dynamic specialist decision"
@@ -153,7 +153,8 @@ def test_natural_grouped_weight_preview_is_one_confirmation_boundary():
         {"label":"Pig 11","pig_id":"PIG-2026-E88A","weight_kg":47.2},
         {"label":"Mona","pig_id":"PIG-2026-D050","weight_kg":118}],language="en")
     assert answer.count("kg")==2 and "Confirm this grouped preview" in answer
-    assert "recorded" in answer and "PIG-2026-E88A" in answer
+    assert "recorded" in answer and "Pig 11" in answer and "Mona" in answer
+    assert "PIG-2026-" not in answer
 
 def test_natural_grouped_weight_lines_resolve_canonically_without_repeating_known_date():
     pigs={"success":True,"pigs":[

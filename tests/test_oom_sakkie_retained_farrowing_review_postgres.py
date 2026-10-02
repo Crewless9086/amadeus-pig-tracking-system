@@ -175,8 +175,8 @@ def test_real_family_delivery_owner_only_replay_no_claim_or_farm_changes(journey
     replay=worker.deliver_farm_manager_case(case,now=NOW)
     assert first['success'] is True and first['delivery_confirmed'] is True, first
     assert replay['success'] is True and replay['delivery_confirmed'] is False
-    assert len(sends)==1 and 'ONBEVESTIGDE' in sends[0][1]
-    assert 'geen geboorte' in sends[0][1].casefold()
+    assert len(sends)==1 and 'Onbevestig — nog nie aangeteken nie.' in sends[0][1]
+    assert 'nog nie aangeteken nie' in sends[0][1].casefold()
     assert snapshot(journey['store'])==before
     with journey['store'](True) as db,db.cursor() as cur:
         cur.execute("select review_json->'family_message_lifecycle' from public.sam_live_stock_conversation_review_events where event_source='oom_sakkie_family_message_lifecycle'")

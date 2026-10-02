@@ -57,7 +57,7 @@ def test_corrected_linda_report_creates_dedicated_litter_claim_without_write():
     assert captured["preview_payload"]["counts"]["arithmetic"] == "9=8+0+1"
     assert captured["preview_payload"]["mating_id"] is None
     assert captured["preview_payload"]["sow_display_name"] == "Linda"
-    assert "Linda (PIG-2026-5AA8)" in result["answer"]
+    assert "Linda" in result["answer"] and "PIG-2026-5AA8" not in result["answer"]
     assert result["writes_farm_data"] is False
 
 
@@ -68,6 +68,42 @@ def test_duplicate_readback_contains_recovery_without_claim():
         ]), claim_creator=lambda **_: (_ for _ in ()).throw(AssertionError("claim forbidden")))
     assert status == 409 and result["status"] == "canonical_litter_already_exists"
     assert result["writes_farm_data"] is False
+
+
+def test_exact_unnamed_sow_keeps_protected_identity_in_preview():
+    canonical=evidence()
+    canonical['animals'][0].update(name='',tag_number='')
+    facts={**parsed()['semantic']['farrowing_litter'],'sow_ref':'PIG-2026-5AA8'}
+    captured={}
+    def create(**kwargs):
+        captured.update(kwargs); return {'callback_token':'opaque','preview_digest':'digest'}
+    result,status=handle_farrowing_litter_message(parsed(facts),issue_gateway_owner_authority('42','42'),
+        evidence_loader=lambda **_:canonical,claim_creator=create)
+    assert status==200 and result['status']=='farrowing_litter_preview_ready'
+    assert captured['preview_payload']['sow_pig_id']=='PIG-2026-5AA8'
+    assert 'PIG-2026-5AA8' in result['answer'] and 'Unknown animal' not in result['answer']
+    assert result['writes_farm_data'] is False
+    assert result['reply_markup']['inline_keyboard'][0][0]['callback_data']=='oompa:opaque:confirm'
+
+
+@pytest.mark.parametrize('distinct_tags',[True,False])
+def test_duplicate_sow_and_father_names_use_distinct_protected_labels(distinct_tags):
+    canonical=evidence(animals=[{'pig_id':pid,'name':'Mona','tag_number':tag if distinct_tags else '',
+        'status':'Active','on_farm':True,'sex':sex} for pid,tag,sex in
+        [('PIG-2026-5AA8','S-A','Female'),('PIG-OTHER','S-B','Female'),('PIG-BOAR','B-A','Male')]],
+        matings=[{'mating_id':'MAT-1','sow_pig_id':'PIG-2026-5AA8','boar_pig_id':'PIG-BOAR',
+            'mating_date':'2026-05-02','outcome':'Mated'}])
+    facts={**parsed()['semantic']['farrowing_litter'],'sow_ref':'PIG-2026-5AA8'}
+    captured={}
+    result,status=handle_farrowing_litter_message(parsed(facts),issue_gateway_owner_authority('42','42'),
+        evidence_loader=lambda **_:canonical,claim_creator=lambda **kw:captured.update(kw) or {'callback_token':'T','preview_digest':'D'})
+    assert status==200 and result['status']=='farrowing_litter_preview_ready'
+    assert ('S-A' if distinct_tags else 'PIG-2026-5AA8') in result['answer']
+    assert ('Father: B-A' if distinct_tags else 'Father: PIG-BOAR') in result['answer']
+    assert 'Mona' not in result['answer'] and '2 May 2026' in result['answer']
+    assert captured['preview_payload']['sow_pig_id']=='PIG-2026-5AA8'
+    assert captured['preview_payload']['father_pig_id']=='PIG-BOAR'
+    assert result['writes_farm_data'] is False
 
 
 def test_non_litter_semantic_intent_is_not_claimed():
@@ -118,7 +154,7 @@ def test_execute_preserves_correction_metadata_through_digest_refresh(monkeypatc
         "correction_of_litter_id": "LIT-OLD", "correction_reason": "Corrected birth counts"}
     result, status = _execute(monkeypatch, facts, canonical)
     assert status == 201 and result["success"] is True
-    assert result["answer"].startswith("Litter recorded for Linda (PIG-2026-5AA8)")
+    assert result["answer"].startswith("<b>🐷 Linda — birth recorded</b>")
 
 
 def test_preview_and_completion_use_escaped_name_in_afrikaans(monkeypatch):
@@ -131,11 +167,12 @@ def test_preview_and_completion_use_escaped_name_in_afrikaans(monkeypatch):
         issue_gateway_owner_authority("42", "42"), evidence_loader=lambda **_: canonical,
         claim_creator=lambda **_: {"callback_token": "opaque", "preview_digest": "digest"})
     assert preview_status == 200
-    assert "Linda &lt;Hoof&gt; (PIG-2026-5AA8)" in preview_result["answer"]
-    assert "Bevestig die presiese beskermde rekord" in preview_result["answer"]
+    assert "Linda &lt;Hoof&gt;" in preview_result["answer"] and "PIG-2026-5AA8" not in preview_result["answer"]
+    assert "Gebruik Bevestig om hierdie besonderhede te stoor" in preview_result["answer"]
     result, status = _execute(monkeypatch, facts, canonical, language="af")
     assert status == 201
-    assert result["answer"].startswith("Linda &lt;Hoof&gt; (PIG-2026-5AA8) se werpsel")
+    assert result["answer"].startswith("<b>🐷 Linda &lt;Hoof&gt; — geboorte aangeteken</b>")
+    assert "PIG-2026-5AA8" not in result["answer"]
 
 
 def test_execute_resolves_matching_father_uuid_tag_and_name(monkeypatch):

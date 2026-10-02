@@ -814,33 +814,33 @@ def _health_loss_message(language: str, key: str) -> str:
 
 
 def _mortality_completion_message(recorded: Mapping[str, Any], language: str) -> str:
+    from modules.oom_sakkie.family_presentation import heading, date_label
     af = str(language).casefold().startswith("af")
     name = html.escape(str(recorded.get("pig_name") or recorded.get("tag_number") or
                ("Die vark" if af else "The pig")))
     if af:
-        heading = (f"VARK {name} AANGETEKEN" if name.casefold() != "die vark"
-                   else "VARK AANGETEKEN")
-        lines = [f"<b>{heading}</b>", "",
-                 "Die bevestigde afsterwe is een keer aangeteken en die vark is nie meer op die plaas beskikbaar nie."]
+        lines = [heading(html.unescape(name) + " — afsterwe aangeteken", emoji="🐷"), "",
+                 "• Die bevestigde afsterwe is een keer aangeteken.",
+                 "• Nie meer op die plaas beskikbaar nie."]
         if recorded.get("welfare_case_closed"):
-            lines.append("Die verwante lewende-welsynsaak is met afsterwe as rede gesluit.")
+            lines.append("• Die verwante lewende-welsynsaak is met afsterwe as rede gesluit.")
         if recorded.get("living_checks_reconciled"):
-            lines.append("Toekomstige lewende-dier kontroles wat nie meer geldig is nie, is afgesluit.")
+            lines.append("• Toekomstige lewende-dier kontroles wat nie meer geldig is nie, is afgesluit.")
         lines.append("Geen diagnose of presiese tyd is afgelei nie.")
         if int(recorded.get("preserved_distinct_work") or 0):
             lines.append("Afsonderlike wegdoenings- of biosekuriteitswerk bly sigbaar omdat dit nog oop is.")
     else:
-        lines = [f"<b>{name} - DEATH RECORDED</b>", "",
-                 "The confirmed death was recorded once and the pig is no longer available on farm."]
+        lines = [heading(html.unescape(name) + " — death recorded", emoji="🐷"), "",
+                 "• The confirmed death was recorded once.", "• No longer available on farm."]
         if recorded.get("welfare_case_closed"):
-            lines.append("The related living-welfare case was closed with death as the reason.")
+            lines.append("• The related living-welfare case was closed with death as the reason.")
         if recorded.get("living_checks_reconciled"):
-            lines.append("Future living-animal checks that no longer apply were closed.")
+            lines.append("• Future living-animal checks that no longer apply were closed.")
         lines.append("No diagnosis or exact time has been inferred.")
         if int(recorded.get("preserved_distinct_work") or 0):
             lines.append("Separate disposal or biosecurity work stays visible because it is still open.")
     if recorded.get("event_date"):
-        lines.append(("Afsterwedatum: " if af else "Death date: ") + html.escape(str(recorded["event_date"])))
+        lines.append(("Afsterwedatum: " if af else "Death date: ") + html.escape(date_label(recorded["event_date"], language=language)))
     return "\n".join(lines)
 
 

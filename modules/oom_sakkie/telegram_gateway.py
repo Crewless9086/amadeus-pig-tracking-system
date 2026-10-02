@@ -915,7 +915,7 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
         delivery = deliver_family_result(parsed, herd_request, specialist="HERDMASTER",
             mission_id=str(herd_request.get("mission_id") or ""),
             card_mission_id=str(herd_request.get("card_mission_id") or ""),
-            delivery_retry_authority=delivery_retry_authority_for(herd_request))
+            delivery_retry_authority=delivery_retry_authority_for(herd_request, parsed=parsed))
         body, _ = _gateway_result(bool(herd_request.get("success")),
             str(herd_request.get("status") or "herdmaster_request_contained"),
             policy, herd_request_status)

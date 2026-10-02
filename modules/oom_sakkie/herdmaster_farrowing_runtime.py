@@ -74,9 +74,15 @@ def load_farrowing_context(parsed, *, connect_factory=None, context_store=None):
         return None
     try:
         rows = (context_store or PostgresFarrowingStore(connect_factory)).read(actor, chat)
-        if not rows:
-            return None
-        row = select_context(rows, parsed)
+        try:
+            row = select_context(rows, parsed)
+        except FarrowingContextError as exc:
+            if exc.status not in {'farrowing_context_not_current', 'farrowing_reply_context_mismatch'}:
+                raise
+            from modules.oom_sakkie.retained_farrowing_review_context import discover_retained_farrowing_review_context
+            row = discover_retained_farrowing_review_context(parsed)
+            if not row:
+                raise exc
         context = {key: row.get(key) for key in ("context_id", "facts", "question", "provider_timestamp",
                                                 "canonical_litters", "sow_refs")}
         saved = row.get("_saved_result") or {}
@@ -86,6 +92,9 @@ def load_farrowing_context(parsed, *, connect_factory=None, context_store=None):
                 "litter_id", "sow_pig_id", "farrowing_date", "total_born", "born_alive",
                 "stillborn_count", "mummified_count")}]
             context["canonical_litters_source"] = "retained_confirmed_result"
+        if row.get('historical_review_binding') or row.get('historical_review'):
+            context.update(status='historical_unconfirmed_owner_review',
+                historical_review=True, confirmation_required=True)
         return context
     except FarrowingContextError as exc:
         return {"status": exc.status, "question": _context_failure(_language(parsed), exc.status)["answer"]}
@@ -152,7 +161,34 @@ def handle_farrowing_litter_message(parsed: Mapping, authority, *, connect_facto
                 return replay["outcome"], replay["http_status"]
             if any(source_order(row) > source_order(parsed) for row in rows):
                 raise FarrowingContextError("farrowing_out_of_order")
-            prior = select_context(rows, parsed, supplied) if semantic.get("continuation") else None
+            prior = None
+            historical = None
+            if semantic.get('continuation'):
+                try:
+                    prior = select_context(rows, parsed, supplied)
+                except FarrowingContextError as exc:
+                    if (exc.status not in {'farrowing_context_not_current', 'farrowing_reply_context_mismatch'}
+                            or not hasattr(conversation, 'db')):
+                        raise
+                    from modules.oom_sakkie.retained_farrowing_review_context import validate_retained_farrowing_review_context
+                    prior = validate_retained_farrowing_review_context(parsed, connection=conversation.db)
+                    if not prior:
+                        raise exc
+                historical = prior.get('historical_review_binding')
+                if historical and supplied.get('sow_ref') and str(supplied['sow_ref']).casefold() not in {
+                        str(value).casefold() for value in prior.get('sow_refs') or []}:
+                    return _reply(language, 'farrowing_historical_subject_changed',
+                        'For a different sow, please send her name or tag, birth date and all birth counts together.',
+                        'Vir ' + "'n" + ' ander sog, stuur haar naam of oornommer, geboortedatum en al die geboortetellings saam.',
+                        question_count=1), 200
+                if historical and (semantic.get('message_kind') not in {'observation','correction'}
+                        or semantic.get('needs_clarification') is True
+                        or float(semantic.get('confidence') or 0) < 0.8
+                        or (semantic.get('message_kind') == 'correction' and not supplied)):
+                    return _reply(language, 'farrowing_historical_review_question',
+                        'What should I change in the birth details? Nothing has been recorded.',
+                        'Wat moet ek in die geboortebesonderhede verander? Niks is aangeteken nie.',
+                        question_count=1), 200
             if prior and source_order(parsed) <= source_order(prior):
                 raise FarrowingContextError("farrowing_out_of_order")
             facts = {**(prior.get("facts") or {} if prior else {}), **supplied}
@@ -173,7 +209,10 @@ def handle_farrowing_litter_message(parsed: Mapping, authority, *, connect_facto
                 facts["farrowing_date"] = (stamp.astimezone(ZoneInfo("Africa/Johannesburg")).date()
                     - timedelta(days=relative_days[relative])).isoformat()
             new_context = "OOM-FARROW-" + digest([owner, chat, provider])[:24].upper()
-            context_id = prior["context_id"] if prior else new_context
+            # A fresh owner statement prepares a new preview, never executes or
+            # retires the historical reporter's claim. Only the existing later
+            # protected callback may call execute_claimed_farrowing_litter.
+            context_id = prior["context_id"] if prior and not historical else new_context
             protected = conversation.retire(context_id)
             supersedes = ""
             if protected:
@@ -191,6 +230,10 @@ def handle_farrowing_litter_message(parsed: Mapping, authority, *, connect_facto
                 "authenticated_principal_id": owner, "provider_message_id": provider,
                 "language": language, "reported_on": stamp.astimezone(ZoneInfo("Africa/Johannesburg")).date(),
                 "farrowing_litter": facts}, canonical)
+            if historical and (prepared.get('writes_farm_data') is not False
+                    or prepared.get('zero_io') is not True
+                    or (prepared.get('success') is True and prepared.get('confirmation_required') is not True)):
+                raise FarrowingContextError('farrowing_exact_preview_required')
             if prepared.get("success") is True and (semantic.get("needs_clarification") is True
                     or (semantic.get("confidence") is not None and float(semantic["confidence"]) < 0.8)):
                 prepared = {"success": False, "status": "farrowing_meaning_uncertain",
@@ -198,11 +241,12 @@ def handle_farrowing_litter_message(parsed: Mapping, authority, *, connect_facto
                                  "Which part of the birth report needs clarifying?")}
             if prepared.get("success") is True:
                 preview = prepared["preview"]
+                owner_text = _preview_answer(prepared, canonical=canonical)
                 claim = (claim_creator or create_claim)(action_kind=ACTION_KIND,
                     owner_user_id=owner, private_chat_id=chat, mission_id=context_id,
                     provider_message_id=provider, evidence_generation=str(preview["evidence_generation"]),
                     preview_payload=preview, connect_factory=conversation.connection, ttl_minutes=15)
-                result = _reply(language, "farrowing_litter_preview_ready", _preview_answer(prepared),
+                result = _reply(language, "farrowing_litter_preview_ready", owner_text,
                     success=True, mission_id=context_id, card_mission_id=context_id,
                     callback_token=claim["callback_token"], preview_digest=claim["preview_digest"],
                     action_kind=ACTION_KIND, reply_markup=build_buttons(claim["callback_token"], language=language))
@@ -223,6 +267,8 @@ def handle_farrowing_litter_message(parsed: Mapping, authority, *, connect_facto
                 "context_id": context_id, "supersedes_context_id": supersedes, "facts": facts,
                 "sow_refs": sorted(set(sow_refs)), "question": result.get("clarification_question", ""),
                 "canonical_litters": result.get("canonical_litters") or [], "outcome": result, "http_status": code}
+            if historical:
+                receipt['historical_review_binding'] = historical
             conversation.save(receipt)
         return result, code
     except FarrowingContextError as exc:
@@ -314,20 +360,17 @@ def _readback_matches(preview, readback, litter_id, pig_ids):
 def _completion_result(preview, result, readback, *, mission_id=None):
     label = _sow_label(preview)
     af = str(preview.get("language") or "").startswith("af")
-    if af:
-        answer = (f"{label} se werpsel is aangeteken: totaal {preview['counts']['total_born']}, "
-                  f"{preview['counts']['born_alive']} lewend gebore, {preview['counts']['stillborn']} doodgebore, "
-                  f"{preview['counts']['mummified']} gemummifiseer op {preview['farrowing_date']}. "
-                  + ("Paring en vader bly Onbekend. " if not preview.get("mating_id") else "Die toepaslike paring is as Gekry gemerk. ")
-                  + f"Werpsel {html.escape(result['litter_id'])}. "
-                  + "HERDMASTER se opvolg vir werpselsorg, merk, weeg en speen is behou.")
-    else:
-        answer = (f"Litter recorded for {label}: total {preview['counts']['total_born']}, "
-                  f"{preview['counts']['born_alive']} born alive, {preview['counts']['stillborn']} stillborn, "
-                  f"{preview['counts']['mummified']} mummified on {preview['farrowing_date']}. "
-                  + ("Mating and father remain Unknown. " if not preview.get("mating_id") else "The attributable mating was marked Farrowed. ")
-                  + f"Litter {html.escape(result['litter_id'])}. "
-                  + "HERDMASTER's litter-care, tagging, weighing and weaning follow-up is retained.")
+    from modules.oom_sakkie.family_presentation import message, date_label, birth_counts
+    language = 'af' if af else 'en'
+    bullets = [date_label(preview['farrowing_date'], language=language),
+        *birth_counts(preview['counts'], language=language, include_zero_details=True)]
+    bullets.append(("Paring en vader bly Onbekend." if af else "Mating and father remain Unknown.")
+        if not preview.get('mating_id') else
+        ("Die toepaslike paring is as Gekry gemerk." if af else "The attributable mating was marked Farrowed."))
+    answer = message(html.unescape(label) + (' — geboorte aangeteken' if af else ' — birth recorded'),
+        bullets=bullets, status=("Gestoor en teruggelees. Ek volg werpselsorg, merk, weeg en speen op." if af else
+            "Saved and read back. I'll follow up litter care, tagging, weighing and weaning."),
+        language=language, emoji='🐷')
     mission_id = str(mission_id or "OOM-" + preview["operation_id"])
     return {**result, "handled": True, "specialist": "HERDMASTER", "answer": answer, "canonical_readback": readback,
             "mission_id": mission_id, "card_mission_id": mission_id,
@@ -437,24 +480,36 @@ def _hold_answer(result, *, language="en"):
                         "The birth details need review first. Nothing was recorded.")
 
 
-def _preview_answer(result):
+def _preview_answer(result, *, canonical=None):
+    from modules.oom_sakkie.family_presentation import protected_animal_labels, birth_counts, date_label, message
     p, c = result["preview"], result["counts"]
-    label = _sow_label(p)
     af = str(p.get("language") or "").startswith("af")
-    linkage = (f"Mating {p['mating_id']} and father {p['father_pig_id']} will be linked."
-               if p.get("mating_id") else "Mating and father will remain Unknown; neither will be invented.")
-    if af:
-        linkage = (f"Paring {p['mating_id']} en vader {p['father_pig_id']} sal gekoppel word."
-                   if p.get("mating_id") else "Paring en vader bly Onbekend; niks word uitgedink nie.")
-        return (f"HERDMASTER werpselvoorskou: {label}, {p['farrowing_date']}; "
-                f"totaal {c['total_born']}, lewend gebore {c['born_alive']}, doodgebore {c['stillborn']}, "
-                f"gemummifiseer {c['mummified']}. {linkage} Bevestig die presiese beskermde rekord.")
-    return (f"HERDMASTER litter preview: {label}, {p['farrowing_date']}; "
-            f"total {c['total_born']}, born alive {c['born_alive']}, stillborn {c['stillborn']}, "
-            f"mummified {c['mummified']}. {linkage} Confirm the exact protected record.")
+    language = 'af' if af else 'en'
+    labels = protected_animal_labels((canonical or {}).get('animals',[]))
+    sow_label = labels.get(p.get('sow_pig_id')) or html.unescape(_sow_label(p))
+    linkage = 'Paring en vader bly Onbekend.' if af else 'Mating and father remain Unknown.'
+    if p.get('mating_id'):
+        father = labels.get(p.get('father_pig_id')) or ''
+        if father in {'','Unknown animal','Onbekende dier'}:
+            # A protected linkage cannot lose its sole identity to meet style.
+            father = str(p.get('father_pig_id') or ('Onbekend' if af else 'Unknown'))
+        matings = [row for row in (canonical or {}).get('matings',[]) if row.get('mating_id') == p['mating_id']]
+        mating = (date_label(matings[0]['mating_date'],language=language) + ' (' + str(p['mating_id']) + ')'
+            if len(matings)==1 and matings[0].get('mating_date') else str(p['mating_id']))
+        linkage = (f'Vader: {father}; paring: {mating}. Hierdie koppeling sal gestoor word.' if af else
+            f'Father: {father}; mating: {mating}. This link will be saved.')
+    return message(sow_label + (' — geboortevoorskou' if af else ' — birth preview'),
+        bullets=[date_label(p['farrowing_date'], language=language),
+                 *birth_counts(c, language=language, include_zero_details=True), linkage],
+        status='Nog nie aangeteken nie.' if af else 'Not recorded yet.',
+        question=('Gebruik Bevestig om hierdie besonderhede te stoor, of Verander om dit reg te stel.' if af else
+                  'Use Confirm to save these details, or Change to correct them.'), language=language)
 
 
 def _sow_label(preview):
-    pig_id = html.escape(str(preview.get("sow_pig_id") or "").strip())
-    name = html.escape(str(preview.get("sow_display_name") or "").strip())
-    return f"{name} ({pig_id})" if name and name.casefold() != pig_id.casefold() else pig_id
+    from modules.oom_sakkie.family_presentation import animal_label
+    label=animal_label(preview, language=preview.get('language') or 'en')
+    if label in {'Unknown animal','Onbekende dier'}:
+        # Protected confirmation must retain its sole exact identity.
+        label=str(preview.get('sow_pig_id') or label)
+    return html.escape(label)
