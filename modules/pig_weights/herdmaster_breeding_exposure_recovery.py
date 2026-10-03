@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from modules.pig_weights.herdmaster_breeding_operating_loop import FARM_TIMEZONE
 
 CONTRACT_VERSION = "herdmaster_breeding_exposure_recovery_v1"
 OBSERVATION_VERSION = "herdmaster_breeding_observation_v1"
 BREEDING_CYCLE_VERSION = "herdmaster_exposure_breeding_cycle_v1"
 GESTATION_DAYS = 114
-ALLOWED_ACTIONS = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing"}
+ALLOWED_ACTIONS = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing", "condition_observation"}
 
 
 def planned_exposure_removal_on(started_on, days=17):
@@ -151,12 +153,50 @@ def _instant(value):
         return None
 
 
+def observation_time(value, *, observed_on=None, reported_at=None):
+    """Retain supplied precision; midnight is storage convention, not observed clock time."""
+    raw = str(value or "").strip()
+    supplied_day = _date(observed_on) if observed_on else None
+    if observed_on and not supplied_day:
+        raise ValueError("observation_date_required")
+    day_only = _date(raw)
+    if not raw and supplied_day:
+        day_only = supplied_day
+    observed = (datetime.combine(day_only, time.min, tzinfo=FARM_TIMEZONE)
+                if day_only else _instant(raw))
+    if observed is None:
+        raise ValueError("observation_date_required")
+    local_day = observed.astimezone(FARM_TIMEZONE).date()
+    if supplied_day and supplied_day != local_day:
+        raise ValueError("observation_dates_conflict")
+    reference = _instant(reported_at)
+    if reported_at and reference is None:
+        raise ValueError("observation_report_time_required")
+    if reference and (local_day > reference.astimezone(FARM_TIMEZONE).date()
+                      if day_only else observed > reference):
+        raise ValueError("observation_date_in_future")
+    return {"observed_at": observed.astimezone(timezone.utc).isoformat(),
+            "observation_date": local_day.isoformat(),
+            "observation_precision": "date" if day_only else "instant",
+            "observation_timezone": str(FARM_TIMEZONE)}
+
+
+def _condition_score(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return score if math.isfinite(score) and 1 <= score <= 5 else None
+
+
 def _stable(prefix, *parts):
     material = json.dumps(parts, sort_keys=True, separators=(",", ":"), default=str)
     return prefix + hashlib.sha256(material.encode()).hexdigest().upper()[:32]
 
 
-def build_grouped_preview(payload, *, evidence_generation):
+def build_grouped_preview(payload, *, evidence_generation, reported_at=None):
     payload = payload if isinstance(payload, dict) else {}
     rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
     errors, cleaned, seen = [], [], set()
@@ -203,29 +243,38 @@ def build_grouped_preview(payload, *, evidence_generation):
                         exposure_group_identity=str(row.get("exposure_group_identity") or "").strip() or None,
                         exposure_started_on=str(started) if started else None,
                         actual_removed_on=str(removed) if removed else None, **window)
-        elif action in {"recovery_hold", "recovery_clearance"}:
+        elif action in {"condition_observation", "recovery_hold", "recovery_clearance", "near_farrowing"}:
+            # Old timestamp-only previews retain their shape. New observation-only
+            # claims always bind the report instant and the actual supplied precision.
+            timed = {}
+            if action == "condition_observation" and any(row.get(key) is not None for key in (
+                    "boar_pig_id", "boar_ref", "placement_pen_id", "placement_pen_ref", "planned_days",
+                    "exposure_started_on", "planned_removal_on", "actual_removed_on", "exposure_identity",
+                    "recovery_hold_action", "supersedes_observation_event_id")):
+                errors.append(f"row_{index + 1}_observation_only_fields_required")
             try:
-                score = float(row.get("body_condition_score"))
-            except (TypeError, ValueError):
-                score = None
-            observed = _instant(row.get("observed_at"))
-            if score is None or not 1 <= score <= 5 or observed is None:
-                errors.append(f"row_{index + 1}_fresh_body_condition_required")
-            if action == "recovery_hold" and score is not None and score > 2:
-                errors.append(f"row_{index + 1}_hold_requires_bcs_2_or_lower")
-            if action == "recovery_clearance" and score is not None and score < 3:
-                errors.append(f"row_{index + 1}_clearance_requires_bcs_3_or_higher")
-            item.update(body_condition_score=score, observed_at=observed.isoformat() if observed else None,
+                timed = observation_time(row.get("observed_at"), observed_on=row.get("observed_on"),
+                                         reported_at=reported_at)
+                if action == "condition_observation" and _instant(reported_at) is None:
+                    raise ValueError("observation_report_time_required")
+            except ValueError as exc:
+                errors.append(f"row_{index + 1}_{exc}")
+            item.update(observed_at=timed.get("observed_at"),
                         factual_note=str(row.get("factual_note") or "").strip())
-            if not item["factual_note"]:
-                errors.append(f"row_{index + 1}_factual_note_required")
-        elif action == "near_farrowing":
-            observed = _instant(row.get("observed_at"))
-            if observed is None:
-                errors.append(f"row_{index + 1}_observation_time_required")
-            item.update(observed_at=observed.isoformat() if observed else None,
-                        factual_note=str(row.get("factual_note") or "").strip(),
-                        father_pig_id=None, historical_mating_date=None)
+            if action == "condition_observation" or timed.get("observation_precision") == "date":
+                item.update(timed)
+                item["reported_at"] = _instant(reported_at).isoformat() if _instant(reported_at) else None
+            if action != "near_farrowing":
+                score = _condition_score(row.get("body_condition_score"))
+                if score is None:
+                    errors.append(f"row_{index + 1}_body_condition_score_required")
+                if action == "recovery_hold" and score is not None and score > 2:
+                    errors.append(f"row_{index + 1}_hold_requires_bcs_2_or_lower")
+                if action == "recovery_clearance" and score is not None and score < 3:
+                    errors.append(f"row_{index + 1}_clearance_requires_bcs_3_or_higher")
+                item["body_condition_score"] = score
+            else:
+                item.update(father_pig_id=None, historical_mating_date=None)
             if not item["factual_note"]:
                 errors.append(f"row_{index + 1}_factual_note_required")
         cleaned.append(item)
@@ -291,6 +340,34 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
             if str(row.get("planned_removal_on") or "") != expected_removal:
                 return {"success": False, "status": "corrected_exposure_preview_required",
                         "rows_changed": 0}, 409
+    if any(row.get("action") == "condition_observation" for row in preview.get("rows") or ()):
+        # Mixed packets may move only the animals/route/date already justified
+        # by their exposure rows. A condition-only packet has no movements.
+        exposures = [row for row in preview["rows"] if row.get("action") == "exposure"]
+        expected = build_grouped_preview({"rows": exposures},
+            evidence_generation=preview.get("evidence_generation")) if exposures else None
+        if ((expected and not expected.get("success"))
+                or preview.get("movements", []) != (expected["preview"]["movements"] if expected else [])):
+            return {"success": False, "status": "corrected_observation_preview_required", "rows_changed": 0}, 409
+    # The new observation action cannot be widened by a reconstructed packet.
+    # Legacy grouped payloads keep their existing confirmation/replay contract.
+    for row in preview.get("rows") or ():
+        if row.get("action") != "condition_observation":
+            continue
+        try:
+            source_value = (row.get("observation_date") if row.get("observation_precision") == "date"
+                            else row.get("observed_at"))
+            timed = observation_time(source_value, observed_on=row.get("observation_date"),
+                                     reported_at=row.get("reported_at"))
+            allowed = {"pig_id", "label", "action", "body_condition_score", "factual_note", "reported_at", *timed}
+            if (set(row) - allowed or not _instant(row.get("reported_at")) or _condition_score(row.get("body_condition_score")) is None
+                    or any(row.get(key) != value for key, value in timed.items())
+                    or not str(row.get("factual_note") or "").strip()
+                    or preview.get("movements") and any(m.get("pig_id") == row.get("pig_id")
+                                                         for m in preview["movements"])):
+                raise ValueError("invalid observation packet")
+        except ValueError:
+            return {"success": False, "status": "corrected_observation_preview_required", "rows_changed": 0}, 409
     operation_id = expected_operation
     inserted = []
     with connect_factory() as db:
@@ -387,8 +464,11 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                     measurements = {"contract_version": OBSERVATION_VERSION,
                         "recovery_hold_action": "active" if action == "recovery_hold" else "cleared" if action == "recovery_clearance" else "not_recorded",
                         "near_farrowing": "observed" if action == "near_farrowing" else "not_recorded"}
-                    if action in {"recovery_hold", "recovery_clearance"}:
+                    if action in {"condition_observation", "recovery_hold", "recovery_clearance"}:
                         measurements["body_condition_score"] = row["body_condition_score"]
+                    if row.get("observation_precision"):
+                        measurements.update({key: row[key] for key in
+                            ("observation_precision", "observation_date", "observation_timezone")})
                     cur.execute("""insert into public.pig_observation_events(
                         observation_event_id,pig_id,observed_at,observer_reference,observation_category,severity,
                         factual_note,measurements_json,source_system,source_reference,idempotency_key)

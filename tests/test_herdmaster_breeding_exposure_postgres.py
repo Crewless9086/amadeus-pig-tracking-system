@@ -234,5 +234,104 @@ class BreedingExposurePostgresTests(unittest.TestCase):
             db.rollback()
 
 
+    def test_named_dated_condition_claim_callback_appends_once_and_keeps_prior_hold(self):
+        from datetime import datetime, timedelta, timezone
+        from psycopg.rows import dict_row
+        from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+        from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import handle_grouped_breeding_message
+        from modules.oom_sakkie.protected_action_claims import create_claim, bind_claim_card
+        from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
+        from modules.pig_weights.mating_routes import _project_breeding_observations
+        from modules.pig_weights.herdmaster_breeding_exposure_recovery import FARM_TIMEZONE
+        now=datetime.now(timezone.utc)
+        old=(now-timedelta(days=2)).isoformat()
+        hold=build_grouped_preview({'rows':[{'pig_id':self.sows[0],'action':'recovery_hold',
+            'body_condition_score':2,'observed_at':old,'factual_note':'Explicit recovery hold.'}]},
+            evidence_generation='OLD-HOLD-'+self.suffix)
+        result,status=execute_grouped_preview(hold,confirmed_preview_sha256=hold['preview_sha256'],
+            actor_id='owner-condition',connect_factory=self.connect)
+        self.assertEqual((status,result['rows_changed']),(201,1))
+        with self.connect() as db:
+            prior=db.execute('select observation_event_id,observed_at,measurements_json from public.pig_observation_events where pig_id=%s',
+                             (self.sows[0],)).fetchone()
+            pig_before=db.execute('select * from public.pigs where pig_id=%s',(self.sows[0],)).fetchone()
+        observed_on=now.astimezone(FARM_TIMEZONE).date().isoformat()
+        parsed={'telegram_user_id':'owner-condition','telegram_chat_id':'owner-condition',
+            'provider_message_id':'CONDITION-'+self.suffix,'provider_timestamp':now.isoformat(),
+            'text':'Synthetic named dated condition report','output_language':'en',
+            'semantic':{'domain':'herd_management','message_kind':'observation','breeding_actions':[
+                {'animal_ref':'Teena-test','action':'condition_observation','body_condition_score':3,'observed_on':observed_on}]}}
+        authority=issue_gateway_owner_authority('owner-condition','owner-condition')
+        evidence={'success':True,'allocation_inputs':{'pig_master_rows':[
+            {'Pig_ID':self.sows[0],'Tag_Number':'Teena-test','Sex':'Female','Status':'Active','On_Farm':'Yes'}]}}
+        captured={}
+        def creator(**kwargs):
+            captured.update(kwargs)
+            return create_claim(**kwargs,connect_factory=self.connect)
+        preview,status=handle_grouped_breeding_message(parsed,authority,evidence_loader=lambda:evidence,
+                                                       claim_creator=creator,now=now)
+        self.assertEqual((status,preview['status']),(200,'breeding_grouped_preview_ready'))
+        with self.connect() as db:
+            self.assertEqual(db.execute('select count(*) from public.pig_observation_events where pig_id=%s',
+                                        (self.sows[0],)).fetchone()[0],1)
+        self.assertTrue(bind_claim_card(preview['callback_token'],'CONDITION-CARD-'+self.suffix,connect_factory=self.connect))
+        callback={**parsed,'provider_message_id':'CONFIRM-'+self.suffix,
+            'provider_timestamp':datetime.now(timezone.utc).isoformat(),
+            'callback_data':f"oompa:{preview['callback_token']}:confirm",
+            'reply_to_message_id':'CONDITION-CARD-'+self.suffix}
+        # Actual private callback guard refuses a different card before any write.
+        wrong,status=handle_protected_action_input({**callback,'reply_to_message_id':'OTHER'},authority,
+                                                   connect_factory=self.connect)
+        self.assertEqual(status,409)
+        result,status=handle_protected_action_input(callback,authority,connect_factory=self.connect)
+        self.assertEqual(status,201)
+        self.assertEqual(result['rows_changed'],1)
+        replay,replay_status=handle_protected_action_input(callback,authority,connect_factory=self.connect)
+        self.assertEqual(replay_status,200)
+        self.assertEqual(replay['status'],'protected_callback_replayed_noop')
+        with psycopg.connect(URL,row_factory=dict_row) as db:
+            rows=db.execute('select * from public.pig_observation_events where pig_id=%s order by observed_at',
+                            (self.sows[0],)).fetchall()
+            self.assertEqual(len(rows),2)
+            original=next(row for row in rows if row['observation_event_id']==prior[0])
+            self.assertEqual((original['observed_at'],original['measurements_json']),(prior[1],prior[2]))
+            fresh=next(row for row in rows if row['observation_event_id']!=prior[0])
+            self.assertEqual(fresh['measurements_json']['body_condition_score'],3)
+            self.assertEqual(fresh['measurements_json']['recovery_hold_action'],'not_recorded')
+            self.assertEqual(fresh['measurements_json']['observation_precision'],'date')
+            self.assertEqual(fresh['measurements_json']['observation_date'],observed_on)
+            self.assertEqual(fresh['observed_at'].astimezone(FARM_TIMEZONE).hour,0)
+            self.assertIsNone(fresh['supersedes_observation_event_id'])
+            self.assertEqual(fresh['observer_reference'],'owner-condition')
+            self.assertEqual(fresh['source_reference'],captured['preview_payload']['preview_sha256'])
+            projection=_project_breeding_observations(rows,now=now)[self.sows[0]]
+            self.assertEqual(projection['body_condition_score'],3)
+            self.assertTrue(projection['body_condition_fresh'])
+            self.assertEqual(projection['recovery_hold'],'active')
+            self.assertEqual(projection['recovery_hold_observation_event_id'],prior[0])
+        with self.connect() as db:
+            self.assertEqual(db.execute('select * from public.pigs where pig_id=%s',(self.sows[0],)).fetchone(),pig_before)
+            for table,field in [('mating_events','sow_pig_id'),('pig_breeding_exposure_events','sow_pig_id'),
+                                ('pig_location_events','pig_id')]:
+                self.assertEqual(db.execute(f'select count(*) from public.{table} where {field}=%s',
+                                            (self.sows[0],)).fetchone()[0],0)
+            claim=db.execute('select status from app_private.oom_protected_action_claims where callback_token=%s',
+                             (preview['callback_token'],)).fetchone()
+            self.assertEqual(claim[0],'completed')
+
+    def test_condition_current_identity_change_rolls_back_before_observation_insert(self):
+        preview=build_grouped_preview({'rows':[{'pig_id':self.sows[0],'action':'condition_observation',
+            'body_condition_score':3,'observed_on':'2026-10-03','factual_note':'Synthetic condition.'}]},
+            evidence_generation='IDENTITY-'+self.suffix,reported_at='2026-10-03T10:00:00Z')
+        with self.connect() as db:
+            db.execute("update public.pigs set status='Sold',on_farm=false where pig_id=%s",(self.sows[0],))
+        with self.assertRaisesRegex(ValueError,'current_sow_identity_changed'):
+            execute_grouped_preview(preview,confirmed_preview_sha256=preview['preview_sha256'],
+                actor_id='owner-condition',connect_factory=self.connect)
+        with self.connect() as db:
+            self.assertEqual(db.execute('select count(*) from public.pig_observation_events where pig_id=%s',
+                                        (self.sows[0],)).fetchone()[0],0)
+
+
 if __name__ == "__main__":
     unittest.main()

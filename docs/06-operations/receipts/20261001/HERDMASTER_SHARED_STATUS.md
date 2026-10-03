@@ -3,7 +3,36 @@
 Lifecycle: `active` current-state evidence; non-doctrine. This is a dated shared
 checkpoint, not runtime authority or certification of every repository file.
 
-## Current checkpoint — 3 October, breeding follow-up clarity
+## Current checkpoint — 3 October, condition observation intake
+
+PR1373 is protected-merged and verified live at
+`bcc5e686c8b9e1a8f21738a773bbb4546577dcdf`. The owner's fresh breeding reply
+matches one retained answer and Telegram acknowledgement, delivered in 57
+seconds. It clearly identifies overdue planned removals and missing parentage.
+One natural cycle deferred a case at its deadline; a later normal scheduled
+retry processed the same case generation without a new send or edit and
+scheduled reassessment. This is bounded case recovery, not proof of every
+cycle, a new farm effect or full autonomy. These release actions are consumed.
+
+The owner is awaiting Teena's actual condition. Engineering continues on the
+existing mission without inventing that observation. The next repair introduces
+an observation-only body-condition action through the existing grouped protected
+claim and canonical append-only observation writer. A plain score is neither an
+instruction to place a recovery hold nor permission to clear one. Its confirmation
+must show the exact animal, score and supplied date. Date-only reports preserve
+date precision rather than assert a physical clock time. Missing, conflicting or
+future dates, invalid scores and unresolved identities cannot create a claim.
+A new score must preserve an older explicit recovery hold and repeat confirmation
+must not append another observation. No new storage, migration, schedule, paid
+model call or farm fact is introduced by engineering qualification.
+
+Local tests, independent review, hosted tests, protected release and a genuine
+named/dated observation plus owner confirmation are separate gates. Until those
+pass, this successor is not a deployed or accepted farm-record journey. Existing
+individual-weighing scheduling limits remain open; an old missing-weight window
+cannot authorize a new task. ROOTLINE follows HERDMASTER readiness.
+
+## Earlier checkpoint — 3 October, breeding follow-up clarity
 
 PR1372 is protected-merged and verified live at
 `bd3aa29f4af029a626de8cfe102406ed72b700b7`. The owner returned fresh Telegram

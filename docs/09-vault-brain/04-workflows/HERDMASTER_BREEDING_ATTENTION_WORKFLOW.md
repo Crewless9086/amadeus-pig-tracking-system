@@ -111,9 +111,11 @@ Current agentic functions include:
 - owner decisions waiting.
 
 Observation recording, mating execution and reminder delivery remain separate
-governed actions. The deployed OOM exchange previews directly stated physical
-facts but does not yet append them. A mating may be created only after one
-exact owner approval bound to the female, male, evidence generation and mating
+governed actions. Directly stated condition facts use the existing protected
+grouped preview and append-only observation writer after exact owner confirmation.
+A plain body-condition report is an observation-only action: it neither requests
+a recovery hold nor clears an existing hold. A mating may be created only after
+one exact owner approval bound to the female, male, evidence generation and mating
 date. CORE may later provide scheduling and delivery, but is not the owner of
 breeding reasoning and is not a prerequisite for the HERDMASTER workflow.
 
@@ -122,6 +124,17 @@ grouped natural reports while binding every fact to its exact female and
 observation time. The Breeding Attention/mating board remains the owner recovery
 surface. Do not create a second observation store or require Charl to repeat a
 fact already captured through either governed entry point.
+
+A condition confirmation shows the resolved animal name/tag, finite score from
+1 through 5, and owner-supplied observation date. A date-only report retains its
+farm-local date and explicit date precision; its storage timestamp is an anchor,
+not an asserted physical clock time. An explicitly supplied timestamp retains
+its instant. For the observation-only intake, missing, conflicting or future
+observation dates require clarification before a claim. The provider message time is report provenance,
+not a replacement for a supplied observation date. Bare scores or pronouns do
+not acquire write authority from a prior read-only breeding answer. The confirmed
+observation is append-only and idempotent; it does not supersede or clear a prior
+explicit hold. Recovery clearance keeps its own explicit protected decision.
 
 ## Authority and safety
 
