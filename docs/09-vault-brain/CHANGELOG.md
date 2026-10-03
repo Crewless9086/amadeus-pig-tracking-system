@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-03 - Protected observation-only body condition intake
+
+- Reuse the grouped protected claim and canonical append-only observation writer
+  for a named, dated body-condition score without inferring recovery clearance.
+- Preserve supplied observation precision and date, show both score and date in
+  the confirmation, and clarify invalid or ambiguous input before a claim.
+- Reconcile shared documentation with PR1373's genuine breeding reply and bounded
+  scheduled case recovery. The new protected journey remains in qualification;
+  real farm evidence, release and owner confirmation are separate gates.
+
 ## 2026-10-03 - Clear overdue breeding-record follow-up
 
 - Distinguish an open boar-exposure record from current physical presence.
