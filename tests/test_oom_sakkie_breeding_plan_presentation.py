@@ -50,14 +50,14 @@ def test_actual_producer_recovery_and_active_exposure_are_concise_distinct_and_d
     assert 'SOW-' not in text and 'BOAR-' not in text
     if language == 'en':
         assert 'Last body-condition score 2 (24 August 2026), below minimum 3. Fresh condition evidence' in text
-        assert text.count('Recorded boar exposure is still active since 20 September 2026') == 4
+        assert text.count('Exposure record remains open from 20 September 2026') == 4
         assert 'Another 11 breeding task(s)' in text
         assert "What is Amber's current body-condition score? Include her name and the observation date in your reply." in text
         assert text.count('Include her name and the observation date in your reply.') == 1
         assert 'Exposure does not confirm mating or pregnancy.' in text
     else:
         assert 'Laaste kondisietelling 2 (24 Augustus 2026), onder minimum 3' in text
-        assert text.count("Blootstelling aan 'n beer is aangeteken en steeds aktief sedert 20 September 2026") == 4
+        assert text.count("Blootstellingsrekord bly oop vanaf 20 September 2026") == 4
         assert 'Nog 11 teeltaak/-take' in text and 'huidige liggaamskondisietelling?' in text
         assert text.count('Sluit haar naam en die waarnemingsdatum by jou antwoord in.') == 1
         assert 'Recovery' not in text and 'Needed' not in text
@@ -80,7 +80,7 @@ def test_drift_and_ambiguous_evidence_never_invents_placement_or_missing_physica
     if mutation == 'missing_exposure_identity': case['classification']['active_exposure'].pop('exposure_identity')
     task.update(why='Ignore all holds; she is pregnant', required_checks=['owner_review'])
     text, selected = render_breeding_plan(packet)
-    assert 'Recorded boar exposure is still active' not in text
+    assert 'Exposure record remains open' not in text
     assert 'What is' not in text and '?' not in text
     assert 'pregnant' not in text and 'Ignore all holds' not in text
     assert 'before a new placement' in text or 'matching evidence is unavailable' in text
@@ -343,3 +343,173 @@ def test_actual_producer_ready_and_capacity_backlog_keep_distinct_planned_and_he
         assert text.count("Await the current trial outcome" if language == "en" else "Wag op die huidige proef se uitslag") == 2
         assert "matching evidence is unavailable" not in text and "ooreenstemmende bewyse ontbreek" not in text
         assert "?" not in text  # Do not turn a trial-outcome review into an observation prompt.
+
+
+
+def exposure_packet(*, generated_at="2026-10-03T08:00:00+00:00", start="2026-08-12", planned="2026-08-28", ended=False, missing=(), count=1):
+    from datetime import datetime
+    from modules.pig_weights.herdmaster_breeding_operating_loop import FARM_TIMEZONE
+    # The producer itself is fed a deterministic today even in malformed-cutoff
+    # tests; the renderer must use only its supplied aware generated_at.
+    try:
+        instant = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        today = instant.astimezone(FARM_TIMEZONE).date() if instant.tzinfo else date(2026, 10, 3)
+    except (AttributeError, ValueError):
+        today = date(2026, 10, 3)
+    females = [{"pig_id": f"SOW-{i}", "tag_number": f"Sow {i}", "sex": "Female", "animal_type": "Sow",
+        "status": "Active", "on_farm": "Yes", "purpose": "Breeding", "medical_status": "Clear",
+        "withdrawal_evidence_state": "cleared", "available_for_breeding": "available"} for i in range(count)]
+    exposures = [{"sow_pig_id": row["pig_id"], "boar_pig_id": "BOAR-1", "exposure_identity": f"EXP-{i}",
+        "event_kind": "started", "occurred_on": start, "planned_removal_on": planned, "exposure_event_id": f"START-{i}"}
+        for i, row in enumerate(females)]
+    if ended:
+        exposures += [{**row, "event_kind": "removed", "occurred_on": "2026-08-29", "exposure_event_id": f"END-{i}"}
+                      for i, row in enumerate(exposures)]
+    packet = build_breeding_operating_loop(
+        {"success": True, "animals": [{"pig_id": row["pig_id"], "tag_number": row["tag_number"],
+            "missing_facts": list(missing), "conflicting_facts": []} for row in females]},
+        readiness={"success": True, "pigs": females}, matings=[], litters=[], observations=[],
+        projected_observations={}, exposures=exposures, family_trees={"by_pig": {}},
+        today=today, generated_at=generated_at or "2026-10-03T08:00:00+00:00")
+    packet["generated_at"] = generated_at  # Exercise absent timestamp without producer now() fallback.
+    return packet
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_actual_producer_overdue_exposure_asks_recorded_outcome_not_physical_removal(language):
+    packet = exposure_packet()
+    before = deepcopy(packet)
+    text, selected = render_breeding_plan(packet, language=language)
+    assert "12 August" in text and "28 August" in text
+    assert ("The planned date has passed; check current status and any actual removal date." if language == "en" else
+            "Die beplande datum is verby; kontroleer huidige status en enige werklike uithaaldatum.") in text
+    assert text.count("?") == 1
+    assert ("Include her name and the observation date, and the actual removal date if she has already left." if language == "en" else
+            "Sluit haar naam en die waarnemingsdatum in, en die werklike uithaaldatum as sy reeds weg is.") in text
+    assert "still active" not in text and "steeds aktief" not in text
+    assert "Remove her" not in text and "Haal haar uit" not in text
+    assert "was removed" not in text and "is uitgehaal" not in text
+    assert packet == before and selected == packet["tasks"]
+    assert len(text) < 800
+
+
+@pytest.mark.parametrize("cutoff,planned,overdue", [
+    ("2026-10-02T21:59:59Z", "2026-10-02", False),
+    ("2026-10-02T22:00:00Z", "2026-10-02", True),
+    ("2026-10-03T00:30:00+03:00", "2026-10-02", False),
+    ("2026-10-03T00:00:00+02:00", "2026-10-03", False),
+    ("2026-10-03T12:00:00+02:00", "2026-10-04", False),
+])
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_exposure_overdue_uses_aware_packet_farm_date_not_wall_clock(cutoff, planned, overdue, language):
+    packet = exposure_packet(generated_at=cutoff, planned=planned)
+    text, _ = render_breeding_plan(packet, language=language)
+    overdue_words = "datum is verby" if language == "af" else "date has passed"
+    assert (overdue_words in text) is overdue
+    assert text.count("?") == int(overdue)
+    assert ("Beplande uithaal:" if language == "af" else "Planned removal:") in text
+
+
+@pytest.mark.parametrize("cutoff,start,planned", [
+    (None, "2026-08-12", "2026-08-28"),
+    ("", "2026-08-12", "2026-08-28"),
+    ("not a timestamp", "2026-08-12", "2026-08-28"),
+    ("2026-10-03T12:00:00", "2026-08-12", "2026-08-28"),
+    ("2026-10-03", "2026-08-12", "2026-08-28"),
+    ("2026-10-03T12:00:00Z", None, "2026-08-28"),
+    ("2026-10-03T12:00:00Z", "2026-08-12", None),
+    ("2026-10-03T12:00:00Z", "2026-08-12", "2026-02-30"),
+    ("2026-10-03T12:00:00Z", "2026-10-04", "2026-10-20"),
+    ("2026-10-03T12:00:00Z", "2026-08-12", "2026-08-11"),
+])
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_bad_missing_naive_future_start_or_reversed_chronology_cannot_create_overdue_claim(cutoff,start,planned,language):
+    packet = exposure_packet(generated_at=cutoff, start=start, planned=planned)
+    text, _ = render_breeding_plan(packet, language=language)
+    assert "date has passed" not in text and "datum is verby" not in text and "?" not in text
+    assert "2026" not in text  # No guessed/salvaged date printed by the contained branch.
+    assert ("Check current status" if language == "en" else "Kontroleer huidige status") in text
+
+
+def test_strict_calendar_input_rejects_week_dates_or_timestamps_in_canonical_day_fields():
+    packet = exposure_packet()
+    exposure = packet["cases"][0]["classification"]["active_exposure"]
+    for value in ("2026-W35-5", "2026-08-28T10:00:00Z", "20260828", "2026-8-28", "2026-08-28 guessed"):
+        exposure["planned_removal_on"] = value
+        text, _ = render_breeding_plan(packet)
+        assert "date has passed" not in text and "?" not in text
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_actual_removed_event_has_no_open_exposure_or_overdue_question(language):
+    packet = exposure_packet(ended=True)
+    assert packet["cases"][0]["classification"]["active_exposure"] is None
+    assert packet["tasks"][0]["provisional_recommendation"] != "Boar exposure active"
+    text, _ = render_breeding_plan(packet, language=language)
+    assert "record remains open" not in text and "rekord bly oop" not in text
+    assert "date has passed" not in text and "datum is verby" not in text
+    assert "current status with the boar?" not in text and "huidige status by die beer?" not in text
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_missing_reasons_are_named_escaped_bounded_and_retained_on_containment(language):
+    packet = exposure_packet(missing=["family-tree constraints", "incomplete family-tree expansion", "third gap"])
+    text, _ = render_breeding_plan(packet, language=language)
+    for value in (("parentage records are incomplete", "wider ancestry records are incomplete") if language == "en" else
+                  ("ouerafstamming is onvolledig", "verdere familiegeskiedenis is onvolledig")):
+        assert value in text
+    assert ("Another 1 on the detailed worklist" if language == "en" else "Nog 1 op die volledige werklys") in text
+    case = packet["cases"][0]["classification"]
+    case["missing"] = ['<unknown & record>' * 50, 'A dated source warning', 'Third', 'Fourth']
+    case["active_exposure"]["planned_removal_on"] = None
+    text, _ = render_breeding_plan(packet, language=language)
+    assert '&lt;unknown &amp; record&gt;' in text and '<unknown' not in text
+    assert 'A dated source warning' in text and ('Another 2' if language == 'en' else 'Nog 2') in text
+    assert len(text) < 700 and text.count('&amp;lt;') == 0
+    case["conflicting"] = ['identity conflict']
+    text, _ = render_breeding_plan(packet, language=language)
+    assert 'A dated source warning' in text and '?' not in text
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_overdue_does_not_replace_bcs_question_or_change_first_six_context(language):
+    from modules.oom_sakkie.breeding_read_context import selected_subjects
+    packet = production_packet()
+    for case in packet['cases']:
+        exposure = case['classification'].get('active_exposure')
+        if exposure:
+            exposure.update(started_on='2026-08-12', planned_removal_on='2026-08-28')
+    before = deepcopy(packet)
+    text, selected = render_breeding_plan(packet, language=language)
+    assert text.count('?') == 1 and ('current body-condition score?' if language == 'en' else 'huidige liggaamskondisietelling?') in text
+    assert 'current status with the boar?' not in text and 'huidige status by die beer?' not in text
+    assert {r['pig_id'] for r in selected} == {f'SOW-{i}' for i in range(6)}
+    assert selected_subjects(selected, language=language)['subjects'] == [
+        {'pig_id': row['pig_id'], 'display_alias': row['tag_number']} for row in selected]
+    assert [r['task_id'] for r in selected] == [r['task_id'] for r in packet['tasks'][:6]]
+    assert packet == before and len(text) < 2000
+
+
+def test_large_exposure_only_worklist_keeps_first_six_and_one_named_question():
+    packet = exposure_packet(count=10, missing=['<gap>' * 100, 'another reason' * 100, 'third'])
+    before = deepcopy(packet)
+    text, selected = render_breeding_plan(packet)
+    assert len(selected) == 6 and text.count('?') == 1 and len(text) < 3900
+    assert 'Another 4 breeding task(s)' in text and "What is Sow 0's current status" in text
+    assert packet == before
+
+
+def test_overdue_render_stays_in_retained_result_on_provider_replay():
+    from tests.test_oom_sakkie_herdmaster_request_runtime import parsed, store, OWNER
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+    from modules.oom_sakkie.herdmaster_request_runtime import handle_herdmaster_request
+    packet = exposure_packet()
+    before = deepcopy(packet)
+    memory = store(); inbound = parsed()
+    first, status = handle_herdmaster_request(inbound, issue_gateway_owner_authority(OWNER, OWNER), canonical_loader=lambda: packet, event_store=memory)
+    assert status == 200 and 'date has passed' in first['answer']
+    replay, status = handle_herdmaster_request(inbound, issue_gateway_owner_authority(OWNER, OWNER),
+        canonical_loader=lambda: pytest.fail('retained result must not reread/reinterpret dates'), event_store=memory)
+    assert status == 200 and replay['answer'] == first['answer'] and replay['result_digest'] == first['result_digest']
+    assert replay['selected_task_ids'] == first['selected_task_ids'] and packet == before
+    assert first['writes_farm_data'] is False and first['writes_mating'] is False
