@@ -11,6 +11,13 @@ Follow [AGENTS.md](AGENTS.md), the
 and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md).
 The register names the sole coordinator, current work, holds and next gate.
 
+PR1372 is verified live at `bd3aa29f4af029a626de8cfe102406ed72b700b7`.
+The owner's fresh 3 October replies exactly match recorded weighing and breeding
+deliveries; two later natural cycles completed without errors or new messages.
+A bounded follow-up correction is in qualification: clarify past exposure-removal
+plans and name missing evidence while preserving farm facts and confirmations.
+Full HERDMASTER autonomy and individual weighing schedules remain unproven.
+
 The [1 October shared status](docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md)
 records the HERDMASTER work and its acceptance limits. PR1367 is merged at
 `bc35db71a653677b11e8b03ca6d9eda965edfba7`; that web revision was verified live

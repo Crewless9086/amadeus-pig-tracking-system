@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 import html
 
 from modules.oom_sakkie.family_presentation import animal_label, date_label
+from modules.pig_weights.herdmaster_breeding_operating_loop import FARM_TIMEZONE
 from modules.pig_weights.herdmaster_breeding_policy import (
     BREEDING_BODY_CONDITION_MIN, BREEDING_BODY_CONDITION_MAX,
 )
@@ -190,12 +191,104 @@ def _legacy_details(row, *, language):
     return " ".join(lines)
 
 
+def _calendar_day(value):
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or len(value) != 10:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+        return parsed if parsed.isoformat() == value else None
+    except ValueError:
+        return None
+
+
+def _packet_day(packet):
+    """Only the canonical aware cutoff determines the farm date; never now()."""
+    raw = packet.get("generated_at")
+    try:
+        instant = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if instant.tzinfo is None or instant.utcoffset() is None:
+            return None
+        return instant.astimezone(FARM_TIMEZONE).date()
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _exposure_followup(packet, row, exposure, language):
+    af = language == "af"
+    as_of = _packet_day(packet)
+    start = _calendar_day(exposure.get("started_on"))
+    planned = _calendar_day(exposure.get("planned_removal_on"))
+    if as_of is None or start is None or planned is None:
+        return (("Blootstellingsrekord bly oop; die bewystyd of datums is onvolledig. Kontroleer huidige status en datums."
+                 if af else "Exposure record remains open; evidence time or dates are incomplete. Check current status and dates."), None)
+    if start > as_of or planned < start:
+        return (("Blootstellingsdatums bots met mekaar of die bewystyd. Kontroleer huidige status en die begin- en beplande uithaaldatum."
+                 if af else "Exposure dates conflict with each other or the evidence time. Check current status, start and planned removal dates."), None)
+    start_text, planned_text = date_label(start, language=language), date_label(planned, language=language)
+    text = (f"Blootstellingsrekord bly oop vanaf {start_text}. Beplande uithaal: {planned_text}." if af else
+            f"Exposure record remains open from {start_text}. Planned removal: {planned_text}.")
+    if planned >= as_of:
+        return text, None
+    text += (" Die beplande datum is verby; kontroleer huidige status en enige werklike uithaaldatum." if af else
+             " The planned date has passed; check current status and any actual removal date.")
+    # Keep the existing first-six selection and BCS/other task question priority.
+    # An exposure-only worklist may ask for a self-identifying report; this is
+    # neither implicit continuation authority nor a physical-removal instruction.
+    pending = [task for task in packet.get("tasks") or () if isinstance(task, Mapping) and not task.get("completed")]
+    if not pending or any(task.get("provisional_recommendation") != "Boar exposure active" for task in pending):
+        return text, None
+    name = animal_label(row, language=language)[:60]
+    question = (f"Wat is {name} se huidige status by die beer? Sluit haar naam en die waarnemingsdatum in, en die werklike uithaaldatum as sy reeds weg is."
+                if af else f"What is {name}'s current status with the boar? Include her name and the observation date, and the actual removal date if she has already left.")
+    return text, question
+
+
+def _missing_evidence(classification, language):
+    """Name supplied gaps, preserving unknown source wording and omitted count."""
+    from modules.oom_sakkie.owner_response_composer import _clip
+    raw = classification.get("missing") or ()
+    reasons = list(raw) if isinstance(raw, (list, tuple)) else [raw]
+    if not reasons:
+        return ""
+    labels = {
+        "family-tree constraints": ("parentage records are incomplete", "ouerafstamming is onvolledig"),
+        "incomplete family-tree expansion": ("wider ancestry records are incomplete", "verdere familiegeskiedenis is onvolledig"),
+    }
+    af = language == "af"
+    displayed = []
+    for reason in reasons[:2]:
+        key = str(reason or "").strip()
+        if key in labels:
+            displayed.append(labels[key][int(af)])
+        else:
+            source = _clip(key, 75) if key else ("onbenoemde bewysgaping" if af else "unspecified evidence gap")
+            displayed.append(("bronwoorde: " if af else "source: ") + source)
+    text = ("  Ontbrekende bewyse: " if af else "  Missing evidence: ") + "; ".join(displayed) + "."
+    if len(reasons) > 2:
+        text += (f" Nog {len(reasons)-2} op die volledige werklys." if af else
+                 f" Another {len(reasons)-2} on the detailed worklist.")
+    return text
+
+
 def breeding_task_lines(packet, row, *, language="en"):
+    language = "af" if str(language).casefold().startswith("af") else "en"
+    classification = _case(packet, row)
+    lines, question = _task_lines(packet, row, classification, language=language)
+    # Preserve source gaps even when a richer state/date rendering is contained.
+    if classification is not None:
+        missing = _missing_evidence(classification, language)
+        if missing:
+            lines.append(missing)
+    return lines, question
+
+
+def _task_lines(packet, row, classification, *, language="en"):
     """Return display lines and, only when supported, one factual next question."""
     language = "af" if str(language).casefold().startswith("af") else "en"
     af = language == "af"
     name = animal_label(row, language=language)[:60]
-    classification = _case(packet, row)
     state = row.get("provisional_recommendation")
     prefix = f"• <b>{_safe(name)}</b> — "
     unavailable = ("Hersiening nodig; volledige of ooreenstemmende bewyse ontbreek."
@@ -216,12 +309,7 @@ def breeding_task_lines(packet, row, *, language="en"):
         exposure = _map(classification.get("active_exposure"))
         if not exposure.get("exposure_identity") or not exposure.get("boar_pig_id"):
             return [prefix + unavailable], None
-        text = "Blootstelling aan 'n beer is aangeteken en steeds aktief" if af else "Recorded boar exposure is still active"
-        if exposure.get("started_on"):
-            text += (" sedert " if af else " since ") + _date(exposure["started_on"], language)
-        text += "."
-        if exposure.get("planned_removal_on"):
-            text += (" Beplande uithaal: " if af else " Planned removal: ") + _date(exposure["planned_removal_on"], language) + "."
+        text, question = _exposure_followup(packet, row, exposure, language)
     elif state == "Body condition recovery":
         try:
             score = Decimal(str(classification.get("body_condition")))
@@ -277,10 +365,6 @@ def breeding_task_lines(packet, row, *, language="en"):
         body_condition_question = True
         question = (f"Wat is {name} se huidige liggaamskondisietelling?" if af else
                     f"What is {name}'s current body-condition score?")
-    missing_count = len(classification.get("missing") or ())
-    if missing_count:
-        text += (f" Nog {missing_count} bewysgaping(s) op die volledige werklys." if af else
-                 f" {missing_count} evidence gap(s) remain on the detailed worklist.")
     if unsupported:
         text += (" Ander vereistes wag op hersiening." if af else "Other requirements await review.")
     if question and body_condition_question:
