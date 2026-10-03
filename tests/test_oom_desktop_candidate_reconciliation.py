@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/pig_weights/herdmaster_weighing_reconciliation.py', 'tests/test_herdmaster_weighing_reconciliation.py', 'tests/test_herdmaster_weighing_reconciliation_postgres.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/breeding_plan_presentation.py', 'modules/oom_sakkie/herd_read_queries.py', 'modules/oom_sakkie/herdmaster_request_runtime.py', 'tests/test_herdmaster_breeding_chronology.py', 'tests/test_herdmaster_weighing_reconciliation.py', 'tests/test_oom_sakkie_breeding_plan_presentation.py', 'tests/test_oom_sakkie_herd_read_queries.py', 'tests/test_oom_sakkie_herdmaster_request_runtime.py', 'tests/test_oom_sakkie_weighing_presentation.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -532,8 +532,8 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:59c5b50f69830eb5b0f77b218343b013f74f070e"})
-        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:c0387dad99ca07732294d1d9d5d5a742f43e1992"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:c0387dad99ca07732294d1d9d5d5a742f43e1992"})
+        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:bd3aa29f4af029a626de8cfe102406ed72b700b7"})
         self.assertFalse(READINESS_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(CONCISE_BRIEF_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FAMILY_STYLE_EFFECTS & adapter.ADDED_EFFECTS)
@@ -666,6 +666,23 @@ class ReconciliationTests(unittest.TestCase):
         for effect in ("manual_weighing_instruction","sale_implies_physical_exit","breeding_read_context_farm_confirmation"):
             changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
             with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_breeding_overdue_followup_cannot_infer_dates_facts_or_question_authority(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        for before,after in (
+                ("supplied canonical packet's aware farm-date cutoff, never the wall clock", "the current wall clock"),
+                ("Missing, naive, invalid, future-start or conflicting dates remain explicit uncertainty", "Incomplete dates imply overdue physical work"),
+                ("does not prove current physical presence, removal, mating or pregnancy", "proves physical presence and pregnancy"),
+                ("existing displayed task order and question priority", "new owner task ranking"),
+                ("only for the supported exposure-only worklist", "for every worklist"),
+                ("Do not replace a higher-priority condition question", "Replace any higher-priority condition question"),
+                ("bounded source wording and an explicit omitted count", "invented explanations without source gaps"),
+                ("earlier PR1372 replies remain historical evidence", "earlier PR1372 replies prove this release")):
+            changed=deepcopy(m);original=changed["contract"]["operational_acceptance"]
+            changed["contract"]["operational_acceptance"]=[v.replace(before,after) for v in original]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],original,before)
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
     def test_owner_attention_presentation_cannot_invent_work_facts_or_authority(self):
@@ -948,20 +965,20 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR,1372)
-        self.assertEqual(adapter.HEAD,"5804acce467ecc0b3a5ce61f7f72dfcd9e9839a4")
-        self.assertEqual(adapter.TREE,"6b7f5b3d130a4acd4850b56899cd2b16b217740b")
-        self.assertEqual(adapter.BASE,"c0387dad99ca07732294d1d9d5d5a742f43e1992")
-        self.assertEqual(adapter.BRANCH,"codex/herd-owner-attention-answers-20261002")
+        self.assertEqual(adapter.CANDIDATE_PR,1373)
+        self.assertEqual(adapter.HEAD,"39155807bb975f949425b4e0563557621177e7c8")
+        self.assertEqual(adapter.TREE,"c53e8d049041b287043fed27a8a2936904f8da62")
+        self.assertEqual(adapter.BASE,"bd3aa29f4af029a626de8cfe102406ed72b700b7")
+        self.assertEqual(adapter.BRANCH,"codex/herd-breeding-overdue-followup-20261003")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1371)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"97a89cb0c2aad3179d54c62b995751af405a17bd")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"59c5b50f69830eb5b0f77b218343b013f74f070e")
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-weighing-retired-order-20261002")
+        self.assertEqual(adapter.PREDECESSOR_PR,1372)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"5804acce467ecc0b3a5ce61f7f72dfcd9e9839a4")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"c0387dad99ca07732294d1d9d5d5a742f43e1992")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-owner-attention-answers-20261002")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),7)
-        self.assertEqual(len(adapter.PATHS),14)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),14)
+        self.assertEqual(adapter.PATHS,['README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/breeding_plan_presentation.py', 'tests/test_oom_sakkie_breeding_plan_presentation.py'])
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
