@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-03 - Clear overdue breeding-record follow-up
+
+- Distinguish an open boar-exposure record from current physical presence.
+  Compare valid planned removal dates with the canonical assessment date and
+  state the current-status/removal-date evidence needed when a plan is past.
+- Name missing evidence instead of displaying only a count. Preserve unknowns,
+  selected animal identities, existing condition questions and protected actions.
+- Record PR1372 live state and the owner's fresh weighing/breeding replies;
+  the successor presentation and full autonomy retain separate acceptance gates.
+
 ## 2026-10-02 - Clear HERDMASTER weighing and breeding answers
 
 - Apply the existing concise family-message standard to specific weighing and

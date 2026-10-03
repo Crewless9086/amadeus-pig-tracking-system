@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Lifecycle: `active` current-state evidence; non-doctrine.
-Updated: 2026-10-02; PR1371 live; genuine weighing/breeding replies verified; clearer answers in qualification.
+Updated: 2026-10-03; PR1372 live; fresh owner replies verified; overdue breeding follow-up clarity in qualification.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
@@ -14,6 +14,14 @@ be executed again. Detailed private working evidence stays in the assigned
 sibling mission directory, not in the public repository.
 
 ## Current work and authority
+
+- The [3 October checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md#current-checkpoint--3-october-breeding-follow-up-clarity)
+  records live PR1372 and the fresh owner replies. The successor clarifies past
+  removal plans and names missing evidence without changing farm records,
+  physical actions, task selection or retained conversation identities.
+  Existing engineering/release authority applies; no repeated approval is needed.
+  Full autonomy remains open. The earlier checkpoints below are history.
+  OWNER ACTION: NONE
 
 - The [current operational checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md#current-checkpoint--2-october-direct-owner-replies)
   supersedes the PR1369 presentation work described below. PR1369 is merged

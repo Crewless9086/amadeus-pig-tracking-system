@@ -1,9 +1,38 @@
-# HERDMASTER shared status — updated 2 October 2026
+# HERDMASTER shared status — updated 3 October 2026
 
 Lifecycle: `active` current-state evidence; non-doctrine. This is a dated shared
 checkpoint, not runtime authority or certification of every repository file.
 
-## Current checkpoint — 2 October, direct owner replies
+## Current checkpoint — 3 October, breeding follow-up clarity
+
+PR1372 is protected-merged and verified live at
+`bd3aa29f4af029a626de8cfe102406ed72b700b7`. The owner returned fresh Telegram
+weighing and breeding replies at 02:16/02:17 SAST on 3 October. Both exactly
+match retained visible answers and stored Telegram acknowledgements. Delivery
+took 30 and 31 seconds respectively. Two later natural manager cycles completed
+without exceptions, deferrals or new messages. This proves the narrow read/reply
+journeys, not protected changes or full autonomy. The weighing
+answer now separates historical window coverage from a confirmed due task.
+The breeding answer exposes a remaining gap: an open exposure record has a
+planned removal date that has already passed, but the reply does not say what
+current evidence needs checking. Generic evidence-gap counts are also unclear.
+
+The bounded presentation repair compares valid exposure dates with the canonical
+packet's dated assessment in the farm timezone. It distinguishes an open record
+from physical presence and requests current status and any actual removal date;
+it does not assert a removal or authorize a physical operation. Missing evidence
+is named, including incomplete ancestry, and unknown reasons remain visible.
+Animal selection, retained replies, observation provenance and confirmation
+boundaries remain unchanged. Current condition evidence is still required for
+Teena and Waki; old low scores cannot establish recovery by the passage of time.
+
+This successor passed 392 local conversation/producer regressions and Vault
+alignment, and is not yet deployed. Exact hosted/release qualification and
+later successor operational acceptance remain separate gates. Individual
+weighing schedules, protected observation journeys and full HERDMASTER autonomy
+remain open. ROOTLINE still follows the HERDMASTER readiness gate.
+
+## Earlier checkpoint — 2 October, direct owner replies
 
 PR1371 is merged and verified live at
 `c0387dad99ca07732294d1d9d5d5a742f43e1992`. Its bounded live canonical comparison
