@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/breeding_plan_presentation.py', 'modules/oom_sakkie/herd_read_queries.py', 'modules/oom_sakkie/herdmaster_request_runtime.py', 'tests/test_herdmaster_breeding_chronology.py', 'tests/test_herdmaster_weighing_reconciliation.py', 'tests/test_oom_sakkie_breeding_plan_presentation.py', 'tests/test_oom_sakkie_herd_read_queries.py', 'tests/test_oom_sakkie_herdmaster_request_runtime.py', 'tests/test_oom_sakkie_weighing_presentation.py']
+PREDECESSOR_PATHS = ['README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/breeding_plan_presentation.py', 'tests/test_oom_sakkie_breeding_plan_presentation.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -52,6 +52,8 @@ RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_prev
 SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40, "TREE": "c" * 40,
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
+
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1374, 'HEAD': '640f56423b85c11c0a0d60b61f904c0fdce603ec', 'TREE': '88622940e5fd3d1017d2da943d488305a363f3e8', 'APPROVED_RUNTIME_HEAD': '640f56423b85c11c0a0d60b61f904c0fdce603ec', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md', 'docs/09-vault-brain/06-data/FARM_DATA_MODEL.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/herdmaster_breeding_exposure_runtime.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/pig_weights/herdmaster_breeding_exposure_recovery.py', 'tests/test_herdmaster_breeding_exposure_postgres.py', 'tests/test_herdmaster_breeding_exposure_recovery.py', 'tests/test_oom_sakkie_herdmaster_breeding_exposure_runtime.py', 'tests/test_oom_sakkie_semantic_front_door.py']}
 
 def use_synthetic_candidate(test):
     pending = {key: deepcopy(value) for key, value in SYNTHETIC_PINS.items()
@@ -329,6 +331,19 @@ def issuer_chain(test,connect,snapshot):
     test.assertEqual(snapshot(),before)
 
 
+class CandidatePinTests(unittest.TestCase):
+    def test_exact_real_candidate_and_pending_pin_refusal_before_source_or_database_access(self):
+        for name, expected in FINAL_CANDIDATE_PINS.items():
+            self.assertEqual(getattr(adapter, name), expected, name)
+        self.assertEqual(adapter.QUALIFICATION_TEST_PATHS, [])
+        with patch.object(adapter, "CANDIDATE_PR", None), patch.object(adapter, "verify_source_and_candidate") as verify:
+            with self.assertRaisesRegex(adapter.ReconciliationError, "candidate_pins_pending"):
+                adapter.reconcile_candidate(manifest_bytes=b"{}", approval_bytes=b"{}",
+                    expected_manifest_sha256="0" * 64, expected_approval_sha256="0" * 64,
+                    connect_factory=lambda _: self.fail("unexpected connection"))
+        verify.assert_not_called()
+
+
 class ReconciliationTests(unittest.TestCase):
     def setUp(self):
         use_synthetic_candidate(self)
@@ -532,8 +547,8 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:c0387dad99ca07732294d1d9d5d5a742f43e1992"})
-        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:bd3aa29f4af029a626de8cfe102406ed72b700b7"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:bd3aa29f4af029a626de8cfe102406ed72b700b7"})
+        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:bcc5e686c8b9e1a8f21738a773bbb4546577dcdf", "herdmaster_protected_body_condition_observation_intake"})
         self.assertFalse(READINESS_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(CONCISE_BRIEF_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FAMILY_STYLE_EFFECTS & adapter.ADDED_EFFECTS)
@@ -668,6 +683,43 @@ class ReconciliationTests(unittest.TestCase):
             with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
+    def test_condition_observation_preserves_fact_date_hold_and_confirmation_boundaries(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
+        effect="herdmaster_protected_body_condition_observation_intake"
+        self.assertNotIn(effect, prior["allowed_effects"])
+        self.assertIn(effect, m["contract"]["allowed_effects"])
+        self.assertIn("farm_write", m["contract"]["forbidden_effects"])
+        for before,after in (
+                ("genuine current authenticated owner report", "synthetic engineering report"),
+                ("finite nonboolean body-condition score", "any inferred score"),
+                ("explicit observation date and date-only precision", "provider date and invented physical time"),
+                ("reject missing, future, invalid or conflicting observation dates before claim creation", "accept any date after claim creation"),
+                ("Prior read context, a score alone, a pronoun", "Any prior read context, score or pronoun"),
+                ("exact bound current claim, preview digest, card and genuine confirmation", "any old card or release approval"),
+                ("successful replay records no second observation", "replay may append another observation"),
+                ("recovery_hold_action=not_recorded and no supersession", "recovery_hold_action=cleared and supersession"),
+                ("preserve an earlier explicit active hold", "clear an earlier explicit active hold"),
+                ("Reject extra protected-effect fields", "Accept extra protected-effect fields"),
+                ("Registration remains exactly five canonical release-metadata writes", "Registration may write farm observations"),
+                ("PR1373 read replies remain historical evidence", "PR1373 read replies prove the new protected outcome"),
+                ("tests/test_herdmaster_breeding_exposure_recovery.py in Run canonical conversational follow-up gates", "optional grouped recovery examples"),
+                ("tests/test_oom_sakkie_semantic_front_door.py in Run retained farrowing conversation gates", "optional semantic examples"),
+                ("in Run HERDMASTER grouped breeding exposure transaction gates", "in an unqualified new lane"),
+                ("tests/test_herdmaster_breeding_exposure_postgres.py with isolated PostgreSQL", "optional PostgreSQL examples")):
+            changed=deepcopy(m);original=changed["contract"]["operational_acceptance"]
+            changed["contract"]["operational_acceptance"]=[v.replace(before,after) for v in original]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],original,before)
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        changed=deepcopy(m);changed["contract"]["allowed_effects"].remove(effect)
+        with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+            adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        for unauthorized in ("implicit_recovery_clearance", "engineering_observation_recording", "condition_report_without_confirmation"):
+            changed=deepcopy(m);changed["contract"]["allowed_effects"].append(unauthorized)
+            with self.subTest(effect=unauthorized),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
     def test_breeding_overdue_followup_cannot_infer_dates_facts_or_question_authority(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         for before,after in (
@@ -689,7 +741,7 @@ class ReconciliationTests(unittest.TestCase):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:"+adapter.PREDECESSOR_BASE})
-        self.assertEqual(adapter.ADDED_EFFECTS,{"application_revision_rollback:web:"+adapter.BASE})
+        self.assertEqual(adapter.ADDED_EFFECTS,{"application_revision_rollback:web:"+adapter.BASE, "herdmaster_protected_body_condition_observation_intake"})
         self.assertTrue(READINESS_EFFECTS <= set(prior["allowed_effects"]))
         self.assertTrue(READINESS_EFFECTS <= set(m["contract"]["allowed_effects"]))
         for before,after in (
@@ -965,20 +1017,18 @@ class ReconciliationTests(unittest.TestCase):
         m["implementation"]["adapter_sha256"]=adapter.digest(Path(adapter.__file__).read_bytes())
         m["implementation"]["helper_files"]={p:adapter.digest((adapter.ROOT/p).read_bytes()) for p in adapter.HELPERS}
         plan=adapter.prepare_reconciliation(**encode(m,a))
-        self.assertEqual(adapter.CANDIDATE_PR,1373)
-        self.assertEqual(adapter.HEAD,"39155807bb975f949425b4e0563557621177e7c8")
-        self.assertEqual(adapter.TREE,"c53e8d049041b287043fed27a8a2936904f8da62")
-        self.assertEqual(adapter.BASE,"bd3aa29f4af029a626de8cfe102406ed72b700b7")
-        self.assertEqual(adapter.BRANCH,"codex/herd-breeding-overdue-followup-20261003")
+        for name, value in FINAL_CANDIDATE_PINS.items():
+            self.assertEqual(getattr(adapter, name), value)
+        self.assertEqual(adapter.BASE,"bcc5e686c8b9e1a8f21738a773bbb4546577dcdf")
+        self.assertEqual(adapter.BRANCH,"codex/herd-readiness-20261003")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1372)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"5804acce467ecc0b3a5ce61f7f72dfcd9e9839a4")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"c0387dad99ca07732294d1d9d5d5a742f43e1992")
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-owner-attention-answers-20261002")
+        self.assertEqual(adapter.PREDECESSOR_PR,1373)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"39155807bb975f949425b4e0563557621177e7c8")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"bd3aa29f4af029a626de8cfe102406ed72b700b7")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-breeding-overdue-followup-20261003")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),14)
-        self.assertEqual(adapter.PATHS,['README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/breeding_plan_presentation.py', 'tests/test_oom_sakkie_breeding_plan_presentation.py'])
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),6)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
