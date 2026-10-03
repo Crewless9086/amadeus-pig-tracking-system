@@ -108,9 +108,9 @@ def test_weight_question_uses_governed_schedules_conflict_and_eligibility():
     result = answer("weight_attention", packet)
     assert "schedule is due: 101" in result["answer"]
     assert "records checked" in result["answer"]
-    assert "do not authorize a new routine weighing instruction" in result["answer"]
+    assert "alone do not make weighing due now" in result["answer"]
     assert "Conflicting weights need evidence review: 1 — 104" in result["answer"]
-    assert "1 breeding animal(s)" in result["answer"]
+    assert "1 breeding animal without individual schedules" in result["answer"]
     assert "schedule is due: 104" not in result["answer"]
 
 
@@ -144,10 +144,11 @@ def test_breeding_plan_shows_due_checks_not_fabricated_placement_and_retains_rem
         "task_group": "pregnancy check due", "why": "Result date is missing",
         "required_checks": ["pregnancy result"], "male_recommendation": {}} for i in range(8)]
     text, selected = render_breeding_plan({"tasks": tasks})
-    assert "Sow0" in text and "pregnancy check due" in text and "Result date is missing" in text
-    assert "Missing observations: pregnancy result" in text
+    assert "Sow0" in text and "Pregnancy check due" in text
+    assert "Source note: Result date is missing" in text
+    assert "Worklist requirements: pregnancy result." in text
     assert "Another 2 breeding task(s)" in text and len(selected) == 6
-    assert "planned placement" not in text and "No evidence-supported placement" in text
+    assert "planned placement" not in text and "Complete placement evidence is unavailable." in text
 
 
 @pytest.mark.parametrize("evidence", [{}, {"pig_rows": None}, {"pig_rows": "unknown"}])

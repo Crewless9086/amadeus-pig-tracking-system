@@ -27,8 +27,14 @@ delivery receipts, typed context and current canonical counts. PR1370's weighing
 comparison and breeding follow-up identity repair are live at
 `59c5b50f69830eb5b0f77b218343b013f74f070e`. Natural cycles picked up the new
 weighing comparison, and an independent canonical read matched its evidence.
-A narrow follow-up corrects cancelled order lines with historical tags being
-treated as current identity problems; their source history is preserved.
+PR1371's cancelled-order correction is live at
+`c0387dad99ca07732294d1d9d5d5a742f43e1992`; the eleven false weekly-group
+identity warnings cleared while original records remained intact. Fresh owner
+weighing and breeding replies reached the requested capability but exposed
+confusing counts and generic review wording. The current presentation correction
+keeps reporting periods, whole-register issues, recorded exposure and proposed
+placement distinct. Its release and genuine conversation acceptance are separate
+from implementation. No new farm or weighing-schedule authority is introduced.
 Fresh protected confirmations, remaining genuine
 conversation journeys and full agent autonomy remain unproven.
 ROOTLINE is the next proposed focus after HERDMASTER readiness.
