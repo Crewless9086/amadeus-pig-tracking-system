@@ -24,14 +24,29 @@ Farm record writes require approved backend paths and audit evidence.
 
 ## Pig Observation Event Contract
 
-`pig_observation_events` is an additive, unapplied canonical fact rail. Each row is tied to one canonical `pig_id`, has an observation and recording timestamp, observer/source provenance, controlled factual category/severity, non-empty factual note, optional object-shaped measurements, and a caller idempotency key.
+`pig_observation_events` is the canonical append-only observation fact rail. Each row is tied to one canonical `pig_id`, has an observation and recording timestamp, observer/source provenance, controlled factual category/severity, non-empty factual note, optional object-shaped measurements, and a caller idempotency key.
 
 - Observations are evidence, not diagnoses, treatment instructions, lifecycle/purpose decisions, or external-action instructions.
 - Events are append-only. Corrections must be new factual events linked by `supersedes_observation_event_id`; normal updates and deletes are database-blocked.
 - A correction can supersede only an earlier observation for the same pig; the observation timestamp cannot be later than its recorded timestamp.
-- The table has RLS enabled and no browser policy is introduced by this migration. A future protected backend capture rail must define its own permission and audit contract.
+- The table has RLS enabled; ordinary conversation capture uses the existing authenticated protected backend claim and audit contract, not a browser write policy.
 - Herdmaster may consume recent observations only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; observation presence cannot trigger an automated farm or commercial write.
 - Alert acknowledgements, recommendations, owner decisions, automation state, notification delivery, and retention/deletion policy require separately approved data contracts.
+
+Body-condition capture uses the existing breeding-observation contract. Its
+measurements preserve a finite `body_condition_score` from 1 through 5 and
+`recovery_hold_action=not_recorded` for an observation-only report. Such a row
+does not supersede an older hold-bearing observation. Effective score and
+explicit recovery-hold state are projected independently.
+
+Dated grouped observations retain `observation_date`, `observation_precision`
+(`date` or `instant`) and `observation_timezone`. A date-only observation uses
+the start of that farm-local day as its timestamp anchor; consumers and owner
+messages must not present it as a known physical clock time. Report provenance
+remains separate from observation time. Existing rows without this added precision
+metadata keep their recorded evidence and are not rewritten by this change.
+Schema, deployed channel support and genuine owner acceptance are separate gates;
+consult the current mission register for their dated evidence.
 
 ## Pig Lifecycle Event Contract
 
@@ -119,6 +134,6 @@ The current canonical `pig_current_state`/`pigs` read projection does not supply
 - `docs/03-google-sheets/FIELD_DEFINITIONS.md`
 - `docs/03-google-sheets/FORMULA_LOGIC.md`
 - `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`
-- `supabase/migrations/202607200001_create_pig_observation_events.sql` (unapplied; application requires explicit owner approval)
+- `supabase/migrations/202607200001_create_pig_observation_events.sql` (schema source; historical migration labels do not establish current deployment state)
 - `supabase/migrations/202607210001_create_pig_lifecycle_events.sql` (unapplied; application requires explicit owner approval)
 - `supabase/migrations/202608200002_create_pig_welfare_case_lifecycle.sql` (unapplied additive case foundation; application requires explicit owner approval)

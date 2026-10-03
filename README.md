@@ -11,11 +11,14 @@ Follow [AGENTS.md](AGENTS.md), the
 and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md).
 The register names the sole coordinator, current work, holds and next gate.
 
-PR1372 is verified live at `bd3aa29f4af029a626de8cfe102406ed72b700b7`.
-The owner's fresh 3 October replies exactly match recorded weighing and breeding
-deliveries; two later natural cycles completed without errors or new messages.
-A bounded follow-up correction is in qualification: clarify past exposure-removal
-plans and name missing evidence while preserving farm facts and confirmations.
+PR1373 is verified live at `bcc5e686c8b9e1a8f21738a773bbb4546577dcdf`.
+The owner's fresh breeding reply matches the retained answer and Telegram
+acknowledgement. A later scheduled retry recovered one deferred case without
+duplicate delivery. This proves that bounded read journey and case recovery.
+A protected body-condition intake repair is now in qualification while the
+owner awaits a real farm observation. It preserves the stated score and date,
+requires confirmation and cannot silently clear an existing recovery hold.
+Its release and genuine protected journey remain separate acceptance gates.
 Full HERDMASTER autonomy and individual weighing schedules remain unproven.
 
 The [1 October shared status](docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md)

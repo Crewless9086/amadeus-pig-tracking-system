@@ -696,3 +696,25 @@ def setUpModule():
 
 def tearDownModule():
     _model_budget_test_scope.close()
+
+
+def test_plain_named_dated_condition_retains_observation_only_action_and_supplied_date():
+    payload=_semantic('herd_management','breeding_grouped_facts',message_kind='observation',
+        breeding_actions=[{'animal_ref':'Teena','action':'condition_observation',
+                           'body_condition_score':3,'observed_on':'2026-10-03'}],
+        protected_preview_required=True,recording_prohibited=True)
+    result=parse_semantic_response(_response(payload))
+    assert result.breeding_actions==({'animal_ref':'Teena','action':'condition_observation',
+                                      'body_condition_score':3,'observed_on':'2026-10-03'},)
+    assert result.protected_preview_required and result.recording_prohibited
+
+
+def test_condition_prompt_separates_plain_score_from_hold_authority_and_missing_date():
+    from modules.oom_sakkie.semantic_front_door import _payload
+    payload=_payload({'text':'Teena condition 3 on 3 October 2026','provider_timestamp':'2026-10-03T10:00:00Z'},[], {})
+    # Inspect the actual outbound prompt contract without calling a model.
+    text=str(payload)
+    assert 'plain body-condition score report is condition_observation' in text
+    assert 'only for an explicit owner instruction' in text
+    assert 'Never substitute message time for an omitted observation date' in text
+    assert 'bare score, yes or pronoun in a multi-animal plan' in text
