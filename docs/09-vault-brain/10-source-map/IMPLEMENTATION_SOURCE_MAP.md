@@ -1073,6 +1073,13 @@ Current built read-only readiness surface to expand:
 - Vault doctrine: `docs/09-vault-brain/02-agents/farm/HERDMASTER.md`, `docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md`, `docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`, `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`, `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`, `docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md`;
 - code: `modules/pig_weights/pig_weights_service.py`, `modules/oom_sakkie/manager_case_sources.py`, `modules/oom_sakkie/owner_attention_projection.py`;
 - UI: `templates/pig-allocation.html`, `static/js/pigAllocation.js`;
+  The single-pig preview consumes canonical `herdmaster_purpose_correction_v2`
+  decisions/effects and requires a complete matching unexpired binding before Apply.
+  Request epochs and an invocation-owned Apply lock prevent stale preview reuse.
+  Existing correction-batch create/approve/execute remain the authority; browser
+  checks do not verify the server HMAC. `tests/pig_allocation_purpose_preview.spec.js`
+  uses the actual read-only preview producer through `tests/purpose_preview_server.py`
+  and synthetic rows; it is selected by the browser behavior workflow.
 - tests: `tests/test_pig_allocation_readiness_service.py`, `tests/test_purpose_review_eligibility.py`, `tests/test_oom_sakkie_owner_attention_projection.py`;
 - migrations: none for the first read-only alert build;
 - legacy references: `docs/03-google-sheets/sheets/PIG_MASTER.md`, `docs/03-google-sheets/sheets/PIG_OVERVIEW.md`, `docs/03-google-sheets/sheets/WEIGHT_LOG.md`;
