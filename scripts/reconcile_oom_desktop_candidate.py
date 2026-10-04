@@ -17,23 +17,23 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = '52598af363c2b8ac8d54b8a2e40978f85a72ea3e'
+BASE = 'bfe3a70f671989b6ba6f8279acf33cc39f89cad4'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-CANDIDATE_PR = 1376
-HEAD = '319dad1b423089b23686d52c72b5b071e3e424f3'
-TREE = 'f55671071697a0939619bcdb0d69fb5f1091df84'
+CANDIDATE_PR = 1377
+HEAD = '8ae635accf0855dd6a96278e09d55efb77981ea9'
+TREE = '8be64e58795c7e7ef813675a8a66d909a708433a'
 # Candidate pins remain inert until the coordinator binds the reviewed complete tree.
 # Synthetic qualification pins live only in tests; no later runtime delta is allowed.
-APPROVED_RUNTIME_HEAD = '319dad1b423089b23686d52c72b5b071e3e424f3'
+APPROVED_RUNTIME_HEAD = '8ae635accf0855dd6a96278e09d55efb77981ea9'
 QUALIFICATION_TEST_PATHS = []
-BRANCH = 'codex/herd-purpose-followthrough-20261004'
-PREDECESSOR_PR = 1375
-PREDECESSOR_BASE = '65a39c5421234e5a9789868b024bb8da489b9027'
-PREDECESSOR_HEAD = '6bd6eb137b1a4bd0eaf91b5d210cb285e4e9690d'
-PREDECESSOR_BRANCH = 'codex/herd-weighing-cohorts-20261004'
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_purpose_decision.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_purpose_decision.py']
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/herd_read_queries.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/pig_weights/herdmaster_daily_manager_evidence.py', 'modules/pig_weights/herdmaster_purpose_work.py', 'tests/test_herdmaster_purpose_weighing_postgres.py', 'tests/test_herdmaster_purpose_work.py', 'tests/test_herdmaster_weighing_reconciliation.py', 'tests/test_herdmaster_weighing_reconciliation_postgres.py', 'tests/test_oom_sakkie_farm_brief_concise.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_owner_attention_projection.py']
+BRANCH = 'codex/herd-purpose-refresh-20261004'
+PREDECESSOR_PR = 1376
+PREDECESSOR_BASE = '52598af363c2b8ac8d54b8a2e40978f85a72ea3e'
+PREDECESSOR_HEAD = '319dad1b423089b23686d52c72b5b071e3e424f3'
+PREDECESSOR_BRANCH = 'codex/herd-purpose-followthrough-20261004'
+PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_purpose_refresh.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_purpose_decision.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_purpose_decision.py']
 
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_ROLLBACK = BASE
@@ -50,8 +50,8 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "scripts/render_oom_desktop_registration_sql.py", "tests/test_oom_desktop_registration_sql.py"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {'application_revision_rollback:web:65a39c5421234e5a9789868b024bb8da489b9027'}
-ADDED_EFFECTS = {'herdmaster_ready_purpose_private_owner_notice', 'application_revision_rollback:web:52598af363c2b8ac8d54b8a2e40978f85a72ea3e'}
+REMOVED_EFFECTS = {'application_revision_rollback:web:52598af363c2b8ac8d54b8a2e40978f85a72ea3e'}
+ADDED_EFFECTS = {'application_revision_rollback:web:bfe3a70f671989b6ba6f8279acf33cc39f89cad4'}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
 REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
@@ -79,7 +79,7 @@ REQUIRED_ACCEPTANCE = {
     'Retain only the exact bounded canonical subjects actually displayed in a successfully delivered read-only breeding plan. Bind subject IDs and displayed aliases to that stored plan, original provider input, configured private owner and current recipient; resolve a genuine follow-up through exact current canonical identity. Missing, ambiguous, expired, cross-recipient, undelivered or conflicting context refuses selection. A read answer or historical plan is not a new observation, farm instruction, protected preview or confirmation authority.',
     'Reconcile the existing HERDMASTER weighing concern from complete bounded current canonical lifecycle, weight, sale, allocation, outlet and parent-order evidence in one read-only snapshot. Keep the intentional prior weekly reporting window separate from current cohort eligibility, latest valid weights and current due evidence. Sales, reservations, an order promise, missing weights or an old reporting date never establish physical departure or authorize a new weighing task. Unsupported, duplicate, crossed, nonfinite, missing or conflicting evidence remains unresolved.',
     'Publish bounded current weighing assessment through the existing manager case and family brief. Preserve exact source and case identity, current recipient, generation and active-worker lease fences; only genuine source changes may alter material evidence. Observation time, row order, display changes and repeated natural cycles must not churn evidence, manufacture work or create another provider attempt. Retain truthful cohort totals with bounded detail; current eligibility, prior-window capture and actionable due work remain distinct.',
-    'Prove tests/test_herdmaster_weighing_reconciliation.py in Run canonical HERDMASTER morning recipient-language gates and tests/test_herdmaster_weighing_reconciliation_postgres.py in Prove weighing reconciliation with isolated PostgreSQL. Prove exact breeding read context through Run canonical conversational follow-up gates, retaining all prior stages and tests with zero skips. Require all four full helper suites on the exact final helper revision before production binding; local focused checks and prior run receipts do not substitute for final hosted proof. Also require tests/test_herdmaster_purpose_work.py and tests/test_oom_sakkie_owner_attention_projection.py in the same morning stage; tests/test_herdmaster_purpose_weighing_postgres.py in the same weighing PostgreSQL stage; tests/test_oom_sakkie_manager_case_sources.py and tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py in Run retained report identity and age recovery gates; and tests/test_oom_sakkie_farm_brief_concise.py in Prove family presentation and historical-review continuation. Require all four full helper suites on the exact final helper head with zero skips. Also require tests/test_oom_sakkie_purpose_decision.py in Prove weighing reconciliation with isolated PostgreSQL, preserving all existing selectors and zero-skip qualification. Prove current typed admission, unchanged case/material, current private owner and lease, durable exact-text retry fencing, one proven-zero-send recovery, ambiguous and delivered refusal, and silent later replay.',
+    'Prove tests/test_herdmaster_weighing_reconciliation.py in Run canonical HERDMASTER morning recipient-language gates and tests/test_herdmaster_weighing_reconciliation_postgres.py in Prove weighing reconciliation with isolated PostgreSQL. Prove exact breeding read context through Run canonical conversational follow-up gates, retaining all prior stages and tests with zero skips. Require all four full helper suites on the exact final helper revision before production binding; local focused checks and prior run receipts do not substitute for final hosted proof. Also require tests/test_herdmaster_purpose_work.py and tests/test_oom_sakkie_owner_attention_projection.py in the same morning stage; tests/test_herdmaster_purpose_weighing_postgres.py in the same weighing PostgreSQL stage; tests/test_oom_sakkie_manager_case_sources.py and tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py in Run retained report identity and age recovery gates; and tests/test_oom_sakkie_farm_brief_concise.py in Prove family presentation and historical-review continuation. Require all four full helper suites on the exact final helper head with zero skips. Also require tests/test_oom_sakkie_purpose_decision.py in Prove weighing reconciliation with isolated PostgreSQL, preserving all existing selectors and zero-skip qualification. Prove current typed admission, unchanged case/material, current private owner and lease, durable exact-text retry fencing, one proven-zero-send recovery, ambiguous and delivered refusal, and silent later replay. Prove tests/test_oom_sakkie_purpose_refresh.py: one canonical purpose snapshot per valid claimed group; own refresh batch and shared 80s/30s cutoff. Reject late, failed, missing, held or changed evidence without cached fallback. Prove default dispatcher/store multi-cycle catch-up, mixed-collector isolation, fresh urgent priority and duplicate silence; no five-send guarantee or new authority.',
     'Keep the preserved breeding-subject read and weighing-reconciliation flows read-only for farm state and within existing configured-owner and specialist authority. Those read flows must not create a claim, confirmation generation, role, farm permission, schema, scheduler deployment, manual message, replay, retry, model spend or hardware action. Preserve the parent mission, original source/farm/provider histories, US$1/day model cap and all ten other services. Require fresh genuine loaded-revision breeding follow-up and weighing delivery, exact canonical readback and later natural manager continuity before claiming an owner outcome.',
 
     'Compose the concise localized farm brief from typed canonical brief facts, never from parsing opaque specialist prose. Keep full detailed rows and original questions available beneath the brief. Preserve exact canonical identity, quantities, dates, coverage counts, provenance and uncertainty; a missing fact must not become a clean status or an invented instruction. Limit family-facing detail without changing specialist records or hiding a distinct urgent owner decision.',

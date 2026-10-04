@@ -1,7 +1,7 @@
 name: OOM Desktop Rebind Qualification
 on:
   push:
-    branches: [codex/herd-purpose-followthrough-registration-20261004]
+    branches: [codex/herd-purpose-refresh-registration-20261004]
 permissions:
   contents: read
 jobs:
@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt pytest
-      - name: Prove ready-purpose notices, PR1375 lineage and web-only release
+      - name: Prove bounded purpose refresh, PR1376 lineage and web-only release
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation -v
       - name: Prove compact HTTPS registration, atomic rollback and zero-write replay
         run: python -m unittest tests.test_oom_desktop_registration_sql -v
