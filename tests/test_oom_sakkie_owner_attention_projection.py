@@ -14,10 +14,58 @@ NOW = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
 @pytest.fixture(autouse=True)
 def isolate_unrelated_herd_sources(monkeypatch, request):
     # These projection tests supply their own owning specialist evidence.
+    monkeypatch.setattr("modules.pig_weights.pig_welfare_case_runtime.load_open_welfare_attention_cases",
+                        lambda: [])
     monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._completed_bulk_batch_findings", lambda _now: [])
     monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._retained_litter_followup_candidates", lambda *_a, **_kw: [])
     if not request.node.name.startswith("test_purpose_review"):
         monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._purpose_review_candidates", lambda *_a, **_kw: [])
+
+
+@pytest.mark.parametrize("explicit_welfare_enable", [False, True])
+def test_supplied_projection_evidence_excludes_foreign_persisted_welfare(
+        monkeypatch, explicit_welfare_enable):
+    from types import SimpleNamespace
+    from modules.pig_weights import pig_welfare_case_runtime as welfare
+
+    # Hosted DATABASE_URL enables this independent collector even when the
+    # explicit runtime switch is absent. Its rows belong to other tests.
+    foreign_rows = [("WELFARE-EXISTING-FOREIGN", "PIG-FOREIGN", "open", "due",
+                     "owner-1", NOW, None, NOW, {})]
+    reads = []
+
+    class ForeignWelfareConnection:
+        def __enter__(self):
+            reads.append("connection")
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def cursor(self):
+            return self
+
+        def execute(self, *_args):
+            reads.append("query")
+
+        def fetchall(self):
+            return foreign_rows
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://127.0.0.1:1/foreign_test_rows")
+    if explicit_welfare_enable:
+        monkeypatch.setenv("PIG_WELFARE_CASE_RUNTIME_ENABLED", "true")
+    else:
+        monkeypatch.delenv("PIG_WELFARE_CASE_RUNTIME_ENABLED", raising=False)
+    monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "owner-1")
+    monkeypatch.setattr(welfare, "_connect", ForeignWelfareConnection)
+    monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
+                        lambda *_args: SimpleNamespace(result_id="supplied-empty", work_items=()))
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot",
+                        lambda **_kwargs: {"overview_rows": [], "litter_rows": []})
+
+    assert welfare.welfare_case_runtime_enabled() is True
+    assert _herdmaster(NOW) == []
+    assert reads == []
 
 
 def _purpose_snapshot(rows):
