@@ -207,3 +207,106 @@ def test_existing_exposure_cycle_correction_preview_is_exact_and_unknown_safe():
     assert {row["expected_farrowing_window_start"] for row in result["preview"]["rows"]} == {"2026-12-04"}
     assert {row["expected_farrowing_window_end"] for row in result["preview"]["rows"]} == {"2026-12-20"}
     assert all(row["exact_service_date"] is row["conception"] is row["pregnancy"] is None for row in result["preview"]["rows"])
+
+
+import copy
+import pytest
+from datetime import datetime, timezone
+from modules.pig_weights.herdmaster_breeding_exposure_recovery import execute_grouped_preview, observation_time
+
+
+def _condition_preview(**facts):
+    return build_grouped_preview({'rows':[{'pig_id':'SOW-T','label':'Teena','action':'condition_observation',
+        'body_condition_score':3,'observed_on':'2026-10-03','factual_note':'Owner reports BCS 3.',**facts}]},
+        evidence_generation='SOURCE-1',reported_at='2026-10-03T10:00:00Z')
+
+
+def test_plain_condition_is_not_a_hold_or_clearance_and_does_not_make_other_effects():
+    result=_condition_preview()
+    assert result['success'] and not result['creates_movement'] and not result['creates_breeding_cycle']
+    assert not result['asserts_service_date'] and not result['asserts_pregnancy']
+    assert result['preview']['rows'][0]['action']=='condition_observation'
+    assert result['preview']['movements']==[]
+
+
+@pytest.mark.parametrize('value',[1,2,2.5,3,4,5])
+def test_observation_accepts_finite_full_bcs_scale_without_hold_policy(value):
+    result=_condition_preview(body_condition_score=value)
+    assert result['success'] and result['preview']['rows'][0]['body_condition_score']==value
+
+
+def test_date_precision_uses_farm_day_and_deterministic_storage_not_physical_clock():
+    timed=observation_time('2026-10-03',reported_at='2026-10-02T22:01:00Z')
+    assert timed=={'observed_at':'2026-10-02T22:00:00+00:00','observation_date':'2026-10-03',
+        'observation_precision':'date','observation_timezone':'Africa/Johannesburg'}
+    with pytest.raises(ValueError,match='future'):
+        observation_time('2026-10-03',reported_at='2026-10-02T21:59:00Z')
+    with pytest.raises(ValueError,match='conflict'):
+        observation_time('2026-10-02T22:01:00Z',observed_on='2026-10-02')
+
+
+@pytest.mark.parametrize('field,value',[('body_condition_score',4),('observed_at','2026-10-03T10:00:00Z'),
+    ('observation_precision','instant'),('observation_date','2026-10-02'),('pig_id','OTHER'),('action','recovery_clearance')])
+def test_condition_confirmation_tamper_is_rejected_without_connect(field,value):
+    preview=_condition_preview();preview['preview']['rows'][0][field]=value
+    result,status=execute_grouped_preview(preview,confirmed_preview_sha256=preview['preview_sha256'],actor_id='owner',
+        connect_factory=lambda:pytest.fail('must not connect'))
+    assert status==409 and result['rows_changed']==0
+
+
+def test_condition_reconstructed_invalid_precision_is_rejected_without_connect():
+    import hashlib,json
+    from modules.pig_weights.herdmaster_breeding_exposure_recovery import _stable
+    preview=_condition_preview();preview['preview']['rows'][0]['observed_at']='2026-10-03T10:00:00+00:00'
+    digest=hashlib.sha256(json.dumps(preview['preview'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    preview.update(preview_sha256=digest,operation_id=_stable('HERD-BREED-GROUP-',digest))
+    result,status=execute_grouped_preview(preview,confirmed_preview_sha256=digest,actor_id='owner',
+        connect_factory=lambda:pytest.fail('must not connect'))
+    assert status==409 and result['status']=='corrected_observation_preview_required'
+
+
+@pytest.mark.parametrize('field,value',[('boar_pig_id','B1'),('placement_pen_id','P1'),
+    ('recovery_hold_action','cleared'),('supersedes_observation_event_id','HOLD-1'),('planned_days',17)])
+def test_condition_cannot_smuggle_hold_exposure_or_movement_fields(field,value):
+    assert not _condition_preview(**{field:value})['success']
+    import hashlib,json
+    from modules.pig_weights.herdmaster_breeding_exposure_recovery import _stable
+    preview=_condition_preview();preview['preview']['rows'][0][field]=value
+    digest=hashlib.sha256(json.dumps(preview['preview'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    preview.update(preview_sha256=digest,operation_id=_stable('HERD-BREED-GROUP-',digest))
+    result,status=execute_grouped_preview(preview,confirmed_preview_sha256=digest,actor_id='owner',
+        connect_factory=lambda:pytest.fail('must not connect'))
+    assert status==409 and result['status']=='corrected_observation_preview_required'
+
+
+def test_condition_only_cannot_hide_a_foreign_pig_movement_in_resealed_preview():
+    import hashlib,json
+    from modules.pig_weights.herdmaster_breeding_exposure_recovery import _stable
+    preview=_condition_preview()
+    preview['preview']['movements']=[{'pig_id':'OTHER','from_pen_id':'A','to_pen_id':'B',
+                                      'to_pen_name':'B','move_date':'2026-10-03'}]
+    digest=hashlib.sha256(json.dumps(preview['preview'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    preview.update(preview_sha256=digest,operation_id=_stable('HERD-BREED-GROUP-',digest))
+    result,status=execute_grouped_preview(preview,confirmed_preview_sha256=digest,actor_id='owner',
+        connect_factory=lambda:pytest.fail('must not connect'))
+    assert status==409 and result['status']=='corrected_observation_preview_required'
+
+
+def test_mixed_exposure_and_condition_keeps_only_producer_bound_movements():
+    condition=_condition_preview()['preview']['rows'][0]
+    # Preserve date precision while passing the original supplied facts to builder.
+    condition['observed_at']=condition['observation_date']
+    exposure={'pig_id':'OTHER-SOW','label':'Mona','action':'exposure','boar_pig_id':'BOAR-1',
+        'exposure_started_on':'2026-10-03','planned_removal_on':'2026-10-19',
+        'placement_pen_id':'PEN-B','placement_pen_name':'Pen B',
+        'sow_current_pen_id':'PEN-A','boar_current_pen_id':'PEN-C'}
+    preview=build_grouped_preview({'rows':[condition,exposure]},evidence_generation='MIXED',
+                                 reported_at='2026-10-03T10:00:00Z')
+    assert preview['success']
+    assert {row['pig_id'] for row in preview['preview']['movements']}=={'OTHER-SOW','BOAR-1'}
+    class ReachedCanonicalStore(Exception): pass
+    def connect(): raise ReachedCanonicalStore()
+    # All pre-transaction exact-effect checks pass; canonical DB guards follow.
+    with pytest.raises(ReachedCanonicalStore):
+        execute_grouped_preview(preview,confirmed_preview_sha256=preview['preview_sha256'],
+                               actor_id='owner',connect_factory=connect)

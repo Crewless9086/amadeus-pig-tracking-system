@@ -435,11 +435,18 @@ def _payload(parsed, context, source):
         "is not a current observed sign. Neither map grants any confirmation or recording authority. "
         "Never add a cause, diagnosis, treatment or dose. Keep observation faithful "
         "to the supplied facts and clarification_question in the recipient's configured language."
-        " For an owner report of actual boar placements, removals, a body-condition recovery hold or clearance, or a sow appearing close to farrowing, "
+        " For an owner report of actual boar placements, removals, a body-condition score, an explicit recovery hold or clearance, or a sow appearing close to farrowing, "
         "return breeding_actions with one object per supplied sow. Use animal_ref and, for exposure, boar_ref; supported action values are exposure, "
-        "exposure_removal, recovery_hold, recovery_clearance, and near_farrowing. Preserve only explicitly supplied exposure_started_on, "
-        "planned_days, planned_removal_on, actual_removed_on, exposure_identity, placement_pen_ref, body_condition_score, observed_at, "
-        "prior_mating_known, father_known, and factual_note. Never infer a service, "
+        "exposure_removal, condition_observation, recovery_hold, recovery_clearance, and near_farrowing. "
+        "A plain body-condition score report is condition_observation: it does not request a recovery hold or clearance. "
+        "Use recovery_hold or recovery_clearance only for an explicit owner instruction to establish or clear that hold. "
+        "Use stable intent breeding_grouped_facts, message_kind observation and protected_preview_required=true; never record from the report alone. "
+        "Preserve only explicitly supplied exposure_started_on, "
+        "planned_days, planned_removal_on, actual_removed_on, exposure_identity, placement_pen_ref, body_condition_score, observed_at, observed_on, "
+        "prior_mating_known, father_known, and factual_note. For an observation date without a clock time use observed_on as YYYY-MM-DD; "
+        "use observed_at only for a supplied timezone-aware instant. Resolve explicitly stated today/yesterday using the authenticated provider timestamp in Africa/Johannesburg. "
+        "Never substitute message time for an omitted observation date. Missing dates require one question; retain a named condition_observation row so deterministic validation can ask it. "
+        "Never infer the animal from a bare score, yes or pronoun in a multi-animal plan. Never infer a service, "
         "conception, pregnancy, father, mating date, animal identity, or omitted group member."
         " For a natural request to record a real farrowing/litter, use herd_management with stable intent record_farrowing_litter and return farrowing_litter. "
         "Allowed farrowing_litter keys are sow_ref,farrowing_date,total_born,born_alive,stillborn,mummified,died_after_live_birth,mating_ref,father_ref,correction_of_litter_id,correction_reason. "
@@ -628,9 +635,9 @@ def _breeding_actions(value):
         return ()
     if not isinstance(value, list) or not 1 <= len(value) <= 24:
         return ()
-    allowed = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing"}
+    allowed = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing", "condition_observation"}
     keys = {"animal_ref", "boar_ref", "action", "exposure_started_on", "planned_days", "planned_removal_on", "placement_pen_ref",
-            "actual_removed_on", "exposure_identity", "exposure_group_identity", "body_condition_score", "observed_at", "factual_note",
+            "actual_removed_on", "exposure_identity", "exposure_group_identity", "body_condition_score", "observed_at", "observed_on", "factual_note",
             "prior_mating_known", "father_known"}
     result, seen = [], set()
     for raw in value:

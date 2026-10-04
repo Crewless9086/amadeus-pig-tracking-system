@@ -6,7 +6,7 @@ and delegates confirmed execution to the HERDMASTER grouped contract.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import hashlib
 import html
 import json
@@ -18,6 +18,7 @@ from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
     build_grouped_preview,
     execute_grouped_preview,
     planned_exposure_removal_on,
+    FARM_TIMEZONE,
 )
 
 
@@ -25,7 +26,7 @@ ACTION_KIND = "herdmaster_breeding_grouped"
 EXPOSURE_DAYS = 17
 
 
-def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, evidence_loader=None):
+def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, evidence_loader=None, now=None):
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), dict) else {}
     parsed_rows = parse_grouped_exposure_reply(
         str(parsed.get("text") or ""), provider_timestamp=str(parsed.get("provider_timestamp") or "")
@@ -37,9 +38,11 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
     raw_rows = (parsed_rows if len(parsed_rows) > len(semantic_rows or ()) else semantic_rows)
     if semantic.get("domain") != "herd_management" or not isinstance(raw_rows, (list, tuple)) or not raw_rows:
         return {"handled": False}, 200
+    language = 'af' if str(parsed.get('output_language') or semantic.get('language') or 'en').startswith('af') else 'en'
     owner = str(parsed.get("telegram_user_id") or "")
     chat = str(parsed.get("telegram_chat_id") or "")
-    if not validates_gateway_owner_authority(authority) or owner != chat or authority.owner_user_id != owner:
+    if (not validates_gateway_owner_authority(authority) or owner != chat or authority.owner_user_id != owner
+            or authority.private_chat_id != chat or getattr(authority, "principal_role", "owner") != "owner"):
         return {"handled": True, "success": False, "status": "breeding_group_owner_required", **_zero()}, 403
     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
     provider_timestamp = _provider_timestamp(parsed.get("provider_timestamp"))
@@ -47,11 +50,23 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
         return {"handled": True, "success": False, "status": "breeding_provider_provenance_required",
                 "answer": ("I could not verify this message's provider identity and time safely. "
                            "Nothing was recorded."), **_zero()}, 422
+    if any(row.get("action") == "condition_observation" for row in raw_rows if isinstance(row, dict)):
+        # Only the new intake requires a fresh message. Existing source-bound
+        # recovery packets retain their prior replay semantics.
+        received = datetime.fromisoformat(provider_timestamp)
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None or not -30 <= (current - received).total_seconds() <= 21600:
+            return {"handled": True, "success": False, "status": "breeding_observation_message_stale",
+                    "answer": _clarification(["observation_message_stale"], language), "question_count": 1,
+                    "recipient_render_contract":"specialist_structured_recipient_v1", "recipient_language":language,
+                    **_zero()}, 409
     if evidence_loader is None:
         from modules.pig_weights.farm_supabase_read_service import get_breeding_attention_source_snapshot
         evidence_loader = get_breeding_attention_source_snapshot
     try:
         evidence = evidence_loader()
+        if not isinstance(evidence, dict) or evidence.get("success") is False:
+            raise ValueError("current breeding evidence unavailable")
     except Exception:
         return {"handled": True, "success": False, "status": "breeding_evidence_unavailable",
                 "answer": "I could not verify the current animals safely. Nothing was recorded.", **_zero()}, 503
@@ -60,18 +75,20 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
     if resolution_errors:
         return {"handled": True, "success": False, "status": "breeding_identity_clarification_required",
                 "errors": resolution_errors, "question_count": 1,
-                "answer": "Please identify only these ambiguous animals once: " + "; ".join(resolution_errors),
+                "answer": _clarification(resolution_errors, language),
+                "recipient_render_contract":"specialist_structured_recipient_v1", "recipient_language":language,
                 **_zero()}, 200
     generation = hashlib.sha256(json.dumps(evidence, sort_keys=True, default=str,
                                 separators=(",", ":")).encode()).hexdigest()
-    preview = build_grouped_preview({"rows": rows}, evidence_generation=generation)
+    preview = build_grouped_preview({"rows": rows}, evidence_generation=generation, reported_at=provider_timestamp)
     mission = "OOM-HERD-BREED-" + hashlib.sha256(
         f"{owner}|{provider_message_id}|{json.dumps(rows, sort_keys=True)}".encode()
     ).hexdigest()[:24].upper()
     if preview.get("success") is not True:
         return {"handled": True, "success": False, "status": preview["status"],
                 "errors": preview["errors"], "question_count": 1,
-                "answer": "I could not bind the complete group. Please correct the listed facts once; nothing was recorded.",
+                "answer": _clarification(preview["errors"], language),
+                "recipient_render_contract":"specialist_structured_recipient_v1", "recipient_language":language,
                 **_zero()}, 200
     language = 'af' if str(parsed.get('output_language') or semantic.get('language') or 'en').startswith('af') else 'en'
     try:
@@ -126,7 +143,9 @@ def _production_connect():
 def _summary(rows, *, language='en', display_animals=()):
     from modules.oom_sakkie.family_presentation import date_label, heading, protected_animal_labels
     af = language == 'af'
-    lines = [heading('Teelgroep om te bevestig' if af else 'Breeding group to confirm',emoji='🐷'), ""]
+    observation_only = all(row.get('action') == 'condition_observation' for row in rows)
+    title = ('Kondisiewaarneming om te bevestig' if af else 'Condition observation to confirm') if observation_only else ('Teelgroep om te bevestig' if af else 'Breeding group to confirm')
+    lines = [heading(title, emoji='🐷'), ""]
     # The canonical preview intentionally omits presentation fields. Resolve
     # its exact IDs through the already-resolved source rows; never alter the
     # signed packet or lose a protected identity if a visible label is absent.
@@ -148,15 +167,56 @@ def _summary(rows, *, language='en', display_animals=()):
             lines.append(('  Moontlike dektyd: ' if af else '  Possible service window: ')+day(row['service_window_start'])+' — '+day(row['service_window_end']))
             lines.append(('  Verwagte kraamtyd: ' if af else '  Expected farrowing window: ')+day(row['expected_farrowing_window_start'])+' — '+day(row['expected_farrowing_window_end']))
             lines.append('  Presiese dekking en bevrugting bly Onbekend.' if af else '  Exact service and conception remain Unknown.')
-        elif row.get("action") == "recovery_hold":
-            lines.append(f"• <b>{label}</b> — "+('herstelwaarneming; liggaamskondisie ' if af else 'recovery hold; body condition ')+f"{float(row['body_condition_score']):g}.")
+        elif row.get("action") in {"condition_observation", "recovery_hold", "recovery_clearance"}:
+            local = datetime.fromisoformat(row['observed_at']).astimezone(FARM_TIMEZONE)
+            when = day(local.date().isoformat())
+            if row.get('observation_precision') == 'date':
+                when += ('; tyd nie verskaf nie' if af else '; time not supplied')
+            else:
+                when += ' ' + local.strftime('%H:%M:%S %Z')
+            lines.append(f"• <b>{label}</b> — " + ('liggaamskondisie ' if af else 'body condition ') +
+                         f"<b>{float(row['body_condition_score']):g}/5</b>; {when}.")
+            if row['action'] == 'recovery_hold':
+                lines.append('  Herstelhou word ingestel.' if af else '  Establish the recovery hold.')
+            elif row['action'] == 'recovery_clearance':
+                lines.append('  Herstelhou word opgehef.' if af else '  Clear the recovery hold.')
+            else:
+                lines.append('  Slegs die telling word aangeteken; enige herstelhou bly onveranderd.' if af else
+                             '  Record the score only; any recovery hold stays unchanged.')
         elif row.get("action") == "near_farrowing":
-            lines.append(f"• <b>{label}</b> — "+('lyk naby kraam; vorige paringsdatum en vader Onbekend.' if af else 'appears close to farrowing; previous mating date and father Unknown.'))
+            local_day = datetime.fromisoformat(row['observed_at']).astimezone(FARM_TIMEZONE).date().isoformat()
+            lines.append(f"• <b>{label}</b> — "+('lyk naby kraam; vorige paringsdatum en vader Onbekend.' if af else 'appears close to farrowing; previous mating date and father Unknown.') + ' ' + day(local_day))
         else:
             lines.append(f"• <b>{label}</b> — {html.escape(str(row.get('action') or 'review'))}.")
+    if observation_only:
+        lines += ["", ('Bevestig om hierdie waarneming te stoor.' if len(rows) == 1 else 'Bevestig om hierdie waarnemings te stoor.') if af else
+                  ('Confirm to save this observation.' if len(rows) == 1 else 'Confirm to save these observations.')]
+        return "\n".join(lines)
     lines += ["", ('Nog nie aangeteken nie. Bevestig hierdie volledige groep om dit een keer te stoor.' if af else 'Nothing has been recorded yet. Confirm this complete group to record it once.'),
               ('Dit teken geen paring, bevrugting, dragtigheid, skuif of werpsel aan nie.' if af else 'This does not record mating, conception, pregnancy, movement or a litter.')]
     return "\n".join(lines)
+
+
+def _clarification(errors, language):
+    from modules.oom_sakkie.family_presentation import heading
+    af = language == 'af'
+    codes = ' '.join(errors)
+    if 'observation_message_stale' in codes:
+        question = ("Hierdie boodskap se tyd kon nie bevestig word nie. Stuur asseblief die dier se naam, kondisietelling en waarnemingsdatum weer." if af else
+                    "Please send the animal's name, condition score and observation date again.")
+    elif 'observation_date' in codes or 'observation_time' in codes:
+        question = ("Op watter datum is die kondisie waargeneem? Gee die dier se naam en een datum wat nie in die toekoms is nie." if af else
+                    "On what date was this observed? Include the animal's name and one date that is not in the future.")
+    elif 'body_condition' in codes:
+        question = ("Wat is die dier se liggaamskondisietelling van 1 tot 5?" if af else
+                    "What is the animal's body-condition score from 1 to 5?")
+    elif 'current active female' in codes:
+        question = ("Watter aktiewe sog op die plaas bedoel jy? Gee haar unieke naam of oornommer." if af else
+                    "Which active sow on the farm do you mean? Give her unique name or tag.")
+    else:
+        question = ("Gee asseblief die dier se unieke naam of oornommer en die korrekte feite vir hierdie groep." if af else
+                    "Please give the animal's unique name or tag and the corrected facts for this group.")
+    return heading('Waarneming benodig' if af else 'Observation needed', emoji='🐷') + '\n\n' + question
 
 
 def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
@@ -168,9 +228,9 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
         pig_id = str(row.get("Pig_ID") or row.get("pig_id") or "").strip()
         if not pig_id:
             continue
-        label = str(row.get("Name") or row.get("Tag_Number") or row.get("tag_number") or pig_id).strip()
+        label = str(row.get("Name") or row.get("Pig_Name") or row.get("pig_name") or row.get("Tag_Number") or row.get("tag_number") or pig_id).strip()
         labels[pig_id] = label
-        for value in (pig_id, row.get("Name"), row.get("Tag_Number"), row.get("tag_number")):
+        for value in (pig_id, row.get("Name"), row.get("Pig_Name"), row.get("pig_name"), row.get("Tag_Number"), row.get("tag_number")):
             key = str(value or "").strip().casefold()
             if key:
                 index.setdefault(key, []).append(pig_id)
@@ -195,6 +255,14 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
         if not sow:
             errors.append(f"{row.get('pig_id') or raw.get('animal_ref')}: exact sow identity")
             continue
+        if row.get("action") == "condition_observation":
+            matches = [item for item in master if str(item.get("Pig_ID") or item.get("pig_id") or "") == sow]
+            if (len(matches) != 1 or str(matches[0].get("Sex") or matches[0].get("sex") or "").lower() != "female"
+                    or str(matches[0].get("Status") or matches[0].get("status") or "").lower() != "active"
+                    or str(matches[0].get("On_Farm") if "On_Farm" in matches[0] else matches[0].get("on_farm")).lower() not in {"yes", "true"}):
+                errors.append("current active female required")
+                continue
+            row["factual_note"] = str(row.get("factual_note") or "Owner reports body-condition score only; recovery hold unchanged.")
         boar_ref = row.pop("boar_ref", None)
         if boar_ref:
             boar = exact(boar_ref)
@@ -249,7 +317,10 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
         prior_known = row.pop("prior_mating_known", None)
         father_known = row.pop("father_known", None)
         if row.get("action") == "recovery_hold":
-            row["observed_at"] = provider_timestamp
+            # Legacy present-tense hold/near-farrowing reports may omit a date.
+            # Supplied observations retain their chronology and are validated below.
+            if not row.get("observed_at") and not row.get("observed_on"):
+                row["observed_at"] = provider_timestamp
             row["factual_note"] = str(row.get("factual_note") or
                 "Owner reports body condition and directs recovery hold.")
         if row.get("action") == "near_farrowing":
@@ -258,7 +329,10 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
                 continue
             row["factual_note"] = str(row.get("factual_note") or
                 "Owner reports she appears close to farrowing; previous mating date and father are unknown.")
-            row["observed_at"] = provider_timestamp
+            # Legacy present-tense hold/near-farrowing reports may omit a date.
+            # Supplied observations retain their chronology and are validated below.
+            if not row.get("observed_at") and not row.get("observed_on"):
+                row["observed_at"] = provider_timestamp
         row["pig_id"] = sow
         row["label"] = labels.get(sow, sow)
         resolved.append(row)

@@ -179,18 +179,17 @@ def test_provider_identity_and_timezone_aware_chronology_are_required_before_cla
         assert result["writes_farm_data"] is False and called == []
 
 
-def test_authenticated_provider_time_overrides_unproven_semantic_observation_time():
-    captured = {}
-    result, status = handle_grouped_breeding_message(_parsed([
+def test_supplied_future_hold_and_farrowing_dates_fail_before_claim():
+    called=[]
+    result,status=handle_grouped_breeding_message(_parsed([
         {"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
          "observed_at":"2035-01-01T00:00:00+00:00"},
         {"animal_ref":"Linda","action":"near_farrowing",
          "observed_at":"2035-01-01T00:00:00+00:00"},
     ]), issue_gateway_owner_authority("42", "42"), evidence_loader=_evidence,
-        claim_creator=lambda **kwargs:(captured.update(kwargs) or {"callback_token":"TOKEN"}))
-    assert status == 200 and result["status"] == "breeding_grouped_preview_ready"
-    assert [row["observed_at"] for row in captured["preview_payload"]["preview"]["rows"]] == [
-        "2026-08-12T11:41:25+00:00", "2026-08-12T11:41:25+00:00"]
+        claim_creator=lambda **kw:called.append(kw))
+    assert status==200 and not result['success'] and not called
+    assert result['question_count']==1 and 'not in the future' in result['answer']
 
 
 def test_claim_persistence_failure_is_visibly_contained_without_write():
@@ -356,3 +355,178 @@ def test_complete_semantic_packet_outranks_syntactically_valid_sow_first_lines()
         ("Sophie","B1"),("Olive","B2"),("Shupe","B2"),
         ("Lucy","B2"),("Lolly","B3")]
     assert {row["planned_removal_on"] for row in preview["rows"][:5]} == {"2026-08-28"}
+
+
+# Synthetic owner facts; these are never sent and imply no live observation.
+from datetime import datetime, timedelta, timezone
+
+CONDITION_NOW = datetime(2026, 10, 3, 10, tzinfo=timezone.utc)
+
+
+def _condition_request(**facts):
+    parsed=_parsed([{'animal_ref':'Teena','action':'condition_observation',
+                    'body_condition_score':3,'observed_on':'2026-10-03', **facts}])
+    parsed.update(provider_timestamp=CONDITION_NOW.isoformat(), text='Teena condition 3 on 3 October 2026')
+    return parsed
+
+
+def _condition_evidence():
+    # Actual canonical allocation reader fields, not a model-selected identity.
+    return {'success':True,'allocation_inputs':{'pig_master_rows':[
+        {'Pig_ID':'SOW-T','Tag_Number':'Teena','Sex':'Female','Status':'Active','On_Farm':'Yes'}]}}
+
+
+def _condition_handle(parsed=None, evidence=None, **kwargs):
+    calls=[]
+    result,status=handle_grouped_breeding_message(parsed or _condition_request(),
+        issue_gateway_owner_authority('42','42'), evidence_loader=lambda:evidence or _condition_evidence(),
+        claim_creator=lambda **kw:calls.append(kw) or {'callback_token':'C'},
+        now=CONDITION_NOW, **kwargs)
+    return result,status,calls
+
+
+@pytest.mark.parametrize('language,score_word,date_word,hold_word',[
+    ('en','body condition','3 October 2026','any recovery hold stays unchanged'),
+    ('af','liggaamskondisie','3 Oktober 2026','enige herstelhou bly onveranderd')])
+def test_named_dated_condition_prepares_score_only_in_recipient_language(language,score_word,date_word,hold_word):
+    parsed=_condition_request();parsed['output_language']=language
+    result,status,calls=_condition_handle(parsed)
+    assert status==200 and result['status']=='breeding_grouped_preview_ready' and len(calls)==1
+    row=calls[0]['preview_payload']['preview']['rows'][0]
+    assert row['pig_id']=='SOW-T' and row['action']=='condition_observation'
+    assert row['body_condition_score']==3 and row['observed_at']=='2026-10-02T22:00:00+00:00'
+    assert row['observation_precision']=='date' and row['observation_date']=='2026-10-03'
+    assert row['observation_timezone']=='Africa/Johannesburg'
+    assert row['reported_at']==CONDITION_NOW.isoformat()
+    assert all(piece in result['answer'] for piece in ['Teena','3/5',score_word,date_word,hold_word])
+    assert '22:00' not in result['answer'] and result['confirmation_required'] is True
+    assert localize_recipient_result({'output_language':language},result,'HERDMASTER')['answer']==result['answer']
+    assert calls[0]['action_kind']==ACTION_KIND and not result['writes_farm_data']
+    assert len(result['answer']) < 430 and 'complete group' not in result['answer']
+    assert ('Confirm to save this observation.' if language=='en' else 'Bevestig om hierdie waarneming te stoor.') in result['answer']
+    assert not calls[0]['preview_payload']['creates_movement']
+
+
+@pytest.mark.parametrize('score',[True,False,float('nan'),float('inf'),float('-inf'),0,5.1,'unknown',None])
+def test_invalid_condition_scores_never_create_a_claim(score):
+    result,status,calls=_condition_handle(_condition_request(body_condition_score=score))
+    assert status==200 and not result['success'] and calls==[]
+    assert 'score from 1 to 5' in result['answer'] and result['question_count']==1
+
+
+@pytest.mark.parametrize('facts',[
+    {'observed_on':None}, {'observed_on':'bad'}, {'observed_on':'2026-02-30'},
+    {'observed_on':'2026-10-04'}, {'observed_on':None,'observed_at':'2026-10-03T10:00:00'},
+    {'observed_on':'2026-10-02','observed_at':'2026-10-03T09:00:00Z'},
+    {'observed_on':None,'observed_at':'2026-10-03T10:00:01Z'}])
+def test_missing_malformed_future_and_conflicting_condition_dates_clarify_before_claim(facts):
+    result,status,calls=_condition_handle(_condition_request(**facts))
+    assert status==200 and not result['success'] and calls==[]
+    assert 'On what date was this observed?' in result['answer'] and result['question_count']==1
+
+
+def test_exact_aware_observation_instant_and_old_historical_date_are_preserved():
+    for facts,expected,precision in [({'observed_on':None,'observed_at':'2026-10-03T11:42:13+02:00'},
+                                    '2026-10-03T09:42:13+00:00','instant'),
+                                   ({'observed_on':'2026-08-24'},'2026-08-23T22:00:00+00:00','date')]:
+        result,status,calls=_condition_handle(_condition_request(**facts))
+        assert status==200 and result['success']
+        row=calls[0]['preview_payload']['preview']['rows'][0]
+        assert row['observed_at']==expected and row['observation_precision']==precision
+        assert ('11:42:13' in result['answer']) == (precision=='instant')
+        assert 'current score' not in result['answer'].lower()
+
+
+@pytest.mark.parametrize('change',[{'Status':'Sold'},{'Status':'Dead'},{'On_Farm':'No'},
+                                   {'On_Farm':'Unknown'},{'Sex':'Male'}])
+def test_condition_inactive_or_unproven_canonical_subject_cannot_create_claim(change):
+    evidence=_condition_evidence();evidence['allocation_inputs']['pig_master_rows'][0].update(change)
+    result,status,calls=_condition_handle(evidence=evidence)
+    assert not result['success'] and calls==[] and 'active sow' in result['answer']
+
+
+def test_condition_ambiguous_identity_and_bare_pronoun_cannot_borrow_six_subject_plan():
+    evidence=_condition_evidence();evidence['allocation_inputs']['pig_master_rows'].append(
+        {**evidence['allocation_inputs']['pig_master_rows'][0],'Pig_ID':'SOW-OTHER'})
+    for parsed,source in [(_condition_request(),evidence),(_condition_request(animal_ref='her'),_condition_evidence())]:
+        parsed['semantic']['continuation']=True
+        parsed['conversation_context']=[{'canonical_read_subjects':['SOW-T','S2','S3','S4','S5','S6']}]
+        result,status,calls=_condition_handle(parsed,source)
+        assert not result['success'] and calls==[] and result['question_count']==1
+
+
+@pytest.mark.parametrize('offset',[-21601,31])
+def test_condition_stale_or_future_provider_message_refuses_before_evidence(offset):
+    parsed=_condition_request();parsed['provider_timestamp']=(CONDITION_NOW+timedelta(seconds=offset)).isoformat()
+    result,status,calls=_condition_handle(parsed)
+    assert status==409 and result['status']=='breeding_observation_message_stale' and not calls
+
+
+def test_supplied_hold_and_near_farrowing_observation_dates_are_not_replaced_by_receipt_time():
+    captured=[]
+    result,status=handle_grouped_breeding_message(_parsed([
+        {'animal_ref':'Ms Piggy','action':'recovery_hold','body_condition_score':2,'observed_at':'2026-08-10T09:12:00+02:00'},
+        {'animal_ref':'Linda','action':'near_farrowing','observed_on':'2026-08-11'}]),
+        issue_gateway_owner_authority('42','42'), evidence_loader=_evidence,
+        claim_creator=lambda **kw:captured.append(kw) or {'callback_token':'T'})
+    assert status==200 and result['success']
+    rows=captured[0]['preview_payload']['preview']['rows']
+    assert [row['observed_at'] for row in rows]==['2026-08-10T07:12:00+00:00','2026-08-10T22:00:00+00:00']
+    assert rows[1]['observation_precision']=='date'
+
+
+def test_condition_replay_existing_card_is_silent_and_provider_identity_remains_exact():
+    captured=[]
+    def existing(**kw):
+        captured.append(kw)
+        return {'status':'protected_claim_existing','callback_token':'C','preview_card_message_id':'CARD'}
+    parsed=_condition_request()
+    result,status=handle_grouped_breeding_message(parsed,issue_gateway_owner_authority('42','42'),
+        evidence_loader=_condition_evidence,claim_creator=existing,now=CONDITION_NOW)
+    assert status==200 and result['suppress_owner_delivery'] and result['answer']==''
+    assert captured[0]['provider_message_id']==parsed['provider_message_id']
+    assert captured[0]['owner_user_id']==captured[0]['private_chat_id']=='42'
+
+
+def test_condition_farm_manager_role_cannot_prepare_owner_only_claim():
+    result,status=handle_grouped_breeding_message(_condition_request(),
+        issue_gateway_owner_authority('42','42',principal_role='farm_manager',capabilities=('herd_report',)),
+        evidence_loader=lambda:pytest.fail('no read before owner authority'),
+        claim_creator=lambda **kw:pytest.fail('no claim'),now=CONDITION_NOW)
+    assert status==403 and result['status']=='breeding_group_owner_required'
+
+
+def test_condition_failed_source_result_is_not_accepted_as_current_identity():
+    evidence=_condition_evidence();evidence['success']=False
+    result,status,calls=_condition_handle(evidence=evidence)
+    assert status==503 and result['status']=='breeding_evidence_unavailable' and not calls
+
+
+@pytest.mark.parametrize('language',['en','af'])
+def test_condition_stale_clarification_survives_final_recipient_localization(language):
+    parsed=_condition_request();parsed.update(output_language=language,
+        provider_timestamp=(CONDITION_NOW-timedelta(hours=7)).isoformat())
+    result,status,calls=_condition_handle(parsed)
+    delivered=localize_recipient_result({'output_language':language},result,'HERDMASTER')
+    assert status==409 and not calls and result['question_count']==1
+    assert delivered['answer']==result['answer'] and not delivered.get('suppress_owner_delivery')
+    assert not delivered.get('recipient_language_render_unrecognized')
+    assert '\n\n' in delivered['answer'] and '\\n' not in delivered['answer']
+    assert delivered['status']=='breeding_observation_message_stale'
+    assert ('waarnemingsdatum weer' if language=='af' else 'observation date again') in delivered['answer']
+
+
+@pytest.mark.parametrize('language',['en','af'])
+@pytest.mark.parametrize('reason',['date','score','identity','stale'])
+def test_condition_clarification_is_deliverable_in_both_languages(reason,language):
+    facts={'date':{'observed_on':None},'score':{'body_condition_score':False},
+           'identity':{'animal_ref':'unknown sow'},'stale':{}}[reason]
+    parsed=_condition_request(**facts);parsed['output_language']=language
+    if reason=='stale':
+        parsed['provider_timestamp']=(CONDITION_NOW-timedelta(hours=7)).isoformat()
+    result,status,calls=_condition_handle(parsed)
+    delivered=localize_recipient_result({'output_language':language},result,'HERDMASTER')
+    assert not result['success'] and not calls and result['question_count']==1
+    assert delivered['answer']==result['answer'] and '\n\n' in delivered['answer']
+    assert not delivered.get('recipient_language_render_unrecognized')
+    assert result['writes_farm_data'] is False
