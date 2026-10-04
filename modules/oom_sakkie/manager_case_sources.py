@@ -170,6 +170,39 @@ def is_advisory_herd_refresh_case(case):
         or re.fullmatch(r"herdmaster:pig-[A-Za-z0-9-]+-withdrawal-sales", key)))
 
 
+def is_purpose_herd_refresh_case(case):
+    """Only fully attributed, retained purpose decisions use this owning read."""
+    from modules.oom_sakkie.herdmaster_purpose_decision import purpose_decision_binding
+    return isinstance(case, dict) and purpose_decision_binding(case) is not None
+
+
+def _purpose_review_refresh(now, cases, *, deadline_monotonic=None):
+    """Reproject exact claimed cohorts once, without unrelated herd work."""
+    from modules.oom_sakkie.general_manager_worker import CLAIM_LIMIT
+    from modules.pig_weights.herdmaster_purpose_work import load_purpose_work_snapshot
+    if (not 0 < len(cases) <= CLAIM_LIMIT
+            or any(not is_purpose_herd_refresh_case(case)
+                   or not isinstance(case.get("case_id"), str) or not case["case_id"].strip()
+                   for case in cases)
+            or len({case["case_id"] for case in cases}) != len(cases)
+            or len({case["dedupe_key"] for case in cases}) != len(cases)):
+        raise ValueError("purpose_refresh_case_identity_invalid")
+    # Retain the loader's existing ten-second bound and the remaining shared
+    # refresh window. Neither a new connection nor a sibling resets that budget.
+    deadline = min(time.monotonic() + 10, deadline_monotonic
+                   if deadline_monotonic is not None else float("inf"))
+    if time.monotonic() >= deadline:
+        raise TimeoutError("purpose_refresh_deadline")
+    today = _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).date()
+    snapshot = load_purpose_work_snapshot(analysis_date=today, deadline=deadline)
+    rows = _purpose_review_candidates(snapshot, now=now, today=today,
+        observed_at=_time(snapshot.get("snapshot_observed_at"), now))
+    if time.monotonic() >= deadline:
+        raise TimeoutError("purpose_refresh_deadline")
+    return _project_refresh_rows(rows, {
+        (case["dedupe_key"], case["specialist"]) for case in cases})
+
+
 def _herdmaster_retained(now):
     return _retained_herd_report_recovery_candidates(now)
 
@@ -179,7 +212,8 @@ def _herdmaster_advisories(now):
     return collect_advisory_dispositions(now)
 
 
-def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
+def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None,
+                                     deadline_monotonic=None):
     """Refresh every claimed case from one read per owning specialist.
 
     A manager cohort can contain many cases from one specialist. Re-running the
@@ -196,6 +230,13 @@ def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None):
     requested.discard(("", ""))
     if not requested:
         return {}
+    if collectors is None and all(is_purpose_herd_refresh_case(case) for case in cases):
+        try:
+            return _purpose_review_refresh(now, cases,
+                deadline_monotonic=deadline_monotonic)
+        except Exception as exc:
+            failure = ManagerCollectorRefreshError("herdmaster_purpose", exc.__class__.__name__)
+            return {identity: failure for identity in requested}
     if collectors is None and all(is_advisory_herd_refresh_case(case) for case in cases):
         from modules.oom_sakkie.herdmaster_case_disposition import collect_advisory_refresh
         try:

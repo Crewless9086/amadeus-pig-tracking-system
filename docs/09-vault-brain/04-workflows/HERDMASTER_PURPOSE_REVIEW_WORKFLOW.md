@@ -24,6 +24,14 @@ Allocation review. Delivery is not approval: purpose, allocation, sale and farm
 records remain unchanged. Changed evidence invalidates an old notice; unchanged
 material produces no repeated send or edit. A fresh owning refresh and exact
 current case checks govern delivery without a second full-herd collection.
+Claimed ready-purpose siblings share one fresh owning purpose snapshot within
+the remaining manager refresh budget. They do not wait for unrelated breeding,
+welfare or completed-batch reads. The existing allocation and reconciliation
+producer still decides phase, membership and holds; a missing, failed, changed
+or late snapshot never authorizes delivery from the earlier candidate. Keep the
+cycle deadline and completion reserve, priority, leases and confirmed-message
+history intact. Bounded deferral remains visible until a later natural cycle
+makes progress; a faster source path alone is not proof of reliable delivery.
 One retry is permitted only when the retained first attempt proves nothing was
 sent and the current owner, case generation and complete message binding still
 match. Any ambiguous delivery, changed binding or exhausted retry stays

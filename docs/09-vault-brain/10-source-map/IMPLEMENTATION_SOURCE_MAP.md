@@ -1050,6 +1050,11 @@ Current built Supabase-backed surface:
   material evidence, owner-review surface and family delivery lifecycle.
   Qualification: `tests/test_oom_sakkie_purpose_decision.py` exercises the
   producer, stored case, real PostgreSQL claim and existing delivery rail.
+  Claimed purpose decisions use one independent, deadline-bound canonical
+  purpose refresh for their exact cohorts, preserving the same eligibility
+  producer and delivery fences. `tests/test_oom_sakkie_purpose_refresh.py`
+  covers default grouping, unrelated slow reads, changed evidence, the stored
+  case/family path and bounded sibling catch-up with quiet replay.
   Source support is separate from release and genuine automatic delivery proof.
 
 Current built read-only readiness surface to expand:

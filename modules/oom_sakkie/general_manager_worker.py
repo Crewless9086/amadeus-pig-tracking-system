@@ -974,7 +974,7 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
         from modules.oom_sakkie.manager_case_sources import (
             collect_manager_candidate, collect_manager_candidates,
             collect_manager_refresh_snapshot, is_retained_herd_refresh_case,
-            is_advisory_herd_refresh_case)
+            is_advisory_herd_refresh_case, is_purpose_herd_refresh_case)
         if collectors is None:
             from modules.telemetry.rootline_mixer_readiness_observer import (
                 collect_mixer_readiness,
@@ -1025,6 +1025,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
             if (not cases or time.monotonic()
                     >= deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS):
                 return {}
+            refresh_deadline = min(time.monotonic() + REFRESH_SNAPSHOT_DEADLINE_SECONDS,
+                deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS)
             by_owner = {}
             for case in cases:
                 prefix = str(case.get("dedupe_key") or "").split(":", 1)[0].casefold()
@@ -1032,6 +1034,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                     prefix = "herdmaster-retained"
                 elif is_advisory_herd_refresh_case(case):
                     prefix = "herdmaster-advisories:" + str(case["case_id"])
+                elif is_purpose_herd_refresh_case(case):
+                    prefix = "herdmaster-purpose"
                 by_owner.setdefault(prefix, []).append(case)
             groups = []
             for owner, owned_cases in by_owner.items():
@@ -1045,6 +1049,11 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                         return {(str(row.get("dedupe_key") or ""),
                                  str(row.get("specialist") or "").upper()): row
                                 for row in rows or ()}
+                elif owner == "herdmaster-purpose":
+                    def collect(owned_cases=owned_cases):
+                        return collect_manager_refresh_snapshot(
+                            now=datetime.now(timezone.utc), cases=owned_cases,
+                            collectors=collectors, deadline_monotonic=refresh_deadline)
                 else:
                     def collect(owned_cases=owned_cases):
                         return collect_manager_refresh_snapshot(
