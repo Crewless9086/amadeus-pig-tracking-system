@@ -11,6 +11,24 @@ the shared Oom Sakkie attention lifecycle. A resolved purpose removes the case;
 deferment retains reassessment ownership; an unchanged material digest does not
 create another Application, Brief or Telegram item.
 
+A ready purpose decision is actionable even when no factual observation is
+missing. Oom Sakkie must recognize the existing purpose-review family, current
+owner-decision phase and exact cohort evidence at both queue admission and
+owner delivery. Do not invent an unknown fact or alter a case's material digest
+merely to obtain a turn. Preserve urgent work, confirmed-delivery suppression,
+current evidence, lease ownership and the shared cycle deadline.
+
+Send a concise grouped review notice only to the currently configured,
+authorized private owner. Use names or visible tags and the existing Pig
+Allocation review. Delivery is not approval: purpose, allocation, sale and farm
+records remain unchanged. Changed evidence invalidates an old notice; unchanged
+material produces no repeated send or edit. A fresh owning refresh and exact
+current case checks govern delivery without a second full-herd collection.
+One retry is permitted only when the retained first attempt proves nothing was
+sent and the current owner, case generation and complete message binding still
+match. Any ambiguous delivery, changed binding or exhausted retry stays
+contained; do not clear history to obtain another send.
+
 Specific weighing questions and manager follow-ups consume the same typed
 canonical cohort projection. Preserve its stable work identity as missing
 post-wean weight becomes purpose review. A historical reporting gap never creates

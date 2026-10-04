@@ -1065,6 +1065,10 @@ def _purpose_review_candidates(snapshot, *, now, today, observed_at):
             presentation_identity={"human_name": cohort["label"],
                 "familiar_meaning": "Purpose review cohort" if not cohort["label"] else "",
                 "stable_reference": reference}))
+        # Transient rendering facts accompany the existing owning refresh. They
+        # never add stored fields, change case identity or enter material digests.
+        result[-1]["_purpose_review"] = {"phase": phase, "cohort_key": cohort["cohort_key"],
+            "material_digest": cohort["material_digest"], "member_count": len(rows), "label": label}
     return result
 
 
