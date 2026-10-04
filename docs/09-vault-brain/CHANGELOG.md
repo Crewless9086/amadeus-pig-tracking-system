@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+## 2026-10-04 - Focused refresh for ready purpose decisions
+
+- Refresh exact claimed purpose cohorts together through the existing canonical
+  purpose-work loader, independently of unrelated herd overview reads.
+- Preserve the same eligibility, current material, private owner, lease and
+  delivery protections within the unchanged cycle deadline and completion reserve.
+- Qualify default dispatch, source failure/changes, sibling catch-up and replay;
+  retain naturally scheduled delivery and later continuity as separate proof.
+
 ## 2026-10-04 - Ready purpose decisions retain owner follow-through
 
 - Distinguish a supported protected decision from a missing factual observation
