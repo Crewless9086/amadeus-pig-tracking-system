@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-10-04 - Attributable completion for retained purpose work
+
+- Consume executed owner-approved canonical correction evidence through existing
+  case disposition; keep partial or unproved groups open under the same identity.
+- Preserve generation, material, lease, replay and delivery history protections;
+  omit no case merely because current advisory work disappears.
+- Existing retained groups with twelve or more pig references cannot prove full
+  membership and remain unsupported for automatic completion in this repair.
+- No farm writer, notice, schedule, schema or model change. Local and hosted proof
+  remain separate from actual approved farm corrections and natural continuity.
+
+
 ## 2026-10-04 - Focused refresh for ready purpose decisions
 
 - Refresh exact claimed purpose cohorts together through the existing canonical

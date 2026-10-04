@@ -121,8 +121,11 @@ def build_owner_attention_projection(
             or ("DELIVERY_GAPS" in unavailable_specialists and key.startswith("delivery:"))
         )
         ledger_lifecycle = str(prior.get("lifecycle") or "open").lower()
-        lifecycle = "open" if unavailable else (
-            ledger_lifecycle if ledger_lifecycle in {"resolved", "superseded"} else "resolved")
+        purpose_case = key.startswith("herdmaster:purpose-review:")
+        purpose_completed = str(prior.get("operational_status") or "").lower() == "completed"
+        lifecycle = ("resolved" if purpose_completed else "open") if purpose_case else (
+            "open" if unavailable else (
+                ledger_lifecycle if ledger_lifecycle in {"resolved", "superseded"} else "resolved"))
         items.append(_item({**dict(prior), "lifecycle": lifecycle}, now))
     items = _disambiguate_duplicate_labels(items)
     ordered = sorted(items, key=lambda item: (
