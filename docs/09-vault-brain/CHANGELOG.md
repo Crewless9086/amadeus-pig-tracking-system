@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-04 - Exact single-pig purpose preview
+
+- Show canonical animal identity, current/new purpose, reason and owner note from
+  the protected correction preview, with readable purpose labels.
+- Refuse incomplete, mismatched, expired or superseded previews; retain one
+  captured explicit create/approve/execute sequence and distinguish saved records
+  from a failed subsequent page refresh. Backend authority remains unchanged.
+- Local desktop/mobile browser proof uses synthetic rows and the real read-only
+  preview producer. No farm data, schema, grouped UI or release authority changes.
+
 ## 2026-10-04 - Attributable completion for retained purpose work
 
 - Consume executed owner-approved canonical correction evidence through existing

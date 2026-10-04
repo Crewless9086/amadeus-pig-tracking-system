@@ -38,6 +38,9 @@ let allocationRows = [];
 let allocationSummary = {};
 let selectedReviewPigId = "";
 let latestAllocationPurposePreview = null;
+let allocationReviewEpoch = 0;
+let allocationPreviewExpiry = null;
+let allocationPurposeApplying = false;
 let auctionPacket = {};
 let auctionCandidateIds = new Set();
 let auctionSelectableIds = new Set();
@@ -291,94 +294,139 @@ function allocationReviewChangedBy() {
 }
 
 function resetAllocationReviewPreview() {
+  allocationReviewEpoch += 1;
+  clearTimeout(allocationPreviewExpiry);
   latestAllocationPurposePreview = null;
   const preview = document.getElementById("allocation_review_preview");
-  const applyButton = document.querySelector("[data-allocation-review-apply]");
-  if (preview) {
-    preview.innerHTML = '<p class="form-helper">Preview the purpose update before applying it.</p>';
-  }
-  if (applyButton) {
-    applyButton.disabled = true;
-  }
+  if (preview) preview.innerHTML = '<p class="form-helper">Preview the purpose update before applying it.</p>';
+  updateAllocationPurposeControls();
+}
+
+function updateAllocationPurposeControls() {
+  reviewDetail?.querySelectorAll("input, select, textarea, [data-allocation-review-preview]").forEach((el) => {
+    el.disabled = allocationPurposeApplying;
+  });
+  bodyEl.querySelectorAll("[data-review-pig-id]").forEach((el) => { el.disabled = allocationPurposeApplying; });
+  const apply = document.querySelector("[data-allocation-review-apply]");
+  if (apply) apply.disabled = allocationPurposeApplying || !latestAllocationPurposePreview;
 }
 
 function allocationPurposeDecisionPayload(dryRun) {
   const row = selectedReviewRow();
   const purpose = currentReviewPurpose();
-  if (!row || !row.pig_id) {
-    throw new Error("Select a pig before previewing a purpose update.");
-  }
-  if (!purpose) {
-    throw new Error("Choose a purpose before previewing the update.");
-  }
+  if (!row || !row.pig_id) throw new Error("Select a pig before previewing a purpose update.");
+  if (!purpose) throw new Error("Choose a purpose before previewing the update.");
+  // Match the owning producer's string normalization, including Unicode code points.
+  const clean = (value, limit) => Array.from(String(value || "").trim()).slice(0, limit).join("");
   return {
     decisions: [{
-      pig_id: row.pig_id,
-      purpose,
-      reason: row.suggested_purpose_reason || row.readiness_reason || "Pig Allocation owner purpose review.",
-      note: allocationReviewNote(),
+      pig_id: row.pig_id, purpose,
+      reason: clean(row.suggested_purpose_reason || row.readiness_reason || "Pig Allocation owner purpose review.", 500),
+      note: clean(allocationReviewNote(), 1000),
     }],
-    changed_by: allocationReviewChangedBy(),
-    dry_run: dryRun,
-    allow_reclassify: true,
+    changed_by: allocationReviewChangedBy(), dry_run: dryRun, allow_reclassify: true,
   };
+}
+
+function allocationPurposeIntent() {
+  const row = selectedReviewRow();
+  return {
+    payload: allocationPurposeDecisionPayload(true),
+    tag: String(row.tag_number || ""), oldPurpose: row.purpose || "Unknown",
+    returnTo: new URLSearchParams(window.location.search).get("return_to") || "",
+  };
+}
+
+function sameAllocationPurposeIntent(intent) {
+  try { return JSON.stringify(intent) === JSON.stringify(allocationPurposeIntent()); }
+  catch (_) { return false; }
+}
+
+function validAllocationPurposePreview(data, intent) {
+  const version = "herdmaster_purpose_correction_v2";
+  const binding = data?.confirmation_binding;
+  const effect = data?.effects?.[0];
+  const decision = data?.decisions?.[0];
+  const wanted = intent.payload.decisions[0];
+  const hex = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  const age = Math.floor(Date.now() / 1000) - binding?.issued_at;
+  // This checks response completeness and correspondence, not the server's HMAC.
+  // Create/approve/execute still authenticate and reread the canonical records.
+  return data?.success === true && data.status === "correction_preview_ready"
+    && data.contract_version === version && data.approved_count === 1
+    && Array.isArray(data.decisions) && data.decisions.length === 1
+    && Array.isArray(data.effects) && data.effects.length === 1
+    && decision && Object.keys(wanted).every((key) => decision[key] === wanted[key])
+    && effect && effect.pig_id === wanted.pig_id && effect.new_purpose === wanted.purpose
+    && effect.reason === wanted.reason && effect.note === wanted.note
+    && effect.old_purpose === intent.oldPurpose && effect.tag_number === intent.tag
+    && effect.status === "Active" && effect.on_farm === true
+    && Object.hasOwn(effect, "latest_weight_date") && Object.hasOwn(effect, "latest_weight_kg")
+    && (effect.latest_weight_date === null || (typeof effect.latest_weight_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effect.latest_weight_date)))
+    && (effect.latest_weight_kg === null || (typeof effect.latest_weight_kg === "number" && Number.isFinite(effect.latest_weight_kg)))
+    && hex(data.preview_digest) && binding?.contract_version === version
+    && binding.preview_digest === data.preview_digest && hex(binding.signature)
+    && typeof binding.actor_id === "string" && binding.actor_id.trim().length > 0
+    && Number.isInteger(binding.issued_at) && age >= 0 && age <= 1800
+    && data.writes_performed === false && data.writes_to_sheets === false
+    && (data.return_to || "") === intent.returnTo
+    && (!intent.returnTo || /^\/orders\/[A-Za-z0-9][A-Za-z0-9-]{2,79}$/.test(intent.returnTo));
+}
+
+function allocationPurposeLabel(value) {
+  return ({Grow_Out: "Grow out", House_Use: "House use"})[value] || value;
 }
 
 function renderAllocationPurposePreview(data) {
   const preview = document.getElementById("allocation_review_preview");
-  const applyButton = document.querySelector("[data-allocation-review-apply]");
-  if (!preview) return;
-  const approved = Array.isArray(data.approved) ? data.approved : [];
-  const planned = data.planned_updates || {};
-  const items = approved.map((item) => {
-    const update = planned[item.pig_id] || {};
-    return `
-      <div class="allocation-review-preview-item">
-        <strong>${escapeHtml(item.tag_number || item.pig_id || "-")}</strong>
-        <span>${escapeHtml(item.old_purpose || "Unknown")} -> ${escapeHtml(item.new_purpose || "-")}</span>
-        <small>${escapeHtml(update.General_Notes || item.reason || "No audit note returned.")}</small>
-      </div>
-    `;
-  }).join("");
-
+  const item = data.effects[0];
+  const row = selectedReviewRow();
+  const name = row.pig_id === item.pig_id ? String(row.name || "").trim() : "";
+  const identity = [name, item.tag_number ? `Tag ${formatTagNumber(item.tag_number)}` : "Tag unknown"].filter(Boolean).join(" · ");
   preview.innerHTML = `
     <div class="allocation-review-preview-success">
-      <strong>${escapeHtml(data.message || "Purpose review preview ready.")}</strong>
-      ${items || '<p class="form-helper">No update row returned by the preview.</p>'}
-    </div>
-  `;
-  if (applyButton) {
-    applyButton.disabled = !data.success;
-  }
+      <strong>Review purpose change</strong>
+      <div class="allocation-review-preview-item">
+        <strong>${escapeHtml(identity)}</strong>
+        <small>Record: ${escapeHtml(item.pig_id)}</small>
+        <span>Current purpose: <strong>${escapeHtml(allocationPurposeLabel(item.old_purpose))}</strong></span>
+        <span>New purpose: <strong>${escapeHtml(allocationPurposeLabel(item.new_purpose))}</strong></span>
+        <small>Reason: ${escapeHtml(item.reason || "Not supplied")}</small>
+        ${item.note ? `<small>Owner note: ${escapeHtml(item.note)}</small>` : ""}
+      </div>
+      <p class="form-helper">Nothing has been saved. Apply purpose asks you to confirm this change.</p>
+    </div>`;
 }
 
 async function submitAllocationPurposeDecision(dryRun) {
+  if (allocationPurposeApplying) return;
   clearMessage();
-  const preview = document.getElementById("allocation_review_preview");
-  const previewButton = document.querySelector("[data-allocation-review-preview]");
-  const applyButton = document.querySelector("[data-allocation-review-apply]");
-  if (!dryRun && !latestAllocationPurposePreview) {
-    showMessage("Preview the purpose update before applying it.");
-    return;
-  }
-  if (!dryRun && !window.confirm("Apply this purpose update to the selected pig?")) {
-    return;
-  }
+  let epoch = allocationReviewEpoch;
+  let committed = false;
+  let applyingThisRequest = false;
   try {
     if (!dryRun) {
-      const decision = allocationPurposeDecisionPayload(false);
-      const decisions = decision.decisions || [];
+      const retained = latestAllocationPurposePreview;
+      if (!retained || retained.epoch !== epoch || !sameAllocationPurposeIntent(retained.intent)
+          || !validAllocationPurposePreview(retained.data, retained.intent)) {
+        resetAllocationReviewPreview();
+        throw new Error("The preview has changed or expired. Preview the purpose update again.");
+      }
+      const {data, intent} = retained;
+      const effect = data.effects[0];
+      if (!window.confirm(`Apply ${allocationPurposeLabel(effect.old_purpose)} → ${allocationPurposeLabel(effect.new_purpose)} to ${effect.tag_number ? `tag ${effect.tag_number}` : effect.pig_id}?`)) return;
+      // Capture the reviewed request before any await; never reread mutable form state.
+      allocationPurposeApplying = true;
+      applyingThisRequest = true;
+      updateAllocationPurposeControls();
       const key = `purpose-correction-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const created = await fetch("/api/pig-weights/purpose-review/correction-batches", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          decisions, idempotency_key: key,
-          confirmation_binding: latestAllocationPurposePreview.confirmation_binding,
-          return_to: latestAllocationPurposePreview.return_to || "",
-        }),
+        body: JSON.stringify({decisions: intent.payload.decisions, idempotency_key: key,
+          confirmation_binding: data.confirmation_binding, return_to: intent.returnTo}),
       });
       const createdData = await created.json();
-      if (!created.ok || !createdData.success) throw new Error(createdData.message || createdData.status || "Correction batch creation failed.");
+      if (!created.ok || !createdData.success || typeof createdData.batch_id !== "string" || !createdData.batch_id) throw new Error(createdData.message || createdData.status || "Correction batch creation failed.");
       const batchId = createdData.batch_id;
       const approved = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(batchId)}/approve`, { method: "POST" });
       const approvedData = await approved.json();
@@ -386,59 +434,54 @@ async function submitAllocationPurposeDecision(dryRun) {
       const executed = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(batchId)}/execute`, { method: "POST" });
       const executedData = await executed.json();
       if (!executed.ok || !executedData.success) throw new Error(executedData.message || executedData.status || "Correction batch was not executed.");
+      committed = true;
       const item = (executedData.per_pig_results || [])[0];
-      showMessage(item ? `${item.tag_number || item.pig_id}: ${item.available === true ? "available" : item.remaining_blocker || "eligibility Unknown"}` : "Purpose changed with canonical readback.", "success");
-      const returnTo = latestAllocationPurposePreview.return_to;
-      latestAllocationPurposePreview = null;
-      await loadAllocationReadiness();
-      if (returnTo) window.location.assign(returnTo);
+      resetAllocationReviewPreview();
+      const refreshed = await loadAllocationReadiness();
+      showMessage(!refreshed ? "Purpose saved. Latest records could not be loaded; refresh before another change." : item ? `${item.tag_number || item.pig_id}: ${item.available === true ? "available" : item.remaining_blocker || "eligibility Unknown"}` : "Purpose changed with canonical readback.", "success");
+      if (intent.returnTo) window.location.assign(intent.returnTo);
       return;
     }
-    if (previewButton) previewButton.disabled = true;
-    if (applyButton) applyButton.disabled = true;
-    if (preview) {
-      preview.innerHTML = `<p class="form-helper">${dryRun ? "Previewing" : "Applying"} purpose update...</p>`;
-    }
+    resetAllocationReviewPreview();
+    epoch = allocationReviewEpoch;
+    const intent = allocationPurposeIntent();
+    const preview = document.getElementById("allocation_review_preview");
+    if (preview) preview.innerHTML = '<p class="form-helper">Loading purpose preview…</p>';
+    const button = document.querySelector("[data-allocation-review-preview]");
+    if (button) button.disabled = true;
     const response = await fetch("/api/pig-weights/purpose-review/apply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...allocationPurposeDecisionPayload(dryRun),
-        return_to: new URLSearchParams(window.location.search).get("return_to") || "",
-      }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({...intent.payload, return_to: intent.returnTo}),
     });
     const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.message || "Purpose review failed."]).join(" "));
+    if (epoch !== allocationReviewEpoch) return;
+    if (!sameAllocationPurposeIntent(intent) || !response.ok || !validAllocationPurposePreview(data, intent)) {
+      throw new Error("A complete matching preview is unavailable. Refresh the records and preview again.");
     }
-    if (dryRun) {
-      latestAllocationPurposePreview = data;
-      renderAllocationPurposePreview(data);
-      showMessage("Purpose update preview is ready. Review it, then apply if correct.", "success");
-      return;
-    }
-    latestAllocationPurposePreview = null;
-    showMessage(data.message || "Purpose review saved.", "success");
-    const pigId = selectedReviewPigId;
-    await loadAllocationReadiness();
-    selectedReviewPigId = pigId;
-    renderPurposeReview(selectedReviewRow());
+    latestAllocationPurposePreview = {data, intent, epoch};
+    renderAllocationPurposePreview(data);
+    allocationPreviewExpiry = setTimeout(() => {
+      if (allocationReviewEpoch !== epoch) return;
+      resetAllocationReviewPreview();
+      showMessage("The preview has expired. Preview the purpose update again.");
+    }, Math.max(1, (data.confirmation_binding.issued_at + 1801) * 1000 - Date.now()));
+    showMessage("Review the animal, purpose change and reason before applying.", "success");
   } catch (error) {
-    console.error("Allocation purpose review submit error:", error);
-    latestAllocationPurposePreview = null;
-    if (preview) {
-      preview.innerHTML = `<p class="form-helper">${escapeHtml(error.message || "Could not submit purpose review.")}</p>`;
-    }
-    showMessage(error.message || "Could not submit purpose review.");
+    if (dryRun && epoch !== allocationReviewEpoch) return;
+    resetAllocationReviewPreview();
+    const message = committed ? "Purpose saved. Refresh the page to read the latest records." : error.message || "Could not submit purpose review.";
+    const preview = document.getElementById("allocation_review_preview");
+    if (preview) preview.innerHTML = `<p class="form-helper">${escapeHtml(message)}</p>`;
+    showMessage(message, committed ? "success" : "error");
   } finally {
-    if (previewButton) previewButton.disabled = false;
-    if (applyButton) applyButton.disabled = !latestAllocationPurposePreview;
+    if (applyingThisRequest) allocationPurposeApplying = false;
+    if (epoch === allocationReviewEpoch || !dryRun) updateAllocationPurposeControls();
   }
 }
 
 function renderPurposeReview(row) {
   if (!reviewDetail || !reviewStatus) return;
-  latestAllocationPurposePreview = null;
+  resetAllocationReviewPreview();
   if (!row) {
     reviewStatus.textContent = "Select a pig from the table to inspect the recommendation before any purpose decision.";
     reviewDetail.innerHTML = '<div class="table-empty">No pig selected. Use Review on a table row to open a recommendation packet.</div>';
@@ -508,8 +551,8 @@ function renderPurposeReview(row) {
         <button type="button" class="btn-primary" data-allocation-review-apply disabled>Apply purpose</button>
         <a class="button-link" href="/purpose-review">Open full queue</a>
       </div>
-      <div id="allocation_review_preview" class="allocation-review-preview">
-        <p class="form-helper">Preview the purpose update before applying it. This writes only the pig Purpose, Updated At, and audit note.</p>
+      <div id="allocation_review_preview" class="allocation-review-preview" aria-live="polite">
+        <p class="form-helper">Preview the purpose update before applying it. Nothing is saved until you confirm Apply purpose.</p>
       </div>
     </div>
   `;
@@ -694,10 +737,12 @@ function renderRows(rows) {
 function applyFilters() {
   if (!bucketFilter.value.startsWith("Auction ")) auctionSelection.clear();
   renderRows(filteredRows());
+  updateAllocationPurposeControls();
   updateAuctionSelectionCount();
 }
 
 async function loadAllocationReadiness() {
+  resetAllocationReviewPreview();
   clearMessage();
   try {
     const response = await fetch("/api/pig-weights/pig-allocation-readiness");
@@ -720,10 +765,15 @@ async function loadAllocationReadiness() {
     renderSummary(allocationSummary);
     renderRules(data.business_rules || {});
     applyFilters();
+    // Refresh only an open purpose form; other review panels retain their own lifecycle.
+    if (selectedReviewPigId && document.getElementById("allocation_review_purpose_choice")) renderPurposeReview(selectedReviewRow());
+    updateAllocationPurposeControls();
+    return true;
   } catch (error) {
     console.error("Pig allocation readiness error:", error);
     showMessage(error.message || "Something went wrong while loading pig allocation readiness.");
     bodyEl.innerHTML = '<tr><td colspan="8" class="table-empty">Could not load pig allocation readiness.</td></tr>';
+    return false;
   }
 }
 
@@ -980,7 +1030,7 @@ resetFiltersButton.addEventListener("click", () => {
 
 bodyEl.addEventListener("click", (event) => {
   const button = event.target.closest("[data-review-pig-id]");
-  if (!button) return;
+  if (!button || allocationPurposeApplying) return;
   selectedReviewPigId = button.dataset.reviewPigId || "";
   const row = allocationRows.find((item) => item.pig_id === selectedReviewPigId);
   if (isAuctionMode()) {
