@@ -56,7 +56,7 @@ def _project_refresh_rows(rows, requested):
 
 def collect_manager_candidates(*, now: datetime, collectors=None):
     # Start bounded owning reads before slow overview collectors can fill the pool.
-    selected = collectors or (_herdmaster_retained, _herdmaster_advisories,
+    selected = collectors or (_herdmaster_retained, _herdmaster_advisories, _herdmaster_purpose_completions,
         _rootline, _herdmaster, _sam, _beacon, _delivery_gaps, _runtime)
     selected = tuple(selected)
 
@@ -205,6 +205,11 @@ def _purpose_review_refresh(now, cases, *, deadline_monotonic=None):
 
 def _herdmaster_retained(now):
     return _retained_herd_report_recovery_candidates(now)
+
+
+def _herdmaster_purpose_completions(now):
+    from modules.oom_sakkie.herdmaster_purpose_completion import collect_purpose_completions
+    return collect_purpose_completions(now)
 
 
 def _herdmaster_advisories(now):

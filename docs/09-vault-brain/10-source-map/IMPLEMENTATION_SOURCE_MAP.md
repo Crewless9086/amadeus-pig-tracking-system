@@ -1055,6 +1055,16 @@ Current built Supabase-backed surface:
   producer and delivery fences. `tests/test_oom_sakkie_purpose_refresh.py`
   covers default grouping, unrelated slow reads, changed evidence, the stored
   case/family path and bounded sibling catch-up with quiet replay.
+  `modules/oom_sakkie/herdmaster_purpose_completion.py` consumes complete,
+  attributable executed owner-approved corrections through the existing case
+  disposition and generation/material/lease fences. Its four bounded read-only
+  queries do not write farm facts or send notices. Legacy retained groups of
+  twelve or more IDs have no complete membership proof and remain open; smaller
+  groups still require every member and reject extra unresolved cohort members.
+  `tests/test_oom_sakkie_purpose_completion.py` exercises the canonical correction
+  writer, natural candidate collection, default case store, partial completion,
+  replay and evidence/race refusal. Owner Attention does not infer purpose-case
+  resolution from collector omission.
   Source support is separate from release and genuine automatic delivery proof.
 
 Current built read-only readiness surface to expand:
