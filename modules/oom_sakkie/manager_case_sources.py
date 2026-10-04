@@ -381,17 +381,9 @@ def _herdmaster(now):
             physical_assignee=(item.assignee if task_class == "physical_action_due" else None),
             owner_question_eligible=exact_owner_question or (
                 task_class == "protected_decision" and not unknowns)))
-    from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
+    from modules.pig_weights.herdmaster_purpose_work import load_purpose_work_snapshot
     farm_today = _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).date()
-    try:
-        snapshot = get_allocation_input_rows(today=farm_today)
-    except TypeError as exc:
-        # Preserve narrow dependency-injected adapters that predate the
-        # optional deterministic date argument; production uses the canonical
-        # adapter above.
-        if "today" not in str(exc):
-            raise
-        snapshot = get_allocation_input_rows()
+    snapshot = load_purpose_work_snapshot(analysis_date=farm_today)
     snapshot_observed = _time(snapshot.get("snapshot_observed_at"), now)
     candidates.extend(_retained_litter_followup_candidates(
         now, snapshot.get("litter_rows") or ()))
@@ -1021,78 +1013,58 @@ def _completed_bulk_batch_findings(now, *, connect=None):
 
 
 def _purpose_review_candidates(snapshot, *, now, today, observed_at):
-    """Project one governed purpose-work identity per canonical litter/cohort."""
-    from modules.pig_weights.pig_weights_service import get_pig_allocation_readiness
-
-    allocation = get_pig_allocation_readiness(
-        today=today, allow_sheet_fallback=False, canonical_inputs=snapshot,
-    )
-    if allocation.get("success") is not True:
-        return []
-
-    grouped = {}
-    for row in allocation.get("pigs") or ():
-        purpose = str(row.get("purpose") or "").strip().casefold()
-        if (str(row.get("status") or "").casefold() != "active"
-                or str(row.get("on_farm") or "").casefold() != "yes"
-                or purpose not in {"", "unknown", "unallocated", "not allocated", "not_allocated"}):
-            continue
-        if row.get("purpose_review_eligible") is not True:
-            continue
-        litter_id = str(row.get("litter_id") or "").strip()
-        cohort_key = litter_id or str(row.get("pig_id") or "").strip()
-        if not cohort_key:
-            continue
-        grouped.setdefault(cohort_key, {"litter_id": litter_id, "rows": []})["rows"].append(row)
-
+    """Present the same typed, reconciled cohort work as direct herd questions."""
+    from modules.pig_weights.herdmaster_purpose_work import CONTRACT
+    work = snapshot.get("purpose_work") or {}
+    if work.get("contract") != CONTRACT or work.get("state") != "checked":
+        raise ValueError("purpose_work_evidence_unavailable")
     result = []
-    for cohort_key, cohort in sorted(grouped.items()):
-        rows = cohort["rows"]
-        missing = [row for row in rows if row.get("purpose_review_state") == "weight_due"]
-        sow_name = next((str(row.get("sow_tag_number") or "").strip()
-                         for row in rows if str(row.get("sow_tag_number") or "").strip()), "")
-        row_names = [str(row.get("tag_number") or "").strip() or "Name unavailable"
-                     for row in rows]
-        animal_names = [name for name in row_names if name != "Name unavailable"]
-        label = sow_name or (animal_names[0] if len(animal_names) == 1 else "Purpose review cohort")
-        stable_reference = cohort["litter_id"] or str(rows[0].get("pig_id") or cohort_key)
-        refs = [f"litter:{cohort['litter_id']}" if cohort["litter_id"] else f"pig:{stable_reference}",
-                f"purpose_work:{cohort_key}", f"rule_day:{rows[0].get('purpose_review_due_after_days') or 14}",
-                f"observed:{observed_at.isoformat()}"]
+    for cohort in work["cohorts"]:
+        rows, phase = cohort["members"], cohort["phase"]
+        selected = [row for row in rows if row["pig_id"] in cohort["weighing_ids"]]
+        label = cohort["label"] if 0 < len(cohort["label"]) <= 60 else "Purpose review cohort"
+        reference = cohort["litter_id"] or cohort["member_ids"][0]
+        refs = [f"litter:{cohort['litter_id']}" if cohort["litter_id"] else f"pig:{reference}",
+                f"purpose_work:{cohort['cohort_key']}", f"rule_day:{cohort['rule_days']}",
+                f"purpose_evidence:{cohort['material_digest']}", f"observed:{observed_at.isoformat()}",
+                f"phase:{'post_wean_weight' if phase == 'weight_due' else 'owner_decision' if phase == 'decision_due' else 'held'}"]
+        # Full membership is digest-bound; reference bounds must admit large cohorts.
+        refs.extend(f"pig:{row['pig_id']}" for row in rows[:12])
         detail = "/pig-allocation?mode=purpose-review"
         if cohort["litter_id"] and _safe_detail_identifier(cohort["litter_id"]):
             detail += f"&litter_id={cohort['litter_id']}"
-        if missing:
-            names = [str(row.get("tag_number") or "Name unavailable") for row in missing]
-            result.append(_candidate(
-                f"herdmaster:purpose-review:{cohort_key}", "HERDMASTER", "due", refs + [
-                    "phase:post_wean_weight", *[f"pig:{row.get('pig_id')}" for row in missing]], [],
-                f"{label}'s purpose cohort needs {len(missing)} qualifying post-wean weight"
-                f"{'s' if len(missing) != 1 else ''} before one grouped decision.",
-                "Physically weigh and record through the existing grouped weighing rail: "
-                + ", ".join(names) + ".", now,
-                task_class="physical_action_due", physical_work_ready=True,
-                physical_assignee="Farm team", exceptional_weighing_due_now=True,
-                message_family="purpose_review", detail_target=detail,
-                presentation_identity={"human_name": sow_name,
-                    "familiar_meaning": "Purpose review cohort" if not sow_name else "",
-                    "stable_reference": stable_reference}))
-            continue
-        suggestions = [str(row.get("suggested_purpose") or "Manual Review") for row in rows]
-        result.append(_candidate(
-            f"herdmaster:purpose-review:{cohort_key}", "HERDMASTER", "due",
-            refs + ["phase:owner_decision", *[f"pig:{row.get('pig_id')}" for row in rows]], [],
-            f"{label}'s purpose cohort has qualifying day-{rows[0].get('purpose_review_due_after_days') or 14} evidence for {len(rows)} animal"
-            f"{'s' if len(rows) != 1 else ''}.",
-            "Review one grouped HERDMASTER recommendation in Pig Allocation: "
-            + ", ".join(f"{name} — {suggestion}"
-                        for name, suggestion in zip(row_names, suggestions))
-            + ". Purpose approval does not allocate, reserve, sell, or publish an animal.",
-            now, task_class="protected_decision", owner_question_eligible=True,
+        shown = selected if phase == "weight_due" else rows
+        named = [row for row in shown if row["tag"] and len(str(row["tag"])) <= 40][:4]
+        names = ", ".join(str(row["tag"]) for row in named)
+        if len(shown) > len(named):
+            names += f" ({len(shown)-len(named)} more; exact full group in Pig Allocation)"
+        held = len(cohort["blocked"])
+        unknowns = []
+        if phase == "weight_due":
+            summary = f"{label}: {len(selected)} qualifying post-wean weights needed before the grouped purpose decision."
+            action = "Physically weigh and record through the existing grouped weighing rail: " + names + "."
+            if held:
+                action += f" {held} other group member(s) remain held for evidence review; do not weigh those animals from this task."
+            task_class, urgency = "physical_action_due", "due"
+        elif phase == "decision_due":
+            summary = f"{label}: qualifying post-wean evidence for {len(rows)} animals; grouped purpose review is due."
+            action = "Review one grouped HERDMASTER recommendation in Pig Allocation: " + names + ". Purpose approval does not allocate, reserve, sell, or publish an animal."
+            task_class, urgency = "protected_decision", "due"
+        else:
+            summary = f"{label}: purpose review is held for current evidence checks ({held} animals)."
+            action = "HERDMASTER must reconcile identity, weight and current allocation evidence before a weighing task or grouped decision is ready."
+            unknowns = sorted({reason for row in cohort["blocked"] for reason in row["reasons"]})
+            task_class, urgency = "status_reconciliation", "watch"
+        result.append(_candidate(cohort["case_key"], "HERDMASTER", urgency, refs, unknowns,
+            summary, action, now, task_class=task_class,
+            physical_work_ready=phase == "weight_due",
+            physical_assignee="Farm team" if phase == "weight_due" else None,
+            exceptional_weighing_due_now=phase == "weight_due",
+            owner_question_eligible=phase == "decision_due",
             message_family="purpose_review", detail_target=detail,
-            presentation_identity={"human_name": sow_name,
-                "familiar_meaning": "Purpose review cohort" if not sow_name else "",
-                "stable_reference": stable_reference}))
+            presentation_identity={"human_name": cohort["label"],
+                "familiar_meaning": "Purpose review cohort" if not cohort["label"] else "",
+                "stable_reference": reference}))
     return result
 
 

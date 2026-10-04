@@ -137,14 +137,14 @@ def test_actual_collector_two_cycles_keep_one_case_and_never_dispatch_farm_or_pr
     from modules.oom_sakkie import manager_case_sources as sources, farm_manager_runtime as runtime
     from modules.oom_sakkie.herdmaster_daily_manager_adapter import consume_daily_manager_evidence
     from modules.oom_sakkie.general_manager_worker import deliver_farm_manager_case
-    from modules.pig_weights import farm_supabase_read_service as reads, pig_welfare_case_runtime as welfare
+    from modules.pig_weights import herdmaster_purpose_work as purpose_work, pig_welfare_case_runtime as welfare
     store = weighing_store
     monkeypatch.setattr(sources, "_configured_owner", lambda: "42")
     monkeypatch.setattr(sources, "_completed_bulk_batch_findings", lambda now: [])
     monkeypatch.setattr(sources, "_retained_litter_followup_candidates", lambda *a: [])
     monkeypatch.setattr(sources, "_purpose_review_candidates", lambda *a, **kw: [])
     monkeypatch.setattr(welfare, "welfare_case_runtime_enabled", lambda: False)
-    monkeypatch.setattr(reads, "get_allocation_input_rows", lambda **kw: {
+    monkeypatch.setattr(purpose_work, "load_purpose_work_snapshot", lambda **kw: {
         "snapshot_observed_at": NOW.isoformat(), "overview_rows": [], "litter_rows": []})
     monkeypatch.setattr(runtime, "_load_herdmaster", lambda _db, _owner, now:
         consume_daily_manager_evidence(load(store), observed_at=now))

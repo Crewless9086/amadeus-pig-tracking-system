@@ -1,7 +1,7 @@
 # Control Tower Mission Register
 
 Lifecycle: `active` current-state evidence; non-doctrine.
-Updated: 2026-10-03; PR1373 read journey verified; protected condition observation intake in qualification.
+Updated: 2026-10-04; PR1374 live; canonical weighing cohort reconciliation in qualification.
 Coordinator: `CONTROL-TOWER-DESKTOP-SUCCESSOR-20260918`.
 Coordinating task: `01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6`.
 Mission: `OMQ-20260813-03` / `OMQ-20260813-03-MORNING-CONTAINMENT`.
@@ -15,15 +15,17 @@ sibling mission directory, not in the public repository.
 
 ## Current work and authority
 
-- The [current checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md#current-checkpoint--3-october-condition-observation-intake)
-  records PR1373 live acceptance and the next bounded repair. A named, dated
-  body-condition report uses the existing protected grouped observation rail;
-  recording a score does not grant recovery clearance. No physical observation
-  is fabricated while the owner awaits the farm. The application continues on
-  `codex/herd-readiness-20261003`, based on `bcc5e686`, in the existing worktree.
-  The same coordinator and release lane remain. Existing engineering authority
-  applies; current implementation is not yet a deployed or proven owner outcome.
-  OWNER ACTION: NONE
+- The [current checkpoint](receipts/20261001/HERDMASTER_SHARED_STATUS.md#current-checkpoint--4-october-canonical-weighing-follow-up)
+  records PR1374 live and two bounded natural cycles. Its genuine protected
+  condition journey still awaits farm facts; do not request them again.
+- The same mission continues on `codex/herd-weighing-cohorts-20261004`, based
+  on main `65a39c54`, in the existing application worktree. Current weighing
+  answers must consume the canonical purpose-review cohort work and preserve
+  current reconciliation holds, rather than manufacture individual schedules.
+  Root retains sole coordination and release authority. Existing engineering
+  approval applies; qualification is not a deployed owner outcome. Other holds,
+  three worktrees, the paused observer and US$1/day optional AI cap remain.
+  OWNER ACTION: NONE.
 
 Earlier checkpoints below are retained history, not pending release instructions.
 

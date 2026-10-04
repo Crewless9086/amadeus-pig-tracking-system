@@ -752,7 +752,7 @@ def test_withdrawal_producer_only_retires_conclusive_departure(monkeypatch, stat
     row = {"Pig_ID": "PIG-151", "Tag_Number": "151", "Status": status, "On_Farm": on_farm,
            "Withdrawal_Evidence_State": "unknown"}
     snapshot = {"overview_rows": [row]}
-    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot",
                         lambda **kwargs: snapshot)
     key = "herdmaster:pig-151-withdrawal-sales"
     assert (key not in [v["dedupe_key"] for v in sources._herdmaster(NOW)]) is suppressed

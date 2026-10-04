@@ -602,7 +602,7 @@ def test_default_cycles_preserve_genuine_current_question_without_disposition_ch
     monkeypatch.setattr(sources, "_retained_litter_followup_candidates", lambda *args: [])
     monkeypatch.setattr(sources, "_purpose_review_candidates", lambda *args, **kwargs: [])
     monkeypatch.setattr("modules.pig_weights.pig_welfare_case_runtime.welfare_case_runtime_enabled", lambda: False)
-    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows", lambda **kwargs: {})
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot", lambda **kwargs: {})
     monkeypatch.setattr("modules.telemetry.rootline_mixer_readiness_observer.collect_mixer_readiness", lambda **kwargs: [])
     for name in ("_rootline", "_sam", "_beacon", "_delivery_gaps", "_runtime"):
         def empty(now): return []

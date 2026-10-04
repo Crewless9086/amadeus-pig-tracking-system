@@ -11,15 +11,14 @@ Follow [AGENTS.md](AGENTS.md), the
 and the [current register](docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md).
 The register names the sole coordinator, current work, holds and next gate.
 
-PR1373 is verified live at `bcc5e686c8b9e1a8f21738a773bbb4546577dcdf`.
-The owner's fresh breeding reply matches the retained answer and Telegram
-acknowledgement. A later scheduled retry recovered one deferred case without
-duplicate delivery. This proves that bounded read journey and case recovery.
-A protected body-condition intake repair is now in qualification while the
-owner awaits a real farm observation. It preserves the stated score and date,
-requires confirmation and cannot silently clear an existing recovery hold.
-Its release and genuine protected journey remain separate acceptance gates.
-Full HERDMASTER autonomy and individual weighing schedules remain unproven.
+PR1374 is verified live at `65a39c5421234e5a9789868b024bb8da489b9027`.
+Two observed natural manager cycles completed without exceptions or duplicate
+delivery. The protected condition-observation journey awaits genuine farm facts
+and confirmation; a score cannot silently clear an existing recovery hold.
+Engineering now reconciles weighing answers with the existing canonical
+purpose-review cohort tasks. An old reporting-window gap does not make weighing
+due. Local qualification, release and a fresh owner-visible reply are separate
+gates. Full HERDMASTER autonomy remains unproven.
 
 The [1 October shared status](docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md)
 records the HERDMASTER work and its acceptance limits. PR1367 is merged at
