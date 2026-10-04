@@ -20,6 +20,8 @@ import uuid
 from typing import Any, Callable, Iterable, Mapping
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+from modules.oom_sakkie.herdmaster_purpose_decision import (
+    PURPOSE_DECISION_SQL, purpose_decision_binding, purpose_refresh_receipt)
 
 CONTRACT_VERSION = "oom_sakkie_general_manager_worker.v1"
 BRAIN_GUARD_AUDIT_VERSION = "scheduled_brain_guard_audit.v1"
@@ -264,7 +266,8 @@ class PostgresManagerCaseStore:
                                     or (m.specialist in ('HERDMASTER','ROOTLINE')
                                       and m.unknowns='[]'::jsonb
                                       and not (m.evidence_refs @>
-                                        '["manager_message_family:retained_protected_recovery"]'::jsonb))
+                                        '["manager_message_family:retained_protected_recovery"]'::jsonb)
+                                      and not (__PURPOSE_DECISION__))
                                   then 1 else 0 end work_class,
                                 greatest(m.next_reassessment_at,
                                     coalesce(m.last_heartbeat_at,m.next_reassessment_at)) fair_due_at,
@@ -299,7 +302,8 @@ class PostgresManagerCaseStore:
                             case e.urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
                             case when e.specialist='BEACON' then 0 else 1 end,e.case_id
-                        for update of m skip locked limit %s""",
+                        for update of m skip locked limit %s""".replace(
+                            "__PURPOSE_DECISION__", PURPOSE_DECISION_SQL),
                         (now, now, CLAIM_LIMIT))
                     for row in cur.fetchall():
                         case = _case_row(row)
@@ -942,8 +946,10 @@ class PostgresManagerCaseStore:
                     self._event(cur, current, "claimed", now, cycle_id=cycle_id)
                     self._event(cur, current, "delegated", now, cycle_id=cycle_id,
                                 specialist=current["specialist"])
+        receipt = purpose_refresh_receipt(raw, current, now=now, cycle_id=cycle_id)
         return {**current, "_refreshed_generation": refreshed_generation,
-                "_manager_cycle_id": cycle_id}
+                "_manager_cycle_id": cycle_id,
+                **({"_purpose_review_refresh": receipt} if receipt is not None else {})}
 
     @staticmethod
     def _event(cur, case, event_type, now, **payload):
@@ -1141,7 +1147,21 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
         return {**outcome, "success": confirmed, "delivery_confirmed": confirmed,
             "writes_farm_data": False}
     farrowing_review = str(case.get("message_family") or "") == "retained_farrowing_owner_review"
-    if farrowing_review:
+    purpose_review = purpose_decision_binding(case) is not None
+    if purpose_review:
+        from modules.oom_sakkie.herdmaster_purpose_decision import (
+            current_purpose_owner, build_purpose_review, purpose_delivery_current,
+            purpose_delivery_retry_authority)
+        principal = current_purpose_owner()
+        if principal is None:
+            return {"success": False, "status": "manager_owner_binding_unavailable",
+                "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
+        owner = principal.telegram_user_id
+        result = build_purpose_review(case, principal=principal, now=now,
+            deadline_monotonic=deadline_monotonic)
+        if result.get("success") is not True:
+            return result
+    elif farrowing_review:
         from modules.oom_sakkie.herdmaster_retained_recovery_runtime import (
             build_retained_farrowing_owner_review, current_farrowing_review_owner)
         owner = current_farrowing_review_owner()
@@ -1211,7 +1231,7 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     parsed = {"telegram_user_id": owner, "telegram_chat_id": owner,
               "provider_message_id": "scheduled:" + mission_id,
               "provider_timestamp": observed.isoformat(), "text": "General Manager case"}
-    if farrowing_review:
+    if farrowing_review or purpose_review:
         parsed.update(telegram_chat_type="private", output_language=result["recipient_language"])
     if deliver is None:
         from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
@@ -1224,6 +1244,26 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
                 "customer_sends": 0, "provider_actions": 0,
                 "hardware_commands": 0, "writes_farm_data": False}
     delivery_options = {"deadline_monotonic": deadline_monotonic}
+    if purpose_review:
+        from modules.oom_sakkie.family_message_lifecycle import _send_telegram, _edit_telegram
+        def purpose_current():
+            return (current_purpose_owner() == principal and purpose_delivery_current(
+                case, deadline_monotonic=deadline_monotonic))
+        def purpose_sender(destination, text, **kwargs):
+            if str(destination) != owner or not purpose_current():
+                return {"success": False, "status": "purpose_review_delivery_context_changed",
+                        "delivery_definitely_not_sent": True}
+            kwargs["reply_markup"] = result.get("reply_markup")
+            return _send_telegram(destination, text, **kwargs)
+        def purpose_editor(destination, message_id, text, **kwargs):
+            if str(destination) != owner or not purpose_current():
+                return {"success": False, "status": "purpose_review_delivery_context_changed",
+                        "delivery_definitely_not_sent": True}
+            kwargs["reply_markup"] = result.get("reply_markup")
+            return _edit_telegram(destination, message_id, text, **kwargs)
+        delivery_options.update(sender=purpose_sender, editor=purpose_editor,
+            delivery_retry_authority=purpose_delivery_retry_authority(case, parsed, result,
+                mission_id=mission_id, deadline_monotonic=deadline_monotonic))
     if farrowing_review:
         # The current configured owner must remain the recipient at the actual
         # provider boundary. No old reporter identity or protected token is used.

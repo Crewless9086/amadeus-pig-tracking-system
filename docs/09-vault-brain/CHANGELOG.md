@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-10-04 - Ready purpose decisions retain owner follow-through
+
+- Distinguish a supported protected decision from a missing factual observation
+  at both scheduled admission and delivery; an empty unknowns list is not proof
+  that the owner has nothing to review.
+- Reuse existing case/material identities and current owner authorization;
+  preserve quiet repeats, current-evidence checks, deadlines and farm-write
+  boundaries. No new model call, schedule, schema or automatic purpose approval.
+- Reuse one bounded delivery retry only after exact retained proof of zero send;
+  preserve uncertain delivery containment and all previous attempt history.
+- Keep implementation, release and naturally scheduled owner-visible proof as
+  separate gates in the continuing mission evidence.
+
 ## 2026-10-04 - Canonical purpose-cohort weighing follow-up
 
 - Connect specific weighing questions and manager follow-ups to the same

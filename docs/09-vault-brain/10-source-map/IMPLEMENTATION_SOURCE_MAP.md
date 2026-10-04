@@ -1043,6 +1043,15 @@ Current built Supabase-backed surface:
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 
+- Scheduled ready-decision admission and delivery:
+  `modules/oom_sakkie/herdmaster_purpose_decision.py`,
+  `modules/oom_sakkie/general_manager_worker.py` and
+  `modules/oom_sakkie/manager_case_sources.py` reuse the existing cohort identity,
+  material evidence, owner-review surface and family delivery lifecycle.
+  Qualification: `tests/test_oom_sakkie_purpose_decision.py` exercises the
+  producer, stored case, real PostgreSQL claim and existing delivery rail.
+  Source support is separate from release and genuine automatic delivery proof.
+
 Current built read-only readiness surface to expand:
 
 - routes: `/pig-allocation`, `/api/pig-weights/pig-allocation-readiness`, `/api/pig-weights/purpose-review`, `/api/pig-weights/purpose-review/apply`, `/api/pig-weights/purpose-review/recheck`;
