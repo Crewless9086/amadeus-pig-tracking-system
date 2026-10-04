@@ -56,7 +56,8 @@ def test_current_weight_is_separate_from_previous_capture_window_and_not_a_new_i
     assert weight["reconciliation"]["authorizes_routine_weighing"] is False
     answer = "\n".join(_weighing(value, False))
     assert "29 September 2026" in answer and "0/1" in answer
-    assert "No individual weighing task is currently confirmed due" in answer
+    assert "Grouped post-wean work could not be confirmed" in answer
+    assert "Weigh now" not in answer and "weigh 1 after weaning" not in answer
     assert "41 kg" not in answer and "PIG-" not in answer
     assert "alone do not make weighing due now" in answer
 

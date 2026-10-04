@@ -11,6 +11,15 @@ the shared Oom Sakkie attention lifecycle. A resolved purpose removes the case;
 deferment retains reassessment ownership; an unchanged material digest does not
 create another Application, Brief or Telegram item.
 
+Specific weighing questions and manager follow-ups consume the same typed
+canonical cohort projection. Preserve its stable work identity as missing
+post-wean weight becomes purpose review. A historical reporting gap never creates
+a task. Current farm, sale, order, outlet, identity and weight conflicts remain
+explicit reconciliation work and cannot become physical weighing instructions.
+Known eligible members remain visible when another member is held; shortened
+answers disclose the remainder. Missing or failed source evidence is not zero
+work. Reads and presentation create no purpose or farm-write authority.
+
 Herdmaster prepares recommendations using wean weight, latest weight, ADG, litter quality, sow/boar, sex, pen, stored purpose, and missing data.
 
 Owner approves, overrides, defers, or requests recheck. A correction write requires a persisted owner-approved correction batch, execution-time canonical fresh-weight validation, and an atomic operational audit event for every corrected pig. The legacy apply route is preview-only and correction execution has no Google Sheets fallback.

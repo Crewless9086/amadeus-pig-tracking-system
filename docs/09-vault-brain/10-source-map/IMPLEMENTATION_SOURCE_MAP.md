@@ -1105,6 +1105,11 @@ Current Stage 4 surface:
 - Human daily rendering: `modules/oom_sakkie/rootline_daily_presentation.py`
 # Oom Sakkie daily farm management
 
+- `modules/pig_weights/herdmaster_purpose_work.py` — shared typed purpose-review
+  cohort projection for specific weighing answers and existing manager cases;
+  preserves canonical eligibility, stable work identity and reconciliation holds.
+  Qualification: `tests/test_herdmaster_purpose_work.py` and
+  `tests/test_herdmaster_purpose_weighing_postgres.py`.
 - `modules/pig_weights/herdmaster_weighing_reconciliation.py` — bounded,
   read-only current pig/weight/sale/order/outlet comparison used by the existing
   daily producer and direct weighing reader. It retains source identities,
