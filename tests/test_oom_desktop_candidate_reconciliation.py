@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md', 'docs/09-vault-brain/06-data/FARM_DATA_MODEL.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/herdmaster_breeding_exposure_runtime.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/pig_weights/herdmaster_breeding_exposure_recovery.py', 'tests/test_herdmaster_breeding_exposure_postgres.py', 'tests/test_herdmaster_breeding_exposure_recovery.py', 'tests/test_oom_sakkie_herdmaster_breeding_exposure_runtime.py', 'tests/test_oom_sakkie_semantic_front_door.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/herd_read_queries.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/pig_weights/herdmaster_daily_manager_evidence.py', 'modules/pig_weights/herdmaster_purpose_work.py', 'tests/test_herdmaster_purpose_weighing_postgres.py', 'tests/test_herdmaster_purpose_work.py', 'tests/test_herdmaster_weighing_reconciliation.py', 'tests/test_herdmaster_weighing_reconciliation_postgres.py', 'tests/test_oom_sakkie_farm_brief_concise.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_owner_attention_projection.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -45,6 +45,9 @@ FARROWING_REVIEW_EFFECTS = {'herdmaster_exact_retained_farrowing_refresh',
 FAMILY_STYLE_EFFECTS = {'oom_sakkie_shared_family_message_presentation',
     'authenticated_historical_farrowing_review_reply_protected_preview'}
 CONDITION_OBSERVATION_EFFECTS = {'herdmaster_protected_body_condition_observation_intake'}
+COHORT_EFFECTS = {'herdmaster_canonical_purpose_cohort_work_advisory'}
+PURPOSE_NOTICE_EFFECT = 'herdmaster_ready_purpose_private_owner_notice'
+PRIOR_COHORT_ACCEPTANCE = 'Share canonical purpose-review work between genuine weighing answers and the existing manager case, preserving day-14 eligibility, qualifying dated weights, cohort identity and current reconciliation. Missing historical coverage alone never establishes current weighing work. List clear weighing members beside held members with exact reasons; unknown, conflicting or unsupported evidence remains held or unavailable, never false no-work. Exclude conclusively sold/off-farm animals. Recorded weights advance the same case to decision only when the complete cohort has no missing or blocked member. Use one bounded read-only repeatable-read snapshot and shared remaining deadline; refuse overflow, query failure or inconsistent source. Detailed purpose reads remain opt-in for weighing. Observation time, day counters, display order and unrendered advice must not churn material evidence or create duplicate cases or attempts. This is an advisory application capability, not farm execution or release-operation authority. Preserve protected condition-observation intake, genuine observation and owner confirmation, hold preservation, all prior effects and the five metadata-write registration. Add no farm writer, claim, schedule, schema, model call, manual send or provider retry. Require a genuine loaded-revision weighing question, exact retained typed/provider binding, canonical cohort readback and later natural same-case reassessment; synthetic tests and prior releases do not prove this owner outcome.'
 CONCISE_BRIEF_EFFECTS = {'rootline_proven_no_send_retry_presented_text_binding', 'oom_sakkie_typed_concise_farm_brief_presentation'}
 READINESS_EFFECTS = {'herdmaster_delivered_breeding_subject_read_context', 'herdmaster_current_weighing_status_order_reconciliation'}
 RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_preview_renewal'
@@ -54,7 +57,7 @@ SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1375, 'HEAD': '6bd6eb137b1a4bd0eaf91b5d210cb285e4e9690d', 'TREE': '8b9512c7d409cfa0ce11a9c4e1ac4882318cd798', 'APPROVED_RUNTIME_HEAD': '6bd6eb137b1a4bd0eaf91b5d210cb285e4e9690d', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'README.md', 'docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md', 'docs/06-operations/receipts/20261001/HERDMASTER_SHARED_STATUS.md', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/herd_read_queries.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/pig_weights/herdmaster_daily_manager_evidence.py', 'modules/pig_weights/herdmaster_purpose_work.py', 'tests/test_herdmaster_purpose_weighing_postgres.py', 'tests/test_herdmaster_purpose_work.py', 'tests/test_herdmaster_weighing_reconciliation.py', 'tests/test_herdmaster_weighing_reconciliation_postgres.py', 'tests/test_oom_sakkie_farm_brief_concise.py', 'tests/test_oom_sakkie_herdmaster_case_disposition_postgres.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_owner_attention_projection.py']}
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1376, 'HEAD': '319dad1b423089b23686d52c72b5b071e3e424f3', 'TREE': 'f55671071697a0939619bcdb0d69fb5f1091df84', 'APPROVED_RUNTIME_HEAD': '319dad1b423089b23686d52c72b5b071e3e424f3', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_purpose_decision.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_purpose_decision.py']}
 
 def use_synthetic_candidate(test):
     pending = {key: deepcopy(value) for key, value in SYNTHETIC_PINS.items()
@@ -79,7 +82,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | CONDITION_OBSERVATION_EFFECTS | READINESS_EFFECTS | CONCISE_BRIEF_EFFECTS | FAMILY_STYLE_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
+        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | COHORT_EFFECTS | CONDITION_OBSERVATION_EFFECTS | READINESS_EFFECTS | CONCISE_BRIEF_EFFECTS | FAMILY_STYLE_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
         "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -550,8 +553,8 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:bcc5e686c8b9e1a8f21738a773bbb4546577dcdf"})
-        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:65a39c5421234e5a9789868b024bb8da489b9027", "herdmaster_canonical_purpose_cohort_work_advisory"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:65a39c5421234e5a9789868b024bb8da489b9027"})
+        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:52598af363c2b8ac8d54b8a2e40978f85a72ea3e", PURPOSE_NOTICE_EFFECT})
         self.assertFalse(READINESS_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(CONCISE_BRIEF_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FAMILY_STYLE_EFFECTS & adapter.ADDED_EFFECTS)
@@ -690,7 +693,8 @@ class ReconciliationTests(unittest.TestCase):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         effect="herdmaster_canonical_purpose_cohort_work_advisory"
-        self.assertNotIn(effect, prior["allowed_effects"])
+        self.assertIn(effect, prior["allowed_effects"])
+        self.assertNotIn(effect, adapter.ADDED_EFFECTS)
         self.assertIn(effect, m["contract"]["allowed_effects"])
         self.assertTrue(CONDITION_OBSERVATION_EFFECTS <= set(prior["allowed_effects"]))
         self.assertTrue(CONDITION_OBSERVATION_EFFECTS <= set(m["contract"]["allowed_effects"]))
@@ -715,6 +719,54 @@ class ReconciliationTests(unittest.TestCase):
         for unauthorized in ("automatic_weighing_execution", "purpose_decision_without_confirmation", "new_weighing_schedule"):
             changed=deepcopy(m);changed["contract"]["allowed_effects"].append(unauthorized)
             with self.subTest(effect=unauthorized),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_ready_purpose_notice_preserves_prior_projection_and_bounded_scope(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
+        self.assertTrue(COHORT_EFFECTS <= set(prior["allowed_effects"]))
+        self.assertNotIn(PURPOSE_NOTICE_EFFECT, prior["allowed_effects"])
+        self.assertEqual(set(m["contract"]["allowed_effects"]),
+            (set(prior["allowed_effects"]) - adapter.REMOVED_EFFECTS) | adapter.ADDED_EFFECTS)
+        self.assertIn("farm_write", m["contract"]["forbidden_effects"])
+        clauses=m["contract"]["operational_acceptance"]
+        self.assertEqual(len(clauses),100)
+        self.assertTrue(all(0 < len(value) <= 2000 for value in clauses))
+        shared=[value for value in clauses if value.startswith(PRIOR_COHORT_ACCEPTANCE)]
+        self.assertEqual(len(shared),1)
+        self.assertEqual(len(shared[0]),1992)
+        self.assertIn("\n\nSeparate scheduled ready-purpose private-owner notice:",shared[0])
+        self.assertIn("preceding no-provider-retry rule remains on the read-only weighing projection",shared[0])
+        for before,after in (
+                ("Separate scheduled ready-purpose private-owner notice", "Any owner or public message"),
+                ("one existing opaque retry", "unlimited new retries"),
+                ("durable zero-send proof", "uncertain send history"),
+                ("exact content, owner and generation", "any content or recipient"),
+                ("ambiguous history refuses", "ambiguous history retries"),
+                ("unchanged case identity, material, lease and current source", "cached case alone"),
+                ("No farm write, model, new schedule, schema or manual trigger", "Allow farm and manual effects"),
+                ("Prove same-case delivery and later natural reassessment", "Treat green tests as acceptance"),
+                ("tests/test_oom_sakkie_purpose_decision.py", "optional purpose examples"),
+                ("prior read-only projection authority alone is insufficient", "prior projection grants all retries")):
+            changed=deepcopy(m)
+            changed["contract"]["operational_acceptance"]=[value.replace(before,after) for value in clauses]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],clauses,before)
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        changed=deepcopy(m)
+        changed["contract"]["operational_acceptance"]=[PRIOR_COHORT_ACCEPTANCE if value==shared[0] else value for value in clauses]
+        with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+            adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_ready_purpose_notice_effect_cannot_be_missing_or_broadened(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        changed=deepcopy(m);changed["contract"]["allowed_effects"].remove(PURPOSE_NOTICE_EFFECT)
+        with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+            adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        for effect in ("ambiguous_purpose_notice_retry","manual_purpose_notice_trigger",
+                       "automatic_purpose_change","unbounded_provider_retry","new_manager_schedule"):
+            changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
+            with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
     def test_condition_observation_preserves_fact_date_hold_and_confirmation_boundaries(self):
@@ -776,7 +828,7 @@ class ReconciliationTests(unittest.TestCase):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:"+adapter.PREDECESSOR_BASE})
-        self.assertEqual(adapter.ADDED_EFFECTS,{"application_revision_rollback:web:"+adapter.BASE, "herdmaster_canonical_purpose_cohort_work_advisory"})
+        self.assertEqual(adapter.ADDED_EFFECTS,{"application_revision_rollback:web:"+adapter.BASE, PURPOSE_NOTICE_EFFECT})
         self.assertTrue(READINESS_EFFECTS <= set(prior["allowed_effects"]))
         self.assertTrue(READINESS_EFFECTS <= set(m["contract"]["allowed_effects"]))
         for before,after in (
@@ -1055,16 +1107,16 @@ class ReconciliationTests(unittest.TestCase):
         plan=adapter.prepare_reconciliation(**encode(m,a))
         for name, value in FINAL_CANDIDATE_PINS.items():
             self.assertEqual(getattr(adapter, name), value)
-        self.assertEqual(adapter.BASE,"65a39c5421234e5a9789868b024bb8da489b9027")
-        self.assertEqual(adapter.BRANCH,"codex/herd-weighing-cohorts-20261004")
+        self.assertEqual(adapter.BASE,"52598af363c2b8ac8d54b8a2e40978f85a72ea3e")
+        self.assertEqual(adapter.BRANCH,"codex/herd-purpose-followthrough-20261004")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1374)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"640f56423b85c11c0a0d60b61f904c0fdce603ec")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"bcc5e686c8b9e1a8f21738a773bbb4546577dcdf")
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-readiness-20261003")
+        self.assertEqual(adapter.PREDECESSOR_PR,1375)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"6bd6eb137b1a4bd0eaf91b5d210cb285e4e9690d")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"65a39c5421234e5a9789868b024bb8da489b9027")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-weighing-cohorts-20261004")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),14)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),19)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
