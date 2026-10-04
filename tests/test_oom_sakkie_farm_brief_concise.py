@@ -134,14 +134,14 @@ def test_display_facts_do_not_change_daily_material_notifications_or_manager_can
     new = daily.build_daily_management_packet(results, now=NOW, language=language)
     for key in ("material_digest", "notification_keys", "candidate_notification_keys", "question_binding", "all_tasks"):
         assert old[key] == new[key]
-    from modules.pig_weights import farm_supabase_read_service as reads
+    from modules.pig_weights import herdmaster_purpose_work as reads
     from modules.pig_weights import pig_welfare_case_runtime as welfare
     monkeypatch.setattr(sources, "_configured_owner", lambda: OWNER)
     monkeypatch.setattr(sources, "_completed_bulk_batch_findings", lambda now: [])
     monkeypatch.setattr(sources, "_retained_litter_followup_candidates", lambda *args: [])
     monkeypatch.setattr(sources, "_purpose_review_candidates", lambda *args, **kwargs: [])
     monkeypatch.setattr(welfare, "welfare_case_runtime_enabled", lambda: False)
-    monkeypatch.setattr(reads, "get_allocation_input_rows", lambda **kwargs: {
+    monkeypatch.setattr(reads, "load_purpose_work_snapshot", lambda **kwargs: {
         "snapshot_observed_at": NOW.isoformat(), "overview_rows": [], "litter_rows": []})
     def candidates(herd):
         monkeypatch.setattr(runtime, "_load_herdmaster", lambda *args: herd)

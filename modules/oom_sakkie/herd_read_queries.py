@@ -20,7 +20,7 @@ def load_herd_read_evidence(capability):
         from modules.pig_weights.herdmaster_daily_manager_evidence import load_daily_manager_evidence
         return load_daily_manager_evidence(
             analysis_date=datetime.now(ZoneInfo("Africa/Johannesburg")).date(),
-            include_mortality=False)
+            include_mortality=False, include_purpose_work=True)
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     from modules.pig_weights import farm_supabase_read_service as canonical
     with connect_bounded_rootline_postgres() as connection:
@@ -202,6 +202,7 @@ def _weighing(packet, af):
     # Window coverage, old weights and display order cannot create one here.
     actionable = [row for row in weight["individual_weighing_due_now"]
                   if row["pig_id"] not in conflicts] if checked else []
+    grouped_lines = _purpose_weighing_lines(packet.get("purpose_work"), af)
     if actionable:
         lines = [("Weeg nou — 'n individuele weegtaak is verskuldig: " if af else
                   "Weigh now — an individual weighing schedule is due: ") + _names(actionable, af=af) + "."]
@@ -211,6 +212,10 @@ def _weighing(packet, af):
     else:
         lines = ["Ek kan nie bevestig watter varke nou geweeg moet word terwyl plaas-/verkooprekordkontroles onbeskikbaar is nie." if af else
                  "I cannot confirm which pigs need weighing while farm/sale record checks are unavailable."]
+    if grouped_lines:
+        # An actual grouped task leads; absence of an individual schedule must
+        # never hide or contradict the specialist's current cohort work.
+        lines = grouped_lines + (lines if actionable or not checked else [])
     lines += ["", (f"• Verslagtydperk: {start} tot {end} — {covered}/{eligible} van die huidige groep het gewigte in dié tydperk." if af else
                     f"• Reporting window: {start} to {end} — {covered}/{eligible} of the current group have weights in that window.")]
     if covered < eligible:
@@ -244,6 +249,66 @@ def _weighing(packet, af):
         lines.append(("• Uitgesluit van hierdie individuele groep: " if af else
                       "• Excluded from this individual group: ") + "; ".join(exclusions) + ".")
     return lines
+
+
+def _purpose_weighing_lines(work, af):
+    from modules.pig_weights.herdmaster_purpose_work import CONTRACT
+    from modules.oom_sakkie.family_presentation import date_label
+    if not isinstance(work, dict) or work.get("contract") != CONTRACT or work.get("state") != "checked":
+        return [("Groepsweegwerk ná speen kon nie bevestig word nie; die rekords moet nagegaan word." if af else
+                 "Grouped post-wean work could not be confirmed; its records need checking.")]
+    cohorts = sorted(work.get("cohorts") or [], key=lambda row: (
+        {"weight_due": 0, "held": 1, "decision_due": 2}.get(row.get("phase"), 3), row["case_key"]))
+    if not cohorts:
+        return []
+    lines = []
+    for cohort in cohorts[:2]:
+        members = cohort["members"]
+        selected = [row for row in members if row["pig_id"] in cohort["weighing_ids"]]
+        label = _text(cohort["label"] if len(str(cohort["label"])) <= 48 else "",
+                      "Doelgroep" if af else "Purpose review group")
+        # Exact visible tags distinguish same-name animals; full IDs stay internal.
+        tags = _purpose_tags(selected, af)
+        if cohort["phase"] == "weight_due":
+            due_dates = sorted({row["due_date"] for row in selected})
+            due = " / ".join(date_label(value, language="af" if af else "en") for value in due_dates[:2])
+            if len(due_dates) > 2:
+                due += " (+)"
+            lines.append((f"• {label}: weeg {len(selected)} ná speen — {tags}. Vanaf {due}; die {cohort['rule_days']}-dae doelhersiening kort dié gewigte." if af else
+                          f"• {label}: weigh {len(selected)} after weaning — {tags}. Due from {due}; the day-{cohort['rule_days']} purpose review needs these weights."))
+        elif cohort["phase"] == "decision_due":
+            lines.append((f"• {label}: {len(members)} het geldige gewigte ná speen; hersien die groepsdoel in Pig Allocation. Geen nuwe weegopdrag nie." if af else
+                          f"• {label}: {len(members)} have qualifying post-wean weights; review the grouped purpose decision in Pig Allocation. No new weighing instruction."))
+        if cohort["blocked"]:
+            blocked_ids = {row["pig_id"] for row in cohort["blocked"]}
+            shown = [{**row, "name": None} for row in members if row["pig_id"] in blocked_ids]
+            reasons = {reason for row in cohort["blocked"] for reason in row["reasons"]}
+            categories = []
+            if "allocation_hold" in reasons:
+                categories.append("bestaande toewysing" if af else "existing allocation")
+            if reasons - {"allocation_hold"}:
+                categories.append("onopgeloste identiteit-, status- of gewigsbewyse" if af else
+                                  "unresolved identity, status or weight evidence")
+            reason = "; ".join(categories)
+            lines.append((f"• {len(shown)} teruggehou ({_purpose_tags(shown, af)}): {reason}. Nie deel van hierdie weegopdrag nie." if af else
+                          f"• {len(shown)} held ({_purpose_tags(shown, af)}): {reason}. Excluded from this weighing instruction."))
+    if len(cohorts) > 2:
+        lines.append(f"• Nog {len(cohorts)-2} groepe in Pig Allocation; hierdie is 'n beperkte aansig." if af else
+                     f"• Another {len(cohorts)-2} groups in Pig Allocation; this is a bounded view.")
+    if any(row["weighing_ids"] for row in cohorts):
+        lines.append("Stuur die gemete gewigte met elke tag en die weegdatum; hersien die bevestiging voordat dit gestoor word." if af else
+                     "Send the measured weights with each tag and weighing date; review the confirmation before saving.")
+    return lines
+
+
+def _purpose_tags(rows, af):
+    visible = [row for row in rows if row.get("tag") and len(str(row["tag"])) <= 32][:6]
+    text = ", ".join(_text(row["tag"]) for row in visible)
+    remaining = len(rows) - len(visible)
+    if remaining:
+        text += ("; " if text else "") + (f"nog {remaining} in Pig Allocation" if af else
+                                           f"{remaining} more in Pig Allocation")
+    return text
 
 
 def _names(rows, *, af=False):

@@ -1,9 +1,31 @@
-# HERDMASTER shared status — updated 3 October 2026
+# HERDMASTER shared status — updated 4 October 2026
 
 Lifecycle: `active` current-state evidence; non-doctrine. This is a dated shared
 checkpoint, not runtime authority or certification of every repository file.
 
-## Current checkpoint — 3 October, condition observation intake
+## Current checkpoint — 4 October, canonical weighing follow-up
+
+PR1374 was protected-merged at `65a39c5421234e5a9789868b024bb8da489b9027`
+and verified on the existing web service. Two observed natural manager cycles
+completed on that revision without exceptions or duplicate delivery. Those
+release and observation attempts are consumed. The genuine condition-record
+journey still awaits the farm's observation and protected confirmation.
+
+The same OMQ mission now connects specific weighing answers to the existing
+purpose-review cohort work. The canonical day-14 eligibility rule selects work;
+window coverage does not. Questions and manager follow-ups must share the same
+cohort identity, current members, missing-weight reason and reconciliation holds.
+A qualifying recorded weight moves that work to purpose review; it does not
+complete a purpose decision or grant sale, allocation or breeding authority.
+
+This slice is in local qualification. No new live outcome is claimed. Tests,
+review, protected release, a genuine Telegram question and later natural
+reassessment remain distinct evidence gates. No farm fact, owner message or
+scheduled cycle is manufactured. The pending condition observation is not a
+blocker to this engineering work; do not ask for it again. ROOTLINE follows
+HERDMASTER readiness. OWNER ACTION: NONE.
+
+## Earlier checkpoint — 3 October, condition observation intake
 
 PR1373 is protected-merged and verified live at
 `bcc5e686c8b9e1a8f21738a773bbb4546577dcdf`. The owner's fresh breeding reply

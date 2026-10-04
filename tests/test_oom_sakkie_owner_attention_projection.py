@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import inspect
+import pytest
 
 from modules.oom_sakkie.manager_case_sources import _herdmaster, _sam
 from modules.oom_sakkie.owner_attention_projection import build_owner_attention_projection
@@ -8,6 +9,33 @@ from modules.pig_weights.farm_supabase_read_service import _first_treatment_timi
 
 
 NOW = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def isolate_unrelated_herd_sources(monkeypatch, request):
+    # These projection tests supply their own owning specialist evidence.
+    monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._completed_bulk_batch_findings", lambda _now: [])
+    monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._retained_litter_followup_candidates", lambda *_a, **_kw: [])
+    if not request.node.name.startswith("test_purpose_review"):
+        monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._purpose_review_candidates", lambda *_a, **_kw: [])
+
+
+def _purpose_snapshot(rows):
+    from modules.pig_weights.herdmaster_purpose_work import build_purpose_work
+    from modules.pig_weights.herdmaster_weighing_reconciliation import reconcile_weighing
+    from datetime import timedelta
+    rows = [{"animal_type": "Weaner", "wean_date": (NOW.date()-timedelta(days=14)).isoformat(),
+             "latest_weight_date": (NOW.date()-timedelta(days=1)).isoformat()
+                 if row.get("purpose_review_state") == "decision_due" else None,
+             "latest_weight_kg": 12 if row.get("purpose_review_state") == "decision_due" else None,
+             **row} for row in rows]
+    pigs = [{"pig_id": row["pig_id"], "tag_number": row["tag_number"], "status": row["status"],
+             "on_farm": True, "purpose": row["purpose"], "animal_type": row["animal_type"]} for row in rows]
+    weights = [{"pig_id": row["pig_id"], "weight_event_id": "W-"+row["pig_id"],
+                "weight_date": row["latest_weight_date"], "weight_kg": row["latest_weight_kg"]}
+               for row in rows if row["latest_weight_date"]]
+    checks = reconcile_weighing(pigs, {"latest_weights": weights}, analysis_date=NOW.date())
+    return {"purpose_work": build_purpose_work({"success": True, "pigs": rows}, checks, analysis_date=NOW.date())}
 
 
 def candidate(key, specialist, summary, action, *, urgency="due", unknowns=(), lifecycle="open",
@@ -290,8 +318,8 @@ def test_herdmaster_protected_state_is_typed_as_owner_decision(monkeypatch):
     monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "owner-1")
     monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
                         lambda *_args: Result())
-    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
-                        lambda: {"overview_rows": [], "litter_rows": []})
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot",
+                        lambda **_kwargs: {"overview_rows": [], "litter_rows": []})
 
     rows = _herdmaster(NOW)
 
@@ -323,8 +351,8 @@ def test_herdmaster_exact_charl_question_is_owner_eligible_until_consumed(monkey
     monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "owner-1")
     monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
                         lambda *_args: Result())
-    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
-                        lambda: {"overview_rows": [], "litter_rows": []})
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot",
+                        lambda **_kwargs: {"overview_rows": [], "litter_rows": []})
     rows = _herdmaster(NOW)
     projection = build_owner_attention_projection(rows, generated_at=NOW)
     assert rows[0]["owner_question_eligible"] is True
@@ -357,8 +385,8 @@ def test_generic_planned_weigh_wording_is_not_physical_readiness(monkeypatch):
     monkeypatch.setenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "owner-1")
     monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
                         lambda *_args: Result())
-    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
-                        lambda: {"overview_rows": [], "litter_rows": []})
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot",
+                        lambda **_kwargs: {"overview_rows": [], "litter_rows": []})
     rows = _herdmaster(NOW)
     projection = build_owner_attention_projection(rows, generated_at=NOW)
     assert rows[0].get("physical_work_ready") is not True
@@ -382,8 +410,8 @@ def test_molly_missing_weaning_date_remains_status_reconciliation(monkeypatch):
     monkeypatch.delenv("PIG_WELFARE_CASE_RUNTIME_ENABLED", raising=False)
     monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
                         lambda *_args: Result())
-    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
-                        lambda: {"snapshot_observed_at": NOW.isoformat(), "overview_rows": [],
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot",
+                        lambda **_kwargs: {"snapshot_observed_at": NOW.isoformat(), "overview_rows": [],
                                  "litter_rows": [{"Sow_Tag_Number": "Molly",
                                                   "Litter_Status": "Active",
                                                   "Litter_ID": "LIT-MOLLY",
@@ -436,7 +464,7 @@ def test_due_molly_treatment_is_names_first_primary_and_routes_to_exact_litter(m
     monkeypatch.delenv("PIG_WELFARE_CASE_RUNTIME_ENABLED", raising=False)
     monkeypatch.setattr("modules.oom_sakkie.farm_manager_runtime._load_herdmaster",
                         lambda *_args: Result())
-    monkeypatch.setattr("modules.pig_weights.farm_supabase_read_service.get_allocation_input_rows",
+    monkeypatch.setattr("modules.pig_weights.herdmaster_purpose_work.load_purpose_work_snapshot",
                         lambda **_kwargs: {"snapshot_observed_at": NOW.isoformat(),
                             "overview_rows": [], "litter_rows": [{
                                 "Sow_Tag_Number": "Molly", "Litter_Status": "Active",
@@ -784,21 +812,19 @@ def test_purpose_review_day_boundary_uses_one_stable_grouped_work_identity(monke
             "purpose": "Unknown", "suggested_purpose": "Breeding Review",
             "purpose_review_due_after_days": 14}
     state = {"rows": []}
-    monkeypatch.setattr("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness",
-                        lambda **_kwargs: {"success": True, "pigs": state["rows"]})
     args = {"now": NOW, "today": NOW.date(), "observed_at": NOW}
-    assert _purpose_review_candidates({}, **args) == []
+    assert _purpose_review_candidates(_purpose_snapshot(state["rows"]), **args) == []
 
     state["rows"] = [{**base, "purpose_review_state": "weight_due",
                       "purpose_review_eligible": True}]
-    weight = _purpose_review_candidates({}, **args)[0]
+    weight = _purpose_review_candidates(_purpose_snapshot(state["rows"]), **args)[0]
     assert weight["dedupe_key"] == "herdmaster:purpose-review:LIT-1"
     assert weight["task_class"] == "physical_action_due"
     assert weight["physical_work_ready"] is True
 
     state["rows"] = [{**base, "purpose_review_state": "decision_due",
                       "purpose_review_eligible": True}]
-    decision = _purpose_review_candidates({}, **args)[0]
+    decision = _purpose_review_candidates(_purpose_snapshot(state["rows"]), **args)[0]
     assert decision["dedupe_key"] == weight["dedupe_key"]
     assert decision["task_class"] == "protected_decision"
     assert decision["owner_question_eligible"] is True
@@ -813,9 +839,7 @@ def test_purpose_review_resolved_and_deferred_lifecycle_do_not_repeat(monkeypatc
            "purpose": "Unknown", "suggested_purpose": "Breeding Review",
            "purpose_review_state": "decision_due", "purpose_review_eligible": True,
            "purpose_review_due_after_days": 14}
-    monkeypatch.setattr("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness",
-                        lambda **_kwargs: {"success": True, "pigs": [row]})
-    current = _purpose_review_candidates({}, now=NOW, today=NOW.date(), observed_at=NOW)[0]
+    current = _purpose_review_candidates(_purpose_snapshot([row]), now=NOW, today=NOW.date(), observed_at=NOW)[0]
     deferred = {**current, "operational_status": "waiting_reassessment",
                 "assigned_worker_id": "herdmaster-worker"}
     projection = build_owner_attention_projection([current], generated_at=NOW,
@@ -838,10 +862,8 @@ def test_purpose_review_deep_link_rejects_unsafe_canonical_identifier(monkeypatc
            "purpose": "Unknown", "suggested_purpose": "Grow Out",
            "purpose_review_state": "decision_due", "purpose_review_eligible": True,
            "purpose_review_due_after_days": 14}
-    monkeypatch.setattr("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness",
-                        lambda **_kwargs: {"success": True, "pigs": [row]})
     candidate_row = _purpose_review_candidates(
-        {}, now=NOW, today=NOW.date(), observed_at=NOW,
+        _purpose_snapshot([row]), now=NOW, today=NOW.date(), observed_at=NOW,
     )[0]
     assert candidate_row["detail_target"] == "/pig-allocation?mode=purpose-review"
 

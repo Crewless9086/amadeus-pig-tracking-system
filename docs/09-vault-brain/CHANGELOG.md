@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-04 - Canonical purpose-cohort weighing follow-up
+
+- Connect specific weighing questions and manager follow-ups to the same
+  canonical purpose-review cohort projection and stable work identity.
+- Preserve current reconciliation holds and distinguish due post-wean work
+  from historical reporting coverage. Recorded evidence changes the phase;
+  a read does not create a purpose decision or farm action.
+- Record PR1374 live state and its bounded natural continuity separately
+  from the still-pending genuine condition observation and this qualification.
+
 ## 2026-10-03 - Protected observation-only body condition intake
 
 - Reuse the grouped protected claim and canonical append-only observation writer

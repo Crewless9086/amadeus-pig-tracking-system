@@ -32,7 +32,7 @@ INDIVIDUAL_WEIGHING_CANCEL_EVENTS = {
 
 def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
                                  lifecycle_events=(), mortality_packet=None,
-                                 reconciliation_rows=None,
+                                 reconciliation_rows=None, purpose_work=None,
                                  prior_mortality_digest="", prior_mortality_event_fingerprints=None,
                                  prior_mortality_consumed_at=None,
                                  analysis_date):
@@ -232,6 +232,9 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
     return {"packet_type": PACKET_TYPE, "contract_version": PACKET_TYPE,
             "observed_at": datetime.now().astimezone().isoformat(),
             "material_digest": _digest(material), "weight": weight,
+            # Purpose work owns its existing separate manager-case identity.
+            # Its changing phase must not alter the weekly coverage case digest.
+            "purpose_work": purpose_work,
             "mortality": mortality,
             # Typed HERDMASTER packet retained for the existing durable Oom
             # Sakkie consumption rail; the composer never interprets it.
@@ -244,7 +247,8 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                                 owner_user_id=None,
                                 owner_user_ids=None,
                                 mortality_evidence_loader=None,
-                                mortality_packet_builder=None, include_mortality=True):
+                                mortality_packet_builder=None, include_mortality=True,
+                                include_purpose_work=False):
     """Load canonical Supabase truth through bounded read-only sessions."""
     analysis_date = _day(analysis_date)
     window_start, window_end = _weight_window(analysis_date)
@@ -292,10 +296,18 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                     or len(prior_weights) > 10000 or len(lifecycle) > 5000):
                 raise RuntimeError("herdmaster_daily_evidence_row_bound_exceeded")
             reconciliation_rows = load_reconciliation_rows(cursor, pigs, analysis_date)
+            purpose_work = None
+            if include_purpose_work:
+                from modules.pig_weights.herdmaster_purpose_work import load_purpose_work_snapshot
+                purpose_snapshot = load_purpose_work_snapshot(analysis_date=analysis_date,
+                    connection=connection, deadline=deadline,
+                    reconciliation=reconcile_weighing(pigs, reconciliation_rows, analysis_date=analysis_date))
+                purpose_work = purpose_snapshot["purpose_work"]
             if not include_mortality:
                 return build_daily_manager_evidence(pigs=pigs, window_weights=window_weights,
                     prior_weights=prior_weights, lifecycle_events=lifecycle,
-                    reconciliation_rows=reconciliation_rows, analysis_date=analysis_date)
+                    reconciliation_rows=reconciliation_rows, purpose_work=purpose_work,
+                    analysis_date=analysis_date)
             owners = tuple(dict.fromkeys(str(value) for value in
                 (owner_user_ids or (owner_user_id,)) if str(value or "").strip()))
             owner_hashes = [hashlib.sha256(value.encode()).hexdigest() for value in owners]
@@ -344,7 +356,7 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
     return build_daily_manager_evidence(pigs=pigs,
         window_weights=window_weights, prior_weights=prior_weights,
         lifecycle_events=lifecycle, mortality_packet=mortality,
-        reconciliation_rows=reconciliation_rows,
+        reconciliation_rows=reconciliation_rows, purpose_work=purpose_work,
         prior_mortality_digest=prior_digest,
         prior_mortality_event_fingerprints=prior_event_fingerprints,
         prior_mortality_consumed_at=prior_consumption_at,
