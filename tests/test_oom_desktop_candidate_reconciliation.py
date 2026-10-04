@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_purpose_decision.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_purpose_decision.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_purpose_refresh.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -57,7 +57,7 @@ SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1377, 'HEAD': '8ae635accf0855dd6a96278e09d55efb77981ea9', 'TREE': '8be64e58795c7e7ef813675a8a66d909a708433a', 'APPROVED_RUNTIME_HEAD': '8ae635accf0855dd6a96278e09d55efb77981ea9', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/manager_case_sources.py', 'tests/test_oom_sakkie_purpose_refresh.py']}
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1378, 'HEAD': 'cd6c9e8211c172cda1ec7823acef619e46f049b6', 'TREE': 'bf19fc14ce3acb41b1d9c5580d8de7aff172b83e', 'APPROVED_RUNTIME_HEAD': 'cd6c9e8211c172cda1ec7823acef619e46f049b6', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/herdmaster_purpose_completion.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/owner_attention_projection.py', 'tests/test_oom_sakkie_purpose_completion.py']}
 
 def use_synthetic_candidate(test):
     pending = {key: deepcopy(value) for key, value in SYNTHETIC_PINS.items()
@@ -82,7 +82,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | COHORT_EFFECTS | CONDITION_OBSERVATION_EFFECTS | READINESS_EFFECTS | CONCISE_BRIEF_EFFECTS | FAMILY_STYLE_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {PURPOSE_NOTICE_EFFECT, READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release"}),
+        "allowed_effects": sorted(adapter.REMOVED_EFFECTS | COHORT_EFFECTS | CONDITION_OBSERVATION_EFFECTS | READINESS_EFFECTS | CONCISE_BRIEF_EFFECTS | FAMILY_STYLE_EFFECTS | SUCCESSOR_EFFECTS | FARROWING_REVIEW_EFFECTS | PRESENTATION_EFFECTS | PRESERVED_PREVIEW_EFFECTS | {PURPOSE_NOTICE_EFFECT, READ_QUERY_EFFECT, CONTINUATION_EFFECT, "repository_candidate_validation", "merge", "existing_web_application_release", "publication", "repository_test_fixture_write", "existing_task_register_reconciliation"}),
         "forbidden_effects": ["cron_deploy", "farm_write", "hardware_command", "database_migration", "service_configuration_change"],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -553,8 +553,8 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:52598af363c2b8ac8d54b8a2e40978f85a72ea3e"})
-        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:bfe3a70f671989b6ba6f8279acf33cc39f89cad4"})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:bfe3a70f671989b6ba6f8279acf33cc39f89cad4"})
+        self.assertEqual(adapter.ADDED_EFFECTS, {"application_revision_rollback:web:294da845192f7e345662fbfd991add9f5d6a51fb", "herdmaster_attributable_approved_purpose_case_completion"})
         self.assertFalse(READINESS_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(CONCISE_BRIEF_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FAMILY_STYLE_EFFECTS & adapter.ADDED_EFFECTS)
@@ -786,7 +786,7 @@ class ReconciliationTests(unittest.TestCase):
         with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
             adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
-    def test_purpose_refresh_adds_no_effect_beyond_exact_rollback_successor(self):
+    def test_purpose_refresh_boundaries_remain_inherited_by_completion_successor(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertIn(PURPOSE_NOTICE_EFFECT,prior["allowed_effects"])
@@ -798,6 +798,70 @@ class ReconciliationTests(unittest.TestCase):
             changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
             with self.subTest(effect=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_purpose_completion_requires_positive_complete_attributable_fenced_evidence(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        clauses=m["contract"]["operational_acceptance"]
+        completion=[value for value in clauses if value.startswith("Complete only the same existing purpose-review case")]
+        self.assertEqual(len(completion),1)
+        self.assertEqual(len(clauses),100)
+        self.assertTrue(all(0<len(value)<=2000 for value in clauses))
+        for before,after in (
+                ("positive current canonical correction evidence, never collector omission or disappearance", "collector disappearance alone"),
+                ("1-11 complete retained member IDs", "any truncated retained member list"),
+                ("12 or more may be truncated and cannot prove completion", "12 or more prove complete membership"),
+                ("Every retained member", "Any one retained member"),
+                ("exact canonical litter, tag, Active and on-farm identity", "similar historical display names"),
+                ("latest pig.purpose_corrected event", "any old correction event"),
+                ("executed owner-approved batch and decision with matching preview and event hashes", "unexecuted proposal or unrelated approval"),
+                ("after the unique current generation-created or evidence_changed epoch", "before any older case generation"),
+                ("Missing, partial, stale, contradictory or extra unresolved cohort membership refuses closure", "Partial or unknown cohorts close"),
+                ("one read-only snapshot with four set-based reads", "unbounded independent snapshots"),
+                ("six-second total deadline", "renewed deadline for every query"),
+                ("64 cases and 2048 source rows", "unbounded cases and source rows"),
+                ("timeout, failure or overflow refuses without partial success", "overflow is successful truncation"),
+                ("exact current generation and material digest", "any older generation and digest"),
+                ("lease, delegation and current-work-wins fences", "terminal finding overrides current work and lease"),
+                ("Complete once including previously delivered cases; replay is silent", "Complete repeatedly and resend delivered notices"),
+                ("new legitimate unresolved material retains normal reopening/history", "completed case forbids future work"),
+                ("Owner-attention omission must remain unresolved unless positive completion is proved", "Owner-attention omission proves resolution"),
+                ("tests/test_oom_sakkie_purpose_completion.py", "optional completion examples"),
+                ("real approved batch writer and default manager store", "mocked producer outputs only"),
+                ("grants no farm write, owner deferral, new notice or retry, model, schema or schedule authority", "grants all farm and scheduling authority"),
+                ("genuine attributable approved correction, exact loaded-revision same-case completion and later natural quiet follow-up", "green unit tests only")):
+            changed=deepcopy(m)
+            changed["contract"]["operational_acceptance"]=[value.replace(before,after) for value in clauses]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],clauses,before)
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        changed=deepcopy(m);changed["contract"]["operational_acceptance"].remove(completion[0])
+        with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+            adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_purpose_completion_effect_is_narrow_and_preserves_all_predecessor_authority(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        effect="herdmaster_attributable_approved_purpose_case_completion"
+        prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
+        self.assertNotIn(effect,prior["allowed_effects"])
+        self.assertTrue({"publication", "repository_test_fixture_write", "existing_task_register_reconciliation"} <= set(prior["allowed_effects"]))
+        self.assertEqual(adapter.ADDED_EFFECTS,{effect,"application_revision_rollback:web:"+adapter.BASE})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:"+adapter.PREDECESSOR_BASE})
+        self.assertEqual(set(m["contract"]["allowed_effects"]),set(prior["allowed_effects"])-adapter.REMOVED_EFFECTS|adapter.ADDED_EFFECTS)
+        self.assertEqual(set(m["contract"]["forbidden_effects"]),set(prior["forbidden_effects"]))
+        self.assertIn("farm_write",m["contract"]["forbidden_effects"])
+        self.assertTrue(COHORT_EFFECTS|CONDITION_OBSERVATION_EFFECTS|{PURPOSE_NOTICE_EFFECT}<=set(prior["allowed_effects"]))
+        for replacement in (None,"purpose_completion_on_omission","partial_purpose_completion", "purpose_owner_deferral", "farm_purpose_write", "purpose_completion_manual_send", "purpose_completion_new_schedule"):
+            changed=deepcopy(m);changed["contract"]["allowed_effects"].remove(effect)
+            if replacement:changed["contract"]["allowed_effects"].append(replacement)
+            with self.subTest(effect=replacement),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_completion_clause_coalescing_preserves_both_prior_presentation_obligations(self):
+        clauses=adapter.REQUIRED_ACCEPTANCE
+        prior_first="Mark an overdue recorded exposure removal plan only against the supplied canonical packet's aware farm-date cutoff, never the wall clock. Missing, naive, invalid, future-start or conflicting dates remain explicit uncertainty. An open exposure record does not prove current physical presence, removal, mating or pregnancy and does not authorize physical work."
+        prior_second='Preserve the existing displayed task order and question priority. Ask a named current-status and actual-removal-date question only for the supported exposure-only worklist; require the animal name and observation date in a genuine reply. Do not replace a higher-priority condition question, infer a farm fact from a planned date or create new continuation authority.'
+        self.assertIn(prior_first+"\n\n"+prior_second,clauses)
+        self.assertEqual(len(clauses),100)
 
     def test_ready_purpose_notice_effect_cannot_be_missing_or_broadened(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
@@ -869,7 +933,7 @@ class ReconciliationTests(unittest.TestCase):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertEqual(adapter.REMOVED_EFFECTS,{"application_revision_rollback:web:"+adapter.PREDECESSOR_BASE})
-        self.assertEqual(adapter.ADDED_EFFECTS,{"application_revision_rollback:web:"+adapter.BASE})
+        self.assertEqual(adapter.ADDED_EFFECTS,{"application_revision_rollback:web:"+adapter.BASE, "herdmaster_attributable_approved_purpose_case_completion"})
         self.assertTrue(READINESS_EFFECTS <= set(prior["allowed_effects"]))
         self.assertTrue(READINESS_EFFECTS <= set(m["contract"]["allowed_effects"]))
         for before,after in (
@@ -1148,16 +1212,16 @@ class ReconciliationTests(unittest.TestCase):
         plan=adapter.prepare_reconciliation(**encode(m,a))
         for name, value in (FINAL_CANDIDATE_PINS if FINAL_CANDIDATE_PINS["HEAD"] is not None else SYNTHETIC_PINS).items():
             self.assertEqual(getattr(adapter, name), value)
-        self.assertEqual(adapter.BASE,"bfe3a70f671989b6ba6f8279acf33cc39f89cad4")
-        self.assertEqual(adapter.BRANCH,"codex/herd-purpose-refresh-20261004")
+        self.assertEqual(adapter.BASE,"294da845192f7e345662fbfd991add9f5d6a51fb")
+        self.assertEqual(adapter.BRANCH,"codex/herd-purpose-completion-20261004")
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1376)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,"319dad1b423089b23686d52c72b5b071e3e424f3")
-        self.assertEqual(adapter.PREDECESSOR_BASE,"52598af363c2b8ac8d54b8a2e40978f85a72ea3e")
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-purpose-followthrough-20261004")
+        self.assertEqual(adapter.PREDECESSOR_PR,1377)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,"8ae635accf0855dd6a96278e09d55efb77981ea9")
+        self.assertEqual(adapter.PREDECESSOR_BASE,"bfe3a70f671989b6ba6f8279acf33cc39f89cad4")
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,"codex/herd-purpose-refresh-20261004")
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),8)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),7)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
