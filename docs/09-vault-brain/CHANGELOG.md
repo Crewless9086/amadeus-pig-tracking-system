@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-05 - Quiet purpose overview and visible component failures
+
+- Skip shared message-history reads only when current validated groups already
+  have their notices and no owner-requested review is due. Retain exact history
+  checks for mixed, new, overview-covered and due-review work.
+- Preserve caught overview failure type and stage, and count the exception in
+  worker evidence. Cycle completion cannot stand in for component success.
+- Retain original groups, delivery history, protected Telegram decisions and
+  explicit-date follow-up; no new farm action, schedule or schema authority.
+
 ## 2026-10-05 - Protected purpose decisions inside Telegram
 
 - Add current-group navigation, exact selection/change, paged explanations and

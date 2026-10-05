@@ -1052,7 +1052,9 @@ Current built Supabase-backed surface:
   `herdmaster_purpose_overview.py` coalesces current groups and verifies separate
   overview coverage through the existing family lifecycle. Worker priority and
   completion retain per-case identities, leases, original delivery truth and
-  partial-group obligations.
+  partial-group obligations. Already-notified current groups with no due dated
+  review avoid the shared history scan after membership/deferral validation;
+  worker evidence retains caught overview failure type, stage and count.
 - Qualification: `tests/test_oom_sakkie_purpose_telegram.py`,
   `tests/test_oom_sakkie_purpose_telegram_postgres.py`,
   `tests/test_oom_sakkie_purpose_membership.py` and

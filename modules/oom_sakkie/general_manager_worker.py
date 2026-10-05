@@ -364,10 +364,12 @@ class PostgresManagerCaseStore:
                 overview_result = {"success": False, "status": "purpose_overview_deadline_deferred",
                     "telegram_sends": 0, "telegram_edits": 0, "coverage": []}
                 if deadline_monotonic is None or time.monotonic() < deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS:
+                    overview_stage = "dispatch"
                     try:
                         overview_result = dict(purpose_overview(raw_candidates, cycle_id=cycle_id,
                             now=_aware(datetime.now(timezone.utc)), deadline_monotonic=deadline_monotonic,
                             connect=self.connect_factory) or {})
+                        overview_stage = "coverage"
                         overview_covered = self._record_purpose_overview_coverage(overview_result,
                             cycle_id=cycle_id, now=_aware(datetime.now(timezone.utc)),
                             deadline_monotonic=deadline_monotonic)
@@ -375,7 +377,8 @@ class PostgresManagerCaseStore:
                         if not (isinstance(exc, (ValueError, RuntimeError, OSError)) or is_database_unavailable(exc)):
                             raise
                         overview_result = {**overview_result, "success": False,
-                            "status": "purpose_overview_contained", "failure_kind": type(exc).__name__}
+                            "status": "purpose_overview_contained", "failure_kind": type(exc).__name__,
+                            "failure_stage": overview_stage}
             batch_refreshes = {}
             refresh_needed = tuple(case for case in claimed
                 if case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
@@ -567,6 +570,18 @@ class PostgresManagerCaseStore:
             # limit; the full current summary is still eligible after that work,
             # only inside the same remaining absolute deadline.
             dispatch_overview_once()
+            overview_failure = {}
+            if overview_result is not None and overview_result.get("failure_kind"):
+                from modules.oom_sakkie.herdmaster_purpose_overview import FAILURE_STAGES
+                kind = str(overview_result["failure_kind"])
+                stage = overview_result.get("failure_stage")
+                overview_failure = {
+                    "failure_kind": kind if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", kind) else "Exception",
+                    "failure_stage": stage if isinstance(stage, str) and stage in FAILURE_STAGES else "dispatch"}
+                # One contained overview exception, not one invented failure
+                # for each already-delivered case. Expected no-send outcomes
+                # have no failure_kind and retain their existing counts.
+                exceptions += 1
             counts = {"candidates_created": created, "candidates_changed": changed,
                 "candidate_replays": replayed, "cases_claimed": len(claimed),
                 "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
@@ -579,7 +594,8 @@ class PostgresManagerCaseStore:
                     "covered_cases": len(overview_covered),
                     "telegram_sends": int(overview_result.get("telegram_sends") or 0),
                     "telegram_edits": int(overview_result.get("telegram_edits") or 0),
-                    "case_deliveries_confirmed": 0}
+                    "case_deliveries_confirmed": 0,
+                    "exceptions": int(bool(overview_failure)), **overview_failure}
             with self.connect_factory() as cycle_connection:
                 with cycle_connection.cursor() as cur:
                     cur.execute("""update app_private.oom_manager_worker_cycles set heartbeat_at=%s,
