@@ -1043,6 +1043,25 @@ Current built Supabase-backed surface:
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 
+- Telegram purpose review: `modules/oom_sakkie/herdmaster_purpose_telegram.py`
+  uses authenticated direct/gateway ingress, typed semantic navigation, existing
+  protected claims, exact family-card transitions and the canonical correction
+  batch writer. `herdmaster_purpose_deferment.py` records explicit dated requests
+  on the existing manager case/events; it creates no farm record.
+- `herdmaster_purpose_membership.py` retains full attributable cohort membership;
+  `herdmaster_purpose_overview.py` coalesces current groups and verifies separate
+  overview coverage through the existing family lifecycle. Worker priority and
+  completion retain per-case identities, leases, original delivery truth and
+  partial-group obligations.
+- Qualification: `tests/test_oom_sakkie_purpose_telegram.py`,
+  `tests/test_oom_sakkie_purpose_telegram_postgres.py`,
+  `tests/test_oom_sakkie_purpose_membership.py` and
+  `tests/test_oom_sakkie_purpose_overview.py`; actual isolated claims, canonical
+  batch writes and family persistence with fake provider transport. Migration
+  `20261004232451_allow_herdmaster_purpose_protected_claims.sql` adds exactly the
+  review and correction claim kinds with predecessor, replay and privilege guards.
+  Schema release and genuine owner confirmation remain separate acceptance gates.
+
 - Scheduled ready-decision admission and delivery:
   `modules/oom_sakkie/herdmaster_purpose_decision.py`,
   `modules/oom_sakkie/general_manager_worker.py` and

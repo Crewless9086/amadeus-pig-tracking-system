@@ -315,6 +315,18 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
     if family_principal.role not in {FamilyRole.OWNER, FamilyRole.FARM_MANAGER}:
         return _family_gateway_response(parsed, family_principal, policy)
 
+    from modules.oom_sakkie.herdmaster_purpose_telegram import applicable as purpose_applicable, handle_purpose_message
+    if purpose_applicable(parsed):
+        authority = issue_gateway_owner_authority(parsed["telegram_user_id"], parsed["telegram_chat_id"],
+            principal_role=family_principal.role.value, capabilities=family_principal.effective_permissions)
+        acknowledgement = (_acknowledge_family_callback(parsed["callback_query_id"], source)
+            if parsed.get("callback_query_id") else None)
+        result, status = handle_purpose_message(parsed, authority)
+        body, status = _protected_gateway_response(parsed, policy, result, status)
+        if acknowledgement is not None:
+            body["callback_acknowledgement"] = acknowledgement
+        return body, status
+
     media = telegram_media_envelope(payload)
     if media is not None:
         intake, intake_status = handle_telegram_media_intake(payload, environ=source)
@@ -582,6 +594,10 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
             "language": "af" if af else "en", "clarification_question": question}})
         return _protected_gateway_response(parsed, policy,
             {**clarification, "specialist": "OOM_SAKKIE"}, 200)
+
+    if purpose_applicable(parsed, semantic):
+        result, status = handle_purpose_message(parsed, gateway_authority, semantic=semantic)
+        return _protected_gateway_response(parsed, policy, result, status)
 
     treatment_result, treatment_status = handle_litter_first_treatment_message(parsed, gateway_authority)
     if treatment_result.get("handled"):

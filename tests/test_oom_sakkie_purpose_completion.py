@@ -284,7 +284,7 @@ def snapshot_groups():
     case['case_id']='CASE-SYNTHETIC'
     return [
         [(case['case_id'],case['dedupe_key'],case['generation'],case['evidence_digest'],case['evidence_refs'])],
-        [(case['case_id'],case['generation'],case['generation_started_at'])],
+        [(case['case_id'],case['generation'],case['generation_started_at'],{},'created')],
         [tuple(p[k] for k in ('pig_id','tag_number','litter_id','purpose','status','on_farm')) for p in pigs],
         history]
 
@@ -294,10 +294,10 @@ def test_collector_uses_one_fixed_bounded_read_snapshot_and_never_writes():
     result=completion.collect_purpose_completions(NOW+timedelta(minutes=1),connect=lambda:snapshot)
     assert len(result)==1 and len(snapshot.selects)==4
     assert all(sql.lstrip().startswith('select ') for sql in snapshot.selects)
-    assert [int(sql.rsplit('limit ',1)[1]) for sql in snapshot.selects]==[65,129,2049,2049]
+    assert [int(sql.rsplit('limit ',1)[1]) for sql in snapshot.selects]==[65,129,10001,10001]
 
 
-@pytest.mark.parametrize('stage,limit', [(0,64),(1,128),(2,2048),(3,2048)])
+@pytest.mark.parametrize('stage,limit', [(0,64),(1,128),(2,10000),(3,10000)])
 def test_any_snapshot_overflow_refuses_partial_completion(stage,limit):
     groups=snapshot_groups();groups[stage]=[groups[stage][0]]*(limit+1)
     with pytest.raises(ValueError,match='bound_exceeded'):

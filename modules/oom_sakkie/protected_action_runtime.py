@@ -34,6 +34,10 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         active=resolve_natural_confirmation(owner_user_id=owner,private_chat_id=chat,
             reply_to_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
         if not active:return {"handled":False,"status":"protected_confirmation_not_unambiguous"},200
+        if (active.get("preview_payload") or {}).get("contract") == "herdmaster.telegram_purpose.v1":
+            return {"handled":True,"success":False,"status":"purpose_exact_button_required",
+                "answer":"Please use Confirm on the exact purpose preview; a plain yes cannot record a purpose.",
+                "writes_farm_data":False},409
         if (parsed.get("input_provenance") or {}).get("source_kind") == "telegram_voice":
             from modules.oom_sakkie.telegram_voice import voice_confirmation_required
             return voice_confirmation_required(parsed)

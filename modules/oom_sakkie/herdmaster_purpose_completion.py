@@ -16,7 +16,7 @@ from modules.pig_weights.purpose_correction_batch_service import (
 from modules.pig_weights.herdmaster_purpose_work import UNKNOWN_PURPOSES
 
 MAX_CASES = 64
-MAX_ROWS = 2048
+MAX_ROWS = 10000
 UNKNOWN = UNKNOWN_PURPOSES | {"none", "n/a", "na", "not recorded"}
 
 
@@ -45,7 +45,26 @@ def retained_members(case):
     binding = purpose_decision_binding({**case, "message_family": "purpose_review",
         "unknowns": [], "evidence_refs": ["phase:owner_decision" if v == phases[0] else v for v in refs]})
     pigs = [v[4:] for v in refs if v.startswith("pig:")]
-    if not binding or not 0 < len(pigs) < 12:
+    if not binding:
+        return None
+    if case.get("purpose_membership") is not None:
+        from modules.oom_sakkie.herdmaster_purpose_membership import (
+            PurposeMembershipError, validate_record, validate_candidate_membership)
+        try:
+            record = validate_record(case["purpose_membership"])
+            validate_candidate_membership(case, {k: record[k] for k in (
+                "cohort_key", "litter_id", "material_digest", "members", "member_ids",
+                "member_count", "membership_digest")})
+            if (record["case_id"], record["generation"], record["evidence_digest"]) != (
+                    case.get("case_id"), case.get("generation"), case.get("evidence_digest")):
+                return None
+        except PurposeMembershipError:
+            return None
+        return {**binding, "pig_ids": [v["pig_id"] for v in record["obligations"]],
+                "obligations": {v["pig_id"]: v for v in record["obligations"]}}
+    # Preserve the previously qualified small legacy completion contract.
+    # Capped legacy refs never become Telegram approval membership.
+    if not 0 < len(pigs) < 12:
         return None
     return {**binding, "pig_ids": sorted(pigs)}
 
@@ -135,7 +154,11 @@ def completion_candidate(case, pigs, history, *, now):
         dated.sort(key=lambda v: v[0], reverse=True)
         if len(dated) > 1 and dated[0][0] == dated[1][0]:
             return None
-        proof = _event_proof(dated[0][1], dated[0][2], pig, epoch, now)
+        obligation = bound.get("obligations", {}).get(pig["pig_id"])
+        required_since = _instant(obligation["required_since"]) if obligation else epoch
+        if obligation and (pig.get("tag_number") != obligation["tag"] or not required_since):
+            return None
+        proof = _event_proof(dated[0][1], dated[0][2], pig, required_since, now)
         if not proof:
             return None
         proofs.append(proof)
@@ -144,6 +167,8 @@ def completion_candidate(case, pigs, history, *, now):
         "herdmaster_disposition:approved_purpose_correction_complete",
         "disposition_evidence:" + _digest({"members": targets, "proofs": proofs}),
         "observed:" + now.isoformat()]
+    if case.get("purpose_membership"):
+        refs.append("purpose_membership_snapshot:" + case["purpose_membership"]["snapshot_digest"])
     return _candidate(case["dedupe_key"], "HERDMASTER", "watch", refs, [],
         "The retained purpose review is complete from approved canonical corrections.",
         "The existing case is closed from recorded purpose evidence; no farm action or owner message is required.",
@@ -167,31 +192,57 @@ def collect_purpose_completions(now, *, connect=None):
         if len(rows) > MAX_CASES:
             raise ValueError("purpose_completion_case_bound_exceeded")
         cases = [dict(zip(("case_id", "dedupe_key", "generation", "evidence_digest", "evidence_refs"), row), specialist="HERDMASTER") for row in rows]
-        cases = [row for row in cases if retained_members(row)]
         if not cases:
             return []
-        ids = sorted({v for row in cases for v in retained_members(row)["pig_ids"]})
-        litters = sorted({retained_members(row)["litter_id"] for row in cases} - {""})
-        cur.execute("""select e.case_id,e.generation,e.occurred_at from app_private.oom_manager_case_events e
+        cur.execute("""select e.case_id,e.generation,e.occurred_at,e.event_payload,e.event_type
+            from app_private.oom_manager_case_events e
             join app_private.oom_manager_cases c on c.case_id=e.case_id and c.generation=e.generation
-            where e.case_id=any(%s) and e.event_type in ('created','evidence_changed')
+            where e.case_id=any(%s) and (e.event_type in ('created','evidence_changed')
+                or e.event_payload ? 'purpose_membership')
             order by e.case_id,e.occurred_at limit 129""", ([row["case_id"] for row in cases],))
         epochs = cur.fetchall()
         if len(epochs) > 128:
             raise ValueError("purpose_completion_epoch_bound_exceeded")
+        from modules.oom_sakkie.herdmaster_purpose_membership import event_record, PurposeMembershipError
         for row in cases:
-            matches = [value[2] for value in epochs if value[:2] == (row["case_id"], row["generation"])]
+            matches = [value[2] for value in epochs if value[:2] == (row["case_id"], row["generation"])
+                       and value[4] in ('created', 'evidence_changed')]
             row["generation_started_at"] = matches[0] if len(matches) == 1 else None
+            snapshots = [value for value in epochs if value[:2] == (row["case_id"], row["generation"])
+                         and 'purpose_membership' in value[3]]
+            unavailable = any(value[:2] == (row["case_id"], row["generation"])
+                and value[3].get("purpose_membership_unavailable") for value in epochs)
+            if unavailable:
+                row["purpose_membership"] = {}
+            if snapshots:
+                row["purpose_membership"] = {}  # malformed/ambiguous proof cannot fall back to legacy
+                if len(snapshots) == 1 and not unavailable:
+                    value = snapshots[0]
+                    try:
+                        row["purpose_membership"] = event_record(dict(zip(
+                            ('case_id', 'generation', 'occurred_at', 'event_payload', 'event_type'), value)),
+                            case_id=row['case_id'], generation=row['generation'])
+                    except PurposeMembershipError:
+                        pass
+        cases = [row for row in cases if retained_members(row)]
+        if not cases:
+            return []
+        ids = sorted({v for row in cases for v in retained_members(row)["pig_ids"]})
+        if len(ids) > 5000:
+            raise ValueError("purpose_completion_member_bound_exceeded")
+        litters = sorted({retained_members(row)["litter_id"] for row in cases} - {""})
         cur.execute("""select pig_id,tag_number,litter_id,purpose,status,on_farm
             from public.current_canonical_pigs where pig_id=any(%s) or litter_id=any(%s)
-            order by pig_id limit 2049""", (ids, litters))
+            order by pig_id limit 10001""", (ids, litters))
         pigs = [dict(zip(("pig_id", "tag_number", "litter_id", "purpose", "status", "on_farm"), row)) for row in cur.fetchall()]
         if len(pigs) > MAX_ROWS:
             raise ValueError("purpose_completion_member_bound_exceeded")
-        cur.execute("""select to_jsonb(e),to_jsonb(b) from public.operational_events e
+        cur.execute("""select to_jsonb(e),to_jsonb(b) from unnest(%s::text[]) member(pig_id)
+            cross join lateral (select * from public.operational_events history
+                where history.aggregate_id=member.pig_id and history.event_type='pig.purpose_corrected'
+                order by history.occurred_at desc,history.event_id limit 2) e
             left join public.pig_purpose_correction_batches b on b.batch_id=e.correlation_id
-            where e.aggregate_id=any(%s) and e.event_type='pig.purpose_corrected'
-            order by e.aggregate_id,e.occurred_at desc,e.event_id limit 2049""", (ids,))
+            order by e.aggregate_id,e.occurred_at desc,e.event_id limit 10001""", (ids,))
         history = cur.fetchall()
         if len(history) > MAX_ROWS:
             raise ValueError("purpose_completion_history_bound_exceeded")

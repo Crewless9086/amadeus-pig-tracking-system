@@ -50,7 +50,47 @@ Herdmaster prepares recommendations using wean weight, latest weight, ADG, litte
 
 Owner approves, overrides, defers, or requests recheck. A correction write requires a persisted owner-approved correction batch, execution-time canonical fresh-weight validation, and an atomic operational audit event for every corrected pig. The legacy apply route is preview-only and correction execution has no Google Sheets fallback.
 
-Pig Allocation is the unified owner workspace. Purpose Review is its filtered
+The owner can complete purpose review inside Telegram. A fresh natural request
+opens the current overview, including previously delivered link-only cases;
+opening or navigating never approves a purpose. One concise overview covers
+current groups, with readable sow names, counts and navigation. Keep canonical
+per-cohort work identities and prior delivery history. Verified overview
+coverage is presentation evidence, not a per-case delivery or purpose decision;
+unchanged covered work stays quiet without starving other manager work.
+
+Each group shows its proposed purposes, affected tags, concise reasons and
+uncertainty. Review suggestion, Change, Why and Review later are separate
+choices. Recommendations reuse the canonical numeric reasoning signal: at least
+0.96 is required for trusted treatment, while a supported Medium advisory may
+be reviewed and explicitly chosen by the owner. Low, missing or contradictory
+recommendations never become implied decisions. Change opens exact animal
+selection and alternatives; Why offers every animal's recorded explanation.
+
+A protected preview binds every selected animal, old/new purpose, reason,
+current recommendation and canonical evidence. Every preview page must be
+shown before an exact Confirm button is admitted. The authenticated current
+owner, private chat, delivered card, action, payload, generation and callback
+remain bound. A changed choice requires a new preview; stale, expired, foreign
+or generic yes callbacks never execute. Navigation updates one existing card
+through an authenticated parent-to-successor transition. Buttons make no paid
+model call. Purpose approval grants no reservation, allocation or sale action.
+
+Confirmation reuses the existing create/approve/execute correction batch in its
+canonical transaction, with a fresh current-membership and eligibility check.
+Full current membership is retained as attributable manager event evidence,
+including larger groups; old truncated references alone are insufficient.
+Partial decisions leave the original group obligation open. Exact batch
+idempotency and readback distinguish a verified save from an uncertain reply;
+a lost acknowledgement must recover the stored result without another write.
+
+Review later requires a displayed future date and explicit confirmation. It
+records a dated owner request against the existing case, generation and material,
+without changing any farm fact. The case is quiet before that date; at due time
+one separately verified requested-review occurrence may appear in the overview.
+Replays and concurrent cycles do not create repeated reminders or copy the
+summary receipt into individual case delivery history.
+
+Pig Allocation remains the web owner workspace. Purpose Review is its filtered
 decision mode, and `/purpose-review` remains a compatibility deep link into that
 mode. Purpose, allocation, reservation, sale and customer availability remain
 distinct; approving purpose performs none of the other actions.
