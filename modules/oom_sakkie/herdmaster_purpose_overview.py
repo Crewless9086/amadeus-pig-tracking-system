@@ -19,6 +19,8 @@ FIELD = "purpose_overview"
 MAX_CASES = 64
 MAX_EVENTS = 9
 RESERVE_SECONDS = 30
+FAILURE_STAGES = frozenset({"admission", "membership", "delivery_state", "deferrals",
+    "history", "current_case", "preview", "delivery", "receipt", "dispatch", "coverage"})
 
 
 def _digest(value):
@@ -242,6 +244,7 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
     now = _instant(now)
     deadline = _deadline(deadline_monotonic)
     outcome = _empty("purpose_overview_unavailable")
+    failure_stage = "admission"
     try:
         owner = current_purpose_owner()
         if not owner or not now or not cycle_id or deadline-time.monotonic() < 3:
@@ -253,6 +256,7 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
         if len(raw) > MAX_CASES: raise ValueError("purpose_overview_case_bound")
         normalized = {n["case_id"]: n for _, n in admitted}
         if len(normalized) != len(raw): raise ValueError("purpose_overview_duplicate_case")
+        failure_stage = "membership"
         snapshot = raw[0].get("_purpose_source_snapshot")
         if context is None:
             if not snapshot or any(v.get("_purpose_source_snapshot") != snapshot for v in raw):
@@ -271,7 +275,18 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
         manifest = [{"case_id": r["case_id"], "generation": r["generation"], "evidence_digest": r["evidence_digest"],
             "membership_digest": r["membership"]["membership_digest"]} for r in rows]
         if not _valid_manifest(manifest): raise ValueError("purpose_overview_manifest_invalid")
+        failure_stage = "delivery_state"
+        if any("last_delivery_digest" not in row for row in rows):
+            raise ValueError("purpose_overview_delivery_history_unavailable")
+        failure_stage = "deferrals"
         deferrals = _deferrals(manifest, owner_id=owner.telegram_user_id, connect=connect, deadline=deadline, now=now)
+        # Exact current case deliveries already prove that routine notice is
+        # unnecessary. A validated due request still needs receipt history to
+        # determine whether that separate occurrence has been consumed.
+        if (all(r["last_delivery_digest"] == r["evidence_digest"] for r in rows)
+                and not any(_instant(d["review_at"]) <= now for d in deferrals)):
+            return {**_empty("purpose_overview_no_unnotified_due_work"), "success": True}
+        failure_stage = "history"
         history = _read_events(manifest=manifest, owner_id=owner.telegram_user_id, connect=connect, deadline=deadline)
         prior_receipts, covered, consumed = [], set(), set()
         for event in history:
@@ -286,8 +301,6 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
             consumed.update(meta.get("request_ids") or [])
         due = [d for d in deferrals if _instant(d["review_at"]) <= now and d["request_id"] not in consumed]
         future = {d["case_id"] for d in deferrals if _instant(d["review_at"]) > now}
-        if any("last_delivery_digest" not in row for row in rows):
-            raise ValueError("purpose_overview_delivery_history_unavailable")
         eligible = {d["case_id"] for d in due} | {r["case_id"] for r in rows
             if r["last_delivery_digest"] != r["evidence_digest"] and r["case_id"] not in covered | future}
         if not eligible:
@@ -298,6 +311,7 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
                 if all(m in manifest for m in meta["manifest"])), None)
             if prior:
                 proof, same, meta = prior
+                failure_stage = "current_case"
                 if not _current_rows(meta["manifest"], cycle_id=cycle_id, now=clock(), connect=connect,
                         deadline=deadline, deferrals=[d for d in deferrals if d["case_id"] in {m["case_id"] for m in meta["manifest"]}]):
                     raise ValueError("purpose_overview_current_case_changed")
@@ -312,6 +326,7 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
         deferrals = [d for d in deferrals if d["case_id"] in eligible]
         occurrence = "initial" if not due else "review:"+_digest(sorted(d["request_id"] for d in due))
         mission = overview_identity(manifest, owner.telegram_user_id, occurrence)
+        failure_stage = "history"
         events = _read_events(mission=mission, connect=connect, deadline=deadline)
         receipt = verify_overview_receipt(events, manifest=manifest, owner_id=owner.telegram_user_id, occurrence_id=occurrence)
         def result_for(receipt, events, **effects):
@@ -320,6 +335,7 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
                 "manifest": manifest, "owner_id": owner.telegram_user_id, "occurrence_id": occurrence,
                 "receipt_events": events, "coverage": [{**m, "receipt": receipt} for m in manifest], **effects}
         if receipt:
+            failure_stage = "current_case"
             if not _current_rows(manifest, cycle_id=cycle_id, now=clock(), connect=connect, deadline=deadline, deferrals=deferrals):
                 raise ValueError("purpose_overview_current_case_changed")
             return result_for(receipt, events)
@@ -327,6 +343,7 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
         parsed = {"telegram_user_id": owner.telegram_user_id, "telegram_chat_id": owner.telegram_user_id,
             "telegram_chat_type": "private", "provider_message_id": mission, "provider_timestamp": "",
             "text": mission, "output_language": owner.language}
+        failure_stage = "preview"
         prepared, status = (builder or build_telegram_purpose_overview)({**context, "cases": rows,
             "purpose_overview_revisit": [{"request_id": d["request_id"], "review_at": d["review_at"]} for d in due]},
             parsed, mission=mission, connect=connect)
@@ -353,11 +370,13 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
             if response.get("success") is True and response.get("telegram_message_id"):
                 outcome["telegram_sends"] = 1
             return response
+        failure_stage = "delivery"
         delivery = family.deliver_family_result(parsed, prepared, specialist="HERDMASTER", mission_id=mission,
             card_mission_id=prepared["card_mission_id"], event_store=bound_store, sender=guarded_sender,
             protected_delivery=protected_delivery or (lambda **kwargs: recover_protected_card(**kwargs, connect_factory=_factory(connect))),
             deadline_monotonic=deadline_monotonic)
         outcome.update(telegram_sends=max(outcome["telegram_sends"], int(delivery.get("telegram_sends") or 0)), telegram_edits=int(delivery.get("telegram_edits") or 0))
+        failure_stage = "receipt"
         message = str(delivery.get("telegram_message_id") or delivery.get("provider_card_message_id") or "")
         if (delivery.get("success") is not True or not message or
                 not bind_claim_card(prepared["callback_token"], message, connect_factory=_factory(connect))):
@@ -373,4 +392,4 @@ def dispatch_purpose_overview(candidates, *, cycle_id, now, deadline_monotonic,
         if not receipt: return {**outcome, "status": "purpose_overview_receipt_unproven"}
         return result_for(receipt, events, telegram_sends=outcome["telegram_sends"], telegram_edits=outcome["telegram_edits"])
     except Exception as exc:
-        return {**outcome, "failure_kind": type(exc).__name__}
+        return {**outcome, "failure_kind": type(exc).__name__, "failure_stage": failure_stage}

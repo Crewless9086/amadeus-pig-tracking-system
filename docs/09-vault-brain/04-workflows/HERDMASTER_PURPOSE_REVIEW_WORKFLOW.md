@@ -58,6 +58,15 @@ per-cohort work identities and prior delivery history. Verified overview
 coverage is presentation evidence, not a per-case delivery or purpose decision;
 unchanged covered work stays quiet without starving other manager work.
 
+After current membership and dated review requests are verified, groups whose
+current evidence already has a confirmed notice stay quiet without scanning
+shared message history when no requested review is due. New, mixed, overview-
+covered or due-review work still uses its exact history and receipt checks.
+This quiet result creates no new coverage, approval or case-completion evidence.
+A caught overview failure retains its bounded exception type and fixed processing
+stage in the worker result and contributes to the recorded exception count;
+a completed worker cycle alone does not establish a successful overview.
+
 Each group shows its proposed purposes, affected tags, concise reasons and
 uncertainty. Review suggestion, Change, Why and Review later are separate
 choices. Recommendations reuse the canonical numeric reasoning signal: at least

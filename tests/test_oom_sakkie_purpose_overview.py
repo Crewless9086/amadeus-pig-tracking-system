@@ -267,6 +267,10 @@ def test_postgres_default_worker_collector_seven_cases_one_overview_old_receipts
             db.execute("update app_private.oom_manager_cases set last_delivery_digest=evidence_digest,last_delivery_at=%s",(pg.now-timedelta(days=1),))
         before=db.execute('select case_id,generation,evidence_digest,last_delivery_digest,last_delivery_at from app_private.oom_manager_cases order by case_id').fetchall()
     sent=[]
+    if old_delivered:
+        def unused_history(**kwargs):
+            pytest.fail('already-delivered default worker must not read family history')
+        monkeypatch.setattr(overview, '_read_events', unused_history)
     from modules.oom_sakkie import family_message_lifecycle as family
     def send(chat,text,**kw):
         sent.append((chat,text,kw));return {'success':True,'telegram_message_id':'SYNTHETIC-901','provider_timestamp':pg.now.isoformat()}
@@ -278,6 +282,7 @@ def test_postgres_default_worker_collector_seven_cases_one_overview_old_receipts
     assert first['success'] is True,first
     if old_delivered:
         assert sent==[] and first['purpose_overview']['telegram_sends']==0
+        assert first['exceptions']==first['purpose_overview']['exceptions']==0
         with connect() as db:
             assert db.execute('select count(*) from app_private.oom_protected_action_claims').fetchone()[0]==0
             assert db.execute('select case_id,generation,evidence_digest,last_delivery_digest,last_delivery_at from app_private.oom_manager_cases order by case_id').fetchall()==before
@@ -457,3 +462,154 @@ def test_postgres_capped_legacy_group_keeps_history_while_proven_sibling_notifie
         assert db.execute("select count(*) from app_private.oom_manager_case_events where case_id=%s and event_payload ? 'purpose_membership'",(legacy_id,)).fetchone()[0]==0
         payload=db.execute('select preview_payload from app_private.oom_protected_action_claims').fetchone()[0]
         assert len(payload['cases'])==1 and payload['cases'][0]['membership']['member_count']==2
+
+
+@pytest.mark.parametrize('future_request', [False, True])
+def test_already_delivered_quiet_history_not_read_even_if_history_would_timeout(harness, monkeypatch, future_request):
+    from unittest.mock import Mock
+    run, memory, _, context, now = harness
+    for row in context['cases']:
+        row['last_delivery_digest'] = row['evidence_digest']
+    original = deepcopy(context)
+    member = {k: context['cases'][0][k] for k in ('case_id', 'generation', 'evidence_digest')}
+    member['membership_digest'] = context['cases'][0]['membership']['membership_digest']
+    requests = [defer_event(member, now-timedelta(hours=1), day=3)] if future_request else []
+    def validated(*args, **kwargs):
+        return REAL_DEFERRALS(*args, **{**kwargs, 'connect': lambda: ReadRows(requests)})
+    monkeypatch.setattr(overview, '_deferrals', validated)
+    history = Mock(side_effect=TimeoutError('private SQL details must never be retained'))
+    monkeypatch.setattr(overview, '_read_events', history)
+    result = run()
+    assert result['success'] is True and result['status'] == 'purpose_overview_no_unnotified_due_work'
+    assert result['coverage'] == [] and result['telegram_sends'] == result['telegram_edits'] == 0
+    assert result['delivery_confirmed'] is False and result['writes_farm_data'] is False
+    assert memory.sent == [] and memory.events == {} and context == original
+    history.assert_not_called()
+
+
+def test_missing_delivery_field_refuses_before_reading_history(harness, monkeypatch):
+    from unittest.mock import Mock
+    run, memory, _, context, _ = harness
+    for row in context['cases']:
+        row['last_delivery_digest'] = row['evidence_digest']
+    context['cases'][0].pop('last_delivery_digest')
+    history = Mock(side_effect=AssertionError('history must not precede delivery-state validation'))
+    monkeypatch.setattr(overview, '_read_events', history)
+    result = run()
+    assert result['success'] is False and result['failure_kind'] == 'ValueError'
+    assert result['failure_stage'] == 'delivery_state' and result['coverage'] == []
+    assert not memory.sent and not memory.events
+    history.assert_not_called()
+
+
+@pytest.mark.parametrize('reason', ['new_group', 'due_review'])
+def test_new_or_due_work_still_requires_exact_family_history(harness, monkeypatch, reason):
+    from unittest.mock import Mock
+    run, memory, _, context, now = harness
+    for row in context['cases']:
+        row['last_delivery_digest'] = row['evidence_digest']
+    if reason == 'new_group':
+        context['cases'][0]['last_delivery_digest'] = None
+    else:
+        member = {k: context['cases'][0][k] for k in ('case_id', 'generation', 'evidence_digest')}
+        member['membership_digest'] = context['cases'][0]['membership']['membership_digest']
+        request = defer_event(member, now-timedelta(days=2), day=1)
+        monkeypatch.setattr(overview, '_deferrals', lambda *a, **k: REAL_DEFERRALS(*a,
+            **{**k, 'connect': lambda: ReadRows([request])}))
+    history = Mock(side_effect=TimeoutError('private SQL details must never be retained'))
+    monkeypatch.setattr(overview, '_read_events', history)
+    result = run()
+    assert result['success'] is False and result['failure_kind'] == 'TimeoutError'
+    assert result['failure_stage'] == 'history' and result['coverage'] == []
+    assert 'private SQL' not in str(result) and not memory.sent and not memory.events
+    history.assert_called_once()
+
+
+@pytest.mark.parametrize('stage', ['membership', 'deferrals', 'history'])
+def test_caught_source_failures_keep_fixed_stage_and_only_exception_type(harness, monkeypatch, stage):
+    run, memory, raw, context, now = harness
+    def fail(*args, **kwargs):
+        raise TimeoutError('private SQL, animal or owner data must not be copied')
+    if stage == 'membership':
+        monkeypatch.setattr(membership, 'list_current_review_cases', fail)
+        result = overview.dispatch_purpose_overview(raw, cycle_id='CYCLE-A', now=now,
+            deadline_monotonic=time.monotonic()+80)
+    else:
+        monkeypatch.setattr(overview, '_deferrals' if stage == 'deferrals' else '_read_events', fail)
+        result = run()
+    assert result['failure_kind'] == 'TimeoutError' and result['failure_stage'] == stage
+    assert result['success'] is False and result['coverage'] == []
+    assert 'private SQL' not in str(result) and not memory.sent and not memory.events
+
+
+@pytest.mark.parametrize('stage', ['membership', 'deferrals', 'history', 'dispatch', 'coverage'])
+def test_postgres_contained_overview_exception_persists_once_without_per_case_failure(overview_db, monkeypatch, stage):
+    import json
+    pg, connect = overview_db
+    configure_owner(monkeypatch)
+    raw, context = production_packet(pg.now)
+    pg.seed(raw)
+    with connect() as db:
+        db.execute('update app_private.oom_manager_cases set last_delivery_digest=evidence_digest,last_delivery_at=%s', (pg.now-timedelta(days=1),))
+        before = db.execute('select case_id,generation,evidence_digest,last_delivery_digest,last_delivery_at from app_private.oom_manager_cases order by case_id').fetchall()
+    def fail(*args, **kwargs):
+        raise TimeoutError('private SQL details must never be retained')
+    if stage == 'membership':
+        monkeypatch.setattr(membership, 'list_current_review_cases', fail)
+    elif stage == 'deferrals':
+        monkeypatch.setattr(overview, '_deferrals', fail)
+    elif stage == 'history':
+        # A real attributable due request forces history even for old URL cards.
+        member = {k: context['cases'][0][k] for k in ('case_id', 'generation', 'evidence_digest')}
+        member['membership_digest'] = context['cases'][0]['membership']['membership_digest']
+        request = defer_event(member, pg.now-timedelta(days=2), day=1)
+        with connect() as db:
+            db.execute("insert into app_private.oom_manager_case_events(event_id,case_id,generation,event_type,event_payload,occurred_at) values(%s,%s,%s,'reassessment_scheduled',%s::jsonb,%s)",
+                (request[2], request[0], request[1], json.dumps(request[3]), request[4]))
+        monkeypatch.setattr(overview, '_read_events', fail)
+    elif stage == 'dispatch':
+        monkeypatch.setattr(overview, 'dispatch_purpose_overview', fail)
+    else:
+        monkeypatch.setattr(pg.store, '_record_purpose_overview_coverage', fail)
+    from modules.oom_sakkie import family_message_lifecycle as family
+    monkeypatch.setattr(family, '_send_telegram', lambda *a, **k: pytest.fail('no provider effect is allowed'))
+    result = worker.run_general_manager_cycle(now=pg.now, source_revision='synthetic-continuity', store=pg.store,
+        collectors=[lambda now: sources._purpose_review_candidates(context['snapshot'], now=now, today=DAY, observed_at=now)],
+        deliver=worker.deliver_farm_manager_case)
+    assert result['success'] is True  # Existing contained worker completion semantics.
+    assert result['exceptions'] == 1 and result['deadline_deferrals'] == 0
+    component = result['purpose_overview']
+    assert component['success'] is False and component['exceptions'] == 1
+    assert component['failure_kind'] == 'TimeoutError' and component['failure_stage'] == stage
+    assert component['telegram_sends'] == component['telegram_edits'] == component['covered_cases'] == 0
+    assert all(r['outcome_status'] == 'manager_delivery_duplicate_suppressed' for r in result['case_results'])
+    with connect() as db:
+        status, counts = db.execute('select status,case_counts from app_private.oom_manager_worker_cycles where cycle_id=%s', (result['cycle_id'],)).fetchone()
+        assert status == 'completed' and counts['exceptions'] == 1 and counts['purpose_overview'] == component
+        assert db.execute('select case_id,generation,evidence_digest,last_delivery_digest,last_delivery_at from app_private.oom_manager_cases order by case_id').fetchall() == before
+        assert db.execute('select count(*) from app_private.oom_protected_action_claims').fetchone()[0] == 0
+        assert db.execute('select count(*) from public.sam_live_stock_conversation_review_events').fetchone()[0] == 0
+        assert db.execute("select count(*) from app_private.oom_manager_case_events where event_payload ? 'purpose_overview_coverage' or event_type='delivery_confirmed'").fetchone()[0] == 0
+    assert 'private SQL' not in json.dumps(counts)
+
+
+@pytest.mark.parametrize('status', ['purpose_overview_deadline_deferred', 'purpose_overview_prior_attempt_contained', 'purpose_overview_delivery_unproven'])
+def test_postgres_expected_no_send_without_exception_is_not_counted_as_exception(overview_db, monkeypatch, status):
+    pg, connect = overview_db
+    configure_owner(monkeypatch)
+    raw, context = production_packet(pg.now)
+    pg.seed(raw)
+    with connect() as db:
+        db.execute('update app_private.oom_manager_cases set last_delivery_digest=evidence_digest')
+    monkeypatch.setattr(overview, 'dispatch_purpose_overview', lambda *a, **k: overview._empty(status))
+    result = worker.run_general_manager_cycle(now=pg.now, source_revision='synthetic-contained-outcome', store=pg.store,
+        collectors=[lambda now: sources._purpose_review_candidates(context['snapshot'], now=now, today=DAY, observed_at=now)],
+        deliver=worker.deliver_farm_manager_case)
+    assert result['success'] and result['exceptions'] == result['purpose_overview']['exceptions'] == 0
+    assert result['purpose_overview']['status'] == status and result['purpose_overview']['success'] is False
+    assert 'failure_kind' not in result['purpose_overview'] and 'failure_stage' not in result['purpose_overview']
+    with connect() as db:
+        counts = db.execute('select case_counts from app_private.oom_manager_worker_cycles where cycle_id=%s', (result['cycle_id'],)).fetchone()[0]
+        assert counts['exceptions'] == 0 and counts['purpose_overview'] == result['purpose_overview']
+        assert db.execute('select count(*) from app_private.oom_protected_action_claims').fetchone()[0] == 0
+        assert db.execute('select count(*) from public.sam_live_stock_conversation_review_events').fetchone()[0] == 0
