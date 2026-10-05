@@ -19,7 +19,8 @@ import time
 import uuid
 from typing import Any, Callable, Iterable, Mapping
 
-from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+from modules.oom_sakkie.bounded_postgres_read import (
+    ReadBudgetCursor, connect_bounded_postgres, is_database_unavailable)
 from modules.oom_sakkie.herdmaster_purpose_decision import (
     PURPOSE_DECISION_SQL, purpose_decision_binding, purpose_refresh_receipt)
 
@@ -40,6 +41,29 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
 _PRODUCTION_RETAINED_RECOVERY = object()
 _MESSAGE_FAMILY_REF = "manager_message_family:"
 _RECONCILIATION_PRIOR_UNREAD = object()
+
+
+# Only this worker admits coverage after verifying the immutable family receipt.
+# A later generation, changed membership or ordinary suppression is never quiet
+# on the strength of a previous overview. This is not a case delivery receipt.
+_PURPOSE_OVERVIEW_COVERAGE_SQL = """(m.specialist='HERDMASTER'
+    and starts_with(m.dedupe_key,'herdmaster:purpose-review:')
+    and exists (select 1 from app_private.oom_manager_case_events coverage
+        where coverage.case_id=m.case_id and coverage.generation=m.generation
+          and coverage.event_type='delivery_suppressed'
+          and coverage.event_payload->>'outcome_status'='purpose_review_overview_covered'
+          and coverage.event_payload->'delivery_confirmed'='false'::jsonb
+          and coverage.event_payload->'purpose_overview_coverage'->>'contract'='herdmaster.purpose_overview.v1'
+          and coverage.event_payload->'purpose_overview_coverage'->>'case_id'=m.case_id
+          and coverage.event_payload->'purpose_overview_coverage'->>'generation'=m.generation::text
+          and coverage.event_payload->'purpose_overview_coverage'->>'evidence_digest'=m.evidence_digest
+          and coverage.event_payload->'purpose_overview_coverage'->>'receipt_digest' ~ '^[a-f0-9]{64}$'
+          and coverage.event_payload->'purpose_overview_coverage'->>'membership_digest'=(
+              select membership.event_payload->'purpose_membership'->>'membership_digest'
+              from app_private.oom_manager_case_events membership
+              where membership.case_id=m.case_id and membership.generation=m.generation
+                and membership.event_payload ? 'purpose_membership'
+              order by membership.occurred_at desc,membership.event_id desc limit 1)))"""
 
 
 class ManagerCaseError(ValueError):
@@ -178,8 +202,12 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
     digest_material["evidence_refs"] = [ref for ref in refs
                                         if not str(ref).startswith(("observed:", "herdmaster_case_fence:"))]
     digest = _digest(digest_material)
-    return {**material, "case_id": "OOM-CASE-" + hashlib.sha256(dedupe.encode()).hexdigest()[:24].upper(),
-            "evidence_digest": digest}
+    result = {**material, "case_id": "OOM-CASE-" + hashlib.sha256(dedupe.encode()).hexdigest()[:24].upper(),
+              "evidence_digest": digest}
+    if "_purpose_membership" in raw:
+        from modules.oom_sakkie.herdmaster_purpose_membership import validate_candidate_membership
+        result["_purpose_membership"] = validate_candidate_membership(result, raw["_purpose_membership"])
+    return result
 
 
 class PostgresManagerCaseStore:
@@ -194,7 +222,7 @@ class PostgresManagerCaseStore:
                                           Mapping[str, Any] | _ManagerRefreshBatch] | None = None,
                   deadline_monotonic: float | None = None,
                   brain_guard_audit: Mapping[str, Any] | None = None,
-                  source_collection_ms: int = 0):
+                  source_collection_ms: int = 0, purpose_overview=None):
         store_started = time.monotonic()
         timings = {"source_collection": source_collection_ms}
         now = _aware(now)
@@ -207,6 +235,9 @@ class PostgresManagerCaseStore:
         claimed: list[dict[str, Any]] = []
         connection = None
         refresh_handle = None
+        raw_candidates = tuple(candidates)
+        overview_result = None
+        overview_covered = set()
         try:
             with self.connect_factory() as audit_connection:
                 with audit_connection.cursor() as cur:
@@ -222,7 +253,7 @@ class PostgresManagerCaseStore:
             with connection:
                 with connection.cursor() as cur:
                     normalized_candidates = sorted(
-                        (normalize_candidate(raw, now=now) for raw in candidates),
+                        (normalize_candidate(raw, now=now) for raw in raw_candidates),
                         key=lambda item: item["case_id"])
                     key_counts = Counter(item["dedupe_key"] for item in normalized_candidates)
                     replay_epochs = []
@@ -261,6 +292,7 @@ class PostgresManagerCaseStore:
                                 -- quiet/confirmed cases, to unlock later generations.
                                 case when m.status='delegated' then 0
                                   when m.last_delivery_digest=m.evidence_digest
+                                    or __PURPOSE_OVERVIEW_COVERAGE__
                                     or starts_with(m.dedupe_key,'rootline-readiness:')
                                     or m.specialist in ('SAM','RUNTIME')
                                     or (m.specialist in ('HERDMASTER','ROOTLINE')
@@ -295,7 +327,8 @@ class PostgresManagerCaseStore:
                         )
                         select m.case_id,m.dedupe_key,m.specialist,m.urgency,m.status,
                             m.evidence_digest,m.evidence_refs,m.unknowns,m.summary,m.next_action,
-                            m.next_reassessment_at,m.generation,m.last_delivery_digest
+                            m.next_reassessment_at,m.generation,m.last_delivery_digest,
+                            __PURPOSE_OVERVIEW_COVERAGE__
                         from app_private.oom_manager_cases m join eligible e using(case_id)
                         order by e.work_class,case when e.specialist_rank=1 then 0 else 1 end,
                             e.fresh_priority,e.fair_due_at,e.last_heartbeat_at nulls first,
@@ -303,7 +336,8 @@ class PostgresManagerCaseStore:
                             when 'due' then 2 when 'planned' then 3 else 4 end,
                             case when e.specialist='BEACON' then 0 else 1 end,e.case_id
                         for update of m skip locked limit %s""".replace(
-                            "__PURPOSE_DECISION__", PURPOSE_DECISION_SQL),
+                            "__PURPOSE_DECISION__", PURPOSE_DECISION_SQL).replace(
+                            "__PURPOSE_OVERVIEW_COVERAGE__", _PURPOSE_OVERVIEW_COVERAGE_SQL),
                         (now, now, CLAIM_LIMIT))
                     for row in cur.fetchall():
                         case = _case_row(row)
@@ -319,9 +353,33 @@ class PostgresManagerCaseStore:
             dispatch_started = time.monotonic()
             delivered = suppressed = exceptions = deadline_deferrals = 0
             case_results = []
+            # Reconciliation and claims committed before this hook. Routine
+            # purpose gets one provider turn only after claimed urgent work.
+            overview_attempted = False
+            def dispatch_overview_once():
+                nonlocal overview_attempted, overview_result, overview_covered
+                if overview_attempted or purpose_overview is None or not deliver:
+                    return
+                overview_attempted = True
+                overview_result = {"success": False, "status": "purpose_overview_deadline_deferred",
+                    "telegram_sends": 0, "telegram_edits": 0, "coverage": []}
+                if deadline_monotonic is None or time.monotonic() < deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS:
+                    try:
+                        overview_result = dict(purpose_overview(raw_candidates, cycle_id=cycle_id,
+                            now=_aware(datetime.now(timezone.utc)), deadline_monotonic=deadline_monotonic,
+                            connect=self.connect_factory) or {})
+                        overview_covered = self._record_purpose_overview_coverage(overview_result,
+                            cycle_id=cycle_id, now=_aware(datetime.now(timezone.utc)),
+                            deadline_monotonic=deadline_monotonic)
+                    except Exception as exc:
+                        if not (isinstance(exc, (ValueError, RuntimeError, OSError)) or is_database_unavailable(exc)):
+                            raise
+                        overview_result = {**overview_result, "success": False,
+                            "status": "purpose_overview_contained", "failure_kind": type(exc).__name__}
             batch_refreshes = {}
             refresh_needed = tuple(case for case in claimed
                 if case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
+                and not (purpose_overview is not None and purpose_decision_binding(case))
                 and case.get("last_delivery_digest") != case["evidence_digest"])
             if (deliver and refresh_batch and refresh_needed
                     and (deadline_monotonic is None or time.monotonic()
@@ -360,24 +418,30 @@ class PostgresManagerCaseStore:
                             "next_reassessment_at": (now + CADENCE).isoformat(),
                         })
                     break
-                case_index = 0
+                urgent_pending = bool(purpose_overview is not None and any(
+                    item.get("urgency") in {"critical", "urgent"} and not purpose_decision_binding(item)
+                    for item in pending))
                 if refresh_handle is not None:
                     batch_refreshes = refresh_handle.poll()
-                    # Re-scan the original claim order before each dispatch.
-                    # A pending collector cannot hold back a ready sibling;
-                    # an earlier claim that becomes ready takes the next turn.
-                    case_index = next((index for index, item in enumerate(pending)
-                        if item["case_id"] not in refresh_ids
-                        or item["case_id"] in batch_refreshes), None)
-                    if case_index is None:
+                case_index = next((index for index, item in enumerate(pending)
+                    if not (urgent_pending and purpose_decision_binding(item))
+                    and (refresh_handle is None or item["case_id"] not in refresh_ids
+                        or item["case_id"] in batch_refreshes)), None)
+                if case_index is None:
+                    if refresh_handle is not None:
                         refresh_handle.wait_for_ready()
                         continue
+                    raise ManagerCaseError("manager_dispatch_order_unavailable")
                 case = pending.pop(case_index)
                 current_case = case
+                if purpose_overview is not None and purpose_decision_binding(case):
+                    dispatch_overview_once()
                 case_started = time.monotonic()
                 case_timings = {"dispatch_wait": _elapsed_ms(dispatch_started)}
                 specialist_failure = None
-                refresh_eligible = case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
+                overview_case = purpose_overview is not None and purpose_decision_binding(case) is not None
+                refresh_eligible = (case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
+                    and not overview_case)
                 if (not deadline_deferred and deliver and refresh_eligible
                         and case.get("last_delivery_digest") != case["evidence_digest"]):
                     refreshed = None
@@ -426,6 +490,15 @@ class PostgresManagerCaseStore:
                     outcome = {"success": True,
                         "status": "manager_delivery_refreshed_generation_deferred",
                         "delivery_confirmed": False, "telegram_sends": 0}
+                elif overview_case:
+                    covered = (current_case["case_id"] in overview_covered
+                        or current_case.get("_purpose_overview_covered") is True)
+                    already_delivered = current_case.get("last_delivery_digest") == current_case["evidence_digest"]
+                    outcome = {"success": covered or already_delivered, "status": ("purpose_review_overview_covered"
+                        if covered else "manager_delivery_duplicate_suppressed" if already_delivered
+                        else "purpose_review_overview_unavailable"), "delivery_confirmed": False,
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "next_reassessment_at": (now + CADENCE).isoformat()}
                 elif (deliver and current_case.get("last_delivery_digest")
                         != current_case["evidence_digest"]):
                     if (deadline_monotonic is not None
@@ -490,12 +563,23 @@ class PostgresManagerCaseStore:
                     "delivery_confirmed": confirmed,
                     "next_reassessment_at": str(outcome.get("next_reassessment_at")
                         or current_case["next_reassessment_at"])})
+            # No purpose case may be selected when urgent work fills the claim
+            # limit; the full current summary is still eligible after that work,
+            # only inside the same remaining absolute deadline.
+            dispatch_overview_once()
             counts = {"candidates_created": created, "candidates_changed": changed,
                 "candidate_replays": replayed, "cases_claimed": len(claimed),
                 "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
                 "exceptions": exceptions, "deadline_deferrals": deadline_deferrals,
                 "brain_guard": brain_guard,
                 "processing_timings_ms": {**timings, "dispatch": _elapsed_ms(dispatch_started)}}
+            if overview_result is not None:
+                counts["purpose_overview"] = {"status": overview_result.get("status"),
+                    "success": overview_result.get("success") is True,
+                    "covered_cases": len(overview_covered),
+                    "telegram_sends": int(overview_result.get("telegram_sends") or 0),
+                    "telegram_edits": int(overview_result.get("telegram_edits") or 0),
+                    "case_deliveries_confirmed": 0}
             with self.connect_factory() as cycle_connection:
                 with cycle_connection.cursor() as cur:
                     cur.execute("""update app_private.oom_manager_worker_cycles set heartbeat_at=%s,
@@ -686,6 +770,10 @@ class PostgresManagerCaseStore:
                 and str(prior[3] or "") != str(lease_owner or "")):
             return "deferred"
         if prior and prior[0] == candidate["evidence_digest"]:
+            # Metadata adoption is an append-only reassessment of this exact
+            # pre-decision generation, never new evidence or delivery authority.
+            if candidate.get("_purpose_membership") and prior[2] not in {"delegated", "completed", "contained"}:
+                self._purpose_membership_event(cur, candidate, int(prior[1]), now, prior=prior, adopt=True)
             candidate_epoch = _evidence_epoch(candidate["evidence_refs"])
             prior_epoch = _evidence_epoch(prior[5])
             if candidate_epoch and (not prior_epoch or candidate_epoch > prior_epoch):
@@ -723,8 +811,104 @@ class PostgresManagerCaseStore:
               candidate["summary"], candidate["next_action"],
               _time(candidate["next_reassessment_at"], "next_reassessment_at"), generation, now, now))
         event_case = {**candidate, "generation": generation}
-        self._event(cur, event_case, "created" if not prior else "evidence_changed", now)
+        membership = self._purpose_membership_event(cur, candidate, generation, now, prior=prior)
+        membership_payload = {"purpose_membership": membership} if membership else (
+            {"purpose_membership_unavailable": "legacy_lineage_changed"}
+            if candidate.get("message_family") == "purpose_review" else {})
+        self._event(cur, event_case, "created" if not prior else "evidence_changed", now,
+                    **membership_payload)
         return "created" if not prior else "changed"
+
+    def _purpose_membership_event(self, cur, candidate, generation, now, *, prior, adopt=False):
+        if not candidate.get("_purpose_membership"):
+            return None
+        from modules.oom_sakkie.herdmaster_purpose_membership import (
+            build_record, read_latest_record, legacy_adoption_epoch)
+        previous = read_latest_record(cur, candidate["case_id"], generation) if prior else None
+        if adopt:
+            # Preserve the accepted 1-11 current-generation compatibility;
+            # never claim complete initial-ever history or recover capped IDs.
+            if previous is not None:
+                return None
+            epoch = legacy_adoption_epoch(cur, candidate, generation)
+            if epoch is None:
+                return None
+            record = build_record(candidate, generation=generation, now=now, legacy_epoch=epoch)
+            self._event(cur, {**candidate, "generation": generation}, "reassessment_scheduled", now,
+                purpose_membership=record, reason="exact_predecision_membership_adopted",
+                metadata_only=True, schedule_changed=False, delivery_changed=False)
+            return record
+        if prior and prior[2] != "completed":
+            if not previous or (previous["generation"], previous["evidence_digest"]) != (int(prior[1]), prior[0]):
+                return None
+        else:
+            previous = None
+        from modules.oom_sakkie.herdmaster_purpose_membership import PurposeMembershipError
+        try:
+            return build_record(candidate, generation=generation, now=now, previous=previous)
+        except PurposeMembershipError:
+            # Do not erase unresolved original obligations when a new identity
+            # conflicts with retained metadata. Keep the current task visible.
+            return None
+
+    def _record_purpose_overview_coverage(self, outcome, *, cycle_id, now, deadline_monotonic=None):
+        """Admit one actual overview receipt without marking any case delivered."""
+        from modules.oom_sakkie.herdmaster_purpose_overview import verify_overview_receipt
+        if outcome.get("success") is not True or not outcome.get("coverage"):
+            return set()
+        receipt = verify_overview_receipt(outcome.get("receipt_events"), manifest=outcome.get("manifest"),
+            owner_id=outcome.get("owner_id"), occurrence_id=outcome.get("occurrence_id"))
+        if receipt is None or outcome.get("delivery_confirmed") is not False:
+            raise ManagerCaseError("purpose_overview_receipt_unproven")
+        manifest, coverage = outcome["manifest"], outcome["coverage"]
+        if (not isinstance(coverage, list) or len(coverage) != len(manifest)
+                or any(item != {**entry, "receipt": receipt} for item, entry in zip(coverage, manifest))):
+            raise ManagerCaseError("purpose_overview_coverage_unproven")
+        deadline = min(time.monotonic()+5, deadline_monotonic if deadline_monotonic is not None else float("inf"))
+        if time.monotonic() >= deadline:
+            raise TimeoutError("purpose_overview_coverage_deadline")
+        admitted = set()
+        with self.connect_factory() as db, db.cursor() as cursor:
+            cur = ReadBudgetCursor(cursor, deadline, failure_kind="purpose_overview_coverage_deadline")
+            cur.execute("set local lock_timeout='1000ms'")
+            cur.execute("""select m.case_id,m.generation,m.evidence_digest,m.status,m.assigned_worker_id,m.lease_until,
+                (select e.event_payload->'purpose_membership'->>'membership_digest'
+                    from app_private.oom_manager_case_events e where e.case_id=m.case_id
+                      and e.generation=m.generation and e.event_payload ? 'purpose_membership'
+                    order by e.occurred_at desc,e.event_id desc limit 1)
+                from app_private.oom_manager_cases m where m.case_id=any(%s)
+                  and m.specialist='HERDMASTER' and starts_with(m.dedupe_key,'herdmaster:purpose-review:')
+                order by m.case_id for update""", ([v["case_id"] for v in manifest],))
+            rows = {v[0]: v for v in cur.fetchall()}
+            cur.execute("""select case_id,event_payload->'purpose_overview_coverage'
+                from app_private.oom_manager_case_events where case_id=any(%s)
+                  and event_type='delivery_suppressed'
+                  and event_payload->'purpose_overview_coverage'->>'receipt_digest'=%s limit 65""",
+                ([v["case_id"] for v in manifest], receipt["receipt_digest"]))
+            prior = cur.fetchall()
+            if len(prior) > 64 or len({v[0] for v in prior}) != len(prior):
+                raise ManagerCaseError("purpose_overview_coverage_ambiguous")
+            existing = dict(prior)
+            for item in manifest:
+                admitted_at = _aware(datetime.now(timezone.utc))
+                row = rows.get(item["case_id"])
+                if (not row or (row[1], row[2], row[6]) != (item["generation"], item["evidence_digest"], item["membership_digest"])
+                        or not ((row[3] in {"open", "waiting_reassessment", "exception"} and not row[4] and row[5] is None)
+                            or (row[3] == "delegated" and row[4] == cycle_id and row[5] and row[5] > admitted_at))):
+                    continue
+                proof = {**item, "contract": receipt["contract"], "manifest_digest": receipt["manifest_digest"],
+                    "receipt_digest": receipt["receipt_digest"], "owner_id": receipt["owner_id"],
+                    "occurrence_id": receipt["occurrence_id"], "card_id": receipt["card_mission_id"],
+                    "delivery_id": receipt["event_id"], "telegram_message_id": receipt["telegram_message_id"]}
+                if item["case_id"] in existing:
+                    if existing[item["case_id"]] != proof:
+                        raise ManagerCaseError("purpose_overview_coverage_conflict")
+                else:
+                    self._event(cur, item, "delivery_suppressed", admitted_at,
+                        outcome_status="purpose_review_overview_covered", cycle_id=cycle_id,
+                        purpose_overview_coverage=proof, delivery_confirmed=False)
+                admitted.add(item["case_id"])
+        return admitted
 
     @staticmethod
     def _retire_stale_beacon_claims(cur, dedupe_key, now):
@@ -964,7 +1148,7 @@ class PostgresManagerCaseStore:
 
 
 def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None,
-                              store=None, collectors=None, deliver=None):
+                              store=None, collectors=None, deliver=None, purpose_overview=None):
     collection_started = time.monotonic()
     deadline_monotonic = collection_started + GENERAL_MANAGER_CYCLE_DEADLINE_SECONDS
     now = _aware(now or datetime.now(timezone.utc))
@@ -1061,13 +1245,16 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                             collectors=collectors)
                 groups.append((owned_cases, collect))
             return _ManagerRefreshBatch(groups, deadline_monotonic=deadline_monotonic)
+    if purpose_overview is None and deliver is deliver_farm_manager_case:
+        from modules.oom_sakkie.herdmaster_purpose_overview import dispatch_purpose_overview
+        purpose_overview = dispatch_purpose_overview
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
     brain_guard = build_scheduled_brain_guard_audit(source_revision=revision, now=now)
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver,
         refresh=refresh, refresh_batch=refresh_batch,
         deadline_monotonic=deadline_monotonic, brain_guard_audit=brain_guard,
-        source_collection_ms=_elapsed_ms(collection_started))
+        source_collection_ms=_elapsed_ms(collection_started), purpose_overview=purpose_overview)
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None,
@@ -1328,7 +1515,10 @@ def _case_row(row):
     keys = ("case_id","dedupe_key","specialist","urgency","status","evidence_digest",
             "evidence_refs","unknowns","summary","next_action","next_reassessment_at",
             "generation","last_delivery_digest")
-    value = dict(zip(keys, row)); value["next_reassessment_at"] = value["next_reassessment_at"].isoformat()
+    value = dict(zip(keys, row))
+    if len(row) > len(keys):
+        value["_purpose_overview_covered"] = row[len(keys)] is True
+    value["next_reassessment_at"] = value["next_reassessment_at"].isoformat()
     value["message_family"] = next((str(ref)[len(_MESSAGE_FAMILY_REF):]
         for ref in value.get("evidence_refs") or ()
         if str(ref).startswith(_MESSAGE_FAMILY_REF)), "")

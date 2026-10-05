@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-10-05 - Protected purpose decisions inside Telegram
+
+- Add current-group navigation, exact selection/change, paged explanations and
+  protected preview/Confirm through the existing canonical correction batch.
+- Retain full cohort membership, one verified overview and explicit dated review
+  occurrences in the existing manager/family lifecycle; preserve partial work,
+  historical delivery, quiet repeats and current identity/lease protections.
+- Add two narrowly guarded claim kinds. Recover committed batches and lost
+  acknowledgements without a second farm write; uncertain results stay explicit.
+- Synthetic qualification is separate from schema/release authority, genuine
+  owner decisions, verified farm readback and later natural continuity.
+
 ## 2026-10-04 - Exact single-pig purpose preview
 
 - Show canonical animal identity, current/new purpose, reason and owner note from

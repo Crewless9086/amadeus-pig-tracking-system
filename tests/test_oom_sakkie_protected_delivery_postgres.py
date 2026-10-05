@@ -21,6 +21,7 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
        delivery_attempted_at timestamptz,provider_accepted_at timestamptz,delivery_confirmed_at timestamptz,
        delivery_ambiguous_at timestamptz,delivery_result jsonb)""")
       db.execute("""alter table app_private.oom_protected_action_claims
+       add column if not exists created_at timestamptz not null default now(),
        add column if not exists delivery_state text not null default 'claim_created',
        add column if not exists delivery_attempt_id text,
        add column if not exists delivery_attempted_at timestamptz,

@@ -62,6 +62,8 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
                               specialist: str) -> dict[str, Any]:
     """Final provider boundary: one language for every Oom Sakkie specialist."""
     localized = dict(result)
+    typed_purpose = (specialist == "HERDMASTER" and result.get("purpose_presentation_contract") == "herdmaster.telegram_purpose.v1"
+        and str(result.get("status") or "").startswith("purpose_") and result.get("recipient_language") == "af")
     if not str(parsed.get("output_language") or "en").casefold().startswith("af"):
         return localized
     status = str(localized.get("status") or "").casefold()
@@ -148,6 +150,10 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             answer = (f"<b>SAM — VEREFFENING VOLTOOI</b>\n\nVeiling afgehandel. "
                 f"Ontvang: R{localized['received_amount']} via {localized['payment_method']} "
                 f"op {localized['payment_date']}. Volledig gerekonsilieer.")
+        elif (localized.get("purpose_presentation_contract") == "herdmaster.telegram_purpose.v1"
+              and specialist == "HERDMASTER" and localized.get("recipient_language") == "af"
+              and status.startswith("purpose_") and answer):
+            answer = original_answer
         elif (localized.get("recipient_render_contract") == "specialist_structured_recipient_v1"
               and str(localized.get("recipient_language") or "").casefold().startswith("af")
               and answer.startswith("<b>") and "</b>" in answer
@@ -184,7 +190,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             for button in row:
                 item = dict(button)
                 action = str(item.get("callback_data") or "").rsplit(":", 1)[-1]
-                if action in labels:
+                if action in labels and not typed_purpose:
                     item["text"] = labels[action]
                 elif str(item.get("text") or "").casefold() == "finish album":
                     item["text"] = "Voltooi album"
@@ -192,7 +198,7 @@ def localize_recipient_result(parsed: Mapping[str, Any], result: Mapping[str, An
             rows.append(translated)
         localized["reply_markup"] = {**markup, "inline_keyboard": rows}
     localized["recipient_language"] = "af"
-    if answer and answer == original_answer and not preserves_recipient_text and not structured_treatment and not _looks_afrikaans(answer):
+    if answer and answer == original_answer and not preserves_recipient_text and not structured_treatment and not typed_purpose and not _looks_afrikaans(answer):
         localized["recipient_language_render_unrecognized"] = True
     return localized
 
@@ -386,7 +392,11 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         if previous:
             parsed = {**parsed, "provider_timestamp": previous["provider_timestamp"]}
     reply_markup = result.get("reply_markup") if isinstance(result.get("reply_markup"), Mapping) else None
+    purpose_keyboard_sha = (hashlib.sha256(json.dumps(reply_markup,sort_keys=True,separators=(",", ":")).encode()).hexdigest()
+        if result.get("purpose_presentation_contract") == "herdmaster.telegram_purpose.v1" else "")
+    presentation_sha = hashlib.sha256((text_sha+purpose_keyboard_sha).encode()).hexdigest() if purpose_keyboard_sha else text_sha
     completion_states = {
+            "purpose_recorded_verified", "purpose_review_date_recorded", "purpose_review_date_replayed",
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded",
             "payment_state_recorded", "payment_state_replay_noop",
             "weaning_day_committed", "weaning_day_replayed_withheld",
@@ -416,7 +426,14 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             != str(parsed.get("provider_message_id") or "")
         and str(latest.get("text_sha256") or "") != text_sha
         and result.get("requires_visible_notification") is not True)
-    if _provider_attempt is not None and card_id and not clarification_transition:
+    purpose_transition = False
+    if card_id and result.get("purpose_transition") and specialist == "HERDMASTER":
+        from modules.oom_sakkie.herdmaster_purpose_telegram import verify_card_transition
+        try:
+            purpose_transition = verify_card_transition(parsed, result, latest)
+        except Exception:
+            purpose_transition = False
+    if _provider_attempt is not None and card_id and not (clarification_transition or purpose_transition):
         # An explicit clarification can become the same conversation's protected
         # preview. Other unbound cards cannot authorize a second protected effect.
         return {"success": False, "status": "protected_delivery_existing_family_card_unbound",
@@ -488,6 +505,17 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         and str(result.get("card_mission_id") or "") == card_mission_id)
     payload = _event(parsed, mission_id, card_mission_id, specialist,
                      str(result.get("status") or "working"), text_sha)
+    if (result.get("purpose_presentation_contract") == "herdmaster.telegram_purpose.v1"
+            and result.get("action_kind") in {"herdmaster_purpose_review", "herdmaster_purpose_correction"}):
+        payload["purpose_callback_token"] = str(result.get("callback_token") or "")
+        payload["purpose_preview_digest"] = str(result.get("preview_digest") or "")
+        payload["purpose_keyboard_sha256"] = purpose_keyboard_sha
+    elif (result.get("purpose_presentation_contract") == "herdmaster.telegram_purpose.v1"
+            and exclusive_completion and result.get("status") in {
+                "purpose_recorded_verified","purpose_review_date_recorded","purpose_review_date_replayed"}):
+        # The completed result is immutable. Bind its read-only continuation
+        # keyboard to this actual receipt without creating another action claim.
+        payload["purpose_keyboard_sha256"] = purpose_keyboard_sha
     if int(result.get("question_count") or 0) == 1:
         payload["clarification_question"] = str(
             result.get("clarification_question") or (source_text if result.get("status") in {
@@ -580,7 +608,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
     if (card_id and result.get("requires_visible_notification") is True):
-        update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
+        update_id = card_mission_id + "-UPDATE-" + presentation_sha[:20].upper()
         prior_update = [row for row in events
             if str(row.get("event_id") or "").startswith(update_id)]
         if any(row.get("state") == "updated" for row in prior_update):
@@ -604,13 +632,14 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 card_mission_id, card_id, text_sha, store, sender,
                 specialist=specialist, prior_edits=0,
                 deadline_monotonic=deadline_monotonic)
-    if latest and str(latest.get("text_sha256") or "") == text_sha:
+    if (latest and str(latest.get("text_sha256") or "") == text_sha
+            and (not purpose_keyboard_sha or latest.get("purpose_keyboard_sha256") == purpose_keyboard_sha)):
         return {"success": True, "status": "family_message_replayed_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
 
     if card_id:
-        update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
+        update_id = card_mission_id + "-UPDATE-" + presentation_sha[:20].upper()
         if exclusive_completion_restore:
             update_id += "-MONOTONIC-RESTORE-2"
         prior_update = [row for row in events

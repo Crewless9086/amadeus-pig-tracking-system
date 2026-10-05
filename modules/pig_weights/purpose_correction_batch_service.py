@@ -213,7 +213,7 @@ def approve_correction_batch(batch_id, *, actor_id, connect_factory=None):
         return {"success": False, "status": "correction_batch_store_unavailable", "writes_to_sheets": False}, 503
 
 
-def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=None):
+def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=None, validate_current=None):
     actor_id = to_clean_string(actor_id)
     if not actor_id:
         return {"success": False, "status": "correction_batch_owner_principal_required", "writes_to_sheets": False}, 403
@@ -280,6 +280,10 @@ def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=
                         errors.append(item["pig_id"])
                 if errors:
                     return {"success": False, "status": "correction_batch_weight_not_fresh", "blocked_pig_ids": errors, "writes_to_sheets": False}, 409
+                # Channel-specific exact-context guard participates in this same
+                # serializable transaction; raising rolls back before any farm write.
+                if validate_current is not None:
+                    validate_current(connection, envelope)
                 event_ids = []
                 rows_updated = 0
                 now = datetime.now(timezone.utc)

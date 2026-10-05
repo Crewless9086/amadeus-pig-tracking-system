@@ -40,7 +40,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
                  ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True,
                  reuse_active_provider_identity=False,
-                 retire_expired_unbound_predecessor=None):
+                 retire_expired_unbound_predecessor=None, purpose_parent_transition=None):
     digest=canonical_preview_digest(action_kind,preview_payload)
     token=secrets.token_urlsafe(12).replace("-","").replace("_","")[:16]
     expires=(datetime.fromisoformat(str(expires_at).replace("Z","+00:00"))
@@ -49,6 +49,14 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
         raise ValueError("protected_claim_expiry_invalid")
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
+        purpose_kind = action_kind in {"herdmaster_purpose_review", "herdmaster_purpose_correction"}
+        if purpose_parent_transition is not None and (not purpose_kind or not isinstance(purpose_parent_transition, dict)
+                or preview_payload.get("contract") != "herdmaster.telegram_purpose.v1"
+                or preview_payload.get("parent_transition") != purpose_parent_transition):
+            raise ValueError("purpose_parent_transition_contract_invalid")
+        if purpose_kind:
+            lock_material = hashlib.sha256(f"protected-claim|{mission_id}".encode()).hexdigest()
+            cur.execute("select pg_advisory_xact_lock(%s)", (int(lock_material[:15],16),))
         if reuse_active_provider_identity:
             # Serialize one logical preview before the unique-key read/insert so
             # concurrent provider deliveries recover the winner, not an error.
@@ -84,7 +92,28 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                   "expires_at":expires.isoformat(),
                   "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
-        if not supersede_active:
+        if purpose_parent_transition is not None:
+            parent = purpose_parent_transition
+            cur.execute("""select action_kind,status,owner_user_id,private_chat_id,mission_id,
+                preview_digest,preview_card_message_id,expires_at,preview_payload
+                from app_private.oom_protected_action_claims where callback_token=%s for update""",
+                (str(parent.get("callback_token") or ""),))
+            row = cur.fetchone()
+            if (not row or row[0] not in {"herdmaster_purpose_review","herdmaster_purpose_correction"}
+                    or row[1] != "active" or str(row[2]) != str(owner_user_id)
+                    or str(row[3]) != str(private_chat_id) or row[4] != mission_id
+                    or row[5] != parent.get("preview_digest") or not row[6]
+                    or str(row[6]) != str(parent.get("source_card_message_id") or "")
+                    or row[7] <= datetime.now(timezone.utc)
+                    or row[8].get("contract") != "herdmaster.telegram_purpose.v1"
+                    or canonical_preview_digest(row[0], row[8]) != row[5]
+                    or str(parent.get("provider_message_id") or "") != str(provider_message_id)):
+                raise ValueError("purpose_parent_transition_not_current")
+            cur.execute("""update app_private.oom_protected_action_claims set status='changed'
+                where callback_token=%s and status='active'""", (parent["callback_token"],))
+            if cur.rowcount != 1:
+                raise ValueError("purpose_parent_transition_not_current")
+        elif not supersede_active:
             # Serialize the mission-wide active-claim invariant before cleanup
             # and insert. The production partial unique index remains the final
             # constraint; this lock turns a concurrent loser into the governed
@@ -284,7 +313,7 @@ def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
                    provider_timestamp, source_card_message_id="", connect_factory=None,
                    allowed_action_kinds=None, weaning_semantic_confirmation=False,
-                   first_treatment_semantic_confirmation=False):
+                   first_treatment_semantic_confirmation=False, purpose_callback=False):
     data=str(callback_data or "")
     try:
         provider_time=datetime.fromisoformat(str(provider_timestamp or "").replace("Z","+00:00"))
@@ -305,6 +334,8 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
             return {"success":False,"status":"protected_callback_capability_denied",
                     "action_kind":str(row[0]),"mission_id":str(row[3]),
                     "writes_farm_data":False,"hardware_commands":0},403
+        if row[0] in {"herdmaster_purpose_review", "herdmaster_purpose_correction"} and purpose_callback is not True:
+            return {"success":False,"status":"purpose_typed_callback_required"},409
         if not row[10]:
             return {"success":False,"status":"protected_callback_card_unbound"},409
         semantic_weaning = (weaning_semantic_confirmation is True
@@ -348,6 +379,16 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
                     return {"success":False,"status":("weaning_confirmation_not_unambiguous" if semantic_weaning else "first_treatment_confirmation_not_unambiguous"),
                         "writes_farm_data":False},409
         if row[7]=="completed":
+            if row[0] in {"herdmaster_purpose_review", "herdmaster_purpose_correction"}:
+                if (action == "confirm" and str(row[11] or "") == str(provider_message_id) and row[12]
+                        and canonical_preview_digest(row[0],row[6]) == row[4]):
+                    return {"success":True,"status":"purpose_completed_delivery_recovery",
+                        "action_kind":row[0],"preview_digest":row[4],"preview_payload":row[6],"result":row[9],
+                        "delivery_callback_binding":{"owner_user_id":str(row[1]),"chat_id":str(row[2]),
+                            "provider_message_id":str(row[11]),"provider_timestamp":row[12].isoformat(),
+                            "reply_to_message_id":str(row[10])}},200
+                return {"success":True,"status":"protected_callback_replayed_noop",
+                    "result":row[9],"telegram_sends":0,"telegram_edits":0},200
             if row[0] in {"mortality", "rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review",

@@ -226,6 +226,11 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             return voice_response
 
     callback = _parse_telegram_callback_payload(payload)
+    if callback["callback_data"].startswith("oompur:"):
+        source = environ if environ is not None else os.environ
+        return _dispatch_authenticated_telegram_message(payload, environ=source,
+            policy=telegram_gateway_policy(source), require_backend_delivery=True)
+
     if callback["callback_data"].startswith(FAMILY_CALLBACK_PREFIX):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
         source = environ if environ is not None else os.environ

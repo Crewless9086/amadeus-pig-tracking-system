@@ -1065,6 +1065,7 @@ def _purpose_review_candidates(snapshot, *, now, today, observed_at):
     if work.get("contract") != CONTRACT or work.get("state") != "checked":
         raise ValueError("purpose_work_evidence_unavailable")
     result = []
+    overview_snapshot = {"purpose_work": work, "snapshot_observed_at": observed_at}
     for cohort in work["cohorts"]:
         rows, phase = cohort["members"], cohort["phase"]
         selected = [row for row in rows if row["pig_id"] in cohort["weighing_ids"]]
@@ -1074,7 +1075,7 @@ def _purpose_review_candidates(snapshot, *, now, today, observed_at):
                 f"purpose_work:{cohort['cohort_key']}", f"rule_day:{cohort['rule_days']}",
                 f"purpose_evidence:{cohort['material_digest']}", f"observed:{observed_at.isoformat()}",
                 f"phase:{'post_wean_weight' if phase == 'weight_due' else 'owner_decision' if phase == 'decision_due' else 'held'}"]
-        # Full membership is digest-bound; reference bounds must admit large cohorts.
+        # Presentation refs stay capped; full immutable membership travels separately.
         refs.extend(f"pig:{row['pig_id']}" for row in rows[:12])
         detail = "/pig-allocation?mode=purpose-review"
         if cohort["litter_id"] and _safe_detail_identifier(cohort["litter_id"]):
@@ -1115,6 +1116,14 @@ def _purpose_review_candidates(snapshot, *, now, today, observed_at):
         # never add stored fields, change case identity or enter material digests.
         result[-1]["_purpose_review"] = {"phase": phase, "cohort_key": cohort["cohort_key"],
             "material_digest": cohort["material_digest"], "member_count": len(rows), "label": label}
+        result[-1]["_purpose_source_snapshot"] = overview_snapshot
+        from modules.oom_sakkie.herdmaster_purpose_membership import producer_membership, PurposeMembershipError
+        try:
+            result[-1]["_purpose_membership"] = producer_membership(cohort)
+        except PurposeMembershipError:
+            # Missing/ambiguous identity remains visible held work. It cannot
+            # supply approval membership or erase qualified sibling candidates.
+            pass
     return result
 
 

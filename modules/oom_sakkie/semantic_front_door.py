@@ -128,6 +128,22 @@ def _media_payload(owner_context, asset_sha256, source):
         "response_format": {"type": "json_object"}}
 
 
+def purpose_review_intent(parsed):
+    """Read-only typed navigation, recognized before any optional model call.
+
+    Opening a review is not selecting a purpose or providing confirmation.
+    EN/AF request variants share one stable intent; farm facts are not needed.
+    """
+    text = str(parsed.get("text") or "").strip()
+    subject = re.search(r"\b(?:purposes?|purpose decisions?|doel(?:keuses|besluite)?)\b", text, re.I)
+    request = re.search(r"\b(?:review|show|open|manage|see|look|hersien|wys|bekyk|sien)\b", text, re.I)
+    if not subject or not request:
+        return None
+    return SemanticInterpretation(domain="herd_management", intent="purpose_review_telegram",
+        message_kind="request", requested_action="open_current_purpose_review", recording_prohibited=True,
+        language="af" if re.search(r"\b(?:hersien|wys|bekyk|sien|doel)",text,re.I) else "en")
+
+
 def semantic_front_door_policy(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     source = environ if environ is not None else os.environ
     enabled = str(source.get(ENABLED_ENV) or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -140,6 +156,9 @@ def semantic_front_door_policy(environ: Mapping[str, str] | None = None) -> dict
 def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
                             context_loader: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
                             http_open=None) -> SemanticInterpretation | None:
+    deterministic = purpose_review_intent(parsed)
+    if deterministic is not None:
+        return deterministic
     source = environ if environ is not None else os.environ
     policy = semantic_front_door_policy(source)
     if not policy["enabled"] or not policy["configured"]:
@@ -366,6 +385,9 @@ def _payload(parsed, context, source):
         "You are Oom Sakkie's semantic front door for authenticated private farm-family messages. "
         "Understand natural English, Afrikaans, mixed-language text, typos, short follow-ups, and references to active cases. "
         "Identity and permissions are supplied by deterministic gateway policy; never infer either from a name or language. "
+        "For an owner asking to review purpose decisions or what to do with a named sow's weaned piglets, "
+        "use domain herd_management, intent purpose_review_telegram, requested_action open_current_purpose_review. "
+        "This opens a read-only Telegram overview; it never selects, approves or records a purpose. "
         "Classify meaning only; never claim a write, send, publication, sale, treatment, mating, or hardware action. "
         "Domains: herd_health only for a specific animal welfare/death/loss/health report; herd_management for herd, "
         "breeding, weighing, farrowing or animal-work planning; rootline for water, tanks, irrigation, power, valves "
