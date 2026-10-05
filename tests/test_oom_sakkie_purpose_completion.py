@@ -317,3 +317,94 @@ def test_current_work_wins_over_complete_snapshot_even_when_returned_later():
     case,pigs,history=proof_fixture();terminal=project(case,pigs,history)
     rows=sources.collect_manager_candidates(now=NOW,collectors=(lambda _: [terminal],lambda _: [candidate(now=NOW)]))
     assert len(rows)==1 and not rows[0].get('terminal_state')
+
+
+def one_member_retained_proof():
+    """Production-shaped adopted one-member generation; all identities synthetic."""
+    from modules.oom_sakkie import herdmaster_purpose_membership as membership
+    allocation, checks, _ = inputs(count=1, weight_day=DAY-timedelta(days=1))
+    allocation['pigs'][0]['tag_number']='106'
+    checks['rows'][0]['canonical']['tag_number']='106'
+    raw=sources._purpose_review_candidates({'purpose_work':build_purpose_work(allocation,checks,analysis_date=DAY)},
+        now=NOW,today=DAY,observed_at=NOW)[0]
+    case={**worker.normalize_candidate(raw,now=NOW),'generation':4,'generation_started_at':NOW,
+        'status':'waiting_reassessment','_purpose_membership':raw['_purpose_membership']}
+    case['purpose_membership']=membership.build_record(case,generation=4,now=NOW,legacy_epoch=NOW)
+    _,pigs,history=proof_fixture();pigs=pigs[:1];history=history[:1]
+    pigs[0]['tag_number']='106';envelope=history[0][1]['decisions_json'];envelope['effects'][0]['tag_number']='106'
+    envelope['preview_digest']=correction._preview_digest(envelope['decisions'],envelope['effects'],'')
+    return case,pigs,history
+
+
+@pytest.mark.parametrize('status',['Died','Dead','Deceased','Sold','Culled'])
+def test_departed_non_obligation_unknown_extras_do_not_block_proven_completion(status):
+    case,pigs,history=one_member_retained_proof()
+    for number in range(2):
+        pigs.append({'pig_id':f'PIG-HISTORICAL-{number}','tag_number':None,'litter_id':'COHORT-A',
+            'purpose':'Unknown','status':status,'on_farm':False})
+    before=deepcopy(pigs)
+    result=project(case,pigs,history)
+    assert result and result['terminal_state']=='completed'
+    assert result['dedupe_key']==case['dedupe_key']
+    assert f"herdmaster_case_fence:4:{case['evidence_digest']}" in result['evidence_refs']
+    assert 'purpose_membership_snapshot:'+case['purpose_membership']['snapshot_digest'] in result['evidence_refs']
+    assert pigs==before
+
+
+@pytest.mark.parametrize('status,on_farm',[('Active',True),('Active',False),('Died',True),('Died',None),
+    ('Unknown',False),('',False),('Held',True),('Inactive',False),('Died','False'),('Died',0)])
+def test_uncertain_or_current_unknown_extras_still_block(status,on_farm):
+    case,pigs,history=one_member_retained_proof()
+    pigs.append({'pig_id':'PIG-EXTRA','tag_number':None,'litter_id':'COHORT-A','purpose':'Unknown',
+        'status':status,'on_farm':on_farm})
+    assert project(case,pigs,history) is None
+
+
+@pytest.mark.parametrize('status',['Died','Dead','Deceased','Sold','Culled'])
+def test_departed_recorded_obligation_is_never_waived(status):
+    case,pigs,history=one_member_retained_proof()
+    pigs[0].update(status=status,on_farm=False)
+    assert project(case,pigs,history) is None
+
+
+@pytest.mark.parametrize('extra_status,extra_on_farm,completed',[('Died',False,True),('Active',True,False),('Died',True,False)])
+def test_postgres_one_member_correction_with_historical_litter_rows(purpose_db,monkeypatch,extra_status,extra_on_farm,completed):
+    pg,connect=purpose_db
+    allocation,checks,_=inputs(count=1,weight_day=DAY-timedelta(days=1))
+    allocation['pigs'][0]['tag_number']='106';checks['rows'][0]['canonical']['tag_number']='106'
+    raw=sources._purpose_review_candidates({'purpose_work':build_purpose_work(allocation,checks,analysis_date=DAY)},
+        now=pg.now,today=DAY,observed_at=pg.now)[0]
+    pg.seed([raw])
+    with connect() as db:
+        db.execute("update public.pigs set tag_number='106' where pig_id='PIG-SYNTHETIC-0000'")
+        db.execute("update public.pigs set purpose='Sale' where pig_id='PIG-SYNTHETIC-0001'")
+        for i in range(2):
+            db.execute("insert into public.pigs values(%s,null,'COHORT-A','Unknown',%s,%s,now())",
+                (f'PIG-HISTORICAL-{i}',extra_status,extra_on_farm))
+        db.execute("update app_private.oom_manager_cases set status='waiting_reassessment',last_delivery_digest=evidence_digest,last_delivery_at=%s",(pg.now,))
+        before=db.execute('select case_id,generation,last_delivery_digest,last_delivery_at from app_private.oom_manager_cases').fetchone()
+        other_rows=db.execute("select * from public.pigs where pig_id<>'PIG-SYNTHETIC-0000' order by pig_id").fetchall()
+        record=db.execute("select event_payload->'purpose_membership' from app_private.oom_manager_case_events where event_payload ? 'purpose_membership'").fetchone()[0]
+        assert record['member_ids']==['PIG-SYNTHETIC-0000'] and len(record['obligations'])==1
+    execute_real_correction(connect,monkeypatch,['PIG-SYNTHETIC-0000'])
+    pg.now=datetime.now(timezone.utc)+timedelta(seconds=1)
+    monkeypatch.setattr(completion,'connect_bounded_read',connect)
+    for name in ('_herdmaster_retained','_herdmaster_advisories','_rootline','_herdmaster','_sam','_beacon','_delivery_gaps','_runtime'):
+        monkeypatch.setattr(sources,name,lambda _now:[])
+    rows=sources.collect_manager_candidates(now=pg.now)
+    assert len(rows)==int(completed)
+    if completed:
+        assert rows[0]['terminal_state']=='completed'
+        result=pg.cycle(rows,deliver=lambda *_a,**_k:pytest.fail('completion cannot send'))
+        assert result['success'] and result['candidates_changed']==1
+        assert completion.collect_purpose_completions(pg.now,connect=connect)==[]
+        pg.now+=timedelta(minutes=6)
+        assert pg.cycle(rows,deliver=lambda *_a,**_k:pytest.fail('replay cannot send'))['success']
+    with connect() as db:
+        actual=db.execute('select case_id,generation,last_delivery_digest,last_delivery_at from app_private.oom_manager_cases').fetchone()
+        assert actual==(before[0],before[1]+int(completed),before[2],before[3])
+        assert db.execute("select count(*) from app_private.oom_manager_case_events where event_type='completed'").fetchone()[0]==int(completed)
+        assert db.execute("select purpose from public.pigs where pig_id='PIG-SYNTHETIC-0000'").fetchone()[0]=='Sale'
+        assert db.execute("select * from public.pigs where pig_id<>'PIG-SYNTHETIC-0000' order by pig_id").fetchall()==other_rows
+        assert db.execute('select count(*) from public.operational_events').fetchone()[0]==1
+        assert db.execute("select count(*) from public.pig_purpose_correction_batches where status='executed'").fetchone()[0]==1
