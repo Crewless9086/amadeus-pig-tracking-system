@@ -1093,6 +1093,11 @@ Current built Supabase-backed surface:
   queries do not write farm facts or send notices. Legacy retained groups of
   twelve or more IDs have no complete membership proof and remain open; smaller
   groups still require every member and reject extra unresolved cohort members.
+  Local completion eligibility repair (`LOCAL_NOT_RELEASED`) reuses
+  `herdmaster_case_disposition.conclusively_departed` only for non-obligation
+  historical extras in the full-litter unknown-purpose veto. Immutable members
+  still require exact approved correction proof and active/on-farm identity;
+  uncertain or contradictory extras retain the veto. No farm writer changes.
   `tests/test_oom_sakkie_purpose_completion.py` exercises the canonical correction
   writer, natural candidate collection, default case store, partial completion,
   replay and evidence/race refusal. Owner Attention does not infer purpose-case

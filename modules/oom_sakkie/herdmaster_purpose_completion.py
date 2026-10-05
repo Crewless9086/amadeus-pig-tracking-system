@@ -7,7 +7,7 @@ import json
 import time
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read, ReadBudgetCursor
-from modules.oom_sakkie.herdmaster_case_disposition import FENCE, FAMILY
+from modules.oom_sakkie.herdmaster_case_disposition import FENCE, FAMILY, conclusively_departed
 from modules.oom_sakkie.herdmaster_purpose_decision import PREFIX, purpose_decision_binding
 from modules.pig_weights.purpose_correction_batch_service import (
     CONTRACT_VERSION, _decisions, _decision_hash, _preview_digest,
@@ -139,8 +139,13 @@ def completion_candidate(case, pigs, history, *, now):
     if any(v is None for v in targets):
         return None
     cohort = [v for v in pigs if (v.get("litter_id") or "") == bound["litter_id"]] if bound["litter_id"] else targets
+    # Historical departed extras are not outstanding purpose obligations.
+    # Never waive a retained member, or an unknown/contradictory lifecycle.
+    obligation_ids = set(bound["pig_ids"])
     if (any((v.get("litter_id") or "") != bound["litter_id"] for v in targets)
-            or any(str(v.get("purpose") or "").strip().casefold() in UNKNOWN for v in cohort)
+            or any(str(v.get("purpose") or "").strip().casefold() in UNKNOWN
+                and (v.get("pig_id") in obligation_ids
+                    or not conclusively_departed(v.get("status"), v.get("on_farm"))) for v in cohort)
             or any(v.get("status") != "Active" or v.get("on_farm") is not True for v in targets)):
         return None
     proofs = []

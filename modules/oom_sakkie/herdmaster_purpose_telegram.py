@@ -510,9 +510,10 @@ def execute_claimed_purpose(claimed, parsed, *, now, connect=None):
     if (len(readback) != len(wanted) or {r["pig_id"]: r["purpose"] for r in readback} != wanted
             or any(r["status"] != "Active" or r["on_farm"] is not True for r in readback)):
         raise ValueError("purpose_executed_readback_unproven")
+    count = len(wanted)
     return {**result, "specialist": "HERDMASTER", "status": "purpose_recorded_verified", "answer": _word(p,
-        f"Recorded and verified the purposes for {len(wanted)} animals. I'll reassess the same group from the updated records.",
-        f"Die doele van {len(wanted)} diere is aangeteken en nagegaan. Ek sal dieselfde groep uit die bygewerkte rekords hersien."),
+        f"Recorded and verified the {'purpose' if count == 1 else 'purposes'} for {count} {'animal' if count == 1 else 'animals'}. I'll reassess the same group from the updated records.",
+        f"Die {'doel' if count == 1 else 'doele'} van {count} {'dier' if count == 1 else 'diere'} is aangeteken en nagegaan. Ek sal dieselfde groep uit die bygewerkte rekords hersien."),
         "writes_farm_data": result.get("rows_updated", 0) > 0, "reply_markup": {"inline_keyboard": []}}, 200
 
 
