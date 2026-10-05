@@ -57,7 +57,7 @@ SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1380, 'HEAD': 'aa2b0ce31b139dae6ab630b538555a0746277139', 'TREE': '3243299e5f8b5e18f7a1ddd2428abfd4e7930c0c', 'APPROVED_RUNTIME_HEAD': 'aa2b0ce31b139dae6ab630b538555a0746277139', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_purpose_completion.py', 'modules/oom_sakkie/herdmaster_purpose_deferment.py', 'modules/oom_sakkie/herdmaster_purpose_membership.py', 'modules/oom_sakkie/herdmaster_purpose_overview.py', 'modules/oom_sakkie/herdmaster_purpose_telegram.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/protected_action_claims.py', 'modules/oom_sakkie/protected_action_runtime.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/oom_sakkie/telegram_direct.py', 'modules/oom_sakkie/telegram_gateway.py', 'modules/pig_weights/purpose_correction_batch_service.py', 'supabase/migrations/20261004232451_allow_herdmaster_purpose_protected_claims.sql', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_purpose_completion.py', 'tests/test_oom_sakkie_purpose_membership.py', 'tests/test_oom_sakkie_purpose_overview.py', 'tests/test_oom_sakkie_purpose_telegram.py', 'tests/test_oom_sakkie_purpose_telegram_postgres.py']}
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1380, 'HEAD': 'e7eb13b7252f46472d2f60a4e35e2df36d81ee82', 'TREE': '7073a5e82b048020abfc8bc727bdef6e4331b982', 'APPROVED_RUNTIME_HEAD': 'e7eb13b7252f46472d2f60a4e35e2df36d81ee82', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/family_message_lifecycle.py', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_purpose_completion.py', 'modules/oom_sakkie/herdmaster_purpose_deferment.py', 'modules/oom_sakkie/herdmaster_purpose_membership.py', 'modules/oom_sakkie/herdmaster_purpose_overview.py', 'modules/oom_sakkie/herdmaster_purpose_telegram.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/protected_action_claims.py', 'modules/oom_sakkie/protected_action_runtime.py', 'modules/oom_sakkie/semantic_front_door.py', 'modules/oom_sakkie/telegram_direct.py', 'modules/oom_sakkie/telegram_gateway.py', 'modules/pig_weights/purpose_correction_batch_service.py', 'supabase/migrations/20261004232451_allow_herdmaster_purpose_protected_claims.sql', 'tests/test_oom_sakkie_protected_delivery_postgres.py', 'tests/test_oom_sakkie_purpose_completion.py', 'tests/test_oom_sakkie_purpose_membership.py', 'tests/test_oom_sakkie_purpose_overview.py', 'tests/test_oom_sakkie_purpose_telegram.py', 'tests/test_oom_sakkie_purpose_telegram_postgres.py']}
 
 def use_synthetic_candidate(test):
     pending = {key: deepcopy(value) for key, value in SYNTHETIC_PINS.items()
@@ -953,7 +953,7 @@ class ReconciliationTests(unittest.TestCase):
             with self.subTest(extra=effect),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
         for guard_text in ("only supabase/migrations/20261004232451_allow_herdmaster_purpose_protected_claims.sql",
-                "exact 17-kind protected-action constraint to its exact 19-kind target", "existing privileges, records and other schema remain preserved",
+                "exact 16-kind predecessor to its exact 18-kind target or exact 17-kind predecessor to its exact 19-kind target", "existing privileges, records and other schema remain preserved",
                 "Register exactly five release-metadata writes", "verified encrypted transport",
                 "retaining additive schema and legitimate new claim/business history", "No unencrypted transport, down-migration, unrelated migration",
                 "fresh mission/schema preimages", "qualification-only and is never merged or deployed",
@@ -966,6 +966,24 @@ class ReconciliationTests(unittest.TestCase):
         changed=deepcopy(m);changed["contract"]["forbidden_effects"].remove("unrelated_database_migration")
         with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
             adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_exact_migration_variants_preserve_weaning_and_refuse_unknown_predecessor(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        clauses=m["contract"]["operational_acceptance"]
+        self.assertEqual(len(clauses),100)
+        self.assertTrue(all(len(v)<=2000 for v in clauses))
+        for before,after in (
+                ("freshly verified exact 16-kind predecessor to its exact 18-kind target or exact 17-kind predecessor to its exact 19-kind target", "any predecessor to any expanded target"),
+                ("adding only herdmaster_purpose_review and herdmaster_purpose_correction", "adding purpose and unrelated protected actions"),
+                ("Preserve the presence or absence of herdmaster_record_litter_weaning; never implicitly enable weaning", "always enable herdmaster_record_litter_weaning"),
+                ("Unknown predecessor sets refuse", "Unknown predecessor sets are accepted"),
+                ("exact supported target replay preserves existing history", "replay rebuilds historical claims and migration records")):
+            changed=deepcopy(m)
+            changed["contract"]["operational_acceptance"]=[v.replace(before,after) for v in clauses]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],clauses,before)
+            with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        self.assertEqual(sorted(v for v in adapter.ADDED_EFFECTS if v.startswith("supabase_schema_migration:")),["supabase_schema_migration:20261004232451_allow_herdmaster_purpose_protected_claims"])
 
     def test_ready_purpose_notice_effect_cannot_be_missing_or_broadened(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
