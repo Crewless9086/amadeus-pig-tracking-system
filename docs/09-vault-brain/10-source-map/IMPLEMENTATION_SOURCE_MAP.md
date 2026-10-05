@@ -1043,6 +1043,15 @@ Current built Supabase-backed surface:
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 
+- Purpose callback transport: GateKeeper's existing authenticated callback
+  classifier forwards `oompur:` unchanged through the backend relay, alongside
+  the retained `oompa:` and `sam_live_` families. The original native envelope
+  reaches `telegram_direct.py` and `telegram_gateway.py`; purpose/card/owner
+  authority stays in the backend.
+  `tests/test_oom_sakkie_gatekeeper_purpose_callback_routing.py` executes the
+  tracked code, switch edges and native backend route without live providers.
+  The historical nested workflow version is not a deployable current snapshot;
+  exact live routing and callback delivery remain separate acceptance evidence.
 - Telegram purpose review: `modules/oom_sakkie/herdmaster_purpose_telegram.py`
   uses authenticated direct/gateway ingress, typed semantic navigation, existing
   protected claims, exact family-card transitions and the canonical correction
