@@ -733,7 +733,7 @@
                                          "specifyBody":  "json",
                                          "jsonBody":  "={{ $json.raw_update }}",
                                          "options":  {
-                                                         "timeout":  10000
+                                                         "timeout":  60000
                                                      }
                                      },
                       "id":  "a36cd52d-31a4-46ce-bf0c-cb555f2d8afd",

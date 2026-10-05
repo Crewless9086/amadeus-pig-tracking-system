@@ -97,9 +97,14 @@ Unknown callback families and the existing order/document routes stay unchanged.
 `tests/test_oom_sakkie_gatekeeper_purpose_callback_routing.py` executes the
 tracked normalization and routing code before the real native backend parser,
 using synthetic identities and isolated claim/provider substitutes. This proves
-the local transport contract, not live routing or a saved purpose. The existing
-10-second HTTP timeout is unchanged; callback latency and delivery need separate
-operational evidence.
+the local transport contract, not live routing or a saved purpose. The candidate
+relay allows up to 60 seconds for the synchronous backend response, with automatic
+retries disabled. This mitigates the observed 10-second client timeout while the
+backend continued processing; it does not establish a maximum backend duration.
+A timeout remains an unknown outcome: inspect the existing exact claim, batch and
+family receipt rather than replaying a confirmation. This source change has not
+been applied to the provider. Live timeout/readback, server compatibility and a
+fresh genuine callback still require separate operational evidence.
 
 This export retains a historical nested `activeVersion`. Do not bulk-import it
 as the current deployed workflow. A release must compare and review the exact
