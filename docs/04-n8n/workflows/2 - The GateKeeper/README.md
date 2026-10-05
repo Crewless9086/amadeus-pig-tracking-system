@@ -83,3 +83,24 @@ This source export contains a review-only correction; it has not been imported o
 - Unknown callback families are acknowledged as unsupported and never enter legacy Orders approval parsing.
 - Import requires the n8n variable `OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET` to match the existing backend webhook secret. The value must never be exported or logged.
 - Rollback is the prior GateKeeper export; no backend, database, Render, or Telegram migration is required.
+
+## Protected purpose callback transport
+
+Purpose-review buttons use the `oompur:` callback family. The existing
+authenticated callback classifier forwards this family, alongside `oompa:` and
+`sam_live_`, to the same backend callback relay with the complete original
+`raw_update`. The backend owns the private-recipient, card, claim, expiry and
+current-evidence checks, acknowledgement and exact confirmation. GateKeeper
+does not interpret purpose choices or acknowledge the forwarded callback twice.
+Unknown callback families and the existing order/document routes stay unchanged.
+
+`tests/test_oom_sakkie_gatekeeper_purpose_callback_routing.py` executes the
+tracked normalization and routing code before the real native backend parser,
+using synthetic identities and isolated claim/provider substitutes. This proves
+the local transport contract, not live routing or a saved purpose. The existing
+10-second HTTP timeout is unchanged; callback latency and delivery need separate
+operational evidence.
+
+This export retains a historical nested `activeVersion`. Do not bulk-import it
+as the current deployed workflow. A release must compare and review the exact
+active callback node and preserve unrelated live routing and authorization.

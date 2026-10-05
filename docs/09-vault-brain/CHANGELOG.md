@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-05 - Purpose buttons retain their authenticated backend route
+
+- Forward the `oompur:` callback family through the existing GateKeeper backend
+  relay with the native callback envelope intact. Preserve authorization, one
+  backend acknowledgement, unknown-prefix containment and legacy routing.
+- Qualify actual workflow code and switch edges before native backend purpose
+  handling. No purpose writer, confirmation rule or transport timeout changes.
+- Keep historical workflow versions intact. Local routing tests do not establish
+  a live callback response, genuine confirmation or verified purpose completion.
+
 ## 2026-10-05 - Quiet purpose overview and visible component failures
 
 - Skip shared message-history reads only when current validated groups already
