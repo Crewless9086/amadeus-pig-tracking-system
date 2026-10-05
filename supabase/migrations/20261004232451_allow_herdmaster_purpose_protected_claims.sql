@@ -7,6 +7,8 @@ declare
   constraint_oid oid;
   current_constraint_definition text;
   current_action_kinds text[];
+  matched_target_action_kinds text[];
+  target_sql_literals text;
   predecessor_action_kinds constant text[] := array[
     'beacon_campaign_review',
     'beacon_media_review',
@@ -76,7 +78,7 @@ begin
   select array_agg(action_kind order by action_kind)
     into current_action_kinds
     from (
-      select distinct (matches.value)[1] as action_kind
+      select (matches.value)[1] as action_kind
         from regexp_matches(
           pg_catalog.pg_get_constraintdef(constraint_oid),
           '''([^'']+)''',
@@ -84,35 +86,25 @@ begin
         ) as matches(value)
     ) extracted;
 
-  if current_action_kinds = target_action_kinds then
-    -- Exact direct-SQL replay: retain the already-applied target unchanged.
+  -- The freshly observed canonical predecessor has exactly the same retained
+  -- kinds except litter weaning. Do not apply that unrelated capability here.
+  if current_action_kinds = target_action_kinds
+     or current_action_kinds = array_remove(target_action_kinds, 'herdmaster_record_litter_weaning') then
+    -- Exact 19- or 18-kind replay; preserve the matched existing capability set.
     null;
-  elsif current_action_kinds = predecessor_action_kinds then
+  elsif current_action_kinds = predecessor_action_kinds
+     or current_action_kinds = array_remove(predecessor_action_kinds, 'herdmaster_record_litter_weaning') then
+    matched_target_action_kinds := case
+      when current_action_kinds = predecessor_action_kinds then target_action_kinds
+      else array_remove(target_action_kinds, 'herdmaster_record_litter_weaning')
+    end;
+    select string_agg(quote_literal(kind), ',' order by kind)
+      into target_sql_literals from unnest(matched_target_action_kinds) kind;
     alter table app_private.oom_protected_action_claims
       drop constraint oom_protected_action_claims_action_kind_check;
-    alter table app_private.oom_protected_action_claims
-      add constraint oom_protected_action_claims_action_kind_check
-      check (action_kind in (
-        'mortality',
-        'grouped_weights',
-        'herdmaster_breeding_grouped',
-        'herdmaster_purpose_correction',
-        'herdmaster_purpose_review',
-        'herdmaster_record_farrowing_litter',
-        'herdmaster_record_litter_first_treatment',
-        'herdmaster_record_litter_piglet_deaths',
-        'herdmaster_record_litter_weaning',
-        'rootline_irrigation_segment',
-        'sam_sale_payment',
-        'beacon_private_album_finish',
-        'beacon_media_review',
-        'rootline_fertilizer_mixer_commissioning',
-        'rootline_fertilizer_mixer_presence_refresh',
-        'rootline_delegated_family',
-        'beacon_campaign_review',
-        'documents_green_print',
-        'documents_green_physical_acceptance'
-      ));
+    execute 'alter table app_private.oom_protected_action_claims '
+      || 'add constraint oom_protected_action_claims_action_kind_check '
+      || 'check (action_kind in (' || target_sql_literals || '))';
   else
     raise exception 'canonical protected action-kind constraint mismatch: %',
       current_action_kinds;

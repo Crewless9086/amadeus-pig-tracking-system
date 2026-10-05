@@ -352,11 +352,14 @@ def test_verified_completion_opens_other_group_in_telegram_once(database,transpo
     assert counts(database)==before
 
 
-@pytest.mark.parametrize('wrong',['same_count_wrong_kind','weakened_same_kinds'])
-def test_migration_refuses_wrong_predecessor_without_constraint_or_privilege_change(database,wrong):
+@pytest.mark.parametrize('predecessor_count',[16,17])
+@pytest.mark.parametrize('wrong',['same_count_wrong_kind','weakened_same_kinds','duplicate_kind'])
+def test_migration_refuses_wrong_predecessor_without_constraint_or_privilege_change(database,wrong,predecessor_count):
     folder=Path(__file__).parents[1]/'supabase/migrations'
     previous=(folder/'202609110001_allow_herdmaster_weaning_protected_claims.sql').read_text(encoding='utf-8')
     kinds=re.search(r'target_action_kinds constant text\[\] := array\[(.*?)\]::text\[\]',previous,re.S)[1]
+    if predecessor_count==16:kinds=kinds.replace("'herdmaster_record_litter_weaning',",'')
+    if wrong=='duplicate_kind':kinds+=", 'mortality'"
     if wrong=='same_count_wrong_kind':kinds=kinds.replace("'mortality'","'unauthorized_kind'")
     expression='action_kind in ('+kinds+')'
     if wrong=='weakened_same_kinds':expression+=' or length(action_kind)>0'
@@ -372,3 +375,33 @@ def test_migration_refuses_wrong_predecessor_without_constraint_or_privilege_cha
     with database() as db,db.cursor() as cur:
         cur.execute("select oid,pg_get_constraintdef(oid) from pg_constraint where conrelid=%s::regclass and conname='oom_protected_action_claims_action_kind_check'",(schema+'.oom_protected_action_claims',));assert cur.fetchone()==before
         cur.execute("select has_table_privilege('anon',%s,'INSERT'),has_table_privilege('authenticated',%s,'UPDATE')",(schema+'.oom_protected_action_claims',)*2);assert cur.fetchone()==privileges
+
+
+@pytest.mark.parametrize('predecessor_count',[16,17])
+def test_migration_preserves_exact_observed_capabilities_and_log_on_replay(purpose_store,predecessor_count):
+    folder=Path(__file__).parents[1]/'supabase/migrations'
+    source=(folder/MIGRATION).read_text(encoding='utf-8')
+    listed=re.search(r'predecessor_action_kinds constant text\[\] := array\[(.*?)\]::text\[\]',source,re.S)[1]
+    kinds=set(re.findall("'([a-z_]+)'",listed))
+    if predecessor_count==16:kinds.remove('herdmaster_record_litter_weaning')
+    with purpose_store() as db,db.cursor() as cur:
+        schema=db.schema
+        cur.execute('alter table app_private.oom_protected_action_claims drop constraint oom_protected_action_claims_action_kind_check')
+        cur.execute('alter table app_private.oom_protected_action_claims add constraint oom_protected_action_claims_action_kind_check check(action_kind in ('+','.join("'"+v+"'" for v in sorted(kinds))+'))')
+        cur.execute("select migration_id,description from app_private.migration_log order by migration_id");old_logs=cur.fetchall()
+        cur.execute('select * from app_private.oom_protected_action_claims');old_claims=cur.fetchall()
+        cur.execute("select relacl::text,relowner,relrowsecurity,relforcerowsecurity from pg_class where oid=%s::regclass",(schema+'.oom_protected_action_claims',));old_privileges=cur.fetchone()
+        ddl=source.replace("n.nspname = 'app_private'", "n.nspname = '"+schema+"'")
+        cur.execute(ddl)
+        cur.execute("select oid,pg_get_constraintdef(oid) from pg_constraint where conrelid=%s::regclass and conname='oom_protected_action_claims_action_kind_check'",(schema+'.oom_protected_action_claims',));first=cur.fetchone()
+        actual=set(re.findall("'([a-z_]+)'",first[1]));assert actual==kinds|{runtime.REVIEW,runtime.CORRECTION}
+        assert len(actual)==predecessor_count+2
+        assert ('herdmaster_record_litter_weaning' in actual)==(predecessor_count==17)
+        cur.execute(ddl)
+        cur.execute("select oid,pg_get_constraintdef(oid) from pg_constraint where conrelid=%s::regclass and conname='oom_protected_action_claims_action_kind_check'",(schema+'.oom_protected_action_claims',));assert cur.fetchone()==first
+        cur.execute('select * from app_private.oom_protected_action_claims');assert cur.fetchall()==old_claims
+        cur.execute("select relacl::text,relowner,relrowsecurity,relforcerowsecurity from pg_class where oid=%s::regclass",(schema+'.oom_protected_action_claims',));assert cur.fetchone()==old_privileges
+        cur.execute("select migration_id,description from app_private.migration_log order by migration_id");new_logs=cur.fetchall()
+        assert all(row in new_logs for row in old_logs)
+        assert len(new_logs)==len(old_logs)+1
+        assert sum(row[0]==MIGRATION.removesuffix('.sql') for row in new_logs)==1
