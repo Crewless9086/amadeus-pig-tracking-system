@@ -199,10 +199,11 @@ def test_backend_security_and_claim_refusals_remain_after_relay(kind,backend):
     else:assert len(inputs)==1 and body['message']['writes_farm_data'] is False
 
 
-def test_relay_contract_remains_one_raw_authenticated_route_with_unchanged_timeout():
+def test_relay_contract_keeps_one_raw_authenticated_request_with_bounded_wait_and_no_retry():
     w=workflow();nodes={n['name']:n for n in w['nodes']};relay=nodes['Relay SAM Callback to Backend']['parameters']
     assert relay['method']=='POST' and relay['url'].endswith('/api/oom-sakkie/channels/telegram/direct-webhook')
-    assert relay['jsonBody']=='={{ $json.raw_update }}' and relay['options']['timeout']==10000
+    assert relay['jsonBody']=='={{ $json.raw_update }}' and relay['options']['timeout']==60000
+    assert nodes['Relay SAM Callback to Backend'].get('retryOnFail',False) is False
     assert relay['headerParameters']['parameters']==[{'name':'X-Telegram-Bot-Api-Secret-Token','value':'={{$vars.OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET}}'}]
     assert sum(n['type']=='n8n-nodes-base.telegramTrigger' for n in w['nodes'])==1
     assert 'callback_query' in nodes['Telegram Trigger']['parameters']['updates']

@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+## 2026-10-05 - Candidate callback relay timeout mitigation
+
+- Raise only the existing GateKeeper callback relay wait from 10 to 60 seconds.
+  Preserve disabled retries, routing, original body and authentication.
+- Retain exact claim/batch recovery when a response is lost; a client timeout
+  cannot establish rollback or authorize another purpose write.
+- Source candidate only: no provider update or backend rollout performed. The
+  longer allowance does not prove a full-operation deadline or live success.
+
 ## 2026-10-05 - Purpose buttons retain their authenticated backend route
 
 - Forward the `oompur:` callback family through the existing GateKeeper backend

@@ -1047,7 +1047,9 @@ Current built Supabase-backed surface:
   classifier forwards `oompur:` unchanged through the backend relay, alongside
   the retained `oompa:` and `sam_live_` families. The original native envelope
   reaches `telegram_direct.py` and `telegram_gateway.py`; purpose/card/owner
-  authority stays in the backend.
+  authority stays in the backend. The source candidate allows a bounded
+  60-second relay wait without automatic retries; ambiguous timeouts require
+  exact claim/batch readback, not a new confirmation attempt.
   `tests/test_oom_sakkie_gatekeeper_purpose_callback_routing.py` executes the
   tracked code, switch edges and native backend route without live providers.
   The historical nested workflow version is not a deployable current snapshot;
