@@ -299,6 +299,9 @@ jobs:
       - name: Prove ROOTLINE notification follow-through without provider effects
         run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_rootline_notification_followthrough.py tests/test_oom_sakkie_rootline_notification_followthrough_postgres.py
 
+      - name: Prove legacy mortality technical reconciliation without farm completion
+        run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_mortality_reconciliation.py tests/test_oom_sakkie_mortality_reconciliation_postgres.py
+
       - name: Run farm OpenAI budget concurrency and denial gates
         run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_farm_openai_budget.py tests/test_oom_sakkie_model_budget_denials.py
 

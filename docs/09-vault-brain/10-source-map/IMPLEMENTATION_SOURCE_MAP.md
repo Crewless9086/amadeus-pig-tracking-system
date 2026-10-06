@@ -63,6 +63,29 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns release/acceptance state
   `04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`. No-notification or semantic
   owner-plan equivalence lacking durable proof is not inferred by this repair.
 
+## Legacy mortality technical reconciliation
+
+Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
+
+- `modules/oom_sakkie/herdmaster_case_disposition.py` recognizes only the two
+  complete legacy daily-evidence mortality advisory families and acquires a
+  bounded, read-only receipt of their exact retained manager projections.
+- `manager_case_sources.py` in that directory gives current canonical candidates
+  and explicit collector failures precedence. `general_manager_worker.py`
+  checks current owner, full row, generation/material and live owned lease at
+  both admission and persistence, without renormalizing the pending receipt.
+- Existing case events retain a stable technical dependency identity; existing
+  reassessment cadence and separate pending counts remain truthful. This does
+  not complete mortality/welfare work, confirm delivery or create CORE intake.
+- `owner_attention_projection.py` preserves only these exact absent legacy
+  families as technical context, retaining historical titles/provenance.
+- Qualification: `tests/test_oom_sakkie_mortality_reconciliation.py`,
+  `tests/test_oom_sakkie_mortality_reconciliation_postgres.py`, and the existing
+  owner-attention suite. Both new files are selected in
+  `.github/workflows/oom-sakkie-audit-rails.yml` with isolated PostgreSQL.
+- Governing policy remains `02-agents/farm/HERDMASTER.md` and
+  `04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`.
+
 ## HERDMASTER retained advisory and identity reconciliation
 
 - Owning read-only dispositions: `modules/oom_sakkie/herdmaster_case_disposition.py`.

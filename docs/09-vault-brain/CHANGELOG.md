@@ -1,5 +1,22 @@
 # Vault Brain Changelog
 
+## 2026-10-06 - Retained mortality technical dependencies
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Preserve exact legacy mortality advisory material, generation and delivery
+  history when its original source lineage is unproven. Record technical
+  pending through existing manager events and the existing reassessment cadence.
+- Recheck the full retained projection, current private owner and live owned
+  lease before admission and persistence. Current canonical work takes
+  precedence; read failures remain failures. No absence implies completion.
+- Keep these exact absent advisories visible as technical reconciliation, with
+  no invented owner task or repeated historical notice. Pending is counted
+  explicitly and does not establish welfare completion or CORE acknowledgement.
+- No farm/provider/model effects, new stores, schema, schedules or authority.
+  Local source qualification is separate from deployed operational acceptance.
+
+
 ## 2026-10-06 - ROOTLINE notification follow-through bookkeeping
 
 Status: `LOCAL_NOT_RELEASED`.
