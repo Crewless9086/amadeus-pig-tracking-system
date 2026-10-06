@@ -355,7 +355,12 @@ jobs:
               module="${test_file%.py}"
               module="${module//\//.}"
               echo "::group::$module"
-              timeout 120s python -m unittest "$module" -q
+              case "$test_file" in
+                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py)
+                  timeout 120s python -m pytest -q -p no:cacheprovider --basetemp "$control_root/pytest" "$test_file"
+                  ;;
+                *) timeout 120s python -m unittest "$module" -q ;;
+              esac
               echo "::endgroup::"
             )
           done < <(find tests -maxdepth 1 -name 'test_charlie_*.py' -print | sort)
