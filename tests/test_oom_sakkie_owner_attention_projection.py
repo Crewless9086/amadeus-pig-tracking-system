@@ -951,3 +951,33 @@ def test_telegram_hidden_count_matches_shared_global_top_three():
     assert projection["hidden_count"] == 5
     assert message.count("  Next:") == 3
     assert "5 more in What needs attention" in message
+
+
+@pytest.mark.parametrize("cluster", [False, True])
+@pytest.mark.parametrize("status", ["exception", "contained", "stale"])
+def test_absent_legacy_mortality_stays_technical_not_owner_work(cluster, status):
+    from tests.test_oom_sakkie_mortality_reconciliation import legacy
+    row = legacy(NOW, cluster=cluster)
+    row["operational_status"] = status
+    result = build_owner_attention_projection(candidates=[], prior_cases=[row], generated_at=NOW)
+    item = result["lifecycle_items"][0]
+    assert item["lifecycle"] == "open" and item["task_class"] == "status_reconciliation"
+    assert item["owner_action_eligible"] is False and item["attention_group"] == "oom_sakkie_checking"
+    original_title = build_owner_attention_projection(candidates=[row], generated_at=NOW)["lifecycle_items"][0]["title"]
+    assert item["title"] == original_title and set(item["provenance"]) == set(row["evidence_refs"])
+    assert result["total_count"] == 0
+
+
+def test_mortality_attention_preserves_current_work_and_requires_positive_completion():
+    from tests.test_oom_sakkie_mortality_reconciliation import legacy
+    row = legacy(NOW); prior = {**row, "operational_status": "waiting_reassessment"}
+    result = build_owner_attention_projection(candidates=[row], prior_cases=[prior], generated_at=NOW)
+    current = build_owner_attention_projection(candidates=[row], generated_at=NOW)["lifecycle_items"][0]
+    assert result["lifecycle_items"][0]["exact_owner_action"] == current["exact_owner_action"]
+    assert result["lifecycle_items"][0]["task_class"] == current["task_class"]
+    prior["operational_status"] = "completed"
+    result = build_owner_attention_projection(candidates=[], prior_cases=[prior], generated_at=NOW)
+    assert result["lifecycle_items"][0]["lifecycle"] == "resolved"
+    row["dedupe_key"] = "herdmaster:unrelated-mortality-advice"
+    result = build_owner_attention_projection(candidates=[], prior_cases=[row], generated_at=NOW)
+    assert result["lifecycle_items"][0]["lifecycle"] == "resolved"

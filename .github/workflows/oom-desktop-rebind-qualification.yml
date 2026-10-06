@@ -1,7 +1,7 @@
 name: OOM Desktop Rebind Qualification
 on:
   push:
-    branches: [codex/manager-mortality-qualification-20261006]
+    branches: [codex/manager-mortality-queue-qualification-20261006]
 permissions:
   contents: read
 jobs:
@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt pytest
-      - name: Prove mortality technical-pending reconciliation, PR1385 lineage and web-only release
+      - name: Prove mortality queue retry, PR1386 lineage and web-only release
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation -v
       - name: Prove compact HTTPS registration, atomic rollback and zero-write replay
         run: python -m unittest tests.test_oom_desktop_registration_sql -v

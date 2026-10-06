@@ -17,27 +17,27 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "oom_desktop_candidate_reconciliation_v1"
 MISSION_ID = "OMQ-20260813-03-MORNING-CONTAINMENT"
 PARENT_ID = "OMQ-20260813-03"
-BASE = '4d21d234a75ceba8956146eb2154c72492698376'
+BASE = 'eb1afc7c91701683694d0bb104f02cd2fd0b3a54'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
-# Exact PR1386 source pins are bound; release authority remains independently bound.
-CANDIDATE_PR = 1386
-HEAD = '9f4d4470f23643153591cfee5ea9528b0b930aa4'
-TREE = '7b838ed9d27c1f8af42b4d213cdd1fede98665a9'
+# Exact PR1387 source pins are bound; release authority remains independently bound.
+CANDIDATE_PR = 1387
+HEAD = '2604348ca98a0df4e351fa20a0c40f2d39da510f'
+TREE = 'f300a34654e3eabe4985b5640f0fa6fbd7929713'
 # Complete candidate identity alone grants no release or farm-write authority.
 # Synthetic qualification pins live only in tests; no later runtime delta is allowed.
-APPROVED_RUNTIME_HEAD = '9f4d4470f23643153591cfee5ea9528b0b930aa4'
+APPROVED_RUNTIME_HEAD = '2604348ca98a0df4e351fa20a0c40f2d39da510f'
 QUALIFICATION_TEST_PATHS = []
-BRANCH = 'codex/manager-mortality-reconciliation-20261006'
-PREDECESSOR_PR = 1385
-PREDECESSOR_BASE = '103b431eaea709e6243e01dbe43f9bb65ed0e1ed'
-PREDECESSOR_HEAD = 'a29ee4ecb57935d279fa843b917b5935f078c733'
-PREDECESSOR_BRANCH = 'codex/manager-followthrough-reliability-20261006'
-PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/owner_attention_projection.py', 'tests/test_oom_sakkie_mortality_reconciliation.py', 'tests/test_oom_sakkie_mortality_reconciliation_postgres.py', 'tests/test_oom_sakkie_owner_attention_projection.py']
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/rootline_notification_disposition.py', 'tests/test_oom_sakkie_manager_case_sources.py', 'tests/test_oom_sakkie_rootline_notification_followthrough.py', 'tests/test_oom_sakkie_rootline_notification_followthrough_postgres.py']
+BRANCH = 'codex/manager-mortality-queue-priority-20261006'
+PREDECESSOR_PR = 1386
+PREDECESSOR_BASE = '4d21d234a75ceba8956146eb2154c72492698376'
+PREDECESSOR_HEAD = '9f4d4470f23643153591cfee5ea9528b0b930aa4'
+PREDECESSOR_BRANCH = 'codex/manager-mortality-reconciliation-20261006'
+PATHS = ['docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'tests/test_oom_sakkie_mortality_reconciliation.py', 'tests/test_oom_sakkie_mortality_reconciliation_postgres.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/owner_attention_projection.py', 'tests/test_oom_sakkie_mortality_reconciliation.py', 'tests/test_oom_sakkie_mortality_reconciliation_postgres.py', 'tests/test_oom_sakkie_owner_attention_projection.py']
 
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
-WEB_ROLLBACK = '4d21d234a75ceba8956146eb2154c72492698376'
+WEB_ROLLBACK = 'eb1afc7c91701683694d0bb104f02cd2fd0b3a54'
 # These identify retired predecessor effects, not successor authority.
 SCHEDULER_SERVICE = "crn-d9us4d3ncjis73adehrg"
 SCHEDULER_ROLLBACK = "f9c003855cc335be6b652f313bfb0e3c02fb1f2a"
@@ -51,8 +51,8 @@ MAINTAINER_PATHS = {"scripts/reconcile_oom_desktop_candidate.py",
     "scripts/render_oom_desktop_registration_sql.py", "tests/test_oom_desktop_registration_sql.py"}
 DECISION = "reconcile_exact_oom_conversation_followup_candidate"
 TASK_ID = "01a0b9d5-5c55-7e30-a5fc-aea27c93ffd6"
-REMOVED_EFFECTS = {'application_revision_rollback:web:103b431eaea709e6243e01dbe43f9bb65ed0e1ed'}
-ADDED_EFFECTS = {'herdmaster_legacy_mortality_technical_pending_reconciliation', 'application_revision_rollback:web:4d21d234a75ceba8956146eb2154c72492698376'}
+REMOVED_EFFECTS = {'application_revision_rollback:web:4d21d234a75ceba8956146eb2154c72492698376'}
+ADDED_EFFECTS = {'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'}
 REMOVED_FORBIDDEN_EFFECTS = set()
 ADDED_FORBIDDEN_EFFECTS = set()
 REQUIRED_TESTS = {"Closed Render migration rail with disposable Postgres",
@@ -92,7 +92,7 @@ REQUIRED_ACCEPTANCE = {
     'Label historical farrowing counts as unconfirmed original report information and state that no birth record has been created. Use plain localized language requesting genuine fresh owner input. The informational review contains no approval buttons, protected callback token or executable farm authority; it does not grant a role, create a new protected claim or manufacture an owner response. Any later birth record requires the existing fresh protected preview and genuine confirmation.',
     "Mark an overdue recorded exposure removal plan only against the supplied canonical packet's aware farm-date cutoff, never the wall clock. Missing, naive, invalid, future-start or conflicting dates remain explicit uncertainty. An open exposure record does not prove current physical presence, removal, mating or pregnancy and does not authorize physical work.\n\nPreserve the existing displayed task order and question priority. Ask a named current-status and actual-removal-date question only for the supported exposure-only worklist; require the animal name and observation date in a genuine reply. Do not replace a higher-priority condition question, infer a farm fact from a planned date or create new continuation authority.",
     'Name supplied breeding evidence gaps with bounded source wording and an explicit omitted count while retaining the full detailed worklist. Preserve canonical identities, facts, material digests, stored replay and protected authority. Prove the exact breeding presentation test in the existing conversational hosted stage with zero skips; earlier PR1372 replies remain historical evidence and do not prove this overdue-follow-up presentation outcome.',
-    'No scheduler deployment, webhook cutover, n8n workflow publication, change or disablement, database migration, permission or configuration change, direct or terminal farm write, hardware command, manual cron trigger or manufactured acceptance.\n\nThe predecessor claim-kind migration is consumed history and must not be replayed, extended or reversed. Preserve its exact observed 18-kind or 19-kind target, including the presence or absence of herdmaster_record_litter_weaning; never implicitly enable weaning. Existing privileges, records, migration logs and other schema remain preserved. Register exactly five release-metadata writes through verified encrypted transport, complete protected merge and deploy only the existing web service. Roll back application to 4d21d234a75ceba8956146eb2154c72492698376 if needed, retaining additive schema and legitimate new claim/business history. No unencrypted transport, down-migration, unrelated migration, manual owner confirmation, scheduler/configuration change, hardware operation or release-operator farm write. Bind exact final candidate/tree/diff/helper/manifest and fresh mission preimages before release. Helper code is qualification-only and is never merged or deployed. Prior PR1385 registration and web deployment are consumed history; preserve the existing provider state without another workflow update or rollback.',
+    'No scheduler deployment, webhook cutover, n8n workflow publication, change or disablement, database migration, permission or configuration change, direct or terminal farm write, hardware command, manual cron trigger or manufactured acceptance.\n\nThe predecessor claim-kind migration is consumed history and must not be replayed, extended or reversed. Preserve its exact observed 18-kind or 19-kind target, including the presence or absence of herdmaster_record_litter_weaning; never implicitly enable weaning. Existing privileges, records, migration logs and other schema remain preserved. Register exactly five release-metadata writes through verified encrypted transport, complete protected merge and deploy only the existing web service. Roll back application to eb1afc7c91701683694d0bb104f02cd2fd0b3a54 if needed, retaining additive schema and legitimate new claim/business history. No unencrypted transport, down-migration, unrelated migration, manual owner confirmation, scheduler/configuration change, hardware operation or release-operator farm write. Bind exact final candidate/tree/diff/helper/manifest and fresh mission preimages before release. Helper code is qualification-only and is never merged or deployed. Prior PR1386 registration and web deployment are consumed history; preserve the existing provider state without another workflow update or rollback.',
     'Normalize semantic container representation only through the existing persisted JSON encoding: tuples become their stored lists while identity, source status, facts, false values and zero counts remain exact. Unsupported facts must raise rather than be stringified. Preserve exact staged-source equality, predecessor comparison, terminal-state and cancellation fencing; JSON normalization grants no confirmation or provider authority.',
     'Ordinary completed mortality source chronology remains immutable on replay. Validate the exact original operation, principal, pig, lifecycle event, source digest and welfare result through current canonical readback; a missing or mismatched completed event must refuse without recreating a farm effect or appending a replacement source. Preserve existing first-completion persistence recovery from a still-preview source and the retained protected-callback-only boundary.',
     'Permit one audited replacement only when complete bounded history proves a legacy claim is expired, active and claim_created, with every delivery attempt, card, provider result and confirmation marker null and no earlier presentation, continuation, replacement, correction or renewal audit. The original private principal, original report, canonical pig and found_dead meaning must match while the complete current canonical preview material must differ. Changed material is not equivalent authority: never silently renew, reuse, rearm or confirm the stale claim.',

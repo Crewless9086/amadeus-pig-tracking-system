@@ -363,7 +363,7 @@ class PostgresManagerCaseStore:
                         claimed.append(case)
             timings["reconciliation_and_claim"] = _elapsed_ms(store_started)
             dispatch_started = time.monotonic()
-            delivered = suppressed = exceptions = deadline_deferrals = 0
+            delivered = suppressed = exceptions = deadline_deferrals = reconciliation_pending = 0
             case_results = []
             # Reconciliation and claims committed before this hook. Routine
             # purpose gets one provider turn only after claimed urgent work.
@@ -501,6 +501,9 @@ class PostgresManagerCaseStore:
                     outcome = {"success": True,
                         "status": "manager_case_completed_from_current_evidence",
                         "delivery_confirmed": False, "telegram_sends": 0}
+                elif current_case.get("_mortality_pending") is not None:
+                    outcome = {"success": True, "status": "herdmaster_owning_reconciliation_pending",
+                        "delivery_confirmed": False, "telegram_sends": 0, "writes_farm_data": False}
                 elif current_case.pop("_refreshed_generation", False):
                     outcome = {"success": True,
                         "status": "manager_delivery_refreshed_generation_deferred",
@@ -564,6 +567,11 @@ class PostgresManagerCaseStore:
                         == "manager_case_completed_from_current_evidence"):
                     outcome = {**outcome, "success": False,
                         "status": "manager_case_completion_persistence_unproven"}
+                elif not persisted and current_case.get("_mortality_pending") is not None:
+                    outcome = {**outcome, "success": False,
+                        "status": "manager_reconciliation_persistence_unproven"}
+                reconciliation_pending += bool(persisted and outcome.get("success") is True
+                    and current_case.get("_mortality_pending") is not None)
                 delivered += confirmed
                 suppressed += not confirmed
                 exceptions += outcome.get("success") is False
@@ -598,6 +606,7 @@ class PostgresManagerCaseStore:
                 "candidate_replays": replayed, "cases_claimed": len(claimed),
                 "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
                 "exceptions": exceptions, "deadline_deferrals": deadline_deferrals,
+                "reconciliation_pending": reconciliation_pending,
                 "brain_guard": brain_guard,
                 "processing_timings_ms": {**timings, "dispatch": _elapsed_ms(dispatch_started)}}
             if overview_result is not None:
@@ -978,7 +987,37 @@ class PostgresManagerCaseStore:
                 where p.callback_token=c.callback_token)""",
             (reason, now, case_provider_pattern, current_provider))
 
+    def _finish_mortality_pending(self, case, outcome, cycle_id):
+        from modules.oom_sakkie.herdmaster_case_disposition import mortality_pending_matches
+        receipt = case["_mortality_pending"]
+        if (outcome.get("status") != "herdmaster_owning_reconciliation_pending"
+                or outcome.get("success") is not True or outcome.get("delivery_confirmed") is not False):
+            return False
+        with self.connect_factory() as connection:
+            with connection.cursor() as cur:
+                cur.execute("select to_jsonb(m) from app_private.oom_manager_cases m where case_id=%s for update",
+                    (case["case_id"],))
+                row = cur.fetchone()
+                admitted_at = _aware(datetime.now(timezone.utc))
+                if not row or not mortality_pending_matches(receipt, row[0], case,
+                        now=admitted_at, cycle_id=cycle_id):
+                    return False
+                next_at = admitted_at + CADENCE
+                cur.execute("""update app_private.oom_manager_cases set status='waiting_reassessment',
+                    next_reassessment_at=%s,assigned_worker_id=null,lease_until=null,
+                    last_heartbeat_at=%s,updated_at=%s where case_id=%s""",
+                    (next_at, admitted_at, admitted_at, case["case_id"]))
+                self._event(cur, case, "delivery_suppressed", admitted_at, cycle_id=cycle_id,
+                    outcome_status="herdmaster_owning_reconciliation_pending", delivery_confirmed=False,
+                    technical_dependency=receipt.metadata())
+                self._event(cur, case, "reassessment_scheduled", admitted_at,
+                    next_reassessment_at=next_at.isoformat(), cycle_id=cycle_id)
+        outcome["next_reassessment_at"] = next_at.isoformat()
+        return True
+
     def _finish_claim(self, case, outcome, now, cycle_id):
+        if case.get("_mortality_pending") is not None:
+            return self._finish_mortality_pending(case, outcome, cycle_id)
         confirmed = bool(outcome.get("success") is True
                          and outcome.get("delivery_confirmed") is True)
         failed = outcome.get("success") is False
@@ -1128,6 +1167,21 @@ class PostgresManagerCaseStore:
         """Bind delivery to the newest canonical generation under the case lock."""
         if raw is None:
             return None
+        from modules.oom_sakkie.herdmaster_case_disposition import (
+            MortalityReconciliationPending, mortality_pending_matches)
+        if isinstance(raw, MortalityReconciliationPending):
+            with self.connect_factory() as connection:
+                with connection.cursor() as cur:
+                    cur.execute("select to_jsonb(m) from app_private.oom_manager_cases m where case_id=%s for update",
+                        (claimed["case_id"],))
+                    row = cur.fetchone()
+                    admitted_at = _aware(datetime.now(timezone.utc))
+                    if not row or not mortality_pending_matches(raw, row[0], claimed,
+                            now=admitted_at, cycle_id=cycle_id):
+                        return None
+            # No reconcile or lease renewal: every stored projection field is
+            # unchanged, and persistence must recheck this exact read receipt.
+            return {**claimed, "_mortality_pending": raw}
         candidate = normalize_candidate(raw, now=now)
         if candidate["dedupe_key"] != claimed["dedupe_key"]:
             raise ManagerCaseError("refreshed_dedupe_key_mismatch")
@@ -1247,10 +1301,16 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                 return {}
             refresh_deadline = min(time.monotonic() + REFRESH_SNAPSHOT_DEADLINE_SECONDS,
                 deadline_monotonic - CASE_COMPLETION_RESERVE_SECONDS)
+            from modules.oom_sakkie.herdmaster_case_disposition import is_legacy_mortality_case
+            mortality_source_known = collectors is None or any(
+                getattr(value, "__name__", "").strip("_").casefold() == "herdmaster"
+                for value in collectors)
             by_owner = {}
             for case in cases:
                 prefix = str(case.get("dedupe_key") or "").split(":", 1)[0].casefold()
-                if is_retained_herd_refresh_case(case):
+                if mortality_source_known and is_legacy_mortality_case(case):
+                    prefix = "herdmaster-legacy-mortality"
+                elif is_retained_herd_refresh_case(case):
                     prefix = "herdmaster-retained"
                 elif is_advisory_herd_refresh_case(case):
                     prefix = "herdmaster-advisories:" + str(case["case_id"])
@@ -1269,6 +1329,12 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                         return {(str(row.get("dedupe_key") or ""),
                                  str(row.get("specialist") or "").upper()): row
                                 for row in rows or ()}
+                elif owner == "herdmaster-legacy-mortality":
+                    def collect(owned_cases=owned_cases):
+                        return collect_manager_refresh_snapshot(now=datetime.now(timezone.utc),
+                            cases=owned_cases, collectors=collectors, initial_candidates=candidates,
+                            connect=store.connect_factory if store is not None else None,
+                            deadline_monotonic=refresh_deadline)
                 elif owner == "herdmaster-purpose":
                     def collect(owned_cases=owned_cases):
                         return collect_manager_refresh_snapshot(

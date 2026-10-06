@@ -126,7 +126,15 @@ def build_owner_attention_projection(
         lifecycle = ("resolved" if purpose_completed else "open") if purpose_case else (
             "open" if unavailable else (
                 ledger_lifecycle if ledger_lifecycle in {"resolved", "superseded"} else "resolved"))
-        items.append(_item({**dict(prior), "lifecycle": lifecycle}, now))
+        from modules.oom_sakkie.herdmaster_case_disposition import is_legacy_mortality_case
+        technical = {}
+        if is_legacy_mortality_case(dict(prior)):
+            # A missing old projection is no welfare completion. Keep its
+            # historical title/refs, but do not repeat it as fresh owner work.
+            lifecycle = "resolved" if purpose_completed else "open"
+            technical = {"task_class": "status_reconciliation",
+                "next_action": "Retain the mortality source-lineage dependency for technical reconciliation; no owner action is established."}
+        items.append(_item({**dict(prior), "lifecycle": lifecycle, **technical}, now))
     items = _disambiguate_duplicate_labels(items)
     ordered = sorted(items, key=lambda item: (
         item.lifecycle != "open", not item.welfare_priority,
@@ -333,6 +341,10 @@ def _attention_eligibility(raw: Mapping[str, Any], *, task_class: str, lifecycle
                            operational_status: str, priority: str,
                            now: datetime) -> tuple[str, bool]:
     """Derive owner eligibility only from existing canonical case semantics."""
+    from modules.oom_sakkie.herdmaster_case_disposition import is_legacy_mortality_case
+    if (lifecycle == "open" and task_class == "status_reconciliation"
+            and is_legacy_mortality_case(dict(raw))):
+        return "oom_sakkie_checking", False
     if lifecycle != "open" or operational_status in {"completed", "contained", "resolved", "superseded", "stale"}:
         return "recently_completed", False
     agent_owned = operational_status in {"delegated", "waiting_reassessment"}
