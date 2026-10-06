@@ -1,5 +1,24 @@
 # Vault Brain Changelog
 
+## 2026-10-06 - Explicitly admitted manager engineering intake
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Reuse existing CORE mission finding events, control commands and manager
+  event history for a separate receipt of exact mortality technical dependencies.
+  Frozen source anchors, current owner, material/generation/ref identity, policy
+  budget, mission admission, supersession, holds and leases all fail closed.
+- The existing active executive may consume only the new exact scoped capability;
+  generic policies and observe/off modes do not enable this adapter. No policy,
+  mission, grant, scheduled task or runtime activation is created by this change.
+- CORE commit is read back before an append-only manager receipt link. Crashes
+  and concurrent callers replay the same identities, within one shared deadline.
+  Existing pending proof flags and manager case projections remain unchanged.
+- A finding receipt proves no worker selection, pickup, repair or welfare outcome.
+  In-progress, unowned or unadmitted missions are deliberately excluded. Actual
+  intake admission and current runtime readiness require separate verified setup.
+
+
 ## 2026-10-06 - Legacy mortality exceptions receive a work turn
 
 Status: `LOCAL_NOT_RELEASED`.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import hashlib
 
+from modules.charlie.manager_dependency_intake import consume_manager_dependencies
 from modules.charlie.block_adjudication import adjudicate_block
 from modules.charlie.delegated_governance import delegated_review_assessment, queue_candidate_assessment
 from modules.charlie.executive_control import build_executive_cycle
@@ -37,6 +38,8 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
     context, context_status = load_executive_context(database_url=database_url, connect_factory=connect_factory)
     if loaded_status >= 400 or context_status >= 400:
         return {"success": False, "status": "executive_context_unavailable", "mode": mode, "mission_status": loaded_status, "policy_status": context_status}, 503
+    manager_intake = consume_manager_dependencies(mode=mode, policies=context.get("policies", []),
+        database_url=database_url, connect_factory=connect_factory)
     cycle = build_executive_cycle(loaded.get("missions", []), context.get("policies", []), runner=runner, goals=context.get("goals", []), trust=context.get("trust", []))
     results = []
     for command in cycle["commands"]:
@@ -77,7 +80,14 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
                     database_url=database_url,
                     connect_factory=connect_factory,
                 )
-    return {"success": True, "status": "executive_cycle_complete", "mode": mode, "cycle": cycle, "results": results}, 200
+    # The ordinary pickup caller records non-complete statuses even when the
+    # legacy command list is empty. Preserve unrelated work and expose this
+    # component failure through that existing heartbeat rail, without a send.
+    intake_failed = manager_intake.get("failures", 0) > 0
+    return {"success": not intake_failed,
+            "status": "executive_cycle_component_failed" if intake_failed else "executive_cycle_complete",
+            "mode": mode, "cycle": cycle, "results": results,
+            "manager_dependency_intake": manager_intake}, 503 if intake_failed else 200
 
 
 def _command_outcome(command, database_url, connect_factory):

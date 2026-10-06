@@ -1,5 +1,30 @@
 # Implementation Source Map
 
+## CORE manager technical-dependency intake
+
+- Status: `LOCAL_NOT_RELEASED`; authority remains `01-identity/CHARLIE_CORE.md`,
+  `02-agents/owner-command/CHARLIE.md` and `04-workflows/CHARLIE_MISSION_WORKFLOW.md`.
+- Adapter: `modules/charlie/manager_dependency_intake.py`; invocation is the
+  existing `run_executive_cycle` in `modules/charlie/executive_runtime.py`.
+  Only active mode plus an enabled, expiring `core.manager_dependency_intake`
+  policy and exact matching mission service admission permit receipt writes.
+- Reused persistence: `append_mission_control_event`, `record_control_command`
+  and `complete_control_command`; no new queue, table, migration or scheduler.
+  A second transaction verifies the full canonical committed finding and command
+  before linking the dependency through the existing manager event rail.
+- Admission binds a current private owner, approved idle unsuperseded mission,
+  immutable dependency anchors and source revision, generation/material/full refs,
+  policy budget, and current hold/lease state. No historical mission snapshot or
+  generic delegation policy is an activation grant. Status, leases, original
+  pending events and manager projections are preserved.
+- The receipt explicitly leaves worker selection, pickup, repair and welfare
+  completion unproven. Existing queue and pickup controls remain their authorities;
+  no CORE runtime activation follows from web deployment alone.
+- Tests: `tests/test_charlie_manager_dependency_intake.py` and
+  `tests/test_charlie_manager_dependency_intake_postgres.py`, with existing
+  executive/event regressions, selected by `.github/workflows/charlie-core-tests.yml`.
+
+
 ## Oom Sakkie family message presentation
 
 - Authority: `02-agents/farm/OOM_SAKKIE.md` and
