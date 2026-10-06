@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-10-05 - Purpose completion respects retained obligations
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Reuse the existing conclusive-departure predicate for historical litter
+  members outside the retained purpose obligations. Unknown or conflicting
+  lifecycle evidence continues to block closure.
+- Preserve every recorded obligation, exact approved correction provenance,
+  same-case generation fences and original delivery history. No farm writer,
+  schema, scheduler or notification authority changes.
+- Qualify one-member saved-purpose reconciliation with historical departed
+  extras, uncertain/current extras, replay and unchanged records. Correct
+  singular/plural wording in verified Telegram save replies in English and
+  Afrikaans. Local tests do not establish deployed completion.
+
 ## 2026-10-05 - Candidate callback relay timeout mitigation
 
 - Raise only the existing GateKeeper callback relay wait from 10 to 60 seconds.

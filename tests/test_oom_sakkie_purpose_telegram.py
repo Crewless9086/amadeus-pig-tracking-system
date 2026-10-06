@@ -282,3 +282,29 @@ def test_refusals_keep_owned_language_and_never_invite_confirmation(language,rea
     assert not rendered.get('recipient_language_render_unrecognized')
     assert 'bevestig' not in rendered['answer'].lower() and 'confirm' not in rendered['answer'].lower()
     assert not rendered.get('reply_markup') and rendered['writes_farm_data'] is False
+
+
+@pytest.mark.parametrize('language,count,expected',[('en',1,'the purpose for 1 animal.'),
+    ('en',2,'the purposes for 2 animals.'),('af',1,'Die doel van 1 dier is'),('af',2,'Die doele van 2 diere is')])
+def test_verified_save_uses_localized_singular_and_plural(monkeypatch,language,count,expected):
+    from modules.pig_weights import purpose_correction_batch_service as batches
+    decisions=[dict(pig_id=f'PIG-SYNTHETIC-{i}',purpose='Sale',reason='Synthetic owner review',note='') for i in range(count)]
+    effects=[dict(pig_id=d['pig_id'],old_purpose='Unknown',new_purpose='Sale') for d in decisions]
+    preview=dict(contract_version=batches.CONTRACT_VERSION,decisions=decisions,effects=effects,
+        preview_digest=batches._preview_digest(decisions,effects,''),return_to=None)
+    envelope={k:preview[k] for k in ('contract_version','decisions','effects','preview_digest','return_to')}
+    class Connection:
+        def __enter__(self):return self
+        def __exit__(self,*_):return False
+        def cursor(self):return self
+        def execute(self,*_):pass
+        def fetchone(self):return ('B-SYNTHETIC','executed',envelope,'42',batches._decision_hash(decisions))
+    execute=Mock(return_value=({'success':True,'rows_updated':0,'canonical_readback':[
+        dict(pig_id=d['pig_id'],purpose=d['purpose'],status='Active',on_farm=True) for d in decisions]},200))
+    monkeypatch.setattr(batches,'execute_correction_batch',execute)
+    claimed=dict(action_kind=runtime.CORRECTION,callback_token='SYNTHETIC-TOKEN',preview_digest='a'*64,
+        preview_payload=dict(mode='preview',batch_preview=preview,seen_pages=[0],language=language))
+    result,code=runtime.execute_claimed_purpose(claimed,{'telegram_user_id':'42'},now=NOW,connect=Connection)
+    assert code==200 and result['status']=='purpose_recorded_verified'
+    assert expected in result['answer'] and result['writes_farm_data'] is False
+    execute.assert_called_once()
