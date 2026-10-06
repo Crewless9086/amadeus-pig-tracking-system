@@ -377,6 +377,9 @@ class _RootlineConnection:
 
 def _rootline_connector(monkeypatch, rows):
     from modules.oom_sakkie import manager_case_sources
+    monkeypatch.setenv('OOM_SAKKIE_TELEGRAM_OWNER_USER_ID', '42')
+    monkeypatch.setenv('ROOTLINE_REASSESSMENT_OWNER_USER_ID', '42')
+    monkeypatch.setenv('OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS', '42')
     cursor = _RootlineCursor(rows)
     monkeypatch.setattr(manager_case_sources, "connect_bounded_read",
                         lambda: _RootlineConnection(cursor))
@@ -384,22 +387,26 @@ def _rootline_connector(monkeypatch, rows):
 
 
 def _observation():
-    return {"operating_date": "2026-08-17", "material_digest": "material-one",
+    return {"operating_date": "2026-08-17", "material_digest": "a" * 64,
         "result_id": "result-one", "evidence_generation": "generation-one",
-        "delivery_state": "observation_only", "owner_user_id": "42", "chat_id": "42"}
+        "delivery_state": "observation_only", "owner_user_id": "42", "chat_id": "42",
+        "identity": "OBS", "event_id": "OBS-RECORD_OBSERVATION"}
 
 
-def test_same_date_exact_provider_confirmed_plan_has_no_generic_unknown(monkeypatch):
+def test_same_date_exact_provider_confirmed_plan_has_terminal_evidence(monkeypatch):
     observed = datetime(2026, 8, 17, 9, 59, tzinfo=timezone.utc)
     observation = _observation()
     sources, cursor = _rootline_connector(monkeypatch, [
-        ("OBS-1", observed, observation),
-        ("DELIVERY-1", observed + timedelta(seconds=1), {
-            **observation, "delivery_state": "delivered", "provider_message_id": "9001"}),
+        ("OBS-RECORD_OBSERVATION", observed, observation),
+        ("DELIVERY-MARK_DELIVERED", observed + timedelta(seconds=1), {
+            **observation, "identity": "DELIVERY", "event_id": "DELIVERY-MARK_DELIVERED",
+            "delivery_state": "delivered", "provider_message_id": "9001"}), None,
     ])
-    assert sources._rootline(NOW) == []
-    assert cursor.commands[1][1] == (
-        "2026-08-17", "material-one", "result-one", "generation-one", "42", "42")
+    rows = sources._rootline(NOW)
+    assert len(rows) == 1 and rows[0]["terminal_state"] == "completed"
+    assert rows[0]["unknowns"] == []
+    delivery_query = next(params for sql, params in cursor.commands if "in ('delivered','ambiguous'" in sql)
+    assert delivery_query == ("2026-08-17", "42", "42")
 
 
 def test_current_observation_without_exact_delivery_returns_precise_exception(monkeypatch):
@@ -407,9 +414,9 @@ def test_current_observation_without_exact_delivery_returns_precise_exception(mo
     sources, _ = _rootline_connector(monkeypatch, [("OBS-1", observed, _observation()), None])
     case = sources._rootline(NOW)[0]
     assert case["unknowns"] == ["provider_confirmed_family_delivery_bound_to_current_plan"]
-    assert "exact current-date material, result and generation" in case["summary"]
+    assert "current-date material and exact recipient" in case["summary"]
     assert "Automatic acquisition owner" in case["next_action"]
-    assert "2026-08-17 12:05 SAST" in case["next_action"]
+    assert "next scheduled reassessment" in case["next_action"]
 
 
 def test_missing_current_observation_names_acquisition_owner_and_retry(monkeypatch):
