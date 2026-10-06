@@ -296,6 +296,9 @@ jobs:
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_protected_breeding_claim_postgres.py tests/test_rootline_protected_irrigation_postgres.py tests/test_oom_sakkie_general_manager_postgres.py
           OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_daily_farm_manager_postgres.py tests/test_oom_sakkie_protected_delivery_postgres.py
 
+      - name: Prove ROOTLINE notification follow-through without provider effects
+        run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_oom_sakkie_rootline_notification_followthrough.py tests/test_oom_sakkie_rootline_notification_followthrough_postgres.py
+
       - name: Run farm OpenAI budget concurrency and denial gates
         run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m pytest -q tests/test_farm_openai_budget.py tests/test_oom_sakkie_model_budget_denials.py
 

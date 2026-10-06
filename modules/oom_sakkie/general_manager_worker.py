@@ -199,11 +199,23 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
     # new case generation every five minutes.
     digest_material = {key: value for key, value in material.items()
                        if key != "next_reassessment_at"}
-    digest_material["evidence_refs"] = [ref for ref in refs
+    digest_refs = refs
+    if message_family == "rootline_delivery_advisory":
+        from modules.oom_sakkie.rootline_notification_disposition import notification_material_refs
+        stable_refs = notification_material_refs(raw, now=now)
+        if stable_refs is not None:
+            digest_refs = sorted(set(stable_refs + [_MESSAGE_FAMILY_REF + message_family]))
+    digest_material["evidence_refs"] = [ref for ref in digest_refs
                                         if not str(ref).startswith(("observed:", "herdmaster_case_fence:"))]
     digest = _digest(digest_material)
     result = {**material, "case_id": "OOM-CASE-" + hashlib.sha256(dedupe.encode()).hexdigest()[:24].upper(),
               "evidence_digest": digest}
+    if message_family == "rootline_delivery_disposition" or "_rootline_delivery_proof" in raw:
+        from modules.oom_sakkie.rootline_notification_disposition import validate_completion
+        proof = validate_completion(raw, now=now)
+        if proof is None:
+            raise ManagerCaseError("rootline_delivery_proof_invalid")
+        result["_rootline_delivery_proof"] = proof
     if "_purpose_membership" in raw:
         from modules.oom_sakkie.herdmaster_purpose_membership import validate_candidate_membership
         result["_purpose_membership"] = validate_candidate_membership(result, raw["_purpose_membership"])
@@ -738,6 +750,12 @@ class PostgresManagerCaseStore:
             if fences != [expected]:
                 return "stale"
         if candidate.get("terminal_state") == "completed":
+            if candidate.get("message_family") == "rootline_delivery_disposition":
+                from modules.oom_sakkie.rootline_notification_disposition import prior_matches
+                proof = candidate.get("_rootline_delivery_proof")
+                replay = prior and prior[2] == "completed" and prior[0] == candidate["evidence_digest"]
+                if not proof or (not replay and not prior_matches(proof, prior)):
+                    return "stale"
             if not prior:
                 return "replayed"
             if prior[2] == "completed" and prior[0] == candidate["evidence_digest"]:
@@ -768,7 +786,9 @@ class PostgresManagerCaseStore:
             proof = ({"evidence_digest": candidate["evidence_digest"],
                 "evidence_refs": candidate["evidence_refs"],
                 "prior_generation": int(prior[1]), "prior_evidence_digest": prior[0]}
-                if candidate.get("message_family") == "herdmaster_disposition" else {})
+                if candidate.get("message_family") in {"herdmaster_disposition", "rootline_delivery_disposition"} else {})
+            if candidate.get("message_family") == "rootline_delivery_disposition":
+                proof["rootline_delivery_proof"] = candidate["_rootline_delivery_proof"]
             self._event(cur, {**candidate, "generation": generation}, "completed", now, **proof)
             return "changed"
         if (prior and candidate["specialist"] == "BEACON"

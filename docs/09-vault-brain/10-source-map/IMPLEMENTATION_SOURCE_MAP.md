@@ -39,6 +39,30 @@
   authorize a resend. Source qualification, exact deployed revision and genuine
   family-message acceptance remain separate evidence in the mission register.
 
+## ROOTLINE notification advisory reconciliation
+
+Status: `LOCAL_NOT_RELEASED`; the mission register owns release/acceptance state.
+
+- Owning read-only source: `modules/oom_sakkie/manager_case_sources.py`.
+  `rootline_notification_disposition.py` in that directory binds the current
+  private recipient and exact observation/delivery receipt for only
+  `rootline:current-plan`. Existing ROOTLINE notification material semantics
+  permit a confirmed same-date/material receipt across fresher observations.
+- `general_manager_worker.py` retains full source identities and refreshes
+  observation refs without moving an unchanged notification generation or due
+  date. The exact complete advisory family alone excludes snapshot identities
+  from material; incomplete evidence and other families remain conservative.
+- Terminal reconciliation uses the existing generation/digest/lease fences and
+  appends the receipt plus original retained projection to the completion event.
+  No missing row implies completion, and no manager delivery, irrigation or
+  shutdown outcome is manufactured.
+- Qualification: `tests/test_oom_sakkie_rootline_notification_followthrough.py`
+  and `tests/test_oom_sakkie_rootline_notification_followthrough_postgres.py`,
+  selected explicitly by `.github/workflows/oom-sakkie-audit-rails.yml`.
+- Governing policy remains `02-agents/farm/ROOTLINE.md` and
+  `04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`. No-notification or semantic
+  owner-plan equivalence lacking durable proof is not inferred by this repair.
+
 ## HERDMASTER retained advisory and identity reconciliation
 
 - Owning read-only dispositions: `modules/oom_sakkie/herdmaster_case_disposition.py`.
