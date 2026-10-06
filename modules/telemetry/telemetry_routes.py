@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from modules.telemetry.power_service import (
     evaluate_power_alerts,
@@ -56,7 +56,9 @@ from modules.auth.owner_access import (
     require_owner_read_access,
     require_strict_owner_admin_access,
     require_strict_owner_read_access,
+    strict_owner_read_principal,
 )
+from modules.telemetry.rootline_operational_evidence import build_rootline_operational_evidence
 from modules.telemetry.weather_service import (
     evaluate_weather_alerts,
     get_current_weather_state,
@@ -176,6 +178,30 @@ def telemetry_irrigation_status():
         return guard
     result, status_code = get_irrigation_status(request.args.get("date"))
     return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/operational-evidence", methods=["GET"])
+def telemetry_rootline_operational_evidence():
+    """Expose exact current B evidence with no execution or write capability."""
+    guard = require_strict_owner_read_access()
+    if guard:
+        current_app.logger.warning("rootline operational evidence read denied remote=%s",
+                                   request.remote_addr or "Unknown")
+        return guard
+    def provider_reader(device_id):
+        return read_registered_device(device_id, token_store=PostgresOAuthTokenStore(),
+                                      allow_token_refresh=False)
+    result, status_code = build_rootline_operational_evidence(
+        requester=strict_owner_read_principal(), provider_reader=provider_reader)
+    current_app.logger.info("rootline operational evidence read audit_id=%s requester=%s revision=%s",
+        (result.get("audit") or {}).get("audit_id"),
+        (result.get("audit") or {}).get("requester"), result.get("requested_revision"))
+    if isinstance(result.get("audit"), dict):
+        result["audit"]["emitted"] = True
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response, status_code
 
 
 @telemetry_bp.route("/telemetry/irrigation/status/legacy-audit", methods=["GET"])

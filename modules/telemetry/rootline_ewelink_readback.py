@@ -30,7 +30,7 @@ def read_current_device(*, token_store, environ=None, http_request=None, now=Non
 
 
 def read_registered_device(device_id, *, token_store, environ=None,
-                           http_request=None, now=None):
+                           http_request=None, now=None, allow_token_refresh=True):
     """Read an exact registry-bound device without expanding command authority."""
     source = environ if environ is not None else os.environ
     requested = str(device_id or "").strip()
@@ -48,11 +48,13 @@ def read_registered_device(device_id, *, token_store, environ=None,
         now=now,
         commissioned_baseline=commissioned_registered_device_baseline(requested),
         registered_discovery_only=False,
+        allow_token_refresh=allow_token_refresh,
     )
 
 
 def _read_bound_device(*, expected, token_store, source, http_request, now,
-                       commissioned_baseline, registered_discovery_only):
+                       commissioned_baseline, registered_discovery_only,
+                       allow_token_refresh=True):
     if str(source.get("EWELINK_READBACK_ENABLED") or "").lower() != "true":
         raise OAuthFailure("ewelink_readback_disabled")
     now = now or datetime.now(timezone.utc)
@@ -65,6 +67,8 @@ def _read_bound_device(*, expected, token_store, source, http_request, now,
     request = http_request or _provider_request
     token_refreshed = False
     if record.get("access_expires_at") <= now:
+        if not allow_token_refresh:
+            raise OAuthFailure("ewelink_readback_access_token_expired")
         record = _refresh_token_generation(record, token_store=token_store,
             source=source, request=request, now=now)
         token_refreshed = True
