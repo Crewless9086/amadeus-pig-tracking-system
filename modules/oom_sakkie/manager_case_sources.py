@@ -286,15 +286,25 @@ def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None,
 
 def _rootline(now):
     local_date = _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).date().isoformat()
+    from modules.oom_sakkie.rootline_notification_disposition import (
+        ADVISORY_FAMILY, completion_candidate, current_recipient)
+    recipient = current_recipient()
+    if not recipient:
+        raise RuntimeError("rootline_notification_recipient_unavailable")
+    deadline = time.monotonic() + 9
     with connect_bounded_read() as connection:
-        with connection.cursor() as cur:
+        with connection.cursor() as cursor:
+            cursor.execute("set transaction isolation level repeatable read, read only", ())
+            cur = ReadBudgetCursor(cursor, deadline, failure_kind="rootline_notification_read_deadline")
             cur.execute("""select review_event_id,created_at,
                     review_json->'rootline_reassessment'
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_rootline_reassessment'
                   and review_json->'rootline_reassessment'->>'delivery_state'='observation_only'
                   and review_json->'rootline_reassessment'->>'operating_date'=%s
-                order by created_at desc,review_event_id desc limit 1""", (local_date,))
+                  and review_json->'rootline_reassessment'->>'owner_user_id'=%s
+                  and review_json->'rootline_reassessment'->>'chat_id'=%s
+                order by created_at desc,review_event_id desc limit 1""", (local_date, recipient, recipient))
             observation_row = cur.fetchone()
             delivered_row = None
             if observation_row:
@@ -303,35 +313,33 @@ def _rootline(now):
                         review_json->'rootline_reassessment'
                     from public.sam_live_stock_conversation_review_events
                     where event_source='oom_sakkie_rootline_reassessment'
-                      and review_json->'rootline_reassessment'->>'delivery_state'='delivered'
+                      and review_json->'rootline_reassessment'->>'delivery_state' in ('delivered','ambiguous','pending','failed')
                       and review_json->'rootline_reassessment'->>'operating_date'=%s
-                      and review_json->'rootline_reassessment'->>'material_digest'=%s
-                      and review_json->'rootline_reassessment'->>'result_id'=%s
-                      and review_json->'rootline_reassessment'->>'evidence_generation'=%s
                       and review_json->'rootline_reassessment'->>'owner_user_id'=%s
                       and review_json->'rootline_reassessment'->>'chat_id'=%s
-                      and coalesce(review_json->'rootline_reassessment'->>'provider_message_id','')<>''
                     order by created_at desc,review_event_id desc limit 1""",
-                    (local_date, str(observation.get("material_digest") or ""),
-                     str(observation.get("result_id") or ""),
-                     str(observation.get("evidence_generation") or ""),
-                     str(observation.get("owner_user_id") or ""),
+                    (local_date, str(observation.get("owner_user_id") or ""),
                      str(observation.get("chat_id") or "")))
                 delivered_row = cur.fetchone()
+                if completion_candidate(observation_row, delivered_row, None, now=now):
+                    cur.execute("""select case_id,dedupe_key,specialist,generation,evidence_digest,evidence_refs
+                        from app_private.oom_manager_cases where dedupe_key=%s""", ("rootline:current-plan",))
+                    terminal = completion_candidate(observation_row, delivered_row, cur.fetchone(), now=now)
+                    if terminal:
+                        return [terminal]
     retry_at = now + timedelta(minutes=5)
-    retry_text = retry_at.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%Y-%m-%d %H:%M SAST")
     if not observation_row:
         return [_candidate("rootline:current-plan", "ROOTLINE", "urgent",
-            [f"operating_date:{local_date}", "canonical:rootline_observation:none"],
+            [f"operating_date:{local_date}", "canonical:rootline_observation:none",
+             f"owner:{recipient}", f"chat:{recipient}"],
             ["current_date_canonical_rootline_observation"],
             f"ROOTLINE current-plan delivery exception: the current-date canonical ROOTLINE observation for {local_date} is missing.",
             ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE schedule must load "
-             f"and persist the canonical observation; retry at {retry_text}. No hardware action is permitted."),
-            retry_at, presentation_identity={"familiar_meaning": "Current water and energy plan",
+             "and persist the canonical observation at the next scheduled reassessment. No hardware action is permitted."),
+            retry_at, message_family=ADVISORY_FAMILY,
+            presentation_identity={"familiar_meaning": "Current water and energy plan",
                 "stable_reference": local_date})]
     event_id, observed, payload = observation_row; payload = payload or {}
-    if delivered_row:
-        return []
     identities = {"material": str(payload.get("material_digest") or ""),
         "result": str(payload.get("result_id") or ""),
         "generation": str(payload.get("evidence_generation") or "")}
@@ -342,11 +350,13 @@ def _rootline(now):
          f"material:{identities['material'] or 'missing'}",
          f"result:{identities['result'] or 'missing'}",
          f"generation:{identities['generation'] or 'missing'}",
+         f"owner:{payload.get('owner_user_id') or 'missing'}",
+         f"chat:{payload.get('chat_id') or 'missing'}",
          f"observed:{observed.isoformat()}"], missing,
-        "ROOTLINE current-plan delivery exception: provider-confirmed family delivery is missing for the exact current-date material, result and generation.",
+        "ROOTLINE current-plan delivery exception: provider-confirmed family delivery is unproven for the current-date material and exact recipient.",
         ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE delivery lifecycle must "
-         f"obtain and persist exact Telegram provider confirmation; retry at {retry_text}. "
-         "Do not infer delivery or actuate hardware."), retry_at,
+         "obtain and persist exact Telegram provider confirmation at the next scheduled reassessment. "
+         "Do not infer delivery or actuate hardware."), retry_at, message_family=ADVISORY_FAMILY,
         presentation_identity={"familiar_meaning": "Current water and energy plan",
                                "stable_reference": local_date})]
 

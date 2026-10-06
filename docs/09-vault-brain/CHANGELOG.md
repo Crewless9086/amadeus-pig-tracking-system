@@ -1,5 +1,21 @@
 # Vault Brain Changelog
 
+## 2026-10-06 - ROOTLINE notification follow-through bookkeeping
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Keep retry clocks in scheduling fields. Complete current-plan notification
+  material remains stable across fresh source snapshots, while full observation
+  identities and freshness stay available for audit.
+- Reconcile a proved notification receipt through the existing same-case
+  terminal rail. Bind current private recipient, date and canonical material;
+  preserve exact provider/event evidence, prior generation, foreign leases,
+  original delivery fields and quiet replay.
+- Missing, ambiguous, conflicting or unavailable evidence remains unresolved.
+  No-notification and owner-plan-fingerprint equivalence without sufficient
+  durable proof remain a diagnosed gap. No hardware, farm, schema, schedule or
+  notification-policy authority changes; local qualification is not live proof.
+
 ## 2026-10-05 - Purpose completion respects retained obligations
 
 Status: `LOCAL_NOT_RELEASED`.
