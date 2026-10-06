@@ -63,6 +63,26 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns release/acceptance state
   `04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`. No-notification or semantic
   owner-plan equivalence lacking durable proof is not inferred by this repair.
 
+## Legacy mortality exception queue priority
+
+Status: `LOCAL_NOT_RELEASED`; the mission register owns live acceptance.
+
+- `herdmaster_case_disposition.py` exposes the existing anchored mortality-family
+  key pattern for scheduling only. `general_manager_worker.py` places matching
+  HERDMASTER exceptions in actionable work before the ordinary quiet branch.
+- The existing five-case limit, specialist fairness, urgency ordering, due time,
+  leases and refresh budget are unchanged. A committed technical pending result
+  returns the row to `waiting_reassessment` and its normal quiet classification.
+- A counted pre-provider refresh failure for a fully validated legacy projection
+  keeps exception status until retry; generic delivery containment and confirmed
+  generation preservation remain unchanged. No extra queue read is added.
+- Queue eligibility grants no reconciliation proof. Current work takes precedence;
+  malformed evidence or failed reads remain real failures under the unchanged
+  owner, full-row, generation/material and lease gates. No farm or provider effect.
+- Existing mortality unit/PostgreSQL suites cover a synthetic 282-case backlog,
+  pending persistence then quiet demotion, unrelated urgent work, exact family
+  exclusions and failure retries. The existing audit workflow already selects both.
+
 ## Legacy mortality technical reconciliation
 
 Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.

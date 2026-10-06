@@ -148,3 +148,12 @@ def test_current_candidate_receives_fresh_normal_owning_refresh(owner, monkeypat
     result = sources.collect_manager_refresh_snapshot(now=NOW, cases=[claim], collectors=(_herdmaster,),
         initial_candidates=[current])
     assert result[(claim["dedupe_key"], "HERDMASTER")]["summary"] == current["summary"]
+
+
+def test_priority_identity_reuses_owning_key_without_granting_pending_authority():
+    assert disposition.MORTALITY_EXCEPTION_PRIORITY_SQL == (
+        "m.status='exception' and m.specialist='HERDMASTER' "
+        f"and m.dedupe_key ~ '^{disposition._MORTALITY_KEY.pattern}$'")
+    invalid=legacy();invalid["evidence_refs"]=["malformed retained evidence"]
+    assert disposition._MORTALITY_KEY.fullmatch(invalid["dedupe_key"])
+    assert not disposition.is_legacy_mortality_case(invalid)
