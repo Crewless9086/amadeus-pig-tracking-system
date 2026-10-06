@@ -218,7 +218,7 @@ def _herdmaster_advisories(now):
 
 
 def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None,
-                                     deadline_monotonic=None):
+                                     deadline_monotonic=None, initial_candidates=None, connect=None):
     """Refresh every claimed case from one read per owning specialist.
 
     A manager cohort can contain many cases from one specialist. Re-running the
@@ -235,6 +235,26 @@ def collect_manager_refresh_snapshot(*, now: datetime, cases, collectors=None,
     requested.discard(("", ""))
     if not requested:
         return {}
+    from modules.oom_sakkie.herdmaster_case_disposition import (
+        is_legacy_mortality_case, collect_mortality_reconciliation)
+    if initial_candidates is not None and all(is_legacy_mortality_case(case) for case in cases):
+        # Initial current work and explicit collector failures both win. Only
+        # exact absent legacy projections take the technical dependency rail.
+        initial = _project_refresh_rows(initial_candidates, requested)
+        absent = [case for case in cases if (case["dedupe_key"], case["specialist"]) not in initial]
+        result = {key: value for key, value in initial.items() if isinstance(value, ManagerCollectorRefreshError)}
+        current_cases = [case for case in cases if isinstance(initial.get((case["dedupe_key"], case["specialist"])), dict)]
+        if current_cases:
+            result.update(collect_manager_refresh_snapshot(now=now, cases=current_cases,
+                collectors=collectors, deadline_monotonic=deadline_monotonic))
+        if absent:
+            try:
+                result.update(collect_mortality_reconciliation(now, claimed_cases=absent,
+                    connect=connect, deadline_monotonic=deadline_monotonic))
+            except Exception as exc:
+                failure = ManagerCollectorRefreshError("herdmaster_mortality", exc.__class__.__name__)
+                result.update({(v["dedupe_key"], v["specialist"]): failure for v in absent})
+        return result
     if collectors is None and all(is_purpose_herd_refresh_case(case) for case in cases):
         try:
             return _purpose_review_refresh(now, cases,

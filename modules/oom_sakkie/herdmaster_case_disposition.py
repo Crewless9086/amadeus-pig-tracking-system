@@ -1,13 +1,16 @@
 """Owning, read-only disposition of retained HERDMASTER advisories.
 
-Only the two existing per-animal advisory families are addressed. Protected
-reports, confirmations and farm operations are never completed by this reader.
+Positive terminal proof addresses the two existing per-animal advisory families.
+Exact legacy mortality projections may retain a nonterminal technical dependency.
+Protected reports, confirmations and farm operations are never completed here.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import os
 import re
 import time
 
@@ -274,3 +277,126 @@ def _legacy_advisory_missions(cur, pig, refs):
             or receipt.get("owner_user_id") != owner or receipt.get("chat_id") != owner):
         return set()
     return {mission}
+
+
+MORTALITY_DEPENDENCY = "mortality_source_lineage_unproven"
+_MORTALITY_KEY = re.compile(r"herdmaster:herdmaster:mortality(?:-cluster)?:[a-f0-9]{20}")
+
+
+def is_legacy_mortality_case(case):
+    """Recognize the complete old advisory projection, never welfare completion."""
+    if (not isinstance(case, dict) or case.get("specialist") != "HERDMASTER"
+            or not _MORTALITY_KEY.fullmatch(str(case.get("dedupe_key") or ""))
+            or case.get("message_family") or case.get("unknowns")):
+        return False
+    refs = case.get("evidence_refs")
+    if (not isinstance(refs, (list, tuple)) or not all(isinstance(v, str) for v in refs)
+            or len(set(refs)) != len(refs)):
+        return False
+    digests = [v for v in refs if re.fullmatch(r"[A-F0-9]{64}", v)]
+    observed = [v for v in refs if v.startswith("observed:")]
+    results = [v for v in refs if v.startswith("result:")]
+    if len(digests) != 1 or len(observed) != 1 or len(results) != 1:
+        return False
+    expected = {digests[0], observed[0], results[0], "herdmaster.daily_manager_evidence.v1"}
+    if set(refs) not in (expected, expected | {"attention:welfare_priority"}):
+        return False
+    if not re.fullmatch(r"result:HERD-NEXT-[A-F0-9]{24}:HERD-DAILY-EVIDENCE-" + digests[0][:24], results[0]):
+        return False
+    try:
+        epoch = datetime.fromisoformat(observed[0][len("observed:"):].replace("Z", "+00:00"))
+        return epoch.utcoffset() is not None
+    except (ValueError, TypeError):
+        return False
+
+
+def _mortality_owner_binding():
+    """Current private owner only; this cannot establish a historical reporter."""
+    from modules.oom_sakkie.family_access import family_access_policy, resolve_family_principal
+    allowed = [v.strip() for v in os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "").split(",") if v.strip()]
+    owner = os.getenv("OOM_SAKKIE_TELEGRAM_OWNER_USER_ID", "").strip() or (allowed[0] if len(allowed) == 1 else "")
+    if not owner or not allowed or allowed[0] != owner or not family_access_policy(os.environ)["configuration_valid"]:
+        raise ValueError("mortality_reconciliation_owner_unavailable")
+    principal = resolve_family_principal({"telegram_user_id": owner, "telegram_chat_id": owner,
+        "telegram_chat_type": "private"}, os.environ)
+    if not principal.is_owner:
+        raise ValueError("mortality_reconciliation_owner_unavailable")
+    return _digest({"owner": owner, "private_chat": owner, "binding": principal.binding_digest})
+
+
+@dataclass(frozen=True)
+class MortalityReconciliationPending:
+    """Internal read receipt. No changed candidate material or terminal authority."""
+    projection_json: str
+    owner_binding: str
+    observed_at: datetime
+
+    @property
+    def projection(self):
+        return json.loads(self.projection_json)
+
+    def metadata(self):
+        row = self.projection
+        proof = {"contract": "herdmaster.mortality_technical_dependency.v1",
+            "reason": MORTALITY_DEPENDENCY, "case_id": row["case_id"],
+            "generation": row["generation"], "evidence_digest": row["evidence_digest"],
+            "evidence_refs_digest": _digest(row["evidence_refs"]), "owner_binding": self.owner_binding,
+            "completion_proven": False, "core_acknowledged": False}
+        return {**proof, "dependency_id": "OOM-MORTALITY-DEPENDENCY-" + _digest(proof)[:32].upper()}
+
+
+def _projection_json(row):
+    return json.dumps(row, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def mortality_pending_matches(receipt, row, claimed, *, now, cycle_id):
+    """Fresh exact row, claim and recipient fences, checked again at persistence."""
+    if not isinstance(receipt, MortalityReconciliationPending) or not isinstance(row, dict):
+        return False
+    try:
+        if (not is_legacy_mortality_case(row) or _projection_json(row) != receipt.projection_json
+                or receipt.owner_binding != _mortality_owner_binding()
+                or not 0 <= (now - receipt.observed_at).total_seconds() <= 30
+                or row.get("status") != "delegated" or row.get("assigned_worker_id") != cycle_id
+                or datetime.fromisoformat(row["lease_until"]) < now):
+            return False
+        # The claim's status preceded delegation; all its material and delivery
+        # fields must still match. The full current row also fences scheduling.
+        for key in ("case_id", "dedupe_key", "specialist", "urgency", "generation", "evidence_digest",
+                    "evidence_refs", "unknowns", "summary", "next_action", "last_delivery_digest"):
+            if key not in claimed or row.get(key) != claimed[key]:
+                return False
+        return datetime.fromisoformat(row["next_reassessment_at"]) == datetime.fromisoformat(claimed["next_reassessment_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def collect_mortality_reconciliation(now, *, claimed_cases, connect=None, deadline_monotonic=None):
+    """One bounded read of exact retained projections, not historical farm data."""
+    cases = tuple(claimed_cases)
+    if (not 0 < len(cases) <= 64 or any(not is_legacy_mortality_case(v) or not v.get("case_id") for v in cases)
+            or len({v["case_id"] for v in cases}) != len(cases)):
+        raise ValueError("mortality_reconciliation_identity_invalid")
+    owner = _mortality_owner_binding()
+    deadline = min(time.monotonic() + 6, deadline_monotonic if deadline_monotonic is not None else float("inf"))
+    with (connect or connect_bounded_read)() as db, db.cursor() as raw_cur:
+        raw_cur.execute("set transaction isolation level repeatable read read only")
+        cur = ReadBudgetCursor(raw_cur, deadline, failure_kind="mortality_reconciliation_read_deadline")
+        cur.execute("""select to_jsonb(m) from app_private.oom_manager_cases m
+            where case_id=any(%s) order by case_id limit 65""", ([v["case_id"] for v in cases],))
+        rows = [v[0] for v in cur.fetchall()]
+    if time.monotonic() >= deadline:
+        raise TimeoutError("mortality_reconciliation_read_deadline")
+    if len(rows) != len(cases) or {v.get("case_id") for v in rows} != {v["case_id"] for v in cases}:
+        raise ValueError("mortality_reconciliation_rows_unproven")
+    result = {}
+    for row in rows:
+        if (not is_legacy_mortality_case(row)
+                or not re.fullmatch(r"[a-f0-9]{64}", str(row.get("evidence_digest") or ""))
+                or type(row.get("generation")) is not int or row["generation"] < 1):
+            raise ValueError("mortality_reconciliation_projection_changed")
+        epoch = next(v[len("observed:"):] for v in row["evidence_refs"] if v.startswith("observed:"))
+        if datetime.fromisoformat(epoch.replace("Z", "+00:00")) > now:
+            raise ValueError("mortality_reconciliation_observation_future")
+        result[(row["dedupe_key"], row["specialist"])] = MortalityReconciliationPending(_projection_json(row), owner, now)
+    return result
