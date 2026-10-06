@@ -281,6 +281,12 @@ def _legacy_advisory_missions(cur, pig, refs):
 
 MORTALITY_DEPENDENCY = "mortality_source_lineage_unproven"
 _MORTALITY_KEY = re.compile(r"herdmaster:herdmaster:mortality(?:-cluster)?:[a-f0-9]{20}")
+# Scheduling only: malformed retained evidence still gets a truthful failed
+# refresh. Full current projection/owner/lease checks remain the admission gate.
+MORTALITY_EXCEPTION_PRIORITY_SQL = (
+    "m.status='exception' and m.specialist='HERDMASTER' "
+    f"and m.dedupe_key ~ '^{_MORTALITY_KEY.pattern}$'")
+
 
 
 def is_legacy_mortality_case(case):

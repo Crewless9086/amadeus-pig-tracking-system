@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-10-06 - Legacy mortality exceptions receive a work turn
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Classify only exact legacy mortality-family HERDMASTER exceptions as actionable
+  queue work. Reuse the owning key pattern; preserve every existing ordering,
+  cadence, claim limit and full evidence/owner/lease admission check.
+- Successful typed pending persistence returns the row to ordinary quiet
+  reassessment. Exact legacy pre-provider read failures keep actionable exception
+  status and the existing due time; delivery uncertainty containment is unchanged.
+- Queue rank or a work turn proves no welfare completion, CORE acknowledgement,
+  delivery or owner outcome. No scheduler, schema, authority or provider change.
+
+
 ## 2026-10-06 - Retained mortality technical dependencies
 
 Status: `LOCAL_NOT_RELEASED`.
