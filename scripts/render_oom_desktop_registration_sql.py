@@ -7,6 +7,7 @@ exact package. A copied principal string does not authenticate the caller.
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
+import re
 from unittest.mock import patch
 
 from scripts import reconcile_oom_desktop_candidate as adapter
@@ -199,6 +200,20 @@ def compact_package(captured, *, expected_parent_pg_sha256, expected_child_pg_sh
     return compact
 
 
+def _compact_sql_template(template):
+    """Strip indentation from trusted SQL code, retaining quoted text/comments.
+
+    The outer anonymous-block delimiter is code structure; any other dollar
+    literal is preserved. Run before payload interpolation, never on owner data.
+    """
+    protected = re.compile(
+        r"(?P<text>[eE]'(?:\\.|''|[^'\\])*'|'(?:''|[^'])*'|"
+        r'"(?:""|[^"])*"|--[^\r\n]*|/\*[\s\S]*?\*/|'
+        r"\$(?!bounded_registration\$)(?P<tag>[A-Za-z_][A-Za-z_0-9]*|)\$"
+        r"[\s\S]*?\$(?P=tag)\$)|(?P<indent>^[ \t]+)", re.MULTILINE)
+    return protected.sub(lambda match: match.group('text') or '', template)
+
+
 def render_sql(captured):
     """Anonymous DO block only; package bytes must be reviewed and pinned outside SQL."""
     literal=_literal(captured)
@@ -210,7 +225,8 @@ def render_sql(captured):
         raise ValueError('sql_template_delimiter_shape_changed')
     # Replace only the trusted template before inserting arbitrary JSON text.
     # Replacing after interpolation could alter payload text or close DO early.
-    return SQL_TEMPLATE.replace('$bounded_registration$',outer_tag).replace('__PINNED_PACKAGE__',literal,1)
+    template = _compact_sql_template(SQL_TEMPLATE)
+    return template.replace('$bounded_registration$',outer_tag).replace('__PINNED_PACKAGE__',literal,1)
 
 
 SQL_TEMPLATE = r'''-- OFFLINE PREPARATION: NOT AUTHORITY TO EXECUTE.

@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import json
 import os
+import re
 import unittest
 from unittest.mock import patch
 import time
@@ -56,6 +57,54 @@ class OfflineTests(unittest.TestCase):
         self.assertEqual(db.writes,[])
         self.assertNotIn('fixture',prototype.CaptureDB.__bases__[0].__module__)
         self.assertEqual(prototype.CaptureDB.__bases__,(object,))
+
+    def test_template_compaction_preserves_literals_and_comments(self):
+        protected = (
+            "'first\n    literal line\n  last'",
+            "'it''s a\n    quoted line'",
+            '"first\n    identifier"',
+            "E'escaped\\'quote\n    literal line'",
+            "$fixture$first\n    literal line\n  last$fixture$",
+            "$$first\n    literal line\n  last$$",
+            "-- owner's 'comment'",
+            "/* comment\n    exact comment indentation */",
+        )
+        for value in protected:
+            with self.subTest(value=value):
+                template = "  SELECT " + value + ";\n    SELECT 'next';\n"
+                expected = "SELECT " + value + ";\nSELECT 'next';\n"
+                self.assertEqual(prototype._compact_sql_template(template), expected)
+
+    def test_current_template_only_loses_leading_code_whitespace(self):
+        template = prototype.SQL_TEMPLATE
+        compact = prototype._compact_sql_template(template)
+        self.assertEqual(compact, '\n'.join(line.lstrip(' \t') for line in template.split('\n')))
+        self.assertEqual(re.findall(r"'(?:''|[^'])*'", template),
+                         re.findall(r"'(?:''|[^'])*'", compact))
+        self.assertGreater(len(template.encode()) - len(compact.encode()), 700)
+        self.assertEqual(prototype._compact_sql_template(compact), compact)
+
+    def test_render_preserves_exact_multiline_owner_payload(self):
+        payload = {'text': "first\n    owner indentation\n\tmore 'quotes' $tag$ $$ "
+                   "$bounded_registration_0$ __PINNED_PACKAGE__"}
+        before = deepcopy(payload)
+        rendered = prototype.render_sql(payload)
+        literal = prototype._literal(payload)
+        self.assertEqual(rendered.count(literal), 1)
+        self.assertEqual(payload, before)
+        self.assertIn('DO $bounded_registration_1$', rendered)
+
+    def test_exact_candidate_compact_envelope_without_database(self):
+        with patch.object(a, 'verify_source_and_candidate'):
+            package = prototype.capture_plan(f.arguments(), authenticated_owner_principal=f.OWNER,
+                authenticated_desktop_principal=f.PRINCIPAL)
+        # Synthetic hashes measure serialization only; never execute this SQL.
+        compact = prototype.compact_package(package, expected_parent_pg_sha256='a'*64,
+            expected_child_pg_sha256='b'*64)
+        before = deepcopy(compact)
+        self.assertLess(len(prototype.render_sql(compact).encode()), 90000)
+        self.assertEqual(compact, before)
+
 
 
 class DashboardPostgresTests(f.ReconciliationPostgresTests):
@@ -311,6 +360,22 @@ class DashboardPostgresTests(f.ReconciliationPostgresTests):
         self.assertEqual(self.run_sql(prototype.render_sql(self.package))['writes'],0)
         self.assertEqual(before,self.snapshot())
 
+    def test_indented_and_compact_sql_share_exact_audit_and_replay(self):
+        for compact_first in (False, True):
+            with self.subTest(compact_first=compact_first):
+                self.setUp()
+                with patch.object(prototype, '_compact_sql_template', side_effect=lambda value: value):
+                    indented = prototype.render_sql(self.compact)
+                first, second = (self.sql, indented) if compact_first else (indented, self.sql)
+                self.assertEqual(self.run_sql(first)['writes'], 5)
+                after = self.snapshot()
+                self.assertEqual(self.run_sql(second)['writes'], 0)
+                self.assertEqual(self.snapshot(), after)
+                with self.pg.connect(self.url) as db:
+                    history = db.execute("select metadata_json from public.charlie_mission_events "
+                        "where event_type='workflow_updated'").fetchone()[0]
+                self.assertEqual(history, self.package['history'])
+
     def test_compact_preimage_hash_drift_refuses(self):
         for key in ('expected_parent_pg_sha256','expected_child_pg_sha256'):
             p=deepcopy(self.compact);p[key]='0'*64
@@ -389,7 +454,7 @@ class DashboardPostgresTests(f.ReconciliationPostgresTests):
             package=prototype.capture_plan(args,authenticated_owner_principal=f.OWNER,authenticated_desktop_principal=f.PRINCIPAL)
         full=prototype.render_sql(package);compact=prototype.render_sql(self.compact_for(package))
         self.assertGreater(len(full.encode()),600000)
-        # The 100-clause Telegram/migration contract adds bounded metadata;
+        # The 102-clause retained contract adds bounded metadata;
         # this synthetic envelope check is not a production transport limit.
         self.assertLess(len(compact.encode()),90000)
         self.assertEqual(self.run_sql(compact)['writes'],5)
