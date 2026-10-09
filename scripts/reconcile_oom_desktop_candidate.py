@@ -22,11 +22,11 @@ BASE = 'cee35f3b3bce38f7022c264d458d20b41823baf0'
 # independent authenticated owner approval of the exact manifest and scope.
 # Exact PR1388 source pins are bound; release authority remains independently bound.
 CANDIDATE_PR = 1388
-HEAD = 'c531e8ff6c0b67649a01b6b6b0413c422518547b'
-TREE = '61a30afc0d99fa9cf1c71a28911ddd6ce2ff7846'
+HEAD = 'e1294be17a230386a9f8d70e3a3a73ed821270a0'
+TREE = 'f8711a372b81ea50286368076ebe941c07da9e4d'
 # Complete candidate identity alone grants no release or farm-write authority.
 # Synthetic qualification pins live only in tests; no later runtime delta is allowed.
-APPROVED_RUNTIME_HEAD = 'c531e8ff6c0b67649a01b6b6b0413c422518547b'
+APPROVED_RUNTIME_HEAD = 'e1294be17a230386a9f8d70e3a3a73ed821270a0'
 QUALIFICATION_TEST_PATHS = []
 BRANCH = 'codex/core-manager-dependency-intake-20261006'
 PREDECESSOR_PR = 1387
