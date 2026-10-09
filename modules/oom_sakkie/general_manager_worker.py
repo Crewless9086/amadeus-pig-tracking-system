@@ -21,6 +21,8 @@ from typing import Any, Callable, Iterable, Mapping
 
 from modules.oom_sakkie.bounded_postgres_read import (
     ReadBudgetCursor, connect_bounded_postgres, is_database_unavailable)
+from modules.oom_sakkie.herdmaster_case_disposition import (
+    MORTALITY_EXCEPTION_PRIORITY_SQL, is_legacy_mortality_case)
 from modules.oom_sakkie.herdmaster_purpose_decision import (
     PURPOSE_DECISION_SQL, purpose_decision_binding, purpose_refresh_receipt)
 
@@ -303,6 +305,7 @@ class PostgresManagerCaseStore:
                                 -- delegated leases must still be reclaimed, including
                                 -- quiet/confirmed cases, to unlock later generations.
                                 case when m.status='delegated' then 0
+                                  when (__MORTALITY_EXCEPTION_PRIORITY__) then 0
                                   when m.last_delivery_digest=m.evidence_digest
                                     or __PURPOSE_OVERVIEW_COVERAGE__
                                     or starts_with(m.dedupe_key,'rootline-readiness:')
@@ -349,7 +352,8 @@ class PostgresManagerCaseStore:
                             case when e.specialist='BEACON' then 0 else 1 end,e.case_id
                         for update of m skip locked limit %s""".replace(
                             "__PURPOSE_DECISION__", PURPOSE_DECISION_SQL).replace(
-                            "__PURPOSE_OVERVIEW_COVERAGE__", _PURPOSE_OVERVIEW_COVERAGE_SQL),
+                            "__PURPOSE_OVERVIEW_COVERAGE__", _PURPOSE_OVERVIEW_COVERAGE_SQL).replace(
+                            "__MORTALITY_EXCEPTION_PRIORITY__", MORTALITY_EXCEPTION_PRIORITY_SQL),
                         (now, now, CLAIM_LIMIT))
                     for row in cur.fetchall():
                         case = _case_row(row)
@@ -492,6 +496,10 @@ class PostgresManagerCaseStore:
                             "collector_failure_kind", specialist_failure.__class__.__name__),
                         "delivery_confirmed": False, "telegram_sends": 0,
                         "next_reassessment_at": (now + CADENCE).isoformat()}
+                    if is_legacy_mortality_case(case):
+                        # Only a failed pre-provider read retains this advisory's
+                        # actionable retry. Delivery exceptions stay contained.
+                        outcome["_mortality_refresh_failed"] = True
                 elif current_case is None:
                     current_case = case
                     outcome = {"success": False,
@@ -1029,8 +1037,11 @@ class PostgresManagerCaseStore:
             failed
             and outcome.get("status")
                 == "manager_specialist_processing_exception_contained")
+        mortality_refresh_failed = bool(specialist_exception_contained
+            and outcome.get("_mortality_refresh_failed") is True
+            and is_legacy_mortality_case(case))
         state = "contained" if provider_ambiguity_contained else (
-            "waiting_reassessment" if specialist_exception_contained else (
+            "waiting_reassessment" if specialist_exception_contained and not mortality_refresh_failed else (
                 "exception" if failed else "waiting_reassessment"))
         event_type = "contained" if provider_ambiguity_contained else (
             "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed"))

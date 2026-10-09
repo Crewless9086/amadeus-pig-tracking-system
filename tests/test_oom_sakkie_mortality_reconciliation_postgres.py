@@ -226,3 +226,157 @@ def test_collector_timeout_counts_failure_even_when_legacy_row_is_valid(mortalit
     result = worker.run_general_manager_cycle(now=pg.now, source_revision="failed-initial-source",
         store=pg.store, collectors=(_herdmaster,), deliver=lambda *a, **kw: {"success": True, "delivery_confirmed": False})
     assert result["exceptions"] == 1 and result["reconciliation_pending"] == 0 and dependencies(pg) == []
+
+
+def queue_fixture(pg, *, quiet_count=280):
+    originals = [legacy(pg.now), legacy(pg.now, cluster=True)]
+    pg.seed(originals)
+    keys = [v["dedupe_key"] for v in originals]
+    with pg.db() as db:
+        db.execute("""update app_private.oom_manager_cases set status='exception',
+            generation=case when dedupe_key=%s then 15 else 82 end,
+            last_heartbeat_at=%s where dedupe_key=any(%s)""",
+            (keys[0], pg.now-timedelta(hours=1), keys))
+        db.execute("""insert into app_private.oom_manager_case_events
+            (event_id,case_id,generation,event_type,event_payload,occurred_at)
+            select 'synthetic-prior-failure:'||case_id,case_id,generation,'exception',
+                '{"outcome_status":"manager_delivery_refresh_unavailable"}'::jsonb,%s
+            from app_private.oom_manager_cases where dedupe_key=any(%s)""",
+            (pg.now-timedelta(hours=1), keys))
+    quiet = [pg.value("quiet-backlog-"+str(i), unknowns=[],
+        next_reassessment_at=(pg.now-timedelta(days=2)).isoformat()) for i in range(quiet_count)]
+    pg.seed(quiet)
+    with pg.db() as db:
+        db.execute("""update app_private.oom_manager_cases set last_delivery_digest=evidence_digest,
+            last_delivery_at=%s where not (dedupe_key=any(%s))""", (pg.now-timedelta(days=2),keys))
+    return keys, quiet
+
+
+def queue_run(pg, current, delivered):
+    def _herdmaster(now): return [v for v in current if v["specialist"]=="HERDMASTER"]
+    def _rootline(now): return [v for v in current if v["specialist"]=="ROOTLINE"]
+    def _beacon(now): return [v for v in current if v["specialist"]=="BEACON"]
+    def suppress(case, **kwargs):
+        delivered.append(case["dedupe_key"])
+        return {"success": True, "delivery_confirmed": False, "status": "synthetic_no_provider_effect"}
+    return worker.run_general_manager_cycle(now=pg.now, source_revision="mortality-queue-local-test",
+        store=pg.store, collectors=(_herdmaster,_rootline,_beacon), deliver=suppress)
+
+
+def test_282_due_cases_select_exception_targets_then_pending_returns_to_quiet(mortality_db):
+    pg=mortality_db;keys,quiet=queue_fixture(pg);before={r[0]["dedupe_key"]:r[0] for r in rows(pg)}
+    delivered=[];first=queue_run(pg,quiet,delivered)
+    assert first["cases_claimed"]==5 and first["exceptions"]==0
+    assert first["reconciliation_pending"]==2 and first["deliveries_confirmed"]==0
+    assert not set(keys).intersection(delivered)
+    after={r[0]["dedupe_key"]:r[0] for r in rows(pg)}
+    for key in keys:
+        assert after[key]["status"]=="waiting_reassessment"
+        for field in ("case_id","generation","evidence_digest","evidence_refs","summary","next_action","last_delivery_digest","last_delivery_at"):
+            assert after[key][field]==before[key][field]
+    assert len(dependencies(pg))==2
+    pg.now+=timedelta(minutes=5)
+    second=queue_run(pg,quiet,delivered)
+    assert second["cases_claimed"]==5 and second["exceptions"]==0 and second["reconciliation_pending"]==0
+    final={r[0]["dedupe_key"]:r[0] for r in rows(pg)}
+    assert all(final[key]==after[key] for key in keys) and len(dependencies(pg))==2
+
+
+@pytest.mark.parametrize("key,specialist,status,expected", [
+    ("herdmaster:herdmaster:mortality:"+"a"*20,"HERDMASTER","exception",True),
+    ("herdmaster:herdmaster:mortality-cluster:"+"b"*20,"HERDMASTER","exception",True),
+    ("herdmaster:herdmaster:mortality:"+"a"*20,"ROOTLINE","exception",False),
+    ("herdmaster:herdmaster:mortality:"+"a"*20,"HERDMASTER","waiting_reassessment",False),
+    ("herdmaster:herdmaster:mortality:"+"a"*20,"HERDMASTER","open",False),
+    ("herdmaster:herdmaster:mortality:"+"a"*20,"HERDMASTER","completed",False),
+    ("herdmaster:herdmaster:mortality:"+"a"*19,"HERDMASTER","exception",False),
+    ("herdmaster:herdmaster:mortality:"+"a"*21,"HERDMASTER","exception",False),
+    ("herdmaster:herdmaster:mortality:"+"A"*20,"HERDMASTER","exception",False),
+    ("herdmaster:herdmaster:mortality:"+"a"*20+"\n","HERDMASTER","exception",False),
+    ("prefix:herdmaster:herdmaster:mortality:"+"a"*20,"HERDMASTER","exception",False),
+    ("herdmaster:retained-mortality:"+"a"*20,"HERDMASTER","exception",False),
+    ("herdmaster:herdmaster:mortality-new:"+"a"*20,"HERDMASTER","exception",False),
+])
+def test_exception_priority_sql_is_exact_family_specialist_and_status(mortality_db,key,specialist,status,expected):
+    with mortality_db.db() as db:
+        actual=db.execute("select "+disposition.MORTALITY_EXCEPTION_PRIORITY_SQL+
+            " from (select %s::text dedupe_key,%s::text specialist,%s::text status) m",(key,specialist,status)).fetchone()[0]
+    assert actual is expected
+
+
+@pytest.mark.parametrize("kind",["missing_refs","invalid_timestamp","mixed_json_types"])
+def test_matching_key_malformed_evidence_gets_work_but_remains_error(mortality_db,kind):
+    pg=mortality_db;pg.seed([legacy(pg.now)])
+    with pg.db() as db:
+        refs=db.execute("select evidence_refs from app_private.oom_manager_cases").fetchone()[0]
+        if kind=="missing_refs":refs=["unproven"]
+        elif kind=="invalid_timestamp":refs=["observed:not-a-time" if r.startswith("observed:") else r for r in refs]
+        else:refs=[None,42,{"synthetic":"invalid"}]
+        db.execute("update app_private.oom_manager_cases set status='exception',evidence_refs=%s::jsonb",(json.dumps(refs),))
+    before=rows(pg)[0][0];result=run(pg);after=rows(pg)[0][0]
+    assert result["cases_claimed"]==1 and result["exceptions"]==1 and result["reconciliation_pending"]==0
+    assert after["status"]=="exception" and dependencies(pg)==[]
+    assert datetime.fromisoformat(after["next_reassessment_at"])==pg.now+worker.CADENCE
+    for field in ("generation","evidence_digest","evidence_refs","last_delivery_digest","last_delivery_at"):
+        assert after[field]==before[field]
+
+
+def test_fresh_urgent_fairness_and_following_cycle_handles_remaining_exception(mortality_db):
+    pg=mortality_db;keys,quiet=queue_fixture(pg,quiet_count=12)
+    urgent=[pg.value("urgent-"+str(i),dedupe_key=specialist.lower()+":current-synthetic-"+str(i),
+        specialist=specialist,urgency="critical",unknowns=["synthetic current fact"],
+        next_reassessment_at=(pg.now-timedelta(minutes=1)).isoformat())
+        for i,specialist in enumerate(("HERDMASTER","ROOTLINE","BEACON","HERDMASTER"))]
+    pg.seed(urgent);delivered=[];result=queue_run(pg,quiet+urgent,delivered)
+    assert result["exceptions"]==0 and result["reconciliation_pending"]==1
+    assert set(delivered)=={v["dedupe_key"] for v in urgent}
+    assert len(dependencies(pg))==1
+    pg.now+=worker.CADENCE
+    second=queue_run(pg,quiet+urgent,delivered)
+    assert second["exceptions"]==0 and second["reconciliation_pending"]==1
+    assert {p["technical_dependency"]["case_id"] for p in dependencies(pg)}=={
+        r[0]["case_id"] for r in rows(pg) if r[0]["dedupe_key"] in keys}
+
+
+def test_read_failure_stays_actionable_until_next_due_recovery_with_282_cases(mortality_db,monkeypatch):
+    pg=mortality_db;keys,quiet=queue_fixture(pg)
+    def fail(*args,**kwargs):raise TimeoutError("synthetic unavailable read")
+    with monkeypatch.context() as failure:
+        failure.setattr(disposition,"collect_mortality_reconciliation",fail)
+        first=queue_run(pg,quiet,[])
+    assert first["exceptions"]==2 and first["reconciliation_pending"]==0 and dependencies(pg)==[]
+    failed={r[0]["dedupe_key"]:r[0] for r in rows(pg) if r[0]["dedupe_key"] in keys}
+    assert all(r["status"]=="exception" and datetime.fromisoformat(r["next_reassessment_at"])==pg.now+worker.CADENCE for r in failed.values())
+    with pg.db() as db:
+        failures=db.execute("""select event_payload->>'outcome_status',event_payload->>'failure_kind'
+            from app_private.oom_manager_case_events where event_type='exception'
+            and occurred_at=%s""",(pg.now,)).fetchall()
+    assert failures==[("manager_specialist_processing_exception_contained","collector:herdmaster_mortality:TimeoutError")]*2
+    pg.now+=timedelta(minutes=1);early=queue_run(pg,quiet,[])
+    assert early["exceptions"]==0 and early["reconciliation_pending"]==0
+    assert failed=={r[0]["dedupe_key"]:r[0] for r in rows(pg) if r[0]["dedupe_key"] in keys}
+    pg.now+=timedelta(minutes=4);retry=queue_run(pg,quiet,[])
+    assert retry["exceptions"]==0 and retry["reconciliation_pending"]==2 and len(dependencies(pg))==2
+    recovered={r[0]["dedupe_key"]:r[0] for r in rows(pg) if r[0]["dedupe_key"] in keys}
+    assert all(r["status"]=="waiting_reassessment" for r in recovered.values())
+    for key in keys:
+        for field in ("case_id","generation","evidence_digest","evidence_refs","summary","next_action","last_delivery_digest","last_delivery_at"):
+            assert failed[key][field]==recovered[key][field]
+    pg.now+=worker.CADENCE;later=queue_run(pg,quiet,[])
+    assert later["exceptions"]==0 and later["reconciliation_pending"]==0 and len(dependencies(pg))==2
+    assert recovered=={r[0]["dedupe_key"]:r[0] for r in rows(pg) if r[0]["dedupe_key"] in keys}
+
+
+def test_current_legacy_delivery_exception_preserves_generic_containment(mortality_db):
+    pg=mortality_db;raw=legacy(pg.now);pg.seed([raw]);attempts=[]
+    def _herdmaster(now):return [raw]
+    def delivery(case,**kwargs):
+        attempts.append(case["case_id"])
+        raise TimeoutError("synthetic delivery uncertainty")
+    result=worker.run_general_manager_cycle(now=pg.now,source_revision="mortality-delivery-test",
+        store=pg.store,collectors=(_herdmaster,),deliver=delivery)
+    saved=rows(pg)[0][0]
+    assert len(attempts)==1 and result["exceptions"]==1 and result["reconciliation_pending"]==0
+    assert saved["status"]=="waiting_reassessment" and dependencies(pg)==[]
+    assert datetime.fromisoformat(saved["next_reassessment_at"])==pg.now+worker.CADENCE
+    assert saved["last_delivery_digest"] is None and result["deliveries_confirmed"]==0
