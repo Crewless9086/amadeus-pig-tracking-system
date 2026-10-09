@@ -8,6 +8,7 @@ import unittest
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
@@ -24,6 +25,46 @@ def scope(root):
         environment_path=str(root / ".env"), environment_sha256="b"*64,
         database_host="db.invalid", database_port=5432, database_name="test",
         database_user="test", ca_path=str(root / "ca.pem"), ca_sha256="c"*64)
+
+
+class InterpreterLookupTests(unittest.TestCase):
+    def test_shallow_source_and_filesystem_root_fall_back_without_ancestor_lookup(self):
+        anchor = Path(Path.cwd().anchor)
+        for module in (control, supervisor):
+            for root in (anchor / "source", anchor):
+                with self.subTest(module=module.__name__, root=str(root)), \
+                     patch.object(module, "governed_runtime_binding", return_value=None), \
+                     patch.object(module, "os", SimpleNamespace(name="posix")), \
+                     patch.object(Path, "exists", autospec=True, return_value=False) as exists:
+                    self.assertEqual(module._python_executable(root), str(Path(module.sys.executable)))
+                    self.assertEqual([call.args[0] for call in exists.call_args_list],
+                        [root / "venv" / "Scripts" / "python.exe"])
+
+    def test_normal_depth_preserves_local_then_shared_then_current_interpreter(self):
+        root = Path(Path.cwd().anchor) / "synthetic" / "nested" / "repo"
+        local = root / "venv" / "Scripts" / "python.exe"
+        shared = root.parents[1] / "venv" / "Scripts" / "python.exe"
+        for module in (control, supervisor):
+            for present, expected in (({local, shared}, local), ({shared}, shared),
+                                      (set(), Path(module.sys.executable))):
+                with self.subTest(module=module.__name__, present=sorted(map(str, present))), \
+                     patch.object(module, "governed_runtime_binding", return_value=None), \
+                     patch.object(module, "os", SimpleNamespace(name="posix")), \
+                     patch.object(Path, "exists", autospec=True, side_effect=lambda path: path in present):
+                    self.assertEqual(module._python_executable(root), str(expected))
+
+    def test_governed_and_windows_base_interpreters_keep_precedence(self):
+        for module in (control, supervisor):
+            with self.subTest(module=module.__name__), \
+                 patch.object(module, "governed_runtime_binding", return_value={"interpreter": "bound-python"}), \
+                 patch.object(Path, "exists", side_effect=AssertionError("fallback consulted")):
+                self.assertEqual(module._python_executable(module.REPO_ROOT), "bound-python")
+            with self.subTest(module=module.__name__), \
+                 patch.object(module, "governed_runtime_binding", return_value=None), \
+                 patch.object(module, "os", SimpleNamespace(name="nt")), \
+                 patch.object(module.sys, "_base_executable", "base-python", create=True), \
+                 patch.object(Path, "exists", side_effect=AssertionError("fallback consulted")):
+                self.assertEqual(module._python_executable(module.REPO_ROOT), str(Path("base-python")))
 
 
 class StoppedInitializationTests(unittest.TestCase):
