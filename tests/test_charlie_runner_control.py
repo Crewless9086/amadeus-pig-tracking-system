@@ -1670,7 +1670,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "system_root_required"):
             harness.worker_environment({}, Path("case-root"), "test-job")
 
-    def test_platform_matrix_preserves_production_kwargs_and_seven_bounded_calls(self):
+    def test_platform_matrix_preserves_production_kwargs_and_eight_bounded_calls(self):
         import ast
         from tests import charlie_windows_lifecycle_harness as harness
         source = ast.parse(Path(process_ownership.__file__).read_text(encoding="utf-8"))
@@ -1691,7 +1691,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
             root=Path(tmp).resolve()/"case"
             matched=harness.worker_environment({"SystemRoot":"C:/Windows", **{k:k for k in harness.EXPANDED_PLATFORM_ENV}},root,"same-owned-job")
-            environments=[env for _,env in harness.platform_environment_matrix(matched,root)]
+            environments=[env for _,env in harness.platform_environment_matrix(matched,root,{"SystemRoot":"C:/Windows","PRIVATE_TEST_TOKEN":"private-value"})]
             def invoke(command, **kwargs):
                 spec = specs[0]; env = environments[len(calls)]
                 calls.append((command, kwargs))
@@ -1703,35 +1703,46 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
             with patch.object(harness.subprocess,"run",side_effect=invoke):
                 reports=[harness.probe_cim_module_context(env)for env in environments]
             self.assertEqual(dict(os.environ),before)
-        self.assertEqual(len(calls),7)
+        self.assertEqual(len(calls),8)
         self.assertTrue(all(harness.owned_automatic_cim_passed(report)for report in reports))
         self.assertNotIn("private-",json.dumps(reports))
 
-    def test_platform_matrix_has_exact_groups_and_cache_cannot_escape_case_root(self):
+    def test_platform_matrix_isolates_exact_override_families_without_case_duplicates(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        self.assertEqual(harness.PLATFORM_GROUPS, {
-            "identity": {"USERNAME","USERDOMAIN","USERDOMAIN_ROAMINGPROFILE","COMPUTERNAME","HOMEDRIVE","HOMEPATH","ALLUSERSPROFILE","PUBLIC"},
-            "architecture": {"OS","PROCESSOR_ARCHITECTURE","PROCESSOR_ARCHITEW6432","NUMBER_OF_PROCESSORS"},
-            "installation": {"PROGRAMFILES(X86)","PROGRAMW6432","COMMONPROGRAMFILES","COMMONPROGRAMFILES(X86)","COMMONPROGRAMW6432"}})
-        self.assertEqual(len(harness.EXPANDED_PLATFORM_ENV),17)
+        families = {
+            "module_path": {"PSMODULEPATH"}, "temp": {"TEMP", "TMP"},
+            "test_controls": {harness.JOB_ENV, "PYTHONDONTWRITEBYTECODE", "PYTHON_DOTENV_DISABLED", "DATABASE_URL"}}
         with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
             root=Path(tmp).resolve()/"case"
-            source={"SystemRoot":"C:/Windows",**{k.lower():"benign-value"for k in harness.EXPANDED_PLATFORM_ENV}}
+            source={"SystemRoot":"C:/Windows","PRIVATE_TEST_TOKEN":"private-value","UNRELATED_NAME":"unchanged"}
+            for names in families.values():
+                source.update({k.lower():"ambient-value" for k in names})
             env=harness.worker_environment(source,root,"job")
-            before=dict(env);matrix=dict(harness.platform_environment_matrix(env,root))
-            self.assertEqual(list(matrix),["ambient_reference","existing_allowlist","expanded","without_identity","without_architecture","without_installation","expanded_fresh_cache"])
-            self.assertIsNone(matrix["ambient_reference"])
-            self.assertIs(matrix["expanded"],env)
-            self.assertEqual(env,before)
-            self.assertEqual(matrix["existing_allowlist"],{k:v for k,v in env.items()if k.upper()not in harness.EXPANDED_PLATFORM_ENV})
-            for group,names in harness.PLATFORM_GROUPS.items():
-                self.assertEqual(matrix["without_"+group],{k:v for k,v in env.items()if k.upper()not in names})
-            cached=matrix["expanded_fresh_cache"]
-            self.assertEqual({k:v for k,v in cached.items()if k!="PSModuleAnalysisCachePath"},env)
-            self.assertEqual(Path(cached["PSModuleAnalysisCachePath"]).parent,root)
-            self.assertNotIn("PSModuleAnalysisCachePath",env)
+            before=dict(env); ambient_before=dict(source)
+            matrix=dict(harness.platform_environment_matrix(env,root,source))
+            self.assertEqual(list(matrix),["ambient_reference","ambient_with_module_path","ambient_with_temp",
+                "ambient_with_test_controls","constructed_reference","constructed_without_module_path",
+                "constructed_without_temp","constructed_without_test_controls"])
+            self.assertEqual(matrix["ambient_reference"],source)
+            self.assertIsNot(matrix["ambient_reference"],source)
+            self.assertIs(matrix["constructed_reference"],env)
+            self.assertEqual(env,before); self.assertEqual(source,ambient_before)
+            for label,names in families.items():
+                with self.subTest(family=label):
+                    changed=matrix["ambient_with_"+label]
+                    self.assertEqual(changed,{**{k:v for k,v in source.items()if k.upper()not in names},
+                        **{k:v for k,v in env.items()if k.upper()in names}})
+                    self.assertEqual(len(changed),len({k.upper()for k in changed}))
+                    self.assertEqual(matrix["constructed_without_"+label],{k:v for k,v in env.items()if k.upper()not in names})
+                    self.assertNotIn("PRIVATE_TEST_TOKEN",matrix["constructed_without_"+label])
+            source["UNRELATED_NAME"]="later-change"
+            self.assertEqual(matrix["ambient_reference"]["UNRELATED_NAME"],"unchanged")
+            self.assertNotIn("PSMODULEPATH",{k.upper()for k in matrix["constructed_without_module_path"]})
             with self.assertRaisesRegex(RuntimeError,"report_root_must_be_below_runner_temp"):
-                harness.platform_environment_matrix(env,Path(tmp).resolve())
+                harness.platform_environment_matrix(env,Path(tmp).resolve(),source)
+            for invalid in ({k:v for k,v in env.items()if k!="DATABASE_URL"},{**env,"psmodulepath":"duplicate"}):
+                with self.assertRaisesRegex(RuntimeError,"fixed_override_family_required"):
+                    harness.platform_environment_matrix(invalid,root,source)
 
     def test_policy_context_reports_only_known_labels_and_never_forwards_values(self):
         from tests import charlie_windows_lifecycle_harness as harness
@@ -1830,12 +1841,13 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
              patch.object(harness,"worker_environment",wraps=original_builder) as builder:
             report = harness._run_owned_worker(harness.SELECTORS[1],Path(tmp))
         builder.assert_called_once()
-        self.assertEqual(order,["reference"]*7+["create","assign","resume"])
-        self.assertIsNone(probe.call_args_list[0].args[0])
-        allowlist = probe.call_args_list[2].args[0]
+        self.assertEqual(order,["reference"]*8+["create","assign","resume"])
+        self.assertEqual(probe.call_args_list[0].args[0]["PRIVATE_TEST_TOKEN"],"not-forwarded")
+        allowlist = probe.call_args_list[4].args[0]
         self.assertIs(allowlist,native.CreateProcess.call_args.args[6])
         self.assertNotIn("PRIVATE_TEST_TOKEN",allowlist)
-        self.assertEqual(set(report["platform_parent"]),{"ambient_reference","existing_allowlist","expanded","without_identity","without_architecture","without_installation","expanded_fresh_cache"})
+        self.assertEqual(set(report["platform_parent"]),{"ambient_reference","ambient_with_module_path","ambient_with_temp","ambient_with_test_controls",
+            "constructed_reference","constructed_without_module_path","constructed_without_temp","constructed_without_test_controls"})
         self.assertEqual(set(report["platform_group_present_counts"]),set(harness.PLATFORM_GROUPS))
         self.assertTrue(report["cleanup_verified"])
         self.assertNotIn("not-forwarded",json.dumps(report))

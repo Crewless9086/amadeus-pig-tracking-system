@@ -53,19 +53,27 @@ def worker_environment(source, root, job_name):
     return env
 
 
-def platform_environment_matrix(expanded, root):
-    """Seven fixed references, never an adaptive profile-selection or security fallback."""
-    root = _report_root(str(root))
-    without = lambda names: {k: v for k, v in expanded.items() if k.upper() not in names}
-    cache = {**expanded, "PSModuleAnalysisCachePath": str(root / "ModuleAnalysisCache-diagnostic")}
+def platform_environment_matrix(expanded, root, ambient):
+    """Eight parent-only comparisons; the fixed owned-worker profile never changes."""
+    _report_root(str(root))
+    ambient = dict(ambient)
+    families = {
+        "module_path": frozenset({"PSMODULEPATH"}),
+        "temp": frozenset({"TEMP", "TMP"}),
+        "test_controls": frozenset({JOB_ENV, "PYTHONDONTWRITEBYTECODE", "PYTHON_DOTENV_DISABLED", "DATABASE_URL"}),
+    }
+    without = lambda source, names: {k: v for k, v in source.items() if k.upper() not in names}
+    def override(names):
+        # Windows environment names are case-insensitive: remove before replacing.
+        fixed = {k: v for k, v in expanded.items() if k.upper() in names}
+        if {k.upper() for k in fixed} != names or len(fixed) != len(names):
+            raise RuntimeError("fixed_override_family_required")
+        return {**without(ambient, names), **fixed}
     return (
-        ("ambient_reference", None),
-        ("existing_allowlist", without(EXPANDED_PLATFORM_ENV)),
-        ("expanded", expanded),
-        ("without_identity", without(PLATFORM_GROUPS["identity"])),
-        ("without_architecture", without(PLATFORM_GROUPS["architecture"])),
-        ("without_installation", without(PLATFORM_GROUPS["installation"])),
-        ("expanded_fresh_cache", cache),
+        ("ambient_reference", ambient),
+        *(("ambient_with_" + label, override(names)) for label, names in families.items()),
+        ("constructed_reference", expanded),
+        *(("constructed_without_" + label, without(expanded, names)) for label, names in families.items()),
     )
 
 
@@ -80,7 +88,7 @@ def process_policy_context(source, worker):
 
 
 def cim_module_specs():
-    """Automatic module loading and narrow local CIM, identical in all seven references."""
+    """Automatic module loading and narrow local CIM, identical in all eight references."""
     prefix = (
         "$ErrorActionPreference='Stop';"
         "function Emit([string]$stage,[long]$count){"
@@ -393,11 +401,11 @@ def _run_owned_worker(selector, root):
         env = worker_environment(os.environ, root, name)
         if selector == SELECTORS[1]:
             # Read-only references extend the parent preflight, never lifecycle/termination.
-            # No parent credentials are copied into the matched probe or owned worker.
+            # Ambient variants remain parent-only; no parent credentials enter the worker.
             report["process_policy_context"] = process_policy_context(os.environ, env)
             report["platform_parent"] = {
                 label: probe_cim_module_context(environment)
-                for label, environment in platform_environment_matrix(env, root)
+                for label, environment in platform_environment_matrix(env, root, os.environ)
             }
             report["platform_group_present_counts"] = {
                 label: sum(k.upper() in names for k in env) for label, names in PLATFORM_GROUPS.items()
