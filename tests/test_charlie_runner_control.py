@@ -1667,7 +1667,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "system_root_required"):
             harness.worker_environment({}, Path("case-root"), "test-job")
 
-    def test_phase_probes_preserve_production_stdio_and_change_only_one_startup_argument(self):
+    def test_module_matrix_preserves_production_kwargs_and_six_calls_with_matching_environment(self):
         import ast
         from tests import charlie_windows_lifecycle_harness as harness
         source = ast.parse(Path(process_ownership.__file__).read_text(encoding="utf-8"))
@@ -1677,40 +1677,42 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         production_kwargs = {k.arg: ast.literal_eval(k.value) for k in run.keywords}
         self.assertEqual(production_kwargs, {"capture_output": True, "text": True, "encoding": "utf-8",
             "errors": "replace", "timeout": 8, "check": False})
-        specs = harness.powershell_phase_specs()
-        self.assertEqual(len(specs), 6)
-        self.assertEqual([s[0] for s in specs], ["startup_default", "startup_no_window", "startup_closed_stdin",
-            "narrow_current_pid", "broad_acquisition", "projection_serialization"])
-        self.assertEqual(specs[0][1], specs[1][1]); self.assertEqual(specs[0][1], specs[2][1])
-        self.assertEqual([s[2] for s in specs], [{}, {"creationflags": 0x08000000}, {"stdin": subprocess.DEVNULL}, {}, {}, {}])
-        calls = []
+        specs = harness.cim_module_specs()
+        self.assertEqual([s[0] for s in specs], ["automatic", "explicit_builtin"])
+        self.assertIn("Get-Command -Name Get-CimInstance -CommandType Cmdlet", specs[0][1])
+        self.assertNotIn("Import-Module", specs[0][1])
+        self.assertIn("[IO.Path]::Combine($PSHOME,'Modules','CimCmdlets','CimCmdlets.psd1')", specs[1][1])
+        self.assertNotIn("Join-Path", specs[1][1])
+        self.assertEqual(specs[0][1].split("$rows=",1)[1], specs[1][1].split("$rows=",1)[1])
+        for spec in specs:
+            self.assertIn("Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)", spec[1])
+            self.assertNotIn("-ComputerName", spec[1]); self.assertNotIn("-CimSession", spec[1])
+            self.assertIn("[Console]::Out.Flush()", spec[1])
+        calls = []; matched = {"SYSTEMROOT": "C:/Windows", "PATH": "synthetic", harness.JOB_ENV: "same-owned-job"}
+        environments = [None, matched, dict(matched)]
         def invoke(command, **kwargs):
-            spec = specs[len(calls)]; calls.append((command, kwargs))
+            spec = specs[len(calls) % 2]; env = environments[len(calls) // 2]
+            calls.append((command, kwargs))
             self.assertEqual(command, ["powershell", "-NoProfile", "-NonInteractive", "-Command", spec[1]])
-            self.assertEqual(kwargs, {**production_kwargs, **spec[2]})
-            output = "".join("CHARLIE_PHASE|" + stage + "|0\n" for stage in spec[3])
+            self.assertEqual(kwargs, {**production_kwargs, "env": env})
+            output = "".join("CHARLIE_PHASE|" + stage + ("|0\n" if stage in {"started", "completed"} else "|1\n") for stage in spec[2])
             return SimpleNamespace(returncode=0, stdout=output, stderr="private-error-not-retained")
         before = dict(os.environ)
         with patch.object(harness.subprocess, "run", side_effect=invoke):
-            result = harness.probe_powershell_phases()
+            reports = [harness.probe_cim_module_context(env) for env in environments]
         self.assertEqual(len(calls), 6)
         self.assertEqual(dict(os.environ), before)
-        self.assertTrue(harness.default_phases_passed(result))
-        self.assertNotIn("private-", json.dumps(result))
-        script = ast.literal_eval(next(n.value for n in inspector.body if isinstance(n, ast.Assign)
-            and any(isinstance(t, ast.Name) and t.id == "script" for t in n.targets)))
-        same_projection = script.split("Where-Object", 1)[1].split("|ConvertTo-Json", 1)[0]
-        self.assertIn("Where-Object" + same_projection, specs[-1][1])
-        self.assertIn("[Console]::Out.Flush()", specs[-1][1])
-        self.assertNotIn("[Console]::Out.Write($json)", specs[-1][1])
+        self.assertEqual(calls[2][1]["env"], calls[4][1]["env"])
+        self.assertTrue(all(harness.owned_automatic_cim_passed(report) for report in reports))
+        self.assertNotIn("private-", json.dumps(reports))
 
     def test_phase_timeout_retains_only_fixed_completed_markers_not_exception_details(self):
         from tests import charlie_windows_lifecycle_harness as harness
         error = subprocess.TimeoutExpired(["private-command"], 8,
             output=b"CHARLIE_PHASE|started|0\n", stderr=b"private-error")
         with patch.object(harness.subprocess, "run", side_effect=error) as invoke:
-            report = harness.probe_powershell_phases()
-        self.assertEqual(invoke.call_count, 6)  # one bounded attempt per probe, no retry
+            report = harness.probe_cim_module_context({})
+        self.assertEqual(invoke.call_count, 2)  # one bounded attempt per script/context, no retry
         for item in report.values():
             self.assertFalse(item["success"]); self.assertFalse(item["exited_zero"])
             self.assertEqual(item["error_type"], "TimeoutExpired")
@@ -1733,43 +1735,91 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
 
     def test_completed_script_does_not_hide_process_exit_timeout_or_nonzero_exit(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        specs = harness.powershell_phase_specs(); index = 0
+        specs = harness.cim_module_specs(); index = 0
         def invoke(command, **kwargs):
             nonlocal index
             spec = specs[index]; index += 1
-            output = "".join("CHARLIE_PHASE|" + stage + "|0\n" for stage in spec[3])
+            output = "".join("CHARLIE_PHASE|" + stage + "|0\n" for stage in spec[2])
             if index % 2:
                 raise subprocess.TimeoutExpired(command, 8, output=output)
             return SimpleNamespace(returncode=1, stdout=output, stderr="private")
         with patch.object(harness.subprocess, "run", side_effect=invoke):
-            report = harness.probe_powershell_phases()
+            report = harness.probe_cim_module_context({})
         for item in report.values():
             self.assertTrue(item["output_valid"])
             self.assertEqual(item["markers"][-1], {"stage": "completed", "count": 0})
             self.assertFalse(item["success"])
-        self.assertFalse(harness.default_phases_passed(report))
+        self.assertFalse(harness.owned_automatic_cim_passed(report))
 
-    def test_phase_comparisons_never_rescue_a_failed_or_missing_default_probe(self):
+    def test_reference_or_explicit_module_success_cannot_rescue_owned_automatic_failure(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        good = {spec[0]: {"success": True} for spec in harness.powershell_phase_specs()}
-        self.assertTrue(harness.default_phases_passed(good))
-        for label in harness.DEFAULT_PHASES:
-            with self.subTest(label=label):
-                self.assertFalse(harness.default_phases_passed({**good, label: {"success": False}}))
-                self.assertFalse(harness.default_phases_passed({k: v for k, v in good.items() if k != label}))
-        self.assertTrue(harness.default_phases_passed({**good, "startup_no_window": {"success": False},
-            "startup_closed_stdin": {"success": False}}))
+        self.assertTrue(harness.owned_automatic_cim_passed({"automatic": {"success": True}, "explicit_builtin": {"success": False}}))
+        for value in ({}, {"automatic": {"success": False}}, {"automatic": {"success": "true"}}):
+            with self.subTest(value=value):
+                report = {**value, "explicit_builtin": {"success": True}, "parent_ambient": {"success": True},
+                    "parent_allowlist": {"success": True}}
+                self.assertFalse(harness.owned_automatic_cim_passed(report))
 
-    def test_phase_failures_sanitize_exception_and_discard_unexpected_stdout(self):
+    def test_module_failures_sanitize_errors_and_require_current_pid_row(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        failures = [OSError("private-path"), RuntimeError("private-token")]
-        failures.extend([SimpleNamespace(returncode=0, stdout="private-process", stderr="private-error")] * 4)
-        with patch.object(harness.subprocess, "run", side_effect=failures):
-            report = harness.probe_powershell_phases()
-        self.assertEqual(report["startup_default"]["error_type"], "OSError")
-        self.assertEqual(report["startup_no_window"]["error_type"], "UnexpectedError")
-        self.assertTrue(all(not item["success"] for item in report.values()))
+        with patch.object(harness.subprocess, "run", side_effect=[OSError("private-path"), RuntimeError("private-token")]):
+            report = harness.probe_cim_module_context({})
+        self.assertEqual(report["automatic"]["error_type"], "OSError")
+        self.assertEqual(report["explicit_builtin"]["error_type"], "UnexpectedError")
         self.assertNotIn("private-", json.dumps(report))
+        specs = harness.cim_module_specs()
+        responses = [SimpleNamespace(returncode=0, stdout="".join("CHARLIE_PHASE|" + marker + "|0\n" for marker in spec[2])) for spec in specs]
+        with patch.object(harness.subprocess, "run", side_effect=responses):
+            report = harness.probe_cim_module_context({})
+        self.assertTrue(all(not item["success"] and item["output_valid"] for item in report.values()))
+        with patch.object(harness.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="private-process", stderr="private-error")):
+            report = harness.probe_cim_module_context({})
+        self.assertTrue(all(not item["success"] and not item["output_valid"] for item in report.values()))
+        self.assertNotIn("private-", json.dumps(report))
+
+    def test_parent_references_use_one_allowlist_then_launch_owned_worker_even_if_reference_fails(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api = self.fake_api(); order = []
+        api.AssignProcessToJobObject.side_effect = lambda *args: order.append("assign") or 1
+        api.ResumeThread.side_effect = lambda *args: order.append("resume") or 1
+        def create(*args): order.append("create"); return (40,41,123,124)
+        native = SimpleNamespace(CreateProcess=Mock(side_effect=create))
+        original_builder = harness.worker_environment
+        probe = Mock(side_effect=lambda env: order.append("reference") or {"automatic": {"success": False}})
+        with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows", "PRIVATE_TEST_TOKEN":"not-forwarded"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness,"probe_cim_module_context",probe), \
+             patch.object(harness,"worker_environment",wraps=original_builder) as builder:
+            report = harness._run_owned_worker(harness.SELECTORS[1],Path(tmp))
+        builder.assert_called_once()
+        self.assertEqual(order,["reference","reference","create","assign","resume"])
+        self.assertIsNone(probe.call_args_list[0].args[0])
+        allowlist = probe.call_args_list[1].args[0]
+        self.assertIs(allowlist,native.CreateProcess.call_args.args[6])
+        self.assertNotIn("PRIVATE_TEST_TOKEN",allowlist)
+        self.assertEqual(set(report["cim_module_parent"]),{"ambient_reference","worker_allowlist"})
+        self.assertTrue(report["cleanup_verified"])
+        self.assertNotIn("not-forwarded",json.dumps(report))
+
+    def test_owned_probe_captures_inherited_environment_before_bootstrap_and_fails_before_lifecycle(self):
+        import contextlib
+        from tests import charlie_windows_lifecycle_harness as harness
+        inherited = {"SYSTEMROOT":"C:/Windows", harness.JOB_ENV:"same-owned-job"}
+        failure = {"automatic":{"success":False},"explicit_builtin":{"success":True}}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,inherited,clear=True), \
+             patch.object(harness,"windows_job_guard",return_value=contextlib.nullcontext()), \
+             patch.object(harness,"probe_cim_module_context",return_value=failure) as probe, \
+             patch.object(harness.unittest.defaultTestLoader,"loadTestsFromName") as loader, \
+             patch.object(harness.socket.socket,"connect"), \
+             patch("tempfile.tempdir",tmp):
+            self.assertEqual(harness._worker(harness.SELECTORS[1],Path(tmp)),1)
+            self.assertEqual(probe.call_args.args[0],inherited)
+            loader.assert_not_called()
+            report=json.loads((Path(tmp)/"result.json").read_text())
+            self.assertEqual(report,{"selector":harness.SELECTORS[1],"tests_run":0,"failures":0,"errors":1,"skips":0})
 
     def fake_api(self):
         api = Mock()

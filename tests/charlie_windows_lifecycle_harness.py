@@ -44,44 +44,32 @@ def worker_environment(source, root, job_name):
     return env
 
 
-PHASE_PREFIX = "CHARLIE_PHASE|"
-DEFAULT_PHASES = ("startup_default", "narrow_current_pid", "broad_acquisition", "projection_serialization")
-
-
-def powershell_phase_specs():
-    """Fixed scripts print only stage markers/counts; process fields stay in memory."""
+def cim_module_specs():
+    """Locate automatic/explicit built-in module loading versus local CIM acquisition."""
     prefix = (
         "$ErrorActionPreference='Stop';"
         "function Emit([string]$stage,[long]$count){"
         "[Console]::Out.WriteLine('CHARLIE_PHASE|'+$stage+'|'+$count);[Console]::Out.Flush()};"
         "Emit 'started' 0;"
     )
-    finish = "Emit 'completed' 0;"
-    startup = prefix + finish
-    narrow = prefix + "$rows=@(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID));Emit 'acquired' $rows.Count;" + finish
-    broad = prefix + "$rows=@(Get-CimInstance Win32_Process);Emit 'acquired' $rows.Count;" + finish
-    # Materialize the same acquisition/filter/projection/JSON/base64 operations at
-    # explicit boundaries to locate a stall. This is diagnostic, not an inspector replacement.
-    projection = prefix + (
-        "$selfPid=$PID;$rows=@(Get-CimInstance Win32_Process);Emit 'acquired' $rows.Count;"
-        "$projected=@($rows|"
-        "Where-Object{$_.ProcessId -ne $selfPid -and $_.ParentProcessId -ne $selfPid}|"
-        "ForEach-Object{"
-        "[pscustomobject]@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;"
-        "creation_time=[string]$_.CreationDate;executable_path=[string]$_.ExecutablePath;"
-        "command_line=[string]$_.CommandLine;name=[string]$_.Name}});"
-        "Emit 'projected' $projected.Count;"
-        "$json=$projected|ConvertTo-Json -Compress;"
-        "$bytes=[Text.Encoding]::UTF8.GetBytes([string]$json);Emit 'serialized' $bytes.Length;"
-        "$encoded=[Convert]::ToBase64String($bytes);Emit 'encoded' $encoded.Length;"
-    ) + finish
+    query = (
+        "$rows=@(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID));"
+        "Emit 'acquired' $rows.Count;Emit 'completed' 0;"
+    )
+    automatic = prefix + (
+        "$command=@(Get-Command -Name Get-CimInstance -CommandType Cmdlet -ErrorAction Stop);"
+        "if($command.Count -ne 1 -or $command[0].ModuleName -ne 'CimCmdlets'){throw 'unexpected_cim_command'};"
+        "Emit 'command_resolved' 1;"
+    ) + query
+    explicit = prefix + (
+        "$manifest=[IO.Path]::Combine($PSHOME,'Modules','CimCmdlets','CimCmdlets.psd1');"
+        "$module=@(Import-Module -Name $manifest -PassThru -ErrorAction Stop);"
+        "if($module.Count -ne 1 -or $module[0].Name -ne 'CimCmdlets'){throw 'unexpected_cim_module'};"
+        "Emit 'module_imported' 1;"
+    ) + query
     return (
-        ("startup_default", startup, {}, ("started", "completed")),
-        ("startup_no_window", startup, {"creationflags": 0x08000000}, ("started", "completed")),
-        ("startup_closed_stdin", startup, {"stdin": subprocess.DEVNULL}, ("started", "completed")),
-        ("narrow_current_pid", narrow, {}, ("started", "acquired", "completed")),
-        ("broad_acquisition", broad, {}, ("started", "acquired", "completed")),
-        ("projection_serialization", projection, {}, ("started", "acquired", "projected", "serialized", "encoded", "completed")),
+        ("automatic", automatic, ("started", "command_resolved", "acquired", "completed")),
+        ("explicit_builtin", explicit, ("started", "module_imported", "acquired", "completed")),
     )
 
 
@@ -106,10 +94,10 @@ def parse_phase_markers(output, expected):
     return markers, True
 
 
-def probe_powershell_phases():
-    """Six single-attempt probes in the existing job; production's eight-second limit."""
+def probe_cim_module_context(environment):
+    """Two single-attempt read-only probes; None inherits only the parent's environment."""
     report = {}
-    for label, script, comparison, expected in powershell_phase_specs():
+    for label, script, expected in cim_module_specs():
         started = time.monotonic()
         item = {"success": False, "exited_zero": False, "error_type": None}
         output = ""
@@ -117,7 +105,7 @@ def probe_powershell_phases():
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
-                timeout=8, check=False, **comparison,
+                timeout=8, check=False, env=environment,
             )
             output = result.stdout
             item["exited_zero"] = result.returncode == 0
@@ -132,15 +120,16 @@ def probe_powershell_phases():
         markers, valid = parse_phase_markers(output, expected)
         item["markers"] = markers
         item["output_valid"] = valid
-        item["success"] = item["exited_zero"] and valid and len(markers) == len(expected)
+        item["success"] = (item["exited_zero"] and valid and len(markers) == len(expected)
+            and markers[1]["count"] == 1 and markers[2]["count"] == 1)
         item["elapsed_ms"] = round((time.monotonic() - started) * 1000)
         report[label] = item
     return report
 
 
-def default_phases_passed(report):
-    # Startup comparisons provide evidence, never substitute for the actual default path.
-    return all(report.get(label, {}).get("success") is True for label in DEFAULT_PHASES)
+def owned_automatic_cim_passed(report):
+    # References/explicit import provide evidence, never replace the owned automatic path.
+    return report.get("automatic", {}).get("success") is True
 
 
 class BasicLimits(ctypes.Structure):
@@ -302,6 +291,8 @@ def _report_root(value):
 def _worker(selector, root):
     if selector not in SELECTORS:
         raise RuntimeError("test_selector_refused")
+    # Snapshot the inherited allowlist before test bootstrap adjusts test-only controls.
+    probe_environment = dict(os.environ) if selector == SELECTORS[1] else None
     import tempfile
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     tempfile.tempdir = str(root)
@@ -315,13 +306,13 @@ def _worker(selector, root):
     with windows_job_guard():
         phases = None
         if selector == SELECTORS[1]:
-            phases = probe_powershell_phases()
-            with (root / "cim-phase-diagnostic.json").open("x", encoding="utf-8") as stream:
+            phases = probe_cim_module_context(probe_environment)
+            with (root / "cim-module-diagnostic.json").open("x", encoding="utf-8") as stream:
                 json.dump(phases, stream, indent=2)
         with (root / "test.log").open("x", encoding="utf-8") as log:
             if phases is not None:
-                log.write("CIM_PHASE_DIAGNOSTIC=" + json.dumps(phases, sort_keys=True) + "\n")
-                if not default_phases_passed(phases):
+                log.write("CIM_MODULE_OWNED_DIAGNOSTIC=" + json.dumps(phases, sort_keys=True) + "\n")
+                if not owned_automatic_cim_passed(phases):
                     report = {"selector": selector, "tests_run": 0, "failures": 0, "errors": 1, "skips": 0}
                     with (root / "result.json").open("x", encoding="utf-8") as stream:
                         json.dump(report, stream, indent=2)
@@ -349,6 +340,13 @@ def _run_owned_worker(selector, root):
         limits = ExtendedLimits(); limits.basic.flags = KILL_ON_CLOSE
         _checked(api.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)), "set_test_job_limits")
         env = worker_environment(os.environ, root, name)
+        if selector == SELECTORS[1]:
+            # Read-only references extend the parent preflight, never lifecycle/termination.
+            # No parent credentials are copied into the matched probe or owned worker.
+            report["cim_module_parent"] = {
+                "ambient_reference": probe_cim_module_context(None),
+                "worker_allowlist": probe_cim_module_context(env),
+            }
         command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker", selector, "--report-root", str(root)]
         process, thread, _pid, _tid = _winapi.CreateProcess(sys.executable, subprocess.list2cmdline(command), None, None, False,
             0x4 | 0x08000000 | 0x400, env, str(Path(__file__).resolve().parents[1]), subprocess.STARTUPINFO())
