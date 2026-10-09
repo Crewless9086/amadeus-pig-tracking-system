@@ -49,7 +49,7 @@ jobs:
       contents: read
     env:
       # Root binds only after the test-only harness successor is independently frozen.
-      CHARLIE_WINDOWS_SOURCE_SHA: a4aff538c4996e7495b67ee2e0be74d979015840
+      CHARLIE_WINDOWS_SOURCE_SHA: 63fd9afb4c4b534fc3f98881405114ab365fc575
       PYTHONDONTWRITEBYTECODE: '1'
       PYTHON_DOTENV_DISABLED: '1'
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
