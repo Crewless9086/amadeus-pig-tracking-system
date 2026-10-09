@@ -15,7 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-STATE_ROOT = REPO_ROOT.parent.parent / ".charlie_runner"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from modules.charlie import INTAKE_EXECUTION_MODE, governed_state_root
+STATE_ROOT = governed_state_root(REPO_ROOT, REPO_ROOT.parent.parent / ".charlie_runner")
 EVIDENCE_ROOT = STATE_ROOT / "activation-ledger" / "startup-evidence"
 KEY_PATH = STATE_ROOT / "activation-authority.key"
 PACKET_PATH = STATE_ROOT / "activation-packet.json"
@@ -92,7 +95,7 @@ def _activation_binding():
                 and re.fullmatch(r"[0-9a-f]{32}", value)
                 and authority.get("activation_id") == value
                 and authority.get("version") == AUTHORITY_VERSION
-                and authority.get("execution_mode") == "observe_only"
+                and authority.get("execution_mode") in {"observe_only", INTAKE_EXECUTION_MODE}
                 and expires_at > datetime.now(timezone.utc)
                 and not sealed
                 and hmac.compare_digest(signature, expected)):
@@ -196,8 +199,17 @@ def main():
         )
         if activation_id == "Unknown" or not packet_hmac:
             return 1
-        from dotenv import load_dotenv
-        load_dotenv(REPO_ROOT.parent.parent / ".env", override=True)
+        authority = json.loads(PACKET_PATH.read_text(encoding="utf-8"))["authority"]
+        if authority["execution_mode"] == INTAKE_EXECUTION_MODE:
+            from modules.charlie.runtime_activation import _validate_intake_scope, intake_process_environment
+            _validate_intake_scope(authority)
+            clean = intake_process_environment(os.environ)
+            clean["CHARLIE_CORE_EXECUTION_MODE"] = INTAKE_EXECUTION_MODE
+            os.environ.clear()
+            os.environ.update(clean)
+        else:
+            from dotenv import load_dotenv
+            load_dotenv(REPO_ROOT.parent.parent / ".env", override=True)
         _append_phase("environment_loaded", **evidence_binding)
         _append_phase("watchdog_entry_started", **evidence_binding)
         sys.argv = [str(WATCHDOG_PATH), "--json"]

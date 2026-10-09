@@ -440,3 +440,32 @@ def _policy_row(row):
 
 def _goal_row(row):
     return {"goal_id": row[0], "title": row[1], "objective": row[2], "business_area": row[3], "priority": row[4], "status": row[5], "success_metrics": row[6] or [], "constraints": row[7] or [], "created_by": row[8], "created_at": row[9].isoformat(), "updated_at": row[10].isoformat()}
+
+
+def load_manager_dependency_policy(policy_id, *, database_url=None, connect_factory=None):
+    """Read one named intake policy, never goals, unrelated policies or missions."""
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", str(policy_id or "")):
+        return {"success": False, "status": "intake_policy_id_invalid", "policies": []}, 400
+    try:
+        with _connect(_database_url(database_url), connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SET TRANSACTION READ ONLY")
+                cursor.execute("SET LOCAL statement_timeout='3000ms'")
+                cursor.execute("SET LOCAL lock_timeout='1000ms'")
+                cursor.execute("""
+                    select policy_id, capability, scope_json, authority_tier, enabled,
+                           expires_at, max_actions, max_cost, rollback_required,
+                           deterministic_gate_required, metadata_json
+                    from public.charlie_delegation_policies
+                    where policy_id = %s and capability = 'core.manager_dependency_intake'
+                      and enabled = true and expires_at > now() limit 2
+                """, (policy_id,))
+                policies = [_policy_row(row) for row in cursor.fetchall()]
+            connection.rollback()
+    except Exception as exc:
+        return {"success": False, "status": "intake_policy_read_failed",
+                "error_type": type(exc).__name__, "policies": []}, 503
+    if len(policies) != 1:
+        return {"success": False, "status": "intake_policy_not_current", "policies": []}, 409
+    return {"success": True, "status": "intake_policy_current", "policies": policies}, 200

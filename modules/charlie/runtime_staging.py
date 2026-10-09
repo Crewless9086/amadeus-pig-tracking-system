@@ -11,8 +11,11 @@ import re
 import shutil
 import subprocess
 import uuid
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+from modules.charlie import INITIALIZATION_VERSION, governed_runtime_binding, shared_repository_root
 
 from modules.charlie.validation_receipt import (
     RECEIPT_VERSION,
@@ -90,16 +93,23 @@ def plan_runtime_staging(
         runtime, execution, manifest, expected_runtime_head,
         expected_execution_head, expected_manifest_commit,
     )
-    supervisor = _read_json(supervisor_path, "supervisor_state_missing_or_invalid")
-    watchdog = _read_json(watchdog_path, "watchdog_state_missing_or_invalid")
-    if supervisor.get("status") != "supervisor_stopped":
+    initialized_unstarted = (manifest.get("initialization_sha256") == _optional_sha256(state_root / "initialization.json")
+        and bool(manifest.get("initialization_sha256")) and not supervisor_path.exists()
+        and not watchdog_path.exists() and not (state_root / "activation-ledger").exists())
+    if initialized_unstarted:
+        governed_runtime_binding(runtime_root, required=True)
+    supervisor = {"status": "initialization_stopped"} if initialized_unstarted else _read_json(supervisor_path, "supervisor_state_missing_or_invalid")
+    watchdog = {"status": "initialization_stopped"} if initialized_unstarted else _read_json(watchdog_path, "watchdog_state_missing_or_invalid")
+    if supervisor.get("status") != "supervisor_stopped" and not initialized_unstarted:
         raise RuntimeStagingError("supervisor_not_governed_stopped")
-    if watchdog.get("status") != "governed_stop_active":
+    if watchdog.get("status") != "governed_stop_active" and not initialized_unstarted:
         raise RuntimeStagingError("watchdog_governed_stop_not_active")
     if watchdog.get("version") == "charlie_activation_recovery_projection_v1":
         _validate_recovery_projection(watchdog, state_root)
     task = (task_reader or read_watchdog_task)()
     task_mode = _validate_task(task, runtime_root, allow_historical=True)
+    if initialized_unstarted:
+        _disabled_initialization_task(task)
     task_sha256 = _payload_sha256(task)
     if not re.fullmatch(r"[0-9a-f]{64}", str(expected_task_sha256 or "").lower()):
         raise RuntimeStagingError("exact_scheduled_task_digest_required")
@@ -113,8 +123,8 @@ def plan_runtime_staging(
         "manifest_bytes_b64": base64.b64encode(manifest_path.read_bytes()).decode("ascii"),
         "manifest_sha256": _sha256(manifest_path),
         "stop_marker_sha256": _sha256(stop_path),
-        "supervisor_state_sha256": _sha256(supervisor_path),
-        "watchdog_state_sha256": _sha256(watchdog_path),
+        "supervisor_state_sha256": _optional_sha256(supervisor_path),
+        "watchdog_state_sha256": _optional_sha256(watchdog_path),
         "task_ownership": task,
         "task_ownership_sha256": task_sha256,
         "task_action_mode": task_mode,
@@ -218,7 +228,7 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
         "version": STAGING_VERSION,
         "lane_id": lane_id,
         "source_ref": source_ref,
-        "mission_id": "CMQ-20260813-05",
+        "mission_id": (governed_runtime_binding(runtime_root) or {}).get("mission_id", "CMQ-20260813-05"),
         "acquired_at": _now(),
         "status": "staging_acquired",
     }
@@ -335,6 +345,8 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
             "validation_receipt_sha256": plan["receipt_sha256"],
             "release_lane_id": lane_id,
             "governed_stop_preserved": True,
+            **({"initialization_sha256": plan["rollback"]["manifest"]["initialization_sha256"]}
+               if plan["rollback"]["manifest"].get("initialization_sha256") else {}),
         }
         _atomic_json(state_root / "runtime-manifest.json", manifest)
         result = {
@@ -573,7 +585,8 @@ def _validate_task(rows, runtime_root, allow_historical=False):
         raise RuntimeStagingError("scheduled_task_ownership_ambiguous")
     row = rows[0] if isinstance(rows[0], dict) else {}
     canonical_root = runtime_root.parent.parent
-    expected_execute = canonical_root / "venv" / "Scripts" / "pythonw.exe"
+    binding = governed_runtime_binding(runtime_root)
+    expected_execute = Path(binding["interpreter"]) if binding else canonical_root / "venv" / "Scripts" / "pythonw.exe"
     expected_launcher = runtime_root / "scripts" / "charlie_runner_task_launcher.py"
     expected_arguments = f'"{expected_launcher}"'
     execute = str(Path(str(row.get("execute") or "")).resolve()).casefold()
@@ -616,10 +629,11 @@ def _validate_expected_rollback(runtime, execution, manifest, expected_runtime,
 
 
 def _validate_governed_state_unchanged(state_root, rollback):
-    if _sha256(state_root / "supervisor.json") != rollback["supervisor_state_sha256"]:
-        raise RuntimeStagingError("supervisor_state_changed")
-    if _sha256(state_root / "watchdog.json") != rollback["watchdog_state_sha256"]:
-        raise RuntimeStagingError("watchdog_state_changed")
+    for name, field in (("supervisor.json", "supervisor_state_sha256"), ("watchdog.json", "watchdog_state_sha256")):
+        path = state_root / name
+        if (_optional_sha256(path) != rollback[field]
+                or (rollback[field] is None and path.exists())):
+            raise RuntimeStagingError("supervisor_state_changed" if name == "supervisor.json" else "watchdog_state_changed")
 
 
 def _restore_rollback(plan, runner, *, task_reader=None, task_writer=None):
@@ -874,3 +888,193 @@ def _atomic_bytes(path, payload):
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _initialization_paths(canonical_root, assigned_root, state_root):
+    canonical, assigned, state = (Path(p).absolute() for p in (canonical_root, assigned_root, state_root))
+    if (any(p.resolve() != p for p in (canonical, assigned, state))
+            or not (canonical / ".git").is_dir()
+            or canonical.parent / ".runtime" not in assigned.parents
+            or state.parent != assigned or not assigned.is_dir()):
+        raise RuntimeStagingError("initialization_paths_not_exact")
+    return canonical, assigned, state
+
+
+def _disabled_initialization_task(task):
+    if (not isinstance(task, list) or len(task) != 1 or not isinstance(task[0], dict)
+            or task[0].get("task_name") != TASK_NAME or task[0].get("task_path") != "\\"
+            or task[0].get("state") != "Disabled" or task[0].get("action_count") != 1):
+        raise RuntimeStagingError("initialization_exact_disabled_task_required")
+
+
+def plan_runtime_initialization(*, canonical_root, assigned_root, state_root, source_ref,
+                                mission_id, interpreter, expected_task_sha256,
+                                task_reader=None, runner=subprocess.run, now=None):
+    """Plan an absent-state shell. This does not create worktrees or validation."""
+    canonical, assigned, state = _initialization_paths(canonical_root, assigned_root, state_root)
+    if state.exists():
+        raise RuntimeStagingError("initialization_requires_absent_state")
+    if not re.fullmatch(r"[a-f0-9]{40}", str(source_ref or "")):
+        raise RuntimeStagingError("immutable_source_ref_required")
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{2,159}", str(mission_id or "")):
+        raise RuntimeStagingError("initialization_mission_required")
+    if _git(canonical, ["rev-parse", "--verify", source_ref + "^{commit}"], runner) != source_ref:
+        raise RuntimeStagingError("source_ref_resolution_mismatch")
+    interpreter = Path(interpreter).absolute()
+    if not interpreter.is_file() or interpreter.resolve() != interpreter:
+        raise RuntimeStagingError("initialization_interpreter_invalid")
+    task = (task_reader or read_watchdog_task)()
+    _disabled_initialization_task(task)
+    if _payload_sha256(task) != expected_task_sha256:
+        raise RuntimeStagingError("scheduled_task_digest_mismatch")
+    clock = _sample_clock(now) or datetime.now(timezone.utc)
+    plan = dict(version=INITIALIZATION_VERSION, status="initialization_plan_ready",
+        canonical_root=str(canonical), assigned_root=str(assigned), state_root=str(state),
+        source_ref=source_ref, mission_id=mission_id, predecessor="absent",
+        interpreter=str(interpreter), interpreter_sha256=_sha256(interpreter),
+        task_preimage=task, task_sha256=expected_task_sha256,
+        expires_at=(clock + timedelta(minutes=30)).isoformat(), zero_effect=True)
+    plan["plan_sha256"] = _payload_sha256(plan)
+    return plan
+
+
+def initialize_runtime_stopped(plan, *, task_reader=None, runner=subprocess.run, now=None):
+    """Create only stop/key/typed provenance, retaining failed partial initialization."""
+    if (not isinstance(plan, dict) or plan.get("status") != "initialization_plan_ready"
+            or plan.get("plan_sha256") != _payload_sha256({k:v for k,v in plan.items() if k != "plan_sha256"})):
+        raise RuntimeStagingError("initialization_plan_invalid")
+    clock = _sample_clock(now) or datetime.now(timezone.utc)
+    if datetime.fromisoformat(plan["expires_at"]) <= clock:
+        raise RuntimeStagingError("initialization_plan_expired")
+    canonical, assigned, state = _initialization_paths(plan["canonical_root"], plan["assigned_root"], plan["state_root"])
+    if state.exists():
+        if (assigned / (state.name + "-initialization.lock")).exists():
+            raise RuntimeStagingError("partial_initialization_requires_review")
+        recorded_plan = _read_json(state / "promotion-ledger" / "initialization-plan.json", "partial_initialization_requires_review")
+        if recorded_plan != plan:
+            raise RuntimeStagingError("initialization_replay_drift")
+        record = _read_json(state / "initialization.json", "partial_initialization_requires_review")
+        key = _read_receipt_key(state / "activation-authority.key")
+        if (record.get("plan_sha256") != plan["plan_sha256"]
+                or not hmac.compare_digest(record.get("signature_hmac_sha256", ""),
+                    _record_hmac(record, key, "signature_hmac_sha256"))
+                or _sha256(state / "supervisor.stop") != record.get("stop_sha256")
+                or _sha256(state / "validation-receipt.key") != record.get("validation_key_sha256")
+                or (state / "runtime-manifest.json").exists()):
+            raise RuntimeStagingError("initialization_replay_drift")
+        return {"success": True, "status": "initialization_stopped", "replayed": True, "core_started": False}
+    lane = assigned / (state.name + "-initialization.lock")
+    os.close(_exclusive_json(lane, {"mission_id": plan["mission_id"], "plan_sha256": plan["plan_sha256"]}))
+    try:
+        task = (task_reader or read_watchdog_task)()
+        _disabled_initialization_task(task)
+        if _payload_sha256(task) != plan["task_sha256"] or _sha256(plan["interpreter"]) != plan["interpreter_sha256"]:
+            raise RuntimeStagingError("initialization_preimage_changed")
+        if _git(canonical, ["rev-parse", "--verify", plan["source_ref"] + "^{commit}"], runner) != plan["source_ref"]:
+            raise RuntimeStagingError("source_ref_resolution_mismatch")
+        state.mkdir(exist_ok=False)
+        # The stop exists before either key or any runtime tuple is available.
+        stop = ("Initialization stopped; no validated runtime exists.\n").encode()
+        for name, data in (("supervisor.stop", stop), ("validation-receipt.key", secrets.token_bytes(32)),
+                           ("activation-authority.key", secrets.token_bytes(32))):
+            with (state / name).open("xb") as stream:
+                stream.write(data); stream.flush(); os.fsync(stream.fileno())
+        record = {k:plan[k] for k in ("version", "canonical_root", "assigned_root", "state_root",
+            "source_ref", "mission_id", "predecessor", "interpreter", "interpreter_sha256", "plan_sha256")}
+        record.update(status="initialization_stopped", initialized_at=clock.isoformat(),
+            stop_sha256=_sha256(state / "supervisor.stop"),
+            validation_key_sha256=_sha256(state / "validation-receipt.key"))
+        record["signature_hmac_sha256"] = _record_hmac(record,
+            _read_receipt_key(state / "activation-authority.key"), "signature_hmac_sha256")
+        os.close(_exclusive_json(state / "initialization.json", record))
+        os.close(_exclusive_json(state / "promotion-ledger" / "initialization-plan.json", plan))
+        lane.replace(state / "promotion-ledger" / "initialization-lane.json")
+        return {"success": True, "status": "initialization_stopped", "replayed": False,
+            "validation_proven": False, "runtime_installed": False, "core_started": False}
+    except Exception:
+        # Partial state and the non-stealable lane remain stopped and inspectable.
+        # Never turn a partially created shell into old success-shaped history.
+        raise
+
+
+def stage_initialized_runtime(*, state_root, receipt_path, receipt_sha256, expected_task_sha256,
+                              task_reader=None, runner=subprocess.run, now=None):
+    """Validate an already materialized detached tuple while the task stays disabled.
+
+    The exact disabled action is reconciled separately on the existing action-only
+    rail; this operation neither creates worktrees nor edits Task Scheduler.
+    """
+    state = Path(state_root).absolute()
+    runtime, execution = state / "core-runtime-current", state / "core-execution-current"
+    binding = governed_runtime_binding(runtime, required=True)
+    source = binding["source_ref"]
+    if (state / "runtime-manifest.json").exists():
+        raise RuntimeStagingError("initialization_already_staged")
+    for name in ("activation.lock", "activation-reconciliation.lock", "supervisor.json", "runner.json"):
+        if (state / name).exists():
+            raise RuntimeStagingError("initialization_runtime_state_present")
+    if _sha256(state / "supervisor.stop") != binding["stop_sha256"]:
+        raise RuntimeStagingError("governed_stop_marker_changed")
+    lane = state / "release-staging.lock"
+    lane_id = uuid.uuid4().hex
+    os.close(_exclusive_json(lane, dict(version=INITIALIZATION_VERSION, lane_id=lane_id,
+        mission_id=binding["mission_id"], predecessor="absent", source_ref=source)))
+    published_manifest_sha = None
+    try:
+        for root in (runtime, execution):
+            governed_runtime_binding(root, required=True)
+            inspect_git_checkout_safety(root, runner)
+            identity = _worktree_identity(root, runner)
+            if identity["head"] != source or identity["branch"] not in {"", "HEAD", "(detached)"}:
+                raise RuntimeStagingError("initialization_detached_source_required")
+        registered = _git(Path(binding["canonical_root"]), ["worktree", "list", "--porcelain"], runner)
+        registered_roots = [Path(line[9:]).resolve() for line in registered.splitlines() if line.startswith("worktree ")]
+        if len(registered_roots) != 3 or set(registered_roots) != {Path(binding["canonical_root"]), runtime, execution}:
+            raise RuntimeStagingError("registered_worktree_bound_exceeded")
+        task = (task_reader or read_watchdog_task)()
+        _disabled_initialization_task(task)
+        _validate_task(task, runtime)
+        if _payload_sha256(task) != expected_task_sha256:
+            raise RuntimeStagingError("scheduled_task_digest_mismatch")
+        receipt_path = Path(receipt_path).resolve()
+        if _sha256(receipt_path) != receipt_sha256:
+            raise RuntimeStagingError("sealed_receipt_digest_mismatch")
+        receipt = _read_json(receipt_path, "isolated_validation_receipt_invalid")
+        identity = _validate_receipt(receipt, source, _read_receipt_key(state / "validation-receipt.key"),
+            now=_sample_clock(now))
+        _validate_receipt_history(state, receipt_path, identity, receipt_sha256)
+        if _sha256(state / "supervisor.stop") != binding["stop_sha256"]:
+            raise RuntimeStagingError("governed_stop_marker_changed")
+        if _payload_sha256((task_reader or read_watchdog_task)()) != expected_task_sha256:
+            raise RuntimeStagingError("scheduled_task_ownership_changed")
+        if governed_runtime_binding(runtime, required=True) != binding:
+            raise RuntimeStagingError("initialization_binding_changed")
+        for root in (runtime, execution):
+            current = _worktree_identity(root, runner)
+            if current["head"] != source or current["branch"]:
+                raise RuntimeStagingError("initialization_detached_source_required")
+        receipt = _read_sealed_json(receipt_path, receipt_sha256, "isolated_validation_receipt_invalid")
+        _validate_receipt(receipt, source, _read_receipt_key(state / "validation-receipt.key"),
+            now=_sample_clock(now))
+        consumption = state / "validation-consumptions" / (identity["validation_id"] + ".json")
+        os.close(_exclusive_json(consumption, dict(version=RECEIPT_VERSION,
+            validation_id=identity["validation_id"], source_commit=source, receipt_sha256=receipt_sha256,
+            lane_id=lane_id, status="consumed_for_initial_staging", consumed_at=_now())))
+        manifest = dict(version="charlie_core_runtime_v1", promoted_commit=source,
+            promoted_branch="(detached)", runtime_root=str(runtime), execution_root=str(execution),
+            promoted_at=_now(), source="validated_stopped_initialization",
+            validation_receipt_sha256=receipt_sha256, release_lane_id=lane_id,
+            initialization_sha256=_sha256(state / "initialization.json"), governed_stop_preserved=True)
+        os.close(_exclusive_json(state / "runtime-manifest.json", manifest))
+        published_manifest_sha = _sha256(state / "runtime-manifest.json")
+        result = dict(success=True, status="runtime_staged_governed_stop_preserved",
+            predecessor="absent", core_started=False, watchdog_action="none", manifest=manifest)
+        os.close(_exclusive_json(state / "promotion-ledger" / (lane_id + "-result.json"), result))
+        lane.replace(state / "promotion-ledger" / (lane_id + "-lane.json"))
+        return result
+    except Exception:
+        manifest_path = state / "runtime-manifest.json"
+        if published_manifest_sha and _optional_sha256(manifest_path) == published_manifest_sha:
+            manifest_path.unlink()  # Exact newly owned file only; preserve stop/consumption/lane.
+        # An ambiguous/partial staging cannot be replayed; leave stop and lane intact.
+        raise

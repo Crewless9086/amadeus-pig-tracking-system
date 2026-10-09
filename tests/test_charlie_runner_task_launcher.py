@@ -40,12 +40,13 @@ class CharlieRunnerTaskLauncherTests(unittest.TestCase):
 
     def test_main_records_pre_import_phases_and_sanitized_failure(self):
         phases = []
+        packet = {"authority": {"execution_mode": "observe_only"}}
         with patch.object(
             launcher, "_append_phase",
             side_effect=lambda phase, **kw: phases.append((phase, kw)) or True,
-        ), patch.object(launcher, "_activation_binding", return_value=("b" * 32, "1" * 64)), patch.dict(
-            "sys.modules", {"dotenv": None}
-        ):
+        ), patch.object(launcher, "_activation_binding", return_value=("b" * 32, "1" * 64)), patch.object(
+            launcher, "PACKET_PATH", unittest.mock.Mock(read_text=lambda **_: json.dumps(packet))
+        ), patch.dict("sys.modules", {"dotenv": None}):
             result = launcher.main()
         self.assertEqual(result, 1)
         self.assertEqual([item[0] for item in phases[:2]], [

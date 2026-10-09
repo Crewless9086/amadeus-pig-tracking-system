@@ -42,11 +42,11 @@ def _identity():
     }
 
 
-def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=60):
+def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=60, *, execution_mode=EXECUTION_MODE_OBSERVE_ONLY):
     identity = _identity()
     if SUPERVISOR_STOP_PATH.exists():
         return {"success": False, "reason": "governed_stop_active"}
-    if str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or "") != EXECUTION_MODE_OBSERVE_ONLY:
+    if str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or "") != execution_mode:
         return {"success": False, "reason": "observe_only_mode_missing"}
     if not all(identity.values()):
         return {"success": False, "reason": "observe_only_identity_incomplete"}
@@ -66,7 +66,7 @@ def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=60):
         runner_states={"runner_starting"},
         startup_nonce=identity["supervisor_nonce"],
         statuses={"runner_starting"},
-        execution_mode=EXECUTION_MODE_OBSERVE_ONLY,
+        execution_mode=execution_mode,
     )
     if not valid:
         return {"success": False, "reason": reason}
@@ -87,7 +87,7 @@ def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=60):
         "generation": identity["generation"],
         "startup_nonce": identity["runner_nonce"],
         "revision": identity["execution_revision"],
-        "execution_mode": EXECUTION_MODE_OBSERVE_ONLY,
+        "execution_mode": execution_mode,
     }.items():
         if not isinstance(acknowledgement, dict) or str(
             acknowledgement.get(field) or ""
@@ -111,7 +111,7 @@ def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=60):
     return {"success": True, **identity}
 
 
-def _validate_final(packet):
+def _validate_final(packet, *, execution_mode=EXECUTION_MODE_OBSERVE_ONLY):
     identity = _identity()
     acknowledgement = packet.get("controller_final_acknowledgement")
     if not isinstance(acknowledgement, dict):
@@ -122,7 +122,7 @@ def _validate_final(packet):
         "runner_startup_nonce": identity["runner_nonce"],
         "revision": identity["execution_revision"],
         "runner_pid": str(os.getpid()),
-        "execution_mode": EXECUTION_MODE_OBSERVE_ONLY,
+        "execution_mode": execution_mode,
     }
     if identity.get("activation_id"):
         expected["activation_id"] = identity["activation_id"]

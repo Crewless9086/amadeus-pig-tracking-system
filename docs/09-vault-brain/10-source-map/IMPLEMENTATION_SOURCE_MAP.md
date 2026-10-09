@@ -1,5 +1,73 @@
 # Implementation Source Map
 
+## CORE manager technical-dependency intake
+
+- Status: `LOCAL_NOT_RELEASED`; authority remains `01-identity/CHARLIE_CORE.md`,
+  `02-agents/owner-command/CHARLIE.md` and `04-workflows/CHARLIE_MISSION_WORKFLOW.md`.
+- Adapter: `modules/charlie/manager_dependency_intake.py`; the existing active
+  executive and the scoped `run_manager_dependency_intake_cycle` in
+  `modules/charlie/executive_runtime.py` share its exact receipt contract.
+  Only an enabled, expiring `core.manager_dependency_intake` policy and exact
+  matching receipt-only mission admission permit receipt writes. A named policy
+  is read through `modules/charlie/executive_store.py`; ordinary mission listing,
+  atomic claims, external dispatch and native recovery reject any present intake
+  admission, including malformed or null markers, in `mission_store.py`.
+- Reused persistence: `append_mission_control_event`, `record_control_command`
+  and `complete_control_command`; no new queue, table, migration or scheduler.
+  A second transaction verifies the full canonical committed finding and command
+  before linking the dependency through the existing manager event rail.
+- Admission binds a current private owner, approved idle unsuperseded mission,
+  immutable dependency anchors and source revision, generation/material/full refs,
+  policy budget, and current hold/lease state. No historical mission snapshot or
+  generic delegation policy is an activation grant. Status, leases, original
+  pending events and manager projections are preserved.
+- The receipt explicitly leaves worker selection, pickup, repair and welfare
+  completion unproven. Existing queue and pickup controls remain their authorities;
+  no CORE runtime activation follows from web deployment alone.
+- Tests: `tests/test_charlie_manager_dependency_intake.py` and
+  `tests/test_charlie_manager_dependency_intake_postgres.py`, with existing
+  executive/event regressions, selected by `.github/workflows/charlie-core-tests.yml`.
+
+
+## CORE stopped initialization and scoped receipt runtime
+
+- Status: `LOCAL_NOT_RELEASED`. Reuse the same CORE authority and mission workflow
+  above; implementation is not an activation grant or proof of worker pickup.
+- Shared signed path binding: `modules/charlie/__init__.py`. Typed absent-state
+  initialization and first staging: `modules/charlie/runtime_staging.py` and
+  `scripts/charlie_runtime_stage.py`. Initialization records a real stop and keys,
+  without inventing predecessor, supervisor, validation or worktree history.
+  First staging needs completed initialization, genuine unused signed validation,
+  exact disabled task identity and the existing three-worktree bound.
+- Existing provider/controller rails: `modules/charlie/runtime_activation.py`,
+  `runner_control.py`, and `scripts/charlie_runner_task_launcher.py`,
+  `charlie_runner_watchdog.py`, `charlie_runner_supervisor.py`.
+  `scripts/charlie_manager_intake_runner.py` reuses the observe runner's identity
+  handshake in `charlie_observe_only_runner.py`, then invokes only the named
+  receipt service. Observe-only retains zero mission access; ordinary defaults
+  are unchanged. Scoped failure stops without ordinary repair or automatic restart.
+- Startup and each intake cycle require current signed provider consumption,
+  controller identity, expiry, bound runtime/receipt/configuration, and explicit
+  verified TLS. The scoped process excludes broad dotenv/model/provider secrets;
+  only signed database and owner-filter values reach the exact receipt service.
+  Validated test control roots take precedence over initialized production state.
+  Shared heartbeats expose a bounded allowlist of intake outcomes and references;
+  receipt-only status does not imply ordinary mission pickup or completed repair.
+  No task activation, new policy, mission, hold change or live database write is
+  performed by initialization or source installation.
+- Qualification: `tests/test_charlie_manager_intake_runner.py`, existing staging,
+  activation, launcher/controller/observe tests and intake PostgreSQL tests.
+  `modules/charlie/validation_receipt.py` includes the scoped tests in proportional
+  signed validation; existing `test_charlie_*.py` CI discovery selects the module.
+  Source tests, actual Windows lifecycle qualification and live intake acceptance
+  remain separate gates; receipt acknowledgement proves no repair or welfare result.
+  The test-only `tests/charlie_windows_lifecycle_harness.py` runs four selected
+  cases in individually owned, bounded Windows jobs on a disposable hosted VM.
+  It rejects skipped cases and verifies cleanup. Protected-ancestry stop refusal
+  is distinct from successful independent controller stop, which still requires
+  operational commissioning evidence.
+
+
 ## Oom Sakkie family message presentation
 
 - Authority: `02-agents/farm/OOM_SAKKIE.md` and
