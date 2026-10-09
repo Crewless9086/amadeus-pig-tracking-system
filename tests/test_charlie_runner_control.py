@@ -1656,8 +1656,11 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
             "LOCALAPPDATA": "C:/Users/runner/AppData/Local", "PROGRAMDATA": "C:/ProgramData",
             "SYSTEMDRIVE": "C:", "PROGRAMFILES": "C:/Program Files", "OPENAI_API_KEY": "secret",
             "GH_TOKEN": "secret", "DATABASE_URL": "secret", "PYTHONPATH": "untrusted", "TEMP": "outside"}
+        source.update({name.lower(): "platform-value" for name in harness.EXPANDED_PLATFORM_ENV})
+        source.update({name: "secret" for name in ("PSExecutionPolicyPreference", "__PSLockDownPolicy", "COMPLUS_Security", "DOTNET_STARTUP_HOOKS",
+            "HTTPS_PROXY", "AWS_ACCESS_KEY_ID", "AZURE_TOKEN", "PSModuleAnalysisCachePath", "PSDisableModuleAnalysisCacheCleanup")})
         result = harness.worker_environment(source, Path("case-root"), "test-job")
-        self.assertEqual(set(result), {"SystemRoot", "PATH", *harness.NATIVE_PLATFORM_ENV, "PSModulePath",
+        self.assertEqual(set(result), {"SystemRoot", "PATH", *harness.NATIVE_PLATFORM_ENV, *[n.lower() for n in harness.EXPANDED_PLATFORM_ENV], "PSModulePath",
             harness.JOB_ENV, "TEMP", "TMP", "PYTHONDONTWRITEBYTECODE", "PYTHON_DOTENV_DISABLED", "DATABASE_URL"})
         self.assertEqual(result["PSModulePath"], "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules")
         self.assertEqual(result["TEMP"], str(Path("case-root")))
@@ -1667,7 +1670,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "system_root_required"):
             harness.worker_environment({}, Path("case-root"), "test-job")
 
-    def test_module_matrix_preserves_production_kwargs_and_six_calls_with_matching_environment(self):
+    def test_platform_matrix_preserves_production_kwargs_and_seven_bounded_calls(self):
         import ast
         from tests import charlie_windows_lifecycle_harness as harness
         source = ast.parse(Path(process_ownership.__file__).read_text(encoding="utf-8"))
@@ -1678,33 +1681,70 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         self.assertEqual(production_kwargs, {"capture_output": True, "text": True, "encoding": "utf-8",
             "errors": "replace", "timeout": 8, "check": False})
         specs = harness.cim_module_specs()
-        self.assertEqual([s[0] for s in specs], ["automatic", "explicit_builtin"])
+        self.assertEqual([s[0] for s in specs], ["automatic"])
         self.assertIn("Get-Command -Name Get-CimInstance -CommandType Cmdlet", specs[0][1])
         self.assertNotIn("Import-Module", specs[0][1])
-        self.assertIn("[IO.Path]::Combine($PSHOME,'Modules','CimCmdlets','CimCmdlets.psd1')", specs[1][1])
-        self.assertNotIn("Join-Path", specs[1][1])
-        self.assertEqual(specs[0][1].split("$rows=",1)[1], specs[1][1].split("$rows=",1)[1])
-        for spec in specs:
-            self.assertIn("Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)", spec[1])
-            self.assertNotIn("-ComputerName", spec[1]); self.assertNotIn("-CimSession", spec[1])
-            self.assertIn("[Console]::Out.Flush()", spec[1])
-        calls = []; matched = {"SYSTEMROOT": "C:/Windows", "PATH": "synthetic", harness.JOB_ENV: "same-owned-job"}
-        environments = [None, matched, dict(matched)]
-        def invoke(command, **kwargs):
-            spec = specs[len(calls) % 2]; env = environments[len(calls) // 2]
-            calls.append((command, kwargs))
-            self.assertEqual(command, ["powershell", "-NoProfile", "-NonInteractive", "-Command", spec[1]])
-            self.assertEqual(kwargs, {**production_kwargs, "env": env})
-            output = "".join("CHARLIE_PHASE|" + stage + ("|0\n" if stage in {"started", "completed"} else "|1\n") for stage in spec[2])
-            return SimpleNamespace(returncode=0, stdout=output, stderr="private-error-not-retained")
-        before = dict(os.environ)
-        with patch.object(harness.subprocess, "run", side_effect=invoke):
-            reports = [harness.probe_cim_module_context(env) for env in environments]
-        self.assertEqual(len(calls), 6)
-        self.assertEqual(dict(os.environ), before)
-        self.assertEqual(calls[2][1]["env"], calls[4][1]["env"])
-        self.assertTrue(all(harness.owned_automatic_cim_passed(report) for report in reports))
-        self.assertNotIn("private-", json.dumps(reports))
+        self.assertIn("Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)", specs[0][1])
+        self.assertNotIn("-ComputerName", specs[0][1]); self.assertNotIn("-CimSession", specs[0][1])
+        self.assertIn("[Console]::Out.Flush()", specs[0][1])
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
+            root=Path(tmp).resolve()/"case"
+            matched=harness.worker_environment({"SystemRoot":"C:/Windows", **{k:k for k in harness.EXPANDED_PLATFORM_ENV}},root,"same-owned-job")
+            environments=[env for _,env in harness.platform_environment_matrix(matched,root)]
+            def invoke(command, **kwargs):
+                spec = specs[0]; env = environments[len(calls)]
+                calls.append((command, kwargs))
+                self.assertEqual(command, ["powershell", "-NoProfile", "-NonInteractive", "-Command", spec[1]])
+                self.assertEqual(kwargs, {**production_kwargs, "env": env})
+                output = "".join("CHARLIE_PHASE|" + stage + ("|0\n" if stage in {"started", "completed"} else "|1\n") for stage in spec[2])
+                return SimpleNamespace(returncode=0, stdout=output, stderr="private-error-not-retained")
+            before=dict(os.environ)
+            with patch.object(harness.subprocess,"run",side_effect=invoke):
+                reports=[harness.probe_cim_module_context(env)for env in environments]
+            self.assertEqual(dict(os.environ),before)
+        self.assertEqual(len(calls),7)
+        self.assertTrue(all(harness.owned_automatic_cim_passed(report)for report in reports))
+        self.assertNotIn("private-",json.dumps(reports))
+
+    def test_platform_matrix_has_exact_groups_and_cache_cannot_escape_case_root(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        self.assertEqual(harness.PLATFORM_GROUPS, {
+            "identity": {"USERNAME","USERDOMAIN","USERDOMAIN_ROAMINGPROFILE","COMPUTERNAME","HOMEDRIVE","HOMEPATH","ALLUSERSPROFILE","PUBLIC"},
+            "architecture": {"OS","PROCESSOR_ARCHITECTURE","PROCESSOR_ARCHITEW6432","NUMBER_OF_PROCESSORS"},
+            "installation": {"PROGRAMFILES(X86)","PROGRAMW6432","COMMONPROGRAMFILES","COMMONPROGRAMFILES(X86)","COMMONPROGRAMW6432"}})
+        self.assertEqual(len(harness.EXPANDED_PLATFORM_ENV),17)
+        with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
+            root=Path(tmp).resolve()/"case"
+            source={"SystemRoot":"C:/Windows",**{k.lower():"benign-value"for k in harness.EXPANDED_PLATFORM_ENV}}
+            env=harness.worker_environment(source,root,"job")
+            before=dict(env);matrix=dict(harness.platform_environment_matrix(env,root))
+            self.assertEqual(list(matrix),["ambient_reference","existing_allowlist","expanded","without_identity","without_architecture","without_installation","expanded_fresh_cache"])
+            self.assertIsNone(matrix["ambient_reference"])
+            self.assertIs(matrix["expanded"],env)
+            self.assertEqual(env,before)
+            self.assertEqual(matrix["existing_allowlist"],{k:v for k,v in env.items()if k.upper()not in harness.EXPANDED_PLATFORM_ENV})
+            for group,names in harness.PLATFORM_GROUPS.items():
+                self.assertEqual(matrix["without_"+group],{k:v for k,v in env.items()if k.upper()not in names})
+            cached=matrix["expanded_fresh_cache"]
+            self.assertEqual({k:v for k,v in cached.items()if k!="PSModuleAnalysisCachePath"},env)
+            self.assertEqual(Path(cached["PSModuleAnalysisCachePath"]).parent,root)
+            self.assertNotIn("PSModuleAnalysisCachePath",env)
+            with self.assertRaisesRegex(RuntimeError,"report_root_must_be_below_runner_temp"):
+                harness.platform_environment_matrix(env,Path(tmp).resolve())
+
+    def test_policy_context_reports_only_known_labels_and_never_forwards_values(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        for value,label in (("bYpAsS","Bypass"),("RemoteSigned","RemoteSigned"),("private-token-value","unrecognized")):
+            with self.subTest(label=label):
+                source={"SystemRoot":"C:/Windows","PSExecutionPolicyPreference":value}
+                worker=harness.worker_environment(source,Path("case"),"job")
+                report=harness.process_policy_context(source,worker)
+                self.assertEqual(report,{"ambient_present":True,"ambient_label":label,"worker_inherits":False})
+                self.assertNotIn("private-",json.dumps(report))
+                self.assertNotIn("PSExecutionPolicyPreference",worker)
+        self.assertEqual(harness.process_policy_context({},{}),{"ambient_present":False,"ambient_label":None,"worker_inherits":False})
+        self.assertTrue(harness.process_policy_context({}, {"psexecutionpolicypreference":"Restricted"})["worker_inherits"])
 
     def test_phase_timeout_retains_only_fixed_completed_markers_not_exception_details(self):
         from tests import charlie_windows_lifecycle_harness as harness
@@ -1712,7 +1752,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
             output=b"CHARLIE_PHASE|started|0\n", stderr=b"private-error")
         with patch.object(harness.subprocess, "run", side_effect=error) as invoke:
             report = harness.probe_cim_module_context({})
-        self.assertEqual(invoke.call_count, 2)  # one bounded attempt per script/context, no retry
+        self.assertEqual(invoke.call_count, 1)  # one bounded attempt per context, no retry
         for item in report.values():
             self.assertFalse(item["success"]); self.assertFalse(item["exited_zero"])
             self.assertEqual(item["error_type"], "TimeoutExpired")
@@ -1735,21 +1775,16 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
 
     def test_completed_script_does_not_hide_process_exit_timeout_or_nonzero_exit(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        specs = harness.cim_module_specs(); index = 0
-        def invoke(command, **kwargs):
-            nonlocal index
-            spec = specs[index]; index += 1
-            output = "".join("CHARLIE_PHASE|" + stage + "|0\n" for stage in spec[2])
-            if index % 2:
-                raise subprocess.TimeoutExpired(command, 8, output=output)
-            return SimpleNamespace(returncode=1, stdout=output, stderr="private")
-        with patch.object(harness.subprocess, "run", side_effect=invoke):
-            report = harness.probe_cim_module_context({})
-        for item in report.values():
+        spec=harness.cim_module_specs()[0]
+        output="".join("CHARLIE_PHASE|"+stage+("|0\n"if stage in {"started","completed"}else "|1\n")for stage in spec[2])
+        for response in (subprocess.TimeoutExpired(["powershell"],8,output=output),SimpleNamespace(returncode=1,stdout=output,stderr="private")):
+            with patch.object(harness.subprocess,"run",side_effect=[response]):
+                report=harness.probe_cim_module_context({})
+            item=report["automatic"]
             self.assertTrue(item["output_valid"])
-            self.assertEqual(item["markers"][-1], {"stage": "completed", "count": 0})
+            self.assertEqual(item["markers"][-1],{"stage":"completed","count":0})
             self.assertFalse(item["success"])
-        self.assertFalse(harness.owned_automatic_cim_passed(report))
+            self.assertFalse(harness.owned_automatic_cim_passed(report))
 
     def test_reference_or_explicit_module_success_cannot_rescue_owned_automatic_failure(self):
         from tests import charlie_windows_lifecycle_harness as harness
@@ -1762,11 +1797,11 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
 
     def test_module_failures_sanitize_errors_and_require_current_pid_row(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        with patch.object(harness.subprocess, "run", side_effect=[OSError("private-path"), RuntimeError("private-token")]):
-            report = harness.probe_cim_module_context({})
-        self.assertEqual(report["automatic"]["error_type"], "OSError")
-        self.assertEqual(report["explicit_builtin"]["error_type"], "UnexpectedError")
-        self.assertNotIn("private-", json.dumps(report))
+        for error,kind in ((OSError("private-path"),"OSError"),(RuntimeError("private-token"),"UnexpectedError")):
+            with patch.object(harness.subprocess,"run",side_effect=error):
+                report=harness.probe_cim_module_context({})
+            self.assertEqual(report["automatic"]["error_type"],kind)
+            self.assertNotIn("private-",json.dumps(report))
         specs = harness.cim_module_specs()
         responses = [SimpleNamespace(returncode=0, stdout="".join("CHARLIE_PHASE|" + marker + "|0\n" for marker in spec[2])) for spec in specs]
         with patch.object(harness.subprocess, "run", side_effect=responses):
@@ -1789,18 +1824,19 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
-             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows", "PRIVATE_TEST_TOKEN":"not-forwarded"}), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows", "PRIVATE_TEST_TOKEN":"not-forwarded", "RUNNER_TEMP":str(Path(tmp).resolve().parent)}), \
              patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
              patch.object(harness,"probe_cim_module_context",probe), \
              patch.object(harness,"worker_environment",wraps=original_builder) as builder:
             report = harness._run_owned_worker(harness.SELECTORS[1],Path(tmp))
         builder.assert_called_once()
-        self.assertEqual(order,["reference","reference","create","assign","resume"])
+        self.assertEqual(order,["reference"]*7+["create","assign","resume"])
         self.assertIsNone(probe.call_args_list[0].args[0])
-        allowlist = probe.call_args_list[1].args[0]
+        allowlist = probe.call_args_list[2].args[0]
         self.assertIs(allowlist,native.CreateProcess.call_args.args[6])
         self.assertNotIn("PRIVATE_TEST_TOKEN",allowlist)
-        self.assertEqual(set(report["cim_module_parent"]),{"ambient_reference","worker_allowlist"})
+        self.assertEqual(set(report["platform_parent"]),{"ambient_reference","existing_allowlist","expanded","without_identity","without_architecture","without_installation","expanded_fresh_cache"})
+        self.assertEqual(set(report["platform_group_present_counts"]),set(harness.PLATFORM_GROUPS))
         self.assertTrue(report["cleanup_verified"])
         self.assertNotIn("not-forwarded",json.dumps(report))
 
@@ -1812,14 +1848,53 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,inherited,clear=True), \
              patch.object(harness,"windows_job_guard",return_value=contextlib.nullcontext()), \
              patch.object(harness,"probe_cim_module_context",return_value=failure) as probe, \
+             patch.object(harness,"qualify_actual_snapshot") as actual, \
              patch.object(harness.unittest.defaultTestLoader,"loadTestsFromName") as loader, \
              patch.object(harness.socket.socket,"connect"), \
              patch("tempfile.tempdir",tmp):
             self.assertEqual(harness._worker(harness.SELECTORS[1],Path(tmp)),1)
             self.assertEqual(probe.call_args.args[0],inherited)
             loader.assert_not_called()
+            actual.assert_not_called()
             report=json.loads((Path(tmp)/"result.json").read_text())
             self.assertEqual(report,{"selector":harness.SELECTORS[1],"tests_run":0,"failures":0,"errors":1,"skips":0})
+
+    def test_actual_inspector_gate_requires_current_worker_identity_and_redacts_rows(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        row={"pid":os.getpid(),"creation_time":"private-time","executable_path":"private-path","command_line":"private-command"}
+        inspector=Mock(return_value=[row])
+        report=harness.qualify_actual_snapshot(inspector)
+        inspector.assert_called_once_with()
+        self.assertTrue(report["success"]);self.assertTrue(report["own_process_proven"])
+        self.assertEqual(report["row_count"],1)
+        self.assertNotIn("private-",json.dumps(report))
+        for rows in ([],{},[{}],[{**row,"pid":-1}],[{**row,"pid":True}],[{**row,"creation_time":""}]):
+            with self.subTest(shape=type(rows).__name__):
+                self.assertFalse(harness.qualify_actual_snapshot(Mock(return_value=rows))["success"])
+        error=subprocess.TimeoutExpired(["private-command"],8,output="private-output")
+        report=harness.qualify_actual_snapshot(Mock(side_effect=error))
+        self.assertFalse(report["success"]);self.assertEqual(report["error_type"],"TimeoutExpired")
+        self.assertNotIn("private-",json.dumps(report))
+
+    def test_actual_snapshot_failure_cannot_load_lifecycle_and_success_uses_real_inspector_entry(self):
+        import contextlib
+        from tests import charlie_windows_lifecycle_harness as harness
+        row={"pid":os.getpid(),"creation_time":"private-time","executable_path":"private-path","command_line":"private-command"}
+        for rows,expected in (([],1),([row],0)):
+            with self.subTest(expected=expected),tempfile.TemporaryDirectory() as tmp, \
+                 patch.dict(os.environ,{"SYSTEMROOT":"C:/Windows"},clear=True), \
+                 patch.object(harness,"windows_job_guard",return_value=contextlib.nullcontext()), \
+                 patch.object(harness,"probe_cim_module_context",return_value={"automatic":{"success":True}}), \
+                 patch.object(process_ownership,"_windows_process_snapshot",return_value=rows) as inspector, \
+                 patch.object(harness.unittest.defaultTestLoader,"loadTestsFromName") as loader, \
+                 patch.object(harness.unittest,"TextTestRunner") as runner, \
+                 patch.object(harness.socket.socket,"connect"),patch("tempfile.tempdir",tmp):
+                runner.return_value.run.return_value=SimpleNamespace(testsRun=1,failures=[],errors=[],skipped=[],wasSuccessful=lambda:True)
+                self.assertEqual(harness._worker(harness.SELECTORS[1],Path(tmp)),expected)
+                inspector.assert_called_once_with()
+                if expected:loader.assert_not_called()
+                else:loader.assert_called_once_with(harness.SELECTORS[1])
+                self.assertNotIn("private-",(Path(tmp)/"cim-platform-qualification.json").read_text())
 
     def fake_api(self):
         api = Mock()

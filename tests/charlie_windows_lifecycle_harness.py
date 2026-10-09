@@ -32,9 +32,18 @@ TEST_TIMEOUT_SECONDS = 180
 BASE_PLATFORM_ENV = frozenset({"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "RUNNER_TEMP", "GITHUB_ACTIONS", "RUNNER_OS"})
 NATIVE_PLATFORM_ENV = frozenset({"USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMDRIVE", "PROGRAMFILES"})
 
+PLATFORM_GROUPS = {
+    "identity": frozenset({"USERNAME", "USERDOMAIN", "USERDOMAIN_ROAMINGPROFILE", "COMPUTERNAME",
+        "HOMEDRIVE", "HOMEPATH", "ALLUSERSPROFILE", "PUBLIC"}),
+    "architecture": frozenset({"OS", "PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432", "NUMBER_OF_PROCESSORS"}),
+    "installation": frozenset({"PROGRAMFILES(X86)", "PROGRAMW6432", "COMMONPROGRAMFILES",
+        "COMMONPROGRAMFILES(X86)", "COMMONPROGRAMW6432"}),
+}
+EXPANDED_PLATFORM_ENV = frozenset().union(*PLATFORM_GROUPS.values())
+
 
 def worker_environment(source, root, job_name):
-    env = {k: v for k, v in source.items() if k.upper() in BASE_PLATFORM_ENV | NATIVE_PLATFORM_ENV}
+    env = {k: v for k, v in source.items() if k.upper() in BASE_PLATFORM_ENV | NATIVE_PLATFORM_ENV | EXPANDED_PLATFORM_ENV}
     system_root = next((v for k, v in env.items() if k.upper() == "SYSTEMROOT"), None)
     if not system_root:
         raise RuntimeError("system_root_required")
@@ -44,8 +53,34 @@ def worker_environment(source, root, job_name):
     return env
 
 
+def platform_environment_matrix(expanded, root):
+    """Seven fixed references, never an adaptive profile-selection or security fallback."""
+    root = _report_root(str(root))
+    without = lambda names: {k: v for k, v in expanded.items() if k.upper() not in names}
+    cache = {**expanded, "PSModuleAnalysisCachePath": str(root / "ModuleAnalysisCache-diagnostic")}
+    return (
+        ("ambient_reference", None),
+        ("existing_allowlist", without(EXPANDED_PLATFORM_ENV)),
+        ("expanded", expanded),
+        ("without_identity", without(PLATFORM_GROUPS["identity"])),
+        ("without_architecture", without(PLATFORM_GROUPS["architecture"])),
+        ("without_installation", without(PLATFORM_GROUPS["installation"])),
+        ("expanded_fresh_cache", cache),
+    )
+
+
+def process_policy_context(source, worker):
+    """Classify an existing parent policy without forwarding or changing its value."""
+    values = [v for k, v in source.items() if k.upper() == "PSEXECUTIONPOLICYPREFERENCE"]
+    known = {v.lower(): v for v in ("AllSigned", "Bypass", "Default", "RemoteSigned", "Restricted", "Undefined", "Unrestricted")}
+    value = values[0] if len(values) == 1 else None
+    label = known.get(value.lower(), "unrecognized") if isinstance(value, str) else "unrecognized"
+    return {"ambient_present": bool(values), "ambient_label": label if values else None,
+        "worker_inherits": any(k.upper() == "PSEXECUTIONPOLICYPREFERENCE" for k in worker)}
+
+
 def cim_module_specs():
-    """Locate automatic/explicit built-in module loading versus local CIM acquisition."""
+    """Automatic module loading and narrow local CIM, identical in all seven references."""
     prefix = (
         "$ErrorActionPreference='Stop';"
         "function Emit([string]$stage,[long]$count){"
@@ -61,16 +96,7 @@ def cim_module_specs():
         "if($command.Count -ne 1 -or $command[0].ModuleName -ne 'CimCmdlets'){throw 'unexpected_cim_command'};"
         "Emit 'command_resolved' 1;"
     ) + query
-    explicit = prefix + (
-        "$manifest=[IO.Path]::Combine($PSHOME,'Modules','CimCmdlets','CimCmdlets.psd1');"
-        "$module=@(Import-Module -Name $manifest -PassThru -ErrorAction Stop);"
-        "if($module.Count -ne 1 -or $module[0].Name -ne 'CimCmdlets'){throw 'unexpected_cim_module'};"
-        "Emit 'module_imported' 1;"
-    ) + query
-    return (
-        ("automatic", automatic, ("started", "command_resolved", "acquired", "completed")),
-        ("explicit_builtin", explicit, ("started", "module_imported", "acquired", "completed")),
-    )
+    return (("automatic", automatic, ("started", "command_resolved", "acquired", "completed")),)
 
 
 def parse_phase_markers(output, expected):
@@ -95,7 +121,7 @@ def parse_phase_markers(output, expected):
 
 
 def probe_cim_module_context(environment):
-    """Two single-attempt read-only probes; None inherits only the parent's environment."""
+    """One single-attempt read-only probe; None inherits only the parent's environment."""
     report = {}
     for label, script, expected in cim_module_specs():
         started = time.monotonic()
@@ -130,6 +156,26 @@ def probe_cim_module_context(environment):
 def owned_automatic_cim_passed(report):
     # References/explicit import provide evidence, never replace the owned automatic path.
     return report.get("automatic", {}).get("success") is True
+
+
+def qualify_actual_snapshot(inspector):
+    """Use the actual inspector; retain counts and proof of this worker, never rows."""
+    started = time.monotonic()
+    report = {"success": False, "row_count": 0, "own_process_proven": False, "error_type": None}
+    try:
+        rows = inspector()
+        report["row_count"] = len(rows) if isinstance(rows, list) else 0
+        report["own_process_proven"] = isinstance(rows, list) and any(
+            isinstance(row, dict) and type(row.get("pid")) is int and row["pid"] == os.getpid()
+            and all(isinstance(row.get(key), str) and bool(row[key].strip())
+                for key in ("creation_time", "executable_path", "command_line")) for row in rows)
+        report["success"] = report["row_count"] > 0 and report["own_process_proven"]
+        del rows
+    except Exception as exc:
+        kind = type(exc).__name__
+        report["error_type"] = kind if kind in {"TimeoutExpired", "OSError", "ValueError", "JSONDecodeError"} else "UnexpectedError"
+    report["elapsed_ms"] = round((time.monotonic() - started) * 1000)
+    return report
 
 
 class BasicLimits(ctypes.Structure):
@@ -304,15 +350,20 @@ def _worker(selector, root):
         raise RuntimeError("lifecycle_test_network_forbidden")
     socket.socket.connect = deny_network
     with windows_job_guard():
-        phases = None
+        qualification = None
         if selector == SELECTORS[1]:
             phases = probe_cim_module_context(probe_environment)
-            with (root / "cim-module-diagnostic.json").open("x", encoding="utf-8") as stream:
-                json.dump(phases, stream, indent=2)
+            actual = {"success": False, "status": "not_run"}
+            if owned_automatic_cim_passed(phases):
+                from modules.charlie import process_ownership
+                actual = qualify_actual_snapshot(process_ownership._windows_process_snapshot)
+            qualification = {"automatic_probe": phases, "actual_snapshot": actual}
+            with (root / "cim-platform-qualification.json").open("x", encoding="utf-8") as stream:
+                json.dump(qualification, stream, indent=2)
         with (root / "test.log").open("x", encoding="utf-8") as log:
-            if phases is not None:
-                log.write("CIM_MODULE_OWNED_DIAGNOSTIC=" + json.dumps(phases, sort_keys=True) + "\n")
-                if not owned_automatic_cim_passed(phases):
+            if qualification is not None:
+                log.write("CIM_PLATFORM_QUALIFICATION=" + json.dumps(qualification, sort_keys=True) + "\n")
+                if not owned_automatic_cim_passed(qualification["automatic_probe"]) or qualification["actual_snapshot"].get("success") is not True:
                     report = {"selector": selector, "tests_run": 0, "failures": 0, "errors": 1, "skips": 0}
                     with (root / "result.json").open("x", encoding="utf-8") as stream:
                         json.dump(report, stream, indent=2)
@@ -343,9 +394,13 @@ def _run_owned_worker(selector, root):
         if selector == SELECTORS[1]:
             # Read-only references extend the parent preflight, never lifecycle/termination.
             # No parent credentials are copied into the matched probe or owned worker.
-            report["cim_module_parent"] = {
-                "ambient_reference": probe_cim_module_context(None),
-                "worker_allowlist": probe_cim_module_context(env),
+            report["process_policy_context"] = process_policy_context(os.environ, env)
+            report["platform_parent"] = {
+                label: probe_cim_module_context(environment)
+                for label, environment in platform_environment_matrix(env, root)
+            }
+            report["platform_group_present_counts"] = {
+                label: sum(k.upper() in names for k in env) for label, names in PLATFORM_GROUPS.items()
             }
         command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker", selector, "--report-root", str(root)]
         process, thread, _pid, _tid = _winapi.CreateProcess(sys.executable, subprocess.list2cmdline(command), None, None, False,
