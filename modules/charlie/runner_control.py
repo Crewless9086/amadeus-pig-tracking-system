@@ -21,6 +21,7 @@ from modules.charlie import (
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.process_ownership import (
     inspect_process,
+    inspect_processes,
     inspect_descendant_processes,
     generate_controller_signing_key,
     make_ownership_record,
@@ -1636,6 +1637,8 @@ def _contain_observed_tree(tree, *, allow_root_current_descendant=True):
     if not isinstance(root, dict) or not root.get("pid"):
         return {"success": False, "reason": "ownership_identity_incomplete:root.pid"}
     members = tree.get("members") if isinstance(tree.get("members"), list) else []
+    if any(not isinstance(record, dict) for record in members):
+        return {"success": False, "reason": "ownership_identity_incomplete:member"}
     decisions = []
     terminated_pids = []
     for record in [root, *[
@@ -1685,6 +1688,67 @@ def _contain_observed_tree(tree, *, allow_root_current_descendant=True):
     }
 
 
+def _spawned_observed_console_members(pid, tree, descendants):
+    """Reuse console roles only from a complete, unchanged owned startup tree."""
+    if (
+        not isinstance(tree, dict) or not isinstance(tree.get("root"), dict)
+        or not isinstance(descendants, list)
+        or any(not isinstance(row, dict) for row in descendants)
+    ):
+        return {}, "spawned_observed_tree_metadata_incomplete"
+    try:
+        root = tree["root"]
+        if int(root.get("pid") or 0) != pid or int(tree.get("root_pid") or 0) != pid:
+            return {}, "spawned_observed_root_pid_mismatch"
+        binding = {
+            "generation": root.get("runner_generation"),
+            "revision": root.get("revision"),
+            "startup_nonce": root.get("startup_nonce"),
+        }
+        structural = validate_bootstrap_tree(
+            tree, **binding, expected_root_parent_pid=os.getpid(),
+        )
+        if not structural.get("authorized"):
+            return {}, structural["reason"]
+        members = {int(record["pid"]): record for record in tree["members"]}
+        captured_pids = [int(row.get("pid") or 0) for row in descendants]
+        if (
+            len(set(captured_pids)) != len(captured_pids)
+            or set(captured_pids) != set(members) - {pid}
+        ):
+            return {}, "spawned_observed_descendant_set_mismatch"
+        for row in descendants:
+            record = members[int(row["pid"])]
+            captured = make_ownership_record(
+                row, record["runner_generation"], record["mission_id"],
+                record["execution_id"], record["ownership_type"],
+                revision=record["revision"], startup_nonce=record["startup_nonce"],
+                process_role=record["process_role"],
+            )
+            if any(captured[field] != record.get(field) for field in captured):
+                return {}, "spawned_observed_descendant_identity_mismatch"
+        live = validate_live_bootstrap_tree(tree, **binding)
+        if not live.get("authorized"):
+            return {}, live["reason"]
+        expected = {
+            field: root[field] for field in (
+                "runner_generation", "mission_id", "execution_id", "ownership_type"
+            )
+        }
+        # The canonical batch inspector keeps the tree authorization on one
+        # snapshot instead of issuing a CIM query for each member and ancestor.
+        current_members = inspect_processes(members)
+        decision = validate_process_tree(
+            tree, expected, current_members.get, require_descendant=True,
+            allow_current_descendant=True,
+        )
+        if not decision.get("authorized"):
+            return {}, decision["reason"]
+        return members, "live_spawned_observed_tree_verified"
+    except (KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
+        return {}, "spawned_observed_tree_inspection_failed"
+
+
 def _contain_spawned_process(process, observed_tree):
     """Contain a freshly returned Popen handle even when inspection was partial."""
     observed = _contain_observed_tree(observed_tree)
@@ -1716,11 +1780,28 @@ def _contain_spawned_process(process, observed_tree):
             "observed_containment": observed,
         }
     descendants = inspect_descendant_processes(pid)
+    observed_members = {}
+    members = observed_tree.get("members") if isinstance(observed_tree, dict) else []
+    if isinstance(members, list) and any(
+        isinstance(record, dict)
+        and str(record.get("process_role") or "").endswith("_console_host")
+        for record in members
+    ):
+        observed_members, reason = _spawned_observed_console_members(
+            pid, observed_tree, descendants,
+        )
+        if not observed_members:
+            return {
+                "success": False,
+                "reason": f"spawned_observed_tree_unverified:{reason}",
+                "pid": pid,
+                "observed_containment": observed,
+            }
     descendant_records = []
     for descendant in descendants:
         descendant_pid = int(descendant.get("pid") or 0)
         structural_token = f"fresh-spawn-handle:{pid}"
-        record = make_ownership_record(
+        record = observed_members.get(descendant_pid) or make_ownership_record(
             descendant,
             structural_token,
             "charlie-startup-containment",
@@ -1738,6 +1819,10 @@ def _contain_spawned_process(process, observed_tree):
             expected,
             inspect_process,
             allow_current_descendant=True,
+            allow_console_host_tree_member=bool(
+                observed_members
+                and str(record.get("process_role") or "").endswith("_console_host")
+            ),
         )
         if descendant_pid <= 0 or not decision.get("authorized"):
             return {
@@ -1754,6 +1839,19 @@ def _contain_spawned_process(process, observed_tree):
         int(record["pid"]): str(record["creation_time"])
         for record in descendant_records
     }
+    # Revalidation can take time.  Never let an exited retained handle lend
+    # its numeric PID to the fallback after the complete authorization pass.
+    try:
+        root_still_live = process.poll() is None
+    except (OSError, subprocess.SubprocessError):
+        root_still_live = False
+    if not root_still_live:
+        return {
+            "success": False,
+            "reason": "spawned_process_handle_no_longer_live",
+            "pid": pid,
+            "observed_containment": observed,
+        }
     try:
         if os.name == "nt":
             for descendant in reversed(descendant_records):

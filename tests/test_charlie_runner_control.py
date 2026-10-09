@@ -5,6 +5,7 @@ import os
 import subprocess
 import threading
 import time
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -1609,6 +1610,194 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "partial_failure")
         self.assertIn("Permission denied", result["stderr_tail"])
+
+
+class SpawnedConsoleContainmentTests(unittest.TestCase):
+    """Real ownership validators over synthetic rows; no native process calls."""
+
+    def setUp(self):
+        self.root_pid, self.child_pid, self.console_pid = 4321, 4322, 4323
+        system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+        console = system_root.rstrip("\\/") + r"\System32\conhost.exe"
+        self.rows = [
+            {"pid": self.root_pid, "parent_pid": os.getpid(), "creation_time": "100",
+             "executable_path": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+             "command_line": "powershell.exe -NoProfile -NonInteractive -Command start",
+             "name": "powershell.exe"},
+            {"pid": self.child_pid, "parent_pid": self.root_pid, "creation_time": "101",
+             "executable_path": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+             "command_line": "powershell.exe -NoProfile -NonInteractive -Command wait",
+             "name": "powershell.exe"},
+            {"pid": self.console_pid, "parent_pid": self.child_pid, "creation_time": "102",
+             "executable_path": console, "command_line": console + " 0x4",
+             "name": "conhost.exe"},
+        ]
+        self.tree = self._tree(self.rows)
+        self.captured = json.loads(json.dumps(self.rows[1:]))
+        self.exited = False
+        self.process = Mock(pid=self.root_pid)
+        self.process.poll.side_effect = lambda: 1 if self.exited else None
+        self.process.terminate.side_effect = self._kill
+        self.process.kill.side_effect = self._kill
+        self.terminate = Mock(side_effect=self._kill)
+        self.extra_ancestor = None
+
+    def _tree(self, rows):
+        members = [process_ownership.make_ownership_record(
+            row, "generation-1", "charlie-control", "generation-1", "charlie_runner",
+            revision="revision-1", startup_nonce="nonce-1", process_role=role,
+        ) for row, role in zip(rows, (
+            "supervisor_launcher", "supervisor_interpreter", "supervisor_console_host",
+        ))]
+        return {"version": "charlie_process_tree_v1", "runner_generation": "generation-1",
+                "root_pid": self.root_pid, "root": members[0], "members": members}
+
+    def _kill(self, *_args, **_kwargs):
+        self.exited = True
+        return Mock(returncode=0)
+
+    def _live(self):
+        if self.exited:
+            return {}
+        by_pid = {row["pid"]: row for row in self.rows}
+        starter = {"pid": os.getpid(), "parent_pid": 0, "name": "python.exe",
+                   "command_line": "python synthetic-test.py"}
+        result = {}
+        for row in self.rows:
+            ancestors, parent, seen = [], row["parent_pid"], set()
+            while parent in by_pid and parent not in seen:
+                seen.add(parent)
+                ancestors.append(dict(by_pid[parent]))
+                parent = by_pid[parent]["parent_pid"]
+            if self.extra_ancestor:
+                ancestors.append(self.extra_ancestor)
+            ancestors.append(starter)
+            result[row["pid"]] = {
+                **row, "ancestry": ancestors, "current_process_ancestry": [starter],
+                "inspection_complete": True,
+            }
+        return result
+
+    def _exercise(self, *, tree=None, after_tree_validation=None):
+        actual_tree_validator = process_ownership.validate_process_tree
+
+        def validate(*args, **kwargs):
+            result = actual_tree_validator(*args, **kwargs)
+            if after_tree_validation:
+                after_tree_validation()
+            return result
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(runner_control, "process_termination_enabled", return_value=False))
+            stack.enter_context(patch.object(runner_control, "inspect_process",
+                                             side_effect=lambda pid: self._live().get(int(pid))))
+            stack.enter_context(patch.object(runner_control, "inspect_descendant_processes",
+                                             side_effect=lambda _pid: [] if self.exited else self.captured))
+            stack.enter_context(patch.object(process_ownership, "inspect_processes_with_snapshot",
+                                             side_effect=lambda _pids: (self._live(), None)))
+            stack.enter_context(patch.object(process_ownership, "_inspect_process_descendants",
+                                             side_effect=lambda _pid: self.rows))
+            stack.enter_context(patch.object(runner_control, "validate_process_tree", side_effect=validate))
+            stack.enter_context(patch.object(runner_control.subprocess, "run", self.terminate))
+            result = runner_control._contain_spawned_process(
+                self.process, self.tree if tree is None else tree,
+            )
+        return result
+
+    def _assert_refused_without_kill(self, result):
+        self.assertFalse(result["success"], result)
+        self.terminate.assert_not_called()
+        self.process.terminate.assert_not_called()
+        self.process.kill.assert_not_called()
+        self.process.wait.assert_not_called()
+
+    def test_complete_live_observed_console_reuses_existing_validator(self):
+        result = self._exercise()
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["reason"], "fresh_spawn_handle_tree_termination_verified")
+        self.assertEqual(result["descendant_pids"], [self.child_pid, self.console_pid])
+        self.assertEqual(result["observed_containment"]["termination"]["reason"],
+                         "process_termination_not_enabled")
+        self.assertTrue(self.terminate.called or self.process.terminate.called)
+
+    def test_spoofed_console_image_or_command_is_not_authorized(self):
+        for field, value in (
+            ("executable_path", r"C:\Temp\conhost.exe"),
+            ("command_line", r"C:\Windows\System32\conhost.exe arbitrary-script.py"),
+            ("command_line", r"C:\Temp\conhost.exe 0x4"),
+        ):
+            with self.subTest(field=field, value=value):
+                self.setUp()
+                self.rows[2][field] = value
+                self.tree = self._tree(self.rows)
+                self.captured = json.loads(json.dumps(self.rows[1:]))
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_live_identity_drift_is_refused(self):
+        for index, field, value in (
+            (0, "creation_time", "999"), (2, "creation_time", "999"),
+            (2, "pid", 9000), (2, "parent_pid", self.root_pid),
+            (2, "executable_path", r"C:\Temp\conhost.exe"),
+            (2, "command_line", "conhost.exe 0x8"),
+        ):
+            with self.subTest(index=index, field=field):
+                self.setUp()
+                self.rows[index][field] = value
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_captured_descendant_drift_and_duplicate_are_refused(self):
+        for kind in ("creation", "parent", "missing", "new", "duplicate"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                if kind == "creation": self.captured[1]["creation_time"] = "999"
+                elif kind == "parent": self.captured[1]["parent_pid"] = self.root_pid
+                elif kind == "missing": self.captured.pop()
+                elif kind == "new": self.captured.append({**self.captured[1], "pid": 9999})
+                else: self.captured.append(dict(self.captured[1]))
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_partial_unknown_or_unobserved_console_is_refused(self):
+        for kind in ("empty", "missing-root", "string-root", "list-root", "missing-field", "missing-member", "wrong-role", "null"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                if kind == "empty": self.tree = {}
+                elif kind == "missing-root": self.tree.pop("root")
+                elif kind == "string-root": self.tree["root"] = "malformed"
+                elif kind == "list-root": self.tree["root"] = ["malformed"]
+                elif kind == "missing-field": self.tree["members"][2].pop("revision")
+                elif kind == "missing-member": self.tree["members"].pop()
+                elif kind == "wrong-role": self.tree["members"][2]["process_role"] = "supervisor_interpreter"
+                else: self.tree["members"].append(None)
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_observed_root_binding_and_stale_metadata_are_refused(self):
+        for kind in ("root-pid", "tree-root-pid", "parent", "generation", "revision", "nonce"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                if kind == "root-pid": self.tree["root"]["pid"] = 9999
+                elif kind == "tree-root-pid": self.tree["root_pid"] = 9999
+                elif kind == "parent": self.tree["root"]["parent_pid"] = 9999
+                else:
+                    field = {"generation": "runner_generation", "revision": "revision", "nonce": "startup_nonce"}[kind]
+                    self.tree["members"][2][field] = "stale"
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_protected_ancestor_remains_refused(self):
+        self.extra_ancestor = {"pid": 9999, "name": "cursor.exe", "command_line": "cursor"}
+        self._assert_refused_without_kill(self._exercise())
+
+    def test_live_extra_descendant_remains_refused(self):
+        self.rows.append({**self.rows[2], "pid": 9999})
+        self._assert_refused_without_kill(self._exercise())
+
+    def test_change_after_complete_tree_validation_prevents_any_kill(self):
+        self._assert_refused_without_kill(self._exercise(
+            after_tree_validation=lambda: self.rows[2].update(creation_time="999"),
+        ))
+
+    def test_root_exit_after_validation_does_not_authorize_numeric_pid_kill(self):
+        self.process.poll.side_effect = [None, 0]
+        self._assert_refused_without_kill(self._exercise())
 
 
 class WindowsHarnessBoundaryTests(unittest.TestCase):
