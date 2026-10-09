@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from modules.charlie import process_ownership, runner_control
 from tests.charlie_windows_lifecycle_harness import (job_owned_test, close_retained_test_process,
-    owned_powershell_child, current_job_active_count)
+    owned_powershell_child, current_job_active_count, exited_launcher_command)
 from scripts import charlie_runner_control as runner_control_cli
 
 
@@ -301,14 +301,12 @@ class CharlieRunnerControlTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "Windows launcher-first exit harness")
     @job_owned_test
     def test_windows_exited_launcher_still_contains_unobserved_child(self):
-        powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
         process = None
         try:
-            process = subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive", "-Command",
-                owned_powershell_child("Start-Sleep -Seconds 120") + "Start-Sleep -Seconds 1"],
+            process = subprocess.Popen(exited_launcher_command(),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
                 **runner_control.background_process_kwargs())
-            process.wait(timeout=15)
+            self.assertEqual(process.wait(timeout=15), 0)
             self.assertGreaterEqual(current_job_active_count(), 2)  # test worker plus orphan
             with patch.object(runner_control, "inspect_descendant_processes", side_effect=AssertionError("exited PID inspection")), \
                  patch.object(runner_control.subprocess, "run", side_effect=AssertionError("exited PID termination")):
@@ -1615,6 +1613,42 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
 class WindowsHarnessBoundaryTests(unittest.TestCase):
     """No native calls: qualification of the hosted test containment decisions."""
+    def test_exited_launcher_creates_only_job_inheriting_child_then_exits(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        command = harness.exited_launcher_command()
+        self.assertEqual(command[:4], [harness.sys.executable, "-I", "-S", "-c"])
+        events = []
+        class LauncherExited(Exception): pass
+        def leave(code):
+            events.append(("exit", code))
+            raise LauncherExited()
+        fake_process = SimpleNamespace(DEVNULL=-3, CREATE_NO_WINDOW=0x08000000,
+            Popen=Mock(side_effect=lambda *args, **kwargs: events.append(("spawn", args, kwargs))))
+        modules = {"os": SimpleNamespace(_exit=leave), "subprocess": fake_process,
+            "sys": SimpleNamespace(executable="synthetic-python.exe")}
+        def fake_import(name, *_args, **_kwargs): return modules[name]
+        with self.assertRaises(LauncherExited):
+            exec(compile(command[4], "<exited-launcher-fixture>", "exec"),
+                {"__builtins__": {"__import__": fake_import, "getattr": getattr}})
+        self.assertEqual([event[0] for event in events], ["spawn", "exit"])
+        self.assertEqual(events[-1], ("exit", 0))
+        self.assertEqual(events[0][1], (["synthetic-python.exe", "-I", "-S", "-c", "import time; time.sleep(120)"],))
+        self.assertEqual(events[0][2], {"stdin": -3, "stdout": -3, "stderr": -3,
+            "close_fds": True, "creationflags": 0x08000000})
+        self.assertFalse(events[0][2]["creationflags"] & 0x01000000)  # no CREATE_BREAKAWAY_FROM_JOB
+
+    def test_exited_launcher_does_not_claim_success_if_child_creation_fails(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        leave = Mock()
+        modules = {"os": SimpleNamespace(_exit=leave),
+            "subprocess": SimpleNamespace(DEVNULL=-3, Popen=Mock(side_effect=OSError("synthetic"))),
+            "sys": SimpleNamespace(executable="synthetic-python.exe")}
+        def fake_import(name, *_args, **_kwargs): return modules[name]
+        with self.assertRaises(OSError):
+            exec(compile(harness.exited_launcher_command()[4], "<exited-launcher-fixture>", "exec"),
+                {"__builtins__": {"__import__": fake_import, "getattr": getattr}})
+        leave.assert_not_called()
+
     def fake_api(self):
         api = Mock()
         api.CreateJobObjectW.return_value = 10

@@ -145,6 +145,18 @@ def owned_powershell_child(script, variable="child"):
         f"${variable}=[Diagnostics.Process]::Start($i);")
 
 
+def exited_launcher_command():
+    """A stdlib-only launcher exits immediately; its sleeping child stays in our job."""
+    script = "\n".join((
+        "import os, subprocess, sys",
+        "subprocess.Popen([sys.executable, '-I', '-S', '-c', 'import time; time.sleep(120)'],",
+        "    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,",
+        "    close_fds=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))",
+        "os._exit(0)",
+    ))
+    return [sys.executable, "-I", "-S", "-c", script]
+
+
 def current_job_active_count():
     api = _kernel(); job = api.OpenJobObjectW(0x4, False, os.environ[JOB_ENV])
     _checked(job, "open_test_job")
