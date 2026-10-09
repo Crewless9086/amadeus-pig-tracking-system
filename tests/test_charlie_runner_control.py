@@ -1670,195 +1670,132 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "system_root_required"):
             harness.worker_environment({}, Path("case-root"), "test-job")
 
-    @staticmethod
-    def omission_result(success):
-        return {"automatic": {"success": success, "exited_zero": success,
-            "error_type": None if success else "TimeoutExpired", "output_valid": True, "elapsed_ms": 0,
-            "markers": ([{"stage":"started","count":0},{"stage":"command_resolved","count":1},
-                {"stage":"acquired","count":1},{"stage":"completed","count":0}] if success
-                else [{"stage":"started","count":0}])}}
-
-    def run_omission_diagnostic(self, source, response):
+    def test_provider_module_cache_requires_exact_image_path_before_file_access(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        calls=[]
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
-            root=Path(tmp).resolve()/"case"
-            worker=harness.worker_environment(source,root,"same-owned-job")
-            before=dict(worker); ambient_before=dict(source)
-            def invoke(env):
-                calls.append(env)
-                return response(env,len(calls)-1)
-            with patch.object(harness,"probe_cim_module_context",side_effect=invoke):
-                report=harness.diagnose_environment_omissions(worker,root,source)
-            self.assertEqual(worker,before); self.assertEqual(source,ambient_before)
-            self.assertIs(calls[2],worker)
-        return report,calls,worker
+        expected=r"C:\PSModuleAnalysisCachePath\ModuleAnalysisCache"
+        self.assertEqual(harness.PROVIDER_MODULE_CACHE,expected)
+        self.assertEqual(harness.MAX_MODULE_CACHE_BYTES,64*1024*1024)
+        with patch.object(harness.Path,"lstat")as inspect:
+            for source in ({},{harness.MODULE_CACHE_KEY:None},{harness.MODULE_CACHE_KEY:""},
+                {harness.MODULE_CACHE_KEY:expected,"psmoduleanalysiscachepath":expected},
+                *({harness.MODULE_CACHE_KEY:value}for value in ("NUL",r"\\server\share\cache",r"\\?\C:\PSModuleAnalysisCachePath\ModuleAnalysisCache",
+                    r"\\.\NUL",r"C:\arbitrary\cache",expected+":stream",expected+" ",expected+"\x00",
+                    r"C:\PSModuleAnalysisCachePath\..\ModuleAnalysisCache","C:/PSModuleAnalysisCachePath/ModuleAnalysisCache"))):
+                with self.subTest(kind=type(source.get(harness.MODULE_CACHE_KEY)).__name__):
+                    with self.assertRaisesRegex(RuntimeError,"exact_provider_module_cache_required"):
+                        harness.provider_module_cache_path(source)
+            self.assertEqual(harness.provider_module_cache_path({"psmoduleanalysiscachepath":expected.lower()}),Path(expected))
+            inspect.assert_not_called()
 
-    def test_omission_probe_preserves_actual_production_kwargs_and_script(self):
+    def test_provider_module_cache_copy_is_bounded_exact_and_exclusive(self):
+        import hashlib
+        from tests import charlie_windows_lifecycle_harness as harness
+        with tempfile.TemporaryDirectory()as tmp,patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
+            root=Path(tmp).resolve()/"case";root.mkdir()
+            provider=Path(tmp)/"provider-cache";data=b"synthetic-provider-cache\x00\x01";provider.write_bytes(data)
+            original=provider.stat()
+            with patch.object(harness,"provider_module_cache_path",return_value=provider):
+                target,receipt=harness.copy_provider_module_cache({},root)
+                self.assertEqual(target,root/"PowerShell-ModuleAnalysisCache")
+                self.assertEqual(target.read_bytes(),data);self.assertEqual(provider.read_bytes(),data)
+                self.assertEqual(provider.stat().st_mtime_ns,original.st_mtime_ns)
+                self.assertEqual(receipt,{"copied":True,"bytes":len(data),"sha256":hashlib.sha256(data).hexdigest()})
+                self.assertNotIn(str(provider),json.dumps(receipt));self.assertNotIn("synthetic",json.dumps(receipt))
+                with self.assertRaises(FileExistsError):harness.copy_provider_module_cache({},root)
+                self.assertEqual(target.read_bytes(),data)
+                with self.assertRaisesRegex(RuntimeError,"report_root_must_be_below_runner_temp"):
+                    harness.copy_provider_module_cache({},Path(tmp).resolve())
+
+    def test_module_cache_rejects_empty_oversized_nonregular_and_reparse(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        with tempfile.TemporaryDirectory()as tmp:
+            folder=Path(tmp)/"provider";folder.mkdir();provider=folder/"cache"
+            for data in (b"",b"x"*9):
+                provider.write_bytes(data)
+                with patch.object(harness,"MAX_MODULE_CACHE_BYTES",8),patch.object(harness.Path,"open")as opened:
+                    with self.assertRaisesRegex(RuntimeError,"module_cache_type_or_size_refused"):
+                        harness._read_verified_module_cache(provider)
+                    opened.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError,"module_cache_type_or_size_refused"):
+                harness._read_verified_module_cache(folder)
+            real_lstat=Path.lstat
+            for rejected,mode,reason in ((provider,harness.stat.S_IFREG,"module_cache_reparse_refused"),
+                (folder,harness.stat.S_IFDIR,"module_cache_parent_refused")):
+                def inspect(path):
+                    if path==rejected:return SimpleNamespace(st_mode=mode,st_file_attributes=0x400)
+                    return real_lstat(path)
+                with patch.object(harness.Path,"lstat",autospec=True,side_effect=inspect),patch.object(harness.Path,"open")as opened:
+                    with self.assertRaisesRegex(RuntimeError,reason):harness._read_verified_module_cache(provider)
+                    opened.assert_not_called()
+
+    def test_module_cache_detects_handle_and_path_drift_and_copy_mismatch(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        with tempfile.TemporaryDirectory()as tmp,patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
+            provider=Path(tmp)/"provider-cache";provider.write_bytes(b"cache");info=provider.stat()
+            changed=SimpleNamespace(st_dev=info.st_dev,st_ino=info.st_ino+1,st_mode=info.st_mode,
+                st_size=info.st_size,st_mtime_ns=info.st_mtime_ns)
+            with patch.object(harness.os,"fstat",return_value=changed):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_identity_changed"):
+                    harness._read_verified_module_cache(provider)
+            with patch.object(harness.os,"fstat",side_effect=[info,changed]):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_changed_during_read"):
+                    harness._read_verified_module_cache(provider)
+            with patch.object(harness,"_cache_path_without_reparse",side_effect=[info,changed]):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_path_changed"):
+                    harness._read_verified_module_cache(provider)
+            root=Path(tmp).resolve()/"case";root.mkdir()
+            with patch.object(harness,"provider_module_cache_path",return_value=provider), \
+                 patch.object(harness,"_read_verified_module_cache",side_effect=[b"cache",b"different"]):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_copy_mismatch"):
+                    harness.copy_provider_module_cache({},root)
+
+    def test_cache_comparison_has_five_fixed_calls_with_real_inspector_kwargs(self):
         import ast
         from tests import charlie_windows_lifecycle_harness as harness
-        source = ast.parse(Path(process_ownership.__file__).read_text(encoding="utf-8"))
-        inspector = next(n for n in source.body if isinstance(n, ast.FunctionDef) and n.name == "_windows_process_snapshot")
-        run = next(n for n in ast.walk(inspector) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-            and isinstance(n.func.value, ast.Name) and n.func.value.id == "subprocess" and n.func.attr == "run")
-        production_kwargs = {k.arg: ast.literal_eval(k.value) for k in run.keywords}
-        self.assertEqual(production_kwargs, {"capture_output": True, "text": True, "encoding": "utf-8",
-            "errors": "replace", "timeout": 8, "check": False})
-        specs = harness.cim_module_specs()
-        self.assertEqual([s[0] for s in specs], ["automatic"])
-        self.assertIn("Get-Command -Name Get-CimInstance -CommandType Cmdlet", specs[0][1])
-        self.assertNotIn("Import-Module", specs[0][1])
-        self.assertIn("Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)", specs[0][1])
-        self.assertNotIn("-ComputerName", specs[0][1]); self.assertNotIn("-CimSession", specs[0][1])
-        self.assertIn("[Console]::Out.Flush()", specs[0][1])
-        calls=[]
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
-            root=Path(tmp).resolve()/"case"
-            ambient={"SystemRoot":"C:/Windows","PRIVATE_TEST_TOKEN":"private-value"}
-            worker=harness.worker_environment(ambient,root,"job")
-            def invoke(command, **kwargs):
-                calls.append((command,kwargs))
-                self.assertEqual(command,["powershell","-NoProfile","-NonInteractive","-Command",specs[0][1]])
-                self.assertEqual({k:v for k,v in kwargs.items()if k!="env"},production_kwargs)
-                output="".join("CHARLIE_PHASE|"+stage+("|0\n"if stage in {"started","completed"}else "|1\n")for stage in specs[0][2])
-                return SimpleNamespace(returncode=0,stdout=output,stderr="private-error-not-retained")
-            with patch.object(harness.subprocess,"run",side_effect=invoke):
-                report=harness.diagnose_environment_omissions(worker,root,ambient)
-        self.assertEqual(len(calls),3)
-        self.assertEqual(report["status"],"constructed_failure_not_reproduced")
+        source=ast.parse(Path(process_ownership.__file__).read_text(encoding="utf-8"))
+        inspector=next(n for n in source.body if isinstance(n,ast.FunctionDef)and n.name=="_windows_process_snapshot")
+        call=next(n for n in ast.walk(inspector)if isinstance(n,ast.Call)and isinstance(n.func,ast.Attribute)
+            and isinstance(n.func.value,ast.Name)and n.func.value.id=="subprocess"and n.func.attr=="run")
+        expected={k.arg:ast.literal_eval(k.value)for k in call.keywords}
+        self.assertEqual(expected,{"capture_output":True,"text":True,"encoding":"utf-8","errors":"replace","timeout":8,"check":False})
+        ambient={"SystemRoot":"C:/Windows","psmoduleanalysiscachepath":harness.PROVIDER_MODULE_CACHE,
+            "PRIVATE_TEST_TOKEN":"private-value","PSDisableModuleAnalysisCacheCleanup":"private-cleanup"}
+        legacy=harness.worker_environment(ambient,Path("case"),"job")
+        corrected={**legacy,harness.MODULE_CACHE_KEY:str(Path("case")/"PowerShell-ModuleAnalysisCache")}
+        environments=[];spec=harness.cim_module_specs()[0]
+        def invoke(command,**kwargs):
+            self.assertEqual(command,["powershell","-NoProfile","-NonInteractive","-Command",spec[1]])
+            self.assertEqual({k:v for k,v in kwargs.items()if k!="env"},expected)
+            environments.append(kwargs["env"])
+            output="".join("CHARLIE_PHASE|"+stage+("|0\n"if stage in {"started","completed"}else "|1\n")for stage in spec[2])
+            return SimpleNamespace(returncode=0,stdout=output,stderr="private-error")
+        before=dict(ambient)
+        with patch.object(harness.subprocess,"run",side_effect=invoke):
+            report=harness.compare_module_cache_profiles(legacy,corrected,ambient)
+        self.assertEqual(list(report),["ambient_reference","ambient_without_cache","legacy_worker_without_cache","corrected_worker_case_copy","restored_ambient"])
+        self.assertEqual(len(environments),5);self.assertEqual(ambient,before)
+        self.assertEqual(environments[0],ambient);self.assertIs(environments[4],environments[0])
+        self.assertEqual(environments[1],{k:v for k,v in ambient.items()if k.upper()!=harness.MODULE_CACHE_KEY.upper()})
+        self.assertIs(environments[2],legacy);self.assertIs(environments[3],corrected)
+        self.assertEqual({k:v for k,v in corrected.items()if k!=harness.MODULE_CACHE_KEY},legacy)
+        self.assertNotIn("PRIVATE_TEST_TOKEN",corrected);self.assertNotIn("PSDisableModuleAnalysisCacheCleanup",corrected)
         self.assertNotIn("private-",json.dumps(report))
+        self.assertTrue(all(harness.owned_automatic_cim_passed(r)for r in report.values()))
 
-    def test_omission_catalog_bound_and_single_dependency_use_at_most_eighteen_calls(self):
+    def test_module_cache_copy_failure_contains_job_before_any_worker_executes(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        self.assertEqual(len(harness.OMISSION_CATALOG),55)
-        self.assertEqual(harness.MAX_PARENT_PROBES,18);self.assertEqual(harness.MAX_SPLIT_PROBES,12)
-        candidate=sorted(harness.OMISSION_CATALOG)[-1]
-        source={"SystemRoot":"C:/Windows",**{k.lower():"metadata-value"for k in harness.OMISSION_CATALOG},
-            "UNKNOWN_SECRET_CONTEXT":"private-secret","__PSLockdownPolicy":"private-policy",
-            "PSModuleAnalysisCachePath":"private-cache","HTTP_PROXY":"private-proxy",
-            "DOTNET_STARTUP_HOOKS":"private-runtime","RUNNER_TRACKING_ID":"private-ownership"}
-        report,calls,worker=self.run_omission_diagnostic(source,
-            lambda env,index:self.omission_result(candidate in {k.upper()for k in env}))
-        self.assertEqual(report["status"],"observed_single_name_removal_dependency")
-        self.assertEqual(report["failing_subset"],[candidate])
-        self.assertEqual(report["calls"],18);self.assertEqual(report["split_probes"],12)
-        self.assertEqual(report["maximum_query_seconds"],144)
-        self.assertEqual([p["label"]for p in report["probes"][-2:]],["repeat_candidate_removal","restored_combined_control"])
-        self.assertTrue(report["removal_reproduced"]);self.assertTrue(report["restored_control_passed"])
-        self.assertEqual(report["inventory"]["outside_catalog_omitted_name_count"],6)
-        self.assertEqual(report["inventory"]["eligible_omitted_name_count"],55)
-        self.assertEqual(report["inventory"]["fixed_presence"]["__PSLOCKDOWNPOLICY"],{"ambient":True,"worker":False})
-        self.assertEqual(report["inventory"]["prefix_counts"]["DOTNET_"],{"ambient":1,"worker":0})
-        for index,env in enumerate(calls):
-            if index==2:continue
-            for key in ("UNKNOWN_SECRET_CONTEXT","__PSLockdownPolicy","PSModuleAnalysisCachePath",
-                "HTTP_PROXY","DOTNET_STARTUP_HOOKS","RUNNER_TRACKING_ID"):
-                self.assertEqual(env[key],source[key])
-            self.assertEqual(len(env),len({k.upper()for k in env}))
-        serialized=json.dumps(report)
-        self.assertLess(len(serialized.encode()),harness.MAX_DIAGNOSTIC_BYTES)
-        self.assertLess(harness.MAX_DIAGNOSTIC_BYTES,32768)
-        self.assertNotIn("private-",serialized);self.assertNotIn("metadata-value",serialized)
-        self.assertNotIn("UNKNOWN_SECRET_CONTEXT",serialized)
-        self.assertNotIn("UNKNOWN_SECRET_CONTEXT",worker)
-
-    def test_omission_combined_override_is_exact_and_case_insensitive(self):
-        from tests import charlie_windows_lifecycle_harness as harness
-        fixed={"PSMODULEPATH","TEMP","TMP",harness.JOB_ENV,"PYTHONDONTWRITEBYTECODE","PYTHON_DOTENV_DISABLED","DATABASE_URL"}
-        source={"SystemRoot":"C:/Windows","HOME":"private-home","UNRELATED":"private-value",
-            **{k.lower():"private-original"for k in fixed}}
-        report,calls,worker=self.run_omission_diagnostic(source,lambda env,index:self.omission_result(index<2 or index>2))
-        self.assertEqual(report["status"],"no_reproduction_in_reviewed_catalog")
-        self.assertEqual(report["calls"],4)
-        self.assertEqual(calls[1],{**{k:v for k,v in source.items()if k.upper()not in fixed},
-            **{k:v for k,v in worker.items()if k.upper()in fixed}})
-        self.assertEqual(calls[3],{k:v for k,v in calls[1].items()if k.upper()!="HOME"})
-        self.assertEqual(len(calls[1]),len({k.upper()for k in calls[1]}))
-        self.assertNotIn("private-",json.dumps(report))
-
-    def test_omission_controls_and_unreproduced_catalog_never_start_splits(self):
-        for case,status in (("ambient","invalid_ambient_control"),("combined","combined_override_failure"),
-            ("constructed_pass","constructed_failure_not_reproduced"),("no_reproduction","no_reproduction_in_reviewed_catalog")):
-            with self.subTest(case=case):
-                def response(env,index):
-                    if index==0:return self.omission_result(case!="ambient")
-                    if index==1:return self.omission_result(case!="combined")
-                    if index==2:return self.omission_result(case=="constructed_pass")
-                    return self.omission_result(True)
-                report,calls,_=self.run_omission_diagnostic({"SystemRoot":"C:/Windows","HOME":"value","OTHER":"private-value"},response)
-                self.assertEqual(report["status"],status)
-                self.assertEqual(report["split_probes"],0)
-                self.assertLessEqual(len(calls),4)
-                self.assertNotIn("failing_subset",report)
-        report,calls,_=self.run_omission_diagnostic({"SystemRoot":"C:/Windows","OTHER":"private-value"},
-            lambda env,index:self.omission_result(index<2))
-        self.assertEqual(report["status"],"empty_reviewed_catalog")
-        self.assertEqual(report["inventory"]["outside_catalog_omitted_name_count"],1)
-        self.assertEqual(len(calls),3)
-
-    def test_omission_requires_exact_started_only_timeout_not_other_failures(self):
-        cases=[{**self.omission_result(False)["automatic"],"error_type":"OSError"},
-            {**self.omission_result(False)["automatic"],"markers":[{"stage":"started","count":0},{"stage":"command_resolved","count":1}]},
-            {**self.omission_result(False)["automatic"],"output_valid":False}]
-        for index,invalid in enumerate(cases):
-            with self.subTest(case=index):
-                report,calls,_=self.run_omission_diagnostic({"SystemRoot":"C:/Windows","HOME":"value"},
-                    lambda env,i:self.omission_result(True)if i<2 else {"automatic":invalid})
-                self.assertEqual(report["status"],"constructed_failure_not_reproduced")
-                self.assertEqual(len(calls),3)
-        report,calls,_=self.run_omission_diagnostic({"SystemRoot":"C:/Windows","HOME":"value"},
-            lambda env,i:self.omission_result(i<2)if i<3 else {"automatic":cases[0]})
-        self.assertEqual(report["status"],"inconclusive_catalog_failure")
-        self.assertEqual(len(calls),4)
-
-    def test_omission_interaction_is_reported_without_picking_a_single_cause(self):
-        report,calls,_=self.run_omission_diagnostic({"SystemRoot":"C:/Windows","HOME":"value","CI":"value"},
-            lambda env,i:self.omission_result(bool({"HOME","CI"}&{k.upper()for k in env})))
-        self.assertEqual(report["status"],"interacting_subset")
-        self.assertEqual(report["failing_subset"],["CI","HOME"])
-        self.assertEqual(report["split_probes"],2);self.assertEqual(len(calls),8)
-        self.assertTrue(report["removal_reproduced"]);self.assertTrue(report["restored_control_passed"])
-
-    def test_omission_split_budget_keeps_proven_subset_and_reserves_reversal_controls(self):
-        from tests import charlie_windows_lifecycle_harness as harness
-        source={"SystemRoot":"C:/Windows",**{k:"value"for k in harness.OMISSION_CATALOG}}
-        candidate=sorted(harness.OMISSION_CATALOG)[-1]
-        with patch.object(harness,"MAX_SPLIT_PROBES",2):
-            report,calls,_=self.run_omission_diagnostic(source,lambda env,i:self.omission_result(candidate in env))
-        self.assertEqual(report["status"],"budget_exhausted_subset")
-        self.assertGreater(len(report["failing_subset"]),1)
-        self.assertEqual(report["split_probes"],2);self.assertEqual(len(calls),8)
-        self.assertEqual([p["label"]for p in report["probes"][-2:]],["repeat_candidate_removal","restored_combined_control"])
-
-    def test_omission_changed_error_and_failed_reversal_cannot_establish_dependency(self):
-        for failure in ("split","repeat","restore"):
-            with self.subTest(failure=failure):
-                def response(env,index):
-                    if failure=="split"and index==4:
-                        return {"automatic":{**self.omission_result(False)["automatic"],"error_type":"OSError"}}
-                    if failure=="repeat"and index==6:return self.omission_result(True)
-                    if failure=="restore"and index==7:return self.omission_result(False)
-                    return self.omission_result("HOME"in env)
-                report,_,_=self.run_omission_diagnostic({"SystemRoot":"C:/Windows","HOME":"value","CI":"value"},response)
-                self.assertEqual(report["status"],"inconclusive_split"if failure=="split"else "reversal_not_confirmed")
-
-    def test_omission_invalid_inputs_and_oversized_report_fail_closed(self):
-        from tests import charlie_windows_lifecycle_harness as harness
-        with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
-            root=Path(tmp).resolve()/"case";ambient={"SystemRoot":"C:/Windows"}
-            worker=harness.worker_environment(ambient,root,"job")
-            with patch.object(harness,"probe_cim_module_context")as probe:
-                for invalid,error in (({k:v for k,v in worker.items()if k!="DATABASE_URL"},"fixed_override_family_required"),
-                    ({**worker,"psmodulepath":"duplicate"},"duplicate_environment_names")):
-                    with self.assertRaisesRegex(RuntimeError,error):harness.diagnose_environment_omissions(invalid,root,ambient)
-                with self.assertRaisesRegex(RuntimeError,"duplicate_environment_names"):
-                    harness.diagnose_environment_omissions(worker,root,{**ambient,"SYSTEMROOT":"duplicate"})
-                with self.assertRaisesRegex(RuntimeError,"report_root_must_be_below_runner_temp"):
-                    harness.diagnose_environment_omissions(worker,Path(tmp).resolve(),ambient)
-                probe.assert_not_called()
-            with patch.object(harness,"MAX_DIAGNOSTIC_BYTES",64),patch.object(harness,"probe_cim_module_context",return_value=self.omission_result(True)):
-                with self.assertRaisesRegex(RuntimeError,"omission_report_size_exceeded"):
-                    harness.diagnose_environment_omissions(worker,root,ambient)
+        api=self.fake_api();native=SimpleNamespace(CreateProcess=Mock())
+        with tempfile.TemporaryDirectory()as tmp,patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness,"copy_provider_module_cache",side_effect=RuntimeError("private-detail")):
+            report=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
+        native.CreateProcess.assert_not_called();api.ResumeThread.assert_not_called()
+        self.assertEqual(report["module_cache_copy"],{"copied":False})
+        self.assertEqual(report["error_type"],"RuntimeError");self.assertTrue(report["cleanup_verified"])
+        self.assertNotIn("private-detail",json.dumps(report));self.assertNotIn("exit_code",report)
 
     def test_policy_context_reports_only_known_labels_and_never_forwards_values(self):
         from tests import charlie_windows_lifecycle_harness as harness
@@ -1951,19 +1888,21 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
              patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows", "PRIVATE_TEST_TOKEN":"not-forwarded", "RUNNER_TEMP":str(Path(tmp).resolve().parent)}), \
              patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
              patch.object(harness,"probe_cim_module_context",probe), \
              patch.object(harness,"worker_environment",wraps=original_builder) as builder:
             report = harness._run_owned_worker(harness.SELECTORS[1],Path(tmp))
         builder.assert_called_once()
-        self.assertEqual(order,["reference"]*3+["create","assign","resume"])
+        self.assertEqual(order,["reference"]*5+["create","assign","resume"])
         self.assertEqual(probe.call_args_list[0].args[0]["PRIVATE_TEST_TOKEN"],"not-forwarded")
-        allowlist = probe.call_args_list[2].args[0]
+        allowlist = probe.call_args_list[3].args[0]
         self.assertIs(allowlist,native.CreateProcess.call_args.args[6])
         self.assertNotIn("PRIVATE_TEST_TOKEN",allowlist)
-        self.assertEqual(report["environment_omission"]["status"],"invalid_ambient_control")
-        self.assertEqual(report["environment_omission"]["calls"],3)
+        self.assertEqual(list(report["cache_parent"]),["ambient_reference","ambient_without_cache","legacy_worker_without_cache","corrected_worker_case_copy","restored_ambient"])
+        self.assertEqual(allowlist[harness.MODULE_CACHE_KEY],str(Path("synthetic-case-cache")))
+        self.assertEqual({k:v for k,v in allowlist.items()if k!=harness.MODULE_CACHE_KEY},probe.call_args_list[2].args[0])
         self.assertTrue(report["cleanup_verified"])
         self.assertNotIn("not-forwarded",json.dumps(report))
 
@@ -2100,6 +2039,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
              patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
              patch.object(harness.ctypes,"get_last_error",return_value=0,create=True):
             root=Path(tmp)
@@ -2118,6 +2058,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
              patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
              patch.object(harness.ctypes,"get_last_error",return_value=5,create=True):
             result=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
@@ -2131,6 +2072,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
              patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
              patch.object(harness.ctypes,"get_last_error",return_value=0,create=True):
             result=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
