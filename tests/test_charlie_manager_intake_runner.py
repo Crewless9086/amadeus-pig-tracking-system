@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
 from modules.charlie import runtime_staging as staging, runtime_activation as activation
 from modules.charlie import executive_runtime as executive, mission_store as missions
+from modules.charlie import runner_control as control
 from scripts import charlie_manager_intake_runner as child
 from scripts import charlie_runner_supervisor as supervisor
 from scripts import charlie_runner_watchdog as watchdog
@@ -59,6 +60,26 @@ class StoppedInitializationTests(unittest.TestCase):
         self.assertTrue(replay["replayed"])
         self.assertEqual(before,{str(p.relative_to(self.state)):p.read_bytes() for p in self.state.rglob("*") if p.is_file()})
         runtime,_=self.roots(); self.assertEqual(governed_runtime_binding(runtime)["predecessor"],"absent")
+    def test_initialized_runtime_cannot_override_explicit_test_state(self):
+        self.initialize(); runtime, _ = self.roots()
+        self.assertEqual(governed_runtime_binding(runtime)["state_root"], str(self.state))
+        before = {str(p.relative_to(self.state)): p.read_bytes() for p in self.state.rglob("*") if p.is_file()}
+        test_root = self.assigned / "isolated-tests"
+        isolated = {"CHARLIE_TEST_ISOLATION": "1", "CHARLIE_TEST_CONTROL_ROOT": str(test_root)}
+        with patch.object(control, "governed_state_root", side_effect=AssertionError("production binding consulted")):
+            selected = control._runner_directory(runtime, isolated)
+        self.assertEqual(selected, test_root / ".charlie_runner")
+        with patch.object(control, "HEARTBEAT_PATH", selected / "runner.json"), \
+             patch.object(control, "_current_git_commit", return_value=self.source), \
+             patch.object(control, "_current_git_branch", return_value="synthetic"), \
+             patch.dict(os.environ, {"CHARLIE_SUPERVISOR_GENERATION": ""}):
+            control.write_runner_heartbeat({"status": "test"})
+        self.assertTrue((selected / "runner.json").is_file())
+        self.assertEqual(before, {str(p.relative_to(self.state)): p.read_bytes() for p in self.state.rglob("*") if p.is_file()})
+        with self.assertRaisesRegex(RuntimeError, "requires CHARLIE_TEST_CONTROL_ROOT"):
+            control._runner_directory(runtime, {"CHARLIE_TEST_ISOLATION": "1"})
+        self.assertEqual(control._runner_directory(runtime, {}), self.state)
+
     def test_task_drift_prevents_all_state_creation(self):
         plan=staging.plan_runtime_initialization(**self.args); self.task[0]["arguments"]="changed"
         with self.assertRaisesRegex(staging.RuntimeStagingError,"preimage_changed"):
@@ -386,3 +407,74 @@ class SignedIntakeStartupTests(unittest.TestCase):
             self.assertEqual(child.run_intake_cycle()[1], 200)
             self.assertEqual(os.environ["DATABASE_URL"], "prior")
             self.assertEqual(os.environ["OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS"], "prior")
+
+
+class IntakeHeartbeatReviewTests(unittest.TestCase):
+    def outcome(self):
+        receipt = {"status": "intake_linked", "finding_received": True, "link_created": True,
+            "command_id": "CMD-" + "A"*20, "event_id": "CORE-MISSION-CONTROL-" + "B"*24,
+            "manager_link_event_id": "OOM-CORE-INTAKE-" + "C"*32,
+            "policy": {"secret": "must-not-persist"}, "owner_user_id": "private-owner"}
+        return {"status": "scoped_intake_cycle_complete", "manager_dependency_intake": {
+            "status": "manager_dependency_intake_checked", "failures": 0, "results": [receipt]}}
+    def test_real_child_heartbeat_keeps_receipt_then_contains_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); heartbeat = root / "runner.json"
+            with patch.object(control, "HEARTBEAT_PATH", heartbeat), \
+                 patch.object(control, "_current_git_commit", return_value="synthetic"), \
+                 patch.object(control, "_current_git_branch", return_value="synthetic"), \
+                 patch.object(control, "_pid_alive", return_value=True), \
+                 patch.object(child, "SUPERVISOR_STOP_PATH", root / "stop"), \
+                 patch.object(child, "_validate_runner_start", return_value={"success": True}), \
+                 patch.object(child, "_read_json", return_value={"status":"operational_authorized", "runner_state":"operational_authorized"}), \
+                 patch.object(child, "run_intake_cycle", return_value=(self.outcome(),200)) as cycle, \
+                 patch.dict(os.environ, {"CHARLIE_CORE_EXECUTION_MODE":INTAKE_EXECUTION_MODE, "CHARLIE_SUPERVISOR_GENERATION":""}):
+                self.assertEqual(child.main(max_cycles=1),0)
+                written = json.loads(heartbeat.read_text())
+                self.assertEqual(written["intake"]["failures"],0)
+                self.assertEqual(written["checks"],1)
+                self.assertEqual(written["intake"]["results"][0]["command_id"],"CMD-"+"A"*20)
+                self.assertNotIn("must-not-persist",heartbeat.read_text())
+                self.assertNotIn("private-owner",heartbeat.read_text())
+                # Custom heartbeat read uses the injected live PID only, not a host process probe.
+                with patch.object(control,"HEARTBEAT_PATH",root/"other.json"):
+                    status=control.runner_status(heartbeat,include_git=False)
+                self.assertEqual(status["operating_state"],"receipt_only_intake")
+                self.assertEqual(status["intake"],written["intake"])
+                self.assertIn("Worker pickup and repair are not enabled",status["next_action"])
+                cycle.side_effect=RuntimeError("private exception must-not-persist")
+                self.assertEqual(child.main(max_cycles=1),1)
+                written=json.loads(heartbeat.read_text())
+                self.assertEqual(written["intake"]["status"],"intake_cycle_contained")
+                self.assertEqual(written["intake"]["error_type"],"RuntimeError")
+                self.assertEqual(written["intake"]["results"],[])
+                self.assertNotIn("private exception",heartbeat.read_text())
+                with patch.object(control,"HEARTBEAT_PATH",root/"other.json"),patch.object(control,"_pid_alive",return_value=False):
+                    status=control.runner_status(heartbeat,include_git=False)
+                self.assertIn("Receipt-only intake is not running",status["next_action"])
+                self.assertNotIn("auto-pick",status["next_action"])
+    def test_summary_bounds_and_malformed_fields_never_copy_free_text(self):
+        raw={"status": ["secret"], "error_type": {"secret":"value"}, "policies":["secret"],
+            "manager_dependency_intake":{"failures":True,"results":[{
+                "status":"manager_dependency_intake_refused", "reason":"raw secret exception",
+                "command_id":"credential-url", "failure_kind":["secret"],
+                "event_id":"CORE-MISSION-CONTROL-"+"B"*24}] * 100}}
+        summary=control._intake_heartbeat_summary(raw)
+        self.assertEqual(summary["status"],"intake_outcome_unrecognized")
+        self.assertIsNone(summary["failures"])
+        self.assertEqual(len(summary["results"]),8)
+        self.assertTrue(summary["results_truncated"])
+        self.assertLess(len(json.dumps(summary)),2200)
+        self.assertNotIn("secret",json.dumps(summary))
+        self.assertNotIn("credential",json.dumps(summary))
+        self.assertEqual(summary,control._intake_heartbeat_summary(summary))
+    def test_ordinary_and_observe_telemetry_do_not_adopt_intake_results(self):
+        for mode,expected in (("ordinary","waiting_for_queue"),("observe_only","observe_only")):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as tmp, \
+                 patch.object(control,"_current_git_commit",return_value="synthetic"), \
+                 patch.object(control,"_current_git_branch",return_value="synthetic"), \
+                 patch.dict(os.environ,{"CHARLIE_CORE_EXECUTION_MODE":mode,"CHARLIE_SUPERVISOR_GENERATION":""}):
+                path=Path(tmp)/"runner.json"
+                record=control.write_runner_heartbeat({"status":"watch_started","intake":self.outcome()},path)
+                self.assertNotIn("intake",record)
+                self.assertEqual(control._runner_operating_state(record,{},True),expected)

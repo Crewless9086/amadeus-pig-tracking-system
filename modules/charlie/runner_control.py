@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import csv
 import signal
@@ -51,8 +52,15 @@ def _control_root(repo_root=REPO_ROOT, environ=None):
     return _shared_repository_root(repo_root)
 
 
+def _runner_directory(repo_root=REPO_ROOT, environ=None):
+    control_root = _control_root(repo_root, environ)
+    if test_isolation_enabled(environ):
+        return control_root / ".charlie_runner"
+    return governed_state_root(repo_root, control_root / ".charlie_runner")
+
+
 CONTROL_ROOT = _control_root()
-RUNNER_DIR = governed_state_root(REPO_ROOT, CONTROL_ROOT / ".charlie_runner")
+RUNNER_DIR = _runner_directory()
 HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
@@ -160,6 +168,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         status = "runner_active"
         next_action = {
             "observe_only": "CORE is healthy in credential-free observation mode and cannot access the mission queue.",
+            "receipt_only_intake": "CORE is checking admitted engineering dependencies and recording receipts. Worker pickup and repair are not enabled by this mode.",
             "running_agent": "CORE is actively executing the displayed agent stage.",
             "between_stages": "CORE is healthy and transitioning between agent stages.",
             "waiting_for_queue": "CORE is healthy and waiting for an approved mission.",
@@ -177,11 +186,15 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     else:
         status = "runner_not_started"
         next_action = "Start the local CHARLIE runner before expecting approved missions to auto-pick up."
+    if payload.get("execution_mode") == INTAKE_EXECUTION_MODE and not active:
+        next_action = "Receipt-only intake is not running. Review its startup or contained failure before resuming; worker pickup and repair remain unproven."
     return redact_payload({
         "success": True,
         "status": status,
         "active": active,
         "operating_state": operating_state,
+        "execution_mode": payload.get("execution_mode", EXECUTION_MODE_ORDINARY),
+        "intake": _intake_heartbeat_summary(payload.get("intake")) if payload.get("execution_mode") == INTAKE_EXECUTION_MODE else {},
         "pid": payload.get("pid"),
         "process_alive": process_alive,
         "heartbeat_fresh": heartbeat_fresh,
@@ -235,6 +248,8 @@ def _runner_operating_state(payload, ledger, active):
         return "stale_or_stopped"
     if str(payload.get("execution_mode") or "") == EXECUTION_MODE_OBSERVE_ONLY:
         return "observe_only"
+    if payload.get("execution_mode") == INTAKE_EXECUTION_MODE:
+        return "receipt_only_intake"
     latest = ledger.get("latest_stage") if isinstance(ledger, dict) and isinstance(ledger.get("latest_stage"), dict) else {}
     current_agent = str(payload.get("current_agent") or latest.get("agent") or "").strip()
     stage_status = str(latest.get("status") or "").strip().lower()
@@ -244,6 +259,57 @@ def _runner_operating_state(payload, ledger, active):
         return "between_stages"
     queue_health = payload.get("queue_health") if isinstance(payload.get("queue_health"), dict) else {}
     return "queue_deadlocked" if queue_health.get("deadlocked") else "waiting_for_queue"
+
+
+
+_INTAKE_OUTCOMES = frozenset({
+    "scoped_intake_cycle_complete", "scoped_intake_cycle_failed", "intake_cycle_contained",
+    "intake_scope_binding_invalid", "intake_policy_scope_changed", "intake_policy_id_invalid",
+    "intake_policy_read_failed", "intake_policy_not_current", "manager_dependency_intake_checked",
+    "manager_dependency_intake_disabled", "manager_dependency_policy_ambiguous",
+    "manager_dependency_scope_invalid", "intake_linked", "intake_exact_replay",
+    "manager_dependency_intake_refused", "manager_dependency_intake_unavailable",
+})
+_INTAKE_ERROR_TYPES = frozenset({"ActivationError", "IntakeRefused", "RuntimeError",
+    "ValueError", "TypeError", "KeyError", "OSError", "TimeoutError", "OperationalError",
+    "InterfaceError", "DatabaseError", "IntegrityError", "QueryCanceled", "LockNotAvailable"})
+_INTAKE_RECEIPT_PATTERNS = {
+    "command_id": r"CMD-[A-F0-9]{20}",
+    "event_id": r"CORE-MISSION-CONTROL-[A-F0-9]{24}",
+    "manager_link_event_id": r"OOM-CORE-INTAKE-[A-F0-9]{32}",
+}
+
+
+def _intake_heartbeat_summary(value):
+    """Project bounded receipt telemetry, never policy, credentials or free text."""
+    if not isinstance(value, dict) or not value:
+        return {}
+    detail = value.get("manager_dependency_intake", value)
+    detail = detail if isinstance(detail, dict) else {}
+    results = detail.get("results")
+    results = results if isinstance(results, list) else []
+    summary = {"status": value.get("status") if isinstance(value.get("status"), str) and value["status"] in _INTAKE_OUTCOMES else "intake_outcome_unrecognized",
+        "results": [], "results_truncated": len(results) > 8 or value.get("results_truncated") is True}
+    failures = detail.get("failures")
+    summary["failures"] = failures if type(failures) is int and 0 <= failures <= 8 else None
+    for item in results[:8]:
+        if not isinstance(item, dict):
+            summary["results"].append({"status": "intake_outcome_unrecognized"})
+            continue
+        projected = {"status": item.get("status") if isinstance(item.get("status"), str) and item["status"] in _INTAKE_OUTCOMES else "intake_outcome_unrecognized"}
+        for key, pattern in _INTAKE_RECEIPT_PATTERNS.items():
+            ref = item.get(key)
+            if isinstance(ref, str) and re.fullmatch(pattern, ref):
+                projected[key] = ref
+        for key in ("finding_received", "link_created"):
+            if type(item.get(key)) is bool:
+                projected[key] = item[key]
+        if "failure_kind" in item:
+            projected["failure_kind"] = item["failure_kind"] if isinstance(item["failure_kind"], str) and item["failure_kind"] in _INTAKE_ERROR_TYPES else "UnclassifiedError"
+        summary["results"].append(projected)
+    if "error_type" in value:
+        summary["error_type"] = value["error_type"] if isinstance(value["error_type"], str) and value["error_type"] in _INTAKE_ERROR_TYPES else "UnclassifiedError"
+    return summary
 
 
 def write_runner_heartbeat(result=None, heartbeat_path=None):
@@ -301,6 +367,8 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
             "release_attempted",
         } and key in previous:
             payload[key] = previous.get(key)
+    if payload["execution_mode"] == INTAKE_EXECUTION_MODE and "intake" in result:
+        payload["intake"] = _intake_heartbeat_summary(result["intake"])
     payload = redact_payload(payload)
     generation = str(payload.get("supervisor_generation") or "")
     if generation:
