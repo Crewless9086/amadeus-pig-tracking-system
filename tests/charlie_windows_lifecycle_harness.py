@@ -53,28 +53,105 @@ def worker_environment(source, root, job_name):
     return env
 
 
-def platform_environment_matrix(expanded, root, ambient):
-    """Eight parent-only comparisons; the fixed owned-worker profile never changes."""
+OMISSION_CATALOG = frozenset(('CI', 'CLIENTNAME', 'GITHUB_ACTION', 'GITHUB_ACTION_PATH', 'GITHUB_ACTION_REPOSITORY', 'GITHUB_ACTOR', 'GITHUB_ACTOR_ID', 'GITHUB_BASE_REF', 'GITHUB_ENV', 'GITHUB_EVENT_NAME', 'GITHUB_EVENT_PATH', 'GITHUB_HEAD_REF', 'GITHUB_JOB', 'GITHUB_OUTPUT', 'GITHUB_PATH', 'GITHUB_REF', 'GITHUB_REF_NAME', 'GITHUB_REF_PROTECTED', 'GITHUB_REF_TYPE', 'GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_REPOSITORY_OWNER', 'GITHUB_REPOSITORY_OWNER_ID', 'GITHUB_RETENTION_DAYS', 'GITHUB_RUN_ATTEMPT', 'GITHUB_RUN_ID', 'GITHUB_RUN_NUMBER', 'GITHUB_SHA', 'GITHUB_STATE', 'GITHUB_STEP_SUMMARY', 'GITHUB_TRIGGERING_ACTOR', 'GITHUB_WORKFLOW', 'GITHUB_WORKFLOW_REF', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKSPACE', 'HOME', 'IMAGEOS', 'IMAGEVERSION', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LOGONSERVER', 'PROCESSOR_IDENTIFIER', 'PROCESSOR_LEVEL', 'PROCESSOR_REVISION', 'PROMPT', 'RUNNER_ARCH', 'RUNNER_DEBUG', 'RUNNER_ENVIRONMENT', 'RUNNER_NAME', 'RUNNER_TOOL_CACHE', 'RUNNER_WORKSPACE', 'SESSIONNAME', 'TERM', 'TERM_PROGRAM'))
+PRESENCE_ONLY_NAMES = ('ALL_PROXY', 'CORECLR_ENABLE_PROFILING', 'CORECLR_PROFILER', 'CORECLR_PROFILER_PATH', 'COR_ENABLE_PROFILING', 'COR_PROFILER', 'COR_PROFILER_PATH', 'DOTNET_MULTILEVEL_LOOKUP', 'DOTNET_ROLL_FORWARD', 'DOTNET_ROOT', 'DOTNET_ROOT_X64', 'DOTNET_STARTUP_HOOKS', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'POWERSHELL_DIAGNOSTICS_OPTOUT', 'POWERSHELL_DISTRIBUTION_CHANNEL', 'POWERSHELL_TELEMETRY_OPTOUT', 'POWERSHELL_UPDATECHECK', 'PSDISABLEMODULEANALYSISCACHECLEANUP', 'PSEXECUTIONPOLICYPREFERENCE', 'PSMODULEANALYSISCACHEPATH', 'PSMODULEPATH', 'WINPSMODULEPATH', '__PSLOCKDOWNPOLICY')
+PRESENCE_ONLY_PREFIXES = ('COMPLUS_', 'DOTNET_', 'COR_', 'CORECLR_')
+MAX_PARENT_PROBES = 18
+MAX_SPLIT_PROBES = 12
+MAX_DIAGNOSTIC_BYTES = 24000
+
+
+def diagnose_environment_omissions(expanded, root, ambient):
+    """Bounded parent-only removal experiment; it never selects a worker profile."""
     _report_root(str(root))
     ambient = dict(ambient)
-    families = {
-        "module_path": frozenset({"PSMODULEPATH"}),
-        "temp": frozenset({"TEMP", "TMP"}),
-        "test_controls": frozenset({JOB_ENV, "PYTHONDONTWRITEBYTECODE", "PYTHON_DOTENV_DISABLED", "DATABASE_URL"}),
-    }
+    ambient_names = {k.upper() for k in ambient}
+    worker_names = {k.upper() for k in expanded}
+    if len(ambient_names) != len(ambient) or len(worker_names) != len(expanded):
+        raise RuntimeError("duplicate_environment_names")
+    fixed_names = {"PSMODULEPATH", "TEMP", "TMP", JOB_ENV,
+        "PYTHONDONTWRITEBYTECODE", "PYTHON_DOTENV_DISABLED", "DATABASE_URL"}
+    fixed = {k: v for k, v in expanded.items() if k.upper() in fixed_names}
+    if {k.upper() for k in fixed} != fixed_names:
+        raise RuntimeError("fixed_override_family_required")
     without = lambda source, names: {k: v for k, v in source.items() if k.upper() not in names}
-    def override(names):
-        # Windows environment names are case-insensitive: remove before replacing.
-        fixed = {k: v for k, v in expanded.items() if k.upper() in names}
-        if {k.upper() for k in fixed} != names or len(fixed) != len(names):
-            raise RuntimeError("fixed_override_family_required")
-        return {**without(ambient, names), **fixed}
-    return (
-        ("ambient_reference", ambient),
-        *(("ambient_with_" + label, override(names)) for label, names in families.items()),
-        ("constructed_reference", expanded),
-        *(("constructed_without_" + label, without(expanded, names)) for label, names in families.items()),
-    )
+    combined = {**without(ambient, fixed_names), **fixed}
+    omitted = ambient_names - worker_names
+    eligible = sorted(omitted & OMISSION_CATALOG)
+    if len(eligible) > 64:
+        raise RuntimeError("omission_catalog_bound_exceeded")
+    report = {"status": "not_classified", "eligible_names": eligible,
+        "inventory": {"ambient_name_count": len(ambient_names), "worker_name_count": len(worker_names),
+            "omitted_name_count": len(omitted), "eligible_omitted_name_count": len(eligible),
+            "outside_catalog_omitted_name_count": len(omitted - OMISSION_CATALOG),
+            "fixed_presence": {name: {"ambient": name in ambient_names, "worker": name in worker_names}
+                for name in PRESENCE_ONLY_NAMES},
+            "prefix_counts": {prefix: {"ambient": sum(k.startswith(prefix) for k in ambient_names),
+                "worker": sum(k.startswith(prefix) for k in worker_names)} for prefix in PRESENCE_ONLY_PREFIXES}},
+        "probes": [], "split_probes": 0, "maximum_calls": MAX_PARENT_PROBES,
+        "maximum_query_seconds": MAX_PARENT_PROBES * 8}
+    def finish(status):
+        report["status"] = status
+        report["calls"] = len(report["probes"])
+        if len(json.dumps(report).encode("utf-8")) > MAX_DIAGNOSTIC_BYTES:
+            raise RuntimeError("omission_report_size_exceeded")
+        return report
+    def probe(label, environment, removed=()):
+        if len(report["probes"]) >= MAX_PARENT_PROBES:
+            raise RuntimeError("parent_probe_budget_exhausted")
+        result = probe_cim_module_context(environment)
+        report["probes"].append({"label": label, "removed_names": list(removed), "result": result})
+        return result
+    def failed_as_before(result):
+        item = result.get("automatic", {})
+        return (item.get("success") is False and item.get("exited_zero") is False
+            and item.get("error_type") == "TimeoutExpired" and item.get("output_valid") is True
+            and item.get("markers") == [{"stage": "started", "count": 0}])
+    baseline = probe("ambient_reference", ambient)
+    all_fixed = probe("ambient_all_fixed_overrides", combined)
+    constructed = probe("constructed_reference", expanded)
+    if not owned_automatic_cim_passed(baseline):
+        return finish("invalid_ambient_control")
+    if not owned_automatic_cim_passed(all_fixed):
+        return finish("combined_override_failure")
+    if not failed_as_before(constructed):
+        return finish("constructed_failure_not_reproduced")
+    if not eligible:
+        return finish("empty_reviewed_catalog")
+    current = eligible
+    removed = probe("remove_all_eligible", without(combined, set(current)), current)
+    if not failed_as_before(removed):
+        return finish("no_reproduction_in_reviewed_catalog" if owned_automatic_cim_passed(removed)
+            else "inconclusive_catalog_failure")
+    reason = "single_candidate"
+    while len(current) > 1:
+        if report["split_probes"] >= MAX_SPLIT_PROBES:
+            reason = "budget_exhausted_subset"; break
+        middle = len(current) // 2
+        halves = (current[:middle], current[middle:])
+        reduced = False
+        for half in halves:
+            if report["split_probes"] >= MAX_SPLIT_PROBES:
+                reason = "budget_exhausted_subset"; break
+            report["split_probes"] += 1
+            result = probe("split_" + str(report["split_probes"]), without(combined, set(half)), half)
+            if failed_as_before(result):
+                current = half; reduced = True; break
+            if not owned_automatic_cim_passed(result):
+                reason = "inconclusive_split"; break
+        else:
+            reason = "interacting_subset"
+        if not reduced:
+            break
+    report["failing_subset"] = current
+    report["search_stop"] = reason
+    repeated = probe("repeat_candidate_removal", without(combined, set(current)), current)
+    restored = probe("restored_combined_control", combined)
+    report["removal_reproduced"] = failed_as_before(repeated)
+    report["restored_control_passed"] = owned_automatic_cim_passed(restored)
+    if not report["removal_reproduced"] or not report["restored_control_passed"]:
+        return finish("reversal_not_confirmed")
+    return finish("observed_single_name_removal_dependency" if len(current) == 1 else reason)
 
 
 def process_policy_context(source, worker):
@@ -88,7 +165,7 @@ def process_policy_context(source, worker):
 
 
 def cim_module_specs():
-    """Automatic module loading and narrow local CIM, identical in all eight references."""
+    """Automatic module loading and narrow local CIM, identical in every bounded parent comparison."""
     prefix = (
         "$ErrorActionPreference='Stop';"
         "function Emit([string]$stage,[long]$count){"
@@ -403,13 +480,7 @@ def _run_owned_worker(selector, root):
             # Read-only references extend the parent preflight, never lifecycle/termination.
             # Ambient variants remain parent-only; no parent credentials enter the worker.
             report["process_policy_context"] = process_policy_context(os.environ, env)
-            report["platform_parent"] = {
-                label: probe_cim_module_context(environment)
-                for label, environment in platform_environment_matrix(env, root, os.environ)
-            }
-            report["platform_group_present_counts"] = {
-                label: sum(k.upper() in names for k in env) for label, names in PLATFORM_GROUPS.items()
-            }
+            report["environment_omission"] = diagnose_environment_omissions(env, root, os.environ)
         command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker", selector, "--report-root", str(root)]
         process, thread, _pid, _tid = _winapi.CreateProcess(sys.executable, subprocess.list2cmdline(command), None, None, False,
             0x4 | 0x08000000 | 0x400, env, str(Path(__file__).resolve().parents[1]), subprocess.STARTUPINFO())
