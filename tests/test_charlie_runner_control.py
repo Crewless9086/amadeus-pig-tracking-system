@@ -493,7 +493,10 @@ class CharlieRunnerControlTests(unittest.TestCase):
             return result
 
         original_wait_for_ack = runner_control._wait_for_supervisor_ack
-        with tempfile.TemporaryDirectory() as tmp:
+        # The outer owning Job stops descendants after this worker exits.
+        # Keep case artifacts for upload/VM teardown; live descendants may hold logs.
+        with tempfile.TemporaryDirectory(delete=False) as tmp:
+            self.assertEqual(Path(tmp).resolve().parent, Path(tempfile.gettempdir()).resolve())
             stop_path = Path(tmp) / "supervisor.stop"
             runner_pid_path = Path(tmp) / "runner.pid"
             quoted_stop = str(stop_path).replace("'", "''")
