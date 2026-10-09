@@ -32,6 +32,7 @@ class DockerProvider:
         (self.private / "HEAD").write_text(SOURCE + "\n")
         (self.private / "index").write_bytes(b"fake index; Docker is not executed")
         if linked:
+            (self.private / "commondir").write_bytes(b"../..\n")
             (self.source / ".git").write_text("gitdir: " + str(self.private))
         self.head = SOURCE
         self.dirty = ""
@@ -155,10 +156,10 @@ class IsolatedCollectorTests(unittest.TestCase):
             creates = [x for x in provider.commands if x[:2] == ["docker", "create"]]
             for command in creates:
                 mounts = [command[i+1] for i,x in enumerate(command) if x == "--mount"]
-                self.assertEqual(len(mounts), 6)
+                self.assertEqual(len(mounts), 7)
                 self.assertTrue(all(x.endswith(",readonly") for x in mounts))
                 self.assertFalse(any("/config," in x.replace("\\", "/") for x in mounts))
-                for value in ("GIT_DIR=/git-private", "GIT_COMMON_DIR=/git-common",
+                for value in ("GIT_DIR=/git-common/worktrees/selected", "GIT_COMMON_DIR=/git-common",
                               "GIT_WORK_TREE=/source", "GIT_OPTIONAL_LOCKS=0",
                               "GIT_CONFIG_VALUE_1=true", "GIT_CONFIG_VALUE_2=false"):
                     self.assertIn(value, command)
@@ -220,6 +221,18 @@ class IsolatedCollectorTests(unittest.TestCase):
                     self.assertEqual(result.stdout, "suite_reached" if reaches else "")
                     self.assertEqual(result.returncode == 0, reaches)
 
+    def test_missing_or_redirected_commondir_is_refused_before_docker(self):
+        for value in (None, b"../../elsewhere\n", b"/other/common\n", b"../..\nextra", b" ../..\n"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                provider = DockerProvider(directory)
+                marker = provider.private / "commondir"
+                if value is None: marker.unlink()
+                else: marker.write_bytes(value)
+                with self.assertRaisesRegex(ValidationReceiptError, "git_commondir_invalid"):
+                    collect_docker_validation_evidence(provider.source, SOURCE,
+                        "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
+                self.assertFalse(any(c[0] == "docker" for c in provider.commands))
+
     def test_host_source_mismatch_or_dirt_stops_before_docker(self):
         for head, dirty in (("d"*40, ""), (SOURCE, " M tracked.py")):
             with self.subTest(head=head, dirty=bool(dirty)), tempfile.TemporaryDirectory() as directory:
@@ -252,7 +265,7 @@ class IsolatedCollectorTests(unittest.TestCase):
             "duplicate_mount": lambda r: r["Mounts"].append(dict(r["Mounts"][1])),
             "missing_env": lambda r: r["Config"]["Env"].pop(),
             "extra_env": lambda r: r["Config"]["Env"].append("GIT_CONFIG=/outside"),
-            "duplicate_env": lambda r: r["Config"]["Env"].append("GIT_DIR=/git-private"),
+            "duplicate_env": lambda r: r["Config"]["Env"].append("GIT_DIR=/git-common/worktrees/selected"),
             "wrong_env": lambda r: r["Config"]["Env"].append("GIT_WORK_TREE=/other"),
             "tmpfs": lambda r: r["HostConfig"].update(Tmpfs={"/tmp":"rw,exec"}),
             "privileged": lambda r: r["HostConfig"].update(Privileged=True),
@@ -293,11 +306,12 @@ class IsolatedCollectorTests(unittest.TestCase):
                       "C:/Amadeus/repo/../other/.git/objects", "relative/path"):
             with self.subTest(value=value): self.assertNotEqual(_mount_source_identity(value), expected)
 
-    def test_real_git_native_view_ignores_unreachable_windows_marker_but_detects_dirt(self):
+    def test_real_git_linked_symbolic_and_detached_heads_with_crlf_and_dirt(self):
         # Synthetic loose Git objects; no registered checkout, Docker or network.
         with tempfile.TemporaryDirectory() as directory:
-            base=Path(directory); source=base/"source"; private=base/"private"; common=base/"common"
-            source.mkdir(); private.mkdir(); (common/"objects").mkdir(parents=True); (common/"refs").mkdir()
+            base=Path(directory); source=base/"source"; common=base/"common"
+            private=common/"worktrees"/"selected"
+            source.mkdir(); private.mkdir(parents=True); (common/"objects").mkdir(); (common/"refs").mkdir()
             (source/".git").write_text("gitdir: C:/unreachable/windows/metadata")
             payload=b"tracked content\n"; (source/"tracked.txt").write_bytes(payload.replace(b"\n", b"\r\n"))
             def obj(kind,data):
@@ -307,7 +321,9 @@ class IsolatedCollectorTests(unittest.TestCase):
             blob=obj("blob",payload)
             tree=obj("tree",b"100644 tracked.txt\0"+bytes.fromhex(blob))
             commit=obj("commit",("tree "+tree+"\nauthor Fixture <fixture@example.invalid> 1 +0000\ncommitter Fixture <fixture@example.invalid> 1 +0000\n\nfixture\n").encode())
-            (private/"HEAD").write_text(commit+"\n")
+            reference=common/"refs"/"heads"/"codex"/"fixture"
+            reference.parent.mkdir(parents=True); reference.write_text(commit+"\n")
+            (private/"HEAD").write_text("ref: refs/heads/codex/fixture\n")
             env={k:v for k,v in os.environ.items() if not k.upper().startswith("GIT_")}
             env.update(GIT_DIR=str(private),GIT_COMMON_DIR=str(common),GIT_WORK_TREE=str(source),
                 GIT_CONFIG_NOSYSTEM="1",GIT_CONFIG_GLOBAL=os.devnull,GIT_OPTIONAL_LOCKS="0",
@@ -316,11 +332,22 @@ class IsolatedCollectorTests(unittest.TestCase):
                 GIT_CONFIG_KEY_2="core.autocrlf",GIT_CONFIG_VALUE_2="true")
             def git(*args):
                 return subprocess.run(["git",*args],cwd=source,env=env,capture_output=True,text=True,timeout=10,check=True).stdout.strip()
+            # This reproduces the real provider failure, even with GIT_COMMON_DIR set.
+            missing = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=source,
+                env=env, capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(missing.returncode, 0)
+            (private/"commondir").write_bytes(b"../..\n")
             git("read-tree",commit)
-            self.assertEqual(git("rev-parse","HEAD"),commit)
-            self.assertEqual(git("status","--porcelain"),"")
-            (source/"tracked.txt").write_text("changed\n")
-            self.assertIn("tracked.txt",git("status","--porcelain"))
+            for mode, head in (("symbolic", "ref: refs/heads/codex/fixture"), ("detached", commit)):
+                with self.subTest(mode=mode):
+                    (private/"HEAD").write_text(head+"\n")
+                    (source/"tracked.txt").write_bytes(payload.replace(b"\n", b"\r\n"))
+                    self.assertEqual(git("rev-parse", "HEAD"), commit)
+                    self.assertEqual(git("show-ref", "--verify", "refs/heads/codex/fixture"),
+                        commit + " refs/heads/codex/fixture")
+                    self.assertEqual(git("status", "--porcelain"), "")
+                    (source/"tracked.txt").write_text("changed\n")
+                    self.assertIn("tracked.txt", git("status", "--porcelain"))
 
 
 if __name__ == "__main__":

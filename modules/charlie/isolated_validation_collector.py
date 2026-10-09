@@ -121,6 +121,12 @@ def _source_binding(source_root, source_commit, run):
             or str(run(git + ["rev-parse", "HEAD"])).strip() != source_commit
             or str(run(git + ["status", "--porcelain", "--untracked-files=all"])).strip()):
         raise ValidationReceiptError("validation_collector_source_not_exact_clean")
+    # The files ref backend reads commondir itself, independently of GIT_COMMON_DIR.
+    # Preserve the existing relative layout; never synthesize or rewrite Git metadata.
+    common_marker = private / "commondir"
+    if (not common_marker.is_file() or common_marker.is_symlink()
+            or common_marker.read_bytes() not in (b"../..", b"../..\n", b"../..\r\n")):
+        raise ValidationReceiptError("validation_collector_git_commondir_invalid")
     # Do not expose host Git configuration, hooks, logs, sibling worktree state,
     # credentials, or external object stores. Git gets an explicit native view.
     if any(path.exists() for path in (common / "objects/info/alternates",
@@ -140,15 +146,16 @@ def _source_binding(source_root, source_commit, run):
             files[destination] = hashlib.sha256(path.read_bytes()).hexdigest()
     mount(common / "objects", "/git-common/objects", directory=True)
     mount(common / "refs", "/git-common/refs", directory=True)
-    mount(private / "HEAD", "/git-private/HEAD")
-    mount(private / "index", "/git-private/index")
+    mount(private / "HEAD", "/git-common/worktrees/selected/HEAD")
+    mount(private / "index", "/git-common/worktrees/selected/index")
+    mount(common_marker, "/git-common/worktrees/selected/commondir")
     for name in ("packed-refs", "shallow"):
         if (common / name).exists():
             mount(common / name, "/git-common/" + name)
     for path in sorted(private.glob("sharedindex.*")):
         if not re.fullmatch(r"sharedindex\.[0-9a-f]{40}", path.name):
             raise ValidationReceiptError("validation_collector_git_layout_unsupported")
-        mount(path, "/git-private/" + path.name)
+        mount(path, "/git-common/worktrees/selected/" + path.name)
     settings = {}
     for name, default, choices in (("core.autocrlf", "false", {"true", "false", "input"}),
                                    ("core.filemode", "true", {"true", "false"})):

@@ -228,7 +228,7 @@ def git_validation_environment(autocrlf, filemode):
     """The only Git configuration admitted into the isolated metadata view."""
     if autocrlf not in {"true", "false", "input"} or filemode not in {"true", "false"}:
         raise ValidationReceiptError("isolated_validation_receipt_git_binding_invalid")
-    return {"GIT_DIR": "/git-private", "GIT_COMMON_DIR": "/git-common",
+    return {"GIT_DIR": "/git-common/worktrees/selected", "GIT_COMMON_DIR": "/git-common",
         "GIT_WORK_TREE": "/source", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_COUNT": "4",
         "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": "/source",
@@ -252,7 +252,7 @@ def _validate_git_binding(binding):
     require(isinstance(binding, dict) and set(binding) == {"version", "mounts", "environment", "git_file_sha256"}
             and binding["version"] == "charlie_linked_git_binding_v1")
     mounts = binding["mounts"]
-    require(isinstance(mounts, list) and 5 <= len(mounts) <= 64)
+    require(isinstance(mounts, list) and 6 <= len(mounts) <= 64)
     by_destination = {}
     for mount in mounts:
         require(isinstance(mount, dict) and set(mount) == {"source", "destination", "read_only"}
@@ -260,28 +260,31 @@ def _validate_git_binding(binding):
         destination = mount["destination"]
         require(isinstance(destination, str) and destination not in by_destination)
         by_destination[destination] = path(mount["source"])
-    mandatory = {"/source", "/git-common/objects", "/git-common/refs", "/git-private/HEAD", "/git-private/index"}
+    mandatory = {"/source", "/git-common/objects", "/git-common/refs", "/git-common/worktrees/selected/HEAD", "/git-common/worktrees/selected/index", "/git-common/worktrees/selected/commondir"}
     require(mandatory <= set(by_destination))
     source = by_destination["/source"]
     common = by_destination["/git-common/objects"].parent
-    private = by_destination["/git-private/HEAD"].parent
+    private = by_destination["/git-common/worktrees/selected/HEAD"].parent
     require(private.parent == common / "worktrees" and private != common
             and common != source and source not in common.parents
             and by_destination["/git-common/objects"] == common / "objects"
             and by_destination["/git-common/refs"] == common / "refs"
-            and by_destination["/git-private/HEAD"] == private / "HEAD"
-            and by_destination["/git-private/index"] == private / "index")
+            and by_destination["/git-common/worktrees/selected/HEAD"] == private / "HEAD"
+            and by_destination["/git-common/worktrees/selected/index"] == private / "index"
+            and by_destination["/git-common/worktrees/selected/commondir"] == private / "commondir")
     for destination, host_path in by_destination.items():
         if destination in mandatory:
             continue
         if destination in {"/git-common/packed-refs", "/git-common/shallow"}:
             require(host_path == common / destination.rsplit("/", 1)[1])
         else:
-            require(bool(re.fullmatch(r"/git-private/sharedindex\.[0-9a-f]{40}", destination))
+            require(bool(re.fullmatch(r"/git-common/worktrees/selected/sharedindex\.[0-9a-f]{40}", destination))
                     and host_path == private / destination.rsplit("/", 1)[1])
     files = binding["git_file_sha256"]
     require(isinstance(files, dict) and set(files) == set(by_destination) - {"/source", "/git-common/objects", "/git-common/refs"}
             and all(isinstance(v, str) and _SHA256.fullmatch(v) for v in files.values()))
+    require(files["/git-common/worktrees/selected/commondir"] in {
+        hashlib.sha256(value).hexdigest() for value in (b"../..", b"../..\n", b"../..\r\n")})
     environment = binding["environment"]
     require(isinstance(environment, dict) and len(environment) <= 64
             and all(isinstance(k, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k)

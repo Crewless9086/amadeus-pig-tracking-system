@@ -28,10 +28,12 @@ def git_binding():
         {"source": "/synthetic/checkout", "destination": "/source", "read_only": True},
         {"source": common + "/objects", "destination": "/git-common/objects", "read_only": True},
         {"source": common + "/refs", "destination": "/git-common/refs", "read_only": True},
-        {"source": private + "/HEAD", "destination": "/git-private/HEAD", "read_only": True},
-        {"source": private + "/index", "destination": "/git-private/index", "read_only": True}],
+        {"source": private + "/HEAD", "destination": "/git-common/worktrees/selected/HEAD", "read_only": True},
+        {"source": private + "/index", "destination": "/git-common/worktrees/selected/index", "read_only": True},
+        {"source": private + "/commondir", "destination": "/git-common/worktrees/selected/commondir", "read_only": True}],
         "environment": {"PATH": "/usr/bin", **git_validation_environment("true", "false")},
-        "git_file_sha256": {"/git-private/HEAD": "d"*64, "/git-private/index": "e"*64}}
+        "git_file_sha256": {"/git-common/worktrees/selected/HEAD": "d"*64, "/git-common/worktrees/selected/index": "e"*64,
+                            "/git-common/worktrees/selected/commondir": hashlib.sha256(b"../..\n").hexdigest()}}
 
 
 def evidence(failed=0):
@@ -213,7 +215,7 @@ class ValidationReceiptTests(unittest.TestCase):
         for field, change in (
             ("mounts", lambda b: b["mounts"][0].update(source="/other/checkout")),
             ("environment", lambda b: b["environment"].update(PATH="/other/bin")),
-            ("hashes", lambda b: b["git_file_sha256"].update({"/git-private/index":"f"*64})),
+            ("hashes", lambda b: b["git_file_sha256"].update({"/git-common/worktrees/selected/index":"f"*64})),
         ):
             receipt = self.receipt(); change(receipt["isolation"]["git_binding"])
             with self.subTest(field=field), self.assertRaises(ValidationReceiptError):
@@ -229,7 +231,8 @@ class ValidationReceiptTests(unittest.TestCase):
             "embedded_common": lambda b:b["mounts"][0].update(source="/synthetic"),
             "bad_environment": lambda b:b["environment"].update(GIT_WORK_TREE="/other"),
             "extra_git_environment": lambda b:b["environment"].update(GIT_CONFIG="/host/config"),
-            "missing_hash": lambda b:b["git_file_sha256"].pop("/git-private/index"),
+            "missing_hash": lambda b:b["git_file_sha256"].pop("/git-common/worktrees/selected/index"),
+            "wrong_commondir": lambda b:b["git_file_sha256"].update({"/git-common/worktrees/selected/commondir": "f"*64}),
         }
         for name, change in changes.items():
             candidate=evidence(); change(candidate["isolation"]["git_binding"])
