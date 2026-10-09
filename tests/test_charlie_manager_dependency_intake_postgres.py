@@ -38,6 +38,7 @@ class CoreConnection:
     def cursor(self): return CoreCursor(self.connection.cursor(),self.schema)
     def execute(self,sql,params=None): return self.cursor().execute(sql,params)
     def close(self): self.connection.close()
+    def rollback(self): self.connection.connection.rollback()
 
 
 @pytest.fixture
@@ -96,7 +97,7 @@ def dbcase(monkeypatch,request):
                 "authority_tier":"auto","enabled":True,"expires_at":(h.now+timedelta(hours=1)).isoformat(),
                 "max_actions":2,"max_cost":0,"rollback_required":True,"deterministic_gate_required":True}
         mission["metadata_json"]["manager_dependency_intake"]={"contract":intake.CONTRACT,"policy_id":policy["policy_id"],
-            "scope_digest":intake.digest(scope),"authorization_identity":"synthetic-owner-authority"}
+            "scope_digest":intake.digest(scope),"authorization_identity":"synthetic-owner-authority","receipt_only":True}
         db.execute("""insert into public.charlie_missions(mission_id,status,source,telegram_user_id,telegram_chat_id,
             raw_text,title,urgency,mission_type,approval_level,selected_next_step,owner_decision,codex_chat_write_status,metadata_json)
             values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
@@ -330,7 +331,7 @@ def test_foreign_mission_owner_cannot_borrow_current_owner_hash(dbcase):
         db.execute("update public.charlie_missions set telegram_user_id='43',telegram_chat_id='43'")
         mission=db.execute("select to_jsonb(m) from public.charlie_missions m").fetchone()[0]
         scope=h.policy["scope"]; scope["owner_user_id"]="43";scope["mission_identity_digest"]=intake.mission_identity_digest(mission)
-        admission={"contract":intake.CONTRACT,"policy_id":h.policy["policy_id"],"scope_digest":intake.digest(scope),"authorization_identity":"synthetic-owner-authority"}
+        admission={"contract":intake.CONTRACT,"policy_id":h.policy["policy_id"],"scope_digest":intake.digest(scope),"authorization_identity":"synthetic-owner-authority","receipt_only":True}
         db.execute("update public.charlie_missions set metadata_json=jsonb_set(metadata_json,'{manager_dependency_intake}',%s::jsonb)",(json.dumps(admission),))
         db.execute("update public.charlie_delegation_policies set scope_json=%s::jsonb",(json.dumps(scope),))
     before=snapshot(h);assert consume(h)["failures"]==2;assert snapshot(h)==before
@@ -377,3 +378,63 @@ def test_actual_later_manager_cycle_preserves_backlinked_dependency_and_replay(d
     assert consume(h)["failures"]==0
     final=snapshot(h)
     assert final==after
+
+
+@pytest.mark.parametrize("admission", [None, False, "malformed", [], {}, {"receipt_only": True}])
+def test_receipt_only_presence_blocks_actual_owner_queue_and_atomic_claim(dbcase, admission):
+    from modules.charlie import mission_store as store
+    h=dbcase
+    with h.db() as db:
+        db.execute("update public.charlie_missions set metadata_json=jsonb_set(metadata_json,'{manager_dependency_intake}',%s::jsonb) where mission_id=%s",
+                   (json.dumps(admission),h.mission["mission_id"]))
+        db.execute("""insert into public.charlie_missions(mission_id,status,source,raw_text,title,urgency,mission_type,approval_level,metadata_json)
+            values('CORE-SYNTHETIC-ORDINARY','approved','test','normal work','ordinary work','P1','bug fix','LEVEL 3','{}')""")
+    before=snapshot(h)
+    selected,code=store.list_owner_work_missions("approved",connect_factory=h.connect)
+    assert code==200,selected
+    assert [v["mission_id"] for v in selected["missions"]]==["CORE-SYNTHETIC-ORDINARY"]
+    claimed,code=store.update_mission_vault(h.mission["mission_id"],{"execution_lease":{"worker_id":"ordinary"}},
+        status="in_progress",expected_status="approved",connect_factory=h.connect)
+    assert code>=400 and not claimed.get("success"),claimed
+    assert snapshot(h)==before
+    # Even the compact read must preserve null/scalar admission presence.
+    loaded,code=store.list_missions("approved",compact=True,connect_factory=h.connect)
+    assert code==200,loaded
+    target=next(v for v in loaded["missions"] if v["mission_id"]==h.mission["mission_id"])
+    assert "manager_dependency_intake" in target["metadata"]
+    assert not store.mission_runtime_eligible(target)
+
+
+def test_named_policy_entry_uses_real_selector_receipts_and_silent_replay(dbcase, monkeypatch):
+    h=dbcase
+    for name in ("_load_executive_missions","load_executive_context","build_executive_cycle"):
+        monkeypatch.setattr(executive,name,Mock(side_effect=AssertionError("broad executive unreachable")))
+    result,code=executive.run_manager_dependency_intake_cycle(policy_id=h.policy["policy_id"],
+        scope_sha256=intake.digest(h.policy["scope"]),connect_factory=h.connect)
+    assert code==200,result
+    assert result["mission_pickup_attempted"] is False
+    after=snapshot(h)
+    again,code=executive.run_manager_dependency_intake_cycle(policy_id=h.policy["policy_id"],
+        scope_sha256=intake.digest(h.policy["scope"]),connect_factory=h.connect)
+    assert code==200,again
+    assert snapshot(h)==after
+
+
+def test_mixed_receipt_admission_cannot_enter_external_or_native_dispatch(dbcase):
+    from modules.charlie import mission_store as store
+    h=dbcase
+    extra={"external_supervisor_state":{"slack_owner_user_id":"synthetic-owner","slack_channel_id":"synthetic-channel",
+        "slack_event_id":"synthetic-event","agent_state":"ACTIVE"},
+        "hermes_native_execution":{"status":"valid","execution_status":"RUNNING","native_execution_id":"synthetic"}}
+    with h.db() as db:
+        db.execute("update public.charlie_missions set source='slack', metadata_json=metadata_json || %s::jsonb where mission_id=%s",
+                   (json.dumps(extra),h.mission["mission_id"]))
+    before=snapshot(h)
+    result,code=store.prepare_external_dispatch_authorization(h.mission["mission_id"],
+        authenticated_principal="hermes:charlie-builder",repository="Crewless9086/amadeus-pig-tracking-system",
+        base_sha="e"*40,owner_user_id="synthetic-owner",channel_id="synthetic-channel",connect_factory=h.connect)
+    assert code==409 and result["status"]=="receipt_only_mission_not_executable",result
+    resumed,code=store.list_resumable_hermes_native_executions(authenticated_principal="hermes:charlie-builder",connect_factory=h.connect)
+    assert code==200,resumed
+    assert not resumed.get("executions") and not resumed.get("pending_handoffs")
+    assert snapshot(h)==before

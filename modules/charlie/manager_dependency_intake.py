@@ -20,7 +20,7 @@ from modules.charlie.executive_store import record_control_command, complete_con
 from modules.charlie.mission_control import build_mission_control_event, canonical_event_equal
 from modules.charlie.mission_store import (
     _connect, _database_url, append_mission_control_event, owner_execution_hold_status,
-    mission_runtime_eligible, _not_durably_superseded_sql,
+    mission_receipt_intake_eligible, _not_durably_superseded_sql,
 )
 from modules.oom_sakkie.herdmaster_case_disposition import (
     MortalityReconciliationPending, _mortality_owner_binding, is_legacy_mortality_case,
@@ -165,15 +165,15 @@ def _policy_matches(current, expected, now):
 def _mission_matches(mission, policy, scope):
     metadata = mission.get("metadata_json") or {}
     _require(mission["mission_id"] == scope["mission_id"] and mission["status"] == "approved"
-             and mission_runtime_eligible({"metadata": metadata}) and not metadata.get("execution_lease"),
+             and mission_receipt_intake_eligible({"metadata": metadata}) and not metadata.get("execution_lease"),
              "mission_not_idle_approved")
     _require(str(mission.get("telegram_user_id")) == scope["owner_user_id"]
              and str(mission.get("telegram_chat_id")) == scope["owner_user_id"]
              and mission_identity_digest(mission) == scope["mission_identity_digest"], "mission_identity_changed")
     admission = metadata.get("manager_dependency_intake")
     _require(isinstance(admission, dict) and set(admission) == {
-        "contract", "policy_id", "scope_digest", "authorization_identity"}
-        and admission["contract"] == CONTRACT and admission["policy_id"] == policy["policy_id"]
+        "contract", "policy_id", "scope_digest", "authorization_identity", "receipt_only"}
+        and admission["receipt_only"] is True and admission["contract"] == CONTRACT and admission["policy_id"] == policy["policy_id"]
         and admission["scope_digest"] == digest(scope)
         and isinstance(admission["authorization_identity"], str)
         and 0 < len(admission["authorization_identity"]) <= 180, "mission_service_admission_missing")

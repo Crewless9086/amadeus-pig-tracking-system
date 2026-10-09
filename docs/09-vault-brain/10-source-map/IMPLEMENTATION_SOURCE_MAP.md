@@ -4,10 +4,14 @@
 
 - Status: `LOCAL_NOT_RELEASED`; authority remains `01-identity/CHARLIE_CORE.md`,
   `02-agents/owner-command/CHARLIE.md` and `04-workflows/CHARLIE_MISSION_WORKFLOW.md`.
-- Adapter: `modules/charlie/manager_dependency_intake.py`; invocation is the
-  existing `run_executive_cycle` in `modules/charlie/executive_runtime.py`.
-  Only active mode plus an enabled, expiring `core.manager_dependency_intake`
-  policy and exact matching mission service admission permit receipt writes.
+- Adapter: `modules/charlie/manager_dependency_intake.py`; the existing active
+  executive and the scoped `run_manager_dependency_intake_cycle` in
+  `modules/charlie/executive_runtime.py` share its exact receipt contract.
+  Only an enabled, expiring `core.manager_dependency_intake` policy and exact
+  matching receipt-only mission admission permit receipt writes. A named policy
+  is read through `modules/charlie/executive_store.py`; ordinary mission listing,
+  atomic claims, external dispatch and native recovery reject any present intake
+  admission, including malformed or null markers, in `mission_store.py`.
 - Reused persistence: `append_mission_control_event`, `record_control_command`
   and `complete_control_command`; no new queue, table, migration or scheduler.
   A second transaction verifies the full canonical committed finding and command
@@ -23,6 +27,37 @@
 - Tests: `tests/test_charlie_manager_dependency_intake.py` and
   `tests/test_charlie_manager_dependency_intake_postgres.py`, with existing
   executive/event regressions, selected by `.github/workflows/charlie-core-tests.yml`.
+
+
+## CORE stopped initialization and scoped receipt runtime
+
+- Status: `LOCAL_NOT_RELEASED`. Reuse the same CORE authority and mission workflow
+  above; implementation is not an activation grant or proof of worker pickup.
+- Shared signed path binding: `modules/charlie/__init__.py`. Typed absent-state
+  initialization and first staging: `modules/charlie/runtime_staging.py` and
+  `scripts/charlie_runtime_stage.py`. Initialization records a real stop and keys,
+  without inventing predecessor, supervisor, validation or worktree history.
+  First staging needs completed initialization, genuine unused signed validation,
+  exact disabled task identity and the existing three-worktree bound.
+- Existing provider/controller rails: `modules/charlie/runtime_activation.py`,
+  `runner_control.py`, and `scripts/charlie_runner_task_launcher.py`,
+  `charlie_runner_watchdog.py`, `charlie_runner_supervisor.py`.
+  `scripts/charlie_manager_intake_runner.py` reuses the observe runner's identity
+  handshake in `charlie_observe_only_runner.py`, then invokes only the named
+  receipt service. Observe-only retains zero mission access; ordinary defaults
+  are unchanged. Scoped failure stops without ordinary repair or automatic restart.
+- Startup and each intake cycle require current signed provider consumption,
+  controller identity, expiry, bound runtime/receipt/configuration, and explicit
+  verified TLS. The scoped process excludes broad dotenv/model/provider secrets;
+  only signed database and owner-filter values reach the exact receipt service.
+  No task activation, new policy, mission, hold change or live database write is
+  performed by initialization or source installation.
+- Qualification: `tests/test_charlie_manager_intake_runner.py`, existing staging,
+  activation, launcher/controller/observe tests and intake PostgreSQL tests.
+  `modules/charlie/validation_receipt.py` includes the scoped tests in proportional
+  signed validation; existing `test_charlie_*.py` CI discovery selects the module.
+  Source tests, actual Windows lifecycle qualification and live intake acceptance
+  remain separate gates; receipt acknowledgement proves no repair or welfare result.
 
 
 ## Oom Sakkie family message presentation

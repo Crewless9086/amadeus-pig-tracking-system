@@ -467,7 +467,19 @@ def mission_runtime_eligible(mission):
     # this key retain their established status-based behavior; any present,
     # malformed, forged or future contract remains ineligible until a later
     # reviewed enforcement stage explicitly validates and enables it.
-    return "portfolio_admission" not in metadata and "portfolio_classification" not in metadata
+    return ("portfolio_admission" not in metadata and "portfolio_classification" not in metadata
+            and "manager_dependency_intake" not in metadata)
+
+
+def mission_receipt_intake_eligible(mission):
+    """Receipt service only; this does not grant ordinary execution eligibility."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata")
+    if not isinstance(metadata, dict) or any(k in metadata for k in
+            ("portfolio_admission", "portfolio_classification")):
+        return False
+    admission = metadata.get("manager_dependency_intake")
+    return isinstance(admission, dict) and admission.get("receipt_only") is True
 
 
 def list_missions(
@@ -1225,7 +1237,7 @@ def finalize_owner_review_transaction(
                 if not row:
                     return {"success": False, "status": "not_found"}, 404
                 current_status, metadata = row[0], row[1] or {}
-                if "portfolio_classification" in metadata:
+                if "portfolio_classification" in metadata or "manager_dependency_intake" in metadata:
                     return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 if current_status != expected_status:
                     return {
@@ -1303,6 +1315,7 @@ def _not_execution_held_sql():
               )
         )
         and public.charlie_missions.metadata_json->'portfolio_classification' is null
+        and not (coalesce(public.charlie_missions.metadata_json, '{}'::jsonb) ? 'manager_dependency_intake')
     """
 
 
@@ -2396,6 +2409,8 @@ def list_resumable_hermes_native_executions(*, authenticated_principal,
     active_cursor_missions = set()
     for mission_id, mission_status, metadata_value in rows:
         metadata = dict(metadata_value or {})
+        if "manager_dependency_intake" in metadata:
+            continue
         native = dict(metadata.get("hermes_native_execution") or {})
         state = dict(metadata.get("external_supervisor_state") or {})
         if (str(state.get("agent_state") or "").upper() == "ACTIVE"
@@ -2570,6 +2585,8 @@ def prepare_external_dispatch_authorization(
                 if not row:
                     return {"success": False, "status": "not_found"}, 404
                 metadata = dict(row[2] or {})
+                if "manager_dependency_intake" in metadata:
+                    return {"success": False, "status": "receipt_only_mission_not_executable"}, 409
                 state = dict(metadata.get("external_supervisor_state") or {})
                 if (row[1] != "slack" or state.get("slack_owner_user_id") != owner_user_id
                         or state.get("slack_channel_id") != channel_id):
@@ -3865,7 +3882,7 @@ def consume_final_agent_artifact(
                 rows = cursor.fetchall()
                 if not rows:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
-                if "portfolio_classification" in dict(rows[0][0] or {}):
+                if any(key in dict(rows[0][0] or {}) for key in ("portfolio_classification", "manager_dependency_intake")):
                     return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 metadata = dict(rows[0][0] or {})
                 ingestion = dict(metadata.get("final_artifact_ingestion") or {})
@@ -4055,7 +4072,7 @@ def record_final_artifact_rejection(
                 if not rows:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
                 metadata = dict(rows[0][0] or {})
-                if "portfolio_classification" in metadata:
+                if "portfolio_classification" in metadata or "manager_dependency_intake" in metadata:
                     return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
                 evidence_generation = _clean_text(
@@ -5727,7 +5744,9 @@ def _mission_metadata_select(compact=False):
                 coalesce(metadata_json->'media_references', '[]'::jsonb),
                 '$[*] ? (@.media_type != "image")'
             )
-        ))
+        )) || case when coalesce(metadata_json, '{{}}'::jsonb) ? 'manager_dependency_intake'
+              then jsonb_build_object('manager_dependency_intake', metadata_json->'manager_dependency_intake')
+              else '{{}}'::jsonb end
     """
 
 

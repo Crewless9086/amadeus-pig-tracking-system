@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from modules.charlie import (
+    INTAKE_EXECUTION_MODE, governed_runtime_binding, governed_state_root,
     TEST_CONTROL_ROOT_ENV,
     TEST_ISOLATION_ENV,
     shared_repository_root,
@@ -51,7 +52,7 @@ def _control_root(repo_root=REPO_ROOT, environ=None):
 
 
 CONTROL_ROOT = _control_root()
-RUNNER_DIR = CONTROL_ROOT / ".charlie_runner"
+RUNNER_DIR = governed_state_root(REPO_ROOT, CONTROL_ROOT / ".charlie_runner")
 HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
@@ -59,7 +60,7 @@ START_CONTAINMENT_PATH = RUNNER_DIR / "startup-containment.json"
 SUPERVISOR_STOP_PATH = RUNNER_DIR / "supervisor.stop"
 EXECUTION_MODE_ORDINARY = "ordinary"
 EXECUTION_MODE_OBSERVE_ONLY = "observe_only"
-EXECUTION_MODES = {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY}
+EXECUTION_MODES = {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY, INTAKE_EXECUTION_MODE}
 EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABLED"
 EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
@@ -71,6 +72,9 @@ SUPERVISOR_PACKET_VERSION = "charlie_supervisor_ownership_v3"
 
 
 def _python_executable(repo_root=REPO_ROOT):
+    binding = governed_runtime_binding(repo_root)
+    if binding:
+        return binding["interpreter"]
     if (
         os.name == "nt"
         and Path(repo_root).resolve() == REPO_ROOT.resolve()
@@ -391,6 +395,12 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
             "status": "governed_stop_active",
             "stop_marker": str(SUPERVISOR_STOP_PATH),
         }, 423
+    if execution_mode == INTAKE_EXECUTION_MODE:
+        from modules.charlie.runtime_activation import read_intake_activation
+        try:
+            read_intake_activation(RUNNER_DIR, os.getenv("CHARLIE_ACTIVATION_ID"))
+        except Exception as exc:
+            return {"success": False, "status": "intake_activation_refused", "error_type": type(exc).__name__}, 423
     supervisor = _read_json(SUPERVISOR_PATH)
     if _pid_alive(supervisor.get("pid")):
         active_mode = str(
@@ -404,7 +414,7 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
             or EXECUTION_MODE_ORDINARY
         )
         active_mode_valid = active_mode == execution_mode and signed_mode == execution_mode
-        if execution_mode == EXECUTION_MODE_OBSERVE_ONLY and active_mode_valid:
+        if execution_mode != EXECUTION_MODE_ORDINARY and active_mode_valid:
             public_key = str(supervisor.get("controller_public_key") or "")
             unsigned_ack = (
                 {
@@ -466,7 +476,8 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
             "runner": (
                 status_override
                 if isinstance(status_override, dict)
-                else runner_status(include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY)
+                else (runner_status(include_orphans=False, include_git=False, include_ledger=False)
+                 if execution_mode == INTAKE_EXECUTION_MODE else runner_status(include_ledger=execution_mode == EXECUTION_MODE_ORDINARY))
             ),
             "supervisor_pid": supervisor.get("pid"),
             "supervisor_generation": supervisor.get("generation", ""),
@@ -474,7 +485,8 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
     status = (
         status_override
         if isinstance(status_override, dict)
-        else runner_status(include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY)
+        else (runner_status(include_orphans=False, include_git=False, include_ledger=False)
+                 if execution_mode == INTAKE_EXECUTION_MODE else runner_status(include_ledger=execution_mode == EXECUTION_MODE_ORDINARY))
     )
     if status["active"]:
         return {"success": True, "status": "runner_already_active", "runner": status}, 200
@@ -500,8 +512,12 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
     startup_nonce = uuid.uuid4().hex
     controller_private_key, controller_public_key = generate_controller_signing_key()
     intended_revision = _current_git_commit()
+    inherited = os.environ
+    if execution_mode == INTAKE_EXECUTION_MODE:
+        from modules.charlie.runtime_activation import intake_process_environment
+        inherited = intake_process_environment(os.environ)
     child_env = {
-        **os.environ,
+        **inherited,
         "CHARLIE_SUPERVISOR_GENERATION": generation,
         "CHARLIE_STARTUP_NONCE": startup_nonce,
         "CHARLIE_INTENDED_RUNTIME_REVISION": intended_revision,
@@ -868,7 +884,7 @@ def stop_runner():
         supervisor.get("execution_mode") or EXECUTION_MODE_ORDINARY
     )
     status = runner_status(
-        include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY
+        include_ledger=execution_mode == EXECUTION_MODE_ORDINARY
     )
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")

@@ -1,5 +1,23 @@
 # Vault Brain Changelog
 
+## 2026-10-09 - Stopped CORE initialization and receipt-only startup
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Add typed absent-state initialization and validated first staging through the
+  existing runtime rails, preserving a real stop, completed initialization,
+  unused signed evidence, exact disabled task and three-worktree boundary.
+- Add a provider/controller-bound receipt-only mode using the existing named
+  policy, mission admission and manager event contract. Reject present intake
+  admissions in ordinary selection, atomic claims, external dispatch and native
+  recovery; malformed markers cannot become ordinary work.
+- Keep scoped startup free of broad dotenv loading, ordinary queue execution,
+  automatic repair/restart and model calls. Require explicit verified TLS and
+  current signed expiry/configuration/process identity. Default modes are unchanged.
+- This source does not enable tasks, establish policies, admit a live mission or
+  prove worker pickup. Runtime activation and genuine operational acceptance
+  remain required; technical receipt acknowledgement is not mission completion.
+
 ## 2026-10-06 - Explicitly admitted manager engineering intake
 
 Status: `LOCAL_NOT_RELEASED`.

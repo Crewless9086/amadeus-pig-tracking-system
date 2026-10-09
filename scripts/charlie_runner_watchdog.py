@@ -16,6 +16,7 @@ os.environ.setdefault("GIT_CONFIG_COUNT", "1")
 os.environ.setdefault("GIT_CONFIG_KEY_0", "safe.directory")
 os.environ.setdefault("GIT_CONFIG_VALUE_0", str(REPO_ROOT))
 
+from modules.charlie import INTAKE_EXECUTION_MODE
 from modules.charlie.runner_control import (
     RUNNER_DIR,
     SUPERVISOR_STOP_PATH,
@@ -188,6 +189,8 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
+    if os.getenv("CHARLIE_CORE_EXECUTION_MODE") == INTAKE_EXECUTION_MODE:
+        return {"status": "intake_only_watchdog_recovery_disabled", "started": False}
     supervisor_state_path = state_path.with_name("supervisor.json")
     supervisor_state = (
         supervisor_state_reader()
@@ -218,7 +221,7 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
         persisted_mode = "observe_only"
     elif not persisted_mode:
         persisted_mode = "ordinary"
-    if supervisor_state and persisted_mode not in {"ordinary", "observe_only"}:
+    if supervisor_state and persisted_mode not in {"ordinary", "observe_only", INTAKE_EXECUTION_MODE}:
         payload = {
             "status": "execution_mode_evidence_invalid",
             "started": False,
@@ -228,6 +231,8 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
+    if persisted_mode == INTAKE_EXECUTION_MODE:
+        return {"status": "intake_only_watchdog_recovery_disabled", "started": False}
     if persisted_mode == "observe_only":
         public_key = str(supervisor_state.get("controller_public_key") or "")
         if isinstance(final_ack, dict):
