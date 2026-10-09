@@ -6,7 +6,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/* \
     && git config --system --add safe.directory /source \
-    && python -m pip install --no-cache-dir pytest==8.4.1 python-dotenv==1.0.1
+    && python -m pip install --no-cache-dir pytest==8.4.1 python-dotenv==1.0.1 "psycopg[binary]==3.3.4"
 
 LABEL org.opencontainers.image.source="https://github.com/Crewless9086/amadeus-pig-tracking-system" \
       org.opencontainers.image.revision="${SOURCE_COMMIT}" \
