@@ -6,6 +6,7 @@ import json
 import os
 import re
 import unittest
+import zlib
 from unittest.mock import patch
 import time
 from urllib.parse import parse_qsl, urlsplit
@@ -102,7 +103,13 @@ class OfflineTests(unittest.TestCase):
         compact = prototype.compact_package(package, expected_parent_pg_sha256='a'*64,
             expected_child_pg_sha256='b'*64)
         before = deepcopy(compact)
-        self.assertLess(len(prototype.render_sql(compact).encode()), 90000)
+        # Match the retained encrypted wrapper: 128 KiB raw SQL and 64 KiB
+        # compressed bytes (before base64). This fixture never executes SQL.
+        raw = prototype.render_sql(compact).encode()
+        compressed = zlib.compress(raw, 9)
+        self.assertLessEqual(len(raw), 131072)
+        self.assertLessEqual(len(compressed), 65536)
+        self.assertEqual(zlib.decompress(compressed), raw)
         self.assertEqual(compact, before)
 
 
@@ -454,9 +461,13 @@ class DashboardPostgresTests(f.ReconciliationPostgresTests):
             package=prototype.capture_plan(args,authenticated_owner_principal=f.OWNER,authenticated_desktop_principal=f.PRINCIPAL)
         full=prototype.render_sql(package);compact=prototype.render_sql(self.compact_for(package))
         self.assertGreater(len(full.encode()),600000)
-        # The 102-clause retained contract adds bounded metadata;
-        # this synthetic envelope check is not a production transport limit.
-        self.assertLess(len(compact.encode()),90000)
+        # Match the existing encrypted wrapper ceilings, without truncating
+        # retained audit/history: 128 KiB raw SQL and 64 KiB compressed bytes.
+        raw = compact.encode()
+        compressed = zlib.compress(raw, 9)
+        self.assertLessEqual(len(raw), 131072)
+        self.assertLessEqual(len(compressed), 65536)
+        self.assertEqual(zlib.decompress(compressed), raw)
         self.assertEqual(self.run_sql(compact)['writes'],5)
         with self.pg.connect(self.url) as db:
             stored=db.execute("select metadata_json from public.charlie_mission_events where event_type='workflow_updated'").fetchone()[0]

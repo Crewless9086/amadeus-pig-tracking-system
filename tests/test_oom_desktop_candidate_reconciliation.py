@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'modules/oom_sakkie/manager_case_sources.py', 'modules/oom_sakkie/owner_attention_projection.py', 'tests/test_oom_sakkie_mortality_reconciliation.py', 'tests/test_oom_sakkie_mortality_reconciliation_postgres.py', 'tests/test_oom_sakkie_owner_attention_projection.py']
+PREDECESSOR_PATHS = ['docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'tests/test_oom_sakkie_mortality_reconciliation.py', 'tests/test_oom_sakkie_mortality_reconciliation_postgres.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -59,7 +59,7 @@ SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1387, 'HEAD': '2604348ca98a0df4e351fa20a0c40f2d39da510f', 'TREE': 'f300a34654e3eabe4985b5640f0fa6fbd7929713', 'APPROVED_RUNTIME_HEAD': '2604348ca98a0df4e351fa20a0c40f2d39da510f', 'PATHS': ['docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/herdmaster_case_disposition.py', 'tests/test_oom_sakkie_mortality_reconciliation.py', 'tests/test_oom_sakkie_mortality_reconciliation_postgres.py']}
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1388, 'HEAD': 'a4aff538c4996e7495b67ee2e0be74d979015840', 'TREE': 'f2b4798eb0569124f71e02706e9b8ba3b6295e2e', 'APPROVED_RUNTIME_HEAD': 'a4aff538c4996e7495b67ee2e0be74d979015840', 'PATHS': ['.github/workflows/charlie-core-tests.yml', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/charlie/__init__.py', 'modules/charlie/executive_runtime.py', 'modules/charlie/executive_store.py', 'modules/charlie/manager_dependency_intake.py', 'modules/charlie/mission_store.py', 'modules/charlie/runner_control.py', 'modules/charlie/runtime_activation.py', 'modules/charlie/runtime_staging.py', 'modules/charlie/validation_receipt.py', 'scripts/charlie_manager_intake_runner.py', 'scripts/charlie_observe_only_runner.py', 'scripts/charlie_runner_supervisor.py', 'scripts/charlie_runner_task_launcher.py', 'scripts/charlie_runner_watchdog.py', 'scripts/charlie_runtime_stage.py', 'tests/charlie_windows_lifecycle_harness.py', 'tests/test_charlie_manager_dependency_intake.py', 'tests/test_charlie_manager_dependency_intake_postgres.py', 'tests/test_charlie_manager_intake_runner.py', 'tests/test_charlie_runner_control.py', 'tests/test_charlie_runner_task_launcher.py']}
 
 def use_synthetic_candidate(test):
     pending = {key: deepcopy(value) for key, value in SYNTHETIC_PINS.items()
@@ -84,7 +84,7 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": ['application_revision_rollback:web:4d21d234a75ceba8956146eb2154c72492698376', 'authenticated_historical_farrowing_review_reply_protected_preview', 'canonical_completed_retained_mortality_delivery_recovery', 'current_recipient_authorized_protected_confirmation_delivery', 'existing_task_register_reconciliation', 'existing_web_application_release', 'herdmaster_attributable_approved_purpose_case_completion', 'herdmaster_canonical_domain_scoped_read_answers', 'herdmaster_canonical_purpose_cohort_work_advisory', 'herdmaster_consolidated_purpose_overview', 'herdmaster_current_weighing_status_order_reconciliation', 'herdmaster_delivered_breeding_subject_read_context', 'herdmaster_exact_canonical_advisory_case_disposition', 'herdmaster_exact_retained_farrowing_refresh', 'herdmaster_legacy_mortality_technical_pending_reconciliation', 'herdmaster_owner_confirmed_purpose_batch', 'herdmaster_owner_requested_purpose_review_date', 'herdmaster_protected_body_condition_observation_intake', 'herdmaster_ready_purpose_private_owner_notice', 'herdmaster_stable_sow_litter_identity_reassessment', 'herdmaster_telegram_exact_purpose_review', 'merge', 'oom_sakkie_shared_family_message_presentation', 'oom_sakkie_typed_concise_farm_brief_presentation', 'owner_requested_expired_retained_mortality_confirmation_successor', 'publication', 'repository_candidate_validation', 'repository_test_fixture_write', 'retained_farrowing_configured_owner_informational_review', 'retained_mortality_audited_never_attempted_orphan_claim_replacement', 'retained_mortality_original_report_identity_reassessment', 'retained_mortality_single_first_attempt_presentation_window', 'retained_mortality_source_fenced_atomic_confirmation', 'rootline_proven_no_send_retry_presented_text_binding', 'rootline_verified_current_plan_delivery_advisory_completion', 'verified_same_case_mortality_completion_projection'],
+        "allowed_effects": ['application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54', 'authenticated_historical_farrowing_review_reply_protected_preview', 'canonical_completed_retained_mortality_delivery_recovery', 'current_recipient_authorized_protected_confirmation_delivery', 'existing_task_register_reconciliation', 'existing_web_application_release', 'herdmaster_attributable_approved_purpose_case_completion', 'herdmaster_canonical_domain_scoped_read_answers', 'herdmaster_canonical_purpose_cohort_work_advisory', 'herdmaster_consolidated_purpose_overview', 'herdmaster_current_weighing_status_order_reconciliation', 'herdmaster_delivered_breeding_subject_read_context', 'herdmaster_exact_canonical_advisory_case_disposition', 'herdmaster_exact_retained_farrowing_refresh', 'herdmaster_legacy_mortality_technical_pending_reconciliation', 'herdmaster_owner_confirmed_purpose_batch', 'herdmaster_owner_requested_purpose_review_date', 'herdmaster_protected_body_condition_observation_intake', 'herdmaster_ready_purpose_private_owner_notice', 'herdmaster_stable_sow_litter_identity_reassessment', 'herdmaster_telegram_exact_purpose_review', 'merge', 'oom_sakkie_shared_family_message_presentation', 'oom_sakkie_typed_concise_farm_brief_presentation', 'owner_requested_expired_retained_mortality_confirmation_successor', 'publication', 'repository_candidate_validation', 'repository_test_fixture_write', 'retained_farrowing_configured_owner_informational_review', 'retained_mortality_audited_never_attempted_orphan_claim_replacement', 'retained_mortality_original_report_identity_reassessment', 'retained_mortality_single_first_attempt_presentation_window', 'retained_mortality_source_fenced_atomic_confirmation', 'rootline_proven_no_send_retry_presented_text_binding', 'rootline_verified_current_plan_delivery_advisory_completion', 'verified_same_case_mortality_completion_projection'],
         "forbidden_effects": ['blanket_task_cleanup', 'cron_deploy', 'customer_message', 'database_migration', 'family_permission_change', 'farm_write', 'hardware_command', 'manual_cron_trigger', 'manufactured_acceptance', 'other_service_deploy', 'runner_activation', 'runtime_source_change_beyond_approved_candidate', 'service_configuration_change', 'transport_publication'],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
@@ -345,7 +345,7 @@ class CandidatePinTests(unittest.TestCase):
         authority=[v for v in adapter.REQUIRED_ACCEPTANCE if v.startswith("Require an independently authenticated attributable owner instruction")]
         self.assertEqual(len(authority),1)
         self.assertIn("exact candidate "+str(adapter.HEAD),authority[0])
-        self.assertIn("this exact legacy mortality technical-pending reconciliation and existing-web-only release contract scope",authority[0])
+        self.assertIn("this exact manager CORE receipt intake, stopped/scoped startup source and existing-web-only release contract scope",authority[0])
         self.assertFalse(any(adapter.PREDECESSOR_HEAD in v for v in adapter.REQUIRED_ACCEPTANCE))
         with patch.object(adapter, "CANDIDATE_PR", None), patch.object(adapter, "verify_source_and_candidate") as verify:
             with self.assertRaisesRegex(adapter.ReconciliationError, "candidate_pins_pending"):
@@ -353,6 +353,32 @@ class CandidatePinTests(unittest.TestCase):
                     expected_manifest_sha256="0" * 64, expected_approval_sha256="0" * 64,
                     connect_factory=lambda _: self.fail("unexpected connection"))
         verify.assert_not_called()
+
+
+    def test_windows_qualification_is_exact_candidate_read_only_and_inert_until_bound(self):
+        workflow=(adapter.ROOT / '.github/workflows/oom-desktop-rebind-qualification.yml').read_text()
+        self.assertEqual(workflow.count('  windows-lifecycle:'),1)
+        windows=workflow.split('  windows-lifecycle:',1)[1]
+        self.assertIn('runs-on: windows-latest',windows)
+        self.assertIn('timeout-minutes: 10',windows)
+        self.assertIn('permissions:\n      contents: read',windows)
+        self.assertNotIn('secrets.',windows)
+        self.assertNotIn('write-all',windows)
+        self.assertNotIn('pull_request_target',workflow)
+        self.assertNotIn('CHARLIE_SUBPROCESS_TESTS_ENABLED',windows)
+        self.assertNotIn('CHARLIE_ALLOW_PROCESS_TERMINATION',windows)
+        bound=next(line.split(':',1)[1].strip() for line in windows.splitlines() if 'CHARLIE_WINDOWS_SOURCE_SHA:' in line)
+        self.assertEqual(bound,adapter.HEAD)
+        self.assertLess(windows.index("-notmatch '^[0-9a-f]{40}$'"),windows.index('uses: actions/checkout@'))
+        self.assertIn('ref: ${{ env.CHARLIE_WINDOWS_SOURCE_SHA }}',windows)
+        self.assertIn('persist-credentials: false',windows)
+        self.assertIn('path: application-candidate',windows)
+        self.assertEqual(windows.count('working-directory: application-candidate'),2)
+        self.assertIn('$actual -cne $env:CHARLIE_WINDOWS_SOURCE_SHA',windows)
+        self.assertIn('tests/charlie_windows_lifecycle_harness.py --source-sha',windows)
+        self.assertIn('--report-root "$env:RUNNER_TEMP\\charlie-windows-lifecycle"',windows)
+        self.assertIn('if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }',windows)
+        self.assertIn('if: ${{ always() }}',windows)
 
 
 class ReconciliationTests(unittest.TestCase):
@@ -546,7 +572,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertIn("application_revision_rollback:web:"+adapter.WEB_ROLLBACK,m["contract"]["allowed_effects"])
         self.assertEqual(adapter.BASE,adapter.WEB_ROLLBACK)
         self.assertTrue({"database_migration","farm_write","service_configuration_change","transport_publication","cron_deploy"}<=set(m["contract"]["forbidden_effects"]))
-        guards=("Only conclusively departed extra rows outside immutable obligations leave the unknown-purpose veto", "retained members and ambiguous/conflicting lifecycle evidence never do", "verified English/Afrikaans saved-purpose singular/plural wording", "Prior PR1386 registration and web deployment are consumed history", "preserve the existing provider state without another workflow update or rollback", "Bind the exact current deployment/settings baseline", "uncertain deployment outcomes require readback rather than blind retry", "No manual case completion, owner confirmation, callback replay or provider workflow mutation")
+        guards=("Only conclusively departed extra rows outside immutable obligations leave the unknown-purpose veto", "retained members and ambiguous/conflicting lifecycle evidence never do", "verified English/Afrikaans saved-purpose singular/plural wording", "Prior PR1387 registration and web deployment are consumed history", "preserve the existing provider state without another workflow update or rollback", "Bind the exact current deployment/settings baseline", "uncertain deployment outcomes require readback rather than blind retry", "No manual case completion, owner confirmation, callback replay or provider workflow mutation")
         for value in guards:
             changed=deepcopy(m);changed["contract"]["operational_acceptance"]=[v.replace(value,"UNAUTHORIZED") for v in m["contract"]["operational_acceptance"]]
             self.assertNotEqual(changed["contract"]["operational_acceptance"],m["contract"]["operational_acceptance"],value)
@@ -652,8 +678,8 @@ class ReconciliationTests(unittest.TestCase):
             m["contract"]["operational_acceptance"]=changed
             with self.subTest(guard=before),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
-        self.assertEqual(adapter.REMOVED_EFFECTS,{'application_revision_rollback:web:4d21d234a75ceba8956146eb2154c72492698376'})
-        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'})
+        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:cee35f3b3bce38f7022c264d458d20b41823baf0'})
         self.assertFalse(READINESS_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(CONCISE_BRIEF_EFFECTS & adapter.ADDED_EFFECTS)
         self.assertFalse(FAMILY_STYLE_EFFECTS & adapter.ADDED_EFFECTS)
@@ -954,7 +980,7 @@ class ReconciliationTests(unittest.TestCase):
                 "not CORE intake, dispatch, execution or repair completion",
                 "Failed reads remain sanitized exceptions", "manager_reconciliation_persistence_unproven",
                 "Fresh current evidence re-enters owning reconciliation",
-                "Add no CORE consumer/activation, farm/provider write, message, replay trigger, schema, schedule, model, permission or security change",
+                "Here add no CORE consumer/activation, farm/provider write, message, replay trigger, schema, schedule, model, permission or security change",
                 "tests/test_oom_sakkie_mortality_reconciliation.py",
                 "tests/test_oom_sakkie_mortality_reconciliation_postgres.py",
                 "Prove legacy mortality technical reconciliation without farm completion",
@@ -969,25 +995,43 @@ class ReconciliationTests(unittest.TestCase):
             with self.subTest(effect=effect),self.assertRaises(adapter.ReconciliationError):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
-    def test_all_102_previous_acceptance_clauses_survive_only_exact_identity_rebinding(self):
+    def test_all_102_previous_acceptance_clauses_survive_scoped_receipt_additions(self):
         restored=set(adapter.REQUIRED_ACCEPTANCE)
-        replacements={
-            "Prior PR1386 registration and web deployment are consumed history": "Prior PR1385 registration and web deployment are consumed history",
-            "Roll back application to eb1afc7c91701683694d0bb104f02cd2fd0b3a54": "Roll back application to 4d21d234a75ceba8956146eb2154c72492698376",
-            "Rollback is limited to web srv-d6sijjkhg0os73f7regg revision eb1afc7c91701683694d0bb104f02cd2fd0b3a54": "Rollback is limited to web srv-d6sijjkhg0os73f7regg revision 4d21d234a75ceba8956146eb2154c72492698376",
-            f"PR{adapter.CANDIDATE_PR} head {adapter.HEAD}": "PR1386 head 9f4d4470f23643153591cfee5ea9528b0b930aa4",
-            f"exact candidate {adapter.HEAD}": "exact candidate 9f4d4470f23643153591cfee5ea9528b0b930aa4",
-        }
+        additions = ('Manager CORE intake is a durable receipt, not worker selection, pickup, repair execution or welfare completion. Reuse core.manager_dependency_intake with exact enabled expiring policy, explicit receipt-only mission admission and current owner/dependency/event/cycle/source binding; enforce holds, supersession, idle state and lease fences in both transactions under one 10-second budget. Commit the canonical CORE finding before separate committed readback/backlink; crash or changed authority can leave it unlinked and replay creates no duplicate or invented acknowledgement. Preserve manager pending identity, source chronology, false completion flags, siblings and later quiet reassessment. Require tests/test_charlie_manager_dependency_intake.py and tests/test_charlie_manager_dependency_intake_postgres.py in Prove typed receipt, replay, crash, concurrency and inactive defaults, zero skips. Genuine deployed intake, actual governed pickup, engineering result and later owning reconciliation require separate attributable evidence; no receipt or healthy web response proves an owner outcome.', 'Publish stopped initialization and scoped startup source only. Staging remains stopped and uses genuine signed validation, exact revision, manifest, governed path and rollback binding. Receipt-only mode reuses the existing provider/controller and cannot select unrelated work, call models, send outbox/messages or start ordinary repair; preserve ordinary and observe defaults. Failure stops the scoped mode without automatic restart. Release registration remains five metadata writes; web deployment grants no runtime activation, task enable/start, stop clearing, policy write or model-budget change. Separate short-lived exact activation authority and provider/controller readback remain required. Require tests/test_charlie_manager_intake_runner.py and tests/test_charlie_runner_task_launcher.py plus existing staging, activation, controller, supervisor, watchdog and observe regressions in Run isolated CHARLIE modules with hard timeouts; disclose skipped process gates and require their qualified proof before activation.')
+        for addition in additions:
+            self.assertEqual(sum(addition in v for v in restored), 1)
+            restored={v.replace("\n\n"+addition, "") for v in restored}
+        replacements = {'Prior PR1387 registration and web deployment are consumed history': 'Prior PR1386 registration and web deployment are consumed history', 'Roll back application to cee35f3b3bce38f7022c264d458d20b41823baf0': 'Roll back application to eb1afc7c91701683694d0bb104f02cd2fd0b3a54', 'Rollback is limited to web srv-d6sijjkhg0os73f7regg revision cee35f3b3bce38f7022c264d458d20b41823baf0': 'Rollback is limited to web srv-d6sijjkhg0os73f7regg revision eb1afc7c91701683694d0bb104f02cd2fd0b3a54', 'PR1388 head a4aff538c4996e7495b67ee2e0be74d979015840': 'PR1387 head 2604348ca98a0df4e351fa20a0c40f2d39da510f', 'exact candidate a4aff538c4996e7495b67ee2e0be74d979015840': 'exact candidate 2604348ca98a0df4e351fa20a0c40f2d39da510f', 'this exact manager CORE receipt intake, stopped/scoped startup source and existing-web-only release contract scope': 'this exact legacy mortality technical-pending reconciliation and existing-web-only release contract scope', 'Here add no CORE consumer/activation, farm/provider write, message, replay trigger, schema, schedule, model, permission or security change.': 'Add no CORE consumer/activation, farm/provider write, message, replay trigger, schema, schedule, model, permission or security change.'}
         for before,after in replacements.items():restored={v.replace(before,after) for v in restored}
         self.assertEqual(len(restored),102)
-        self.assertEqual(adapter.digest(adapter.canonical(sorted(restored))),"1063b5711c47de43cd21a745c16148bab1a418e94c79ec86b034ee7751c8ad15")
+        self.assertEqual(adapter.digest(adapter.canonical(sorted(restored))),"cb617bb1ab6a95778c03ddce1c24f915a7b9dd236a21aae909e9f6b7f9956669")
         m=json.loads(self.args["manifest_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertIn("herdmaster_legacy_mortality_technical_pending_reconciliation",prior["allowed_effects"])
         self.assertNotIn("herdmaster_legacy_mortality_technical_pending_reconciliation",adapter.ADDED_EFFECTS)
-        self.assertEqual(adapter.PREDECESSOR_PR,1386)
+        self.assertEqual(adapter.PREDECESSOR_PR,1387)
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
         self.assertEqual(adapter.BASE,adapter.WEB_ROLLBACK)
+
+    def test_core_receipt_and_stopped_source_do_not_grant_activation_or_pickup(self):
+        m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
+        clauses=m["contract"]["operational_acceptance"]
+        self.assertEqual(len(clauses),102)
+        self.assertTrue(all(0<len(v)<=2000 for v in clauses))
+        for guard_text in ('durable receipt, not worker selection, pickup, repair execution or welfare completion', 'exact enabled expiring policy', 'explicit receipt-only mission admission', 'current owner/dependency/event/cycle/source binding', 'holds, supersession, idle state and lease fences in both transactions', 'one 10-second budget', 'Commit the canonical CORE finding before separate committed readback/backlink', 'replay creates no duplicate or invented acknowledgement', 'source chronology, false completion flags', 'no receipt or healthy web response proves an owner outcome', 'Staging remains stopped', 'genuine signed validation, exact revision, manifest, governed path and rollback binding', 'cannot select unrelated work, call models, send outbox/messages or start ordinary repair', 'preserve ordinary and observe defaults', 'Failure stops the scoped mode without automatic restart', 'web deployment grants no runtime activation, task enable/start, stop clearing, policy write or model-budget change', 'Separate short-lived exact activation authority and provider/controller readback', 'disclose skipped process gates and require their qualified proof before activation'):
+            changed=deepcopy(m)
+            changed["contract"]["operational_acceptance"]=[v.replace(guard_text,"UNAUTHORIZED WEAKENING") for v in clauses]
+            self.assertNotEqual(changed["contract"]["operational_acceptance"],clauses,guard_text)
+            with self.subTest(guard=guard_text),self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        self.assertIn("runner_activation",m["contract"]["forbidden_effects"])
+        for effect in ("runner_activation","core_technical_dependency_dispatch","task_enable","task_start","governed_stop_clear","core_policy_write","model_budget_change","receipt_is_worker_pickup","farm_write"):
+            changed=deepcopy(m);changed["contract"]["allowed_effects"].append(effect)
+            with self.subTest(effect=effect),self.assertRaises(adapter.ReconciliationError):
+                adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
+        changed=deepcopy(m);changed["contract"]["forbidden_effects"].remove("runner_activation")
+        with self.assertRaisesRegex(adapter.ReconciliationError,"approved_scope_delta_changed"):
+            adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
     def test_preview_acceptance_coalescing_preserves_condition_observation_clauses(self):
         first='Prepare condition_observation only from a genuine current authenticated owner report naming one exact current canonical animal and its finite nonboolean body-condition score. Preserve explicit observation date and date-only precision or a supplied aware instant; reject missing, future, invalid or conflicting observation dates before claim creation. Date-only normalization is a disclosed storage convention, not an invented physical observation time. Prior read context, a score alone, a pronoun or an old condition question cannot supply missing animal identity, observation facts or confirmation authority.'
@@ -1040,8 +1084,8 @@ class ReconciliationTests(unittest.TestCase):
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
         self.assertIn(effect,prior["allowed_effects"])
         self.assertTrue({"publication", "repository_test_fixture_write", "existing_task_register_reconciliation"} <= set(prior["allowed_effects"]))
-        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'})
-        self.assertEqual(adapter.REMOVED_EFFECTS,{'application_revision_rollback:web:4d21d234a75ceba8956146eb2154c72492698376'})
+        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:cee35f3b3bce38f7022c264d458d20b41823baf0'})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'})
         self.assertEqual(set(m["contract"]["allowed_effects"]),set(prior["allowed_effects"])-adapter.REMOVED_EFFECTS|adapter.ADDED_EFFECTS)
         self.assertEqual(set(m["contract"]["forbidden_effects"]),(set(prior["forbidden_effects"])-adapter.REMOVED_FORBIDDEN_EFFECTS)|adapter.ADDED_FORBIDDEN_EFFECTS)
         self.assertIn("farm_write",m["contract"]["forbidden_effects"])
@@ -1091,7 +1135,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertTrue(TELEGRAM_EFFECTS <= set(m["contract"]["allowed_effects"]))
         self.assertNotIn(CONSUMED_MIGRATION_EFFECT,prior["allowed_effects"])
         self.assertNotIn(CONSUMED_MIGRATION_EFFECT,m["contract"]["allowed_effects"])
-        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'})
+        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:cee35f3b3bce38f7022c264d458d20b41823baf0'})
         self.assertEqual(adapter.REMOVED_FORBIDDEN_EFFECTS,set())
         self.assertEqual(adapter.ADDED_FORBIDDEN_EFFECTS,set())
         for effect in sorted(TELEGRAM_EFFECTS | adapter.ADDED_EFFECTS):
@@ -1121,7 +1165,7 @@ class ReconciliationTests(unittest.TestCase):
             "retaining additive schema and legitimate new claim/business history",
             "No unencrypted transport, down-migration, unrelated migration",
             "fresh mission preimages", "qualification-only and is never merged or deployed",
-            "this exact legacy mortality technical-pending reconciliation and existing-web-only release contract scope",
+            "this exact manager CORE receipt intake, stopped/scoped startup source and existing-web-only release contract scope",
             "exact available membership, explicit current delivery state and verified dated deferrals",
             "only wholly delivered groups with no due request qualify",
             "New, changed, unnotified or due work retains history verification",
@@ -1204,8 +1248,8 @@ class ReconciliationTests(unittest.TestCase):
     def test_owner_attention_presentation_cannot_invent_work_facts_or_authority(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         prior=m["expected_child_record"]["metadata_json"]["mission_admission_contract"]
-        self.assertEqual(adapter.REMOVED_EFFECTS,{'application_revision_rollback:web:4d21d234a75ceba8956146eb2154c72492698376'})
-        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'})
+        self.assertEqual(adapter.REMOVED_EFFECTS,{'application_revision_rollback:web:eb1afc7c91701683694d0bb104f02cd2fd0b3a54'})
+        self.assertEqual(adapter.ADDED_EFFECTS,{'application_revision_rollback:web:cee35f3b3bce38f7022c264d458d20b41823baf0'})
         self.assertTrue(READINESS_EFFECTS <= set(prior["allowed_effects"]))
         self.assertTrue(READINESS_EFFECTS <= set(m["contract"]["allowed_effects"]))
         for before,after in (
@@ -1485,16 +1529,16 @@ class ReconciliationTests(unittest.TestCase):
         for name, value in FINAL_CANDIDATE_PINS.items():
             expected = SYNTHETIC_PINS[name] if value is None or value == [] else value
             self.assertEqual(getattr(adapter, name), expected)
-        self.assertEqual(adapter.BASE,'eb1afc7c91701683694d0bb104f02cd2fd0b3a54')
-        self.assertEqual(adapter.BRANCH,'codex/manager-mortality-queue-priority-20261006')
+        self.assertEqual(adapter.BASE,'cee35f3b3bce38f7022c264d458d20b41823baf0')
+        self.assertEqual(adapter.BRANCH,'codex/core-manager-dependency-intake-20261006')
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1386)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,'9f4d4470f23643153591cfee5ea9528b0b930aa4')
-        self.assertEqual(adapter.PREDECESSOR_BASE,'4d21d234a75ceba8956146eb2154c72492698376')
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,'codex/manager-mortality-reconciliation-20261006')
+        self.assertEqual(adapter.PREDECESSOR_PR,1387)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,'2604348ca98a0df4e351fa20a0c40f2d39da510f')
+        self.assertEqual(adapter.PREDECESSOR_BASE,'eb1afc7c91701683694d0bb104f02cd2fd0b3a54')
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,'codex/manager-mortality-queue-priority-20261006')
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),10)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),6)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",

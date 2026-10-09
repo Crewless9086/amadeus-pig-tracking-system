@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt pytest
-      - name: Prove mortality queue retry, PR1386 lineage and web-only release
+      - name: Prove CORE receipt intake, PR1387 lineage and web-only release
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation -v
       - name: Prove compact HTTPS registration, atomic rollback and zero-write replay
         run: python -m unittest tests.test_oom_desktop_registration_sql -v
@@ -41,3 +41,56 @@ jobs:
         run: python -m pytest tests/test_oom_presend_timeout_correction.py -q
       - name: Prove one-time unsent expiry extension, rejection and replay
         run: python -m pytest tests/test_oom_unsent_confirmation_extension.py -q
+  windows-lifecycle:
+    name: Contained Windows lifecycle at exact candidate
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Root binds only after the test-only harness successor is independently frozen.
+      CHARLIE_WINDOWS_SOURCE_SHA: a4aff538c4996e7495b67ee2e0be74d979015840
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHON_DOTENV_DISABLED: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      DATABASE_URL: ''
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Refuse an unbound candidate before checkout or test execution
+        run: |
+          if ($env:CHARLIE_WINDOWS_SOURCE_SHA -notmatch '^[0-9a-f]{40}$') {
+            throw 'Exact reviewed Windows candidate is not bound.'
+          }
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.CHARLIE_WINDOWS_SOURCE_SHA }}
+          path: application-candidate
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Verify checked-out candidate and install normal test requirements
+        working-directory: application-candidate
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:CHARLIE_WINDOWS_SOURCE_SHA) {
+            throw 'Candidate checkout changed.'
+          }
+          python -m pip install -r requirements.txt pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prove four individually contained Windows lifecycle cases
+        working-directory: application-candidate
+        run: |
+          python -B tests/charlie_windows_lifecycle_harness.py --source-sha "$env:CHARLIE_WINDOWS_SOURCE_SHA" --report-root "$env:RUNNER_TEMP\charlie-windows-lifecycle"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain synthetic lifecycle result and cleanup evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: charlie-windows-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/charlie-windows-lifecycle/
+          if-no-files-found: warn
+          retention-days: 7
