@@ -1649,6 +1649,60 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
                 {"__builtins__": {"__import__": fake_import, "getattr": getattr}})
         leave.assert_not_called()
 
+    def test_worker_environment_allows_only_platform_inputs_and_fixed_test_controls(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        source = {"SystemRoot": "C:/Windows", "PATH": "synthetic-path", "PSModulePath": "untrusted-user-module-path",
+            "USERPROFILE": "C:/Users/runner", "APPDATA": "C:/Users/runner/AppData/Roaming",
+            "LOCALAPPDATA": "C:/Users/runner/AppData/Local", "PROGRAMDATA": "C:/ProgramData",
+            "SYSTEMDRIVE": "C:", "PROGRAMFILES": "C:/Program Files", "OPENAI_API_KEY": "secret",
+            "GH_TOKEN": "secret", "DATABASE_URL": "secret", "PYTHONPATH": "untrusted", "TEMP": "outside"}
+        result = harness.worker_environment(source, Path("case-root"), "test-job")
+        self.assertEqual(set(result), {"SystemRoot", "PATH", *harness.NATIVE_PLATFORM_ENV, "PSModulePath",
+            harness.JOB_ENV, "TEMP", "TMP", "PYTHONDONTWRITEBYTECODE", "PYTHON_DOTENV_DISABLED", "DATABASE_URL"})
+        self.assertEqual(result["PSModulePath"], "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules")
+        self.assertEqual(result["TEMP"], str(Path("case-root")))
+        self.assertEqual(result["TMP"], str(Path("case-root")))
+        self.assertEqual(result["DATABASE_URL"], "")
+        self.assertNotIn("secret", json.dumps(result))
+        with self.assertRaisesRegex(RuntimeError, "system_root_required"):
+            harness.worker_environment({}, Path("case-root"), "test-job")
+
+    def test_snapshot_comparison_runs_identical_inspector_without_logging_process_details(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        current = {"SYSTEMROOT": "C:/Windows", "USERPROFILE": "synthetic-profile", "PSMODULEPATH": "system-modules", harness.JOB_ENV: "same-owned-job"}
+        calls = []
+        def inspect():
+            calls.append(dict(os.environ))
+            if len(calls) == 1:
+                raise subprocess.TimeoutExpired(["private-command-not-for-report"], 8, output="private-process-output")
+            return [{"command_line": "private-process-details"}]
+        with patch.dict(os.environ, current, clear=True):
+            result = harness.compare_snapshot_environments(inspect)
+            self.assertEqual(dict(os.environ), current)
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("USERPROFILE", calls[0]); self.assertNotIn("PSMODULEPATH", calls[0])
+        self.assertEqual(calls[0][harness.JOB_ENV], "same-owned-job")
+        self.assertEqual(calls[1], current)
+        self.assertEqual(result["legacy_sanitized"]["error_type"], "TimeoutExpired")
+        self.assertFalse(result["legacy_sanitized"]["success"])
+        self.assertTrue(result["minimal_platform"]["success"])
+        self.assertEqual(result["minimal_platform"]["row_count"], 1)
+        self.assertNotIn("private-", json.dumps(result))
+
+    def test_snapshot_comparison_preserves_corrected_failure_and_restores_environment(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        current = {"SYSTEMROOT": "C:/Windows", "APPDATA": "synthetic"}
+        inspect = Mock(side_effect=OSError("sensitive details"))
+        with patch.dict(os.environ, current, clear=True):
+            result = harness.compare_snapshot_environments(inspect)
+            self.assertEqual(dict(os.environ), current)
+        self.assertEqual(inspect.call_count, 2)
+        for item in result.values():
+            self.assertFalse(item["success"])
+            self.assertEqual(item["error_type"], "OSError")
+            self.assertEqual(item["row_count"], 0)
+        self.assertNotIn("sensitive", json.dumps(result))
+
     def fake_api(self):
         api = Mock()
         api.CreateJobObjectW.return_value = 10
@@ -1726,6 +1780,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
              patch.object(harness.ctypes,"get_last_error",return_value=0,create=True):
             root=Path(tmp)
             (root/"result.json").write_text(json.dumps({"tests_run":1,"failures":0,"errors":0,"skips":0}))
@@ -1743,6 +1798,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
              patch.object(harness.ctypes,"get_last_error",return_value=5,create=True):
             result=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
         self.assertFalse(result["cleanup_verified"])
@@ -1755,6 +1811,7 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
              patch.dict("sys.modules",{"_winapi":native}), \
              patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
              patch.object(harness.ctypes,"get_last_error",return_value=0,create=True):
             result=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
         self.assertTrue(result["timed_out"])

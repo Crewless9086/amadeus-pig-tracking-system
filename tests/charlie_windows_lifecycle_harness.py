@@ -9,13 +9,14 @@ from ctypes import wintypes
 import functools
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import socket
 import subprocess
 import sys
 import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 SELECTORS = (
@@ -28,6 +29,41 @@ JOB_ENV = "CHARLIE_WINDOWS_TEST_JOB_NAME"
 KILL_ON_CLOSE = 0x2000
 BREAKAWAY = 0x800 | 0x1000
 TEST_TIMEOUT_SECONDS = 180
+BASE_PLATFORM_ENV = frozenset({"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "RUNNER_TEMP", "GITHUB_ACTIONS", "RUNNER_OS"})
+NATIVE_PLATFORM_ENV = frozenset({"USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMDRIVE", "PROGRAMFILES"})
+
+
+def worker_environment(source, root, job_name):
+    env = {k: v for k, v in source.items() if k.upper() in BASE_PLATFORM_ENV | NATIVE_PLATFORM_ENV}
+    system_root = next((v for k, v in env.items() if k.upper() == "SYSTEMROOT"), None)
+    if not system_root:
+        raise RuntimeError("system_root_required")
+    # Seed built-in Windows modules; do not inherit parent PS7/user module entries.
+    env["PSModulePath"] = str(PureWindowsPath(system_root) / "System32/WindowsPowerShell/v1.0/Modules")
+    env.update({JOB_ENV: job_name, "TEMP": str(root), "TMP": str(root), "PYTHONDONTWRITEBYTECODE": "1", "PYTHON_DOTENV_DISABLED": "1", "DATABASE_URL": ""})
+    return env
+
+
+def compare_snapshot_environments(inspector):
+    """Same real inspector and timeout policy; discard process details before reporting."""
+    current = dict(os.environ)
+    legacy = {k: v for k, v in current.items() if k.upper() not in NATIVE_PLATFORM_ENV | {"PSMODULEPATH"}}
+    report = {}
+    for label, environment in (("legacy_sanitized", legacy), ("minimal_platform", current)):
+        started = time.monotonic()
+        item = {"success": False, "row_count": 0, "error_type": None}
+        with patch.dict(os.environ, environment, clear=True):
+            try:
+                rows = inspector()
+                item["success"] = isinstance(rows, list) and bool(rows)
+                item["row_count"] = len(rows) if isinstance(rows, list) else 0
+                del rows
+            except Exception as exc:
+                kind = type(exc).__name__
+                item["error_type"] = kind if kind in {"TimeoutExpired", "OSError", "ValueError", "JSONDecodeError", "Error"} else "UnexpectedError"
+        item["elapsed_ms"] = round((time.monotonic() - started) * 1000)
+        report[label] = item
+    return report
 
 
 class BasicLimits(ctypes.Structure):
@@ -200,8 +236,21 @@ def _worker(selector, root):
         raise RuntimeError("lifecycle_test_network_forbidden")
     socket.socket.connect = deny_network
     with windows_job_guard():
-        suite = unittest.defaultTestLoader.loadTestsFromName(selector)
+        comparison = None
+        if selector == SELECTORS[1]:
+            from modules.charlie import process_ownership
+            comparison = compare_snapshot_environments(process_ownership._windows_process_snapshot)
+            with (root / "cim-environment-comparison.json").open("x", encoding="utf-8") as stream:
+                json.dump(comparison, stream, indent=2)
         with (root / "test.log").open("x", encoding="utf-8") as log:
+            if comparison is not None:
+                log.write("CIM_ENVIRONMENT_COMPARISON=" + json.dumps(comparison, sort_keys=True) + "\n")
+                if not comparison["minimal_platform"]["success"]:
+                    report = {"selector": selector, "tests_run": 0, "failures": 0, "errors": 1, "skips": 0}
+                    with (root / "result.json").open("x", encoding="utf-8") as stream:
+                        json.dump(report, stream, indent=2)
+                    return 1
+            suite = unittest.defaultTestLoader.loadTestsFromName(selector)
             result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
         report = {"selector": selector, "tests_run": result.testsRun, "failures": len(result.failures),
             "errors": len(result.errors), "skips": len(result.skipped)}
@@ -223,8 +272,7 @@ def _run_owned_worker(selector, root):
     try:
         limits = ExtendedLimits(); limits.basic.flags = KILL_ON_CLOSE
         _checked(api.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)), "set_test_job_limits")
-        env = {k:v for k,v in os.environ.items() if k.upper() in {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "RUNNER_TEMP", "GITHUB_ACTIONS", "RUNNER_OS"}}
-        env.update({JOB_ENV: name, "TEMP":str(root), "TMP":str(root), "PYTHONDONTWRITEBYTECODE":"1", "PYTHON_DOTENV_DISABLED":"1", "DATABASE_URL":""})
+        env = worker_environment(os.environ, root, name)
         command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker", selector, "--report-root", str(root)]
         process, thread, _pid, _tid = _winapi.CreateProcess(sys.executable, subprocess.list2cmdline(command), None, None, False,
             0x4 | 0x08000000 | 0x400, env, str(Path(__file__).resolve().parents[1]), subprocess.STARTUPINFO())
