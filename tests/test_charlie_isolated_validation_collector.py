@@ -2,6 +2,7 @@ import json
 import hashlib
 import os
 import subprocess
+import shutil
 import zlib
 import tempfile
 import unittest
@@ -19,9 +20,11 @@ MANIFEST_DIGEST = "c" * 64
 
 
 class DockerProvider:
-    def __init__(self, source, *, weaken=None, failed=False, repo_digest=True, linked=False):
-        self.source = Path(source).resolve()
-        self.common = self.source.parent / "common.git" if linked else self.source / ".git"
+    def __init__(self, source, *, weaken=None, failed=False, repo_digest=True, linked=True):
+        fixture = Path(source).resolve()
+        self.source = fixture / "selected-checkout"
+        self.source.mkdir(parents=True, exist_ok=True)
+        self.common = fixture / "common.git" if linked else self.source / ".git"
         self.private = self.common / "worktrees" / "fixture" if linked else self.common
         self.private.mkdir(parents=True, exist_ok=True)
         for name in ("objects", "refs"):
@@ -94,7 +97,7 @@ class IsolatedCollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             provider = DockerProvider(directory)
             result = collect_docker_validation_evidence(
-                directory, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider
+                provider.source, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider
             )
         self.assertEqual(result["source_commit"], SOURCE)
         self.assertEqual([row["failed"] for row in result["suites"]], [0, 0])
@@ -105,7 +108,7 @@ class IsolatedCollectorTests(unittest.TestCase):
         self.assertEqual(result["isolation"]["provider_execution_ids"], ["1" * 64, "2" * 64])
         self.assertEqual(sum(1 for row in provider.commands if row[:2] == ["docker", "create"]), 2)
         creates = [row for row in provider.commands if row[:2] == ["docker", "create"]]
-        self.assertTrue(all(f'git rev-parse HEAD)" = "{SOURCE}"' in row[-1] for row in creates))
+        self.assertTrue(all('source_head=$(git rev-parse HEAD)' in row[-1] for row in creates))
 
     def test_weakened_provider_boundary_fails_closed_and_removes_container(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -113,15 +116,16 @@ class IsolatedCollectorTests(unittest.TestCase):
                 {"NetworkMode": "default"}))
             with self.assertRaisesRegex(ValidationReceiptError, "attestation_invalid"):
                 collect_docker_validation_evidence(
-                    directory, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider
+                    provider.source, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider
                 )
         self.assertTrue(any(row[:3] == ["docker", "rm", "--force"] for row in provider.commands))
 
     def test_failed_provider_suite_is_preserved_as_rejected_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
+            provider = DockerProvider(directory, failed=True)
             result = collect_docker_validation_evidence(
-                directory, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST,
-                runner=DockerProvider(directory, failed=True),
+                provider.source, SOURCE, "core-validator@sha256:" + MANIFEST_DIGEST,
+                runner=provider,
             )
         self.assertEqual([row["failed"] for row in result["suites"]], [1, 1])
         self.assertEqual([row["passed"] for row in result["suites"]], [11, 11])
@@ -130,12 +134,12 @@ class IsolatedCollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             provider = DockerProvider(directory)
             with self.assertRaisesRegex(ValidationReceiptError, "digest_reference_required"):
-                collect_docker_validation_evidence(directory, SOURCE, "core-validator:latest",
+                collect_docker_validation_evidence(provider.source, SOURCE, "core-validator:latest",
                                                    runner=provider)
             with self.assertRaisesRegex(ValidationReceiptError, "image_mismatch"):
                 provider = DockerProvider(directory, repo_digest=False)
                 collect_docker_validation_evidence(
-                    directory, SOURCE, "core-validator@sha256:" + "c" * 64, runner=provider
+                    provider.source, SOURCE, "core-validator@sha256:" + "c" * 64, runner=provider
                 )
         self.assertFalse(any(row[:2] == ["docker", "create"] for row in provider.commands))
 
@@ -146,7 +150,7 @@ class IsolatedCollectorTests(unittest.TestCase):
             provider = DockerProvider(source, linked=True)
             (provider.common / "config").write_text("sensitive host configuration not mounted")
             (provider.common / "packed-refs").write_text("# packed-refs fixture")
-            collect_docker_validation_evidence(source, SOURCE,
+            collect_docker_validation_evidence(provider.source, SOURCE,
                 "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
             creates = [x for x in provider.commands if x[:2] == ["docker", "create"]]
             for command in creates:
@@ -160,12 +164,68 @@ class IsolatedCollectorTests(unittest.TestCase):
                     self.assertIn(value, command)
                 self.assertIn('git status --porcelain', command[-1])
 
+    def test_embedded_git_directory_is_refused_before_provider_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            provider = DockerProvider(directory, linked=False)
+            with self.assertRaisesRegex(ValidationReceiptError, "linked_checkout_required"):
+                collect_docker_validation_evidence(provider.source, SOURCE,
+                    "core-validator@sha256:"+MANIFEST_DIGEST, runner=provider)
+            self.assertEqual(provider.commands, [])
+
+    def test_collected_provider_evidence_signs_and_validates_without_fixture_translation(self):
+        from modules.charlie.validation_receipt import sign_validation_receipt, validate_validation_receipt
+        with tempfile.TemporaryDirectory() as directory:
+            provider = DockerProvider(directory)
+            evidence = collect_docker_validation_evidence(provider.source, SOURCE,
+                "core-validator@sha256:"+MANIFEST_DIGEST, runner=provider)
+            key=b"collector-integration-synthetic-key-32-bytes"
+            receipt=sign_validation_receipt(evidence,key,validation_id="a"*32)
+            self.assertEqual(validate_validation_receipt(receipt,SOURCE,key)["validation_id"],"a"*32)
+            self.assertEqual(receipt["isolation"]["git_binding"],evidence["isolation"]["git_binding"])
+            receipt["isolation"]["git_binding"]["mounts"][0]["read_only"]=False
+            with self.assertRaises(ValidationReceiptError):validate_validation_receipt(receipt,SOURCE,key)
+
+    def test_container_git_failures_cannot_reach_fixed_suite(self):
+        shell = shutil.which("sh")
+        if shell is None and os.name == "nt":
+            git = shutil.which("git")
+            candidate = Path(git).parent.parent / "bin" / "sh.exe" if git else Path("missing")
+            shell = str(candidate) if candidate.is_file() else None
+        self.assertIsNotNone(shell, "Git qualification requires a POSIX shell")
+        with tempfile.TemporaryDirectory() as directory:
+            provider = DockerProvider(directory)
+            collect_docker_validation_evidence(provider.source, SOURCE,
+                "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
+            command = next(c[-1] for c in provider.commands if c[:2] == ["docker", "create"])
+            # Exercise the actual collected shell gate with a harmless suite sentinel.
+            gate, fixed_suite = command.rsplit(" && exec ", 1)
+            self.assertTrue(fixed_suite.startswith("python -B -m unittest "))
+            for name, head, head_rc, dirty, status_rc, reaches in (
+                ("clean", SOURCE, 0, "", 0, True),
+                ("head_failure_empty", "", 1, "", 0, False),
+                ("head_failure_matching_output", SOURCE, 1, "", 0, False),
+                ("wrong_head", "b" * 40, 0, "", 0, False),
+                ("status_failure_empty", SOURCE, 0, "", 1, False),
+                ("dirty", SOURCE, 0, " M tracked.py", 0, False),
+            ):
+                script = ("git() { case \"$1\" in rev-parse) printf '%s' '" + head +
+                    "'; return " + str(head_rc) + ";; status) printf '%s' '" + dirty +
+                    "'; return " + str(status_rc) + ";; *) return 99;; esac; }; " +
+                    gate + " && printf suite_reached")
+                environment = {"PATH": os.defpath, "TMPDIR": directory}
+                if os.name == "nt": environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+                result = subprocess.run([shell, "-c", script], cwd=directory,
+                    env=environment, text=True, capture_output=True, timeout=10)
+                with self.subTest(case=name):
+                    self.assertEqual(result.stdout, "suite_reached" if reaches else "")
+                    self.assertEqual(result.returncode == 0, reaches)
+
     def test_host_source_mismatch_or_dirt_stops_before_docker(self):
         for head, dirty in (("d"*40, ""), (SOURCE, " M tracked.py")):
             with self.subTest(head=head, dirty=bool(dirty)), tempfile.TemporaryDirectory() as directory:
                 provider = DockerProvider(directory); provider.head=head; provider.dirty=dirty
                 with self.assertRaisesRegex(ValidationReceiptError, "source_not_exact_clean"):
-                    collect_docker_validation_evidence(directory, SOURCE,
+                    collect_docker_validation_evidence(provider.source, SOURCE,
                         "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
                 self.assertFalse(any(x[0] == "docker" for x in provider.commands))
 
@@ -179,7 +239,7 @@ class IsolatedCollectorTests(unittest.TestCase):
                     target = provider.common / {"alternates":"objects/info/alternates", "grafts":"info/grafts", "reftable":"reftable"}[fault]
                     target.parent.mkdir(parents=True, exist_ok=True); target.write_text("outside")
                 with self.assertRaises(ValidationReceiptError):
-                    collect_docker_validation_evidence(directory, SOURCE,
+                    collect_docker_validation_evidence(provider.source, SOURCE,
                         "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
                 self.assertFalse(any(x[0] == "docker" for x in provider.commands))
 
@@ -202,7 +262,7 @@ class IsolatedCollectorTests(unittest.TestCase):
             with self.subTest(fault=name), tempfile.TemporaryDirectory() as directory:
                 provider = DockerProvider(directory, weaken=fault)
                 with self.assertRaises(ValidationReceiptError):
-                    collect_docker_validation_evidence(directory, SOURCE,
+                    collect_docker_validation_evidence(provider.source, SOURCE,
                         "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
                 self.assertFalse(any(x[:2] == ["docker", "start"] for x in provider.commands))
                 self.assertTrue(any(x[:3] == ["docker", "rm", "--force"] for x in provider.commands))
@@ -212,7 +272,7 @@ class IsolatedCollectorTests(unittest.TestCase):
             source = Path(directory) / "source,not-an-option"; source.mkdir()
             provider = DockerProvider(source)
             with self.assertRaisesRegex(ValidationReceiptError, "git_path_invalid"):
-                collect_docker_validation_evidence(source, SOURCE,
+                collect_docker_validation_evidence(provider.source, SOURCE,
                     "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
             self.assertFalse(any(x[0] == "docker" for x in provider.commands))
 
@@ -220,7 +280,7 @@ class IsolatedCollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             provider = DockerProvider(directory); provider.image_env.append("GIT_CONFIG=/host/config")
             with self.assertRaisesRegex(ValidationReceiptError, "image_environment_invalid"):
-                collect_docker_validation_evidence(directory, SOURCE,
+                collect_docker_validation_evidence(provider.source, SOURCE,
                     "core-validator@sha256:" + MANIFEST_DIGEST, runner=provider)
             self.assertFalse(any(x[:2] == ["docker", "create"] for x in provider.commands))
 

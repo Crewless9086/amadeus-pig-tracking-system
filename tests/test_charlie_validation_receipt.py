@@ -8,6 +8,7 @@ from pathlib import Path
 
 from modules.charlie.validation_receipt import (
     ValidationReceiptError,
+    git_validation_environment,
     VALIDATION_COMMANDS,
     record_validation_receipt,
     sign_validation_receipt,
@@ -20,12 +21,26 @@ SOURCE = "a" * 40
 KEY = b"canonical-validation-receipt-test-key-material"
 
 
+def git_binding():
+    common = "/synthetic/common.git"
+    private = common + "/worktrees/selected"
+    return {"version": "charlie_linked_git_binding_v1", "mounts": [
+        {"source": "/synthetic/checkout", "destination": "/source", "read_only": True},
+        {"source": common + "/objects", "destination": "/git-common/objects", "read_only": True},
+        {"source": common + "/refs", "destination": "/git-common/refs", "read_only": True},
+        {"source": private + "/HEAD", "destination": "/git-private/HEAD", "read_only": True},
+        {"source": private + "/index", "destination": "/git-private/index", "read_only": True}],
+        "environment": {"PATH": "/usr/bin", **git_validation_environment("true", "false")},
+        "git_file_sha256": {"/git-private/HEAD": "d"*64, "/git-private/index": "e"*64}}
+
+
 def evidence(failed=0):
     provider_config = {
         "provider": "docker_engine", "network": "none", "rootfs_read_only": True,
         "source_read_only": True, "cap_drop": ["ALL"], "no_new_privileges": True,
         "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
         "image_manifest_sha256": "b" * 64, "image_config_sha256": "c" * 64,
+        "git_binding": git_binding(),
     }
     return {
         "source_commit": SOURCE,
@@ -49,6 +64,7 @@ def evidence(failed=0):
             "provider_execution_id": hashlib.sha256(json.dumps(
                 ["1" * 64, "2" * 64], separators=(",", ":")
             ).encode()).hexdigest(),
+            "git_binding": git_binding(),
             "provider_config_sha256": hashlib.sha256(json.dumps(
                 provider_config, sort_keys=True, separators=(",", ":")
             ).encode()).hexdigest(),
@@ -180,6 +196,46 @@ class ValidationReceiptTests(unittest.TestCase):
                 evidence(), KEY, validation_id="1" * 32,
                 issued_at="2026-08-21T10:00:00Z", expires_at="2026-08-21T10:30:01Z",
             )
+
+
+    def test_v2_and_stripped_current_binding_never_authorize_v3(self):
+        receipt = self.receipt()
+        self.assertEqual(receipt["version"], "charlie_isolated_validation_receipt_v3")
+        for version in ("charlie_isolated_validation_receipt_v2", "charlie_isolated_validation_receipt_v1"):
+            older = copy.deepcopy(receipt); older["version"] = version
+            with self.subTest(version=version), self.assertRaisesRegex(ValidationReceiptError, "schema_invalid"):
+                validate_validation_receipt(older, SOURCE, KEY)
+        stripped = evidence(); stripped["isolation"].pop("git_binding")
+        with self.assertRaisesRegex(ValidationReceiptError, "schema_invalid"):
+            sign_validation_receipt(stripped, KEY)
+
+    def test_bound_git_evidence_cannot_be_mutated_after_signing(self):
+        for field, change in (
+            ("mounts", lambda b: b["mounts"][0].update(source="/other/checkout")),
+            ("environment", lambda b: b["environment"].update(PATH="/other/bin")),
+            ("hashes", lambda b: b["git_file_sha256"].update({"/git-private/index":"f"*64})),
+        ):
+            receipt = self.receipt(); change(receipt["isolation"]["git_binding"])
+            with self.subTest(field=field), self.assertRaises(ValidationReceiptError):
+                validate_validation_receipt(receipt,SOURCE,KEY)
+
+    def test_bad_git_contract_refused_before_provider_digest_or_signing(self):
+        changes = {
+            "writable": lambda b:b["mounts"][0].update(read_only=False),
+            "extra_host_mount": lambda b:b["mounts"].append({"source":"/host","destination":"/host","read_only":True}),
+            "duplicate": lambda b:b["mounts"].append(dict(b["mounts"][0])),
+            "missing": lambda b:b["mounts"].pop(),
+            "other_common": lambda b:b["mounts"][2].update(source="/other/refs"),
+            "embedded_common": lambda b:b["mounts"][0].update(source="/synthetic"),
+            "bad_environment": lambda b:b["environment"].update(GIT_WORK_TREE="/other"),
+            "extra_git_environment": lambda b:b["environment"].update(GIT_CONFIG="/host/config"),
+            "missing_hash": lambda b:b["git_file_sha256"].pop("/git-private/index"),
+        }
+        for name, change in changes.items():
+            candidate=evidence(); change(candidate["isolation"]["git_binding"])
+            # A signer with a key still cannot admit a disallowed isolation contract.
+            with self.subTest(fault=name), self.assertRaisesRegex(ValidationReceiptError,"git_binding_invalid"):
+                sign_validation_receipt(candidate,KEY)
 
 
 if __name__ == "__main__":

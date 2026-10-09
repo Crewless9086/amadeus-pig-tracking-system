@@ -9,10 +9,10 @@ import os
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
-RECEIPT_VERSION = "charlie_isolated_validation_receipt_v2"
+RECEIPT_VERSION = "charlie_isolated_validation_receipt_v3"
 RECEIPT_ISSUER = "control_tower_isolated_validator_v2"
 RECEIPT_MAX_AGE_SECONDS = 30 * 60
 RECEIPT_CLOCK_SKEW_SECONDS = 5 * 60
@@ -39,7 +39,7 @@ _ISOLATION_FIELDS = frozenset({
     "source_read_only", "capabilities_dropped", "unprivileged",
     "image_manifest_sha256", "image_config_sha256",
     "provider", "provider_actor", "provider_execution_id", "provider_execution_ids",
-    "provider_config_sha256",
+    "provider_config_sha256", "git_binding",
 })
 
 
@@ -209,6 +209,7 @@ def _validate_isolation(isolation):
         raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
     if not _SHA256.fullmatch(str(isolation.get("provider_config_sha256") or "")):
         raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
+    _validate_git_binding(isolation["git_binding"])
     provider_config = {
         "provider": isolation["provider"], "network": "none",
         "rootfs_read_only": True, "source_read_only": isolation["source_read_only"],
@@ -216,10 +217,77 @@ def _validate_isolation(isolation):
         "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
         "image_manifest_sha256": isolation["image_manifest_sha256"],
         "image_config_sha256": isolation["image_config_sha256"],
+        "git_binding": isolation["git_binding"],
     }
     if isolation["provider_config_sha256"] != hashlib.sha256(
             canonical_json(provider_config)).hexdigest():
         raise ValidationReceiptError("isolated_validation_receipt_isolation_invalid")
+
+
+def git_validation_environment(autocrlf, filemode):
+    """The only Git configuration admitted into the isolated metadata view."""
+    if autocrlf not in {"true", "false", "input"} or filemode not in {"true", "false"}:
+        raise ValidationReceiptError("isolated_validation_receipt_git_binding_invalid")
+    return {"GIT_DIR": "/git-private", "GIT_COMMON_DIR": "/git-common",
+        "GIT_WORK_TREE": "/source", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_COUNT": "4",
+        "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": "/source",
+        "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": autocrlf,
+        "GIT_CONFIG_KEY_2": "core.filemode", "GIT_CONFIG_VALUE_2": filemode,
+        "GIT_CONFIG_KEY_3": "core.fsmonitor", "GIT_CONFIG_VALUE_3": "false"}
+
+
+def _validate_git_binding(binding):
+    def require(condition):
+        if not condition:
+            raise ValidationReceiptError("isolated_validation_receipt_git_binding_invalid")
+    def path(value):
+        require(isinstance(value, str) and 0 < len(value) <= 4096)
+        text = value.replace("\\", "/")
+        require(not any(c in text for c in (",", "\n", "\r", "\0"))
+                and not any(part in (".", "..") for part in text.split("/")))
+        result = PureWindowsPath(text) if re.match(r"^[A-Za-z]:/", text) else PurePosixPath(text)
+        require(result.is_absolute() and not text.startswith("//"))
+        return result
+    require(isinstance(binding, dict) and set(binding) == {"version", "mounts", "environment", "git_file_sha256"}
+            and binding["version"] == "charlie_linked_git_binding_v1")
+    mounts = binding["mounts"]
+    require(isinstance(mounts, list) and 5 <= len(mounts) <= 64)
+    by_destination = {}
+    for mount in mounts:
+        require(isinstance(mount, dict) and set(mount) == {"source", "destination", "read_only"}
+                and mount["read_only"] is True)
+        destination = mount["destination"]
+        require(isinstance(destination, str) and destination not in by_destination)
+        by_destination[destination] = path(mount["source"])
+    mandatory = {"/source", "/git-common/objects", "/git-common/refs", "/git-private/HEAD", "/git-private/index"}
+    require(mandatory <= set(by_destination))
+    source = by_destination["/source"]
+    common = by_destination["/git-common/objects"].parent
+    private = by_destination["/git-private/HEAD"].parent
+    require(private.parent == common / "worktrees" and private != common
+            and common != source and source not in common.parents
+            and by_destination["/git-common/objects"] == common / "objects"
+            and by_destination["/git-common/refs"] == common / "refs"
+            and by_destination["/git-private/HEAD"] == private / "HEAD"
+            and by_destination["/git-private/index"] == private / "index")
+    for destination, host_path in by_destination.items():
+        if destination in mandatory:
+            continue
+        if destination in {"/git-common/packed-refs", "/git-common/shallow"}:
+            require(host_path == common / destination.rsplit("/", 1)[1])
+        else:
+            require(bool(re.fullmatch(r"/git-private/sharedindex\.[0-9a-f]{40}", destination))
+                    and host_path == private / destination.rsplit("/", 1)[1])
+    files = binding["git_file_sha256"]
+    require(isinstance(files, dict) and set(files) == set(by_destination) - {"/source", "/git-common/objects", "/git-common/refs"}
+            and all(isinstance(v, str) and _SHA256.fullmatch(v) for v in files.values()))
+    environment = binding["environment"]
+    require(isinstance(environment, dict) and len(environment) <= 64
+            and all(isinstance(k, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k)
+                    and isinstance(v, str) and len(v) <= 4096 and "\0" not in v for k,v in environment.items()))
+    expected = git_validation_environment(environment.get("GIT_CONFIG_VALUE_1"), environment.get("GIT_CONFIG_VALUE_2"))
+    require({k:v for k,v in environment.items() if k.upper().startswith("GIT_")} == expected)
 
 
 def _key(value):

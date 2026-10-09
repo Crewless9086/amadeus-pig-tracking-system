@@ -9,7 +9,9 @@ import re
 import subprocess
 from pathlib import Path
 
-from modules.charlie.validation_receipt import VALIDATION_COMMANDS, ValidationReceiptError
+from modules.charlie.validation_receipt import (
+    VALIDATION_COMMANDS, ValidationReceiptError, git_validation_environment,
+)
 
 
 _IMAGE = re.compile(r"sha256:([0-9a-f]{64})$")
@@ -42,12 +44,15 @@ def collect_docker_validation_evidence(source_root, source_commit, image, *, run
     if any(key.startswith("GIT_") for key in image_environment):
         raise ValidationReceiptError("validation_provider_image_environment_invalid")
     environment = {**image_environment, **binding["environment"]}
+    git_binding = {"version": "charlie_linked_git_binding_v1", "mounts": binding["mounts"],
+        "environment": environment, "git_file_sha256": binding["git_file_sha256"]}
     rows, container_ids = [], []
     for name in ("focused", "proportional"):
         command = VALIDATION_COMMANDS[name]
         provider_command = (
-            f'test "$(git rev-parse HEAD)" = "{source_commit}" && '
-            'test -z "$(git status --porcelain)" && exec ' + command
+            f'source_head=$(git rev-parse HEAD) && test "$source_head" = "{source_commit}" && '
+            'source_status=$(git status --porcelain --untracked-files=all) && '
+            'test -z "$source_status" && exec ' + command
         )
         create = [
             "docker", "create", "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -76,8 +81,7 @@ def collect_docker_validation_evidence(source_root, source_commit, image, *, run
         "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
         "image_manifest_sha256": image_manifest_sha256,
         "image_config_sha256": image_config_sha256,
-        "mounts": binding["mounts"], "environment": environment,
-        "git_file_sha256": binding["git_file_sha256"],
+        "git_binding": git_binding,
     }
     return {
         "source_commit": source_commit,
@@ -94,11 +98,16 @@ def collect_docker_validation_evidence(source_root, source_commit, image, *, run
             "provider_execution_id": _digest(container_ids),
             "provider_execution_ids": container_ids,
             "provider_config_sha256": _digest(provider_config),
+            "git_binding": git_binding,
         },
     }
 
 
 def _source_binding(source_root, source_commit, run):
+    # Linked-only: embedding .git would expose host config through /source.
+    marker = source_root / ".git"
+    if not marker.is_file() or marker.is_symlink():
+        raise ValidationReceiptError("validation_collector_linked_checkout_required")
     # Resolve the selected checkout, never the coordinator's current branch.
     git = ["git", "-c", "safe.directory=" + str(source_root), "-c", "core.fsmonitor=false",
            "-C", str(source_root)]
@@ -107,7 +116,8 @@ def _source_binding(source_root, source_commit, run):
         raise ValidationReceiptError("validation_collector_git_identity_invalid")
     private, common = (Path(value).resolve() for value in paths)
     if (not private.is_dir() or not common.is_dir()
-            or (private != common and private.parent != common / "worktrees")
+            or private == common or private.parent != common / "worktrees"
+            or common == source_root or source_root in common.parents
             or str(run(git + ["rev-parse", "HEAD"])).strip() != source_commit
             or str(run(git + ["status", "--porcelain", "--untracked-files=all"])).strip()):
         raise ValidationReceiptError("validation_collector_source_not_exact_clean")
@@ -118,14 +128,14 @@ def _source_binding(source_root, source_commit, run):
         raise ValidationReceiptError("validation_collector_git_layout_unsupported")
     if any(ch in str(source_root) for ch in (",", "\n", "\r")):
         raise ValidationReceiptError("validation_collector_git_path_invalid")
-    mounts = [{"source": str(source_root), "destination": "/source"}]
+    mounts = [{"source": str(source_root), "destination": "/source", "read_only": True}]
     files = {}
     def mount(path, destination, *, directory=False):
         if (path.is_symlink() or path.resolve() != path
                 or not (path.is_dir() if directory else path.is_file())
                 or any(ch in str(path) for ch in (",", "\n", "\r"))):
             raise ValidationReceiptError("validation_collector_git_path_invalid")
-        mounts.append({"source": str(path), "destination": destination})
+        mounts.append({"source": str(path), "destination": destination, "read_only": True})
         if not directory:
             files[destination] = hashlib.sha256(path.read_bytes()).hexdigest()
     mount(common / "objects", "/git-common/objects", directory=True)
@@ -147,13 +157,7 @@ def _source_binding(source_root, source_commit, run):
         if code not in (0, 1) or value not in choices:
             raise ValidationReceiptError("validation_collector_git_setting_invalid")
         settings[name] = value
-    environment = {"GIT_DIR": "/git-private", "GIT_COMMON_DIR": "/git-common",
-        "GIT_WORK_TREE": "/source", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1",
-        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_COUNT": "4",
-        "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": "/source",
-        "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": settings["core.autocrlf"],
-        "GIT_CONFIG_KEY_2": "core.filemode", "GIT_CONFIG_VALUE_2": settings["core.filemode"],
-        "GIT_CONFIG_KEY_3": "core.fsmonitor", "GIT_CONFIG_VALUE_3": "false"}
+    environment = git_validation_environment(settings["core.autocrlf"], settings["core.filemode"])
     return {"mounts": mounts, "environment": environment, "git_file_sha256": files}
 
 
