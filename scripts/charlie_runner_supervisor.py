@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
+from modules.charlie.runtime_activation import read_intake_activation, intake_process_environment
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
@@ -164,6 +166,9 @@ def _transaction_pool_url(value):
 
 
 def _python_executable(repo_root=REPO_ROOT):
+    binding = governed_runtime_binding(repo_root)
+    if binding:
+        return binding["interpreter"]
     if (
         os.name == "nt"
         and Path(repo_root).resolve() == REPO_ROOT.resolve()
@@ -203,7 +208,7 @@ def supervise_runner(
     startup_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or uuid.uuid4().hex)
     execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or "ordinary").strip().lower()
     activation_id = str(os.getenv("CHARLIE_ACTIVATION_ID") or "")
-    if execution_mode not in {"ordinary", "observe_only"}:
+    if execution_mode not in {"ordinary", "observe_only", INTAKE_EXECUTION_MODE}:
         return {"status": "infrastructure_hold", "failure_status": "execution_mode_invalid"}
     test_mode = popen_factory is not subprocess.Popen
     controller_public_key = str(os.getenv("CHARLIE_CONTROLLER_PUBLIC_KEY") or "")
@@ -284,7 +289,14 @@ def supervise_runner(
     repeated_failure_count = 0
     while not STOP_PATH.exists():
         cycles += 1
-        bootstrap = (prepare_fn or _prepare_execution_root)()
+        if execution_mode == INTAKE_EXECUTION_MODE:
+            try:
+                read_intake_activation(RUNNER_DIR, activation_id)
+                bootstrap = {"success": True, "status": "intake_tuple_preserved"}
+            except Exception as exc:
+                bootstrap = {"success": False, "status": "intake_activation_refused", "error_type": type(exc).__name__}
+        else:
+            bootstrap = (prepare_fn or _prepare_execution_root)()
         if not bootstrap.get("success"):
             payload = _write_status(
                 "infrastructure_hold",
@@ -309,7 +321,7 @@ def supervise_runner(
         # cannot open the mission queue.  Recursively scanning the historical
         # execution archive here delayed a harmless ownership probe by
         # minutes.  Ordinary execution retains the complete preflight scrub.
-        scrub_results = [] if execution_mode == "observe_only" else [
+        scrub_results = [] if execution_mode != "ordinary" else [
             redact_tree_in_place(RUNNER_HEARTBEAT_PATH),
             redact_tree_in_place(RUNNER_DIR / "runner.log"),
             redact_tree_in_place(EXECUTION_ROOT / ".charlie_runner" / "executions"),
@@ -329,7 +341,9 @@ def supervise_runner(
             if notifier:
                 notifier(payload)
             return {"status": "infrastructure_hold", "failure_status": "secret_scrub_failed", "scrub_results": scrub_results}
-        if execution_mode == "observe_only":
+        if execution_mode == INTAKE_EXECUTION_MODE:
+            child_env = intake_process_environment(os.environ)
+        elif execution_mode == "observe_only":
             child_env = {
                 key: os.environ[key]
                 for key in (
@@ -385,6 +399,8 @@ def supervise_runner(
         runner_nonce = uuid.uuid4().hex
         child_env["CHARLIE_RUNNER_STARTUP_NONCE"] = runner_nonce
         runner_command = (
+            [RUNNER_COMMAND[0], str(REPO_ROOT / "scripts" / "charlie_manager_intake_runner.py")]
+            if execution_mode == INTAKE_EXECUTION_MODE else
             [RUNNER_COMMAND[0], str(REPO_ROOT / "scripts" / "charlie_observe_only_runner.py")]
             if execution_mode == "observe_only"
             else list(RUNNER_COMMAND)
@@ -533,8 +549,8 @@ def supervise_runner(
                 "containment": containment,
             }
         try:
-            if execution_mode == "observe_only":
-                recovery, recovery_status = ({"status": "observe_only_recovery_unreachable"}, 200)
+            if execution_mode != "ordinary":
+                recovery, recovery_status = ({"status": execution_mode + "_recovery_unreachable"}, 200)
             elif recovery_fn is not None:
                 recovery, recovery_status = recovery_fn()
             elif test_mode:
@@ -571,6 +587,14 @@ def supervise_runner(
             recovery=recovery,
         )
         return_code = child.wait()
+        if execution_mode == INTAKE_EXECUTION_MODE:
+            if not STOP_PATH.exists():
+                STOP_PATH.write_text("Scoped intake exited; explicit recovery required.\n", encoding="utf-8")
+            _write_status("supervisor_stopped", child_pid=child.pid, runner_state="exited",
+                return_code=return_code, generation=generation, execution_mode=execution_mode,
+                failure_status="intake_child_exited", restart_count=0)
+            return {"status": "supervisor_stopped", "failure_status": "intake_child_exited",
+                    "return_code": return_code, "restart_count": 0, "cycles": cycles}
         if STOP_PATH.exists():
             _write_status("supervisor_stopped", child_pid=child.pid, restart_count=restart_count, return_code=return_code, generation=generation)
             break
@@ -674,7 +698,7 @@ def _wait_for_controller_ack(
                 "startup_nonce": startup_nonce,
                 "revision": runtime_revision,
             }
-            if execution_mode == "observe_only" or acknowledgement.get("execution_mode"):
+            if execution_mode != "ordinary" or acknowledgement.get("execution_mode"):
                 checks["execution_mode"] = execution_mode
             for field, expected in checks.items():
                 if str(acknowledgement.get(field) or "") != expected:
@@ -938,7 +962,7 @@ def _wait_for_controller_final_authorization(
                     packet.get("process_tree_identity")
                 ),
             }
-            if execution_mode == "observe_only" or acknowledgement.get("execution_mode"):
+            if execution_mode != "ordinary" or acknowledgement.get("execution_mode"):
                 expected["execution_mode"] = execution_mode
             mismatch = next(
                 (
@@ -1465,7 +1489,8 @@ def _git_revision(path):
 
 
 def main():
-    for path in (REPO_ROOT / ".env", REPO_ROOT.parents[1] / ".env"):
+    scoped = os.getenv("CHARLIE_CORE_EXECUTION_MODE") == INTAKE_EXECUTION_MODE
+    for path in (() if scoped else (REPO_ROOT / ".env", REPO_ROOT.parents[1] / ".env")):
         if path.exists():
             load_dotenv(path, override=False)
             break
@@ -1478,7 +1503,7 @@ def main():
             return {"status": "governed_stop_active", "runner_state": "not_spawned"}
         generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
         return supervise_runner(
-            notifier=_notify_infrastructure_hold,
+            notifier=None if scoped else _notify_infrastructure_hold,
             generation=generation,
         )
     finally:

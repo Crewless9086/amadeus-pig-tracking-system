@@ -31,7 +31,8 @@ VALIDATION_COMMANDS = {
     "proportional": ("python -B -m unittest tests.test_vault_alignment "
                      "tests.test_charlie_validation_receipt tests.test_charlie_isolated_validation_collector "
                      "tests.test_charlie_runtime_staging "
-                     "tests.test_charlie_runtime_integrity tests.test_charlie_runtime_activation"),
+                     "tests.test_charlie_runtime_integrity tests.test_charlie_runtime_activation "
+                     "tests.test_charlie_manager_intake_runner"),
 }
 _ISOLATION_FIELDS = frozenset({
     "boundary", "host_processes_visible", "outside_boundary_targets", "network_enabled",

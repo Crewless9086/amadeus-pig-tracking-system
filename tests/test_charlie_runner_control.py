@@ -1,17 +1,19 @@
 import tempfile
 import unittest
-import base64
 import json
 import os
 import subprocess
 import threading
 import time
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from modules.charlie import process_ownership, runner_control
+from tests.charlie_windows_lifecycle_harness import (job_owned_test, close_retained_test_process,
+    owned_powershell_child, current_job_active_count, exited_launcher_command)
 from scripts import charlie_runner_control as runner_control_cli
 
 
@@ -298,114 +300,63 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(result["status"], "execution_mode_invalid")
     @unittest.skipUnless(os.name == "nt", "Windows launcher-first exit harness")
+    @job_owned_test
     def test_windows_exited_launcher_still_contains_unobserved_child(self):
-        powershell = (
-            Path(os.environ.get("SystemRoot", r"C:\Windows"))
-            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-        )
-        process = subprocess.Popen(
-            [
-                str(powershell), "-NoProfile", "-NonInteractive", "-Command",
-                "Start-Process powershell.exe -ArgumentList "
-                "'-NoProfile','-NonInteractive','-Command',"
-                "'Start-Sleep -Seconds 120' -WindowStyle Hidden;"
-                "Start-Sleep -Seconds 1",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            **runner_control.background_process_kwargs(),
-        )
-        process.wait(timeout=15)
-        descendants = process_ownership.inspect_descendant_processes(process.pid)
-        if not descendants:
-            self.skipTest("Windows did not retain the detached child parent identity")
+        process = None
         try:
-            containment = runner_control._contain_spawned_process(process, {})
+            process = subprocess.Popen(exited_launcher_command(),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                **runner_control.background_process_kwargs())
+            self.assertEqual(process.wait(timeout=15), 0)
+            self.assertGreaterEqual(current_job_active_count(), 2)  # test worker plus orphan
+            with patch.object(runner_control, "inspect_descendant_processes", side_effect=AssertionError("exited PID inspection")), \
+                 patch.object(runner_control.subprocess, "run", side_effect=AssertionError("exited PID termination")):
+                containment = runner_control._contain_spawned_process(process, {})
             self.assertTrue(containment["success"], containment)
-            self.assertFalse(
-                process_ownership.inspect_descendant_processes(process.pid)
-            )
+            self.assertEqual(containment["reason"], "spawned_process_handle_already_exited")
+            self.assertGreaterEqual(current_job_active_count(), 2)
+            # The exited handle grants no orphan/PID authority. The parent job owns cleanup.
         finally:
-            for descendant in process_ownership.inspect_descendant_processes(
-                process.pid
-            ):
-                subprocess.run(
-                    ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
-                    capture_output=True, text=True, check=False,
-                )
+            close_retained_test_process(process)
 
     @unittest.skipUnless(os.name == "nt", "Windows failed-start containment harness")
+    @job_owned_test
     def test_windows_failed_start_leaves_zero_observed_processes(self):
-        if not process_ownership._windows_process_snapshot():
-            self.skipTest("Windows process inspection is unavailable to this session")
-        powershell = (
-            Path(os.environ.get("SystemRoot", r"C:\Windows"))
-            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-        )
-        command = (
-            "$p=Start-Process powershell.exe -ArgumentList "
-            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
-            "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
-        )
-        failure_mode = "failed_start"
-        process = subprocess.Popen(
-                    [
-                        str(powershell), "-NoProfile", "-NonInteractive",
-                        "-Command", command,
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    **runner_control.background_process_kwargs(),
-                )
-        tree = {}
+        self.assertTrue(process_ownership._windows_process_snapshot(), "Windows process inspection required")
+        powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+        process = None
         try:
-            observed = process_ownership.observe_process_tree(
-                        process.pid,
-                        generation=f"generation-{failure_mode}",
-                        revision="revision-1",
-                        startup_nonce=f"nonce-{failure_mode}",
-                        expected_script="",
-                        expected_root_executable=str(powershell),
-                        process_role_prefix="supervisor",
-                        timeout_seconds=10,
-                    )
+            command = owned_powershell_child("Start-Sleep -Seconds 120") + "$child.WaitForExit()"
+            process = subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive", "-Command", command],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                **runner_control.background_process_kwargs())
+            observed = process_ownership.observe_process_tree(process.pid,
+                generation="generation-failed-start", revision="revision-1", startup_nonce="nonce-failed-start",
+                expected_script="", expected_root_executable=str(powershell),
+                process_role_prefix="supervisor", timeout_seconds=10)
             self.assertTrue(observed["success"], observed)
             tree = observed["tree"]
-            containment = runner_control._contain_spawned_process(
-                        process, tree
-                    )
+            containment = runner_control._contain_spawned_process(process, tree)
             self.assertTrue(containment["success"], containment)
             for member in tree.get("members") or []:
-                self.assertIsNone(
-                            runner_control.inspect_process(member.get("pid")),
-                            (failure_mode, member),
-                        )
+                current = runner_control.inspect_process(member.get("pid"))
+                self.assertFalse(isinstance(current, dict) and current.get("creation_time") == member["creation_time"], member)
         finally:
-            if process.poll() is None:
-                subprocess.run(
-                            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                            capture_output=True, text=True, check=False,
-                        )
+            close_retained_test_process(process)
 
     @unittest.skipUnless(os.name == "nt", "Windows governed lifecycle harness")
-    def test_windows_governed_start_and_stop_exact_observed_tree(self):
-        if not process_ownership._windows_process_snapshot():
-            self.skipTest("Windows process inspection is unavailable to this session")
+    @job_owned_test
+    def test_windows_governed_start_refuses_protected_ancestry_stop(self):
+        self.assertTrue(process_ownership._windows_process_snapshot(), "Windows process inspection required")
         powershell = (
             Path(os.environ.get("SystemRoot", r"C:\Windows"))
             / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-        )
-        command = (
-            "$p=Start-Process powershell.exe -ArgumentList "
-            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
-            "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
         )
         original_observe = runner_control.observe_process_tree
         publisher_threads = []
-        runner_pids = []
         publisher_failures = []
+        publisher_stop = threading.Event()
+        captured_processes = []
 
         def observe(root_pid, *, generation, revision, startup_nonce, **_kwargs):
             result = original_observe(
@@ -456,7 +407,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                     try:
                         deadline = time.monotonic() + 30
                         packet = {}
-                        while time.monotonic() <= deadline:
+                        while time.monotonic() <= deadline and not publisher_stop.is_set():
                             packet = runner_control._read_json(
                                 runner_control.SUPERVISOR_PATH
                             )
@@ -467,16 +418,17 @@ class CharlieRunnerControlTests(unittest.TestCase):
                         deadline = time.monotonic() + 30
                         while (
                             not runner_pid_path.exists()
-                            and time.monotonic() <= deadline
+                            and time.monotonic() <= deadline and not publisher_stop.is_set()
                         ):
                             time.sleep(0.05)
+                        if publisher_stop.is_set():
+                            return
                         if not runner_pid_path.exists():
                             publisher_failures.append("runner_pid_not_published")
                             return
                         runner_pid = int(
                             runner_pid_path.read_text(encoding="utf-8")
                         )
-                        runner_pids.append(runner_pid)
                         runner_observation = original_observe(
                         runner_pid,
                         generation=generation,
@@ -540,38 +492,32 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 publisher_threads.append(publisher)
             return result
 
-        started_pid = 0
         original_wait_for_ack = runner_control._wait_for_supervisor_ack
-        with tempfile.TemporaryDirectory() as tmp:
+        # The outer owning Job stops descendants after this worker exits.
+        # Keep case artifacts for upload/VM teardown; live descendants may hold logs.
+        with tempfile.TemporaryDirectory(delete=False) as tmp:
+            self.assertEqual(Path(tmp).resolve().parent, Path(tempfile.gettempdir()).resolve())
             stop_path = Path(tmp) / "supervisor.stop"
             runner_pid_path = Path(tmp) / "runner.pid"
             quoted_stop = str(stop_path).replace("'", "''")
             quoted_runner_pid = str(runner_pid_path).replace("'", "''")
             helper_script = (
-                f"while (!(Test-Path -LiteralPath '{quoted_stop}')) "
+                "$deadline=[DateTime]::UtcNow.AddSeconds(120);"
+                f"while (!(Test-Path -LiteralPath '{quoted_stop}') -and [DateTime]::UtcNow -lt $deadline) "
                 "{ Start-Sleep -Milliseconds 100 }"
             )
-            helper_encoded = base64.b64encode(
-                helper_script.encode("utf-16le")
-            ).decode("ascii")
-            runner_script = (
-                "$c=Start-Process powershell.exe -ArgumentList "
-                "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
-                "-PassThru -WindowStyle Hidden;Wait-Process -Id $c.Id"
-            )
-            runner_encoded = base64.b64encode(
-                runner_script.encode("utf-16le")
-            ).decode("ascii")
-            supervisor_command = (
-                "$s=Start-Process powershell.exe -ArgumentList "
-                f"'-NoProfile -NonInteractive -EncodedCommand {helper_encoded}' "
-                "-PassThru -WindowStyle Hidden;"
-                "$r=Start-Process powershell.exe -ArgumentList "
-                f"'-NoProfile -NonInteractive -EncodedCommand {runner_encoded}' "
-                "-PassThru -WindowStyle Hidden;"
-                f"Set-Content -LiteralPath '{quoted_runner_pid}' -Value $r.Id;"
-                "Wait-Process -Id $s.Id"
-            )
+            runner_script = owned_powershell_child("Start-Sleep -Seconds 120") + "$child.WaitForExit()"
+            supervisor_command = (owned_powershell_child(helper_script, "s")
+                + owned_powershell_child(runner_script, "r")
+                + f"Set-Content -LiteralPath '{quoted_runner_pid}' -Value $r.Id;"
+                + "$s.WaitForExit();$r.WaitForExit()")
+            real_popen = subprocess.Popen
+            expected_command = [str(powershell), "-NoProfile", "-NonInteractive", "-Command", supervisor_command]
+            def capture_supervisor(command, *args, **kwargs):
+                process = real_popen(command, *args, **kwargs)
+                if command == expected_command:
+                    captured_processes.append(process)
+                return process
             with patch.dict(os.environ, {
                 "CHARLIE_TEST_ISOLATION": "0",
                 process_ownership.TERMINATION_ENABLE_ENV:
@@ -609,89 +555,50 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 side_effect=lambda *args, **kwargs: original_wait_for_ack(
                     *args, **{**kwargs, "timeout_seconds": 90}
                 ),
-            ):
+            ), patch.object(runner_control.subprocess, "Popen", side_effect=capture_supervisor):
                 try:
                     started, start_status = runner_control.start_runner()
                     self.assertEqual(
                         start_status, 200,
                         {"start": started, "publisher_failures": publisher_failures},
                     )
-                    started_pid = int(started["pid"])
-                    original_validate_tree = (
-                        process_ownership.validate_process_tree
+                    self.assertEqual(len(captured_processes), 1)
+                    supervisor_process = captured_processes[0]
+                    self.assertIsNone(supervisor_process.poll(), "synthetic supervisor exited before stop")
+                    # Keep the real ancestry intact when the stop marker ends s:
+                    # the supervisor must also wait for its still-running r child.
+                    packet = runner_control._read_json(runner_control.SUPERVISOR_PATH)
+                    runner_tree = packet["process_tree_identity"]
+                    expected = {field: runner_tree["root"].get(field) for field in (
+                        "runner_generation", "mission_id", "execution_id", "ownership_type",
+                    )}
+                    preflight = process_ownership.validate_process_tree(
+                        runner_tree, expected, runner_control.inspect_process,
+                        require_descendant=True,
                     )
-                    original_validate_termination = (
-                        process_ownership.validate_termination
-                    )
-
-                    def independent_inspector(pid):
-                        inspected = process_ownership.inspect_process(pid)
-                        if isinstance(inspected, dict):
-                            inspected["current_process_ancestry"] = []
-                        return inspected
-
-                    def independent_tree(tree, expected, _inspector, **kwargs):
-                        return original_validate_tree(
-                            tree,
-                            expected,
-                            independent_inspector,
-                            current_pid=-999,
-                            require_descendant=kwargs.get("require_descendant", False),
-                            allow_current_descendant=kwargs.get(
-                                "allow_current_descendant", False
-                            ),
-                        )
-
-                    def independent_termination(record, expected, _inspector, **kwargs):
-                        return original_validate_termination(
-                            record,
-                            expected,
-                            independent_inspector,
-                            current_pid=-999,
-                            allow_current_descendant=kwargs.get(
-                                "allow_current_descendant", False
-                            ),
-                        )
-
-                    with patch.object(
-                        runner_control, "validate_process_tree",
-                        side_effect=independent_tree,
-                    ), patch.object(
-                        runner_control, "validate_termination",
-                        side_effect=independent_termination,
-                    ):
+                    self.assertFalse(preflight["authorized"], preflight)
+                    self.assertIn(preflight["reason"], {
+                        "root_current_process_ancestry", "root_protected_process_boundary",
+                    })
+                    self.assertIsNone(supervisor_process.poll(), "synthetic supervisor exited during preflight")
+                    with patch.object(runner_control, "_stop_process_tree",
+                                      wraps=runner_control._stop_process_tree) as stop_process:
                         stopped, stop_status = runner_control.stop_runner()
-                    self.assertEqual(stop_status, 200, stopped)
-                    self.assertTrue(
-                        stopped["supervisor_containment"]["success"], stopped
-                    )
+                        self.assertEqual(stop_status, 409, stopped)
+                        self.assertEqual(stopped["status"], "runner_process_ownership_not_proven")
+                        self.assertEqual(stopped["reason"], preflight["reason"])
+                        stop_process.assert_not_called()
+                    self.assertIsNone(supervisor_process.poll(), "synthetic supervisor exited during refusal")
                     self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
-                    deadline = time.monotonic() + 10
-                    while (
-                        runner_control.inspect_process(started_pid)
-                        and time.monotonic() <= deadline
-                    ):
-                        time.sleep(0.05)
-                    self.assertIsNone(runner_control.inspect_process(started_pid))
-                    for runner_pid in runner_pids:
-                        self.assertIsNone(
-                            runner_control.inspect_process(runner_pid),
-                            runner_pid,
-                        )
-                    for publisher in publisher_threads:
-                        publisher.join(timeout=5)
                 finally:
-                    for runner_pid in runner_pids:
-                        if runner_control.inspect_process(runner_pid):
-                            subprocess.run(
-                                ["taskkill", "/PID", str(runner_pid), "/T", "/F"],
-                                capture_output=True, text=True, check=False,
-                            )
-                    if started_pid and runner_control.inspect_process(started_pid):
-                        subprocess.run(
-                            ["taskkill", "/PID", str(started_pid), "/T", "/F"],
-                            capture_output=True, text=True, check=False,
-                        )
+                    publisher_stop.set()
+                    stop_path.write_text("disposable test cleanup", encoding="utf-8")
+                    for publisher in publisher_threads:
+                        publisher.join(timeout=12)
+                    for process in captured_processes:
+                        close_retained_test_process(process)
+                    self.assertFalse(any(publisher.is_alive() for publisher in publisher_threads), "test publisher did not stop")
+                    # Exact outer job cleanup also covers orphan descendants on every failure.
 
     def test_governed_start_default_never_removes_stop_marker(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(
@@ -1727,6 +1634,666 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "partial_failure")
         self.assertIn("Permission denied", result["stderr_tail"])
+
+
+class SpawnedConsoleContainmentTests(unittest.TestCase):
+    """Real ownership validators over synthetic rows; no native process calls."""
+
+    def setUp(self):
+        self.root_pid, self.child_pid, self.console_pid = 4321, 4322, 4323
+        system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+        console = system_root.rstrip("\\/") + r"\System32\conhost.exe"
+        self.rows = [
+            {"pid": self.root_pid, "parent_pid": os.getpid(), "creation_time": "100",
+             "executable_path": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+             "command_line": "powershell.exe -NoProfile -NonInteractive -Command start",
+             "name": "powershell.exe"},
+            {"pid": self.child_pid, "parent_pid": self.root_pid, "creation_time": "101",
+             "executable_path": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+             "command_line": "powershell.exe -NoProfile -NonInteractive -Command wait",
+             "name": "powershell.exe"},
+            {"pid": self.console_pid, "parent_pid": self.child_pid, "creation_time": "102",
+             "executable_path": console, "command_line": console + " 0x4",
+             "name": "conhost.exe"},
+        ]
+        self.tree = self._tree(self.rows)
+        self.captured = json.loads(json.dumps(self.rows[1:]))
+        self.exited = False
+        self.process = Mock(pid=self.root_pid)
+        self.process.poll.side_effect = lambda: 1 if self.exited else None
+        self.process.terminate.side_effect = self._kill
+        self.process.kill.side_effect = self._kill
+        self.terminate = Mock(side_effect=self._kill)
+        self.extra_ancestor = None
+
+    def _tree(self, rows):
+        members = [process_ownership.make_ownership_record(
+            row, "generation-1", "charlie-control", "generation-1", "charlie_runner",
+            revision="revision-1", startup_nonce="nonce-1", process_role=role,
+        ) for row, role in zip(rows, (
+            "supervisor_launcher", "supervisor_interpreter", "supervisor_console_host",
+        ))]
+        return {"version": "charlie_process_tree_v1", "runner_generation": "generation-1",
+                "root_pid": self.root_pid, "root": members[0], "members": members}
+
+    def _kill(self, *_args, **_kwargs):
+        self.exited = True
+        return Mock(returncode=0)
+
+    def _live(self):
+        if self.exited:
+            return {}
+        by_pid = {row["pid"]: row for row in self.rows}
+        starter = {"pid": os.getpid(), "parent_pid": 0, "name": "python.exe",
+                   "command_line": "python synthetic-test.py"}
+        result = {}
+        for row in self.rows:
+            ancestors, parent, seen = [], row["parent_pid"], set()
+            while parent in by_pid and parent not in seen:
+                seen.add(parent)
+                ancestors.append(dict(by_pid[parent]))
+                parent = by_pid[parent]["parent_pid"]
+            if self.extra_ancestor:
+                ancestors.append(self.extra_ancestor)
+            ancestors.append(starter)
+            result[row["pid"]] = {
+                **row, "ancestry": ancestors, "current_process_ancestry": [starter],
+                "inspection_complete": True,
+            }
+        return result
+
+    def _exercise(self, *, tree=None, after_tree_validation=None):
+        actual_tree_validator = process_ownership.validate_process_tree
+
+        def validate(*args, **kwargs):
+            result = actual_tree_validator(*args, **kwargs)
+            if after_tree_validation:
+                after_tree_validation()
+            return result
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(runner_control, "process_termination_enabled", return_value=False))
+            stack.enter_context(patch.object(runner_control, "inspect_process",
+                                             side_effect=lambda pid: self._live().get(int(pid))))
+            stack.enter_context(patch.object(runner_control, "inspect_descendant_processes",
+                                             side_effect=lambda _pid: [] if self.exited else self.captured))
+            stack.enter_context(patch.object(process_ownership, "inspect_processes_with_snapshot",
+                                             side_effect=lambda _pids: (self._live(), None)))
+            stack.enter_context(patch.object(process_ownership, "_inspect_process_descendants",
+                                             side_effect=lambda _pid: self.rows))
+            stack.enter_context(patch.object(runner_control, "validate_process_tree", side_effect=validate))
+            stack.enter_context(patch.object(runner_control.subprocess, "run", self.terminate))
+            result = runner_control._contain_spawned_process(
+                self.process, self.tree if tree is None else tree,
+            )
+        return result
+
+    def _assert_refused_without_kill(self, result):
+        self.assertFalse(result["success"], result)
+        self.terminate.assert_not_called()
+        self.process.terminate.assert_not_called()
+        self.process.kill.assert_not_called()
+        self.process.wait.assert_not_called()
+
+    def test_complete_live_observed_console_reuses_existing_validator(self):
+        result = self._exercise()
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["reason"], "fresh_spawn_handle_tree_termination_verified")
+        self.assertEqual(result["descendant_pids"], [self.child_pid, self.console_pid])
+        self.assertEqual(result["observed_containment"]["termination"]["reason"],
+                         "process_termination_not_enabled")
+        self.assertTrue(self.terminate.called or self.process.terminate.called)
+
+    def test_spoofed_console_image_or_command_is_not_authorized(self):
+        for field, value in (
+            ("executable_path", r"C:\Temp\conhost.exe"),
+            ("command_line", r"C:\Windows\System32\conhost.exe arbitrary-script.py"),
+            ("command_line", r"C:\Temp\conhost.exe 0x4"),
+        ):
+            with self.subTest(field=field, value=value):
+                self.setUp()
+                self.rows[2][field] = value
+                self.tree = self._tree(self.rows)
+                self.captured = json.loads(json.dumps(self.rows[1:]))
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_live_identity_drift_is_refused(self):
+        for index, field, value in (
+            (0, "creation_time", "999"), (2, "creation_time", "999"),
+            (2, "pid", 9000), (2, "parent_pid", self.root_pid),
+            (2, "executable_path", r"C:\Temp\conhost.exe"),
+            (2, "command_line", "conhost.exe 0x8"),
+        ):
+            with self.subTest(index=index, field=field):
+                self.setUp()
+                self.rows[index][field] = value
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_captured_descendant_drift_and_duplicate_are_refused(self):
+        for kind in ("creation", "parent", "missing", "new", "duplicate"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                if kind == "creation": self.captured[1]["creation_time"] = "999"
+                elif kind == "parent": self.captured[1]["parent_pid"] = self.root_pid
+                elif kind == "missing": self.captured.pop()
+                elif kind == "new": self.captured.append({**self.captured[1], "pid": 9999})
+                else: self.captured.append(dict(self.captured[1]))
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_partial_unknown_or_unobserved_console_is_refused(self):
+        for kind in ("empty", "missing-root", "string-root", "list-root", "missing-field", "missing-member", "wrong-role", "null"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                if kind == "empty": self.tree = {}
+                elif kind == "missing-root": self.tree.pop("root")
+                elif kind == "string-root": self.tree["root"] = "malformed"
+                elif kind == "list-root": self.tree["root"] = ["malformed"]
+                elif kind == "missing-field": self.tree["members"][2].pop("revision")
+                elif kind == "missing-member": self.tree["members"].pop()
+                elif kind == "wrong-role": self.tree["members"][2]["process_role"] = "supervisor_interpreter"
+                else: self.tree["members"].append(None)
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_observed_root_binding_and_stale_metadata_are_refused(self):
+        for kind in ("root-pid", "tree-root-pid", "parent", "generation", "revision", "nonce"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                if kind == "root-pid": self.tree["root"]["pid"] = 9999
+                elif kind == "tree-root-pid": self.tree["root_pid"] = 9999
+                elif kind == "parent": self.tree["root"]["parent_pid"] = 9999
+                else:
+                    field = {"generation": "runner_generation", "revision": "revision", "nonce": "startup_nonce"}[kind]
+                    self.tree["members"][2][field] = "stale"
+                self._assert_refused_without_kill(self._exercise())
+
+    def test_protected_ancestor_remains_refused(self):
+        self.extra_ancestor = {"pid": 9999, "name": "cursor.exe", "command_line": "cursor"}
+        self._assert_refused_without_kill(self._exercise())
+
+    def test_live_extra_descendant_remains_refused(self):
+        self.rows.append({**self.rows[2], "pid": 9999})
+        self._assert_refused_without_kill(self._exercise())
+
+    def test_change_after_complete_tree_validation_prevents_any_kill(self):
+        self._assert_refused_without_kill(self._exercise(
+            after_tree_validation=lambda: self.rows[2].update(creation_time="999"),
+        ))
+
+    def test_root_exit_after_validation_does_not_authorize_numeric_pid_kill(self):
+        self.process.poll.side_effect = [None, 0]
+        self._assert_refused_without_kill(self._exercise())
+
+
+class WindowsHarnessBoundaryTests(unittest.TestCase):
+    """No native calls: qualification of the hosted test containment decisions."""
+    def test_exited_launcher_creates_only_job_inheriting_child_then_exits(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        command = harness.exited_launcher_command()
+        self.assertEqual(command[:4], [harness.sys.executable, "-I", "-S", "-c"])
+        events = []
+        class LauncherExited(Exception): pass
+        def leave(code):
+            events.append(("exit", code))
+            raise LauncherExited()
+        fake_process = SimpleNamespace(DEVNULL=-3, CREATE_NO_WINDOW=0x08000000,
+            Popen=Mock(side_effect=lambda *args, **kwargs: events.append(("spawn", args, kwargs))))
+        modules = {"os": SimpleNamespace(_exit=leave), "subprocess": fake_process,
+            "sys": SimpleNamespace(executable="synthetic-python.exe")}
+        def fake_import(name, *_args, **_kwargs): return modules[name]
+        with self.assertRaises(LauncherExited):
+            exec(compile(command[4], "<exited-launcher-fixture>", "exec"),
+                {"__builtins__": {"__import__": fake_import, "getattr": getattr}})
+        self.assertEqual([event[0] for event in events], ["spawn", "exit"])
+        self.assertEqual(events[-1], ("exit", 0))
+        self.assertEqual(events[0][1], (["synthetic-python.exe", "-I", "-S", "-c", "import time; time.sleep(120)"],))
+        self.assertEqual(events[0][2], {"stdin": -3, "stdout": -3, "stderr": -3,
+            "close_fds": True, "creationflags": 0x08000000})
+        self.assertFalse(events[0][2]["creationflags"] & 0x01000000)  # no CREATE_BREAKAWAY_FROM_JOB
+
+    def test_exited_launcher_does_not_claim_success_if_child_creation_fails(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        leave = Mock()
+        modules = {"os": SimpleNamespace(_exit=leave),
+            "subprocess": SimpleNamespace(DEVNULL=-3, Popen=Mock(side_effect=OSError("synthetic"))),
+            "sys": SimpleNamespace(executable="synthetic-python.exe")}
+        def fake_import(name, *_args, **_kwargs): return modules[name]
+        with self.assertRaises(OSError):
+            exec(compile(harness.exited_launcher_command()[4], "<exited-launcher-fixture>", "exec"),
+                {"__builtins__": {"__import__": fake_import, "getattr": getattr}})
+        leave.assert_not_called()
+
+    def test_worker_environment_allows_only_platform_inputs_and_fixed_test_controls(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        source = {"SystemRoot": "C:/Windows", "PATH": "synthetic-path", "PSModulePath": "untrusted-user-module-path",
+            "USERPROFILE": "C:/Users/runner", "APPDATA": "C:/Users/runner/AppData/Roaming",
+            "LOCALAPPDATA": "C:/Users/runner/AppData/Local", "PROGRAMDATA": "C:/ProgramData",
+            "SYSTEMDRIVE": "C:", "PROGRAMFILES": "C:/Program Files", "OPENAI_API_KEY": "secret",
+            "GH_TOKEN": "secret", "DATABASE_URL": "secret", "PYTHONPATH": "untrusted", "TEMP": "outside"}
+        source.update({name.lower(): "platform-value" for name in harness.EXPANDED_PLATFORM_ENV})
+        source.update({name: "secret" for name in ("PSExecutionPolicyPreference", "__PSLockDownPolicy", "COMPLUS_Security", "DOTNET_STARTUP_HOOKS",
+            "HTTPS_PROXY", "AWS_ACCESS_KEY_ID", "AZURE_TOKEN", "PSModuleAnalysisCachePath", "PSDisableModuleAnalysisCacheCleanup")})
+        result = harness.worker_environment(source, Path("case-root"), "test-job")
+        self.assertEqual(set(result), {"SystemRoot", "PATH", *harness.NATIVE_PLATFORM_ENV, *[n.lower() for n in harness.EXPANDED_PLATFORM_ENV], "PSModulePath",
+            harness.JOB_ENV, "TEMP", "TMP", "PYTHONDONTWRITEBYTECODE", "PYTHON_DOTENV_DISABLED", "DATABASE_URL"})
+        self.assertEqual(result["PSModulePath"], "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules")
+        self.assertEqual(result["TEMP"], str(Path("case-root")))
+        self.assertEqual(result["TMP"], str(Path("case-root")))
+        self.assertEqual(result["DATABASE_URL"], "")
+        self.assertNotIn("secret", json.dumps(result))
+        with self.assertRaisesRegex(RuntimeError, "system_root_required"):
+            harness.worker_environment({}, Path("case-root"), "test-job")
+
+    def test_provider_module_cache_requires_exact_image_path_before_file_access(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        expected=r"C:\PSModuleAnalysisCachePath\ModuleAnalysisCache"
+        self.assertEqual(harness.PROVIDER_MODULE_CACHE,expected)
+        self.assertEqual(harness.MAX_MODULE_CACHE_BYTES,64*1024*1024)
+        with patch.object(harness.Path,"lstat")as inspect:
+            for source in ({},{harness.MODULE_CACHE_KEY:None},{harness.MODULE_CACHE_KEY:""},
+                {harness.MODULE_CACHE_KEY:expected,"psmoduleanalysiscachepath":expected},
+                *({harness.MODULE_CACHE_KEY:value}for value in ("NUL",r"\\server\share\cache",r"\\?\C:\PSModuleAnalysisCachePath\ModuleAnalysisCache",
+                    r"\\.\NUL",r"C:\arbitrary\cache",expected+":stream",expected+" ",expected+"\x00",
+                    r"C:\PSModuleAnalysisCachePath\..\ModuleAnalysisCache","C:/PSModuleAnalysisCachePath/ModuleAnalysisCache"))):
+                with self.subTest(kind=type(source.get(harness.MODULE_CACHE_KEY)).__name__):
+                    with self.assertRaisesRegex(RuntimeError,"exact_provider_module_cache_required"):
+                        harness.provider_module_cache_path(source)
+            self.assertEqual(harness.provider_module_cache_path({"psmoduleanalysiscachepath":expected.lower()}),Path(expected))
+            inspect.assert_not_called()
+
+    def test_provider_module_cache_copy_is_bounded_exact_and_exclusive(self):
+        import hashlib
+        from tests import charlie_windows_lifecycle_harness as harness
+        with tempfile.TemporaryDirectory()as tmp,patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
+            root=Path(tmp).resolve()/"case";root.mkdir()
+            provider=Path(tmp)/"provider-cache";data=b"synthetic-provider-cache\x00\x01";provider.write_bytes(data)
+            original=provider.stat()
+            with patch.object(harness,"provider_module_cache_path",return_value=provider):
+                target,receipt=harness.copy_provider_module_cache({},root)
+                self.assertEqual(target,root/"PowerShell-ModuleAnalysisCache")
+                self.assertEqual(target.read_bytes(),data);self.assertEqual(provider.read_bytes(),data)
+                self.assertEqual(provider.stat().st_mtime_ns,original.st_mtime_ns)
+                self.assertEqual(receipt,{"copied":True,"bytes":len(data),"sha256":hashlib.sha256(data).hexdigest()})
+                self.assertNotIn(str(provider),json.dumps(receipt));self.assertNotIn("synthetic",json.dumps(receipt))
+                with self.assertRaises(FileExistsError):harness.copy_provider_module_cache({},root)
+                self.assertEqual(target.read_bytes(),data)
+                with self.assertRaisesRegex(RuntimeError,"report_root_must_be_below_runner_temp"):
+                    harness.copy_provider_module_cache({},Path(tmp).resolve())
+
+    def test_module_cache_rejects_empty_oversized_nonregular_and_reparse(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        with tempfile.TemporaryDirectory()as tmp:
+            folder=Path(tmp)/"provider";folder.mkdir();provider=folder/"cache"
+            for data in (b"",b"x"*9):
+                provider.write_bytes(data)
+                with patch.object(harness,"MAX_MODULE_CACHE_BYTES",8),patch.object(harness.Path,"open")as opened:
+                    with self.assertRaisesRegex(RuntimeError,"module_cache_type_or_size_refused"):
+                        harness._read_verified_module_cache(provider)
+                    opened.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError,"module_cache_type_or_size_refused"):
+                harness._read_verified_module_cache(folder)
+            real_lstat=Path.lstat
+            for rejected,mode,reason in ((provider,harness.stat.S_IFREG,"module_cache_reparse_refused"),
+                (folder,harness.stat.S_IFDIR,"module_cache_parent_refused")):
+                def inspect(path):
+                    if path==rejected:return SimpleNamespace(st_mode=mode,st_file_attributes=0x400)
+                    return real_lstat(path)
+                with patch.object(harness.Path,"lstat",autospec=True,side_effect=inspect),patch.object(harness.Path,"open")as opened:
+                    with self.assertRaisesRegex(RuntimeError,reason):harness._read_verified_module_cache(provider)
+                    opened.assert_not_called()
+
+    def test_module_cache_detects_handle_and_path_drift_and_copy_mismatch(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        with tempfile.TemporaryDirectory()as tmp,patch.dict(os.environ,{"RUNNER_TEMP":tmp}):
+            provider=Path(tmp)/"provider-cache";provider.write_bytes(b"cache");info=provider.stat()
+            changed=SimpleNamespace(st_dev=info.st_dev,st_ino=info.st_ino+1,st_mode=info.st_mode,
+                st_size=info.st_size,st_mtime_ns=info.st_mtime_ns)
+            with patch.object(harness.os,"fstat",return_value=changed):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_identity_changed"):
+                    harness._read_verified_module_cache(provider)
+            with patch.object(harness.os,"fstat",side_effect=[info,changed]):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_changed_during_read"):
+                    harness._read_verified_module_cache(provider)
+            with patch.object(harness,"_cache_path_without_reparse",side_effect=[info,changed]):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_path_changed"):
+                    harness._read_verified_module_cache(provider)
+            root=Path(tmp).resolve()/"case";root.mkdir()
+            with patch.object(harness,"provider_module_cache_path",return_value=provider), \
+                 patch.object(harness,"_read_verified_module_cache",side_effect=[b"cache",b"different"]):
+                with self.assertRaisesRegex(RuntimeError,"module_cache_copy_mismatch"):
+                    harness.copy_provider_module_cache({},root)
+
+    def test_cache_comparison_has_five_fixed_calls_with_real_inspector_kwargs(self):
+        import ast
+        from tests import charlie_windows_lifecycle_harness as harness
+        source=ast.parse(Path(process_ownership.__file__).read_text(encoding="utf-8"))
+        inspector=next(n for n in source.body if isinstance(n,ast.FunctionDef)and n.name=="_windows_process_snapshot")
+        call=next(n for n in ast.walk(inspector)if isinstance(n,ast.Call)and isinstance(n.func,ast.Attribute)
+            and isinstance(n.func.value,ast.Name)and n.func.value.id=="subprocess"and n.func.attr=="run")
+        expected={k.arg:ast.literal_eval(k.value)for k in call.keywords}
+        self.assertEqual(expected,{"capture_output":True,"text":True,"encoding":"utf-8","errors":"replace","timeout":8,"check":False})
+        ambient={"SystemRoot":"C:/Windows","psmoduleanalysiscachepath":harness.PROVIDER_MODULE_CACHE,
+            "PRIVATE_TEST_TOKEN":"private-value","PSDisableModuleAnalysisCacheCleanup":"private-cleanup"}
+        legacy=harness.worker_environment(ambient,Path("case"),"job")
+        corrected={**legacy,harness.MODULE_CACHE_KEY:str(Path("case")/"PowerShell-ModuleAnalysisCache")}
+        environments=[];spec=harness.cim_module_specs()[0]
+        def invoke(command,**kwargs):
+            self.assertEqual(command,["powershell","-NoProfile","-NonInteractive","-Command",spec[1]])
+            self.assertEqual({k:v for k,v in kwargs.items()if k!="env"},expected)
+            environments.append(kwargs["env"])
+            output="".join("CHARLIE_PHASE|"+stage+("|0\n"if stage in {"started","completed"}else "|1\n")for stage in spec[2])
+            return SimpleNamespace(returncode=0,stdout=output,stderr="private-error")
+        before=dict(ambient)
+        with patch.object(harness.subprocess,"run",side_effect=invoke):
+            report=harness.compare_module_cache_profiles(legacy,corrected,ambient)
+        self.assertEqual(list(report),["ambient_reference","ambient_without_cache","legacy_worker_without_cache","corrected_worker_case_copy","restored_ambient"])
+        self.assertEqual(len(environments),5);self.assertEqual(ambient,before)
+        self.assertEqual(environments[0],ambient);self.assertIs(environments[4],environments[0])
+        self.assertEqual(environments[1],{k:v for k,v in ambient.items()if k.upper()!=harness.MODULE_CACHE_KEY.upper()})
+        self.assertIs(environments[2],legacy);self.assertIs(environments[3],corrected)
+        self.assertEqual({k:v for k,v in corrected.items()if k!=harness.MODULE_CACHE_KEY},legacy)
+        self.assertNotIn("PRIVATE_TEST_TOKEN",corrected);self.assertNotIn("PSDisableModuleAnalysisCacheCleanup",corrected)
+        self.assertNotIn("private-",json.dumps(report))
+        self.assertTrue(all(harness.owned_automatic_cim_passed(r)for r in report.values()))
+
+    def test_module_cache_copy_failure_contains_job_before_any_worker_executes(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api();native=SimpleNamespace(CreateProcess=Mock())
+        with tempfile.TemporaryDirectory()as tmp,patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness,"copy_provider_module_cache",side_effect=RuntimeError("private-detail")):
+            report=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
+        native.CreateProcess.assert_not_called();api.ResumeThread.assert_not_called()
+        self.assertEqual(report["module_cache_copy"],{"copied":False})
+        self.assertEqual(report["error_type"],"RuntimeError");self.assertTrue(report["cleanup_verified"])
+        self.assertNotIn("private-detail",json.dumps(report));self.assertNotIn("exit_code",report)
+
+    def test_policy_context_reports_only_known_labels_and_never_forwards_values(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        for value,label in (("bYpAsS","Bypass"),("RemoteSigned","RemoteSigned"),("private-token-value","unrecognized")):
+            with self.subTest(label=label):
+                source={"SystemRoot":"C:/Windows","PSExecutionPolicyPreference":value}
+                worker=harness.worker_environment(source,Path("case"),"job")
+                report=harness.process_policy_context(source,worker)
+                self.assertEqual(report,{"ambient_present":True,"ambient_label":label,"worker_inherits":False})
+                self.assertNotIn("private-",json.dumps(report))
+                self.assertNotIn("PSExecutionPolicyPreference",worker)
+        self.assertEqual(harness.process_policy_context({},{}),{"ambient_present":False,"ambient_label":None,"worker_inherits":False})
+        self.assertTrue(harness.process_policy_context({}, {"psexecutionpolicypreference":"Restricted"})["worker_inherits"])
+
+    def test_phase_timeout_retains_only_fixed_completed_markers_not_exception_details(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        error = subprocess.TimeoutExpired(["private-command"], 8,
+            output=b"CHARLIE_PHASE|started|0\n", stderr=b"private-error")
+        with patch.object(harness.subprocess, "run", side_effect=error) as invoke:
+            report = harness.probe_cim_module_context({})
+        self.assertEqual(invoke.call_count, 1)  # one bounded attempt per context, no retry
+        for item in report.values():
+            self.assertFalse(item["success"]); self.assertFalse(item["exited_zero"])
+            self.assertEqual(item["error_type"], "TimeoutExpired")
+            self.assertEqual(item["markers"], [{"stage": "started", "count": 0}])
+            self.assertTrue(item["output_valid"])
+        self.assertNotIn("private-", json.dumps(report))
+
+    def test_phase_parser_rejects_unexpected_private_or_malformed_output(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        expected = ("started", "acquired", "completed")
+        for output in ("private-process-details", "CHARLIE_PHASE|started|0\nsecret",
+            "CHARLIE_PHASE|completed|0\n", "CHARLIE_PHASE|started|0\nCHARLIE_PHASE|started|0\n",
+            "CHARLIE_PHASE|started|1\n", "CHARLIE_PHASE|started|0\nCHARLIE_PHASE|acquired|1000000001\n",
+            "x" * 4097, b"\xff", None):
+            with self.subTest(kind=type(output).__name__, length=len(output) if output else 0):
+                self.assertEqual(harness.parse_phase_markers(output, expected), ([], False))
+        self.assertEqual(harness.parse_phase_markers("", expected), ([], True))
+        self.assertEqual(harness.parse_phase_markers("CHARLIE_PHASE|started|0\r\nCHARLIE_PHASE|acquired|123\r\n", expected),
+            ([{"stage": "started", "count": 0}, {"stage": "acquired", "count": 123}], True))
+
+    def test_completed_script_does_not_hide_process_exit_timeout_or_nonzero_exit(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        spec=harness.cim_module_specs()[0]
+        output="".join("CHARLIE_PHASE|"+stage+("|0\n"if stage in {"started","completed"}else "|1\n")for stage in spec[2])
+        for response in (subprocess.TimeoutExpired(["powershell"],8,output=output),SimpleNamespace(returncode=1,stdout=output,stderr="private")):
+            with patch.object(harness.subprocess,"run",side_effect=[response]):
+                report=harness.probe_cim_module_context({})
+            item=report["automatic"]
+            self.assertTrue(item["output_valid"])
+            self.assertEqual(item["markers"][-1],{"stage":"completed","count":0})
+            self.assertFalse(item["success"])
+            self.assertFalse(harness.owned_automatic_cim_passed(report))
+
+    def test_reference_or_explicit_module_success_cannot_rescue_owned_automatic_failure(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        self.assertTrue(harness.owned_automatic_cim_passed({"automatic": {"success": True}, "explicit_builtin": {"success": False}}))
+        for value in ({}, {"automatic": {"success": False}}, {"automatic": {"success": "true"}}):
+            with self.subTest(value=value):
+                report = {**value, "explicit_builtin": {"success": True}, "parent_ambient": {"success": True},
+                    "parent_allowlist": {"success": True}}
+                self.assertFalse(harness.owned_automatic_cim_passed(report))
+
+    def test_module_failures_sanitize_errors_and_require_current_pid_row(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        for error,kind in ((OSError("private-path"),"OSError"),(RuntimeError("private-token"),"UnexpectedError")):
+            with patch.object(harness.subprocess,"run",side_effect=error):
+                report=harness.probe_cim_module_context({})
+            self.assertEqual(report["automatic"]["error_type"],kind)
+            self.assertNotIn("private-",json.dumps(report))
+        specs = harness.cim_module_specs()
+        responses = [SimpleNamespace(returncode=0, stdout="".join("CHARLIE_PHASE|" + marker + "|0\n" for marker in spec[2])) for spec in specs]
+        with patch.object(harness.subprocess, "run", side_effect=responses):
+            report = harness.probe_cim_module_context({})
+        self.assertTrue(all(not item["success"] and item["output_valid"] for item in report.values()))
+        with patch.object(harness.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="private-process", stderr="private-error")):
+            report = harness.probe_cim_module_context({})
+        self.assertTrue(all(not item["success"] and not item["output_valid"] for item in report.values()))
+        self.assertNotIn("private-", json.dumps(report))
+
+    def test_parent_references_use_one_allowlist_then_launch_owned_worker_even_if_reference_fails(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api = self.fake_api(); order = []
+        api.AssignProcessToJobObject.side_effect = lambda *args: order.append("assign") or 1
+        api.ResumeThread.side_effect = lambda *args: order.append("resume") or 1
+        def create(*args): order.append("create"); return (40,41,123,124)
+        native = SimpleNamespace(CreateProcess=Mock(side_effect=create))
+        original_builder = harness.worker_environment
+        probe = Mock(side_effect=lambda env: order.append("reference") or {"automatic": {"success": False}})
+        with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows", "PRIVATE_TEST_TOKEN":"not-forwarded", "RUNNER_TEMP":str(Path(tmp).resolve().parent)}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness,"probe_cim_module_context",probe), \
+             patch.object(harness,"worker_environment",wraps=original_builder) as builder:
+            report = harness._run_owned_worker(harness.SELECTORS[1],Path(tmp))
+        builder.assert_called_once()
+        self.assertEqual(order,["reference"]*5+["create","assign","resume"])
+        self.assertEqual(probe.call_args_list[0].args[0]["PRIVATE_TEST_TOKEN"],"not-forwarded")
+        allowlist = probe.call_args_list[3].args[0]
+        self.assertIs(allowlist,native.CreateProcess.call_args.args[6])
+        self.assertNotIn("PRIVATE_TEST_TOKEN",allowlist)
+        self.assertEqual(list(report["cache_parent"]),["ambient_reference","ambient_without_cache","legacy_worker_without_cache","corrected_worker_case_copy","restored_ambient"])
+        self.assertEqual(allowlist[harness.MODULE_CACHE_KEY],str(Path("synthetic-case-cache")))
+        self.assertEqual({k:v for k,v in allowlist.items()if k!=harness.MODULE_CACHE_KEY},probe.call_args_list[2].args[0])
+        self.assertTrue(report["cleanup_verified"])
+        self.assertNotIn("not-forwarded",json.dumps(report))
+
+    def test_owned_probe_captures_inherited_environment_before_bootstrap_and_fails_before_lifecycle(self):
+        import contextlib
+        from tests import charlie_windows_lifecycle_harness as harness
+        inherited = {"SYSTEMROOT":"C:/Windows", harness.JOB_ENV:"same-owned-job"}
+        failure = {"automatic":{"success":False},"explicit_builtin":{"success":True}}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,inherited,clear=True), \
+             patch.object(harness,"windows_job_guard",return_value=contextlib.nullcontext()), \
+             patch.object(harness,"probe_cim_module_context",return_value=failure) as probe, \
+             patch.object(harness,"qualify_actual_snapshot") as actual, \
+             patch.object(harness.unittest.defaultTestLoader,"loadTestsFromName") as loader, \
+             patch.object(harness.socket.socket,"connect"), \
+             patch("tempfile.tempdir",tmp):
+            self.assertEqual(harness._worker(harness.SELECTORS[1],Path(tmp)),1)
+            self.assertEqual(probe.call_args.args[0],inherited)
+            loader.assert_not_called()
+            actual.assert_not_called()
+            report=json.loads((Path(tmp)/"result.json").read_text())
+            self.assertEqual(report,{"selector":harness.SELECTORS[1],"tests_run":0,"failures":0,"errors":1,"skips":0})
+
+    def test_actual_inspector_gate_requires_current_worker_identity_and_redacts_rows(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        row={"pid":os.getpid(),"creation_time":"private-time","executable_path":"private-path","command_line":"private-command"}
+        inspector=Mock(return_value=[row])
+        report=harness.qualify_actual_snapshot(inspector)
+        inspector.assert_called_once_with()
+        self.assertTrue(report["success"]);self.assertTrue(report["own_process_proven"])
+        self.assertEqual(report["row_count"],1)
+        self.assertNotIn("private-",json.dumps(report))
+        for rows in ([],{},[{}],[{**row,"pid":-1}],[{**row,"pid":True}],[{**row,"creation_time":""}]):
+            with self.subTest(shape=type(rows).__name__):
+                self.assertFalse(harness.qualify_actual_snapshot(Mock(return_value=rows))["success"])
+        error=subprocess.TimeoutExpired(["private-command"],8,output="private-output")
+        report=harness.qualify_actual_snapshot(Mock(side_effect=error))
+        self.assertFalse(report["success"]);self.assertEqual(report["error_type"],"TimeoutExpired")
+        self.assertNotIn("private-",json.dumps(report))
+
+    def test_actual_snapshot_failure_cannot_load_lifecycle_and_success_uses_real_inspector_entry(self):
+        import contextlib
+        from tests import charlie_windows_lifecycle_harness as harness
+        row={"pid":os.getpid(),"creation_time":"private-time","executable_path":"private-path","command_line":"private-command"}
+        for rows,expected in (([],1),([row],0)):
+            with self.subTest(expected=expected),tempfile.TemporaryDirectory() as tmp, \
+                 patch.dict(os.environ,{"SYSTEMROOT":"C:/Windows"},clear=True), \
+                 patch.object(harness,"windows_job_guard",return_value=contextlib.nullcontext()), \
+                 patch.object(harness,"probe_cim_module_context",return_value={"automatic":{"success":True}}), \
+                 patch.object(process_ownership,"_windows_process_snapshot",return_value=rows) as inspector, \
+                 patch.object(harness.unittest.defaultTestLoader,"loadTestsFromName") as loader, \
+                 patch.object(harness.unittest,"TextTestRunner") as runner, \
+                 patch.object(harness.socket.socket,"connect"),patch("tempfile.tempdir",tmp):
+                runner.return_value.run.return_value=SimpleNamespace(testsRun=1,failures=[],errors=[],skipped=[],wasSuccessful=lambda:True)
+                self.assertEqual(harness._worker(harness.SELECTORS[1],Path(tmp)),expected)
+                inspector.assert_called_once_with()
+                if expected:loader.assert_not_called()
+                else:loader.assert_called_once_with(harness.SELECTORS[1])
+                self.assertNotIn("private-",(Path(tmp)/"cim-platform-qualification.json").read_text())
+
+    def fake_api(self):
+        api = Mock()
+        api.CreateJobObjectW.return_value = 10
+        api.OpenJobObjectW.return_value = 10
+        api.GetCurrentProcess.return_value = 20
+        api.OpenProcess.return_value = 30
+        api.AssignProcessToJobObject.return_value = 1
+        api.TerminateJobObject.return_value = 1
+        api.TerminateProcess.return_value = 1
+        api.WaitForSingleObject.return_value = 0
+        api.ResumeThread.return_value = 1
+        def query(_job, kind, pointer, _size, _returned):
+            if kind == 9:
+                pointer._obj.basic.flags = 0x2000
+            else:
+                pointer._obj.active = 0
+            return 1
+        api.QueryInformationJobObject.side_effect = query
+        def membership(_process, _job, present):
+            present._obj.value = True
+            return 1
+        api.IsProcessInJob.side_effect = membership
+        def exit_code(_process, code):
+            code._obj.value = 0
+            return 1
+        api.GetExitCodeProcess.side_effect = exit_code
+        return api
+    def test_guard_refuses_missing_job_before_native_access(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        with patch.dict(os.environ, {harness.JOB_ENV:""}),patch.object(harness,"_kernel") as kernel:
+            with self.assertRaisesRegex(RuntimeError,"explicit_windows_test_job_required"):
+                with harness.windows_job_guard(): pass
+            kernel.assert_not_called()
+    def test_guard_refuses_breakaway_missing_kill_limit_or_wrong_membership(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        for flags, member in ((0,True),(0x2000|0x800,True),(0x2000|0x1000,True),(0x2000,False)):
+            with self.subTest(flags=flags,member=member):
+                api=self.fake_api()
+                def query(_job,_kind,pointer,_size,_returned):
+                    pointer._obj.basic.flags=flags
+                    return 1
+                def membership(_process,_job,present):
+                    present._obj.value=member
+                    return 1
+                api.QueryInformationJobObject.side_effect=query
+                api.IsProcessInJob.side_effect=membership
+                with patch.object(harness,"_kernel",return_value=api),patch.dict(os.environ,{harness.JOB_ENV:"charlie-test-"+"a"*32}):
+                    with self.assertRaisesRegex(RuntimeError,"ownership_or_limits_invalid"):
+                        with harness.windows_job_guard(): self.fail("guard yielded")
+                api.CloseHandle.assert_called_once_with(10)
+    def test_taskkill_requires_live_membership_and_retains_handle_during_call(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api = self.fake_api(); calls=[]
+        def run(command, **_kwargs):
+            self.assertNotIn(unittest.mock.call(30),api.CloseHandle.call_args_list)
+            calls.append(command)
+        with patch.object(harness,"_kernel",return_value=api),patch.object(harness.subprocess,"run",side_effect=run), \
+             patch.dict(os.environ,{harness.JOB_ENV:"charlie-test-"+"a"*32}):
+            with harness.windows_job_guard():
+                subprocess.run(["taskkill","/PID","123","/T","/F"])
+                def outside(_process,_job,present):
+                    present._obj.value=False
+                    return 1
+                api.IsProcessInJob.side_effect=outside
+                with self.assertRaisesRegex(RuntimeError,"outside_test_job"):
+                    subprocess.run(["taskkill","/PID","456","/T","/F"])
+            self.assertEqual(len(calls),1)
+            self.assertEqual(api.CloseHandle.call_args_list.count(unittest.mock.call(30)),2)
+    def test_suspended_worker_assigned_before_resume_and_cleanup_always_verified(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api(); order=[]
+        api.AssignProcessToJobObject.side_effect=lambda *args: order.append("assign") or 1
+        api.ResumeThread.side_effect=lambda *args: order.append("resume") or 1
+        native=SimpleNamespace(CreateProcess=Mock(return_value=(40,41,123,124)))
+        with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True):
+            root=Path(tmp)
+            (root/"result.json").write_text(json.dumps({"tests_run":1,"failures":0,"errors":0,"skips":0}))
+            result=harness._run_owned_worker(harness.SELECTORS[0],root)
+            self.assertEqual(order,["assign","resume"])
+            self.assertTrue(native.CreateProcess.call_args.args[5] & 4)
+            self.assertFalse(native.CreateProcess.call_args.args[4])
+            self.assertTrue(result["cleanup_verified"])
+            api.TerminateJobObject.assert_called_once_with(10,1)
+            self.assertEqual(set(c.args[0] for c in api.CloseHandle.call_args_list),{10,40,41})
+    def test_assignment_failure_never_resumes_or_claims_unverified_cleanup(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api();api.AssignProcessToJobObject.return_value=0;api.TerminateProcess.return_value=0
+        native=SimpleNamespace(CreateProcess=Mock(return_value=(40,41,123,124)))
+        with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=5,create=True):
+            result=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
+        self.assertFalse(result["cleanup_verified"])
+        api.ResumeThread.assert_not_called()
+        api.TerminateProcess.assert_called_once_with(40,1)
+    def test_timeout_empties_exact_owned_job_and_records_failure(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api();api.WaitForSingleObject.return_value=258
+        native=SimpleNamespace(CreateProcess=Mock(return_value=(40,41,123,124)))
+        with tempfile.TemporaryDirectory() as tmp,patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True,"bytes":5,"sha256":"a"*64})), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True):
+            result=harness._run_owned_worker(harness.SELECTORS[0],Path(tmp))
+        self.assertTrue(result["timed_out"])
+        self.assertTrue(result["cleanup_verified"])
+        self.assertNotIn("exit_code",result)
+        api.WaitForSingleObject.assert_called_once_with(40,180000)
+        api.TerminateJobObject.assert_called_once_with(10,1)
 
 
 if __name__ == "__main__":

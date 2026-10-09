@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
 from modules.charlie.runtime_staging import read_watchdog_task
 from modules.charlie.process_ownership import (
     normalize_command_fingerprint,
@@ -68,6 +69,8 @@ def plan_activation(*, authority_path, authority_sha256, state_root,
     key_path = state_root / "activation-authority.key"
     key = _read_key(key_path)
     _validate_authority(authority, key, now=now)
+    if authority["execution_mode"] == INTAKE_EXECUTION_MODE:
+        _validate_intake_local_binding(authority, state_root, runtime_root)
     runtime = _worktree(runtime_root, git_runner)
     execution = _worktree(execution_root, git_runner)
     manifest_path = state_root / "runtime-manifest.json"
@@ -85,7 +88,7 @@ def plan_activation(*, authority_path, authority_sha256, state_root,
         "receipt_sha256": receipt_sha,
         "stop_marker_sha256": stop_sha,
         "task_action_sha256": task_sha,
-        "execution_mode": MODE,
+        "execution_mode": authority["execution_mode"],
     }
     mismatch = next((name for name, value in expected.items()
                      if str(authority.get(name) or "") != str(value)), "")
@@ -324,7 +327,7 @@ def consume_provider_activation(*, state_root, starter, task_controller,
     previous = os.environ.get("CHARLIE_ACTIVATION_ID")
     os.environ["CHARLIE_ACTIVATION_ID"] = packet["activation_id"]
     try:
-        result, status_code = starter(execution_mode=MODE)
+        result, status_code = starter(execution_mode=packet["authority"]["execution_mode"])
     except Exception as exc:
         recover_activation(state_root=state_root, task_controller=task_controller,
                            activation_id=packet["activation_id"], failure_evidence={
@@ -337,7 +340,7 @@ def consume_provider_activation(*, state_root, starter, task_controller,
             os.environ.pop("CHARLIE_ACTIVATION_ID", None)
         else:
             os.environ["CHARLIE_ACTIVATION_ID"] = previous
-    status = "provider_started_observe_only" if status_code < 300 else "provider_start_failed"
+    status = _started_status(packet["authority"]) if status_code < 300 else "provider_start_failed"
     updated = {**packet, "status": status, "provider": provider,
                "start_result": result, "provider_started_at": _now(now),
                "consumed_packet_hmac_sha256": packet["packet_hmac_sha256"]}
@@ -482,7 +485,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
             evidence = verification_reader(current_packet)
             legacy_ready = isinstance(evidence, dict) and all(
                 evidence.get(item) is True for item in (
-                    "loaded_revision_exact", "execution_mode_observe_only",
+                    "loaded_revision_exact", _mode_evidence_key(packet["authority"]),
                     "signed_supervisor_tree", "signed_runner_tree",
                     "heartbeat_fresh", "activation_id_exact",
                     "unrelated_processes_absent",
@@ -524,7 +527,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
                 }
                 break
             if packet_status not in {
-                "provider_pending", "provider_started_observe_only",
+                "provider_pending", "provider_started_observe_only", "provider_started_manager_dependency_intake_only",
             }:
                 raise ActivationError(
                     "activation_provider_publication_incomplete",
@@ -570,7 +573,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
                               evidence_status=getattr(exc, "status", exc.__class__.__name__),
                               startup_evidence=startup_evidence) from exc
     required = (
-        "loaded_revision_exact", "execution_mode_observe_only",
+        "loaded_revision_exact", _mode_evidence_key(packet["authority"]),
         "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
         "activation_id_exact", "unrelated_processes_absent",
     )
@@ -696,7 +699,7 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
     )
     evidence = {
         "loaded_revision_exact": revision_exact,
-        "execution_mode_observe_only": all(str(value or "") == MODE for value in (
+        _mode_evidence_key(authority): all(str(value or "") == authority.get("execution_mode", MODE) for value in (
             supervisor.get("execution_mode"), (final or {}).get("execution_mode") if isinstance(final, dict) else "",
             heartbeat.get("execution_mode"),
         )),
@@ -728,7 +731,7 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         "runner_start_acknowledgement_failed",
     }
     if all(evidence.get(item) is True for item in (
-        "loaded_revision_exact", "execution_mode_observe_only",
+        "loaded_revision_exact", _mode_evidence_key(packet["authority"]),
         "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
         "activation_id_exact", "unrelated_processes_absent",
     )):
@@ -2086,8 +2089,10 @@ def _validate_authority(authority, key, now=None, allow_expired=False):
             or not re.fullmatch(r"[0-9a-f]{32}", str(authority.get("activation_id") or ""))
             or not hmac.compare_digest(signature, expected)
             or (not allow_expired and expiry <= current.astimezone(timezone.utc))
-            or authority.get("execution_mode") != MODE):
+            or authority.get("execution_mode") not in {MODE, INTAKE_EXECUTION_MODE}):
         raise ActivationError("activation_authority_not_valid")
+    if authority["execution_mode"] == INTAKE_EXECUTION_MODE:
+        _validate_intake_scope(authority)
 
 
 def _validate_plan(plan, now=None):
@@ -2110,6 +2115,8 @@ def _validate_pre_mutation(plan, *, task_reader, git_runner):
     ):
         if _sha256(path) != expected:
             raise ActivationError(status)
+    if plan["authority"]["execution_mode"] == INTAKE_EXECUTION_MODE:
+        _validate_intake_local_binding(plan["authority"], state_root, Path(plan["runtime_root"]))
     task = task_reader()
     _validate_exact_task(task, Path(plan["runtime_root"]))
     if _task_action_sha256(task) != plan["task_action_sha256"]:
@@ -2148,7 +2155,7 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
             or packet.get("activation_id") != authority.get("activation_id")
             or not str(packet.get("expected_instance_guid") or "").strip("{}")):
         raise ActivationError("activation_packet_binding_invalid")
-    if packet.get("status") not in ({"provider_pending", "provider_started_observe_only"} if allow_consumed else {"provider_pending"}):
+    if packet.get("status") not in ({"provider_pending", _started_status(authority)} if allow_consumed else {"provider_pending"}):
         raise ActivationError("activation_packet_replayed")
     consumed_name = f"activation-consumed-{packet['activation_id']}.json"
     consumed_live = state_root / consumed_name
@@ -2157,7 +2164,7 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
     consumed_path = consumed_live if consumed_live.exists() else consumed_verified
     if packet.get("status") == "provider_pending" and consumed_path.exists() and not allow_consumed:
         raise ActivationError("activation_consumed_pending_recovery_required")
-    if packet.get("status") == "provider_started_observe_only" or consumed_path.exists():
+    if packet.get("status") == _started_status(authority) or consumed_path.exists():
         consumed = _read_json(consumed_path, "activation_consumed_identity_missing")
         _validate_consumed_identity(
             packet, consumed, key,
@@ -2250,7 +2257,8 @@ def _validate_exact_task(rows, runtime_root):
         raise ActivationError("scheduled_task_ownership_ambiguous")
     if int(rows[0].get("action_count") or 0) != 1 or str(rows[0].get("state")) != "Disabled":
         raise ActivationError("scheduled_task_not_exact_disabled")
-    expected = runtime_root.parent.parent / "venv" / "Scripts" / "pythonw.exe"
+    binding = governed_runtime_binding(runtime_root)
+    expected = Path(binding["interpreter"]) if binding else runtime_root.parent.parent / "venv" / "Scripts" / "pythonw.exe"
     if str(Path(str(rows[0].get("execute") or "")).resolve()).casefold() != str(expected.resolve()).casefold():
         raise ActivationError("scheduled_task_executable_mismatch")
     if str(Path(str(rows[0].get("working_directory") or "")).resolve()).casefold() != str(runtime_root).casefold():
@@ -2607,3 +2615,142 @@ def _durable_replace(source, target, *, replace_existing=False):
 
 def _now(value=None):
     return (value or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+
+
+def _started_status(authority):
+    return "provider_started_" + authority["execution_mode"]
+
+
+def _mode_evidence_key(authority):
+    return "execution_mode_intake_only" if authority.get("execution_mode") == INTAKE_EXECUTION_MODE else "execution_mode_observe_only"
+
+
+def _validate_intake_scope(authority):
+    scope = authority.get("manager_dependency_intake")
+    keys = {"policy_id", "scope_sha256", "environment_path", "environment_sha256",
+            "database_host", "database_port", "database_name", "database_user", "ca_path", "ca_sha256"}
+    if (not isinstance(scope, dict) or set(scope) != keys
+            or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", str(scope.get("policy_id") or ""))
+            or any(not re.fullmatch(r"[a-f0-9]{64}", str(scope.get(k) or ""))
+                   for k in ("scope_sha256", "environment_sha256", "ca_sha256"))
+            or any(not isinstance(scope.get(k), str) or not scope[k] or len(scope[k]) > 255
+                   for k in ("database_host", "database_name", "database_user"))
+            or type(scope.get("database_port")) is not int or not 1 <= scope["database_port"] <= 65535
+            or any(not Path(str(scope.get(k) or "")).is_absolute() for k in ("environment_path", "ca_path"))):
+        raise ActivationError("intake_activation_scope_invalid")
+    return scope
+
+
+def read_intake_activation(state_root, activation_id, *, now=None):
+    """Revalidate the exact consumed provider authority; never issue authority here."""
+    state = Path(state_root).resolve()
+    if not re.fullmatch(r"[a-f0-9]{32}", str(activation_id or "")):
+        raise ActivationError("intake_activation_identity_invalid")
+    binding = governed_runtime_binding(state / "core-runtime-current", required=True)
+    if (state / "supervisor.stop").exists():
+        raise ActivationError("governed_stop_active")
+    ledger = state / "activation-ledger"
+    if any((ledger / (activation_id + suffix)).exists() for suffix in
+           ("-failure.json", "-recovery-completed.json", "-reconciled.json")):
+        raise ActivationError("intake_activation_closed")
+    live = state / "activation-packet.json"
+    packet_path = live if live.exists() else ledger / (activation_id + "-verified-activation-packet.json")
+    packet = _read_json(packet_path, "intake_activation_packet_missing")
+    key = _read_key(state / "activation-authority.key")
+    authority = packet.get("authority") or {}
+    _validate_authority(authority, key, now=now)
+    if (authority.get("execution_mode") != INTAKE_EXECUTION_MODE
+            or packet.get("activation_id") != activation_id or authority.get("activation_id") != activation_id
+            or packet.get("version") != ACTIVATION_VERSION
+            or packet.get("status") not in {"provider_pending", _started_status(authority)}
+            or not hmac.compare_digest(packet.get("packet_hmac_sha256", ""), _sign_packet(packet, key))
+            or Path(packet.get("runtime_root", "")) != state / "core-runtime-current"
+            or Path(packet.get("execution_root", "")) != state / "core-execution-current"
+            or _sha256(state / "runtime-manifest.json") != authority.get("manifest_sha256")):
+        raise ActivationError("intake_activation_binding_changed")
+    manifest = _read_json(state / "runtime-manifest.json", "intake_manifest_invalid")
+    if (manifest.get("promoted_commit") != authority.get("runtime_revision")
+            or authority.get("runtime_revision") != authority.get("execution_revision")
+            or manifest.get("initialization_sha256") != _sha256(state / "initialization.json")
+            or _sha256(authority.get("receipt_path", "")) != authority.get("receipt_sha256")
+            or manifest.get("validation_receipt_sha256") != authority.get("receipt_sha256")):
+        raise ActivationError("intake_runtime_tuple_changed")
+    consumed_path = state / ("activation-consumed-" + activation_id + ".json")
+    if not consumed_path.exists():
+        consumed_path = ledger / (activation_id + "-verified-" + consumed_path.name)
+    consumed = _read_json(consumed_path, "intake_provider_consumption_missing")
+    _validate_consumed_identity(packet, consumed, key,
+        require_packet_hmac=packet["status"] == "provider_pending")
+    scope = _validate_intake_scope(authority)
+    if Path(scope["environment_path"]).resolve() != Path(binding["canonical_root"]) / ".env":
+        raise ActivationError("intake_environment_path_invalid")
+    return authority
+
+
+INTAKE_ENV_KEYS = frozenset({"DATABASE_URL", "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID",
+    "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "OOM_SAKKIE_TELEGRAM_OWNER_LANGUAGE",
+    "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON"})
+INTAKE_PROCESS_KEYS = frozenset({"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC",
+    "TEMP", "TMP", "GIT_CONFIG_GLOBAL", "CHARLIE_ACTIVATION_ID",
+    "CHARLIE_SUPERVISOR_GENERATION", "CHARLIE_STARTUP_NONCE", "CHARLIE_RUNNER_STARTUP_NONCE",
+    "CHARLIE_INTENDED_RUNTIME_REVISION", "CHARLIE_INTENDED_EXECUTION_REVISION",
+    "CHARLIE_CONTROLLER_PUBLIC_KEY", "CHARLIE_CORE_EXECUTION_MODE",
+    "CHARLIE_PROCESS_TERMINATION_ENABLED"})
+
+
+def intake_process_environment(environ):
+    return {k: str(v) for k, v in environ.items() if k in INTAKE_PROCESS_KEYS}
+
+
+def load_intake_environment(authority):
+    """Select only DB and owner read-filter values after signed provider admission."""
+    from dotenv import dotenv_values
+    scope = _validate_intake_scope(authority)
+    path = Path(scope["environment_path"])
+    if path.resolve() != path or path.is_symlink() or _sha256(path) != scope["environment_sha256"]:
+        raise ActivationError("intake_environment_changed")
+    # No interpolation: environment variables cannot override signed file values.
+    values = dotenv_values(path, interpolate=False)
+    selected = {k: str(values[k]) for k in INTAKE_ENV_KEYS if values.get(k) is not None}
+    if not selected.get("DATABASE_URL"):
+        raise ActivationError("intake_database_missing")
+    return selected
+
+
+def intake_database_connection(authority, database_url):
+    """Verified TLS and an exact signed target, with no service/passfile fallback."""
+    import psycopg
+    from psycopg.conninfo import conninfo_to_dict
+    scope = _validate_intake_scope(authority)
+    params = conninfo_to_dict(database_url)
+    if not params.get("password") or set(params) - {"host", "port", "dbname", "user", "password", "sslmode", "sslrootcert"}:
+        raise ActivationError("intake_database_options_invalid")
+    expected = {"host": scope["database_host"], "port": str(scope["database_port"]),
+                "dbname": scope["database_name"], "user": scope["database_user"]}
+    if any(str(params.get(k, "5432" if k == "port" else "")) != v for k,v in expected.items()):
+        raise ActivationError("intake_database_identity_changed")
+    ca = Path(scope["ca_path"])
+    if ca.resolve() != ca or ca.is_symlink() or _sha256(ca) != scope["ca_sha256"]:
+        raise ActivationError("intake_database_ca_changed")
+    connection = psycopg.connect(
+            **{k:v for k,v in params.items() if k not in {"sslmode", "sslrootcert"}},
+            sslmode="verify-full", sslrootcert=str(ca), connect_timeout=3)
+    if not connection.pgconn.ssl_in_use:
+        connection.close()
+        raise ActivationError("intake_database_tls_unproven")
+    return connection
+
+
+def _validate_intake_local_binding(authority, state_root, runtime_root):
+    binding = governed_runtime_binding(runtime_root, required=True)
+    scope = _validate_intake_scope(authority)
+    if Path(binding["state_root"]) != Path(state_root):
+        raise ActivationError("intake_state_root_mismatch")
+    expected_env = Path(binding["canonical_root"]) / ".env"
+    if Path(scope["environment_path"]) != expected_env or expected_env.resolve() != expected_env:
+        raise ActivationError("intake_environment_path_invalid")
+    for name, digest in (("environment_path", "environment_sha256"), ("ca_path", "ca_sha256")):
+        path = Path(scope[name])
+        if path.resolve() != path or path.is_symlink() or _sha256(path) != scope[digest]:
+            raise ActivationError("intake_local_configuration_changed")
+    return binding

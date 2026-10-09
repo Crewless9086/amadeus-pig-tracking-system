@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import os
 import hashlib
+import json
+import re
 
+from modules.charlie import INTAKE_EXECUTION_MODE
+
+from modules.charlie.manager_dependency_intake import consume_manager_dependencies
 from modules.charlie.block_adjudication import adjudicate_block
 from modules.charlie.delegated_governance import delegated_review_assessment, queue_candidate_assessment
 from modules.charlie.executive_control import build_executive_cycle
 from modules.charlie.executive_store import (
     complete_control_command,
     load_executive_context,
+    load_manager_dependency_policy,
     queue_outbox,
     record_control_command,
     upsert_recovery_case,
@@ -30,6 +36,8 @@ def executive_mode():
 
 
 def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None):
+    if os.getenv("CHARLIE_CORE_EXECUTION_MODE") == INTAKE_EXECUTION_MODE:
+        return {"success": False, "status": "scoped_intake_entry_required"}, 403
     mode = executive_mode()
     if mode == "off":
         return {"success": True, "status": "executive_disabled", "mode": mode}, 200
@@ -37,6 +45,8 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
     context, context_status = load_executive_context(database_url=database_url, connect_factory=connect_factory)
     if loaded_status >= 400 or context_status >= 400:
         return {"success": False, "status": "executive_context_unavailable", "mode": mode, "mission_status": loaded_status, "policy_status": context_status}, 503
+    manager_intake = consume_manager_dependencies(mode=mode, policies=context.get("policies", []),
+        database_url=database_url, connect_factory=connect_factory)
     cycle = build_executive_cycle(loaded.get("missions", []), context.get("policies", []), runner=runner, goals=context.get("goals", []), trust=context.get("trust", []))
     results = []
     for command in cycle["commands"]:
@@ -77,7 +87,14 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
                     database_url=database_url,
                     connect_factory=connect_factory,
                 )
-    return {"success": True, "status": "executive_cycle_complete", "mode": mode, "cycle": cycle, "results": results}, 200
+    # The ordinary pickup caller records non-complete statuses even when the
+    # legacy command list is empty. Preserve unrelated work and expose this
+    # component failure through that existing heartbeat rail, without a send.
+    intake_failed = manager_intake.get("failures", 0) > 0
+    return {"success": not intake_failed,
+            "status": "executive_cycle_component_failed" if intake_failed else "executive_cycle_complete",
+            "mode": mode, "cycle": cycle, "results": results,
+            "manager_dependency_intake": manager_intake}, 503 if intake_failed else 200
 
 
 def _command_outcome(command, database_url, connect_factory):
@@ -757,3 +774,24 @@ def _execute_queue_selection(command, command_id, database_url, connect_factory)
     success = status < 400 and result.get("success")
     complete_control_command(command_id, success=success, result=result, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
     return {"command": command, "status": "queue_selected" if success else "transition_failed", "result": result}
+
+
+def run_manager_dependency_intake_cycle(*, policy_id, scope_sha256, database_url=None, connect_factory=None):
+    """Receipt-only entry. Caller must establish the signed provider/controller gate."""
+    if not re.fullmatch(r"[a-f0-9]{64}", str(scope_sha256 or "")):
+        return {"success": False, "status": "intake_scope_binding_invalid"}, 400
+    context, status = load_manager_dependency_policy(policy_id, database_url=database_url,
+        connect_factory=connect_factory)
+    if status >= 400:
+        return context, status
+    policy = context["policies"][0]
+    digest = hashlib.sha256(json.dumps(policy.get("scope"), sort_keys=True,
+        separators=(",", ":")).encode()).hexdigest()
+    if policy.get("policy_id") != policy_id or digest != scope_sha256:
+        return {"success": False, "status": "intake_policy_scope_changed"}, 409
+    result = consume_manager_dependencies(mode="active", policies=[policy],
+        database_url=database_url, connect_factory=connect_factory)
+    success = result.get("failures") == 0 and result.get("status") == "manager_dependency_intake_checked"
+    return {"success": success, "status": "scoped_intake_cycle_complete" if success else "scoped_intake_cycle_failed",
+        "manager_dependency_intake": result, "mission_pickup_attempted": False,
+        "release_attempted": False}, 200 if success else 503

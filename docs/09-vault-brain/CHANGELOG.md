@@ -1,5 +1,47 @@
 # Vault Brain Changelog
 
+## 2026-10-09 - Stopped CORE initialization and receipt-only startup
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Add typed absent-state initialization and validated first staging through the
+  existing runtime rails, preserving a real stop, completed initialization,
+  unused signed evidence, exact disabled task and three-worktree boundary.
+- Add a provider/controller-bound receipt-only mode using the existing named
+  policy, mission admission and manager event contract. Reject present intake
+  admissions in ordinary selection, atomic claims, external dispatch and native
+  recovery; malformed markers cannot become ordinary work.
+- Keep scoped startup free of broad dotenv loading, ordinary queue execution,
+  automatic repair/restart and model calls. Require explicit verified TLS and
+  current signed expiry/configuration/process identity. Default modes are unchanged.
+- Preserve explicit test-root isolation inside initialized runtime copies and
+  report receipt-only state plus bounded sanitized intake outcome readback.
+- Correct Windows lifecycle qualification to retain real process guards and
+  contain disposable test children. Hosted startup/refusal checks do not prove
+  successful independent operational stop or unattended runtime readiness.
+- This source does not enable tasks, establish policies, admit a live mission or
+  prove worker pickup. Runtime activation and genuine operational acceptance
+  remain required; technical receipt acknowledgement is not mission completion.
+
+## 2026-10-06 - Explicitly admitted manager engineering intake
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Reuse existing CORE mission finding events, control commands and manager
+  event history for a separate receipt of exact mortality technical dependencies.
+  Frozen source anchors, current owner, material/generation/ref identity, policy
+  budget, mission admission, supersession, holds and leases all fail closed.
+- The existing active executive may consume only the new exact scoped capability;
+  generic policies and observe/off modes do not enable this adapter. No policy,
+  mission, grant, scheduled task or runtime activation is created by this change.
+- CORE commit is read back before an append-only manager receipt link. Crashes
+  and concurrent callers replay the same identities, within one shared deadline.
+  Existing pending proof flags and manager case projections remain unchanged.
+- A finding receipt proves no worker selection, pickup, repair or welfare outcome.
+  In-progress, unowned or unadmitted missions are deliberately excluded. Actual
+  intake admission and current runtime readiness require separate verified setup.
+
+
 ## 2026-10-06 - Legacy mortality exceptions receive a work turn
 
 Status: `LOCAL_NOT_RELEASED`.

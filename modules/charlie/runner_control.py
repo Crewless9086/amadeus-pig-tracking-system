@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import csv
 import signal
@@ -10,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from modules.charlie import (
+    INTAKE_EXECUTION_MODE, governed_runtime_binding, governed_state_root,
     TEST_CONTROL_ROOT_ENV,
     TEST_ISOLATION_ENV,
     shared_repository_root,
@@ -19,6 +21,7 @@ from modules.charlie import (
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.process_ownership import (
     inspect_process,
+    inspect_processes,
     inspect_descendant_processes,
     generate_controller_signing_key,
     make_ownership_record,
@@ -50,8 +53,15 @@ def _control_root(repo_root=REPO_ROOT, environ=None):
     return _shared_repository_root(repo_root)
 
 
+def _runner_directory(repo_root=REPO_ROOT, environ=None):
+    control_root = _control_root(repo_root, environ)
+    if test_isolation_enabled(environ):
+        return control_root / ".charlie_runner"
+    return governed_state_root(repo_root, control_root / ".charlie_runner")
+
+
 CONTROL_ROOT = _control_root()
-RUNNER_DIR = CONTROL_ROOT / ".charlie_runner"
+RUNNER_DIR = _runner_directory()
 HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
@@ -59,7 +69,7 @@ START_CONTAINMENT_PATH = RUNNER_DIR / "startup-containment.json"
 SUPERVISOR_STOP_PATH = RUNNER_DIR / "supervisor.stop"
 EXECUTION_MODE_ORDINARY = "ordinary"
 EXECUTION_MODE_OBSERVE_ONLY = "observe_only"
-EXECUTION_MODES = {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY}
+EXECUTION_MODES = {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY, INTAKE_EXECUTION_MODE}
 EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABLED"
 EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
@@ -71,6 +81,9 @@ SUPERVISOR_PACKET_VERSION = "charlie_supervisor_ownership_v3"
 
 
 def _python_executable(repo_root=REPO_ROOT):
+    binding = governed_runtime_binding(repo_root)
+    if binding:
+        return binding["interpreter"]
     if (
         os.name == "nt"
         and Path(repo_root).resolve() == REPO_ROOT.resolve()
@@ -156,6 +169,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         status = "runner_active"
         next_action = {
             "observe_only": "CORE is healthy in credential-free observation mode and cannot access the mission queue.",
+            "receipt_only_intake": "CORE is checking admitted engineering dependencies and recording receipts. Worker pickup and repair are not enabled by this mode.",
             "running_agent": "CORE is actively executing the displayed agent stage.",
             "between_stages": "CORE is healthy and transitioning between agent stages.",
             "waiting_for_queue": "CORE is healthy and waiting for an approved mission.",
@@ -173,11 +187,15 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     else:
         status = "runner_not_started"
         next_action = "Start the local CHARLIE runner before expecting approved missions to auto-pick up."
+    if payload.get("execution_mode") == INTAKE_EXECUTION_MODE and not active:
+        next_action = "Receipt-only intake is not running. Review its startup or contained failure before resuming; worker pickup and repair remain unproven."
     return redact_payload({
         "success": True,
         "status": status,
         "active": active,
         "operating_state": operating_state,
+        "execution_mode": payload.get("execution_mode", EXECUTION_MODE_ORDINARY),
+        "intake": _intake_heartbeat_summary(payload.get("intake")) if payload.get("execution_mode") == INTAKE_EXECUTION_MODE else {},
         "pid": payload.get("pid"),
         "process_alive": process_alive,
         "heartbeat_fresh": heartbeat_fresh,
@@ -231,6 +249,8 @@ def _runner_operating_state(payload, ledger, active):
         return "stale_or_stopped"
     if str(payload.get("execution_mode") or "") == EXECUTION_MODE_OBSERVE_ONLY:
         return "observe_only"
+    if payload.get("execution_mode") == INTAKE_EXECUTION_MODE:
+        return "receipt_only_intake"
     latest = ledger.get("latest_stage") if isinstance(ledger, dict) and isinstance(ledger.get("latest_stage"), dict) else {}
     current_agent = str(payload.get("current_agent") or latest.get("agent") or "").strip()
     stage_status = str(latest.get("status") or "").strip().lower()
@@ -240,6 +260,57 @@ def _runner_operating_state(payload, ledger, active):
         return "between_stages"
     queue_health = payload.get("queue_health") if isinstance(payload.get("queue_health"), dict) else {}
     return "queue_deadlocked" if queue_health.get("deadlocked") else "waiting_for_queue"
+
+
+
+_INTAKE_OUTCOMES = frozenset({
+    "scoped_intake_cycle_complete", "scoped_intake_cycle_failed", "intake_cycle_contained",
+    "intake_scope_binding_invalid", "intake_policy_scope_changed", "intake_policy_id_invalid",
+    "intake_policy_read_failed", "intake_policy_not_current", "manager_dependency_intake_checked",
+    "manager_dependency_intake_disabled", "manager_dependency_policy_ambiguous",
+    "manager_dependency_scope_invalid", "intake_linked", "intake_exact_replay",
+    "manager_dependency_intake_refused", "manager_dependency_intake_unavailable",
+})
+_INTAKE_ERROR_TYPES = frozenset({"ActivationError", "IntakeRefused", "RuntimeError",
+    "ValueError", "TypeError", "KeyError", "OSError", "TimeoutError", "OperationalError",
+    "InterfaceError", "DatabaseError", "IntegrityError", "QueryCanceled", "LockNotAvailable"})
+_INTAKE_RECEIPT_PATTERNS = {
+    "command_id": r"CMD-[A-F0-9]{20}",
+    "event_id": r"CORE-MISSION-CONTROL-[A-F0-9]{24}",
+    "manager_link_event_id": r"OOM-CORE-INTAKE-[A-F0-9]{32}",
+}
+
+
+def _intake_heartbeat_summary(value):
+    """Project bounded receipt telemetry, never policy, credentials or free text."""
+    if not isinstance(value, dict) or not value:
+        return {}
+    detail = value.get("manager_dependency_intake", value)
+    detail = detail if isinstance(detail, dict) else {}
+    results = detail.get("results")
+    results = results if isinstance(results, list) else []
+    summary = {"status": value.get("status") if isinstance(value.get("status"), str) and value["status"] in _INTAKE_OUTCOMES else "intake_outcome_unrecognized",
+        "results": [], "results_truncated": len(results) > 8 or value.get("results_truncated") is True}
+    failures = detail.get("failures")
+    summary["failures"] = failures if type(failures) is int and 0 <= failures <= 8 else None
+    for item in results[:8]:
+        if not isinstance(item, dict):
+            summary["results"].append({"status": "intake_outcome_unrecognized"})
+            continue
+        projected = {"status": item.get("status") if isinstance(item.get("status"), str) and item["status"] in _INTAKE_OUTCOMES else "intake_outcome_unrecognized"}
+        for key, pattern in _INTAKE_RECEIPT_PATTERNS.items():
+            ref = item.get(key)
+            if isinstance(ref, str) and re.fullmatch(pattern, ref):
+                projected[key] = ref
+        for key in ("finding_received", "link_created"):
+            if type(item.get(key)) is bool:
+                projected[key] = item[key]
+        if "failure_kind" in item:
+            projected["failure_kind"] = item["failure_kind"] if isinstance(item["failure_kind"], str) and item["failure_kind"] in _INTAKE_ERROR_TYPES else "UnclassifiedError"
+        summary["results"].append(projected)
+    if "error_type" in value:
+        summary["error_type"] = value["error_type"] if isinstance(value["error_type"], str) and value["error_type"] in _INTAKE_ERROR_TYPES else "UnclassifiedError"
+    return summary
 
 
 def write_runner_heartbeat(result=None, heartbeat_path=None):
@@ -297,6 +368,8 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
             "release_attempted",
         } and key in previous:
             payload[key] = previous.get(key)
+    if payload["execution_mode"] == INTAKE_EXECUTION_MODE and "intake" in result:
+        payload["intake"] = _intake_heartbeat_summary(result["intake"])
     payload = redact_payload(payload)
     generation = str(payload.get("supervisor_generation") or "")
     if generation:
@@ -391,6 +464,12 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
             "status": "governed_stop_active",
             "stop_marker": str(SUPERVISOR_STOP_PATH),
         }, 423
+    if execution_mode == INTAKE_EXECUTION_MODE:
+        from modules.charlie.runtime_activation import read_intake_activation
+        try:
+            read_intake_activation(RUNNER_DIR, os.getenv("CHARLIE_ACTIVATION_ID"))
+        except Exception as exc:
+            return {"success": False, "status": "intake_activation_refused", "error_type": type(exc).__name__}, 423
     supervisor = _read_json(SUPERVISOR_PATH)
     if _pid_alive(supervisor.get("pid")):
         active_mode = str(
@@ -404,7 +483,7 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
             or EXECUTION_MODE_ORDINARY
         )
         active_mode_valid = active_mode == execution_mode and signed_mode == execution_mode
-        if execution_mode == EXECUTION_MODE_OBSERVE_ONLY and active_mode_valid:
+        if execution_mode != EXECUTION_MODE_ORDINARY and active_mode_valid:
             public_key = str(supervisor.get("controller_public_key") or "")
             unsigned_ack = (
                 {
@@ -466,7 +545,8 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
             "runner": (
                 status_override
                 if isinstance(status_override, dict)
-                else runner_status(include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY)
+                else (runner_status(include_orphans=False, include_git=False, include_ledger=False)
+                 if execution_mode == INTAKE_EXECUTION_MODE else runner_status(include_ledger=execution_mode == EXECUTION_MODE_ORDINARY))
             ),
             "supervisor_pid": supervisor.get("pid"),
             "supervisor_generation": supervisor.get("generation", ""),
@@ -474,7 +554,8 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
     status = (
         status_override
         if isinstance(status_override, dict)
-        else runner_status(include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY)
+        else (runner_status(include_orphans=False, include_git=False, include_ledger=False)
+                 if execution_mode == INTAKE_EXECUTION_MODE else runner_status(include_ledger=execution_mode == EXECUTION_MODE_ORDINARY))
     )
     if status["active"]:
         return {"success": True, "status": "runner_already_active", "runner": status}, 200
@@ -500,8 +581,12 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
     startup_nonce = uuid.uuid4().hex
     controller_private_key, controller_public_key = generate_controller_signing_key()
     intended_revision = _current_git_commit()
+    inherited = os.environ
+    if execution_mode == INTAKE_EXECUTION_MODE:
+        from modules.charlie.runtime_activation import intake_process_environment
+        inherited = intake_process_environment(os.environ)
     child_env = {
-        **os.environ,
+        **inherited,
         "CHARLIE_SUPERVISOR_GENERATION": generation,
         "CHARLIE_STARTUP_NONCE": startup_nonce,
         "CHARLIE_INTENDED_RUNTIME_REVISION": intended_revision,
@@ -868,7 +953,7 @@ def stop_runner():
         supervisor.get("execution_mode") or EXECUTION_MODE_ORDINARY
     )
     status = runner_status(
-        include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY
+        include_ledger=execution_mode == EXECUTION_MODE_ORDINARY
     )
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -1552,6 +1637,8 @@ def _contain_observed_tree(tree, *, allow_root_current_descendant=True):
     if not isinstance(root, dict) or not root.get("pid"):
         return {"success": False, "reason": "ownership_identity_incomplete:root.pid"}
     members = tree.get("members") if isinstance(tree.get("members"), list) else []
+    if any(not isinstance(record, dict) for record in members):
+        return {"success": False, "reason": "ownership_identity_incomplete:member"}
     decisions = []
     terminated_pids = []
     for record in [root, *[
@@ -1601,6 +1688,67 @@ def _contain_observed_tree(tree, *, allow_root_current_descendant=True):
     }
 
 
+def _spawned_observed_console_members(pid, tree, descendants):
+    """Reuse console roles only from a complete, unchanged owned startup tree."""
+    if (
+        not isinstance(tree, dict) or not isinstance(tree.get("root"), dict)
+        or not isinstance(descendants, list)
+        or any(not isinstance(row, dict) for row in descendants)
+    ):
+        return {}, "spawned_observed_tree_metadata_incomplete"
+    try:
+        root = tree["root"]
+        if int(root.get("pid") or 0) != pid or int(tree.get("root_pid") or 0) != pid:
+            return {}, "spawned_observed_root_pid_mismatch"
+        binding = {
+            "generation": root.get("runner_generation"),
+            "revision": root.get("revision"),
+            "startup_nonce": root.get("startup_nonce"),
+        }
+        structural = validate_bootstrap_tree(
+            tree, **binding, expected_root_parent_pid=os.getpid(),
+        )
+        if not structural.get("authorized"):
+            return {}, structural["reason"]
+        members = {int(record["pid"]): record for record in tree["members"]}
+        captured_pids = [int(row.get("pid") or 0) for row in descendants]
+        if (
+            len(set(captured_pids)) != len(captured_pids)
+            or set(captured_pids) != set(members) - {pid}
+        ):
+            return {}, "spawned_observed_descendant_set_mismatch"
+        for row in descendants:
+            record = members[int(row["pid"])]
+            captured = make_ownership_record(
+                row, record["runner_generation"], record["mission_id"],
+                record["execution_id"], record["ownership_type"],
+                revision=record["revision"], startup_nonce=record["startup_nonce"],
+                process_role=record["process_role"],
+            )
+            if any(captured[field] != record.get(field) for field in captured):
+                return {}, "spawned_observed_descendant_identity_mismatch"
+        live = validate_live_bootstrap_tree(tree, **binding)
+        if not live.get("authorized"):
+            return {}, live["reason"]
+        expected = {
+            field: root[field] for field in (
+                "runner_generation", "mission_id", "execution_id", "ownership_type"
+            )
+        }
+        # The canonical batch inspector keeps the tree authorization on one
+        # snapshot instead of issuing a CIM query for each member and ancestor.
+        current_members = inspect_processes(members)
+        decision = validate_process_tree(
+            tree, expected, current_members.get, require_descendant=True,
+            allow_current_descendant=True,
+        )
+        if not decision.get("authorized"):
+            return {}, decision["reason"]
+        return members, "live_spawned_observed_tree_verified"
+    except (KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
+        return {}, "spawned_observed_tree_inspection_failed"
+
+
 def _contain_spawned_process(process, observed_tree):
     """Contain a freshly returned Popen handle even when inspection was partial."""
     observed = _contain_observed_tree(observed_tree)
@@ -1632,11 +1780,28 @@ def _contain_spawned_process(process, observed_tree):
             "observed_containment": observed,
         }
     descendants = inspect_descendant_processes(pid)
+    observed_members = {}
+    members = observed_tree.get("members") if isinstance(observed_tree, dict) else []
+    if isinstance(members, list) and any(
+        isinstance(record, dict)
+        and str(record.get("process_role") or "").endswith("_console_host")
+        for record in members
+    ):
+        observed_members, reason = _spawned_observed_console_members(
+            pid, observed_tree, descendants,
+        )
+        if not observed_members:
+            return {
+                "success": False,
+                "reason": f"spawned_observed_tree_unverified:{reason}",
+                "pid": pid,
+                "observed_containment": observed,
+            }
     descendant_records = []
     for descendant in descendants:
         descendant_pid = int(descendant.get("pid") or 0)
         structural_token = f"fresh-spawn-handle:{pid}"
-        record = make_ownership_record(
+        record = observed_members.get(descendant_pid) or make_ownership_record(
             descendant,
             structural_token,
             "charlie-startup-containment",
@@ -1654,6 +1819,10 @@ def _contain_spawned_process(process, observed_tree):
             expected,
             inspect_process,
             allow_current_descendant=True,
+            allow_console_host_tree_member=bool(
+                observed_members
+                and str(record.get("process_role") or "").endswith("_console_host")
+            ),
         )
         if descendant_pid <= 0 or not decision.get("authorized"):
             return {
@@ -1670,6 +1839,19 @@ def _contain_spawned_process(process, observed_tree):
         int(record["pid"]): str(record["creation_time"])
         for record in descendant_records
     }
+    # Revalidation can take time.  Never let an exited retained handle lend
+    # its numeric PID to the fallback after the complete authorization pass.
+    try:
+        root_still_live = process.poll() is None
+    except (OSError, subprocess.SubprocessError):
+        root_still_live = False
+    if not root_still_live:
+        return {
+            "success": False,
+            "reason": "spawned_process_handle_no_longer_live",
+            "pid": pid,
+            "observed_containment": observed,
+        }
     try:
         if os.name == "nt":
             for descendant in reversed(descendant_records):

@@ -6,6 +6,51 @@ on:
     branches: [main]
 
 jobs:
+  manager-dependency-intake:
+    name: Default-inert manager engineering intake with disposable PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: core_manager_intake_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d core_manager_intake_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHON_DOTENV_DISABLED: "1"
+      OOM_PROTECTED_ACTION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/core_manager_intake_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Prepare disposable migration role names
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ["OOM_PROTECTED_ACTION_POSTGRES_URL"]) as db:
+              for role in ("anon", "authenticated"):
+                  if not db.execute("select 1 from pg_roles where rolname=%s", (role,)).fetchone():
+                      db.execute(psycopg.sql.SQL("CREATE ROLE {} NOLOGIN").format(psycopg.sql.Identifier(role)))
+          PY
+      - name: Prove typed receipt, replay, crash, concurrency and inactive defaults
+        run: >-
+          python -m pytest -q -p no:cacheprovider
+          tests/test_charlie_manager_dependency_intake.py
+          tests/test_charlie_manager_dependency_intake_postgres.py
+          tests/test_charlie_executive_runtime.py
+          tests/test_charlie_mission_control.py
+
   mission-admission-candidate-diagnostic:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -290,7 +335,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt pytest
       - name: Run isolated CHARLIE modules with hard timeouts
         shell: bash
         run: |
@@ -310,7 +355,12 @@ jobs:
               module="${test_file%.py}"
               module="${module//\//.}"
               echo "::group::$module"
-              timeout 120s python -m unittest "$module" -q
+              case "$test_file" in
+                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py)
+                  timeout 120s python -m pytest -q -p no:cacheprovider --basetemp "$control_root/pytest" "$test_file"
+                  ;;
+                *) timeout 120s python -m unittest "$module" -q ;;
+              esac
               echo "::endgroup::"
             )
           done < <(find tests -maxdepth 1 -name 'test_charlie_*.py' -print | sort)
