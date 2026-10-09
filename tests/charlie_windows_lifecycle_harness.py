@@ -44,26 +44,103 @@ def worker_environment(source, root, job_name):
     return env
 
 
-def compare_snapshot_environments(inspector):
-    """Same real inspector and timeout policy; discard process details before reporting."""
-    current = dict(os.environ)
-    legacy = {k: v for k, v in current.items() if k.upper() not in NATIVE_PLATFORM_ENV | {"PSMODULEPATH"}}
+PHASE_PREFIX = "CHARLIE_PHASE|"
+DEFAULT_PHASES = ("startup_default", "narrow_current_pid", "broad_acquisition", "projection_serialization")
+
+
+def powershell_phase_specs():
+    """Fixed scripts print only stage markers/counts; process fields stay in memory."""
+    prefix = (
+        "$ErrorActionPreference='Stop';"
+        "function Emit([string]$stage,[long]$count){"
+        "[Console]::Out.WriteLine('CHARLIE_PHASE|'+$stage+'|'+$count);[Console]::Out.Flush()};"
+        "Emit 'started' 0;"
+    )
+    finish = "Emit 'completed' 0;"
+    startup = prefix + finish
+    narrow = prefix + "$rows=@(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID));Emit 'acquired' $rows.Count;" + finish
+    broad = prefix + "$rows=@(Get-CimInstance Win32_Process);Emit 'acquired' $rows.Count;" + finish
+    # Materialize the same acquisition/filter/projection/JSON/base64 operations at
+    # explicit boundaries to locate a stall. This is diagnostic, not an inspector replacement.
+    projection = prefix + (
+        "$selfPid=$PID;$rows=@(Get-CimInstance Win32_Process);Emit 'acquired' $rows.Count;"
+        "$projected=@($rows|"
+        "Where-Object{$_.ProcessId -ne $selfPid -and $_.ParentProcessId -ne $selfPid}|"
+        "ForEach-Object{"
+        "[pscustomobject]@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;"
+        "creation_time=[string]$_.CreationDate;executable_path=[string]$_.ExecutablePath;"
+        "command_line=[string]$_.CommandLine;name=[string]$_.Name}});"
+        "Emit 'projected' $projected.Count;"
+        "$json=$projected|ConvertTo-Json -Compress;"
+        "$bytes=[Text.Encoding]::UTF8.GetBytes([string]$json);Emit 'serialized' $bytes.Length;"
+        "$encoded=[Convert]::ToBase64String($bytes);Emit 'encoded' $encoded.Length;"
+    ) + finish
+    return (
+        ("startup_default", startup, {}, ("started", "completed")),
+        ("startup_no_window", startup, {"creationflags": 0x08000000}, ("started", "completed")),
+        ("startup_closed_stdin", startup, {"stdin": subprocess.DEVNULL}, ("started", "completed")),
+        ("narrow_current_pid", narrow, {}, ("started", "acquired", "completed")),
+        ("broad_acquisition", broad, {}, ("started", "acquired", "completed")),
+        ("projection_serialization", projection, {}, ("started", "acquired", "projected", "serialized", "encoded", "completed")),
+    )
+
+
+def parse_phase_markers(output, expected):
+    """Reject unexpected/oversized data without retaining it, including timeout output."""
+    if not isinstance(output, (str, bytes)) or len(output) > 4096:
+        return [], False
+    if isinstance(output, bytes):
+        try:
+            output = output.decode("ascii")
+        except UnicodeDecodeError:
+            return [], False
+    markers = []
+    for line in output.splitlines():
+        match = re.fullmatch(r"CHARLIE_PHASE\|([a-z_]+)\|([0-9]{1,10})", line)
+        if not match or len(markers) >= len(expected) or match[1] != expected[len(markers)]:
+            return [], False
+        count = int(match[2])
+        if count > 1_000_000_000 or (match[1] in {"started", "completed"} and count != 0):
+            return [], False
+        markers.append({"stage": match[1], "count": count})
+    return markers, True
+
+
+def probe_powershell_phases():
+    """Six single-attempt probes in the existing job; production's eight-second limit."""
     report = {}
-    for label, environment in (("legacy_sanitized", legacy), ("minimal_platform", current)):
+    for label, script, comparison, expected in powershell_phase_specs():
         started = time.monotonic()
-        item = {"success": False, "row_count": 0, "error_type": None}
-        with patch.dict(os.environ, environment, clear=True):
-            try:
-                rows = inspector()
-                item["success"] = isinstance(rows, list) and bool(rows)
-                item["row_count"] = len(rows) if isinstance(rows, list) else 0
-                del rows
-            except Exception as exc:
-                kind = type(exc).__name__
-                item["error_type"] = kind if kind in {"TimeoutExpired", "OSError", "ValueError", "JSONDecodeError", "Error"} else "UnexpectedError"
+        item = {"success": False, "exited_zero": False, "error_type": None}
+        output = ""
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=8, check=False, **comparison,
+            )
+            output = result.stdout
+            item["exited_zero"] = result.returncode == 0
+            if result.returncode:
+                item["error_type"] = "NonzeroExit"
+        except subprocess.TimeoutExpired as exc:
+            output = exc.stdout or ""
+            item["error_type"] = "TimeoutExpired"
+        except Exception as exc:
+            kind = type(exc).__name__
+            item["error_type"] = kind if kind in {"OSError", "ValueError"} else "UnexpectedError"
+        markers, valid = parse_phase_markers(output, expected)
+        item["markers"] = markers
+        item["output_valid"] = valid
+        item["success"] = item["exited_zero"] and valid and len(markers) == len(expected)
         item["elapsed_ms"] = round((time.monotonic() - started) * 1000)
         report[label] = item
     return report
+
+
+def default_phases_passed(report):
+    # Startup comparisons provide evidence, never substitute for the actual default path.
+    return all(report.get(label, {}).get("success") is True for label in DEFAULT_PHASES)
 
 
 class BasicLimits(ctypes.Structure):
@@ -236,16 +313,15 @@ def _worker(selector, root):
         raise RuntimeError("lifecycle_test_network_forbidden")
     socket.socket.connect = deny_network
     with windows_job_guard():
-        comparison = None
+        phases = None
         if selector == SELECTORS[1]:
-            from modules.charlie import process_ownership
-            comparison = compare_snapshot_environments(process_ownership._windows_process_snapshot)
-            with (root / "cim-environment-comparison.json").open("x", encoding="utf-8") as stream:
-                json.dump(comparison, stream, indent=2)
+            phases = probe_powershell_phases()
+            with (root / "cim-phase-diagnostic.json").open("x", encoding="utf-8") as stream:
+                json.dump(phases, stream, indent=2)
         with (root / "test.log").open("x", encoding="utf-8") as log:
-            if comparison is not None:
-                log.write("CIM_ENVIRONMENT_COMPARISON=" + json.dumps(comparison, sort_keys=True) + "\n")
-                if not comparison["minimal_platform"]["success"]:
+            if phases is not None:
+                log.write("CIM_PHASE_DIAGNOSTIC=" + json.dumps(phases, sort_keys=True) + "\n")
+                if not default_phases_passed(phases):
                     report = {"selector": selector, "tests_run": 0, "failures": 0, "errors": 1, "skips": 0}
                     with (root / "result.json").open("x", encoding="utf-8") as stream:
                         json.dump(report, stream, indent=2)

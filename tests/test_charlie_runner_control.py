@@ -1667,41 +1667,109 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "system_root_required"):
             harness.worker_environment({}, Path("case-root"), "test-job")
 
-    def test_snapshot_comparison_runs_identical_inspector_without_logging_process_details(self):
+    def test_phase_probes_preserve_production_stdio_and_change_only_one_startup_argument(self):
+        import ast
         from tests import charlie_windows_lifecycle_harness as harness
-        current = {"SYSTEMROOT": "C:/Windows", "USERPROFILE": "synthetic-profile", "PSMODULEPATH": "system-modules", harness.JOB_ENV: "same-owned-job"}
+        source = ast.parse(Path(process_ownership.__file__).read_text(encoding="utf-8"))
+        inspector = next(n for n in source.body if isinstance(n, ast.FunctionDef) and n.name == "_windows_process_snapshot")
+        run = next(n for n in ast.walk(inspector) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Name) and n.func.value.id == "subprocess" and n.func.attr == "run")
+        production_kwargs = {k.arg: ast.literal_eval(k.value) for k in run.keywords}
+        self.assertEqual(production_kwargs, {"capture_output": True, "text": True, "encoding": "utf-8",
+            "errors": "replace", "timeout": 8, "check": False})
+        specs = harness.powershell_phase_specs()
+        self.assertEqual(len(specs), 6)
+        self.assertEqual([s[0] for s in specs], ["startup_default", "startup_no_window", "startup_closed_stdin",
+            "narrow_current_pid", "broad_acquisition", "projection_serialization"])
+        self.assertEqual(specs[0][1], specs[1][1]); self.assertEqual(specs[0][1], specs[2][1])
+        self.assertEqual([s[2] for s in specs], [{}, {"creationflags": 0x08000000}, {"stdin": subprocess.DEVNULL}, {}, {}, {}])
         calls = []
-        def inspect():
-            calls.append(dict(os.environ))
-            if len(calls) == 1:
-                raise subprocess.TimeoutExpired(["private-command-not-for-report"], 8, output="private-process-output")
-            return [{"command_line": "private-process-details"}]
-        with patch.dict(os.environ, current, clear=True):
-            result = harness.compare_snapshot_environments(inspect)
-            self.assertEqual(dict(os.environ), current)
-        self.assertEqual(len(calls), 2)
-        self.assertNotIn("USERPROFILE", calls[0]); self.assertNotIn("PSMODULEPATH", calls[0])
-        self.assertEqual(calls[0][harness.JOB_ENV], "same-owned-job")
-        self.assertEqual(calls[1], current)
-        self.assertEqual(result["legacy_sanitized"]["error_type"], "TimeoutExpired")
-        self.assertFalse(result["legacy_sanitized"]["success"])
-        self.assertTrue(result["minimal_platform"]["success"])
-        self.assertEqual(result["minimal_platform"]["row_count"], 1)
+        def invoke(command, **kwargs):
+            spec = specs[len(calls)]; calls.append((command, kwargs))
+            self.assertEqual(command, ["powershell", "-NoProfile", "-NonInteractive", "-Command", spec[1]])
+            self.assertEqual(kwargs, {**production_kwargs, **spec[2]})
+            output = "".join("CHARLIE_PHASE|" + stage + "|0\n" for stage in spec[3])
+            return SimpleNamespace(returncode=0, stdout=output, stderr="private-error-not-retained")
+        before = dict(os.environ)
+        with patch.object(harness.subprocess, "run", side_effect=invoke):
+            result = harness.probe_powershell_phases()
+        self.assertEqual(len(calls), 6)
+        self.assertEqual(dict(os.environ), before)
+        self.assertTrue(harness.default_phases_passed(result))
         self.assertNotIn("private-", json.dumps(result))
+        script = ast.literal_eval(next(n.value for n in inspector.body if isinstance(n, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "script" for t in n.targets)))
+        same_projection = script.split("Where-Object", 1)[1].split("|ConvertTo-Json", 1)[0]
+        self.assertIn("Where-Object" + same_projection, specs[-1][1])
+        self.assertIn("[Console]::Out.Flush()", specs[-1][1])
+        self.assertNotIn("[Console]::Out.Write($json)", specs[-1][1])
 
-    def test_snapshot_comparison_preserves_corrected_failure_and_restores_environment(self):
+    def test_phase_timeout_retains_only_fixed_completed_markers_not_exception_details(self):
         from tests import charlie_windows_lifecycle_harness as harness
-        current = {"SYSTEMROOT": "C:/Windows", "APPDATA": "synthetic"}
-        inspect = Mock(side_effect=OSError("sensitive details"))
-        with patch.dict(os.environ, current, clear=True):
-            result = harness.compare_snapshot_environments(inspect)
-            self.assertEqual(dict(os.environ), current)
-        self.assertEqual(inspect.call_count, 2)
-        for item in result.values():
+        error = subprocess.TimeoutExpired(["private-command"], 8,
+            output=b"CHARLIE_PHASE|started|0\n", stderr=b"private-error")
+        with patch.object(harness.subprocess, "run", side_effect=error) as invoke:
+            report = harness.probe_powershell_phases()
+        self.assertEqual(invoke.call_count, 6)  # one bounded attempt per probe, no retry
+        for item in report.values():
+            self.assertFalse(item["success"]); self.assertFalse(item["exited_zero"])
+            self.assertEqual(item["error_type"], "TimeoutExpired")
+            self.assertEqual(item["markers"], [{"stage": "started", "count": 0}])
+            self.assertTrue(item["output_valid"])
+        self.assertNotIn("private-", json.dumps(report))
+
+    def test_phase_parser_rejects_unexpected_private_or_malformed_output(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        expected = ("started", "acquired", "completed")
+        for output in ("private-process-details", "CHARLIE_PHASE|started|0\nsecret",
+            "CHARLIE_PHASE|completed|0\n", "CHARLIE_PHASE|started|0\nCHARLIE_PHASE|started|0\n",
+            "CHARLIE_PHASE|started|1\n", "CHARLIE_PHASE|started|0\nCHARLIE_PHASE|acquired|1000000001\n",
+            "x" * 4097, b"\xff", None):
+            with self.subTest(kind=type(output).__name__, length=len(output) if output else 0):
+                self.assertEqual(harness.parse_phase_markers(output, expected), ([], False))
+        self.assertEqual(harness.parse_phase_markers("", expected), ([], True))
+        self.assertEqual(harness.parse_phase_markers("CHARLIE_PHASE|started|0\r\nCHARLIE_PHASE|acquired|123\r\n", expected),
+            ([{"stage": "started", "count": 0}, {"stage": "acquired", "count": 123}], True))
+
+    def test_completed_script_does_not_hide_process_exit_timeout_or_nonzero_exit(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        specs = harness.powershell_phase_specs(); index = 0
+        def invoke(command, **kwargs):
+            nonlocal index
+            spec = specs[index]; index += 1
+            output = "".join("CHARLIE_PHASE|" + stage + "|0\n" for stage in spec[3])
+            if index % 2:
+                raise subprocess.TimeoutExpired(command, 8, output=output)
+            return SimpleNamespace(returncode=1, stdout=output, stderr="private")
+        with patch.object(harness.subprocess, "run", side_effect=invoke):
+            report = harness.probe_powershell_phases()
+        for item in report.values():
+            self.assertTrue(item["output_valid"])
+            self.assertEqual(item["markers"][-1], {"stage": "completed", "count": 0})
             self.assertFalse(item["success"])
-            self.assertEqual(item["error_type"], "OSError")
-            self.assertEqual(item["row_count"], 0)
-        self.assertNotIn("sensitive", json.dumps(result))
+        self.assertFalse(harness.default_phases_passed(report))
+
+    def test_phase_comparisons_never_rescue_a_failed_or_missing_default_probe(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        good = {spec[0]: {"success": True} for spec in harness.powershell_phase_specs()}
+        self.assertTrue(harness.default_phases_passed(good))
+        for label in harness.DEFAULT_PHASES:
+            with self.subTest(label=label):
+                self.assertFalse(harness.default_phases_passed({**good, label: {"success": False}}))
+                self.assertFalse(harness.default_phases_passed({k: v for k, v in good.items() if k != label}))
+        self.assertTrue(harness.default_phases_passed({**good, "startup_no_window": {"success": False},
+            "startup_closed_stdin": {"success": False}}))
+
+    def test_phase_failures_sanitize_exception_and_discard_unexpected_stdout(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        failures = [OSError("private-path"), RuntimeError("private-token")]
+        failures.extend([SimpleNamespace(returncode=0, stdout="private-process", stderr="private-error")] * 4)
+        with patch.object(harness.subprocess, "run", side_effect=failures):
+            report = harness.probe_powershell_phases()
+        self.assertEqual(report["startup_default"]["error_type"], "OSError")
+        self.assertEqual(report["startup_no_window"]["error_type"], "UnexpectedError")
+        self.assertTrue(all(not item["success"] for item in report.values()))
+        self.assertNotIn("private-", json.dumps(report))
 
     def fake_api(self):
         api = Mock()
