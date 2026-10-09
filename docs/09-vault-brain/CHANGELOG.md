@@ -14,6 +14,11 @@ Status: `LOCAL_NOT_RELEASED`.
 - Keep scoped startup free of broad dotenv loading, ordinary queue execution,
   automatic repair/restart and model calls. Require explicit verified TLS and
   current signed expiry/configuration/process identity. Default modes are unchanged.
+- Preserve explicit test-root isolation inside initialized runtime copies and
+  report receipt-only state plus bounded sanitized intake outcome readback.
+- Correct Windows lifecycle qualification to retain real process guards and
+  contain disposable test children. Hosted startup/refusal checks do not prove
+  successful independent operational stop or unattended runtime readiness.
 - This source does not enable tasks, establish policies, admit a live mission or
   prove worker pickup. Runtime activation and genuine operational acceptance
   remain required; technical receipt acknowledgement is not mission completion.

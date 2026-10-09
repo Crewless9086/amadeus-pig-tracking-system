@@ -50,6 +50,9 @@
   controller identity, expiry, bound runtime/receipt/configuration, and explicit
   verified TLS. The scoped process excludes broad dotenv/model/provider secrets;
   only signed database and owner-filter values reach the exact receipt service.
+  Validated test control roots take precedence over initialized production state.
+  Shared heartbeats expose a bounded allowlist of intake outcomes and references;
+  receipt-only status does not imply ordinary mission pickup or completed repair.
   No task activation, new policy, mission, hold change or live database write is
   performed by initialization or source installation.
 - Qualification: `tests/test_charlie_manager_intake_runner.py`, existing staging,
@@ -58,6 +61,11 @@
   signed validation; existing `test_charlie_*.py` CI discovery selects the module.
   Source tests, actual Windows lifecycle qualification and live intake acceptance
   remain separate gates; receipt acknowledgement proves no repair or welfare result.
+  The test-only `tests/charlie_windows_lifecycle_harness.py` runs four selected
+  cases in individually owned, bounded Windows jobs on a disposable hosted VM.
+  It rejects skipped cases and verifies cleanup. Protected-ancestry stop refusal
+  is distinct from successful independent controller stop, which still requires
+  operational commissioning evidence.
 
 
 ## Oom Sakkie family message presentation
