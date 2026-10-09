@@ -507,7 +507,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
             supervisor_command = (owned_powershell_child(helper_script, "s")
                 + owned_powershell_child(runner_script, "r")
                 + f"Set-Content -LiteralPath '{quoted_runner_pid}' -Value $r.Id;"
-                + "$s.WaitForExit()")
+                + "$s.WaitForExit();$r.WaitForExit()")
             real_popen = subprocess.Popen
             expected_command = [str(powershell), "-NoProfile", "-NonInteractive", "-Command", supervisor_command]
             def capture_supervisor(command, *args, **kwargs):
@@ -559,12 +559,33 @@ class CharlieRunnerControlTests(unittest.TestCase):
                         start_status, 200,
                         {"start": started, "publisher_failures": publisher_failures},
                     )
-                    # Production ancestry guards remain intact. This controller cannot
-                    # authorize independent stop of its own descendant runner tree.
-                    stopped, stop_status = runner_control.stop_runner()
-                    self.assertEqual(stop_status, 409, stopped)
-                    self.assertEqual(stopped["status"], "runner_process_ownership_not_proven")
-                    self.assertEqual(stopped["reason"], "current_process_ancestry")
+                    self.assertEqual(len(captured_processes), 1)
+                    supervisor_process = captured_processes[0]
+                    self.assertIsNone(supervisor_process.poll(), "synthetic supervisor exited before stop")
+                    # Keep the real ancestry intact when the stop marker ends s:
+                    # the supervisor must also wait for its still-running r child.
+                    packet = runner_control._read_json(runner_control.SUPERVISOR_PATH)
+                    runner_tree = packet["process_tree_identity"]
+                    expected = {field: runner_tree["root"].get(field) for field in (
+                        "runner_generation", "mission_id", "execution_id", "ownership_type",
+                    )}
+                    preflight = process_ownership.validate_process_tree(
+                        runner_tree, expected, runner_control.inspect_process,
+                        require_descendant=True,
+                    )
+                    self.assertFalse(preflight["authorized"], preflight)
+                    self.assertIn(preflight["reason"], {
+                        "root_current_process_ancestry", "root_protected_process_boundary",
+                    })
+                    self.assertIsNone(supervisor_process.poll(), "synthetic supervisor exited during preflight")
+                    with patch.object(runner_control, "_stop_process_tree",
+                                      wraps=runner_control._stop_process_tree) as stop_process:
+                        stopped, stop_status = runner_control.stop_runner()
+                        self.assertEqual(stop_status, 409, stopped)
+                        self.assertEqual(stopped["status"], "runner_process_ownership_not_proven")
+                        self.assertEqual(stopped["reason"], preflight["reason"])
+                        stop_process.assert_not_called()
+                    self.assertIsNone(supervisor_process.poll(), "synthetic supervisor exited during refusal")
                     self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
                 finally:
                     publisher_stop.set()
