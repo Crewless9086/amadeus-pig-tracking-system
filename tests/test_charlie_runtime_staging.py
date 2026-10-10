@@ -22,6 +22,9 @@ from modules.charlie.validation_receipt import (
 )
 
 
+from tests.test_charlie_validation_receipt import git_binding
+
+
 SOURCE = "e31f80e5de21a998293dd44b6a8a6f281f9a9c53"
 RUNTIME = "3768cc08" + "0" * 32
 EXECUTION = "7cb7ddae" + "0" * 32
@@ -34,6 +37,7 @@ def _provider_config_sha():
         "source_read_only": True, "cap_drop": ["ALL"], "no_new_privileges": True,
         "user": "65532:65532", "pid_mode": "private", "pids_limit": 256,
         "image_manifest_sha256": "2" * 64, "image_config_sha256": "3" * 64,
+        "git_binding": git_binding(),
     }
     return hashlib.sha256(json.dumps(
         value, sort_keys=True, separators=(",", ":")
@@ -126,7 +130,8 @@ class RuntimeStagingTests(unittest.TestCase):
                           "provider_execution_id": hashlib.sha256(json.dumps(
                               ["5" * 64, "7" * 64], separators=(",", ":")
                           ).encode()).hexdigest(),
-                          "provider_config_sha256": _provider_config_sha()},
+                          "provider_config_sha256": _provider_config_sha(),
+                          "git_binding": git_binding()},
         }, self.receipt_key, validation_id="4" * 32)
         recorded = record_validation_receipt(receipt, self.state)
         self.receipt = Path(recorded["path"])
@@ -189,6 +194,23 @@ class RuntimeStagingTests(unittest.TestCase):
         self.git.fail_execution_switch = False
         self.git.fail_runtime_restore = False
         return read_staging_state(self.state)
+
+    def test_collector_receipt_reaches_stopped_staging_without_translation(self):
+        from modules.charlie.isolated_validation_collector import collect_docker_validation_evidence
+        from tests.test_charlie_isolated_validation_collector import DockerProvider, MANIFEST_DIGEST
+        provider = DockerProvider(self.state.parent / "collector-fixture")
+        provider.head=SOURCE; (provider.private/"HEAD").write_text(SOURCE+"\n")
+        collected=collect_docker_validation_evidence(provider.source,SOURCE,
+            "core-validator@sha256:"+MANIFEST_DIGEST,runner=provider)
+        receipt=sign_validation_receipt(collected,self.receipt_key,validation_id="8"*32)
+        recorded=record_validation_receipt(receipt,self.state)
+        self.receipt=Path(recorded["path"])
+        plan=self._plan()
+        self.assertTrue(plan["zero_effect"])
+        result=stage_runtime(plan,task_reader=self._task,runner=self.git,git_safety_checker=self._safe_git)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["core_started"])
+        self.assertTrue((self.state/"supervisor.stop").exists())
 
     def test_plan_is_zero_effect_and_records_exact_rollback(self):
         before = (dict(self.git.heads), (self.state / "runtime-manifest.json").read_bytes())
@@ -309,7 +331,8 @@ class RuntimeStagingTests(unittest.TestCase):
                           "provider_execution_id": hashlib.sha256(json.dumps(
                               ["5" * 64, "7" * 64], separators=(",", ":")
                           ).encode()).hexdigest(),
-                          "provider_config_sha256": _provider_config_sha()},
+                          "provider_config_sha256": _provider_config_sha(),
+                          "git_binding": git_binding()},
         }, self.receipt_key, validation_id="4" * 32)
         self.receipt.write_text(json.dumps(rejected), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeStagingError, "isolated_validation_receipt_rejected"):
