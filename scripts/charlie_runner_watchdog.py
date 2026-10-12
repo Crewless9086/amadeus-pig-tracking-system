@@ -34,6 +34,8 @@ from modules.charlie.runtime_activation import (
     consume_provider_activation,
     recover_activation,
     reconcile_recovered_activation_stop,
+    validate_successful_stop_projection,
+    successful_stop_projection_required,
 )
 
 
@@ -119,6 +121,8 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
             )
         if state_path.exists():
             previous = json.loads(state_path.read_text(encoding="utf-8"))
+            if previous.get("version") == "charlie_activation_success_stop_v1":
+                return validate_successful_stop_projection(previous, state_path.parent)
             if (previous.get("version") == "charlie_activation_recovery_projection_v1"
                     and previous.get("status") == "governed_stop_active"):
                 return activation_reconciler(
@@ -126,6 +130,9 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
                     activation_id=str(previous.get("recovered_activation_id") or ""),
                     failure_evidence=previous,
                 )
+        if successful_stop_projection_required(state_path.parent):
+            previous = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+            return validate_successful_stop_projection(previous, state_path.parent)
         result = {
             "status": "governed_stop_active",
             "started": False,

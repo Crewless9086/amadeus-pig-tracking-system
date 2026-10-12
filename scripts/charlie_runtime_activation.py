@@ -13,8 +13,9 @@ from modules.charlie.runtime_activation import (
     ActivationError,
     WindowsExactTaskController,
     plan_activation,
+    request_successful_activation_stop,
+    complete_successful_activation_stop,
     prepare_activation,
-    read_activation_runtime_evidence,
     reconcile_recovered_activation_stop,
     recover_activation,
     verify_or_recover_activation,
@@ -23,7 +24,7 @@ from modules.charlie.runtime_activation import (
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Govern provider-origin observe-only CORE activation.")
-    parser.add_argument("action", choices=("dry-run", "prepare", "verify", "recover", "reconcile-stop"))
+    parser.add_argument("action", choices=("dry-run", "prepare", "verify", "recover", "reconcile-stop", "request-stop", "verify-stop"))
     parser.add_argument("--state-root", required=True)
     parser.add_argument("--runtime-root")
     parser.add_argument("--execution-root")
@@ -50,11 +51,15 @@ def main(argv=None):
             state_root = Path(args.state_root)
             result = verify_or_recover_activation(
                 state_root=state_root,
-                verification_reader=lambda packet: read_activation_runtime_evidence(
-                    packet, state_root=state_root
-                ),
                 task_controller=controller,
             )
+        elif args.action in {"request-stop", "verify-stop"}:
+            if not args.activation_id:
+                parser.error("request-stop/verify-stop require --activation-id")
+            operation = (request_successful_activation_stop if args.action == "request-stop"
+                         else complete_successful_activation_stop)
+            result = operation(state_root=args.state_root, activation_id=args.activation_id,
+                               task_controller=controller)
         elif args.action == "recover":
             if not args.activation_id:
                 parser.error("recover requires --activation-id")

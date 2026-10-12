@@ -307,6 +307,34 @@ class IntakeBoundaryTests(unittest.TestCase):
             starter=Mock(side_effect=AssertionError("ordinary start"))
             result=watchdog.watchdog_tick(state_path=Path(tmp)/"watchdog.json",starter=starter)
             self.assertFalse(result["started"]); starter.assert_not_called()
+    def test_scoped_cooperative_stop_is_clean_but_unrequested_exit_is_failure(self):
+        for code, requested in ((0, True), (0, False), (1, True)):
+            with self.subTest(return_code=code, requested=requested), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp); process=Mock(pid=101)
+                def wait():
+                    if requested: (root/"stop").write_text("original governed stop")
+                    return code
+                process.wait.side_effect=wait
+                with patch.object(supervisor,"RUNNER_DIR",root), \
+                     patch.object(supervisor,"SUPERVISOR_PATH",root/"supervisor.json"), \
+                     patch.object(supervisor,"RUNNER_HEARTBEAT_PATH",root/"runner.json"), \
+                     patch.object(supervisor,"STOP_PATH",root/"stop"), \
+                     patch.object(supervisor,"read_intake_activation",return_value={}), \
+                     patch.object(supervisor,"_git_revision",return_value="a"*40), \
+                     patch.object(supervisor,"_runner_failure_packet",side_effect=AssertionError("repair")), \
+                     patch.dict(os.environ,{"CHARLIE_CORE_EXECUTION_MODE":INTAKE_EXECUTION_MODE}):
+                    result=supervisor.supervise_runner(popen_factory=Mock(return_value=process),max_cycles=1,
+                        prepare_fn=Mock(side_effect=AssertionError("prepare")),
+                        recovery_fn=Mock(side_effect=AssertionError("recovery")),
+                        acknowledgement_fn=supervisor._test_acknowledgement,generation="test-generation")
+                stored=json.loads((root/"supervisor.json").read_text())
+                if code==0 and requested:
+                    self.assertEqual(result["stop_reason"],"cooperative_governed_stop")
+                    self.assertNotIn("failure_status",stored)
+                else:
+                    self.assertEqual(stored["failure_status"],"intake_child_exited")
+                self.assertEqual(result["restart_count"],0)
+
     def test_supervisor_intake_spawn_excludes_prepare_scrub_recovery_and_credentials(self):
         process=Mock(pid=101);process.wait.return_value=0;popen=Mock(return_value=process)
         with tempfile.TemporaryDirectory() as tmp,patch.object(supervisor,"RUNNER_DIR",Path(tmp)), \

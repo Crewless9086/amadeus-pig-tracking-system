@@ -588,6 +588,12 @@ def supervise_runner(
         )
         return_code = child.wait()
         if execution_mode == INTAKE_EXECUTION_MODE:
+            if return_code == 0 and STOP_PATH.exists():
+                _write_status("supervisor_stopped", child_pid=child.pid, runner_state="exited",
+                    return_code=0, generation=generation, execution_mode=execution_mode,
+                    stop_reason="cooperative_governed_stop", restart_count=0)
+                return {"status": "supervisor_stopped", "stop_reason": "cooperative_governed_stop",
+                        "return_code": 0, "restart_count": 0, "cycles": cycles}
             if not STOP_PATH.exists():
                 STOP_PATH.write_text("Scoped intake exited; explicit recovery required.\n", encoding="utf-8")
             _write_status("supervisor_stopped", child_pid=child.pid, runner_state="exited",

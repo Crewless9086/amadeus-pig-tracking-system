@@ -106,6 +106,14 @@ def plan_runtime_staging(
         raise RuntimeStagingError("watchdog_governed_stop_not_active")
     if watchdog.get("version") == "charlie_activation_recovery_projection_v1":
         _validate_recovery_projection(watchdog, state_root)
+    from modules.charlie.runtime_activation import (
+        successful_stop_projection_required, validate_successful_stop_projection,
+    )
+    if (watchdog.get("version") == "charlie_activation_success_stop_v1"
+            or (watchdog.get("version") != "charlie_activation_recovery_projection_v1"
+                and successful_stop_projection_required(state_root))):
+        validate_successful_stop_projection(watchdog, state_root,
+                                            task_reader=task_reader or read_watchdog_task)
     task = (task_reader or read_watchdog_task)()
     task_mode = _validate_task(task, runtime_root, allow_historical=True)
     if initialized_unstarted:
@@ -272,6 +280,16 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
             raise RuntimeStagingError("worktree_identity_changed_before_staging")
         if _sha256(state_root / "runtime-manifest.json") != plan["rollback"]["manifest_sha256"]:
             raise RuntimeStagingError("runtime_manifest_changed_before_staging")
+        from modules.charlie.runtime_activation import (
+            successful_stop_projection_required, validate_successful_stop_projection,
+        )
+        stopped_projection = (_read_json(state_root / "watchdog.json", "watchdog_state_missing_or_invalid")
+                              if (state_root / "watchdog.json").exists() else {})
+        if stopped_projection.get("version") == "charlie_activation_recovery_projection_v1":
+            _validate_recovery_projection(stopped_projection, state_root)
+        elif successful_stop_projection_required(state_root):
+            validate_successful_stop_projection(stopped_projection, state_root,
+                                                task_reader=task_reader or read_watchdog_task)
         # Complete every potentially slow task/Git/worktree/manifest/history check
         # before the final clock sample. A receipt valid at lane entry must not be
         # consumed after it expires while those checks run.

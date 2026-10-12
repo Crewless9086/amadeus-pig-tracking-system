@@ -24,6 +24,7 @@ from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
 from modules.charlie.runtime_staging import read_watchdog_task
 from modules.charlie.process_ownership import (
     normalize_command_fingerprint,
+    _valid_windows_console_host_wrapper,
     process_tree_identity_digest,
     validate_bootstrap_tree,
     verify_controller_acknowledgement,
@@ -33,6 +34,7 @@ from modules.charlie.process_ownership import (
 AUTHORITY_VERSION = "charlie_provider_activation_authority_v1"
 ACTIVATION_VERSION = "charlie_provider_activation_v2"
 RECOVERY_PROJECTION_VERSION = "charlie_activation_recovery_projection_v1"
+SUCCESS_STOP_VERSION = "charlie_activation_success_stop_v1"
 TASK_NAME = "CHARLIE CORE Runner Watchdog"
 MODE = "observe_only"
 PROTECTED_ANCESTRY = {
@@ -362,10 +364,10 @@ def verify_or_recover_activation(**kwargs):
         return _verify_or_recover_activation(**kwargs)
 
 
-def _verify_or_recover_activation(*, state_root, verification_reader, task_controller,
+def _verify_or_recover_activation(*, state_root, verification_reader=None, task_controller,
                                   task_reader=read_watchdog_task,
                                   git_runner=subprocess.run, now=None,
-                                  activation_id=None, readiness_timeout_seconds=5,
+                                  activation_id=None, readiness_timeout_seconds=30,
                                   readiness_poll_seconds=0.05,
                                   monotonic_fn=time.monotonic, sleep_fn=time.sleep):
     state_root = Path(state_root).resolve()
@@ -482,7 +484,15 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
             _validate_packet(current_packet, state_root, task_reader,
                              git_runner=git_runner, now=current_time,
                              allow_consumed=True, allow_expired=True)
-            evidence = verification_reader(current_packet)
+            if verification_reader is None:
+                evidence = read_activation_runtime_evidence(
+                    current_packet, state_root=state_root, deadline=deadline,
+                    monotonic_fn=monotonic_fn,
+                )
+            else:
+                # Existing injected readers keep their one-argument contract;
+                # all results still face the same post-read deadline/expiry gate.
+                evidence = verification_reader(current_packet)
             legacy_ready = isinstance(evidence, dict) and all(
                 evidence.get(item) is True for item in (
                     "loaded_revision_exact", _mode_evidence_key(packet["authority"]),
@@ -560,7 +570,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
         startup_evidence = read_startup_evidence(
             state_root, str(packet.get("activation_id") or "")
         )
-        recover_activation(state_root=state_root, task_controller=task_controller,
+        _recover_activation(state_root=state_root, task_controller=task_controller,
                            activation_id=str(packet.get("activation_id") or ""),
                            failure_evidence={
                                "status": "activation_verification_failed",
@@ -630,7 +640,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
                 / f"{packet['activation_id']}-verified-activation-verification.lock",
             )
         return {"success": True, "status": "activation_verified", "evidence": evidence}
-    recover_activation(state_root=state_root, task_controller=task_controller,
+    _recover_activation(state_root=state_root, task_controller=task_controller,
                        activation_id=packet["activation_id"], failure_evidence={
                            "status": "activation_verification_failed", "evidence": evidence,
                        })
@@ -638,7 +648,8 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
 
 
 def read_activation_runtime_evidence(packet, *, state_root, now=None,
-                                     live_validator=None):
+                                     live_validator=None, deadline=None,
+                                     monotonic_fn=time.monotonic):
     """Validate exact signed runtime evidence; never infer ownership by name."""
     state_root = Path(state_root)
     supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
@@ -673,12 +684,14 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         revision=authority["runtime_revision"],
         startup_nonce=str(supervisor.get("startup_nonce") or ""),
         allowed_descendant_tree=runner_tree,
+        process_role_prefix="supervisor", deadline=deadline, monotonic_fn=monotonic_fn,
     )
     runner_live = live_validator(
         runner_tree,
         generation=str(supervisor.get("generation") or ""),
         revision=authority["execution_revision"],
         startup_nonce=str(supervisor.get("runner_startup_nonce") or ""),
+        process_role_prefix="runner", deadline=deadline, monotonic_fn=monotonic_fn,
     )
     tree_digests_exact = isinstance(final, dict) and all((
         str(final.get("supervisor_tree_digest") or "") == process_tree_identity_digest(supervisor_tree),
@@ -693,8 +706,9 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         supervisor_live.get("authorized") and runner_live.get("authorized")
         and not any(
             Path(str(item.get("executable_path") or "")).name.casefold() in PROTECTED_ANCESTRY
-            for item in [*(supervisor_tree or {}).get("members", []), *(runner_tree or {}).get("members", [])]
-            if isinstance(item, dict)
+            and item.get("pid") not in live.get("validated_console_host_pids", [])
+            for tree, live in ((supervisor_tree, supervisor_live), (runner_tree, runner_live))
+            for item in (tree or {}).get("members", []) if isinstance(item, dict)
         )
     )
     evidence = {
@@ -736,6 +750,7 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         "activation_id_exact", "unrelated_processes_absent",
     )):
         publication_status = "activation_bound_ready"
+        evidence["stop_identity"] = _stop_identity(supervisor)
     elif explicit_failure and supervisor_publication_attributable:
         publication_status = "activation_bound_failed"
     elif (final_activation_id == activation_id
@@ -759,16 +774,19 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
 
 
 def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
-                                allowed_descendant_tree=None,
-                                inspector=None, child_inspector=None):
+                                allowed_descendant_tree=None, process_role_prefix=None,
+                                inspector=None, child_inspector=None, deadline=None,
+                                monotonic_fn=time.monotonic):
     static = validate_bootstrap_tree(
         tree, generation=generation, revision=revision,
         startup_nonce=startup_nonce, require_interpreter=True,
     )
     if not static.get("authorized"):
         return static
-    inspector = inspector or _inspect_exact_process
-    child_inspector = child_inspector or _inspect_exact_children
+    inspector = inspector or (lambda pid: _inspect_exact_process(
+        pid, deadline=deadline, monotonic_fn=monotonic_fn))
+    child_inspector = child_inspector or (lambda pid: _inspect_exact_children(
+        pid, deadline=deadline, monotonic_fn=monotonic_fn))
     members = tree.get("members") if isinstance(tree, dict) else []
     signed_pids = {int(item.get("pid") or -1) for item in members}
     allowed_members = (
@@ -776,6 +794,13 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
         if isinstance(allowed_descendant_tree, dict) else []
     )
     allowed_pids = {int(item.get("pid") or -1) for item in allowed_members}
+    wrapper_parents = {
+        int(item["pid"]) for item in members
+        if str(item.get("process_role") or "") in {
+            f"{process_role_prefix}_launcher", f"{process_role_prefix}_interpreter",
+        }
+    }
+    verified_wrappers, wrapper_parent_pids = set(), set()
     for record in members:
         current = inspector(int(record.get("pid") or -1))
         if not isinstance(current, dict) or not current.get("inspection_complete"):
@@ -791,6 +816,20 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
         )
         if not all(checks):
             return {"authorized": False, "reason": "owned_pid_identity_changed"}
+        role = str(record.get("process_role") or "")
+        name = str(current.get("executable_path") or "").replace("\\", "/").rsplit("/", 1)[-1].casefold()
+        if name in PROTECTED_ANCESTRY or role.endswith("_console_host"):
+            parent_pid = int(record["parent_pid"])
+            if (process_role_prefix not in {"supervisor", "runner"}
+                    or role != f"{process_role_prefix}_console_host"
+                    or str(tree["root"].get("process_role") or "") not in {
+                        f"{process_role_prefix}_launcher", f"{process_role_prefix}_interpreter"}
+                    or parent_pid in wrapper_parent_pids
+                    or not _valid_windows_console_host_wrapper(
+                        current, allowed_parent_pids=wrapper_parents, expected_script=None)):
+                return {"authorized": False, "reason": "owned_protected_member_invalid"}
+            verified_wrappers.add(int(record["pid"]))
+            wrapper_parent_pids.add(parent_pid)
         children = child_inspector(int(record.get("pid") or -1))
         if not isinstance(children, list):
             return {"authorized": False, "reason": "owned_descendant_inspection_failed"}
@@ -804,19 +843,34 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
         if len(allowed_roots) != 1 or int(allowed_roots[0].get("parent_pid") or -1) not in signed_pids:
             return {"authorized": False, "reason": "descendant_tree_parentage_mismatch"}
     return {"authorized": True, "reason": "exact_owned_members_live",
-            "member_pids": sorted(signed_pids), "complete_descendants": True}
+            "member_pids": sorted(signed_pids), "complete_descendants": True,
+            "validated_console_host_pids": sorted(verified_wrappers)}
 
 
-def _inspect_exact_process(pid, runner=subprocess.run):
+def _readiness_query_timeout(deadline, monotonic_fn):
+    if deadline is None:
+        return 10
+    remaining = deadline - monotonic_fn()
+    if not math.isfinite(remaining):
+        raise ActivationError("activation_readiness_configuration_invalid")
+    if remaining <= 0:
+        raise ActivationError("activation_readiness_timeout")
+    return min(10, remaining)
+
+
+def _inspect_exact_process(pid, runner=subprocess.run, *, deadline=None,
+                           monotonic_fn=time.monotonic):
     script = (
         "$ErrorActionPreference='Stop';"
         f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={int(pid)}\";"
         "if($null-eq$p){exit 4};"
-        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CreationDate,CommandLine|ConvertTo-Json -Compress"
+        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,"
+        "@{Name='CreationDate';Expression={[string]$_.CreationDate}},CommandLine|ConvertTo-Json -Compress"
     )
     completed = runner(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, timeout=10, check=False,
+        capture_output=True, text=True,
+        timeout=_readiness_query_timeout(deadline, monotonic_fn), check=False,
     )
     if completed.returncode:
         return {"inspection_complete": False}
@@ -833,15 +887,18 @@ def _inspect_exact_process(pid, runner=subprocess.run):
         return {"inspection_complete": False}
 
 
-def _inspect_exact_children(parent_pid, runner=subprocess.run):
+def _inspect_exact_children(parent_pid, runner=subprocess.run, *, deadline=None,
+                            monotonic_fn=time.monotonic):
     script = (
         "$ErrorActionPreference='Stop';"
         f"$p=@(Get-CimInstance Win32_Process -Filter \"ParentProcessId={int(parent_pid)}\");"
-        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CreationDate,CommandLine|ConvertTo-Json -Compress"
+        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,"
+        "@{Name='CreationDate';Expression={[string]$_.CreationDate}},CommandLine|ConvertTo-Json -Compress"
     )
     completed = runner(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, timeout=10, check=False,
+        capture_output=True, text=True,
+        timeout=_readiness_query_timeout(deadline, monotonic_fn), check=False,
     )
     if completed.returncode:
         return None
@@ -858,10 +915,327 @@ def _inspect_exact_children(parent_pid, runner=subprocess.run):
         return None
 
 
-def recover_activation(*, state_root, task_controller, activation_id,
+def _stop_identity(supervisor):
+    """Immutable ownership fields retained across the cooperative terminal update."""
+    return {name: supervisor.get(name) for name in (
+        "pid", "child_pid", "activation_id", "generation", "startup_nonce",
+        "runner_startup_nonce", "intended_runtime_revision",
+        "intended_execution_revision", "execution_mode", "controller_public_key",
+        "controller_final_acknowledgement", "supervisor_tree_identity",
+        "process_tree_identity",
+    )}
+
+
+def _successful_stop_context(state_root, activation_id):
+    if not re.fullmatch(r"[0-9a-f]{32}", str(activation_id or "")):
+        raise ActivationError("successful_stop_identity_invalid")
+    completion = _validated_activation_completion(state_root, activation_id)
+    ledger = state_root / "activation-ledger"
+    packet = _read_json(ledger / f"{activation_id}-verified-activation-packet.json",
+                        "activation_packet_invalid")
+    rollback = _read_json(ledger / f"{activation_id}-rollback.json",
+                          "activation_rollback_missing")
+    key = _read_key(state_root / "activation-authority.key")
+    if (packet.get("activation_id") != activation_id
+            or not hmac.compare_digest(str(packet.get("packet_hmac_sha256") or ""),
+                                       _sign_packet(packet, key))
+            or rollback.get("activation_id") != activation_id
+            or not hmac.compare_digest(str(rollback.get("rollback_hmac_sha256") or ""),
+                                       _sign_record(rollback, key, "rollback_hmac_sha256"))
+            or rollback.get("authority_sha256") != packet.get("authority_sha256")
+            or rollback.get("task_action_sha256") != packet["authority"].get("task_action_sha256")
+            or rollback.get("stop_marker_sha256") != packet["authority"].get("stop_marker_sha256")):
+        raise ActivationError("successful_stop_binding_invalid")
+    evidence = completion.get("evidence") or {}
+    identity = evidence.get("stop_identity")
+    if (not isinstance(identity, dict) or identity.get("activation_id") != activation_id
+            or identity.get("execution_mode") not in {MODE, INTAKE_EXECUTION_MODE}
+            or identity.get("execution_mode") != packet["authority"].get("execution_mode", MODE)
+            or not identity.get("generation")):
+        raise ActivationError("successful_stop_verified_identity_missing")
+    pids = set()
+    for name in ("supervisor_member_pids", "runner_member_pids"):
+        members = evidence.get(name)
+        if (not isinstance(members, list) or not members or len(members) > 32
+                or any(type(pid) is not int or pid <= 0 for pid in members)):
+            raise ActivationError("successful_stop_verified_processes_missing")
+        pids.update(members)
+    consumed = _read_json(ledger / f"{activation_id}-verified-activation-consumed-{activation_id}.json",
+                          "activation_consumed_identity_missing")
+    _validate_consumed_identity(packet, consumed, key, require_packet_hmac=False)
+    provider_pid = consumed.get("provider_pid")
+    if type(provider_pid) is not int or provider_pid <= 0:
+        raise ActivationError("successful_stop_provider_identity_missing")
+    pids.add(provider_pid)  # the consumed launcher, never the persistent Schedule service
+    if any(type(identity.get(name)) is not int or identity[name] not in pids
+           for name in ("pid", "child_pid")):
+        raise ActivationError("successful_stop_verified_processes_missing")
+    try:
+        stop_bytes = base64.b64decode(rollback["stop_marker_bytes_b64"], validate=True)
+    except (KeyError, ValueError, TypeError) as exc:
+        raise ActivationError("successful_stop_original_marker_invalid") from exc
+    if hashlib.sha256(stop_bytes).hexdigest() != rollback["stop_marker_sha256"]:
+        raise ActivationError("successful_stop_original_marker_invalid")
+    binding = {"version": SUCCESS_STOP_VERSION, "activation_id": activation_id,
+        "verification_sha256": _sha256(state_root / "activation-verification-complete.json"),
+        "rollback_sha256": _sha256(ledger / f"{activation_id}-rollback.json"),
+        "stop_marker_sha256": rollback["stop_marker_sha256"],
+        "task_action_sha256": rollback["task_action_sha256"],
+        "process_pids": sorted(pids), "stop_identity": identity}
+    return packet, rollback, binding, stop_bytes, key
+
+
+def _validate_stop_record(record, binding, key, status):
+    if (not isinstance(record, dict) or record.get("status") != status
+            or any(record.get(name) != value for name, value in binding.items())
+            or not hmac.compare_digest(str(record.get("stop_hmac_sha256") or ""),
+                                       _sign_record(record, key, "stop_hmac_sha256"))):
+        raise ActivationError("successful_stop_record_invalid")
+
+
+def _successful_stop_lane_clear(state_root):
+    if any((state_root / name).exists() for name in (
+            "activation.lock", "activation-packet.json", "release-staging.lock",
+            "activation-verification.lock", "activation-reconciliation-pending.json")):
+        raise ActivationError("successful_stop_conflicting_lane")
+
+
+def request_successful_activation_stop(*, state_root, activation_id, task_controller,
+                                       task_reader=read_watchdog_task,
+                                       git_runner=subprocess.run, now=None):
+    """Request cooperative stop of a verified activation; never claim process exit."""
+    state_root = Path(state_root).resolve()
+    with _activation_verifier_lock(state_root):
+        _successful_stop_lane_clear(state_root)
+        packet, rollback, binding, stop_bytes, key = _successful_stop_context(state_root, activation_id)
+        _validate_packet(packet, state_root, task_reader, git_runner,
+                         allow_consumed=True, allow_expired=True, now=now)
+        supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
+        if _stop_identity(supervisor) != binding["stop_identity"]:
+            raise ActivationError("successful_stop_process_identity_changed")
+        stop = state_root / "supervisor.stop"
+        if stop.exists() and _sha256(stop) != binding["stop_marker_sha256"]:
+            raise ActivationError("successful_stop_marker_conflict")
+        ledger = state_root / "activation-ledger"
+        request_path = ledger / f"{activation_id}-stop-request.json"
+        complete_path = ledger / f"{activation_id}-stop-completed.json"
+        if complete_path.exists():
+            return validate_successful_stop_projection(
+                _read_json(state_root / "watchdog.json", "watchdog_state_invalid"),
+                state_root, task_reader=task_reader, task_controller=task_controller)
+        lane_path = state_root / "activation-reconciliation.lock"
+        owner = {**binding, "status": "successful_stop_lane_owned"}
+        owner["stop_hmac_sha256"] = _sign_record(owner, key, "stop_hmac_sha256")
+        if lane_path.exists():
+            _validate_stop_record(_read_json(lane_path, "successful_stop_lane_invalid"),
+                                  binding, key, "successful_stop_lane_owned")
+        else:
+            _exclusive_json(lane_path, owner)
+        _successful_stop_lane_clear(state_root)
+        if request_path.exists():
+            request = _read_json(request_path, "successful_stop_request_invalid")
+            _validate_stop_record(request, binding, key, "activation_stop_requested")
+        else:
+            request = {**binding, "status": "activation_stop_requested", "requested_at": _now(now)}
+            request["stop_hmac_sha256"] = _sign_record(request, key, "stop_hmac_sha256")
+            _exclusive_json(request_path, request)
+        if hasattr(task_controller, "bind_exact"):
+            task_controller.bind_exact(rollback["task_ownership"])
+        task = task_reader()
+        if _task_action_sha256(task) != binding["task_action_sha256"]:
+            raise ActivationError("successful_stop_task_changed")
+        if task[0].get("state") != "Disabled":
+            task_controller.disable_exact(binding["task_action_sha256"])
+        task = task_reader()
+        _validate_exact_task(task, Path(packet["runtime_root"]))
+        if _task_action_sha256(task) != binding["task_action_sha256"]:
+            raise ActivationError("successful_stop_task_changed")
+        if not stop.exists():
+            temporary = state_root / f".successful-stop-{uuid.uuid4().hex}.tmp"
+            try:
+                with temporary.open("xb") as stream:
+                    stream.write(stop_bytes); stream.flush(); os.fsync(stream.fileno())
+                _durable_replace(temporary, stop)  # exclusive; never overwrite a competing marker
+            finally:
+                temporary.unlink(missing_ok=True)
+        if _sha256(stop) != binding["stop_marker_sha256"]:
+            raise ActivationError("successful_stop_marker_conflict")
+        return {"success": True, "status": "activation_stop_requested", "activation_id": activation_id,
+                "process_absence_verified": False, "scheduled_task_state": "Disabled"}
+
+
+def _verify_successful_stop_state(state_root, packet, binding, task_reader,
+                                  task_controller, process_presence_reader):
+    if (state_root / "activation.lock").exists() or (state_root / "activation-packet.json").exists():
+        raise ActivationError("successful_stop_conflicting_lane")
+    if _sha256(state_root / "supervisor.stop") != binding["stop_marker_sha256"]:
+        raise ActivationError("successful_stop_marker_conflict")
+    supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
+    if _stop_identity(supervisor) != binding["stop_identity"]:
+        raise ActivationError("successful_stop_process_identity_changed")
+    if (supervisor.get("status") != "supervisor_stopped"
+            or type(supervisor.get("return_code")) is not int
+            or supervisor["return_code"] != 0 or supervisor.get("failure_status")):
+        raise ActivationError("successful_stop_supervisor_not_cleanly_stopped")
+    for pid in binding["process_pids"]:
+        presence = (process_presence_reader or _process_presence)(pid)
+        if presence != "absent":
+            raise ActivationError("successful_stop_process_still_live" if presence == "live"
+                                  else "successful_stop_process_proof_unavailable")
+    task = task_reader()
+    _validate_exact_task(task, Path(packet["runtime_root"]))
+    if _task_action_sha256(task) != binding["task_action_sha256"]:
+        raise ActivationError("successful_stop_task_changed")
+    if hasattr(task_controller, "bind_exact"):
+        task_controller.bind_exact(packet["task_ownership"])
+    if task_controller.read_exact_instance_state(packet["expected_instance_guid"]) != "exited":
+        raise ActivationError("successful_stop_provider_still_running")
+    task_controller.assert_no_running_instances()
+
+
+def complete_successful_activation_stop(*, state_root, activation_id, task_controller,
+                                        task_reader=read_watchdog_task,
+                                        process_presence_reader=None, now=None):
+    """One bounded verification, resumable after cooperative exit; no polling or kill."""
+    state_root = Path(state_root).resolve()
+    with _activation_verifier_lock(state_root):
+        _successful_stop_lane_clear(state_root)
+        packet, _rollback, binding, _stop_bytes, key = _successful_stop_context(state_root, activation_id)
+        ledger = state_root / "activation-ledger"
+        request_path = ledger / f"{activation_id}-stop-request.json"
+        _validate_stop_record(_read_json(request_path, "successful_stop_request_missing"),
+                              binding, key, "activation_stop_requested")
+        complete_path = ledger / f"{activation_id}-stop-completed.json"
+        lane_path = state_root / "activation-reconciliation.lock"
+        lane_archive = ledger / f"{activation_id}-stop-lane.json"
+        if not lane_path.exists():
+            # Once ownership is archived, replay is strictly read-only. A new
+            # prepare/stage may acquire its lane while absence is inspected.
+            if not complete_path.exists():
+                raise ActivationError("successful_stop_completion_missing")
+            return validate_successful_stop_projection(
+                _read_json(state_root / "watchdog.json", "successful_stop_projection_missing"),
+                state_root, task_reader=task_reader, task_controller=task_controller,
+                process_presence_reader=process_presence_reader)
+        _validate_stop_record(_read_json(lane_path if lane_path.exists() else lane_archive,
+                                         "successful_stop_lane_missing"),
+                              binding, key, "successful_stop_lane_owned")
+        _verify_successful_stop_state(state_root, packet, binding, task_reader,
+                                      task_controller, process_presence_reader)
+        if complete_path.exists():
+            complete = _read_json(complete_path, "successful_stop_completion_invalid")
+            _validate_stop_record(complete, binding, key, "activation_stop_verified")
+            if complete.get("request_sha256") != _sha256(request_path):
+                raise ActivationError("successful_stop_request_changed")
+        else:
+            complete = {**binding, "status": "activation_stop_verified", "completed_at": _now(now),
+                "request_sha256": _sha256(request_path), "process_absence_verified": True,
+                "provider_instances_absent": True, "scheduled_task_state": "Disabled"}
+            complete["stop_hmac_sha256"] = _sign_record(complete, key, "stop_hmac_sha256")
+            _exclusive_json(complete_path, complete)
+        projection = {**binding, "status": "governed_stop_active", "started": False,
+            "completed_activation_id": activation_id, "completed_at": complete["completed_at"],
+            "completion_sha256": _sha256(complete_path), "request_sha256": _sha256(request_path),
+            "scheduled_task_state": "Disabled", "process_absence_verified": True}
+        projection["stop_hmac_sha256"] = _sign_record(projection, key, "stop_hmac_sha256")
+        watchdog = state_root / "watchdog.json"
+        if not watchdog.exists() or _read_json(watchdog, "watchdog_state_invalid") != projection:
+            _atomic_json(watchdog, projection)
+        if lane_path.exists():
+            _durable_replace(lane_path, lane_archive)
+        return projection
+
+
+def successful_stop_projection_required(state_root):
+    marker = Path(state_root) / "activation-verification-complete.json"
+    if not marker.exists():
+        return False
+    value = _read_json(marker, "activation_verification_completion_invalid")
+    activation_id = str(value.get("activation_id") or "")
+    if not re.fullmatch(r"[0-9a-f]{32}", activation_id):
+        raise ActivationError("activation_verification_completion_invalid")
+    return (Path(state_root) / "activation-ledger" / f"{activation_id}-stop-completed.json").exists()
+
+
+def validate_successful_stop_projection(projection, state_root, *, task_reader=read_watchdog_task,
+                                       task_controller=None, process_presence_reader=None):
+    """Shared read-only consumer gate; historical success never proves current absence."""
+    state_root = Path(state_root).resolve()
+    activation_id = projection.get("completed_activation_id") if isinstance(projection, dict) else None
+    packet, _rollback, binding, _stop_bytes, key = _successful_stop_context(state_root, activation_id)
+    _validate_stop_record(projection, binding, key, "governed_stop_active")
+    ledger = state_root / "activation-ledger"
+    request = ledger / f"{activation_id}-stop-request.json"
+    complete = ledger / f"{activation_id}-stop-completed.json"
+    for path, status in ((request, "activation_stop_requested"), (complete, "activation_stop_verified")):
+        record = _read_json(path, "successful_stop_record_missing")
+        _validate_stop_record(record, binding, key, status)
+    if (projection.get("completion_sha256") != _sha256(complete)
+            or projection.get("request_sha256") != _sha256(request)
+            or record.get("request_sha256") != _sha256(request)):
+        raise ActivationError("successful_stop_projection_binding_invalid")
+    lane = state_root / "activation-reconciliation.lock"
+    if not lane.exists():
+        lane = ledger / f"{activation_id}-stop-lane.json"
+    _validate_stop_record(_read_json(lane, "successful_stop_lane_missing"),
+                          binding, key, "successful_stop_lane_owned")
+    _verify_successful_stop_state(state_root, packet, binding, task_reader,
+                                  task_controller or WindowsExactTaskController(), process_presence_reader)
+    return projection
+
+
+def _failed_successful_stop_handoff(state_root, activation_id):
+    """A real failed child may enter existing recovery, never invented failure."""
+    ledger = state_root / "activation-ledger"
+    key = _read_key(state_root / "activation-authority.key")
+    owner = _read_json(state_root / "activation-reconciliation.lock", "successful_stop_lane_invalid")
+    request_path = ledger / f"{activation_id}-stop-request.json"
+    request = _read_json(request_path, "successful_stop_request_missing")
+    binding = {name: value for name, value in owner.items()
+               if name not in {"status", "stop_hmac_sha256"}}
+    if binding.get("activation_id") != activation_id:
+        raise ActivationError("successful_stop_lane_active")
+    _validate_stop_record(owner, binding, key, "successful_stop_lane_owned")
+    _validate_stop_record(request, binding, key, "activation_stop_requested")
+    path = ledger / f"{activation_id}-stop-recovery-handoff.json"
+    if path.exists():
+        handoff = _read_json(path, "successful_stop_recovery_handoff_invalid")
+        _validate_stop_record(handoff, binding, key, "successful_stop_failed_recovery")
+        if handoff.get("request_sha256") != _sha256(request_path):
+            raise ActivationError("successful_stop_request_changed")
+        return handoff
+    _packet, _rollback, expected, _bytes, _key = _successful_stop_context(state_root, activation_id)
+    if expected != binding or (ledger / f"{activation_id}-stop-completed.json").exists():
+        raise ActivationError("successful_stop_recovery_conflict")
+    supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
+    if (_stop_identity(supervisor) != binding["stop_identity"]
+            or supervisor.get("status") != "supervisor_stopped"
+            or type(supervisor.get("return_code")) is not int
+            or (supervisor["return_code"] == 0
+                and (binding["stop_identity"].get("execution_mode") != INTAKE_EXECUTION_MODE
+                     or supervisor.get("failure_status") != "intake_child_exited"))):
+        raise ActivationError("successful_stop_genuine_failure_required")
+    handoff = {**binding, "status": "successful_stop_failed_recovery",
+               "request_sha256": _sha256(request_path), "failure_evidence": supervisor}
+    handoff["stop_hmac_sha256"] = _sign_record(handoff, key, "stop_hmac_sha256")
+    _exclusive_json(path, handoff)
+    return handoff
+
+
+def recover_activation(**kwargs):
+    with _activation_verifier_lock(Path(kwargs["state_root"]).resolve()):
+        return _recover_activation(**kwargs)
+
+
+def _recover_activation(*, state_root, task_controller, activation_id,
                        failure_evidence=None, now=None):
     state_root = Path(state_root).resolve()
     ledger = state_root / "activation-ledger"
+    stop_lane = state_root / "activation-reconciliation.lock"
+    stop_handoff = None
+    if stop_lane.exists() and _read_json(stop_lane, "activation_reconciliation_lane_invalid").get("version") == SUCCESS_STOP_VERSION:
+        stop_handoff = _failed_successful_stop_handoff(state_root, activation_id)
+        failure_evidence = stop_handoff["failure_evidence"]
     lane_path = state_root / "activation.lock"
     lane_archives = [
         ledger / f"{activation_id}-lane-recovered.json",
@@ -1151,10 +1525,17 @@ def recover_activation(*, state_root, task_controller, activation_id,
             verification_marker,
             ledger / f"{activation_id}-recovered-activation-verification.lock",
         )
+    if stop_handoff is not None:
+        _durable_replace(stop_lane, ledger / f"{activation_id}-stop-failed-lane.json")
     return {"success": True, "status": "activation_recovered", "activation_id": activation_id}
 
 
-def reconcile_recovered_activation_stop(*, state_root, activation_id,
+def reconcile_recovered_activation_stop(**kwargs):
+    with _activation_verifier_lock(Path(kwargs["state_root"]).resolve()):
+        return _reconcile_recovered_activation_stop(**kwargs)
+
+
+def _reconcile_recovered_activation_stop(*, state_root, activation_id,
                                         failure_evidence, task_reader=read_watchdog_task,
                                         process_presence_reader=None, now=None):
     """Project an authenticated completed rollback as current stopped authority.
