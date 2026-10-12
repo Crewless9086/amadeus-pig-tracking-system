@@ -24,6 +24,7 @@ from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
 from modules.charlie.runtime_staging import read_watchdog_task
 from modules.charlie.process_ownership import (
     normalize_command_fingerprint,
+    _valid_windows_console_host_wrapper,
     process_tree_identity_digest,
     validate_bootstrap_tree,
     verify_controller_acknowledgement,
@@ -674,12 +675,14 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         revision=authority["runtime_revision"],
         startup_nonce=str(supervisor.get("startup_nonce") or ""),
         allowed_descendant_tree=runner_tree,
+        process_role_prefix="supervisor",
     )
     runner_live = live_validator(
         runner_tree,
         generation=str(supervisor.get("generation") or ""),
         revision=authority["execution_revision"],
         startup_nonce=str(supervisor.get("runner_startup_nonce") or ""),
+        process_role_prefix="runner",
     )
     tree_digests_exact = isinstance(final, dict) and all((
         str(final.get("supervisor_tree_digest") or "") == process_tree_identity_digest(supervisor_tree),
@@ -694,8 +697,9 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         supervisor_live.get("authorized") and runner_live.get("authorized")
         and not any(
             Path(str(item.get("executable_path") or "")).name.casefold() in PROTECTED_ANCESTRY
-            for item in [*(supervisor_tree or {}).get("members", []), *(runner_tree or {}).get("members", [])]
-            if isinstance(item, dict)
+            and item.get("pid") not in live.get("validated_console_host_pids", [])
+            for tree, live in ((supervisor_tree, supervisor_live), (runner_tree, runner_live))
+            for item in (tree or {}).get("members", []) if isinstance(item, dict)
         )
     )
     evidence = {
@@ -761,7 +765,7 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
 
 
 def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
-                                allowed_descendant_tree=None,
+                                allowed_descendant_tree=None, process_role_prefix=None,
                                 inspector=None, child_inspector=None):
     static = validate_bootstrap_tree(
         tree, generation=generation, revision=revision,
@@ -778,6 +782,13 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
         if isinstance(allowed_descendant_tree, dict) else []
     )
     allowed_pids = {int(item.get("pid") or -1) for item in allowed_members}
+    wrapper_parents = {
+        int(item["pid"]) for item in members
+        if str(item.get("process_role") or "") in {
+            f"{process_role_prefix}_launcher", f"{process_role_prefix}_interpreter",
+        }
+    }
+    verified_wrappers, wrapper_parent_pids = set(), set()
     for record in members:
         current = inspector(int(record.get("pid") or -1))
         if not isinstance(current, dict) or not current.get("inspection_complete"):
@@ -793,6 +804,20 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
         )
         if not all(checks):
             return {"authorized": False, "reason": "owned_pid_identity_changed"}
+        role = str(record.get("process_role") or "")
+        name = str(current.get("executable_path") or "").replace("\\", "/").rsplit("/", 1)[-1].casefold()
+        if name in PROTECTED_ANCESTRY or role.endswith("_console_host"):
+            parent_pid = int(record["parent_pid"])
+            if (process_role_prefix not in {"supervisor", "runner"}
+                    or role != f"{process_role_prefix}_console_host"
+                    or str(tree["root"].get("process_role") or "") not in {
+                        f"{process_role_prefix}_launcher", f"{process_role_prefix}_interpreter"}
+                    or parent_pid in wrapper_parent_pids
+                    or not _valid_windows_console_host_wrapper(
+                        current, allowed_parent_pids=wrapper_parents, expected_script=None)):
+                return {"authorized": False, "reason": "owned_protected_member_invalid"}
+            verified_wrappers.add(int(record["pid"]))
+            wrapper_parent_pids.add(parent_pid)
         children = child_inspector(int(record.get("pid") or -1))
         if not isinstance(children, list):
             return {"authorized": False, "reason": "owned_descendant_inspection_failed"}
@@ -806,7 +831,8 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
         if len(allowed_roots) != 1 or int(allowed_roots[0].get("parent_pid") or -1) not in signed_pids:
             return {"authorized": False, "reason": "descendant_tree_parentage_mismatch"}
     return {"authorized": True, "reason": "exact_owned_members_live",
-            "member_pids": sorted(signed_pids), "complete_descendants": True}
+            "member_pids": sorted(signed_pids), "complete_descendants": True,
+            "validated_console_host_pids": sorted(verified_wrappers)}
 
 
 def _inspect_exact_process(pid, runner=subprocess.run):
@@ -814,7 +840,8 @@ def _inspect_exact_process(pid, runner=subprocess.run):
         "$ErrorActionPreference='Stop';"
         f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={int(pid)}\";"
         "if($null-eq$p){exit 4};"
-        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CreationDate,CommandLine|ConvertTo-Json -Compress"
+        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,"
+        "@{Name='CreationDate';Expression={[string]$_.CreationDate}},CommandLine|ConvertTo-Json -Compress"
     )
     completed = runner(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -839,7 +866,8 @@ def _inspect_exact_children(parent_pid, runner=subprocess.run):
     script = (
         "$ErrorActionPreference='Stop';"
         f"$p=@(Get-CimInstance Win32_Process -Filter \"ParentProcessId={int(parent_pid)}\");"
-        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CreationDate,CommandLine|ConvertTo-Json -Compress"
+        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,"
+        "@{Name='CreationDate';Expression={[string]$_.CreationDate}},CommandLine|ConvertTo-Json -Compress"
     )
     completed = runner(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],

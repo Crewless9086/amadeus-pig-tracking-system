@@ -1994,5 +1994,163 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertNotIn("win32_process |", text)
 
 
+class NativeReadinessIdentityTests(unittest.TestCase):
+    """Real reader/validators over synthetic CIM rows, with no native operations."""
+
+    @classmethod
+    def setUpClass(cls):
+        from modules.charlie import process_ownership
+        cls.signing_key, cls.public_key = process_ownership.generate_controller_signing_key()
+
+    def setUp(self):
+        from modules.charlie import process_ownership
+        self.ownership = process_ownership
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.state = Path(self.temp.name)
+        self.system_root = patch.dict(os.environ, {"SystemRoot": r"C:\Windows"})
+        self.system_root.start(); self.addCleanup(self.system_root.stop)
+        self.rows = {}
+        for prefix, pid, parent in (("supervisor", 100, 50), ("runner", 200, 100)):
+            self.rows[pid] = {"inspection_complete": True, "pid": pid, "parent_pid": parent,
+                "creation_time": "10/12/2026 06:39:12", "executable_path": "C:/Python/python.exe",
+                "command_line": f'"C:/Python/python.exe" "C:/fixture/{prefix}.py"'}
+            self.rows[pid+1] = {"inspection_complete": True, "pid": pid+1, "parent_pid": pid,
+                "creation_time": "10/12/2026 06:39:12", "executable_path": "C:/Windows/System32/conhost.exe",
+                "command_line": r"\??\C:\Windows\System32\conhost.exe 0x4"}
+        self.trees = {prefix: self._tree(prefix, pid) for prefix, pid in (("supervisor",100),("runner",200))}
+
+    def _record(self, row, prefix, role):
+        return self.ownership.make_ownership_record(row, "generation", "charlie-control", "generation",
+            "charlie_runner", revision=SOURCE, startup_nonce=prefix, process_role=f"{prefix}_{role}")
+
+    def _tree(self, prefix, pid):
+        root = self._record(self.rows[pid], prefix, "interpreter")
+        wrapper = self._record(self.rows[pid+1], prefix, "console_host")
+        return self.ownership.make_process_tree_record(root, [root,wrapper], "generation")
+
+    def _query(self, command, **kwargs):
+        import re
+        script = command[-1]
+        # Both reader paths must explicitly match the canonical observer's
+        # string projection, not PowerShell's DateTime JSON representation.
+        self.assertIn("@{Name='CreationDate';Expression={[string]$_.CreationDate}}", script)
+        self.assertEqual(kwargs["timeout"], 10)
+        parent_query = "ParentProcessId=" in script
+        pid = int(re.search(r'(?:Parent)?ProcessId=(\d+)', script).group(1))
+        selected = ([r for r in self.rows.values() if r["parent_pid"] == pid]
+                    if parent_query else [self.rows[pid]])
+        rows = [{"ProcessId":r["pid"], "ParentProcessId":r["parent_pid"],
+                 "ExecutablePath":r["executable_path"], "CreationDate":r["creation_time"],
+                 "CommandLine":r["command_line"]} for r in selected]
+        value = rows if parent_query else rows[0]
+        return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
+
+    def _readiness(self):
+        final = {"revision":SOURCE,"activation_id":"current","generation":"generation",
+            "execution_mode":"observe_only",
+            "supervisor_tree_digest":self.ownership.process_tree_identity_digest(self.trees["supervisor"]),
+            "runner_tree_digest":self.ownership.process_tree_identity_digest(self.trees["runner"])}
+        final["signature"] = self.ownership.sign_controller_acknowledgement(final, self.signing_key)
+        supervisor = {"status":"operational_authorized", "pid":100, "child_pid":200,
+            "activation_id":"current","generation":"generation","execution_mode":"observe_only",
+            "startup_nonce":"supervisor","runner_startup_nonce":"runner",
+            "intended_runtime_revision":SOURCE,"intended_execution_revision":SOURCE,
+            "supervisor_tree_identity":self.trees["supervisor"],"process_tree_identity":self.trees["runner"],
+            "controller_final_acknowledgement":final,"controller_public_key":self.public_key}
+        (self.state/"supervisor.json").write_text(json.dumps(supervisor),encoding="utf-8")
+        (self.state/"runner.json").write_text(json.dumps({"activation_id":"current",
+            "runner_source_commit":SOURCE,"execution_mode":"observe_only",
+            "last_seen":datetime.now(timezone.utc).isoformat()}),encoding="utf-8")
+        process_reader = runtime_activation._inspect_exact_process
+        children_reader = runtime_activation._inspect_exact_children
+        with patch.object(runtime_activation, "_inspect_exact_process",
+                          side_effect=lambda pid: process_reader(pid, runner=self._query)), \
+             patch.object(runtime_activation, "_inspect_exact_children",
+                          side_effect=lambda pid: children_reader(pid, runner=self._query)):
+            return read_activation_runtime_evidence({"activation_id":"current", "authority":{
+                "runtime_revision":SOURCE,"execution_revision":SOURCE,"execution_mode":"observe_only"}},
+                state_root=self.state)
+
+    def test_cim_readers_preserve_observer_creation_string_and_provider_rereads(self):
+        first = _inspect_exact_process(100,runner=self._query)
+        second = _inspect_exact_process(100,runner=self._query)
+        children = runtime_activation._inspect_exact_children(100,runner=self._query)
+        self.assertEqual(first,second)
+        self.assertEqual(first["creation_time"],self.trees["supervisor"]["root"]["creation_time"])
+        self.assertEqual(children[0]["creation_time"],first["creation_time"])
+        self.assertEqual(first["command_line"],self.rows[100]["command_line"])
+
+    def test_authenticated_readiness_accepts_exact_live_console_members(self):
+        result = self._readiness()
+        self.assertEqual(result["publication_status"],"activation_bound_ready")
+        for name in ("signed_supervisor_tree","signed_runner_tree","unrelated_processes_absent"):
+            self.assertIs(result[name],True)
+        self.assertEqual(result["supervisor_member_pids"],[100,101])
+        self.assertEqual(result["runner_member_pids"],[200,201])
+        self.assertEqual(result["stop_identity"]["supervisor_tree_identity"],self.trees["supervisor"])
+
+    def test_changed_live_identity_never_passes_authenticated_readiness(self):
+        import copy
+        baseline = copy.deepcopy(self.rows)
+        for key,value in (("creation_time","10/12/2026 06:39:13"),("parent_pid",50),
+                          ("executable_path","C:/unrelated/conhost.exe"),("command_line","changed"),("pid",999)):
+            with self.subTest(field=key):
+                self.rows = copy.deepcopy(baseline); self.rows[101][key] = value
+                result = self._readiness()
+                self.assertEqual(result["publication_status"],"activation_bound_failed")
+                self.assertIs(result["signed_supervisor_tree"],False)
+
+    def test_signed_wrapper_must_have_exact_role_path_command_and_parent(self):
+        import copy
+        saved_rows,saved_trees = copy.deepcopy(self.rows),copy.deepcopy(self.trees)
+        for change in ("cross_mode_role","ordinary_role","path","command","parent","parent_role","missing_identity"):
+            with self.subTest(change=change):
+                self.rows,self.trees = copy.deepcopy(saved_rows),copy.deepcopy(saved_trees)
+                if change in {"path","command","parent"}:
+                    key,value = {"path":("executable_path","C:/unrelated/conhost.exe"),
+                        "command":("command_line",r"C:\Windows\System32\conhost.exe --arbitrary"),
+                        "parent":("parent_pid",200)}[change]
+                    self.rows[101][key]=value; self.trees["supervisor"]=self._tree("supervisor",100)
+                elif change == "parent_role":
+                    self.trees["supervisor"]["root"]["process_role"]="runner_interpreter"
+                    self.trees["supervisor"]["members"][0]["process_role"]="runner_interpreter"
+                elif change == "missing_identity":
+                    self.trees["supervisor"]["members"][1].pop("creation_time")
+                else:
+                    self.trees["supervisor"]["members"][1]["process_role"]=(
+                        "runner_console_host" if change=="cross_mode_role" else "supervisor_interpreter")
+                result = self._readiness()
+                self.assertEqual(result["publication_status"],"activation_bound_failed")
+                self.assertIs(result["signed_supervisor_tree"],False)
+
+    def test_unsigned_console_child_is_not_hidden_by_verified_wrapper(self):
+        self.rows[102] = {**self.rows[101],"pid":102}
+        result = self._readiness()
+        self.assertEqual(result["publication_status"],"activation_bound_failed")
+        self.assertIs(result["signed_supervisor_tree"],False)
+
+    def test_two_signed_console_hosts_for_one_parent_refuse(self):
+        self.rows[102] = {**self.rows[101],"pid":102}
+        self.trees["supervisor"]["members"].append(self._record(self.rows[102],"supervisor","console_host"))
+        self.assertEqual(self._readiness()["publication_status"],"activation_bound_failed")
+
+    def test_other_protected_member_cannot_claim_console_role(self):
+        for role in ("console_host","interpreter"):
+            with self.subTest(role=role):
+                self.rows[101].update(executable_path="C:/Windows/System32/powershell.exe",
+                                      command_line="powershell.exe -NoProfile")
+                self.trees["supervisor"]["members"][1]=self._record(self.rows[101],"supervisor",role)
+                result=self._readiness()
+                self.assertEqual(result["publication_status"],"activation_bound_failed")
+                self.assertIs(result["unrelated_processes_absent"],False)
+
+    def test_runner_cannot_borrow_supervisor_console_role(self):
+        self.trees["runner"]["members"][1]["process_role"]="supervisor_console_host"
+        result=self._readiness()
+        self.assertEqual(result["publication_status"],"activation_bound_failed")
+        self.assertIs(result["signed_runner_tree"],False)
+
+
 if __name__ == "__main__":
     unittest.main()
