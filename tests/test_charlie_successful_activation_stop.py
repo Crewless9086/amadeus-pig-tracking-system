@@ -1,5 +1,6 @@
 """Synthetic canonical successful-stop lifecycle; no native task/process operations."""
 import copy
+import os
 import json
 import unittest
 from pathlib import Path
@@ -436,3 +437,228 @@ class SuccessfulActivationStopTests(unittest.TestCase):
             handoff=activation._failed_successful_stop_handoff(self.state,self.id)
         self.assertEqual(handoff["failure_evidence"]["return_code"],0)
         self.assertEqual(handoff["failure_evidence"]["execution_mode"],activation.INTAKE_EXECUTION_MODE)
+
+
+class NativeSuccessfulActivationStopTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "disposable hosted Windows only")
+    def test_windows_successful_stop_verifies_disposable_process_exit(self):
+        from tests.charlie_windows_lifecycle_harness import windows_job_guard, current_job_active_count
+        import hashlib
+        import subprocess
+        import sys
+        import tempfile
+        import time
+        from modules.charlie import process_ownership
+
+        # The harness owns the job before any process is created. Task/provider
+        # state is a declared fixture; native identities and absence are real.
+        with windows_job_guard():
+            self.assertEqual(os.environ.get("GITHUB_ACTIONS"), "true")
+            self.assertEqual(os.environ.get("RUNNER_OS"), "Windows")
+            f = fixtures.RuntimeActivationTests(methodName="runTest")
+            temporary_directory = tempfile.TemporaryDirectory
+            with patch.object(tempfile, "TemporaryDirectory",
+                              side_effect=lambda *a, **kw: temporary_directory(*a, **kw, delete=False)):
+                f.setUp()
+            root = Path(f.temp.name).resolve()
+            self.assertIn(Path(tempfile.tempdir).resolve(), root.parents)
+            # Child-held files remain in the case directory until parent Job
+            # cleanup / disposable VM teardown. No rmtree or ignored errors.
+            original_stop = f.stop.read_bytes()
+            plan, controller, _ = f._prepared()
+            activation_id = plan["activation_id"]
+            fixture_source = """import json, os, socket, subprocess, sys, time
+from pathlib import Path
+role, root = sys.argv[1], Path(sys.argv[2])
+deadline = time.monotonic() + 90
+phase = 'initializing'
+def deny(*args, **kwargs): raise RuntimeError('fixture_network_forbidden')
+socket.socket.connect = deny
+def wait_for(path):
+    while not path.exists():
+        if time.monotonic() >= deadline: raise RuntimeError('fixture_deadline')
+        time.sleep(0.02)
+def child(name):
+    return subprocess.Popen([sys.executable, str(root / (name + '_fixture.py')), name, str(root)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        close_fds=True, creationflags=subprocess.CREATE_NO_WINDOW)
+def main():
+    global phase
+    (root / (role + '.pid')).write_text(str(os.getpid()))
+    if role == 'launcher':
+        phase = 'waiting_supervisor'
+        return child('supervisor').wait(timeout=90)
+    if role == 'supervisor':
+        phase = 'waiting_observation'
+        wait_for(root / 'start-runner')
+        phase = 'waiting_runner'
+        code = child('runner').wait(timeout=90)
+        path = root / 'state' / 'supervisor.json'
+        state = json.loads(path.read_text())
+        state.update(status='supervisor_stopped', runner_state='exited', return_code=code,
+            stop_reason='cooperative_fixture_stop')
+        pending = path.with_suffix('.pending')
+        pending.write_text(json.dumps(state)); os.replace(pending, path)
+        (root / 'supervisor-returned').write_text(str(code))
+        phase = 'waiting_final_release'
+        wait_for(root / 'supervisor-release')
+        return code
+    if role != 'runner': raise RuntimeError('fixture_role')
+    phase = 'waiting_stop'
+    wait_for(root / 'state' / 'supervisor.stop')
+    phase = 'waiting_runner_release'
+    wait_for(root / 'runner-release')
+    return 0
+try:
+    code = main()
+except Exception as exc:
+    error = type(exc).__name__
+    if error not in {'RuntimeError', 'TimeoutExpired', 'OSError', 'FileNotFoundError', 'JSONDecodeError'}:
+        error = 'other'
+    (root / (role + '.error.json')).write_text(json.dumps({'phase': phase, 'error_type': error}))
+    code = 1
+sys.exit(code)
+"""
+            scripts = {role: root / (role + "_fixture.py") for role in ("launcher", "supervisor", "runner")}
+            for path in scripts.values(): path.write_text(fixture_source, encoding="utf-8")
+            launcher = None
+            def await_file(path):
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    if path.is_file() and path.read_text().strip(): return
+                    if launcher is not None and launcher.poll() is not None:
+                        self.fail("fixture_exited_before_readiness")
+                    time.sleep(0.02)
+                self.fail("fixture_readiness_timeout")
+            try:
+                launcher = subprocess.Popen([sys.executable, str(scripts["launcher"]), "launcher", str(root)],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    close_fds=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                pids = {"launcher": launcher.pid}
+                await_file(root / "supervisor.pid")
+                pids["supervisor"] = int((root / "supervisor.pid").read_text())
+                generation, supervisor_nonce, runner_nonce = "native-stop-generation", "native-supervisor", "native-runner"
+                observed = {}
+                for role, parent, nonce in (("supervisor", pids["launcher"], supervisor_nonce),
+                                           ("runner", pids["supervisor"], runner_nonce)):
+                    if role == "runner":
+                        (root / "start-runner").write_text("release")
+                        await_file(root / "runner.pid")
+                        pids["runner"] = int((root / "runner.pid").read_text())
+                    result = process_ownership.observe_process_tree(pids[role], generation=generation,
+                        revision=fixtures.SOURCE, startup_nonce=nonce, expected_script=str(scripts[role]),
+                        expected_root_executable=sys.executable,
+                        expected_interpreter_executable=getattr(sys, "_base_executable", None) or sys.executable,
+                        expected_root_parent_pid=parent, process_role_prefix=role, timeout_seconds=10)
+                    self.assertTrue(result.get("success"), result.get("reason", "native_observation_failed"))
+                    observed[role] = result["tree"]
+                self.assertEqual(len(set(pids.values())), 3)
+                supervisor_tree, runner_tree = observed["supervisor"], observed["runner"]
+                signing_key, public_key = generate_controller_signing_key()
+                final = {"revision": fixtures.SOURCE, "activation_id": activation_id,
+                    "generation": generation, "execution_mode": "observe_only",
+                    "supervisor_tree_digest": process_tree_identity_digest(supervisor_tree),
+                    "runner_tree_digest": process_tree_identity_digest(runner_tree)}
+                signature = sign_controller_acknowledgement(final, signing_key)
+                supervisor = {"status": "operational_authorized", "pid": pids["supervisor"],
+                    "child_pid": pids["runner"], "activation_id": activation_id, "generation": generation,
+                    "execution_mode": "observe_only", "startup_nonce": supervisor_nonce,
+                    "runner_startup_nonce": runner_nonce, "supervisor_tree_identity": supervisor_tree,
+                    "process_tree_identity": runner_tree, "controller_public_key": public_key,
+                    "controller_final_acknowledgement": {**final, "signature": signature},
+                    "intended_runtime_revision": fixtures.SOURCE, "intended_execution_revision": fixtures.SOURCE}
+                (f.state / "supervisor.json").write_text(json.dumps(supervisor))
+                (f.state / "runner.json").write_text(json.dumps({"activation_id": activation_id,
+                    "runner_source_commit": fixtures.SOURCE, "execution_mode": "observe_only",
+                    "last_seen": datetime.now(timezone.utc).isoformat()}))
+                f._mark_started()
+                consumed_path = f.state / f"activation-consumed-{activation_id}.json"
+                consumed = json.loads(consumed_path.read_bytes())
+                consumed.update(provider_pid=pids["launcher"], provider_parent_pid=os.getpid())
+                consumed["consumed_hmac_sha256"] = activation._sign_record(consumed, f.key, "consumed_hmac_sha256")
+                consumed_path.write_text(json.dumps(consumed))
+                real_read_evidence = activation.read_activation_runtime_evidence
+                real_live_validator = activation._bounded_validate_live_tree
+                readiness_observations = []
+                def read_evidence(packet, **reader_kwargs):
+                    tree_results = []
+                    def observe_live_validation(tree, **kwargs):
+                        # Return the real decision unchanged; retain fixed codes
+                        # and counts only, never commands or process rows.
+                        result = real_live_validator(tree, **kwargs)
+                        reason = result.get("reason")
+                        if reason not in {"exact_owned_members_live", "owned_pid_inspection_failed",
+                                "owned_pid_identity_changed", "owned_protected_member_invalid",
+                                "owned_descendant_inspection_failed", "unsigned_live_descendant",
+                                "descendant_tree_parentage_mismatch"}:
+                            reason = "other_refusal"
+                        tree_results.append({"tree": kwargs["process_role_prefix"],
+                            "authorized": result.get("authorized") is True, "reason": reason,
+                            "member_count": len(result.get("member_pids") or []),
+                            "verified_console_count": len(result.get("validated_console_host_pids") or [])})
+                        return result
+                    evidence = real_read_evidence(packet, **reader_kwargs,
+                        live_validator=observe_live_validation)
+                    if len(readiness_observations) < 8:
+                        readiness_observations.append({"trees": tree_results,
+                            "gates": {name: evidence.get(name) is True for name in (
+                                "loaded_revision_exact", "execution_mode_observe_only",
+                                "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+                                "activation_id_exact", "unrelated_processes_absent")}})
+                        (Path(tempfile.tempdir) / "native-readiness.json").write_text(
+                            json.dumps(readiness_observations), encoding="utf-8")
+                    return evidence
+                # Use the production default-reader branch. This passive wrapper
+                # forwards its exact deadline/clock and returns real decisions.
+                with patch.object(activation, "read_activation_runtime_evidence", side_effect=read_evidence):
+                    verified = activation.verify_or_recover_activation(state_root=f.state,
+                        task_controller=controller, task_reader=lambda: f.task, git_runner=f.git)
+                self.assertEqual(verified["status"], "activation_verified")
+                f.task[0]["state"] = "Running"
+                def disable(digest):
+                    controller.disabled.append(digest); f.task[0]["state"] = "Disabled"
+                controller.disable_exact = disable
+                controller.read_exact_instance_state = lambda _guid: "exited" if launcher.poll() == 0 else "running"
+                def no_fixture_instances():
+                    if launcher.poll() is None: raise RuntimeError("fixture_instance_running")
+                controller.assert_no_running_instances = no_fixture_instances
+                request = activation.request_successful_activation_stop(state_root=f.state,
+                    activation_id=activation_id, task_controller=controller, task_reader=lambda: f.task, git_runner=f.git)
+                self.assertEqual(request["status"], "activation_stop_requested")
+                self.assertFalse(request["process_absence_verified"])
+                self.assertEqual(f.stop.read_bytes(), original_stop)
+                (root / "runner-release").write_text("release")
+                await_file(root / "supervisor-returned")
+                self.assertEqual((root / "supervisor-returned").read_text(), "0")
+                self.assertEqual(activation._process_presence(pids["supervisor"]), "live")
+                args = dict(state_root=f.state, activation_id=activation_id,
+                            task_controller=controller, task_reader=lambda: f.task)
+                with self.assertRaisesRegex(activation.ActivationError, "successful_stop_process_still_live"):
+                    activation.complete_successful_activation_stop(**args)
+                self.assertFalse((f.state / "activation-ledger" / f"{activation_id}-stop-completed.json").exists())
+                (root / "supervisor-release").write_text("release")
+                self.assertEqual(launcher.wait(timeout=15), 0)
+                projection = activation.complete_successful_activation_stop(**args)
+                self.assertEqual(projection["status"], "governed_stop_active")
+                self.assertTrue(projection["process_absence_verified"])
+                self.assertEqual(activation.validate_successful_stop_projection(projection, f.state,
+                    task_reader=lambda: f.task, task_controller=controller), projection)
+                projection_bytes = (f.state / "watchdog.json").read_bytes()
+                self.assertEqual(activation.complete_successful_activation_stop(**args), projection)
+                self.assertEqual((f.state / "watchdog.json").read_bytes(), projection_bytes)
+                self.assertEqual(f.stop.read_bytes(), original_stop)
+                self.assertEqual(len(controller.disabled), 1)
+                self.assertFalse(list((f.state / "activation-ledger").glob("*-failure.json")))
+                self.assertEqual(current_job_active_count(), 1)  # this test worker only, before parent cleanup
+                (Path(tempfile.tempdir) / "native-successful-stop.json").write_text(json.dumps({
+                    "status": "native_cooperative_stop_verified", "fixture_processes": 3,
+                    "native_absence_verified": True, "provider_and_task_are_fake": True,
+                    "canonical_supervisor_loop_exercised": False, "forced_cleanup_used_for_success": False,
+                    "stop_sha256": hashlib.sha256(original_stop).hexdigest()}))
+            finally:
+                # Cooperative release is safe even on assertion failure. The
+                # parent Job exclusively owns any remaining process containment.
+                if not f.stop.exists(): f.stop.write_bytes(original_stop)
+                (root / "start-runner").write_text("release")
+                (root / "runner-release").write_text("release")
+                (root / "supervisor-release").write_text("release")

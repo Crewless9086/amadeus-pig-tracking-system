@@ -1,4 +1,4 @@
-"""Four opt-in lifecycle tests in disposable hosted Windows jobs, never production."""
+"""Six opt-in lifecycle tests in disposable hosted Windows jobs, never production."""
 from __future__ import annotations
 
 import argparse
@@ -26,11 +26,15 @@ SELECTORS = (
     "tests.test_charlie_runner_control.CharlieRunnerControlTests.test_windows_failed_start_leaves_zero_observed_processes",
     "tests.test_charlie_runner_control.CharlieRunnerControlTests.test_windows_governed_start_refuses_protected_ancestry_stop",
     "tests.test_charlie_runner_supervisor.CharlieRunnerSupervisorTests.test_supervisor_script_loads_standalone_outside_repo_cwd",
+    "tests.test_charlie_runtime_activation.RuntimeActivationTests.test_local_current_identity_uses_kernel_creation_time_and_native_command_line",
+    "tests.test_charlie_successful_activation_stop.NativeSuccessfulActivationStopTests.test_windows_successful_stop_verifies_disposable_process_exit",
 )
 JOB_ENV = "CHARLIE_WINDOWS_TEST_JOB_NAME"
 KILL_ON_CLOSE = 0x2000
 BREAKAWAY = 0x800 | 0x1000
 TEST_TIMEOUT_SECONDS = 180
+PARENT_BUDGET_SECONDS = 420
+CLEANUP_RESERVE_SECONDS = 15
 BASE_PLATFORM_ENV = frozenset({"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "RUNNER_TEMP", "GITHUB_ACTIONS", "RUNNER_OS"})
 NATIVE_PLATFORM_ENV = frozenset({"USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMDRIVE", "PROGRAMFILES"})
 
@@ -433,7 +437,7 @@ def _worker(selector, root):
         return 0 if result.testsRun == 1 and result.wasSuccessful() and not result.skipped else 1
 
 
-def _run_owned_worker(selector, root):
+def _run_owned_worker(selector, root, *, deadline=None):
     import _winapi
     api = _kernel(); name = "charlie-test-" + uuid.uuid4().hex
     job = api.CreateJobObjectW(None, name); _checked(job, "create_test_job")
@@ -444,6 +448,8 @@ def _run_owned_worker(selector, root):
     unassigned_cleanup_verified = True
     report = {"selector": selector, "cleanup_verified": False, "timed_out": False}
     try:
+        if deadline is not None and time.monotonic() + CLEANUP_RESERVE_SECONDS >= deadline:
+            raise RuntimeError("parent_test_budget_exhausted")
         limits = ExtendedLimits(); limits.basic.flags = KILL_ON_CLOSE
         _checked(api.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)), "set_test_job_limits")
         legacy = worker_environment(os.environ, root, name)
@@ -454,6 +460,10 @@ def _run_owned_worker(selector, root):
             # Parent references never select a profile or authorize lifecycle success.
             report["process_policy_context"] = process_policy_context(os.environ, env)
             report["cache_parent"] = compare_module_cache_profiles(legacy, env, os.environ)
+        remaining = TEST_TIMEOUT_SECONDS if deadline is None else min(
+            TEST_TIMEOUT_SECONDS, deadline - time.monotonic() - CLEANUP_RESERVE_SECONDS)
+        if remaining <= 0:
+            raise RuntimeError("parent_test_budget_exhausted")
         command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker", selector, "--report-root", str(root)]
         process, thread, _pid, _tid = _winapi.CreateProcess(sys.executable, subprocess.list2cmdline(command), None, None, False,
             0x4 | 0x08000000 | 0x400, env, str(Path(__file__).resolve().parents[1]), subprocess.STARTUPINFO())
@@ -464,7 +474,7 @@ def _run_owned_worker(selector, root):
             raise
         if api.ResumeThread(int(thread)) == 0xFFFFFFFF:
             raise RuntimeError("resume_test_worker_failed")
-        wait = api.WaitForSingleObject(int(process), TEST_TIMEOUT_SECONDS * 1000)
+        wait = api.WaitForSingleObject(int(process), max(1, int(remaining * 1000)))
         report["timed_out"] = wait == 258
         if wait not in {0, 258}:
             raise RuntimeError("test_worker_wait_failed")
@@ -491,6 +501,14 @@ def _run_owned_worker(selector, root):
         for handle in (thread, process, job):
             if handle: api.CloseHandle(int(handle))
     return report
+
+
+def qualification_passed(reports):
+    return len(reports) == len(SELECTORS) and all(
+        r.get("selector") == selector and r.get("exit_code") == 0
+        and r.get("cleanup_verified") is True and not r.get("timed_out")
+        and r.get("result") == {"selector": selector, "tests_run": 1, "failures": 0, "errors": 0, "skips": 0}
+        for selector, r in zip(SELECTORS, reports))
 
 
 def main():
@@ -520,15 +538,15 @@ def main():
     if probe.returncode:
         raise RuntimeError("current_process_cim_preflight_failed")
     reports = []
+    deadline = time.monotonic() + PARENT_BUDGET_SECONDS
     for index, selector in enumerate(SELECTORS):
         case_root = root / str(index); case_root.mkdir()
-        report = _run_owned_worker(selector, case_root); reports.append(report)
+        report = _run_owned_worker(selector, case_root, deadline=deadline); reports.append(report)
         with (case_root / "parent-result.json").open("x", encoding="utf-8") as stream:
             json.dump(report, stream, indent=2)
         if report.get("exit_code") != 0 or not report["cleanup_verified"]:
             break
-    passed = len(reports) == 4 and all(r.get("exit_code") == 0 and r["cleanup_verified"] and
-        r.get("result") == {"selector":r["selector"], "tests_run":1, "failures":0, "errors":0, "skips":0} for r in reports)
+    passed = qualification_passed(reports)
     with (root / "summary.json").open("x", encoding="utf-8") as stream:
         json.dump({"source_sha":head, "passed":passed, "tests_run":sum(r.get("result",{}).get("tests_run",0) for r in reports), "reports":reports}, stream, indent=2)
     return 0 if passed else 1
