@@ -26,6 +26,9 @@ from modules.charlie.process_ownership import (
     TERMINATION_ENABLE_ENV,
     TERMINATION_ENABLE_VALUE,
     normalize_command_fingerprint,
+    _canonical_windows_path,
+    _valid_interpreter_command_role,
+    _validate_process_creation_chronology,
     _valid_windows_console_host_wrapper,
     process_tree_identity_digest,
     validate_bootstrap_tree,
@@ -303,7 +306,7 @@ def consume_provider_activation(*, state_root, starter, task_controller,
         time.sleep(0.05)
     _validate_packet(packet, state_root, task_reader, git_runner=git_runner, now=now)
     inspector = provider_inspector or (lambda pid: inspect_current_provider_chain(
-        pid, activation_id=packet["activation_id"],
+        pid, expected_task=packet["task_ownership"], activation_id=packet["activation_id"],
         activation_prepared_at=packet["prepared_at"],
         activation_event_record_id_lower_bound=packet["task_scheduler_event_record_id_lower_bound"],
     ))
@@ -857,13 +860,15 @@ def _readiness_query_timeout(deadline, monotonic_fn):
 
 
 def _inspect_exact_process(pid, runner=subprocess.run, *, deadline=None,
-                           monotonic_fn=time.monotonic):
+                           monotonic_fn=time.monotonic, creation_time_utc=False):
+    creation = ("$_.CreationDate.ToUniversalTime().ToString('o')"
+                if creation_time_utc else "[string]$_.CreationDate")
     script = (
         "$ErrorActionPreference='Stop';"
         f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={int(pid)}\";"
         "if($null-eq$p){exit 4};"
         "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,"
-        "@{Name='CreationDate';Expression={[string]$_.CreationDate}},CommandLine|ConvertTo-Json -Compress"
+        "@{Name='CreationDate';Expression={" + creation + "}},CommandLine|ConvertTo-Json -Compress"
     )
     completed = runner(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -1534,8 +1539,8 @@ def reconcile_recovered_activation_stop(**kwargs):
 
 
 def _reconcile_recovered_activation_stop(*, state_root, activation_id,
-                                        failure_evidence, task_reader=read_watchdog_task,
-                                        process_presence_reader=None, now=None):
+                                        failure_evidence=None, task_reader=read_watchdog_task,
+                                        process_presence_reader=None, task_controller=None, now=None):
     """Project an authenticated completed rollback as current stopped authority.
 
     The transient activation failure remains an immutable signed ledger record.
@@ -1568,6 +1573,10 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
                 _sign_record(existing_projection, key, "projection_hmac_sha256"))
         )
         if projection_valid:
+            if existing_projection.get("recovery_basis") == "authenticated_pre_consume_failure":
+                validate_no_starter_recovery_projection(
+                    existing_projection, state_root, task_reader=task_reader,
+                    task_controller=task_controller, process_presence_reader=process_presence_reader)
             if reconciliation_lock.exists():
                 owner = _read_json(
                     reconciliation_lock, "activation_reconciliation_lane_invalid"
@@ -1683,19 +1692,26 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
     stop_path = state_root / "supervisor.stop"
     if not stop_path.is_file() or _sha256(stop_path) != rollback["stop_marker_sha256"]:
         raise ActivationError("activation_reconciliation_stop_mismatch")
-    supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
-    if supervisor.get("status") != "supervisor_stopped":
-        raise ActivationError("activation_reconciliation_supervisor_not_stopped")
-    process_pids = {supervisor.get("pid"), supervisor.get("child_pid")}
-    for tree_name in ("supervisor_tree_identity", "process_tree_identity"):
-        tree = supervisor.get(tree_name)
-        root = tree.get("root") if isinstance(tree, dict) else None
-        if isinstance(root, dict):
-            process_pids.add(root.get("pid"))
-        members = tree.get("members") if isinstance(tree, dict) else []
-        process_pids.update(
-            member.get("pid") for member in members if isinstance(member, dict)
-        )
+    pre_starter = None
+    if not (state_root / "supervisor.json").exists():
+        pre_starter = _verify_no_starter_stop(
+            state_root, packet, task_reader=task_reader,
+            task_controller=task_controller, process_presence_reader=process_presence_reader)
+        process_pids = set(pre_starter["known_process_pids"])
+    else:
+        supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
+        if supervisor.get("status") != "supervisor_stopped":
+            raise ActivationError("activation_reconciliation_supervisor_not_stopped")
+        process_pids = {supervisor.get("pid"), supervisor.get("child_pid")}
+        for tree_name in ("supervisor_tree_identity", "process_tree_identity"):
+            tree = supervisor.get(tree_name)
+            root = tree.get("root") if isinstance(tree, dict) else None
+            if isinstance(root, dict):
+                process_pids.add(root.get("pid"))
+            members = tree.get("members") if isinstance(tree, dict) else []
+            process_pids.update(
+                member.get("pid") for member in members if isinstance(member, dict)
+            )
     process_pids.discard(None)
     process_pids.discard("")
     if not process_pids:
@@ -1785,7 +1801,7 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
         "stop_marker_sha256": rollback["stop_marker_sha256"],
         "scheduled_task_state": "Disabled",
         "task_action_sha256": rollback["task_action_sha256"],
-        "supervisor_status": "supervisor_stopped",
+        "supervisor_status": "not_started" if pre_starter else "supervisor_stopped",
         "recovered_activation_id": activation_id,
         "historical_failure_path": str(failure_path),
         "historical_failure_sha256": _sha256(failure_path),
@@ -1801,6 +1817,9 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
         "reconciled_sha256": "pending",
         "runner_status_before": "not_read_after_authenticated_activation_recovery",
     }
+    if pre_starter:
+        projection["recovery_basis"] = "authenticated_pre_consume_failure"
+        projection["pre_starter_evidence"] = pre_starter
     projection["projection_hmac_sha256"] = _sign_record(
         projection, key, "projection_hmac_sha256"
     )
@@ -1814,6 +1833,116 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
     _durable_replace(reconciliation_lock,
                      ledger / f"{activation_id}-reconciliation-lane.json")
     return projection
+
+
+
+def _no_starter_signed_evidence(state_root, packet):
+    """Missing supervisor alone is never proof that the starter did not run."""
+    activation_id = packet["activation_id"]
+    ledger = state_root / "activation-ledger"
+    if (packet.get("status") != "provider_pending"
+            or any((state_root / name).exists() for name in (
+                "supervisor.json", "runner.json", "supervisor.lock",
+                "activation-verification-complete.json",
+                f"activation-consumed-{activation_id}.json"))
+            or any(ledger.glob(f"{activation_id}-*activation-consumed-{activation_id}.json"))
+            or (ledger / f"{activation_id}-verified.json").exists()
+            or packet.get("provider") or packet.get("start_result")):
+        raise ActivationError("pre_starter_recovery_not_proven")
+    key = _read_key(state_root / "activation-authority.key")
+    failure = _read_json(ledger / f"{activation_id}-failure.json", "activation_failure_record_invalid")
+    if (failure.get("activation_id") != activation_id
+            or failure.get("status") != "activation_failure_preserved"
+            or not hmac.compare_digest(str(failure.get("failure_hmac_sha256") or ""),
+                _sign_record(failure, key, "failure_hmac_sha256"))):
+        raise ActivationError("activation_failure_record_invalid")
+    try:
+        payload = json.loads(base64.b64decode(failure["failure_bytes_b64"], validate=True))
+        if (hashlib.sha256(_canonical(payload)).hexdigest() != failure.get("failure_sha256")
+                or payload.get("started") is not False or not payload.get("status")):
+            raise ValueError("not an authenticated pre-starter failure")
+    except (KeyError, ValueError, TypeError) as exc:
+        raise ActivationError("pre_starter_failure_provenance_invalid") from exc
+    evidence = read_startup_evidence(state_root, activation_id)
+    records = evidence.get("records") or []
+    expected_phases = ["launcher_entered", "activation_packet_authenticated",
+                       "environment_loaded", "watchdog_entry_started", "launcher_failed"]
+    row = packet["task_ownership"][0]
+    launcher = Path(packet["runtime_root"]) / "scripts" / "charlie_runner_task_launcher.py"
+    if (evidence.get("status") != "startup_evidence_authenticated"
+            or evidence.get("invalid_or_unbound_records_ignored") != 0
+            or [record.get("phase") for record in records] != expected_phases
+            or len({record.get("pid") for record in records}) != 1
+            or records[-1].get("exit_code") != 1
+            or records[-1].get("error_type") != "ActivationError"
+            or any(_canonical_windows_path(record.get("launcher_path")) != _canonical_windows_path(launcher)
+                or record.get("launcher_sha256") != _sha256(launcher)
+                or _canonical_windows_path(record.get("python_executable")) != _canonical_windows_path(row["execute"])
+                or _canonical_windows_path(record.get("working_directory")) != _canonical_windows_path(row["working_directory"])
+                for record in records)):
+        raise ActivationError("pre_starter_startup_evidence_incomplete")
+    try:
+        times = [datetime.fromisoformat(record["recorded_at"]) for record in records]
+        prepared = datetime.fromisoformat(packet["prepared_at"])
+        expiry = datetime.fromisoformat(packet["authority"]["expires_at"])
+        if times != sorted(times) or times[0] < prepared or times[-1] > expiry:
+            raise ValueError("chronology")
+        pid = int(records[0]["pid"])
+        if pid <= 0:
+            raise ValueError("pid")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ActivationError("pre_starter_startup_evidence_incomplete") from exc
+    return {"startup_evidence_sha256": evidence["evidence_sha256"], "launcher_pid": pid}
+
+
+def _verify_no_starter_stop(state_root, packet, *, task_reader,
+                            task_controller=None, process_presence_reader=None):
+    signed = _no_starter_signed_evidence(state_root, packet)
+    task = task_reader()
+    _validate_exact_task(task, Path(packet["runtime_root"]))
+    if _task_action_sha256(task) != packet["authority"]["task_action_sha256"]:
+        raise ActivationError("activation_reconciliation_task_mismatch")
+    controller = task_controller or WindowsExactTaskController(task_reader=task_reader)
+    controller.bind_exact(packet["task_ownership"])
+    controller.assert_no_running_instances()
+    engine = controller.read_completed_instance_engine_pid(packet)
+    pids = sorted({int(engine), signed["launcher_pid"]})
+    if any(pid <= 0 for pid in pids):
+        raise ActivationError("pre_starter_process_identity_missing")
+    for pid in pids:
+        presence = (process_presence_reader or _process_presence)(pid)
+        if presence != "absent":
+            raise ActivationError("activation_reconciliation_process_still_live" if presence == "live"
+                                  else "activation_reconciliation_process_proof_unavailable")
+    controller.assert_no_running_instances()
+    if task_reader() != task:
+        raise ActivationError("activation_reconciliation_task_mismatch")
+    return {**signed, "known_process_pids": pids, "scheduler_engine_pid": int(engine),
+            "instance_guid": packet["expected_instance_guid"]}
+
+
+def validate_no_starter_recovery_projection(projection, state_root, *, task_reader=read_watchdog_task,
+                                             task_controller=None, process_presence_reader=None):
+    """Revalidate the narrow no-starter basis before stopped staging or replay."""
+    from modules.charlie.runtime_staging import _validate_recovery_projection
+    state_root = Path(state_root)
+    _validate_recovery_projection(projection, state_root)
+    if projection.get("recovery_basis") != "authenticated_pre_consume_failure":
+        raise ActivationError("pre_starter_recovery_basis_missing")
+    packet_path = state_root / "activation-ledger" / (
+        projection["recovered_activation_id"] + "-recovered-activation-packet.json")
+    packet = _read_json(packet_path, "activation_recovered_packet_invalid")
+    key = _read_key(state_root / "activation-authority.key")
+    if not hmac.compare_digest(str(packet.get("packet_hmac_sha256") or ""), _sign_packet(packet, key)):
+        raise ActivationError("activation_recovered_packet_binding_invalid")
+    if (_sha256(state_root / "supervisor.stop") != packet["authority"]["stop_marker_sha256"]
+            or projection.get("recovered_activation_id") != packet.get("activation_id")):
+        raise ActivationError("activation_reconciliation_stop_mismatch")
+    current = _verify_no_starter_stop(state_root, packet, task_reader=task_reader,
+        task_controller=task_controller, process_presence_reader=process_presence_reader)
+    if current != projection.get("pre_starter_evidence"):
+        raise ActivationError("pre_starter_recovery_evidence_changed")
+    return current
 
 
 def _process_presence(pid, runner=subprocess.run):
@@ -1842,6 +1971,61 @@ def _process_presence(pid, runner=subprocess.run):
         return "unknown"
 
 
+def _configured_provider_pair(expected_task):
+    """Resolve a redirector only from the governed interpreter and local config."""
+    row = expected_task[0] if isinstance(expected_task, list) and len(expected_task) == 1 else {}
+    root = Path(str(row.get("working_directory") or "")).resolve()
+    binding = governed_runtime_binding(root, required=True)
+    execute = Path(str(row.get("execute") or "")).resolve()
+    if (_canonical_windows_path(execute) != _canonical_windows_path(binding["interpreter"])
+            or _canonical_windows_path(sys.executable) != _canonical_windows_path(execute)
+            or execute.name.casefold() not in {"python.exe", "pythonw.exe"}):
+        raise ActivationError("provider_interpreter_configuration_mismatch")
+    config = execute.parent.parent / "pyvenv.cfg"
+    if config.is_symlink() or not config.is_file() or config.stat().st_size > 8192:
+        raise ActivationError("provider_interpreter_configuration_missing")
+    raw = config.read_bytes()
+    values = {}
+    for line in raw.decode("utf-8").splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            key = key.strip().casefold()
+            if key in values:
+                raise ActivationError("provider_interpreter_configuration_ambiguous")
+            values[key] = value.strip()
+    home = Path(values.get("home", ""))
+    # CPython's "executable" field records the venv creator, which may itself
+    # be a venv. "home" selects the base interpreter; bind it to this process's
+    # actual base executable rather than treating creator metadata as authority.
+    base = home / execute.name
+    if (not home.is_absolute()
+            or not base.is_file() or base.is_symlink()
+            or _canonical_windows_path(base) != _canonical_windows_path(getattr(sys, "_base_executable", ""))
+            or _canonical_windows_path(base) == _canonical_windows_path(execute)):
+        raise ActivationError("provider_interpreter_configuration_mismatch")
+    return {"execute": str(execute), "base_executable": str(base.resolve()),
+            "configuration_sha256": hashlib.sha256(raw).hexdigest(),
+            "base_sha256": _sha256(base), "execute_sha256": _sha256(execute)}
+
+
+def _provider_chain_chronology(action, current):
+    rows = [dict(action), dict(current)]
+    for row in rows:
+        stamp = str(row.get("creation_time") or "")
+        if stamp.isdigit():
+            row["creation_time"] = datetime.fromtimestamp(
+                (int(stamp) - 116444736000000000) / 10000000, timezone.utc
+            ).isoformat()
+    return _validate_process_creation_chronology(rows, int(action["pid"]))
+
+
+def _exact_provider_command(process, execute, arguments):
+    tokens = _command_tokens(process.get("command_line"))
+    expected = _command_tokens(arguments)
+    return bool(tokens and _canonical_windows_path(tokens[0]) == _canonical_windows_path(execute)
+                and tokens[1:] == expected)
+
+
 def verify_provider_origin(inspector, *, expected_task):
     current = inspector(os.getpid())
     if not isinstance(current, dict) or not current.get("inspection_complete"):
@@ -1854,47 +2038,49 @@ def verify_provider_origin(inspector, *, expected_task):
     names = [Path(str(item.get("executable_path") or "")).name.casefold() for item in ancestry]
     if any(name in PROTECTED_ANCESTRY for name in names):
         return {"authorized": False, "reason": "terminal_ancestry_rejected"}
-    parent = ancestry[0]
-    parent_name = Path(str(parent.get("executable_path") or "")).name.casefold()
-    current_name = Path(str(current.get("executable_path") or "")).name.casefold()
-    if (current_name != "pythonw.exe" or parent_name not in PROVIDER_PARENTS
-            or not parent.get("provider_identity_verified")):
-        return {"authorized": False, "reason": "scheduled_provider_origin_required"}
     row = expected_task[0] if isinstance(expected_task, list) and len(expected_task) == 1 else {}
-    provider_action = {
-        "execute": str(parent.get("action_execute") or ""),
-        "arguments": str(parent.get("action_arguments") or ""),
-        "working_directory": str(parent.get("action_working_directory") or ""),
-    }
-    expected_action = {
-        "execute": str(row.get("execute") or ""),
-        "arguments": str(row.get("arguments") or ""),
-        "working_directory": str(row.get("working_directory") or ""),
-    }
-    if any(
-            str(Path(provider_action[field]).resolve()).casefold()
-            != str(Path(expected_action[field]).resolve()).casefold()
-            if field != "arguments" else provider_action[field] != expected_action[field]
-            for field in expected_action):
+    redirector = current.get("provider_action_process")
+    parent = ancestry[-1]
+    parent_name = Path(str(parent.get("executable_path") or "")).name.casefold()
+    if (parent_name not in PROVIDER_PARENTS or not parent.get("provider_identity_verified")
+            or len(ancestry) != (2 if redirector else 1)
+            or Path(str(row.get("execute") or "")).name.casefold() not in {"python.exe", "pythonw.exe"}):
+        return {"authorized": False, "reason": "scheduled_provider_origin_required"}
+    provider_action = {field: str(parent.get("action_" + field) or "")
+                       for field in ("execute", "arguments", "working_directory")}
+    expected_action = {field: str(row.get(field) or "") for field in provider_action}
+    if any(_canonical_windows_path(provider_action[field]) != _canonical_windows_path(expected_action[field])
+           if field != "arguments" else provider_action[field] != expected_action[field]
+           for field in expected_action):
         return {"authorized": False, "reason": "provider_task_action_mismatch"}
-    current_executable = str(Path(str(current.get("executable_path") or "")).resolve()).casefold()
-    expected_executable = str(Path(str(row.get("execute") or "")).resolve()).casefold()
-    current_tokens = _command_tokens(current.get("command_line"))
-    expected_tokens = _command_tokens(str(row.get("arguments") or ""))
-    if (current_executable != expected_executable or not current_tokens
-            or str(Path(current_tokens[0]).resolve()).casefold() != expected_executable
-            or current_tokens[1:] != expected_tokens):
+    action = current
+    if redirector:
+        try:
+            pair = _configured_provider_pair(expected_task)
+        except (ActivationError, OSError, ValueError, RuntimeError):
+            return {"authorized": False, "reason": "provider_interpreter_configuration_mismatch"}
+        if (pair != current.get("provider_interpreter_binding") or ancestry[0] != redirector
+                or int(current["parent_pid"]) != int(redirector["pid"])
+                or int(redirector["parent_pid"]) != int(parent["pid"])
+                or _canonical_windows_path(current.get("executable_path")) != _canonical_windows_path(pair["base_executable"])
+                or not _exact_provider_command(current, pair["base_executable"], row.get("arguments"))
+                or _provider_chain_chronology(redirector, current)):
+            return {"authorized": False, "reason": "provider_redirector_identity_mismatch"}
+        action = redirector
+    if (_canonical_windows_path(action.get("executable_path")) != _canonical_windows_path(row.get("execute"))
+            or not _exact_provider_command(action, row.get("execute"), row.get("arguments"))):
         return {"authorized": False, "reason": "provider_task_action_mismatch"}
     return {"authorized": True, "reason": "scheduled_provider_origin_verified",
             "pid": int(current["pid"]), "parent_pid": int(current["parent_pid"]),
-            "parent_executable": parent_name,
+            "action_pid": int(action["pid"]), "parent_executable": parent_name,
             "provider_instance_guid": str(parent.get("instance_guid") or "")}
 
 
 def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_identity=None,
                                    provider_identity=None, activation_id=None,
                                    activation_prepared_at=None,
-                                   activation_event_record_id_lower_bound=None):
+                                   activation_event_record_id_lower_bound=None,
+                                   expected_task=None):
     """Inspect this process locally and only its exact parent PIDs through CIM."""
     requested_pid = int(pid or os.getpid())
     if current_identity is not None:
@@ -1902,23 +2088,46 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
     elif requested_pid == os.getpid():
         current = _local_current_process_identity()
     else:
-        current = _inspect_exact_process(requested_pid, runner=runner)
+        current = _inspect_exact_process(requested_pid, runner=runner, creation_time_utc=True)
     required = ("pid", "parent_pid", "executable_path", "creation_time", "command_line")
     if (not isinstance(current, dict) or not current.get("inspection_complete")
             or int(current.get("pid") or -1) != requested_pid
             or any(not str(current.get(field) or "") for field in required[2:])):
         return {"inspection_complete": False, "reason": "provider_identity_unreadable"}
 
+    action_pid = requested_pid
+    redirector = None
+    interpreter_binding = None
+    if expected_task is not None:
+        row = expected_task[0] if isinstance(expected_task, list) and len(expected_task) == 1 else {}
+        if _canonical_windows_path(current.get("executable_path")) != _canonical_windows_path(row.get("execute")):
+            try:
+                interpreter_binding = _configured_provider_pair(expected_task)
+                redirector = _inspect_exact_process(int(current["parent_pid"]), runner=runner, creation_time_utc=True)
+                script_tokens = _command_tokens(row.get("arguments"))
+                if (len(script_tokens) != 1 or not redirector.get("inspection_complete")
+                        or _canonical_windows_path(redirector.get("executable_path")) != _canonical_windows_path(interpreter_binding["execute"])
+                        or not _valid_interpreter_command_role(current, expected_script=script_tokens[0],
+                            expected_interpreter_executable=interpreter_binding["base_executable"])
+                        or not _exact_provider_command(current, interpreter_binding["base_executable"], row.get("arguments"))
+                        or not _exact_provider_command(redirector, interpreter_binding["execute"], row.get("arguments"))
+                        or _provider_chain_chronology(redirector, current)):
+                    raise ActivationError("provider_redirector_identity_mismatch")
+                action_pid = int(redirector["pid"])
+            except (ActivationError, OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as exc:
+                return {"inspection_complete": False,
+                        "reason": getattr(exc, "status", "provider_redirector_identity_unreadable")}
+
     provider_reader = provider_identity or (
         (lambda: _inspect_windows_task_scheduler_provider(
-            requested_pid, runner=runner, activation_id=activation_id,
+            action_pid, runner=runner, activation_id=activation_id,
             activation_prepared_at=activation_prepared_at,
             event_record_id_lower_bound=activation_event_record_id_lower_bound))
         if os.name == "nt" else lambda: {"inspection_complete": False}
     )
     provider = provider_reader()
     if (not _valid_task_scheduler_provider(provider)
-            or int(provider.get("engine_pid") or -1) != requested_pid):
+            or int(provider.get("engine_pid") or -1) != action_pid):
         reason = (str(provider.get("reason") or "provider_identity_unreadable")
                   if isinstance(provider, dict) else "provider_identity_unreadable")
         return {"inspection_complete": False, "reason": reason}
@@ -1953,7 +2162,7 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
                           if key != "inspection_complete"})
             terminated = True
             break
-        item = _inspect_exact_process(next_pid, runner=runner)
+        item = _inspect_exact_process(next_pid, runner=runner, creation_time_utc=True)
         if (not item.get("inspection_complete") or int(item.get("pid") or -1) != next_pid
                 or not str(item.get("executable_path") or "")
                 or not str(item.get("creation_time") or "")):
@@ -1969,8 +2178,8 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
     # A second exact read binds the immediate provider identity across the
     # inspection window and fails closed if a PID was reused or reparented.
     if not chain[0].get("provider_identity_verified"):
-        parent_again = _inspect_exact_process(int(current["parent_pid"]), runner=runner)
-        stable_fields = ("pid", "parent_pid", "executable_path", "creation_time")
+        parent_again = _inspect_exact_process(int(current["parent_pid"]), runner=runner, creation_time_utc=True)
+        stable_fields = ("pid", "parent_pid", "executable_path", "creation_time", "command_line")
         if (not parent_again.get("inspection_complete") or any(
                 str(parent_again.get(field) or "").casefold()
                 != str(chain[0].get(field) or "").casefold()
@@ -1981,7 +2190,7 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
     elif requested_pid == os.getpid():
         current_again = _local_current_process_identity()
     else:
-        current_again = _inspect_exact_process(requested_pid, runner=runner)
+        current_again = _inspect_exact_process(requested_pid, runner=runner, creation_time_utc=True)
     stable_current_fields = (
         "pid", "parent_pid", "executable_path", "creation_time", "command_line",
     )
@@ -1991,6 +2200,16 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
                 != str(current.get(field) or "").casefold()
                 for field in stable_current_fields)):
         return {"inspection_complete": False, "reason": "provider_child_identity_changed"}
+    if redirector:
+        if chain[0] != {key: value for key, value in redirector.items() if key != "inspection_complete"}:
+            return {"inspection_complete": False, "reason": "provider_ancestry_changed"}
+        try:
+            if _configured_provider_pair(expected_task) != interpreter_binding:
+                raise ActivationError("provider_interpreter_configuration_changed")
+        except (ActivationError, OSError, ValueError, RuntimeError):
+            return {"inspection_complete": False, "reason": "provider_interpreter_configuration_changed"}
+        return {**current, "inspection_complete": True, "ancestry": chain,
+                "provider_action_process": chain[0], "provider_interpreter_binding": interpreter_binding}
     return {**current, "inspection_complete": True, "ancestry": chain}
 
 
@@ -2206,6 +2425,7 @@ def _local_current_process_identity():
     """Read self identity without requiring WMI access to the scheduled child."""
     command_line = subprocess.list2cmdline([sys.executable, *sys.argv])
     creation_time = "local-current-process"
+    executable_path = sys.executable
     if os.name == "nt":
         try:
             import ctypes
@@ -2213,6 +2433,13 @@ def _local_current_process_identity():
             kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
             kernel32.GetCommandLineW.restype = wintypes.LPWSTR
             kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            kernel32.GetModuleFileNameW.argtypes = [wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD]
+            kernel32.GetModuleFileNameW.restype = wintypes.DWORD
+            image_buffer = ctypes.create_unicode_buffer(32768)
+            image_length = kernel32.GetModuleFileNameW(None, image_buffer, len(image_buffer))
+            if not 0 < image_length < len(image_buffer):
+                return {"inspection_complete": False}
+            executable_path = image_buffer.value
             kernel32.GetProcessTimes.argtypes = [
                 wintypes.HANDLE,
                 ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME),
@@ -2235,7 +2462,8 @@ def _local_current_process_identity():
         "inspection_complete": True,
         "pid": os.getpid(),
         "parent_pid": os.getppid(),
-        "executable_path": sys.executable,
+        "executable_path": executable_path,
+        "logical_executable": sys.executable,
         "creation_time": creation_time,
         "command_line": command_line,
     }
@@ -2350,6 +2578,46 @@ class WindowsExactTaskController:
         if completed.returncode or state not in {"running", "exited"}:
             raise ActivationError("task_scheduler_instance_state_unreadable")
         return state
+
+    def read_completed_instance_engine_pid(self, packet):
+        """Read the one action-start event for this authenticated failed instance."""
+        instance = str(packet.get("expected_instance_guid") or "").strip("{}").casefold()
+        if not re.fullmatch(r"[0-9a-f-]{36}", instance):
+            raise ActivationError("task_scheduler_instance_guid_invalid")
+        prepared = datetime.fromisoformat(packet["prepared_at"]).isoformat()
+        floor = int(packet["task_scheduler_event_record_id_lower_bound"])
+        script = (
+            "$ErrorActionPreference='Stop';"
+            "$prepared=[DateTime]::Parse('" + prepared + "').ToUniversalTime();"
+            "$rows=@(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational';Id=200;StartTime=$prepared} -ErrorAction Stop|"
+            "ForEach-Object{$x=[xml]$_.ToXml();$d=@{};foreach($i in $x.Event.EventData.Data){$d[[string]$i.Name]=[string]$i.'#text'};"
+            "[pscustomobject]@{record_id=[long]$_.RecordId;utc=$_.TimeCreated.ToUniversalTime().ToString('o');"
+            "activity=[string]$x.Event.System.Correlation.ActivityID;task=[string]$d.TaskName;"
+            "instance=$(if($d.TaskInstanceId){[string]$d.TaskInstanceId}else{[string]$d.InstanceId});"
+            "engine_pid=[int]$d.EnginePID;action=[string]$d.ActionName}}|Where-Object {"
+            "$_.task-eq '\\" + TASK_NAME + "' -and $_.instance.Trim('{}').ToLowerInvariant()-eq '" + instance + "'"
+            " -and $_.record_id-gt " + str(floor) + "});"
+            "ConvertTo-Json -InputObject @($rows) -Compress"
+        )
+        try:
+            result = self.runner(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                                 capture_output=True, text=True, timeout=5, check=False)
+            rows = json.loads(result.stdout)
+            if result.returncode or not isinstance(rows, list) or len(rows) != 1:
+                raise ValueError("ambiguous event")
+            row = rows[0]
+            stamp = datetime.fromisoformat(str(row["utc"]).replace("Z", "+00:00"))
+            if (str(row["activity"]).strip("{}").casefold() != instance
+                    or str(row["instance"]).strip("{}").casefold() != instance
+                    or row["task"].casefold() != ("\\" + TASK_NAME).casefold()
+                    or int(row["record_id"]) <= floor
+                    or not datetime.fromisoformat(prepared) <= stamp <= datetime.fromisoformat(packet["authority"]["expires_at"])
+                    or _canonical_windows_path(row["action"]) != _canonical_windows_path(packet["task_ownership"][0]["execute"])
+                    or int(row["engine_pid"]) <= 0):
+                raise ValueError("event identity")
+            return int(row["engine_pid"])
+        except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
+            raise ActivationError("pre_starter_provider_event_unproven") from exc
 
     def ensure_audit_channel_enabled(self):
         if self.audit_prior is None:

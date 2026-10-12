@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-10-12 - Windows provider process chain and pre-starter recovery
+
+Status: LOCAL_NOT_RELEASED.
+
+- Bind the exact configured Windows venv action and its base-interpreter child
+  to the scheduler identity, preserving separate OS image and argument roles,
+  UTC creation chronology and repeated identity checks.
+- Reconcile an authenticated failure before consumption only after completed
+  signed launcher evidence and exact provider/process absence. Preserve pending
+  inline recovery while its process is live; keep post-starter recovery intact.
+- Reuse the activation CLI and stopped staging with the signed no-starter
+  projection, without fabricating supervisor state or discarding failure history.
+- Add production-shaped adversarial and disposable native tests. Source
+  qualification does not prove task activation, receipt work or autonomy.
+
 ## 2026-10-12 - Explicit intake startup containment capability
 
 Status: `LOCAL_NOT_RELEASED`.

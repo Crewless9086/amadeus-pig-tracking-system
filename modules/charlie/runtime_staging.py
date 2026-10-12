@@ -98,9 +98,16 @@ def plan_runtime_staging(
         and not watchdog_path.exists() and not (state_root / "activation-ledger").exists())
     if initialized_unstarted:
         governed_runtime_binding(runtime_root, required=True)
-    supervisor = {"status": "initialization_stopped"} if initialized_unstarted else _read_json(supervisor_path, "supervisor_state_missing_or_invalid")
     watchdog = {"status": "initialization_stopped"} if initialized_unstarted else _read_json(watchdog_path, "watchdog_state_missing_or_invalid")
-    if supervisor.get("status") != "supervisor_stopped" and not initialized_unstarted:
+    recovered_unstarted = (not supervisor_path.exists()
+        and watchdog.get("recovery_basis") == "authenticated_pre_consume_failure")
+    if recovered_unstarted:
+        from modules.charlie.runtime_activation import validate_no_starter_recovery_projection
+        validate_no_starter_recovery_projection(watchdog, state_root,
+            task_reader=task_reader or read_watchdog_task)
+    supervisor = ({} if initialized_unstarted or recovered_unstarted
+                  else _read_json(supervisor_path, "supervisor_state_missing_or_invalid"))
+    if supervisor.get("status") != "supervisor_stopped" and not (initialized_unstarted or recovered_unstarted):
         raise RuntimeStagingError("supervisor_not_governed_stopped")
     if watchdog.get("status") != "governed_stop_active" and not initialized_unstarted:
         raise RuntimeStagingError("watchdog_governed_stop_not_active")
@@ -287,6 +294,10 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
                               if (state_root / "watchdog.json").exists() else {})
         if stopped_projection.get("version") == "charlie_activation_recovery_projection_v1":
             _validate_recovery_projection(stopped_projection, state_root)
+            if stopped_projection.get("recovery_basis") == "authenticated_pre_consume_failure":
+                from modules.charlie.runtime_activation import validate_no_starter_recovery_projection
+                validate_no_starter_recovery_projection(stopped_projection, state_root,
+                    task_reader=task_reader or read_watchdog_task)
         elif successful_stop_projection_required(state_root):
             validate_successful_stop_projection(stopped_projection, state_root,
                                                 task_reader=task_reader or read_watchdog_task)
