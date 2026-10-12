@@ -1,0 +1,92 @@
+name: CORE Successful Stop Native Qualification
+on:
+  push:
+    branches: [codex/core-successful-stop-native-qualification-v3-20261012]
+permissions:
+  contents: read
+jobs:
+  windows-lifecycle:
+    name: Contained Windows lifecycle at exact candidate
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Qualification-only harness, with separate exact application and main identities.
+      CHARLIE_WINDOWS_SOURCE_SHA: 3a4dc66eeb18095f15d75a957b970f266c612635
+      CHARLIE_APPLICATION_CANDIDATE_SHA: 9449ebd1f3b32be4c6f661dde9f7cc81bd3f1c61
+      CHARLIE_APPLICATION_PREDECESSOR_SHA: bfc372c034ee5be94d89c1ba9c934256bba8d8d3
+      CHARLIE_APPLICATION_ORIGINAL_SHA: 62aebbe085a327acffe1637e27cd131b2d387412
+      CHARLIE_EXPECTED_MAIN_SHA: 518223b7cbf3382dcc1e943ea44b33290c787ca7
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHON_DOTENV_DISABLED: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      DATABASE_URL: ''
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Refuse an unbound candidate before checkout or test execution
+        run: |
+          if ($env:CHARLIE_WINDOWS_SOURCE_SHA -notmatch '^[0-9a-f]{40}$') {
+            throw 'Exact reviewed Windows candidate is not bound.'
+          }
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.CHARLIE_WINDOWS_SOURCE_SHA }}
+          path: application-candidate
+          persist-credentials: false
+          fetch-depth: 5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Verify checked-out candidate and install normal test requirements
+        working-directory: application-candidate
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:CHARLIE_WINDOWS_SOURCE_SHA) {
+            throw 'Candidate checkout changed.'
+          }
+          $parent = (git rev-parse 'HEAD^').Trim()
+          if ($LASTEXITCODE -ne 0 -or $parent -cne $env:CHARLIE_APPLICATION_CANDIDATE_SHA) {
+            throw 'Harness application parent changed.'
+          }
+          $predecessor = (git rev-parse 'HEAD^^').Trim()
+          if ($LASTEXITCODE -ne 0 -or $predecessor -cne $env:CHARLIE_APPLICATION_PREDECESSOR_SHA) {
+            throw 'Application predecessor changed.'
+          }
+          $original = (git rev-parse 'HEAD^^^').Trim()
+          if ($LASTEXITCODE -ne 0 -or $original -cne $env:CHARLIE_APPLICATION_ORIGINAL_SHA) {
+            throw 'Original application lineage changed.'
+          }
+          $base = (git rev-parse 'HEAD^^^^').Trim()
+          if ($LASTEXITCODE -ne 0 -or $base -cne $env:CHARLIE_EXPECTED_MAIN_SHA) {
+            throw 'Application base changed.'
+          }
+          $mainRef = @(git ls-remote --exit-code origin refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainRef.Count -ne 1 -or
+              ($mainRef[0] -split '\s+')[0] -cne $env:CHARLIE_EXPECTED_MAIN_SHA) {
+            throw 'Authoritative main moved; qualification requires review.'
+          }
+          $changed = @(git diff --name-only $env:CHARLIE_APPLICATION_CANDIDATE_SHA $env:CHARLIE_WINDOWS_SOURCE_SHA)
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate comparison failed.' }
+          $expected = @('tests/charlie_windows_lifecycle_harness.py',
+            'tests/test_charlie_runner_control.py', 'tests/test_charlie_successful_activation_stop.py')
+          if ($changed.Count -ne 3 -or @(Compare-Object ($changed | Sort-Object) ($expected | Sort-Object)).Count) {
+            throw 'Qualification successor changed application source.'
+          }
+          python -m pip install -r requirements.txt pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prove six individually contained Windows lifecycle cases
+        working-directory: application-candidate
+        run: |
+          python -B tests/charlie_windows_lifecycle_harness.py --source-sha "$env:CHARLIE_WINDOWS_SOURCE_SHA" --report-root "$env:RUNNER_TEMP\charlie-windows-successful-stop"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain synthetic lifecycle result and cleanup evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: charlie-windows-successful-stop-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/charlie-windows-successful-stop/
+          if-no-files-found: warn
+          retention-days: 7
