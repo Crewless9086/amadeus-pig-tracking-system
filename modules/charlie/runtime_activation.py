@@ -23,6 +23,8 @@ from pathlib import Path
 from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
 from modules.charlie.runtime_staging import read_watchdog_task
 from modules.charlie.process_ownership import (
+    TERMINATION_ENABLE_ENV,
+    TERMINATION_ENABLE_VALUE,
     normalize_command_fingerprint,
     _valid_windows_console_host_wrapper,
     process_tree_identity_digest,
@@ -37,6 +39,8 @@ RECOVERY_PROJECTION_VERSION = "charlie_activation_recovery_projection_v1"
 SUCCESS_STOP_VERSION = "charlie_activation_success_stop_v1"
 TASK_NAME = "CHARLIE CORE Runner Watchdog"
 MODE = "observe_only"
+INTAKE_CONTAINMENT_CAPABILITY = "exact_activation_owned_tree_containment_v1"
+INTAKE_CONTAINMENT_MAX_SECONDS = 1200
 PROTECTED_ANCESTRY = {
     "codex.exe", "codex.cmd", "powershell.exe", "pwsh.exe", "cmd.exe",
     "windowsterminal.exe", "conhost.exe",
@@ -326,10 +330,9 @@ def consume_provider_activation(*, state_root, starter, task_controller,
         "consumed_hmac_sha256",
     )
     _exclusive_json(consumed_path, consumed)
-    previous = os.environ.get("CHARLIE_ACTIVATION_ID")
-    os.environ["CHARLIE_ACTIVATION_ID"] = packet["activation_id"]
     try:
-        result, status_code = starter(execution_mode=packet["authority"]["execution_mode"])
+        with _provider_start_environment(packet["authority"], now=now):
+            result, status_code = starter(execution_mode=packet["authority"]["execution_mode"])
     except Exception as exc:
         recover_activation(state_root=state_root, task_controller=task_controller,
                            activation_id=packet["activation_id"], failure_evidence={
@@ -337,11 +340,6 @@ def consume_provider_activation(*, state_root, starter, task_controller,
                                "error_type": exc.__class__.__name__,
                            })
         raise ActivationError("provider_start_failed", error_type=exc.__class__.__name__) from exc
-    finally:
-        if previous is None:
-            os.environ.pop("CHARLIE_ACTIVATION_ID", None)
-        else:
-            os.environ["CHARLIE_ACTIVATION_ID"] = previous
     status = _started_status(packet["authority"]) if status_code < 300 else "provider_start_failed"
     updated = {**packet, "status": status, "provider": provider,
                "start_result": result, "provider_started_at": _now(now),
@@ -2474,6 +2472,55 @@ def _validate_authority(authority, key, now=None, allow_expired=False):
         raise ActivationError("activation_authority_not_valid")
     if authority["execution_mode"] == INTAKE_EXECUTION_MODE:
         _validate_intake_scope(authority)
+        _validate_intake_containment(authority, now=now, allow_expired=allow_expired)
+    elif "process_containment" in authority:
+        raise ActivationError("activation_containment_mode_invalid")
+
+
+def _validate_intake_containment(authority, *, now=None, allow_expired=False):
+    """Validate an explicit grant inside the already signed intake authority."""
+    grant = authority.get("process_containment")
+    bound = ("activation_id", "execution_mode", "runtime_revision",
+             "execution_revision", "expires_at")
+    if (authority.get("execution_mode") != INTAKE_EXECUTION_MODE
+            or not isinstance(grant, dict)
+            or set(grant) != {"capability", "issued_at", *bound}
+            or grant.get("capability") != INTAKE_CONTAINMENT_CAPABILITY
+            or any(grant.get(name) != authority.get(name) for name in bound)
+            or any(not re.fullmatch(r"[0-9a-f]{40}", str(grant.get(name) or ""))
+                   for name in ("runtime_revision", "execution_revision"))):
+        raise ActivationError("intake_containment_grant_invalid")
+    try:
+        issued = datetime.fromisoformat(str(grant["issued_at"]).replace("Z", "+00:00"))
+        expiry = datetime.fromisoformat(str(grant["expires_at"]).replace("Z", "+00:00"))
+        current = now or datetime.now(timezone.utc)
+        if (issued.tzinfo is None or expiry.tzinfo is None or current.tzinfo is None
+                or not 0 < (expiry - issued).total_seconds() <= INTAKE_CONTAINMENT_MAX_SECONDS
+                or issued > current or (not allow_expired and current >= expiry)):
+            raise ValueError("time window")
+    except (TypeError, ValueError) as exc:
+        raise ActivationError("intake_containment_window_invalid") from exc
+
+
+@contextmanager
+def _provider_start_environment(authority, *, now=None):
+    """Project only the validated activation's starter capability, then restore."""
+    values = {"CHARLIE_ACTIVATION_ID": authority["activation_id"]}
+    if authority["execution_mode"] == INTAKE_EXECUTION_MODE:
+        # Provider validation may take time. Recheck the signed grant's window
+        # immediately before projecting it; never infer it from host settings.
+        _validate_intake_containment(authority, now=now)
+        values[TERMINATION_ENABLE_ENV] = TERMINATION_ENABLE_VALUE
+    previous = {name: os.environ.get(name) for name in values}
+    try:
+        os.environ.update(values)
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def _validate_plan(plan, now=None):

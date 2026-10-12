@@ -50,6 +50,11 @@
   controller identity, expiry, bound runtime/receipt/configuration, and explicit
   verified TLS. The scoped process excludes broad dotenv/model/provider secrets;
   only signed database and owner-filter values reach the exact receipt service.
+  `runtime_activation.py` requires an explicit short-lived signed containment
+  grant for intake and projects the existing sentinel only around the validated
+  provider's starter, restoring the prior process environment on all exits.
+  Existing child inheritance and exact process/stop protections remain in force;
+  no host-wide permission or observe-only/ordinary grant is inferred.
   Validated test control roots take precedence over initialized production state.
   Shared heartbeats expose a bounded allowlist of intake outcomes and references;
   receipt-only status does not imply ordinary mission pickup or completed repair.

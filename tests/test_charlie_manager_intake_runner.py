@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from copy import deepcopy
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from modules.charlie import INTAKE_EXECUTION_MODE, governed_runtime_binding
 from modules.charlie import runtime_staging as staging, runtime_activation as activation
 from modules.charlie import executive_runtime as executive, mission_store as missions
 from modules.charlie import runner_control as control
+from modules.charlie import process_ownership
 from scripts import charlie_manager_intake_runner as child
 from scripts import charlie_runner_supervisor as supervisor
 from scripts import charlie_runner_watchdog as watchdog
@@ -25,6 +27,13 @@ def scope(root):
         environment_path=str(root / ".env"), environment_sha256="b"*64,
         database_host="db.invalid", database_port=5432, database_name="test",
         database_user="test", ca_path=str(root / "ca.pem"), ca_sha256="c"*64)
+
+
+def containment_grant(authority):
+    return {"capability": activation.INTAKE_CONTAINMENT_CAPABILITY,
+        "issued_at": datetime.now(timezone.utc).isoformat(),
+        **{key: authority[key] for key in ("activation_id", "execution_mode",
+            "runtime_revision", "execution_revision", "expires_at")}}
 
 
 class InterpreterLookupTests(unittest.TestCase):
@@ -72,7 +81,7 @@ class StoppedInitializationTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         base=Path(self.temp.name); self.canonical=base/"repo"; (self.canonical/".git").mkdir(parents=True)
         self.assigned=base/".runtime"/"test-mission"; self.assigned.mkdir(parents=True)
-        self.state=self.assigned/"state"; self.python=base/"python.exe"; self.python.write_bytes(b"synthetic interpreter")
+        self.state=self.assigned/"state"; self.python=base/"pythonw.exe"; self.python.write_bytes(b"synthetic interpreter")
         self.task=[dict(task_name=staging.TASK_NAME,task_path="\\",state="Disabled",action_count=1,
             execute=str(self.python),arguments="historical",working_directory="historical")]
         self.source="d"*40; self.now=datetime.now(timezone.utc)
@@ -259,7 +268,9 @@ class IntakeBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             packet={"version":activation.AUTHORITY_VERSION,"issuer":"control_tower_activation_authority_v1",
                 "activation_id":"a"*32,"expires_at":(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat(),
+                "runtime_revision":"d"*40,"execution_revision":"d"*40,
                 "execution_mode":INTAKE_EXECUTION_MODE,"manager_dependency_intake":scope(Path(tmp))}
+            packet["process_containment"] = containment_grant(packet)
             for mutation in ("valid","unknown_key","missing_hash","boolean_port","expired"):
                 value=deepcopy(packet)
                 if mutation=="unknown_key": value["manager_dependency_intake"]["all_missions"]=True
@@ -345,7 +356,9 @@ class IntakeBoundaryTests(unittest.TestCase):
              patch.object(supervisor,"redact_tree_in_place",side_effect=AssertionError("scrub")), \
              patch.object(supervisor,"_runner_failure_packet",side_effect=AssertionError("old failure log")), \
              patch.object(supervisor,"_recreate_damaged_runner_worktree",side_effect=AssertionError("repair")), \
-             patch.dict(os.environ,{"CHARLIE_CORE_EXECUTION_MODE":INTAKE_EXECUTION_MODE,"DATABASE_URL":"secret","OPENAI_API_KEY":"secret"}):
+             patch.dict(os.environ,{"CHARLIE_CORE_EXECUTION_MODE":INTAKE_EXECUTION_MODE,
+                process_ownership.TERMINATION_ENABLE_ENV:process_ownership.TERMINATION_ENABLE_VALUE,
+                "DATABASE_URL":"secret","OPENAI_API_KEY":"secret"}):
             result=supervisor.supervise_runner(popen_factory=popen,max_cycles=1,
                 prepare_fn=Mock(side_effect=AssertionError("prepare")),
                 recovery_fn=Mock(side_effect=AssertionError("recovery")),
@@ -353,7 +366,26 @@ class IntakeBoundaryTests(unittest.TestCase):
         command=popen.call_args.args[0];env=popen.call_args.kwargs["env"]
         self.assertTrue(command[-1].endswith("charlie_manager_intake_runner.py")); self.assertEqual(len(command),2)
         self.assertNotIn("DATABASE_URL",env);self.assertNotIn("OPENAI_API_KEY",env)
+        self.assertEqual(env[process_ownership.TERMINATION_ENABLE_ENV],
+                         process_ownership.TERMINATION_ENABLE_VALUE)
         self.assertEqual(result["restart_count"],0)
+
+    def test_intake_supervisor_main_keeps_inherited_grant_without_loading_dotenv(self):
+        lock=Mock();lock.acquire.return_value=(True,None)
+        def supervise(**kwargs):
+            self.assertEqual(os.environ[process_ownership.TERMINATION_ENABLE_ENV],
+                             process_ownership.TERMINATION_ENABLE_VALUE)
+            self.assertIsNone(kwargs["notifier"])
+            return {"status":"supervisor_stopped"}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{
+                "CHARLIE_CORE_EXECUTION_MODE":INTAKE_EXECUTION_MODE,
+                process_ownership.TERMINATION_ENABLE_ENV:process_ownership.TERMINATION_ENABLE_VALUE}), \
+             patch.object(supervisor,"STOP_PATH",Path(tmp)/"absent-stop"), \
+             patch.object(supervisor,"SupervisorInstanceLock",return_value=lock), \
+             patch.object(supervisor,"load_dotenv",side_effect=AssertionError("ambient configuration")), \
+             patch.object(supervisor,"supervise_runner",side_effect=supervise):
+            self.assertEqual(supervisor.main()["status"],"supervisor_stopped")
+        lock.release.assert_called_once()
 
 
 class SignedIntakeStartupTests(unittest.TestCase):
@@ -381,6 +413,7 @@ class SignedIntakeStartupTests(unittest.TestCase):
             "manifest_sha256": activation._sha256(self.state / "runtime-manifest.json"),
             "runtime_revision": f.source, "execution_revision": f.source,
             "receipt_path": str(self.receipt), "receipt_sha256": activation._sha256(self.receipt)}
+        self.authority["process_containment"] = containment_grant(self.authority)
         self.packet = {"version": activation.ACTIVATION_VERSION, "status": "provider_pending",
             "activation_id": self.activation_id, "authority": self.authority,
             "runtime_root": str(self.runtime), "execution_root": str(self.execution),
@@ -476,6 +509,211 @@ class SignedIntakeStartupTests(unittest.TestCase):
             self.assertEqual(child.run_intake_cycle()[1], 200)
             self.assertEqual(os.environ["DATABASE_URL"], "prior")
             self.assertEqual(os.environ["OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS"], "prior")
+
+
+class IntakeContainmentGrantTests(unittest.TestCase):
+    """Real signed provider consumption and starter; only OS boundaries are fake."""
+
+    def setUp(self):
+        self.fixture = SignedIntakeStartupTests(methodName="runTest")
+        self.fixture.setUp(); self.addCleanup(self.fixture.doCleanups)
+        f = self.fixture; self.state = f.state; self.authority = f.authority
+        self.activation_id = f.activation_id; self.key = f.key
+        (self.state / ("activation-consumed-" + f.activation_id + ".json")).unlink()
+        (self.state / "activation-packet.json").unlink()
+        self.stop = self.state / "supervisor.stop"; self.stop.write_text("synthetic original stop")
+        canonical = f.fixture.canonical
+        environment = canonical / ".env"; environment.write_text("DATABASE_URL=synthetic-not-used\n")
+        ca = canonical / "ca.pem"; ca.write_text("synthetic public CA")
+        self.authority["manager_dependency_intake"].update(
+            environment_sha256=activation._sha256(environment), ca_sha256=activation._sha256(ca))
+        self.task = deepcopy(f.fixture.task)
+        self.task[0].update(arguments='"'+str(f.runtime/"scripts/charlie_runner_task_launcher.py")+'"',
+                            working_directory=str(f.runtime))
+        self.authority.update(stop_marker_sha256=activation._sha256(self.stop),
+                              task_action_sha256=activation._task_action_sha256(self.task))
+        self.authority_path = canonical / "synthetic-activation.json"
+        self.write_authority()
+        self.controller = __import__("tests.test_charlie_runtime_activation", fromlist=["Controller"]).Controller()
+        self.env = self.enter(patch.dict(os.environ, {}, clear=False))
+        os.environ.pop(process_ownership.TERMINATION_ENABLE_ENV, None)
+        os.environ.pop("CHARLIE_ACTIVATION_ID", None)
+
+    def enter(self, context):
+        result = context.__enter__(); self.addCleanup(context.__exit__, None, None, None)
+        return result
+
+    def write_authority(self):
+        self.authority["signature_hmac_sha256"] = activation._sign_record(
+            self.authority, self.key, "signature_hmac_sha256")
+        self.authority_path.write_text(json.dumps(self.authority))
+
+    def git(self, command, **_):
+        return subprocess.CompletedProcess(command, 0,
+            self.fixture.fixture.source if command[-2:] == ["rev-parse", "HEAD"] else "", "")
+
+    def prepare(self):
+        plan = activation.plan_activation(authority_path=self.authority_path,
+            authority_sha256=activation._sha256(self.authority_path), state_root=self.state,
+            runtime_root=self.fixture.runtime, execution_root=self.fixture.execution,
+            task_reader=lambda:self.task, git_runner=self.git)
+        return activation.prepare_activation(plan, task_controller=self.controller,
+            task_reader=lambda:self.task, git_runner=self.git)
+
+    def provider(self, _pid):
+        return {"inspection_complete":True,"pid":10,"parent_pid":20,
+            "executable_path":self.task[0]["execute"],
+            "command_line":f'"{self.task[0]["execute"]}" {self.task[0]["arguments"]}',
+            "ancestry":[{"pid":20,"executable_path":"svchost.exe",
+                "provider_identity_verified":True,
+                "instance_guid":"11111111-1111-1111-1111-111111111111",
+                "action_execute":self.task[0]["execute"],
+                "action_arguments":self.task[0]["arguments"],
+                "action_working_directory":self.task[0]["working_directory"]}]}
+
+    def consume(self, starter, **kwargs):
+        return activation.consume_provider_activation(state_root=self.state, starter=starter,
+            task_controller=self.controller, task_reader=lambda:self.task,
+            provider_inspector=self.provider, git_runner=self.git, **kwargs)
+
+    def starter_context(self, *, raises=False, acknowledge=True):
+        from tests.test_charlie_runner_control import successful_bootstrap_observation
+        stack = ExitStack(); self.addCleanup(stack.close)
+        for name,value in {"REPO_ROOT":self.fixture.runtime,"RUNNER_DIR":self.state,
+                "LOG_PATH":self.state/"runner.log","SUPERVISOR_PATH":self.state/"supervisor.json",
+                "SUPERVISOR_STOP_PATH":self.stop,"HEARTBEAT_PATH":self.state/"runner.json"}.items():
+            stack.enter_context(patch.object(control,name,value))
+        stack.enter_context(patch.object(control,"_pid_alive",return_value=False))
+        stack.enter_context(patch.object(control,"_current_git_commit",return_value=self.fixture.fixture.source))
+        # Keep process-wide test termination isolation enabled. Exercise the real
+        # production predicate on a copied environment; never enable real killing.
+        def enabled():
+            self.assertEqual(os.environ.get("CHARLIE_TEST_ISOLATION"),"1")
+            values={k:v for k,v in os.environ.items() if k!="CHARLIE_TEST_ISOLATION"}
+            return process_ownership.process_termination_enabled(values)
+        stack.enter_context(patch.object(control,"process_termination_enabled",side_effect=enabled))
+        popen=stack.enter_context(patch.object(control.subprocess,"Popen",
+            side_effect=OSError("synthetic spawn refusal") if raises else None,
+            return_value=Mock(pid=700001)))
+        stack.enter_context(patch.object(control,"observe_process_tree",side_effect=successful_bootstrap_observation))
+        stack.enter_context(patch.object(control,"_wait_for_supervisor_ack",return_value={
+            "success":acknowledge,"reason":"synthetic handshake result"}))
+        stack.enter_context(patch.object(control,"stop_runner",return_value=({"success":True},200)))
+        def contain(*_):
+            self.assertTrue(enabled())
+            return {"success":True,"reason":"synthetic exact-owned-tree stop"}
+        stack.enter_context(patch.object(control,"_contain_spawned_process",side_effect=contain))
+        def start(**kwargs):
+            return control.start_runner(status_override={"active":False,"orphan_processes":[]},**kwargs)
+        return start,popen
+
+    def successful_start(self, prior=None):
+        if prior is not None: os.environ[process_ownership.TERMINATION_ENABLE_ENV]=prior
+        os.environ["CHARLIE_ACTIVATION_ID"]="prior-parent-identity"
+        self.prepare(); starter,popen=self.starter_context()
+        result=self.consume(starter)
+        self.assertEqual(result["status"],"provider_started_"+INTAKE_EXECUTION_MODE)
+        self.assertEqual(result["start_result"]["status"],"runner_started")
+        child_env=popen.call_args.kwargs["env"]
+        self.assertEqual(child_env[process_ownership.TERMINATION_ENABLE_ENV],process_ownership.TERMINATION_ENABLE_VALUE)
+        self.assertEqual(child_env["CHARLIE_ACTIVATION_ID"],self.activation_id)
+        self.assertEqual(child_env["CHARLIE_CORE_EXECUTION_MODE"],INTAKE_EXECUTION_MODE)
+        self.assertNotIn("DATABASE_URL",child_env)
+        self.assertEqual(os.environ.get(process_ownership.TERMINATION_ENABLE_ENV),prior)
+        self.assertEqual(os.environ["CHARLIE_ACTIVATION_ID"],"prior-parent-identity")
+        with self.assertRaises(activation.ActivationError):self.consume(starter)
+        self.assertEqual(popen.call_count,1)
+
+    def test_real_starter_receives_explicit_grant_with_host_sentinel_absent(self):
+        self.successful_start()
+
+    def test_parent_disabled_value_is_restored(self):
+        self.successful_start("disabled")
+
+    def test_parent_enabled_value_is_restored(self):
+        self.successful_start(process_ownership.TERMINATION_ENABLE_VALUE)
+
+    def test_spawn_exception_restores_environment_before_recovery(self):
+        self.prepare(); starter,popen=self.starter_context(raises=True)
+        original=activation.recover_activation
+        def recover(**kwargs):
+            self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+            self.assertNotIn("CHARLIE_ACTIVATION_ID",os.environ)
+            return original(**kwargs)
+        with patch.object(activation,"recover_activation",side_effect=recover), self.assertRaisesRegex(
+                activation.ActivationError,"provider_start_failed"):
+            self.consume(starter)
+        self.assertEqual(popen.call_count,1);self.assertTrue(self.stop.exists())
+        self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+
+    def test_failed_handshake_has_grant_for_existing_exact_containment_then_restores(self):
+        self.prepare(); starter,popen=self.starter_context(acknowledge=False)
+        # The starter writes a fresh stop on refusal. Existing recovery refuses
+        # to overwrite that changed marker with the older signed stop preimage.
+        with self.assertRaisesRegex(activation.ActivationError,"activation_recovery_incomplete"):
+            self.consume(starter)
+        self.assertEqual(popen.call_count,1)
+        self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+
+    def test_missing_unknown_substituted_or_bad_time_grants_fail_before_prepare(self):
+        pristine=deepcopy(self.authority)
+        changes={"missing":None,"unknown_capability":{"capability":"all_processes"},
+            "extra":{"broad_kill":True},"identity":{"activation_id":"b"*32},
+            "mode":{"execution_mode":"ordinary"},"source":{"runtime_revision":"e"*40},
+            "malformed_source":{"runtime_revision":"unknown"},
+            "expiry":{"expires_at":"2000-01-01T00:00:00+00:00"},
+            "naive":{"issued_at":"2026-01-01T00:00:00"},
+            "future":{"issued_at":(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()},
+            "too_long":{"issued_at":(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()}}
+        for name,change in changes.items():
+            with self.subTest(case=name):
+                self.authority=deepcopy(pristine)
+                if change is None:self.authority.pop("process_containment")
+                else:self.authority["process_containment"].update(change)
+                self.write_authority()
+                with self.assertRaises(activation.ActivationError):self.prepare()
+                self.assertFalse((self.state/"activation.lock").exists())
+                self.assertTrue(self.stop.exists())
+                self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+
+    def test_unsigned_or_wrong_mode_authority_cannot_project_grant(self):
+        pristine=deepcopy(self.authority)
+        for mode in ("observe_only","ordinary","manager_dependency_intake_only"):
+            with self.subTest(mode=mode):
+                self.authority=deepcopy(pristine);self.authority["execution_mode"]=mode
+                self.write_authority()
+                if mode==INTAKE_EXECUTION_MODE:
+                    self.authority["process_containment"]["issued_at"]="2000-01-01T00:00:00+00:00"
+                    self.authority_path.write_text(json.dumps(self.authority))
+                with self.assertRaises(activation.ActivationError):self.prepare()
+                self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+
+    def test_invalid_provider_never_calls_starter_or_projects_grant(self):
+        self.prepare();starter=Mock(side_effect=AssertionError("starter"))
+        self.provider=lambda _:{"inspection_complete":False}
+        with self.assertRaises(activation.ActivationError):self.consume(starter)
+        starter.assert_not_called();self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+
+    def test_observe_only_authority_does_not_gain_new_containment_permission(self):
+        self.authority["execution_mode"]="observe_only"
+        self.authority.pop("process_containment");self.write_authority();self.prepare()
+        def start(**kwargs):
+            self.assertEqual(kwargs["execution_mode"],"observe_only")
+            self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+            return {"status":"synthetic observe-only result"},200
+        self.assertEqual(self.consume(start)["status"],"provider_started_observe_only")
+        self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
+
+    def test_expiry_during_provider_validation_refuses_at_starter_boundary(self):
+        self.prepare();starter=Mock(side_effect=AssertionError("starter"))
+        real=activation._validate_intake_containment;calls=[]
+        def elapsed(authority,**kwargs):
+            calls.append(True)
+            if len(calls)==2:kwargs["now"]=datetime.fromisoformat(authority["expires_at"])
+            return real(authority,**kwargs)
+        with patch.object(activation,"_validate_intake_containment",side_effect=elapsed),self.assertRaises(
+                activation.ActivationError):self.consume(starter)
+        starter.assert_not_called();self.assertNotIn(process_ownership.TERMINATION_ENABLE_ENV,os.environ)
 
 
 class IntakeHeartbeatReviewTests(unittest.TestCase):
