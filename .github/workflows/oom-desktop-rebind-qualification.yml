@@ -1,7 +1,7 @@
 name: OOM Desktop Rebind Qualification
 on:
   push:
-    branches: [codex/core-containment-registration-qualification-20261012]
+    branches: [codex/core-provider-chain-registration-qualification-20261012]
 permissions:
   contents: read
 jobs:
@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt pytest
-      - name: Prove scoped containment, PR1390 lineage and source-only release
+      - name: Prove provider process-chain source, PR1391 lineage and source-only release
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation -v
       - name: Prove compact HTTPS registration, atomic rollback and zero-write replay
         run: python -m unittest tests.test_oom_desktop_registration_sql -v
@@ -41,5 +41,5 @@ jobs:
         run: python -m pytest tests/test_oom_presend_timeout_correction.py -q
       - name: Prove one-time unsent expiry extension, rejection and replay
         run: python -m pytest tests/test_oom_unsent_confirmation_extension.py -q
-  # Native six-case qualification is required separately at exact application154d660872b53b9fbc2fbf9d1fd30361171daf93.
+  # Native seven-case qualification is required separately at exact applicationf1cccf67987bcec9d4a6e77b3a2fedde49e3f22c.
   # This disposable database workflow proves neither native lifecycle nor live provider startup.

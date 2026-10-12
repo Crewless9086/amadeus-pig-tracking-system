@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-10-12 - Explicit intake startup containment capability
+
+Status: `LOCAL_NOT_RELEASED`.
+
+- Require a signed, short-lived, exact-activation containment grant for
+  receipt-only intake startup. Project the existing process capability only
+  after genuine provider validation and restore the prior environment on exit.
+- Preserve existing restricted child inheritance, source/process identity,
+  signed termination, protected ancestry, replay, expiry and stop controls.
+  No host-wide permission, task activation or ordinary/observe-only grant is added.
+- Qualify the actual provider-consumption-to-starter path with synthetic signed
+  fixtures and isolated process edges, including absent host configuration,
+  refusal, expiry, replay and environment restoration. Source qualification is
+  separate from a genuine provider trial and independent operational acceptance.
+
 ## 2026-10-09 - Stopped CORE initialization and receipt-only startup
 
 Status: `LOCAL_NOT_RELEASED`.
