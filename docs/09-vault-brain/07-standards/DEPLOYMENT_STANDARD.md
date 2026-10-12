@@ -94,6 +94,17 @@ runner identities, signed acknowledgement, fresh heartbeat, independent result,
 next trigger and a later terminal-independent cycle. Historical or failed
 activation identities are immutable and never retried.
 
+Receipt-only manager intake also requires an explicit signed process-containment
+grant bound to the activation ID, intake mode, both source revisions and authority
+expiry. Its aware issuance/expiry interval is at most 1,200 seconds. A missing,
+unknown, substituted or expired grant fails closed. After packet and genuine
+provider validation, only the starter's process environment temporarily receives
+the existing containment sentinel; the previous value is restored on every exit.
+The exact supervisor/runner children inherit it through the existing restricted
+environment. User/Machine settings, ordinary and observe-only permissions remain
+unchanged. This grant does not replace exact process identity, signed termination,
+protected ancestry or governed-stop checks and does not authorize broad killing.
+
 Failure disables only the exact authorized task and restores the exact stop and
 rollback state. Broad PID/name matching, process snapshots, ancestry alone,
 stale PIDs and inferred stale locks grant no mutation or termination authority.
