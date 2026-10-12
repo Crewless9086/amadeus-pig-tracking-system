@@ -2278,6 +2278,55 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         self.assertFalse(result["cleanup_verified"])
         api.ResumeThread.assert_not_called()
         api.TerminateProcess.assert_called_once_with(40,1)
+    def test_qualification_requires_all_six_exact_cases_and_clean_results(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        import copy
+        self.assertEqual(len(harness.SELECTORS), 6)
+        reports = [{"selector": selector, "exit_code": 0, "cleanup_verified": True,
+            "timed_out": False, "result": {"selector": selector, "tests_run": 1,
+            "failures": 0, "errors": 0, "skips": 0}} for selector in harness.SELECTORS]
+        self.assertTrue(harness.qualification_passed(reports))
+        self.assertFalse(harness.qualification_passed(reports[:-1]))
+        self.assertFalse(harness.qualification_passed([reports[0], *reports[0:5]]))
+        for field in ("skips", "failures", "errors"):
+            with self.subTest(field=field):
+                changed=copy.deepcopy(reports); changed[-1]["result"][field]=1
+                self.assertFalse(harness.qualification_passed(changed))
+        for field,value in (("cleanup_verified",False),("timed_out",True),("exit_code",1)):
+            with self.subTest(field=field):
+                changed=copy.deepcopy(reports); changed[-1][field]=value
+                self.assertFalse(harness.qualification_passed(changed))
+
+    def test_parent_budget_clamps_native_wait_and_keeps_owned_cleanup(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api(); api.WaitForSingleObject.return_value=258
+        native=SimpleNamespace(CreateProcess=Mock(return_value=(40,41,123,124)))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True})), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness.time,"monotonic",return_value=100):
+            result=harness._run_owned_worker(harness.SELECTORS[-1],Path(tmp),deadline=125)
+        api.WaitForSingleObject.assert_called_once_with(40,10000)
+        api.TerminateJobObject.assert_called_once_with(10,1)
+        self.assertTrue(result["cleanup_verified"]); self.assertTrue(result["timed_out"])
+        self.assertNotIn("exit_code",result)
+
+    def test_exhausted_parent_budget_cannot_launch_or_be_reported_as_success(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api(); native=SimpleNamespace(CreateProcess=Mock())
+        with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness.time,"monotonic",return_value=100):
+            result=harness._run_owned_worker(harness.SELECTORS[-1],Path(tmp),deadline=115)
+        native.CreateProcess.assert_not_called(); api.ResumeThread.assert_not_called()
+        api.TerminateJobObject.assert_called_once_with(10,1)
+        self.assertTrue(result["cleanup_verified"]); self.assertNotIn("exit_code",result)
+        self.assertFalse(harness.qualification_passed([result]))
+
     def test_timeout_empties_exact_owned_job_and_records_failure(self):
         from tests import charlie_windows_lifecycle_harness as harness
         api=self.fake_api();api.WaitForSingleObject.return_value=258
@@ -2294,6 +2343,136 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         self.assertNotIn("exit_code",result)
         api.WaitForSingleObject.assert_called_once_with(40,180000)
         api.TerminateJobObject.assert_called_once_with(10,1)
+
+
+class WindowsJobMembershipTests(unittest.TestCase):
+    def api(self, pids=(101, 102)):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api = WindowsHarnessBoundaryTests().fake_api()
+        api.OpenProcess.side_effect = lambda _rights, _inherit, pid: pid + 1000
+        def query(_job, kind, pointer, _size, _returned):
+            self.assertEqual(kind, 3)
+            pointer._obj.assigned = pointer._obj.count = len(pids)
+            for i, pid in enumerate(pids): pointer._obj.pids[i] = pid
+            return 1
+        api.QueryInformationJobObject.side_effect = query
+        def times(handle, created, *_rest):
+            created._obj.dwHighDateTime = 1
+            created._obj.dwLowDateTime = handle
+            return 1
+        api.GetProcessTimes.side_effect = times
+        return api
+
+    def test_exact_job_snapshot_uses_kernel_identity_and_closes_every_handle(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api = self.api()
+        with patch.object(harness, "_kernel", return_value=api), \
+             patch.object(harness.os, "getpid", return_value=101), \
+             patch.dict(os.environ, {harness.JOB_ENV: "charlie-test-" + "a" * 32}):
+            result = harness.current_job_process_identities()
+        self.assertEqual(result, {101: (1 << 32) | 1101, 102: (1 << 32) | 1102})
+        api.OpenJobObjectW.assert_called_once_with(4, False, "charlie-test-" + "a" * 32)
+        self.assertEqual(api.QueryInformationJobObject.call_count, 2)
+        self.assertEqual(api.CloseHandle.call_args_list,
+            [unittest.mock.call(1101), unittest.mock.call(1102), unittest.mock.call(10)])
+        self.assertEqual(api.OpenProcess.call_args_list,
+            [unittest.mock.call(0x1000, False, 101), unittest.mock.call(0x1000, False, 102)])
+
+    def test_job_pid_buffer_refuses_incomplete_overflow_duplicate_and_invalid(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        for assigned, count, pids in ((3, 2, (101, 102)), (65, 65, ()),
+                (0, 0, ()), (2, 2, (101, 101)), (1, 1, (0,)), (1, 1, (0x100000000,))):
+            with self.subTest(assigned=assigned, count=count, pids=pids):
+                api = self.api()
+                def query(_job, _kind, pointer, *_rest):
+                    pointer._obj.assigned, pointer._obj.count = assigned, count
+                    for i, pid in enumerate(pids): pointer._obj.pids[i] = pid
+                    return 1
+                api.QueryInformationJobObject.side_effect = query
+                with self.assertRaises(RuntimeError): harness._job_pids(api, 10)
+
+    def test_unknown_changed_or_missing_member_identity_fails_closed(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        for failure in ("times", "zero", "membership", "changed", "open", "worker"):
+            with self.subTest(failure=failure):
+                api = self.api((102,) if failure == "worker" else (101, 102))
+                if failure == "times": api.GetProcessTimes.side_effect = lambda *_args: 0
+                if failure == "zero": api.GetProcessTimes.side_effect = lambda *_args: 1
+                if failure == "membership":
+                    api.IsProcessInJob.side_effect = lambda h, j, p: setattr(p._obj, "value", h == 20) or 1
+                if failure == "changed":
+                    query = api.QueryInformationJobObject.side_effect
+                    count = []
+                    def changed(*args):
+                        result = query(*args); count.append(1)
+                        if len(count) == 2: args[2]._obj.pids[1] = 103
+                        return result
+                    api.QueryInformationJobObject.side_effect = changed
+                if failure == "open": api.OpenProcess.side_effect = lambda *_args: 0
+                with patch.object(harness, "_kernel", return_value=api), \
+                     patch.object(harness.os, "getpid", return_value=101), \
+                     patch.dict(os.environ, {harness.JOB_ENV: "charlie-test-" + "a" * 32}), \
+                     patch.object(harness.ctypes, "get_last_error", return_value=5, create=True):
+                    with self.assertRaises(RuntimeError): harness.current_job_process_identities()
+                self.assertEqual(api.CloseHandle.call_args_list[-1], unittest.mock.call(10))
+                if failure in {"times", "zero", "membership"}:
+                    self.assertIn(unittest.mock.call(1101), api.CloseHandle.call_args_list)
+
+    def test_baseline_permits_only_worker_and_canonical_direct_console(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        row = {"inspection_complete": True, "pid": 102, "parent_pid": 101,
+            "creation_time": "observed", "executable_path": r"C:\Windows\System32\conhost.exe",
+            "command_line": r"\??\C:\Windows\System32\conhost.exe 0xffffffff -ForceV1"}
+        with patch.object(harness.os, "getpid", return_value=101), \
+             patch.dict(os.environ, {"SystemRoot": r"C:\Windows"}):
+            for baseline in ({101: 1}, {101: 1, 102: 2}):
+                with self.subTest(members=len(baseline)), \
+                     patch.object(harness, "current_job_process_identities", return_value=baseline):
+                    inspect = Mock(return_value=row)
+                    self.assertEqual(harness.capture_worker_job_baseline(inspect), baseline)
+                    self.assertEqual(inspect.call_count, len(baseline) - 1)
+            for change in ({"pid": 999}, {"parent_pid": 999}, {"creation_time": ""},
+                    {"inspection_complete": False}, {"executable_path": r"C:\other\conhost.exe"},
+                    {"command_line": "conhost.exe arbitrary-private-token"}):
+                with self.subTest(change=change), \
+                     patch.object(harness, "current_job_process_identities", return_value={101: 1, 102: 2}):
+                    with self.assertRaisesRegex(RuntimeError, "console_unverified"):
+                        harness.capture_worker_job_baseline(Mock(return_value={**row, **change}))
+            for baseline in ({102: 2}, {101: 1, 102: 2, 103: 3}):
+                with self.subTest(baseline=baseline), \
+                     patch.object(harness, "current_job_process_identities", return_value=baseline):
+                    inspect = Mock()
+                    with self.assertRaisesRegex(RuntimeError, "unexpected_member"):
+                        harness.capture_worker_job_baseline(inspect)
+                    inspect.assert_not_called()
+            with patch.object(harness, "current_job_process_identities", side_effect=[{101: 1, 102: 2}, {101: 1, 102: 3}]):
+                with self.assertRaisesRegex(RuntimeError, "identity_changed"):
+                    harness.capture_worker_job_baseline(Mock(return_value=row))
+
+    def test_poll_requires_exact_identity_never_equal_count_and_redacts(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        baseline = {101: 98765432101234567, 102: 98765432101234568}
+        for observed in ({101: baseline[101], 103: baseline[102]}, {**baseline, 102: 999},
+                         {**baseline, 103: 777}, RuntimeError("private-native-details")):
+            with self.subTest(observed=type(observed).__name__):
+                clock = [0.0]
+                def sleep(_seconds): clock[0] += 1.0
+                with patch.object(harness, "current_job_process_identities", side_effect=[observed] * 5):
+                    report = harness.wait_for_worker_job_baseline(baseline,
+                        monotonic_fn=lambda: clock[0], sleep_fn=sleep)
+                self.assertFalse(report["matched"])
+                self.assertNotIn("98765432101234567", json.dumps(report))
+                self.assertNotIn("private-native-details", json.dumps(report))
+                self.assertEqual(clock[0], 5)
+        clock = [0.0]
+        with patch.object(harness, "current_job_process_identities", side_effect=[{**baseline, 103: 777}, baseline]) as read:
+            report = harness.wait_for_worker_job_baseline(baseline,
+                monotonic_fn=lambda: clock[0], sleep_fn=lambda _s: clock.__setitem__(0, clock[0] + 1))
+        self.assertTrue(report["matched"]); self.assertEqual(read.call_count, 2)
+        with patch.object(harness, "current_job_process_identities", return_value=baseline):
+            report = harness.wait_for_worker_job_baseline(baseline,
+                monotonic_fn=Mock(side_effect=[0, 0, 6, 6]), sleep_fn=Mock())
+        self.assertFalse(report["matched"])
 
 
 if __name__ == "__main__":
