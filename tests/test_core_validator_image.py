@@ -10,6 +10,7 @@ def test_image_is_pinned_unprivileged_and_source_bound():
     assert re.search(r"^FROM python:3\.12-slim@sha256:[0-9a-f]{64}$", text, re.MULTILINE)
     assert "pytest==8.4.1" in text
     assert "python-dotenv==1.0.1" in text
+    assert '"psycopg[binary]==3.3.4"' in text
     assert "apt-get install -y --no-install-recommends git" in text
     assert "safe.directory /source" in text
     assert "USER 65532:65532" in text
@@ -49,3 +50,12 @@ def test_both_provenance_and_spdx_attestations_are_independently_verified():
     assert text.count('--source-digest "$EXPECTED_SOURCE_COMMIT"') == 2
     assert text.count('--source-ref "refs/heads/main"') == 2
     assert text.count("--deny-self-hosted-runners") == 2
+
+
+def test_required_binary_driver_pin_satisfies_application_requirement():
+    from packaging.specifiers import SpecifierSet
+    image = (ROOT / "core_validator" / "Dockerfile").read_text(encoding="utf-8")
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    pin = re.search(r"psycopg\[binary\]==([0-9.]+)", image).group(1)
+    constraint = re.search(r"^psycopg\[binary\](.+)$", requirements, re.MULTILINE).group(1)
+    assert pin in SpecifierSet(constraint)
