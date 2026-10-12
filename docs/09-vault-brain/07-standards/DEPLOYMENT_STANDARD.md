@@ -109,6 +109,21 @@ Failure disables only the exact authorized task and restores the exact stop and
 rollback state. Broad PID/name matching, process snapshots, ancestry alone,
 stale PIDs and inferred stale locks grant no mutation or termination authority.
 
+Windows provider identity binds the exact configured action process and, when
+present, its single venv base-interpreter child. The governed interpreter, local
+venv home, actual OS images, distinct command roles, creation chronology and
+stable repeated identities must agree with the exact scheduler instance, action
+and service. A Python basename or reported sys.executable alone proves nothing.
+
+A failed launch before activation consumption may have no supervisor record.
+Reconciliation then requires authenticated preserved failure and completed
+launcher evidence, absence of consumed or successful-start records, the exact
+disabled provider with no running instances, and absence of every known action
+and launcher process. Inline recovery cannot prove its own still-live process
+absent. Preserve pending recovery until a later authenticated read proves exit.
+The resulting signed stop projection may support stopped staging without
+inventing a supervisor record; it never authorizes retry or clears a hold.
+
 ## Dependency retirement and scheduler singularity
 
 Documented, runtime-loaded, provider-verified, OS-observed and physical evidence
