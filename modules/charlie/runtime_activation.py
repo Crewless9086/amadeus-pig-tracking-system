@@ -364,10 +364,10 @@ def verify_or_recover_activation(**kwargs):
         return _verify_or_recover_activation(**kwargs)
 
 
-def _verify_or_recover_activation(*, state_root, verification_reader, task_controller,
+def _verify_or_recover_activation(*, state_root, verification_reader=None, task_controller,
                                   task_reader=read_watchdog_task,
                                   git_runner=subprocess.run, now=None,
-                                  activation_id=None, readiness_timeout_seconds=5,
+                                  activation_id=None, readiness_timeout_seconds=30,
                                   readiness_poll_seconds=0.05,
                                   monotonic_fn=time.monotonic, sleep_fn=time.sleep):
     state_root = Path(state_root).resolve()
@@ -484,7 +484,15 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
             _validate_packet(current_packet, state_root, task_reader,
                              git_runner=git_runner, now=current_time,
                              allow_consumed=True, allow_expired=True)
-            evidence = verification_reader(current_packet)
+            if verification_reader is None:
+                evidence = read_activation_runtime_evidence(
+                    current_packet, state_root=state_root, deadline=deadline,
+                    monotonic_fn=monotonic_fn,
+                )
+            else:
+                # Existing injected readers keep their one-argument contract;
+                # all results still face the same post-read deadline/expiry gate.
+                evidence = verification_reader(current_packet)
             legacy_ready = isinstance(evidence, dict) and all(
                 evidence.get(item) is True for item in (
                     "loaded_revision_exact", _mode_evidence_key(packet["authority"]),
@@ -640,7 +648,8 @@ def _verify_or_recover_activation(*, state_root, verification_reader, task_contr
 
 
 def read_activation_runtime_evidence(packet, *, state_root, now=None,
-                                     live_validator=None):
+                                     live_validator=None, deadline=None,
+                                     monotonic_fn=time.monotonic):
     """Validate exact signed runtime evidence; never infer ownership by name."""
     state_root = Path(state_root)
     supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
@@ -675,14 +684,14 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         revision=authority["runtime_revision"],
         startup_nonce=str(supervisor.get("startup_nonce") or ""),
         allowed_descendant_tree=runner_tree,
-        process_role_prefix="supervisor",
+        process_role_prefix="supervisor", deadline=deadline, monotonic_fn=monotonic_fn,
     )
     runner_live = live_validator(
         runner_tree,
         generation=str(supervisor.get("generation") or ""),
         revision=authority["execution_revision"],
         startup_nonce=str(supervisor.get("runner_startup_nonce") or ""),
-        process_role_prefix="runner",
+        process_role_prefix="runner", deadline=deadline, monotonic_fn=monotonic_fn,
     )
     tree_digests_exact = isinstance(final, dict) and all((
         str(final.get("supervisor_tree_digest") or "") == process_tree_identity_digest(supervisor_tree),
@@ -766,15 +775,18 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
 
 def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
                                 allowed_descendant_tree=None, process_role_prefix=None,
-                                inspector=None, child_inspector=None):
+                                inspector=None, child_inspector=None, deadline=None,
+                                monotonic_fn=time.monotonic):
     static = validate_bootstrap_tree(
         tree, generation=generation, revision=revision,
         startup_nonce=startup_nonce, require_interpreter=True,
     )
     if not static.get("authorized"):
         return static
-    inspector = inspector or _inspect_exact_process
-    child_inspector = child_inspector or _inspect_exact_children
+    inspector = inspector or (lambda pid: _inspect_exact_process(
+        pid, deadline=deadline, monotonic_fn=monotonic_fn))
+    child_inspector = child_inspector or (lambda pid: _inspect_exact_children(
+        pid, deadline=deadline, monotonic_fn=monotonic_fn))
     members = tree.get("members") if isinstance(tree, dict) else []
     signed_pids = {int(item.get("pid") or -1) for item in members}
     allowed_members = (
@@ -835,7 +847,19 @@ def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
             "validated_console_host_pids": sorted(verified_wrappers)}
 
 
-def _inspect_exact_process(pid, runner=subprocess.run):
+def _readiness_query_timeout(deadline, monotonic_fn):
+    if deadline is None:
+        return 10
+    remaining = deadline - monotonic_fn()
+    if not math.isfinite(remaining):
+        raise ActivationError("activation_readiness_configuration_invalid")
+    if remaining <= 0:
+        raise ActivationError("activation_readiness_timeout")
+    return min(10, remaining)
+
+
+def _inspect_exact_process(pid, runner=subprocess.run, *, deadline=None,
+                           monotonic_fn=time.monotonic):
     script = (
         "$ErrorActionPreference='Stop';"
         f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={int(pid)}\";"
@@ -845,7 +869,8 @@ def _inspect_exact_process(pid, runner=subprocess.run):
     )
     completed = runner(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, timeout=10, check=False,
+        capture_output=True, text=True,
+        timeout=_readiness_query_timeout(deadline, monotonic_fn), check=False,
     )
     if completed.returncode:
         return {"inspection_complete": False}
@@ -862,7 +887,8 @@ def _inspect_exact_process(pid, runner=subprocess.run):
         return {"inspection_complete": False}
 
 
-def _inspect_exact_children(parent_pid, runner=subprocess.run):
+def _inspect_exact_children(parent_pid, runner=subprocess.run, *, deadline=None,
+                            monotonic_fn=time.monotonic):
     script = (
         "$ErrorActionPreference='Stop';"
         f"$p=@(Get-CimInstance Win32_Process -Filter \"ParentProcessId={int(parent_pid)}\");"
@@ -871,7 +897,8 @@ def _inspect_exact_children(parent_pid, runner=subprocess.run):
     )
     completed = runner(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, timeout=10, check=False,
+        capture_output=True, text=True,
+        timeout=_readiness_query_timeout(deadline, monotonic_fn), check=False,
     )
     if completed.returncode:
         return None

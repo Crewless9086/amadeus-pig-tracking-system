@@ -16,7 +16,6 @@ from modules.charlie.runtime_activation import (
     request_successful_activation_stop,
     complete_successful_activation_stop,
     prepare_activation,
-    read_activation_runtime_evidence,
     reconcile_recovered_activation_stop,
     recover_activation,
     verify_or_recover_activation,
@@ -52,9 +51,6 @@ def main(argv=None):
             state_root = Path(args.state_root)
             result = verify_or_recover_activation(
                 state_root=state_root,
-                verification_reader=lambda packet: read_activation_runtime_evidence(
-                    packet, state_root=state_root
-                ),
                 task_controller=controller,
             )
         elif args.action in {"request-stop", "verify-stop"}:
