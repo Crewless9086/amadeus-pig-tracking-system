@@ -2278,6 +2278,55 @@ class WindowsHarnessBoundaryTests(unittest.TestCase):
         self.assertFalse(result["cleanup_verified"])
         api.ResumeThread.assert_not_called()
         api.TerminateProcess.assert_called_once_with(40,1)
+    def test_qualification_requires_all_six_exact_cases_and_clean_results(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        import copy
+        self.assertEqual(len(harness.SELECTORS), 6)
+        reports = [{"selector": selector, "exit_code": 0, "cleanup_verified": True,
+            "timed_out": False, "result": {"selector": selector, "tests_run": 1,
+            "failures": 0, "errors": 0, "skips": 0}} for selector in harness.SELECTORS]
+        self.assertTrue(harness.qualification_passed(reports))
+        self.assertFalse(harness.qualification_passed(reports[:-1]))
+        self.assertFalse(harness.qualification_passed([reports[0], *reports[0:5]]))
+        for field in ("skips", "failures", "errors"):
+            with self.subTest(field=field):
+                changed=copy.deepcopy(reports); changed[-1]["result"][field]=1
+                self.assertFalse(harness.qualification_passed(changed))
+        for field,value in (("cleanup_verified",False),("timed_out",True),("exit_code",1)):
+            with self.subTest(field=field):
+                changed=copy.deepcopy(reports); changed[-1][field]=value
+                self.assertFalse(harness.qualification_passed(changed))
+
+    def test_parent_budget_clamps_native_wait_and_keeps_owned_cleanup(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api(); api.WaitForSingleObject.return_value=258
+        native=SimpleNamespace(CreateProcess=Mock(return_value=(40,41,123,124)))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.subprocess,"STARTUPINFO",return_value=SimpleNamespace(),create=True), \
+             patch.object(harness,"copy_provider_module_cache",return_value=(Path("synthetic-case-cache"),{"copied":True})), \
+             patch.dict(harness.os.environ,{"SystemRoot":"C:/Windows"}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness.time,"monotonic",return_value=100):
+            result=harness._run_owned_worker(harness.SELECTORS[-1],Path(tmp),deadline=125)
+        api.WaitForSingleObject.assert_called_once_with(40,10000)
+        api.TerminateJobObject.assert_called_once_with(10,1)
+        self.assertTrue(result["cleanup_verified"]); self.assertTrue(result["timed_out"])
+        self.assertNotIn("exit_code",result)
+
+    def test_exhausted_parent_budget_cannot_launch_or_be_reported_as_success(self):
+        from tests import charlie_windows_lifecycle_harness as harness
+        api=self.fake_api(); native=SimpleNamespace(CreateProcess=Mock())
+        with tempfile.TemporaryDirectory() as tmp, patch.object(harness,"_kernel",return_value=api), \
+             patch.dict("sys.modules",{"_winapi":native}), \
+             patch.object(harness.ctypes,"get_last_error",return_value=0,create=True), \
+             patch.object(harness.time,"monotonic",return_value=100):
+            result=harness._run_owned_worker(harness.SELECTORS[-1],Path(tmp),deadline=115)
+        native.CreateProcess.assert_not_called(); api.ResumeThread.assert_not_called()
+        api.TerminateJobObject.assert_called_once_with(10,1)
+        self.assertTrue(result["cleanup_verified"]); self.assertNotIn("exit_code",result)
+        self.assertFalse(harness.qualification_passed([result]))
+
     def test_timeout_empties_exact_owned_job_and_records_failure(self):
         from tests import charlie_windows_lifecycle_harness as harness
         api=self.fake_api();api.WaitForSingleObject.return_value=258
