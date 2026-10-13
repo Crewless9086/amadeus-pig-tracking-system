@@ -371,9 +371,9 @@ class CandidatePinTests(unittest.TestCase):
         self.assertEqual(workflow.count('run: python -m pytest tests/test_oom_'), 2)
         for suite in ('candidate_reconciliation', 'registration_sql', 'presend_timeout_correction', 'unsent_confirmation_extension'):
             self.assertIn('test_oom_desktop_'+suite if suite in ('candidate_reconciliation','registration_sql') else 'test_oom_'+suite, workflow)
-        self.assertIn('Native seven-case qualification is required separately', workflow)
+        self.assertIn('Exact application service-identity tests and native read-only evidence are qualified separately; live provider startup remains unproven.', workflow)
         self.assertIn('proves neither native lifecycle nor live provider startup', workflow)
-        self.assertIn('application'+(adapter.HEAD or 'UNBOUND_APPLICATION_HEAD'), workflow)
+        self.assertEqual(adapter.HEAD, FINAL_CANDIDATE_PINS['HEAD'])
 
 
 class ReconciliationTests(unittest.TestCase):
