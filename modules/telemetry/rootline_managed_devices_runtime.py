@@ -24,14 +24,23 @@ DEVICE_KEYS = {
 }
 
 
+class ManagedDevicePlanningUnavailable(Exception):
+    """An optional evidence factory could not assemble its planning packet."""
+
+    def __init__(self, result):
+        super().__init__(result["status"])
+        self.result = result
+
+
 def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         store=rootline_irrigation_execution_store, canonical_loader=None,
-        connect_factory=None, now=None):
+        connect_factory=None, now=None, evidence_factory=None):
     """Recover or advance at most one exact managed-device execution.
 
     ``evidence`` is the current planner/reassessment packet.  Missing task,
     safety, need, canonical authority, or edge-revalidation evidence is a local
-    no-command hold and never blocks ordinary B/C irrigation.
+    no-command hold and never blocks ordinary B/C irrigation. An optional evidence
+    factory is evaluated once only after canonical active recovery is excluded.
     """
     now = _aware(now or datetime.now(timezone.utc))
     source = environ if environ is not None else os.environ
@@ -49,6 +58,17 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         result = advance_borehole_execution(eligibility={}, store=store,
             transport=transport, now=now)
         return {**result, "managed_device_recovery": True, "blocks_bc": True}
+
+    if evidence_factory is not None:
+        try:
+            evidence = evidence_factory()
+        except ManagedDevicePlanningUnavailable as exc:
+            return exc.result
+        # Planning can take time. Recheck canonical activity before considering
+        # a new start, using the existing dictionary path without another factory.
+        return run_rootline_managed_device_cycle(evidence=evidence, transport=transport,
+            environ=source, store=store, canonical_loader=canonical_loader,
+            connect_factory=connect_factory, now=now)
 
     packet = evidence if isinstance(evidence, dict) else {}
     tasks = packet.get("irrigation_auxiliary_tasks") or []
