@@ -124,9 +124,20 @@ def _load(action, payload):
                     "record_auxiliary_control_pulse_stopped","contain_auxiliary_device"}
                     if auxiliary else {"record_completed","contain_zone",
                         "record_ambiguous_shutdown","record_claim_recovery"})
+                relevant_actions = terminal_actions | {claim_action, active_action}
+                if not auxiliary and not borehole:
+                    relevant_actions.add("mark_stopping")
+                # Keep malformed and legacy JSON-string envelopes for the existing
+                # reducer: filtering them out could turn a failed read into idle.
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
-                    where event_source=%s order by created_at desc""", (EVENT_SOURCE,))
+                    where event_source=%s
+                      and (jsonb_typeof(review_json->'rootline_execution')
+                               is distinct from 'object'
+                           or jsonb_typeof(review_json->'rootline_execution'->'action')
+                               is distinct from 'string'
+                           or review_json->'rootline_execution'->>'action'=any(%s))
+                    order by created_at desc""", (EVENT_SOURCE, sorted(relevant_actions)))
                 terminal = set(); candidates = {}
                 for row in cursor.fetchall():
                     item = row[0] if isinstance(row[0], dict) else json.loads(row[0])
