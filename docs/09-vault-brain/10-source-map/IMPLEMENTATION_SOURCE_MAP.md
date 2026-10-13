@@ -60,6 +60,16 @@
   receipt-only status does not imply ordinary mission pickup or completed repair.
   No task activation, new policy, mission, hold change or live database write is
   performed by initialization or source installation.
+- Windows action/interpreter identity and pre-consume recovery remain on
+  runtime_activation.py, runtime_staging.py and the existing activation CLI.
+  The exact configured venv redirector and trusted base interpreter retain
+  separate OS image, argument and creation identities. Signed no-starter failure
+  evidence permits only a stopped projection after provider/process absence;
+  no synthetic supervisor file, activation retry or hold clearance is produced.
+- Qualification: tests/test_charlie_provider_process_chain.py covers the real
+  disposable Windows venv topology with a synthetic scheduler boundary, strict
+  identity refusals and failed-before-starter reconciliation through stopped
+  staging. This is source/native qualification, not genuine provider acceptance.
 - Qualification: `tests/test_charlie_manager_intake_runner.py`, existing staging,
   activation, launcher/controller/observe tests and intake PostgreSQL tests.
   `modules/charlie/validation_receipt.py` includes the scoped tests in proportional

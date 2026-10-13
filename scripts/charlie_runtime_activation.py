@@ -79,15 +79,19 @@ def main(argv=None):
                 parser.error("reconcile-stop requires --activation-id")
             state_root = Path(args.state_root)
             watchdog_path = state_root / "watchdog.json"
-            try:
-                failure = json.loads(watchdog_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
-                raise ActivationError("activation_failure_evidence_unreadable") from exc
+            failure = None
+            if watchdog_path.exists():
+                try:
+                    failure = json.loads(watchdog_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError) as exc:
+                    raise ActivationError("activation_failure_evidence_unreadable") from exc
             result = reconcile_recovered_activation_stop(
                 state_root=state_root,
                 activation_id=args.activation_id,
                 failure_evidence=failure,
+                task_controller=controller,
             )
+
     except ActivationError as exc:
         result = {"success": False, "status": exc.status, **exc.evidence}
         print(json.dumps(result, sort_keys=True))

@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/charlie/runtime_activation.py', 'tests/test_charlie_manager_intake_runner.py']
+PREDECESSOR_PATHS = ['docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/charlie/runtime_activation.py', 'modules/charlie/runtime_staging.py', 'scripts/charlie_runtime_activation.py', 'tests/test_charlie_provider_process_chain.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -59,7 +59,7 @@ SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1392, 'BASE': 'c3e726f5c01e2f3106d1a7be7a2fc70805c8babb', 'BRANCH': 'codex/core-provider-process-chain-20261012', 'HEAD': 'f1cccf67987bcec9d4a6e77b3a2fedde49e3f22c', 'TREE': 'd1840fcaff141fdd2b38bfdfd65066d6bf3e9539', 'APPROVED_RUNTIME_HEAD': 'f1cccf67987bcec9d4a6e77b3a2fedde49e3f22c', 'PATHS': ['docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/charlie/runtime_activation.py', 'modules/charlie/runtime_staging.py', 'scripts/charlie_runtime_activation.py', 'tests/test_charlie_provider_process_chain.py']}
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1393, 'BASE': '0f66f4065b7f32277b0ebfd47bef94dfb73ab7ad', 'BRANCH': 'codex/core-service-identity-20261013', 'HEAD': '178180f11e28c0112659356b4b09c57229a38295', 'TREE': 'eab5a06349446dbfb7d7bc755ccde1004b89a3a3', 'APPROVED_RUNTIME_HEAD': '178180f11e28c0112659356b4b09c57229a38295', 'PATHS': ['modules/charlie/runtime_activation.py', 'tests/test_charlie_service_creation_identity.py']}
 
 def use_synthetic_candidate(test):
     pending = {key: deepcopy(value) for key, value in SYNTHETIC_PINS.items()
@@ -345,7 +345,7 @@ class CandidatePinTests(unittest.TestCase):
         authority=[v for v in adapter.REQUIRED_ACCEPTANCE if v.startswith("Require an independently authenticated attributable owner instruction")]
         self.assertEqual(len(authority),1)
         self.assertIn("exact candidate "+str(adapter.HEAD),authority[0])
-        self.assertIn("this exact provider-process-chain repair, protected source merge and existing-image reuse scope",authority[0])
+        self.assertIn("this exact service-creation-identity repair, protected source merge and existing-image reuse scope",authority[0])
         self.assertFalse(any(adapter.PREDECESSOR_HEAD in v for v in adapter.REQUIRED_ACCEPTANCE))
         with patch.object(adapter, "CANDIDATE_PR", None), patch.object(adapter, "verify_source_and_candidate") as verify:
             with self.assertRaisesRegex(adapter.ReconciliationError, "candidate_pins_pending"):
@@ -357,7 +357,7 @@ class CandidatePinTests(unittest.TestCase):
 
     def test_registration_workflow_runs_only_four_disposable_database_suites(self):
         workflow=(adapter.ROOT / '.github/workflows/oom-desktop-rebind-qualification.yml').read_text()
-        self.assertIn('branches: [codex/core-provider-chain-registration-qualification-20261012]', workflow)
+        self.assertIn('branches: [codex/core-service-identity-registration-qualification-20261013]', workflow)
         self.assertEqual(workflow.count('runs-on: ubuntu-latest'), 1)
         self.assertNotIn('runs-on: windows-latest', workflow)
         self.assertNotIn('windows-lifecycle:', workflow)
@@ -481,12 +481,12 @@ class ReconciliationTests(unittest.TestCase):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
 
-    def test_exact_pr1391_predecessor_head_is_not_its_merge_or_other_history(self):
+    def test_exact_pr1392_predecessor_head_is_not_its_merge_or_other_history(self):
         self.assertEqual((adapter.PREDECESSOR_PR, adapter.PREDECESSOR_HEAD, adapter.PREDECESSOR_BASE,
-            adapter.PREDECESSOR_BRANCH), (1391, "154d660872b53b9fbc2fbf9d1fd30361171daf93",
-            "cab658920fbcd001e2b87993990ab3396bbedc2b", "codex/core-intake-scoped-containment-20261012"))
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS), 5)
-        self.assertEqual(len(adapter.PATHS), 7)
+            adapter.PREDECESSOR_BRANCH), (1392, "f1cccf67987bcec9d4a6e77b3a2fedde49e3f22c",
+            "c3e726f5c01e2f3106d1a7be7a2fc70805c8babb", "codex/core-provider-process-chain-20261012"))
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS), 7)
+        self.assertEqual(len(adapter.PATHS), 2)
         self.assertNotEqual(adapter.WEB_BASELINE, adapter.BASE)
         for wrong in (adapter.BASE, "f1643d1014d22bc455eef56b919115d1244e1cd7", "f"*40):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
@@ -645,7 +645,7 @@ class ReconciliationTests(unittest.TestCase):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         self.assertNotIn("existing_web_application_release",m["contract"]["allowed_effects"])
         self.assertNotIn("application_revision_rollback:web:"+adapter.WEB_ROLLBACK,m["contract"]["allowed_effects"])
-        self.assertEqual(adapter.PREDECESSOR_BASE,'cab658920fbcd001e2b87993990ab3396bbedc2b')
+        self.assertEqual(adapter.PREDECESSOR_BASE,'c3e726f5c01e2f3106d1a7be7a2fc70805c8babb')
         self.assertTrue({"database_migration","farm_write","service_configuration_change","transport_publication","cron_deploy"}<=set(m["contract"]["forbidden_effects"]))
         guards=("Only conclusively departed extra rows outside immutable obligations leave the unknown-purpose veto", "retained members and ambiguous/conflicting lifecycle evidence never do", "verified English/Afrikaans saved-purpose singular/plural wording", "Prior PR1388 registration and web deployment are consumed history", "preserve the existing provider state without another workflow update or rollback", "Bind the exact current deployment/settings baseline", "uncertain publication outcomes require readback rather than blind retry", "No manual case completion, owner confirmation, callback replay or provider workflow mutation")
         for value in guards:
@@ -1081,9 +1081,9 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(len(preserved),98)
         # Digest of the 98 unaffected clauses retained through PR1389 helper2a72c934.
         self.assertEqual(adapter.digest(adapter.canonical(sorted(preserved))),'a5b277e4e43e79be96c8f39d31db003dedbf74ded283610badc0467f615567d2')
-        self.assertEqual(adapter.PREDECESSOR_PR,1391)
+        self.assertEqual(adapter.PREDECESSOR_PR,1392)
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(adapter.PREDECESSOR_BASE,'cab658920fbcd001e2b87993990ab3396bbedc2b')
+        self.assertEqual(adapter.PREDECESSOR_BASE,'c3e726f5c01e2f3106d1a7be7a2fc70805c8babb')
 
     def test_core_receipt_and_stopped_source_do_not_grant_activation_or_pickup(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
@@ -1237,7 +1237,7 @@ class ReconciliationTests(unittest.TestCase):
             "retaining additive schema and legitimate new claim/business history",
             "No unencrypted transport, down-migration, unrelated migration",
             "fresh mission preimages", "qualification-only and is never merged or deployed",
-            "this exact provider-process-chain repair, protected source merge and existing-image reuse scope",
+            "this exact service-creation-identity repair, protected source merge and existing-image reuse scope",
             "exact available membership, explicit current delivery state and verified dated deferrals",
             "only wholly delivered groups with no due request qualify",
             "New, changed, unnotified or due work retains history verification",
@@ -1601,16 +1601,16 @@ class ReconciliationTests(unittest.TestCase):
         for name, value in FINAL_CANDIDATE_PINS.items():
             expected = SYNTHETIC_PINS[name] if value is None or value == [] else value
             self.assertEqual(getattr(adapter, name), expected)
-        self.assertEqual(adapter.BASE,'c3e726f5c01e2f3106d1a7be7a2fc70805c8babb')
-        self.assertEqual(adapter.BRANCH,'codex/core-provider-process-chain-20261012')
+        self.assertEqual(adapter.BASE,'0f66f4065b7f32277b0ebfd47bef94dfb73ab7ad')
+        self.assertEqual(adapter.BRANCH,'codex/core-service-identity-20261013')
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1391)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,'154d660872b53b9fbc2fbf9d1fd30361171daf93')
-        self.assertEqual(adapter.PREDECESSOR_BASE,'cab658920fbcd001e2b87993990ab3396bbedc2b')
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,'codex/core-intake-scoped-containment-20261012')
+        self.assertEqual(adapter.PREDECESSOR_PR,1392)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,'f1cccf67987bcec9d4a6e77b3a2fedde49e3f22c')
+        self.assertEqual(adapter.PREDECESSOR_BASE,'c3e726f5c01e2f3106d1a7be7a2fc70805c8babb')
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,'codex/core-provider-process-chain-20261012')
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),5)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),7)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
