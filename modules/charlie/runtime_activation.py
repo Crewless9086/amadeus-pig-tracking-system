@@ -2307,9 +2307,9 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
                 "reason": reasons.get(completed.returncode, "provider_identity_unreadable")}
     try:
         row = json.loads(completed.stdout)
-        creation_time = (process_creation_time or _windows_process_creation_time)(
-            int(row["ProcessId"])
-        )
+        creation_time = (process_creation_time(int(row["ProcessId"]))
+                         if process_creation_time is not None else
+                         _task_scheduler_service_creation_time(int(row["ProcessId"]), runner=runner))
         if not creation_time:
             return {"inspection_complete": False}
         binary_tokens = _command_tokens(row.get("PathName"))
@@ -2384,6 +2384,25 @@ def _valid_task_scheduler_provider(value):
         and re.fullmatch(r"\{?[0-9a-fA-F-]{36}\}?", str(value["instance_guid"]))
         and str(value["task_path"]).casefold() == ("\\" + TASK_NAME).casefold()
     )
+
+
+def _task_scheduler_service_creation_time(pid, runner=subprocess.run):
+    """Read the exact service PID through CIM without protected-process access."""
+    try:
+        pid = int(pid)
+        if pid <= 0:
+            return ""
+        identity = _inspect_exact_process(pid, runner=runner, creation_time_utc=True)
+        if (not isinstance(identity, dict) or identity.get("inspection_complete") is not True
+                or identity.get("pid") != pid):
+            return ""
+        creation_time = str(identity.get("creation_time") or "")
+        stamp = datetime.fromisoformat(creation_time.replace("Z", "+00:00"))
+        if stamp.tzinfo is None or stamp.utcoffset() != timedelta(0):
+            return ""
+        return creation_time
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return ""
 
 
 def _windows_process_creation_time(pid):
