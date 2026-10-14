@@ -100,7 +100,7 @@ def plan_runtime_staging(
         governed_runtime_binding(runtime_root, required=True)
     watchdog = {"status": "initialization_stopped"} if initialized_unstarted else _read_json(watchdog_path, "watchdog_state_missing_or_invalid")
     recovered_unstarted = (not supervisor_path.exists()
-        and watchdog.get("recovery_basis") == "authenticated_pre_consume_failure")
+        and watchdog.get("recovery_basis") in {"authenticated_pre_consume_failure", "authenticated_consumed_stop_refusal"})
     if recovered_unstarted:
         from modules.charlie.runtime_activation import validate_no_starter_recovery_projection
         validate_no_starter_recovery_projection(watchdog, state_root,
@@ -294,7 +294,7 @@ def stage_runtime(plan, *, task_reader=None, task_writer=None, runner=subprocess
                               if (state_root / "watchdog.json").exists() else {})
         if stopped_projection.get("version") == "charlie_activation_recovery_projection_v1":
             _validate_recovery_projection(stopped_projection, state_root)
-            if stopped_projection.get("recovery_basis") == "authenticated_pre_consume_failure":
+            if stopped_projection.get("recovery_basis") in {"authenticated_pre_consume_failure", "authenticated_consumed_stop_refusal"}:
                 from modules.charlie.runtime_activation import validate_no_starter_recovery_projection
                 validate_no_starter_recovery_projection(stopped_projection, state_root,
                     task_reader=task_reader or read_watchdog_task)
