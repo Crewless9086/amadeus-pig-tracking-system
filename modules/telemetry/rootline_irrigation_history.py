@@ -58,7 +58,7 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                     order by created_at,review_event_id""")
                 execution_rows = [row[0] for row in cursor.fetchall()]
         result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
-        _attach_parent_jobs(result, execution_rows)
+        _attach_parent_jobs(result, execution_rows, canonical_ordered=True)
         from modules.telemetry.rootline_water_credit import project_water_credits
         result["water_credits"] = project_water_credits(credit_rows)
         _attach_water_credits(result)
@@ -126,10 +126,10 @@ def _attach_water_credits(history):
                 "dependency": "measured_volume_or_supported_calibration_required"})
 
 
-def _attach_parent_jobs(history, rows):
+def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     """Project incomplete immutable jobs without treating a segment as a day close."""
     from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
-    _attach_latest_zone_executions(history, rows)
+    _attach_latest_zone_executions(history, rows, canonical_ordered=canonical_ordered)
     _attribute_parent_operating_dates(history, rows)
     grouped = {}
     for raw in rows or ():
@@ -261,8 +261,9 @@ def _attribute_parent_operating_dates(history, rows):
         zone["verified_completed_day_count"] = len(zone["verified_completed_days"])
 
 
-def _attach_latest_zone_executions(history, rows):
+def _attach_latest_zone_executions(history, rows, *, canonical_ordered=False):
     """Expose current execution truth without creating a second state rail."""
+    from modules.telemetry.rootline_irrigation_lifecycle import project_execution_shutdown_exceptions
     terminal_actions = {"record_completed", "contain_zone",
                         "record_ambiguous_shutdown", "record_claim_recovery"}
     grouped = {}
@@ -271,11 +272,15 @@ def _attach_latest_zone_executions(history, rows):
         execution_id = str(item.get("execution_id") or "").strip()
         zone_id = str(item.get("zone_id") or "").strip()
         if execution_id and zone_id in ZONES:
-            grouped.setdefault(execution_id, {"zone_id": zone_id, "events": []})[
+            grouped.setdefault((zone_id, execution_id), {"zone_id": zone_id, "events": []})[
                 "events"].append((order, item))
     by_zone = {zone: [] for zone in ZONES}
-    for execution_id, grouped_execution in grouped.items():
+    exceptions_by_zone = {zone: [] for zone in ZONES}
+    for (_, execution_id), grouped_execution in grouped.items():
         events = grouped_execution["events"]
+        exceptions_by_zone[grouped_execution["zone_id"]].extend(
+            project_execution_shutdown_exceptions([item for _, item in events],
+                evidence_cutoff=history.get("snapshot_cutoff"), canonical_ordered=canonical_ordered))
         terminal = next((entry for entry in reversed(events)
                          if str(entry[1].get("action") or "") in terminal_actions
                          and (entry[1].get("action") != "record_claim_recovery"
@@ -289,6 +294,8 @@ def _attach_latest_zone_executions(history, rows):
                 "execution_id": execution_id, "order": selected[0],
                 "terminal": terminal is not None, "event": dict(selected[1])})
     for zone_id, candidates in by_zone.items():
+        history["zones"][zone_id]["execution_exceptions"] = sorted(
+            exceptions_by_zone[zone_id], key=lambda row: (row["execution_id"], row["kind"]))
         active = [candidate for candidate in candidates if not candidate["terminal"]]
         if len(active) > 1:
             history["zones"][zone_id]["latest_execution"] = {

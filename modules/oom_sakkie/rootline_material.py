@@ -3,6 +3,9 @@ import hashlib
 import json
 import re
 from typing import Any, Mapping
+from modules.telemetry.rootline_irrigation_lifecycle import (
+    validate_zone_lifecycle, validated_shutdown_exceptions,
+)
 
 
 def rootline_material_digest(result: Mapping[str, Any]) -> str:
@@ -32,8 +35,20 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
     selected = {"recommendations": recommendations,
         "next_reassessment": stable_reassessment(result.get("next_reassessment")),
         "owner_question": _owner_question((result.get("owner_brief") or {}).get("family_fact_needed"))}
+    exceptions = rootline_exception_material(result)
+    if exceptions:
+        selected["execution_exceptions"] = exceptions
     return hashlib.sha256(json.dumps(selected, sort_keys=True, separators=(",", ":"),
                                      default=str).encode()).hexdigest()
+
+
+def rootline_exception_material(result):
+    lifecycles = result.get("irrigation_lifecycle") if isinstance(result, Mapping) else None
+    if not isinstance(lifecycles, Mapping):
+        return []
+    return [item for zone in ("B12345", "C12345")
+            for item in validated_shutdown_exceptions(
+                validate_zone_lifecycle(lifecycles.get(zone), zone_id=zone), zone_id=zone)]
 
 
 def stable_reassessment(value):
