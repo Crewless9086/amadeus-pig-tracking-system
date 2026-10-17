@@ -124,6 +124,19 @@ absent. Preserve pending recovery until a later authenticated read proves exit.
 The resulting signed stop projection may support stopped staging without
 inventing a supervisor record; it never authorizes retry or clears a hold.
 
+A consumed activation can also remain without a supervisor when the authenticated
+canonical starter returned exactly `governed_stop_active` before any process
+spawn. This distinct recovery basis requires that signed refusal verbatim, the
+consumed identity and packet binding, completed authenticated launcher evidence,
+exact disabled task/instance/action identity and absence of every known action
+and launcher process. A later stop observation cannot turn a different starter
+result into this refusal. If a late packet followed an already-completed rollback,
+retain the original failure, packet and completion unchanged and archive the
+additional signed packet and consumed record under distinct identities. Validate
+both timelines and preserve unknown/contradictory evidence as incomplete recovery.
+The signed stopped projection never proves a supervisor existed, permits replay,
+clears a hold or authorizes a fresh activation.
+
 ## Dependency retirement and scheduler singularity
 
 Documented, runtime-loaded, provider-verified, OS-observed and physical evidence

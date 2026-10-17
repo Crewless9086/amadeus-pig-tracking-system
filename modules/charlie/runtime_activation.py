@@ -319,44 +319,77 @@ def consume_provider_activation(*, state_root, starter, task_controller,
     if (str(provider.get("provider_instance_guid") or "").strip("{}").casefold()
             != str(packet["expected_instance_guid"]).strip("{}").casefold()):
         raise ActivationError("task_scheduler_instance_guid_mismatch")
-    consumed_path = state_root / f"activation-consumed-{packet['activation_id']}.json"
-    consumed = {
-        "version": ACTIVATION_VERSION, "activation_id": packet["activation_id"],
-        "provider_pid": provider["pid"], "provider_parent_pid": provider["parent_pid"],
-        "provider_instance_guid": provider["provider_instance_guid"],
-        "expected_instance_guid": packet["expected_instance_guid"],
-        "packet_hmac_sha256": packet["packet_hmac_sha256"],
-        "consumed_at": _now(now),
-    }
-    consumed["consumed_hmac_sha256"] = _sign_record(
-        consumed, _read_key(state_root / "activation-authority.key"),
-        "consumed_hmac_sha256",
-    )
-    _exclusive_json(consumed_path, consumed)
-    try:
-        with _provider_start_environment(packet["authority"], now=now):
-            result, status_code = starter(execution_mode=packet["authority"]["execution_mode"])
-    except Exception as exc:
-        recover_activation(state_root=state_root, task_controller=task_controller,
-                           activation_id=packet["activation_id"], failure_evidence={
-                               "status": "provider_start_failed",
-                               "error_type": exc.__class__.__name__,
-                           })
-        raise ActivationError("provider_start_failed", error_type=exc.__class__.__name__) from exc
-    status = _started_status(packet["authority"]) if status_code < 300 else "provider_start_failed"
-    updated = {**packet, "status": status, "provider": provider,
-               "start_result": result, "provider_started_at": _now(now),
-               "consumed_packet_hmac_sha256": packet["packet_hmac_sha256"]}
-    updated["packet_hmac_sha256"] = _sign_packet(updated, _read_key(state_root / "activation-authority.key"))
-    _atomic_json(packet_path, updated)
-    if status_code >= 300:
+    # The slow provider query is not authority to publish later.  Serialize
+    # only consumption/start/publication against recovery archival, then
+    # authenticate the live generation again inside that boundary.
+    start_error = None
+    with _activation_publication_lock(state_root):
+        _assert_provider_publication_open(state_root, packet)
+        _validate_packet(packet, state_root, task_reader, git_runner=git_runner, now=now)
+        if (state_root / "supervisor.stop").exists():
+            raise ActivationError("governed_stop_active")
+        consumed_path = state_root / f"activation-consumed-{packet['activation_id']}.json"
+        consumed = {
+            "version": ACTIVATION_VERSION, "activation_id": packet["activation_id"],
+            "provider_pid": provider["pid"], "provider_parent_pid": provider["parent_pid"],
+            "provider_instance_guid": provider["provider_instance_guid"],
+            "expected_instance_guid": packet["expected_instance_guid"],
+            "packet_hmac_sha256": packet["packet_hmac_sha256"],
+            "consumed_at": _now(now),
+        }
+        consumed["consumed_hmac_sha256"] = _sign_record(
+            consumed, _read_key(state_root / "activation-authority.key"),
+            "consumed_hmac_sha256",
+        )
+        _exclusive_json(consumed_path, consumed)
+        try:
+            with _provider_start_environment(packet["authority"], now=now):
+                result, status_code = starter(execution_mode=packet["authority"]["execution_mode"])
+        except Exception as exc:
+            start_error = exc
+            result, status_code = {"status": "provider_start_exception",
+                                   "error_type": exc.__class__.__name__}, 503
+        _assert_provider_publication_open(state_root, packet)
+        contained = (state_root / "supervisor.stop").exists()
+        expired = _parse_time(packet["authority"]["expires_at"]) <= (now or datetime.now(timezone.utc))
+        status = (_started_status(packet["authority"])
+                  if status_code < 300 and not contained and not expired
+                  else "provider_start_failed")
+        updated = {**packet, "status": status, "provider": provider,
+                   "start_result": result, "provider_started_at": _now(now),
+                   "consumed_packet_hmac_sha256": packet["packet_hmac_sha256"]}
+        updated["packet_hmac_sha256"] = _sign_packet(updated, _read_key(state_root / "activation-authority.key"))
+        _atomic_json(packet_path, updated)
+    # Never wait for the verifier lock while holding the publication lock.
+    if status == "provider_start_failed":
         recover_activation(state_root=state_root, task_controller=task_controller,
                            activation_id=packet["activation_id"], failure_evidence={
                                "status": "provider_start_failed", "start_result": result,
                            })
-        raise ActivationError("provider_start_failed", start_result=result)
+        raise ActivationError("provider_start_failed", start_result=result) from start_error
     return {"success": True, "status": status, "activation_id": packet["activation_id"],
             "terminal_spawned_core": False, "provider": provider, "start_result": result}
+
+
+def _assert_provider_publication_open(state_root, packet):
+    """A retained in-memory packet cannot revive a recovered generation."""
+    activation_id = packet["activation_id"]
+    ledger = state_root / "activation-ledger"
+    if ((state_root / "activation-reconciliation-pending.json").exists()
+            or (state_root / "activation-reconciliation.lock").exists()
+            or any((ledger / (activation_id + suffix)).exists() for suffix in (
+                "-failure.json", "-recovery-completed.json", "-reconciled.json",
+                "-verified.json", "-lane-recovered.json"))):
+        raise ActivationError("activation_closed_before_provider_publication")
+    current = _read_json(state_root / "activation-packet.json", "activation_packet_invalid")
+    if current != packet:
+        raise ActivationError("activation_packet_changed_before_provider_publication")
+    lane = _read_json(state_root / "activation.lock", "activation_lane_missing")
+    key = _read_key(state_root / "activation-authority.key")
+    if (lane.get("activation_id") != activation_id
+            or not hmac.compare_digest(str(lane.get("lane_hmac_sha256") or ""),
+                _sign_record(lane, key, "lane_hmac_sha256"))):
+        raise ActivationError("activation_lane_identity_mismatch")
 
 
 def verify_or_recover_activation(**kwargs):
@@ -373,6 +406,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader=None, task_
                                   monotonic_fn=time.monotonic, sleep_fn=time.sleep):
     state_root = Path(state_root).resolve()
     invocation_wall = now or datetime.now(timezone.utc)
+    invocation_tick = monotonic_fn()
     live_packet = state_root / "activation-packet.json"
     if live_packet.exists():
         packet_path = live_packet
@@ -459,6 +493,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader=None, task_
             if exc.status != "activation_lane_already_owned":
                 raise
             raise ActivationError("activation_verification_already_active") from exc
+    committing_verification = False
     try:
         try:
             timeout = float(readiness_timeout_seconds)
@@ -471,7 +506,7 @@ def _verify_or_recover_activation(*, state_root, verification_reader=None, task_
         _validate_packet(packet, state_root, task_reader, git_runner=git_runner,
                          now=now, allow_consumed=True, allow_expired=True)
         started_tick = monotonic_fn()
-        started_wall = invocation_wall
+        started_wall = invocation_wall + timedelta(seconds=max(0, started_tick - invocation_tick))
         deadline = started_tick + timeout
         observations = []
         while True:
@@ -524,7 +559,8 @@ def _verify_or_recover_activation(*, state_root, verification_reader=None, task_
                     "activation_readiness_timeout",
                     publication_status=publication_status,
                 )
-            if publication_status == "activation_bound_ready" and legacy_ready:
+            if (publication_status == "activation_bound_ready" and legacy_ready
+                    and packet_status == _started_status(packet["authority"])):
                 evidence = {
                     **evidence,
                     "readiness_handshake": {
@@ -536,7 +572,32 @@ def _verify_or_recover_activation(*, state_root, verification_reader=None, task_
                         "observations": observations,
                     },
                 }
-                break
+                try:
+                    with _activation_publication_lock(state_root):
+                        latest_packet = _read_json(packet_path, "activation_packet_invalid")
+                        if latest_packet != current_packet:
+                            raise ActivationError("activation_packet_changed_before_verification")
+                        _validate_packet(latest_packet, state_root, task_reader,
+                            git_runner=git_runner, now=after_read_time, allow_consumed=True)
+                        final_tick = monotonic_fn()
+                        final_time = invocation_wall + timedelta(seconds=max(0, final_tick - invocation_tick))
+                        if _parse_time(packet["authority"]["expires_at"]) <= final_time:
+                            raise ActivationError("activation_authority_expired")
+                        if final_tick > deadline:
+                            raise ActivationError("activation_readiness_timeout")
+                        if (state_root / "supervisor.stop").exists():
+                            raise ActivationError("governed_stop_active")
+                        committing_verification = True
+                        return _complete_activation_verification(
+                            state_root, latest_packet, evidence, now=now)
+                except ActivationError as lock_error:
+                    if lock_error.status != "activation_publication_in_progress":
+                        raise
+                    publication_status = "activation_bound_startup_in_progress"
+            elif publication_status == "activation_bound_ready" and legacy_ready and packet_status == "provider_pending":
+                # Runtime acknowledgement may precede the starter's return.
+                # It is not finalized until the provider publishes its result.
+                publication_status = "activation_bound_startup_in_progress"
             if packet_status not in {
                 "provider_pending", "provider_started_observe_only", "provider_started_manager_dependency_intake_only",
             }:
@@ -568,6 +629,10 @@ def _verify_or_recover_activation(*, state_root, verification_reader=None, task_
             sleep_fn(max(0, min(poll,
                                 deadline - monotonic_fn())))
     except Exception as exc:
+        if committing_verification:
+            # Preserve the existing signed archival-pending crash continuation;
+            # a partial successful archive must not be reclassified as failure.
+            raise
         startup_evidence = read_startup_evidence(
             state_root, str(packet.get("activation_id") or "")
         )
@@ -583,69 +648,62 @@ def _verify_or_recover_activation(*, state_root, verification_reader=None, task_
         raise ActivationError("activation_verification_failed",
                               evidence_status=getattr(exc, "status", exc.__class__.__name__),
                               startup_evidence=startup_evidence) from exc
-    required = (
-        "loaded_revision_exact", _mode_evidence_key(packet["authority"]),
-        "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
-        "activation_id_exact", "unrelated_processes_absent",
+
+
+def _complete_activation_verification(state_root, packet, evidence, *, now=None):
+    """Caller owns verifier and publication locks; no provider can publish here."""
+    marker_path = state_root / "activation-verification.lock"
+    marker = {
+        "version": ACTIVATION_VERSION,
+        "activation_id": packet["activation_id"],
+        "status": "activation_verification_archival_pending",
+        "recorded_at": _now(now),
+    }
+    marker["marker_hmac_sha256"] = _sign_record(
+        marker, _read_key(state_root / "activation-authority.key"),
+        "marker_hmac_sha256",
     )
-    if all(evidence.get(item) is True for item in required):
-        marker_path = state_root / "activation-verification.lock"
-        marker = {
-            "version": ACTIVATION_VERSION,
-            "activation_id": packet["activation_id"],
-            "status": "activation_verification_archival_pending",
-            "recorded_at": _now(now),
-        }
-        marker["marker_hmac_sha256"] = _sign_record(
-            marker, _read_key(state_root / "activation-authority.key"),
-            "marker_hmac_sha256",
+    _atomic_json(marker_path, marker)
+    lane = state_root / "activation.lock"
+    archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
+    if lane.exists():
+        _durable_replace(lane, archive)
+    elif not archive.exists():
+        raise ActivationError("activation_lane_missing")
+    _atomic_json(state_root / "activation-ledger" / f"{packet['activation_id']}-verified.json", evidence)
+    _archive_activation_artifacts(state_root, packet["activation_id"], "verified")
+    ledger = state_root / "activation-ledger"
+    required_archives = [
+        f"{packet['activation_id']}-lane.json",
+        f"{packet['activation_id']}-verified.json",
+        f"{packet['activation_id']}-verified-activation-packet.json",
+        f"{packet['activation_id']}-verified-activation-audit-intent-{packet['activation_id']}.json",
+        f"{packet['activation_id']}-verified-activation-audit-receipt-{packet['activation_id']}.json",
+        f"{packet['activation_id']}-verified-activation-consumed-{packet['activation_id']}.json",
+        f"{packet['activation_id']}-verified-supervisor.stop.activation-{packet['activation_id']}",
+    ]
+    archive_hashes = {name: _sha256(ledger / name) for name in required_archives}
+    completion = {
+        "version": ACTIVATION_VERSION,
+        "activation_id": packet["activation_id"],
+        "status": "activation_verified",
+        "completed_at": _now(now),
+        "evidence": evidence,
+        "archive_hashes": archive_hashes,
+    }
+    completion["completion_hmac_sha256"] = _sign_record(
+        completion, _read_key(state_root / "activation-authority.key"),
+        "completion_hmac_sha256",
+    )
+    _atomic_json(state_root / "activation-verification-complete.json", completion)
+    marker_path = state_root / "activation-verification.lock"
+    if marker_path.exists():
+        _durable_replace(
+            marker_path,
+            state_root / "activation-ledger"
+            / f"{packet['activation_id']}-verified-activation-verification.lock",
         )
-        _atomic_json(marker_path, marker)
-        lane = state_root / "activation.lock"
-        archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
-        if lane.exists():
-            _durable_replace(lane, archive)
-        elif not archive.exists():
-            raise ActivationError("activation_lane_missing")
-        _atomic_json(state_root / "activation-ledger" / f"{packet['activation_id']}-verified.json", evidence)
-        _archive_activation_artifacts(state_root, packet["activation_id"], "verified")
-        ledger = state_root / "activation-ledger"
-        required_archives = [
-            f"{packet['activation_id']}-lane.json",
-            f"{packet['activation_id']}-verified.json",
-            f"{packet['activation_id']}-verified-activation-packet.json",
-            f"{packet['activation_id']}-verified-activation-audit-intent-{packet['activation_id']}.json",
-            f"{packet['activation_id']}-verified-activation-audit-receipt-{packet['activation_id']}.json",
-            f"{packet['activation_id']}-verified-activation-consumed-{packet['activation_id']}.json",
-            f"{packet['activation_id']}-verified-supervisor.stop.activation-{packet['activation_id']}",
-        ]
-        archive_hashes = {name: _sha256(ledger / name) for name in required_archives}
-        completion = {
-            "version": ACTIVATION_VERSION,
-            "activation_id": packet["activation_id"],
-            "status": "activation_verified",
-            "completed_at": _now(now),
-            "evidence": evidence,
-            "archive_hashes": archive_hashes,
-        }
-        completion["completion_hmac_sha256"] = _sign_record(
-            completion, _read_key(state_root / "activation-authority.key"),
-            "completion_hmac_sha256",
-        )
-        _atomic_json(state_root / "activation-verification-complete.json", completion)
-        marker_path = state_root / "activation-verification.lock"
-        if marker_path.exists():
-            _durable_replace(
-                marker_path,
-                state_root / "activation-ledger"
-                / f"{packet['activation_id']}-verified-activation-verification.lock",
-            )
-        return {"success": True, "status": "activation_verified", "evidence": evidence}
-    _recover_activation(state_root=state_root, task_controller=task_controller,
-                       activation_id=packet["activation_id"], failure_evidence={
-                           "status": "activation_verification_failed", "evidence": evidence,
-                       })
-    raise ActivationError("activation_verification_failed", evidence=evidence)
+    return {"success": True, "status": "activation_verified", "evidence": evidence}
 
 
 def read_activation_runtime_evidence(packet, *, state_root, now=None,
@@ -653,6 +711,25 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
                                      monotonic_fn=time.monotonic):
     """Validate exact signed runtime evidence; never infer ownership by name."""
     state_root = Path(state_root)
+    # Atomic publication begins with no supervisor/heartbeat at all.  Absence
+    # is pending, never readiness; the verifier still checks the signed packet,
+    # exact running provider instance, authority expiry and bounded deadline.
+    # Existing malformed files are deliberately not converted to absence.
+    supervisor_path = state_root / "supervisor.json"
+    heartbeat_path = state_root / "runner.json"
+    publications = []
+    for path, error in ((supervisor_path, "supervisor_state_invalid"),
+                        (heartbeat_path, "runner_heartbeat_invalid")):
+        if path.exists():
+            publications.append(_read_json(path, error))
+    if not supervisor_path.exists() or not heartbeat_path.exists():
+        if any(item.get("activation_id") == packet["activation_id"]
+               and item.get("status") in {
+                   "supervisor_stopped", "start_failed", "runner_start_failed",
+                   "runner_start_acknowledgement_failed", "stopped", "failed",
+               } for item in publications):
+            return {"publication_status": "activation_bound_failed"}
+        return {"publication_status": "activation_bound_startup_in_progress"}
     supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
     heartbeat = _read_json(state_root / "runner.json", "runner_heartbeat_invalid")
     authority = packet["authority"]
@@ -1462,80 +1539,99 @@ def _recover_activation(*, state_root, task_controller, activation_id,
                        "status": packet_provenance_error})
     if errors:
         raise ActivationError("activation_recovery_incomplete", errors=errors)
-    failure_path = ledger / f"{activation_id}-failure.json"
-    if not failure_path.exists():
-        failure = dict(failure_evidence) if isinstance(failure_evidence, dict) else {}
-        if not failure.get("status") or failure.get("status") == "governed_stop_active":
-            raise ActivationError("activation_failure_evidence_required")
-        failure_record = {
+    # Containment above must not wait for a slow starter.  Archival below is
+    # exclusive with consumed/start/publication and uses fresh locked evidence.
+    with _activation_publication_lock(state_root):
+        packet_source = packet_path if packet_path.exists() else packet_archive
+        current = _read_json(packet_source, "activation_packet_invalid")
+        if (current.get("activation_id") != activation_id
+                or not hmac.compare_digest(str(current.get("packet_hmac_sha256") or ""),
+                    _sign_packet(current, key))
+                or current.get("authority_sha256") != rollback.get("authority_sha256")
+                or current.get("authority") != packet.get("authority")
+                or current.get("task_ownership") != rollback_task):
+            raise ActivationError("activation_packet_changed_during_recovery")
+        consumed_live = state_root / f"activation-consumed-{activation_id}.json"
+        if consumed_live.exists():
+            _validate_consumed_identity(current,
+                _read_json(consumed_live, "activation_consumed_identity_invalid"), key,
+                require_packet_hmac=current.get("status") == "provider_pending")
+        packet = current
+        failure_path = ledger / f"{activation_id}-failure.json"
+        if not failure_path.exists():
+            failure = dict(failure_evidence) if isinstance(failure_evidence, dict) else {}
+            if not failure.get("status") or failure.get("status") == "governed_stop_active":
+                raise ActivationError("activation_failure_evidence_required")
+            failure_record = {
+                "version": RECOVERY_PROJECTION_VERSION,
+                "activation_id": activation_id,
+                "status": "activation_failure_preserved",
+                "recorded_at": _now(now),
+                "failure_bytes_b64": base64.b64encode(_canonical(failure)).decode("ascii"),
+                "failure_sha256": hashlib.sha256(_canonical(failure)).hexdigest(),
+            }
+            failure_record["failure_hmac_sha256"] = _sign_record(
+                failure_record, key, "failure_hmac_sha256"
+            )
+            _exclusive_json(failure_path, failure_record)
+        pending = {
             "version": RECOVERY_PROJECTION_VERSION,
             "activation_id": activation_id,
-            "status": "activation_failure_preserved",
-            "recorded_at": _now(now),
-            "failure_bytes_b64": base64.b64encode(_canonical(failure)).decode("ascii"),
-            "failure_sha256": hashlib.sha256(_canonical(failure)).hexdigest(),
+            "status": "governed_stop_reconciliation_pending",
+            "rollback_sha256": _sha256(state_root / "activation-ledger" / f"{activation_id}-rollback.json"),
+            "stop_marker_sha256": rollback["stop_marker_sha256"],
+            "task_action_sha256": rollback["task_action_sha256"],
+            "historical_failure_sha256": _sha256(failure_path),
+            "lane_sha256": _payload_sha256(lane),
         }
-        failure_record["failure_hmac_sha256"] = _sign_record(
-            failure_record, key, "failure_hmac_sha256"
+        pending["recovery_hmac_sha256"] = _sign_record(
+            pending, key, "recovery_hmac_sha256"
         )
-        _exclusive_json(failure_path, failure_record)
-    pending = {
-        "version": RECOVERY_PROJECTION_VERSION,
-        "activation_id": activation_id,
-        "status": "governed_stop_reconciliation_pending",
-        "rollback_sha256": _sha256(state_root / "activation-ledger" / f"{activation_id}-rollback.json"),
-        "stop_marker_sha256": rollback["stop_marker_sha256"],
-        "task_action_sha256": rollback["task_action_sha256"],
-        "historical_failure_sha256": _sha256(failure_path),
-        "lane_sha256": _payload_sha256(lane),
-    }
-    pending["recovery_hmac_sha256"] = _sign_record(
-        pending, key, "recovery_hmac_sha256"
-    )
-    _atomic_json(state_root / "activation-reconciliation-pending.json", pending)
-    _archive_activation_artifacts(state_root, activation_id, "recovered")
-    if lane_source != lane_archive and lane_source.exists():
-        _durable_replace(lane_source, lane_archive)
-    completion = {
-        "version": RECOVERY_PROJECTION_VERSION,
-        "activation_id": activation_id,
-        "status": "activation_recovery_completed",
-        "completed_at": _now(now),
-        "historical_failure_sha256": _sha256(failure_path),
-        "recovered_packet_sha256": _sha256(packet_archive),
-        "rollback_sha256": _sha256(ledger / f"{activation_id}-rollback.json"),
-        "lane_sha256": _sha256(lane_archive),
-        "stop_marker_sha256": rollback["stop_marker_sha256"],
-        "task_action_sha256": rollback["task_action_sha256"],
-    }
-    completion["completion_hmac_sha256"] = _sign_record(
-        completion, key, "completion_hmac_sha256"
-    )
-    completion_path = ledger / f"{activation_id}-recovery-completed.json"
-    if completion_path.exists():
-        existing_completion = _read_json(completion_path, "activation_recovery_completion_invalid")
-        if (existing_completion.get("activation_id") != activation_id
-                or existing_completion.get("status") != "activation_recovery_completed"
-                or not hmac.compare_digest(
-                    str(existing_completion.get("completion_hmac_sha256") or ""),
-                    _sign_record(existing_completion, key, "completion_hmac_sha256"))):
-            raise ActivationError("activation_recovery_completion_conflict")
-    else:
-        _exclusive_json(completion_path, completion)
-    verification_marker = state_root / "activation-verification.lock"
-    if verification_marker.exists():
-        _durable_replace(
-            verification_marker,
-            ledger / f"{activation_id}-recovered-activation-verification.lock",
+        _atomic_json(state_root / "activation-reconciliation-pending.json", pending)
+        _archive_activation_artifacts(state_root, activation_id, "recovered")
+        if lane_source != lane_archive and lane_source.exists():
+            _durable_replace(lane_source, lane_archive)
+        completion = {
+            "version": RECOVERY_PROJECTION_VERSION,
+            "activation_id": activation_id,
+            "status": "activation_recovery_completed",
+            "completed_at": _now(now),
+            "historical_failure_sha256": _sha256(failure_path),
+            "recovered_packet_sha256": _sha256(packet_archive),
+            "rollback_sha256": _sha256(ledger / f"{activation_id}-rollback.json"),
+            "lane_sha256": _sha256(lane_archive),
+            "stop_marker_sha256": rollback["stop_marker_sha256"],
+            "task_action_sha256": rollback["task_action_sha256"],
+        }
+        completion["completion_hmac_sha256"] = _sign_record(
+            completion, key, "completion_hmac_sha256"
         )
-    if stop_handoff is not None:
-        _durable_replace(stop_lane, ledger / f"{activation_id}-stop-failed-lane.json")
-    return {"success": True, "status": "activation_recovered", "activation_id": activation_id}
+        completion_path = ledger / f"{activation_id}-recovery-completed.json"
+        if completion_path.exists():
+            existing_completion = _read_json(completion_path, "activation_recovery_completion_invalid")
+            if (existing_completion.get("activation_id") != activation_id
+                    or existing_completion.get("status") != "activation_recovery_completed"
+                    or not hmac.compare_digest(
+                        str(existing_completion.get("completion_hmac_sha256") or ""),
+                        _sign_record(existing_completion, key, "completion_hmac_sha256"))):
+                raise ActivationError("activation_recovery_completion_conflict")
+        else:
+            _exclusive_json(completion_path, completion)
+        verification_marker = state_root / "activation-verification.lock"
+        if verification_marker.exists():
+            _durable_replace(
+                verification_marker,
+                ledger / f"{activation_id}-recovered-activation-verification.lock",
+            )
+        if stop_handoff is not None:
+            _durable_replace(stop_lane, ledger / f"{activation_id}-stop-failed-lane.json")
+        return {"success": True, "status": "activation_recovered", "activation_id": activation_id}
 
 
 def reconcile_recovered_activation_stop(**kwargs):
     with _activation_verifier_lock(Path(kwargs["state_root"]).resolve()):
-        return _reconcile_recovered_activation_stop(**kwargs)
+        with _activation_publication_lock(Path(kwargs["state_root"]).resolve()):
+            return _reconcile_recovered_activation_stop(**kwargs)
 
 
 def _reconcile_recovered_activation_stop(*, state_root, activation_id,
@@ -1573,7 +1669,8 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
                 _sign_record(existing_projection, key, "projection_hmac_sha256"))
         )
         if projection_valid:
-            if existing_projection.get("recovery_basis") == "authenticated_pre_consume_failure":
+            if existing_projection.get("recovery_basis") in {
+                    "authenticated_pre_consume_failure", "authenticated_consumed_stop_refusal"}:
                 validate_no_starter_recovery_projection(
                     existing_projection, state_root, task_reader=task_reader,
                     task_controller=task_controller, process_presence_reader=process_presence_reader)
@@ -1694,9 +1791,14 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
         raise ActivationError("activation_reconciliation_stop_mismatch")
     pre_starter = None
     if not (state_root / "supervisor.json").exists():
+        consumed_refusal = bool(_consumed_record_candidates(state_root, activation_id)) and (
+            packet.get("status") == "provider_start_failed"
+            or (state_root / "activation-packet.json").exists()
+            or (ledger / f"{activation_id}-late-refused-activation-packet.json").exists())
         pre_starter = _verify_no_starter_stop(
             state_root, packet, task_reader=task_reader,
-            task_controller=task_controller, process_presence_reader=process_presence_reader)
+            task_controller=task_controller, process_presence_reader=process_presence_reader,
+            consumed_refusal=consumed_refusal)
         process_pids = set(pre_starter["known_process_pids"])
     else:
         supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
@@ -1818,8 +1920,11 @@ def _reconcile_recovered_activation_stop(*, state_root, activation_id,
         "runner_status_before": "not_read_after_authenticated_activation_recovery",
     }
     if pre_starter:
-        projection["recovery_basis"] = "authenticated_pre_consume_failure"
+        projection["recovery_basis"] = ("authenticated_consumed_stop_refusal"
+            if consumed_refusal else "authenticated_pre_consume_failure")
         projection["pre_starter_evidence"] = pre_starter
+        if consumed_refusal:
+            _archive_late_refusal(state_root, activation_id)
     projection["projection_hmac_sha256"] = _sign_record(
         projection, key, "projection_hmac_sha256"
     )
@@ -1863,6 +1968,11 @@ def _no_starter_signed_evidence(state_root, packet):
             raise ValueError("not an authenticated pre-starter failure")
     except (KeyError, ValueError, TypeError) as exc:
         raise ActivationError("pre_starter_failure_provenance_invalid") from exc
+    return _authenticated_launcher_failure(state_root, packet)
+
+
+def _authenticated_launcher_failure(state_root, packet, *, after=None):
+    activation_id = packet["activation_id"]
     evidence = read_startup_evidence(state_root, activation_id)
     records = evidence.get("records") or []
     expected_phases = ["launcher_entered", "activation_packet_authenticated",
@@ -1885,19 +1995,145 @@ def _no_starter_signed_evidence(state_root, packet):
         times = [datetime.fromisoformat(record["recorded_at"]) for record in records]
         prepared = datetime.fromisoformat(packet["prepared_at"])
         expiry = datetime.fromisoformat(packet["authority"]["expires_at"])
-        if times != sorted(times) or times[0] < prepared or times[-1] > expiry:
+        if (any(value.tzinfo is None or value.utcoffset() is None
+                for value in [*times, prepared, expiry])
+                or times != sorted(times) or times[0] < prepared or times[-1] > expiry
+                or (after is not None and times[-1] < after)):
             raise ValueError("chronology")
         pid = int(records[0]["pid"])
         if pid <= 0:
             raise ValueError("pid")
     except (KeyError, TypeError, ValueError) as exc:
         raise ActivationError("pre_starter_startup_evidence_incomplete") from exc
-    return {"startup_evidence_sha256": evidence["evidence_sha256"], "launcher_pid": pid}
+    return {"startup_evidence_sha256": evidence["evidence_sha256"], "launcher_pid": pid,
+            **({"watchdog_entry_at": times[3].isoformat()} if after is not None else {})}
+
+
+
+def _consumed_record_candidates(state_root, activation_id):
+    name = f"activation-consumed-{activation_id}.json"
+    ledger = state_root / "activation-ledger"
+    return [path for path in (state_root / name,
+        ledger / f"{activation_id}-recovered-{name}",
+        ledger / f"{activation_id}-late-refused-{name}",
+        ledger / f"{activation_id}-verified-{name}") if path.exists()]
+
+
+def _consumed_refusal_signed_evidence(state_root, packet):
+    """A signed canonical starter refusal proves no spawn; consumption alone does not."""
+    activation_id = packet["activation_id"]
+    ledger = state_root / "activation-ledger"
+    if (any((state_root / name).exists() for name in (
+            "supervisor.json", "runner.json", "supervisor.lock",
+            "activation-verification-complete.json"))
+            or (ledger / f"{activation_id}-verified.json").exists()):
+        raise ActivationError("consumed_stop_refusal_not_proven")
+    key = _read_key(state_root / "activation-authority.key")
+    original_path = ledger / f"{activation_id}-recovered-activation-packet.json"
+    original_hash = _sha256(original_path)
+    candidates = _consumed_record_candidates(state_root, activation_id)
+    if len(candidates) != 1 or "-verified-" in candidates[0].name:
+        raise ActivationError("activation_consumed_identity_ambiguous")
+    consumed_path = candidates[0]
+    retained = [path for _, path in zip(range(5), ledger.glob(
+        f"{activation_id}-*activation-consumed-{activation_id}.json"))]
+    if len(retained) >= 5 or any(path not in candidates for path in retained):
+        raise ActivationError("activation_consumed_identity_ambiguous")
+    retained_packets = [path for _, path in zip(range(4), ledger.glob(f"{activation_id}-*activation-packet.json"))]
+    permitted_packets = {original_path, ledger / f"{activation_id}-late-refused-activation-packet.json"}
+    if len(retained_packets) >= 4 or any(path not in permitted_packets for path in retained_packets):
+        raise ActivationError("consumed_stop_refusal_packet_ambiguous")
+    consumed = _read_json(consumed_path, "activation_consumed_identity_invalid")
+    late_paths = [path for path in (state_root / "activation-packet.json",
+        ledger / f"{activation_id}-late-refused-activation-packet.json") if path.exists()]
+    if packet.get("status") == "provider_pending":
+        if len(late_paths) != 1:
+            raise ActivationError("consumed_stop_refusal_packet_ambiguous")
+        refused_path = late_paths[0]
+        refused = _read_json(refused_path, "consumed_stop_refusal_packet_invalid")
+        changed = {"status", "provider", "start_result", "provider_started_at",
+                   "consumed_packet_hmac_sha256", "packet_hmac_sha256"}
+        if ({k:v for k,v in refused.items() if k not in changed}
+                != {k:v for k,v in packet.items() if k not in changed}
+                or refused.get("consumed_packet_hmac_sha256") != packet.get("packet_hmac_sha256")):
+            raise ActivationError("consumed_stop_refusal_packet_binding_invalid")
+    elif packet.get("status") == "provider_start_failed" and not late_paths:
+        refused_path, refused = original_path, packet
+    else:
+        raise ActivationError("consumed_stop_refusal_packet_ambiguous")
+    if (not hmac.compare_digest(str(refused.get("packet_hmac_sha256") or ""),
+            _sign_packet(refused, key))
+            or refused.get("status") != "provider_start_failed"
+            or not isinstance(refused.get("start_result"), dict)
+            or refused["start_result"].get("success") is not False
+            or refused.get("start_result") != {"success": False,
+                "status": "governed_stop_active", "stop_marker": str(state_root / "supervisor.stop")}):
+        raise ActivationError("consumed_stop_refusal_not_proven")
+    _validate_consumed_identity(refused, consumed, key, require_packet_hmac=False)
+    provider = refused.get("provider") or {}
+    try:
+        pids = sorted({int(provider["pid"]), int(provider["action_pid"])})
+        if (provider.get("authorized") is not True or any(pid <= 0 for pid in pids)
+                or any(type(provider.get(name)) is not int for name in ("pid", "parent_pid", "action_pid"))
+                or provider["pid"] != consumed["provider_pid"]
+                or provider["parent_pid"] != consumed["provider_parent_pid"]
+                or provider["provider_instance_guid"] != consumed["provider_instance_guid"]):
+            raise ValueError("provider binding")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ActivationError("consumed_stop_refusal_provider_invalid") from exc
+    failure_path = ledger / f"{activation_id}-failure.json"
+    completion_path = ledger / f"{activation_id}-recovery-completed.json"
+    failure = _read_json(failure_path, "activation_failure_record_invalid")
+    completion = _read_json(completion_path, "activation_recovery_completion_invalid")
+    for value, signature, status in (
+        (failure, "failure_hmac_sha256", "activation_failure_preserved"),
+        (completion, "completion_hmac_sha256", "activation_recovery_completed")):
+        if (value.get("activation_id") != activation_id or value.get("status") != status
+                or not hmac.compare_digest(str(value.get(signature) or ""),
+                    _sign_record(value, key, signature))):
+            raise ActivationError("consumed_stop_refusal_history_invalid")
+    if (completion.get("recovered_packet_sha256") != original_hash
+            or completion.get("historical_failure_sha256") != _sha256(failure_path)):
+        raise ActivationError("consumed_stop_refusal_history_invalid")
+    try:
+        prepared, consumed_at, refused_at, expiry, recovered_at = [
+            datetime.fromisoformat(value) for value in (
+                packet["prepared_at"], consumed["consumed_at"], refused["provider_started_at"],
+                packet["authority"]["expires_at"], completion["completed_at"])]
+        if (any(value.tzinfo is None or value.utcoffset() is None for value in
+                (prepared, consumed_at, refused_at, expiry, recovered_at))
+                or not prepared <= consumed_at <= refused_at <= expiry
+                or (packet.get("status") == "provider_pending" and recovered_at > consumed_at)
+                or (packet.get("status") == "provider_start_failed" and refused_at > recovered_at)):
+            raise ValueError("chronology")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ActivationError("consumed_stop_refusal_chronology_invalid") from exc
+    signed = _authenticated_launcher_failure(state_root, packet, after=refused_at)
+    if consumed_at < datetime.fromisoformat(signed["watchdog_entry_at"]):
+        raise ActivationError("consumed_stop_refusal_chronology_invalid")
+    if signed["launcher_pid"] != provider["pid"]:
+        raise ActivationError("consumed_stop_refusal_provider_invalid")
+    return {**signed, "provider_process_pids": pids, "provider_action_pid": provider["action_pid"],
+        "refused_packet_sha256": _sha256(refused_path),
+        "consumed_record_sha256": _sha256(consumed_path),
+        "historical_failure_sha256": _sha256(failure_path),
+        "recovery_completion_sha256": _sha256(completion_path)}
+
+
+def _archive_late_refusal(state_root, activation_id):
+    # Additive, exact names: the original recovery packet/completion are immutable.
+    ledger = state_root / "activation-ledger"
+    for name in ("activation-packet.json", f"activation-consumed-{activation_id}.json"):
+        live = state_root / name
+        if live.exists():
+            _durable_replace(live, ledger / f"{activation_id}-late-refused-{name}")
 
 
 def _verify_no_starter_stop(state_root, packet, *, task_reader,
-                            task_controller=None, process_presence_reader=None):
-    signed = _no_starter_signed_evidence(state_root, packet)
+                            task_controller=None, process_presence_reader=None,
+                            consumed_refusal=False):
+    signed = (_consumed_refusal_signed_evidence(state_root, packet) if consumed_refusal
+              else _no_starter_signed_evidence(state_root, packet))
     task = task_reader()
     _validate_exact_task(task, Path(packet["runtime_root"]))
     if _task_action_sha256(task) != packet["authority"]["task_action_sha256"]:
@@ -1906,7 +2142,9 @@ def _verify_no_starter_stop(state_root, packet, *, task_reader,
     controller.bind_exact(packet["task_ownership"])
     controller.assert_no_running_instances()
     engine = controller.read_completed_instance_engine_pid(packet)
-    pids = sorted({int(engine), signed["launcher_pid"]})
+    if consumed_refusal and (type(engine) is not int or engine != signed["provider_action_pid"]):
+        raise ActivationError("consumed_stop_refusal_action_identity_mismatch")
+    pids = sorted({int(engine), signed["launcher_pid"], *signed.get("provider_process_pids", [])})
     if any(pid <= 0 for pid in pids):
         raise ActivationError("pre_starter_process_identity_missing")
     for pid in pids:
@@ -1927,7 +2165,8 @@ def validate_no_starter_recovery_projection(projection, state_root, *, task_read
     from modules.charlie.runtime_staging import _validate_recovery_projection
     state_root = Path(state_root)
     _validate_recovery_projection(projection, state_root)
-    if projection.get("recovery_basis") != "authenticated_pre_consume_failure":
+    basis = projection.get("recovery_basis")
+    if basis not in {"authenticated_pre_consume_failure", "authenticated_consumed_stop_refusal"}:
         raise ActivationError("pre_starter_recovery_basis_missing")
     packet_path = state_root / "activation-ledger" / (
         projection["recovered_activation_id"] + "-recovered-activation-packet.json")
@@ -1939,7 +2178,8 @@ def validate_no_starter_recovery_projection(projection, state_root, *, task_read
             or projection.get("recovered_activation_id") != packet.get("activation_id")):
         raise ActivationError("activation_reconciliation_stop_mismatch")
     current = _verify_no_starter_stop(state_root, packet, task_reader=task_reader,
-        task_controller=task_controller, process_presence_reader=process_presence_reader)
+        task_controller=task_controller, process_presence_reader=process_presence_reader,
+        consumed_refusal=basis == "authenticated_consumed_stop_refusal")
     if current != projection.get("pre_starter_evidence"):
         raise ActivationError("pre_starter_recovery_evidence_changed")
     return current
@@ -3200,9 +3440,10 @@ def _validated_activation_completion(state_root, activation_id):
 
 
 @contextmanager
-def _activation_verifier_lock(state_root):
+def _activation_verifier_lock(state_root, *, name="activation-verification.owner.lock",
+                              busy_status="activation_verification_already_active"):
     """Hold a crash-released OS lock across the complete verifier transaction."""
-    path = Path(state_root) / "activation-verification.owner.lock"
+    path = Path(state_root) / name
     path.parent.mkdir(parents=True, exist_ok=True)
     stream = path.open("a+b")
     locked = False
@@ -3221,7 +3462,7 @@ def _activation_verifier_lock(state_root):
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             locked = True
         except (OSError, BlockingIOError) as exc:
-            raise ActivationError("activation_verification_already_active") from exc
+            raise ActivationError(busy_status) from exc
         yield
     finally:
         if locked:
@@ -3233,6 +3474,14 @@ def _activation_verifier_lock(state_root):
                 import fcntl
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
         stream.close()
+
+
+def _activation_publication_lock(state_root):
+    # Nonblocking: recovery first restores containment, and cannot declare
+    # archival complete while a producer still owns the publication boundary.
+    return _activation_verifier_lock(state_root,
+        name="activation-publication.owner.lock",
+        busy_status="activation_publication_in_progress")
 
 
 def _parse_time(value):
