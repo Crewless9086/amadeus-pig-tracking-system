@@ -2843,12 +2843,36 @@ class WindowsExactTaskController:
         instance = str(packet.get("expected_instance_guid") or "").strip("{}").casefold()
         if not re.fullmatch(r"[0-9a-f-]{36}", instance):
             raise ActivationError("task_scheduler_instance_guid_invalid")
-        prepared = datetime.fromisoformat(packet["prepared_at"]).isoformat()
-        floor = int(packet["task_scheduler_event_record_id_lower_bound"])
+        try:
+            prepared_at = datetime.fromisoformat(packet["prepared_at"])
+            expires_at = datetime.fromisoformat(packet["authority"]["expires_at"])
+            floor = int(packet["task_scheduler_event_record_id_lower_bound"])
+            if (prepared_at.utcoffset() is None or expires_at.utcoffset() is None
+                    or prepared_at > expires_at or floor < 0):
+                raise ValueError("event query bounds")
+        except (ValueError, TypeError, KeyError) as exc:
+            raise ActivationError("pre_starter_provider_event_unproven") from exc
+        prepared = prepared_at.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        # Bound native enumeration before GUID normalization or XML projection.
+        # Keep task/GUID case normalization and late duplicate detection below.
+        # Round the native lower bound down; exact chronology still fails closed.
+        xpath = (
+            f"*[System[(EventID=200) and (EventRecordID > {floor}) and "
+            f"TimeCreated[@SystemTime >= '{prepared}']]]"
+        )
         script = (
             "$ErrorActionPreference='Stop';"
-            "$prepared=[DateTime]::Parse('" + prepared + "').ToUniversalTime();"
-            "$rows=@(Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational';Id=200;StartTime=$prepared} -ErrorAction Stop|"
+            '$xpath="' + xpath + '";'
+            "$q=New-Object System.Diagnostics.Eventing.Reader.EventLogQuery("
+            "'Microsoft-Windows-TaskScheduler/Operational',"
+            "[System.Diagnostics.Eventing.Reader.PathType]::LogName,$xpath);"
+            "$q.ReverseDirection=$true;$reader=$null;"
+            "$events=New-Object 'System.Collections.Generic.List[System.Diagnostics.Eventing.Reader.EventRecord]';"
+            "try{$reader=New-Object System.Diagnostics.Eventing.Reader.EventLogReader($q);"
+            "while($events.Count-lt 4097){$event=$reader.ReadEvent();"
+            "if($null-eq $event){break};$events.Add($event)};"
+            "if($events.Count-gt 4096){exit 9};"
+            "$rows=@($events|"
             "ForEach-Object{$x=[xml]$_.ToXml();$d=@{};foreach($i in $x.Event.EventData.Data){$d[[string]$i.Name]=[string]$i.'#text'};"
             "[pscustomobject]@{record_id=[long]$_.RecordId;utc=$_.TimeCreated.ToUniversalTime().ToString('o');"
             "activity=[string]$x.Event.System.Correlation.ActivityID;task=[string]$d.TaskName;"
@@ -2857,10 +2881,16 @@ class WindowsExactTaskController:
             "$_.task-eq '\\" + TASK_NAME + "' -and $_.instance.Trim('{}').ToLowerInvariant()-eq '" + instance + "'"
             " -and $_.record_id-gt " + str(floor) + "});"
             "ConvertTo-Json -InputObject @($rows) -Compress"
+            "}finally{$disposeFailed=$false;"
+            "foreach($event in $events){try{$event.Dispose()}catch{$disposeFailed=$true}};"
+            "if($null-ne $reader){try{$reader.Dispose()}catch{$disposeFailed=$true}};"
+            "if($disposeFailed){throw 'event_reader_disposal_failed'}}"
         )
         try:
             result = self.runner(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
                                  capture_output=True, text=True, timeout=5, check=False)
+            if result.returncode == 9:
+                raise ActivationError("pre_starter_provider_event_overflow")
             rows = json.loads(result.stdout)
             if result.returncode or not isinstance(rows, list) or len(rows) != 1:
                 raise ValueError("ambiguous event")
@@ -2870,7 +2900,7 @@ class WindowsExactTaskController:
                     or str(row["instance"]).strip("{}").casefold() != instance
                     or row["task"].casefold() != ("\\" + TASK_NAME).casefold()
                     or int(row["record_id"]) <= floor
-                    or not datetime.fromisoformat(prepared) <= stamp <= datetime.fromisoformat(packet["authority"]["expires_at"])
+                    or not prepared_at <= stamp <= expires_at
                     or _canonical_windows_path(row["action"]) != _canonical_windows_path(packet["task_ownership"][0]["execute"])
                     or int(row["engine_pid"]) <= 0):
                 raise ValueError("event identity")
