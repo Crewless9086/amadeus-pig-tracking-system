@@ -136,6 +136,12 @@ additional signed packet and consumed record under distinct identities. Validate
 both timelines and preserve unknown/contradictory evidence as incomplete recovery.
 The signed stopped projection never proves a supervisor existed, permits replay,
 clears a hold or authorizes a fresh activation.
+Recovery action-event discovery uses a read-only native event reader, bounded by
+event 200, the authenticated record floor and a conservative preparation-time
+lower bound. More than 4,096 candidates refuses recovery before task/instance
+filtering; all records and the reader are disposed on exit. Task/GUID case handling,
+duplicate rejection, exact authority-window proof and the five-second timeout remain;
+a native upper time bound must not hide a later conflicting duplicate.
 
 ## Dependency retirement and scheduler singularity
 
