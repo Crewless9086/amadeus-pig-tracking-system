@@ -1,0 +1,111 @@
+name: CORE Cloud Release Qualification
+on:
+  push:
+    branches: [codex/core-cloud-receipt-registration-qualification-20261018]
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: oom_desktop_rebind_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d oom_desktop_rebind_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      OOM_DESKTOP_REBIND_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oom_desktop_rebind_test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Prove exact cloud candidate lineage and bounded registration
+        run: python -m unittest tests.test_oom_desktop_candidate_reconciliation -v
+      - name: Prove compact HTTPS registration, atomic rollback and zero-write replay
+        run: python -m unittest tests.test_oom_desktop_registration_sql -v
+      - name: Prove bounded pre-send metadata correction and rollback
+        run: python -m pytest tests/test_oom_presend_timeout_correction.py -q
+      - name: Prove one-time unsent expiry extension, rejection and replay
+        run: python -m pytest tests/test_oom_unsent_confirmation_extension.py -q
+
+  manager-dependency-intake:
+    name: Default-inert manager engineering intake with disposable PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: core_manager_intake_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d core_manager_intake_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHON_DOTENV_DISABLED: "1"
+      OOM_PROTECTED_ACTION_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/core_manager_intake_test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 0332cec2e468cc408e9cf38ddc3db811245e946d
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify exact application candidate
+        shell: bash
+        env:
+          EXPECTED_HEAD: 0332cec2e468cc408e9cf38ddc3db811245e946d
+          EXPECTED_TREE: 8f63e88b6b3c2f97dd7b98621ab839f21700312c
+          EXPECTED_BASE: 91ff4ddb7fd721e68a6c759ecfb74c8dce34e8c5
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          git merge-base --is-ancestor "$EXPECTED_BASE" HEAD
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Prepare disposable migration role names
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ["OOM_PROTECTED_ACTION_POSTGRES_URL"]) as db:
+              for role in ("anon", "authenticated"):
+                  if not db.execute("select 1 from pg_roles where rolname=%s", (role,)).fetchone():
+                      db.execute(psycopg.sql.SQL("CREATE ROLE {} NOLOGIN").format(psycopg.sql.Identifier(role)))
+          PY
+      - name: Prove typed receipt, replay, crash, concurrency and inactive defaults
+        run: >-
+          python -m pytest -q -p no:cacheprovider
+          tests/test_charlie_manager_dependency_intake.py
+          tests/test_charlie_manager_dependency_intake_postgres.py
+          tests/test_charlie_cloud_intake.py
+          tests/test_charlie_cloud_intake_postgres.py
+          tests/test_charlie_executive_runtime.py
+          tests/test_charlie_mission_control.py
+
+  # Exact candidate test job is isolated from helper main-source checkout.
+  # Disposable database results do not prove hosted deployment, scheduled continuity or business acceptance.
