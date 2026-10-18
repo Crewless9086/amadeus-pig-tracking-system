@@ -81,6 +81,23 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt pytest
 
+      - name: Qualify bounded cloud engineering mission and worker
+        env:
+          PYTHON_DOTENV_DISABLED: "1"
+        run: |
+          CORE_ENGINEERING_POSTGRES_URL="$DATABASE_URL" python -B -m pytest -q -p no:cacheprovider tests/test_charlie_cloud_engineering.py tests/test_charlie_cloud_engineering_postgres.py tests/test_charlie_cloud_engineering_service.py tests/test_charlie_native_model_budget.py
+
+      - name: Qualify Linux isolation without production credentials
+        run: |
+          docker build -t core-sandbox-qualification -f - . <<'DOCKER'
+          FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+          RUN apt-get update && apt-get install -y --no-install-recommends git libseccomp2 && rm -rf /var/lib/apt/lists/*
+          COPY requirements.txt /tmp/requirements.txt
+          RUN pip install --no-cache-dir -r /tmp/requirements.txt pytest==8.3.5
+          DOCKER
+          docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,size=384m -v "$PWD:/source:ro" -w /source core-sandbox-qualification python -B -m pytest -q -p no:cacheprovider --basetemp /tmp/core-tests tests/test_charlie_native_test_sandbox.py tests/test_charlie_cloud_engineering_service.py
+
+
       - name: Prepare Riversdale source-writer tables
         run: |
           python - <<'PY'

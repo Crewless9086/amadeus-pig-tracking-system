@@ -74,12 +74,15 @@ def prepare_hermes_profile():
 
 def main():
     mode = os.environ.get("CORE_NATIVE_RUNNER_MODE", "builder")
-    if mode == "receipt_only":
+    if mode in {"receipt_only", "engineering"}:
         # Use the deployed image, before disk/Git/profile/model initialization.
         import sys
         source = str(Path(__file__).resolve().parents[1])
         if source not in sys.path:
             sys.path.insert(0, source)
+        if mode == "engineering":
+            from modules.charlie.native_runner.engineering_service import main as engineering_main
+            raise SystemExit(engineering_main())
         from modules.charlie.native_runner.intake_service import main as receipt_main
         raise SystemExit(receipt_main())
     if mode != "builder":

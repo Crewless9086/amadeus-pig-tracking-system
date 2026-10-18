@@ -360,7 +360,7 @@ jobs:
               module="${module//\//.}"
               echo "::group::$module"
               case "$test_file" in
-                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py|tests/test_charlie_manager_dependency_timing.py|tests/test_charlie_cloud_intake.py|tests/test_charlie_cloud_intake_postgres.py|tests/test_charlie_cloud_current_producer.py)
+                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py|tests/test_charlie_manager_dependency_timing.py|tests/test_charlie_cloud_intake.py|tests/test_charlie_cloud_intake_postgres.py|tests/test_charlie_cloud_current_producer.py|tests/test_charlie_cloud_engineering.py|tests/test_charlie_cloud_engineering_postgres.py|tests/test_charlie_cloud_engineering_service.py|tests/test_charlie_native_model_budget.py|tests/test_charlie_native_test_sandbox.py)
                   timeout 120s python -m pytest -q -p no:cacheprovider --basetemp "$control_root/pytest" "$test_file"
                   ;;
                 *) timeout 120s python -m unittest "$module" -q ;;

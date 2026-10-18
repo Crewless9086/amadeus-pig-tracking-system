@@ -2420,3 +2420,50 @@ def charlie_cloud_intake_cycle():
 def charlie_cloud_intake_evidence(epoch_id):
     from modules.charlie.cloud_intake import evidence
     return _cloud_intake_call(lambda: evidence(epoch_id), owner=True)
+
+
+# The engineering worker receives only one owner-admitted private artifact scope.
+def _cloud_engineering_call(callback, *, owner=False):
+    if owner:
+        denied = require_strict_owner_admin_access()
+        if denied:
+            return denied
+    if request.content_length and request.content_length > 500000:
+        return jsonify({"success": False, "status": "engineering_request_bound"}), 413
+    from modules.charlie.cloud_engineering import EngineeringRefused
+    try:
+        return jsonify(callback()), 200
+    except EngineeringRefused as exc:
+        return jsonify({"success": False, "status": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"success": False, "status": "engineering_unavailable",
+                        "failure_kind": type(exc).__name__}), 503
+
+
+@charlie_bp.route("/charlie/core/engineering/missions/<mission_id>", methods=["GET"])
+def charlie_cloud_engineering_read(mission_id):
+    from modules.charlie.cloud_engineering import owner_read
+    return _cloud_engineering_call(lambda: owner_read(mission_id), owner=True)
+
+
+@charlie_bp.route("/charlie/core/engineering/missions/<mission_id>/authorize", methods=["POST"])
+def charlie_cloud_engineering_authorize(mission_id):
+    from modules.charlie.cloud_engineering import authorize
+    return _cloud_engineering_call(lambda: authorize(mission_id, request.get_json(silent=True),
+        actor=strict_owner_admin_principal()), owner=True)
+
+
+@charlie_bp.route("/charlie/core/engineering/missions/<mission_id>/revoke", methods=["POST"])
+def charlie_cloud_engineering_revoke(mission_id):
+    from modules.charlie.cloud_engineering import revoke
+    return _cloud_engineering_call(lambda: revoke(mission_id,
+        actor=strict_owner_admin_principal()), owner=True)
+
+
+@charlie_bp.route("/charlie/core/engineering/missions/<mission_id>/<operation>", methods=["POST"])
+def charlie_cloud_engineering_operation(mission_id, operation):
+    from modules.charlie.cloud_engineering import worker_operation
+    if operation not in {"current", "claim", "check", "reserve", "progress", "complete", "block"}:
+        return jsonify({"success": False, "status": "engineering_operation_invalid"}), 404
+    return _cloud_engineering_call(lambda: worker_operation(mission_id, operation,
+        request.get_json(silent=True), _cloud_worker_token()))
