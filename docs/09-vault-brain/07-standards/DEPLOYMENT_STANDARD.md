@@ -157,6 +157,15 @@ a model or retrying an ambiguous cycle. Acceptance requires canonical receipt
 readback, exact provider proof and a later independent cycle while the owner's
 terminal is absent; source tests or a manual API cycle do not establish autonomy.
 
+Original manager anchors and the frozen receipt scope retain their admitted
+producer revision. A latest anchor may independently match either that original
+producer or the exact current hosted API revision: readiness verifies the loaded
+API identity; creation and enable bind independently observed provider evidence;
+each locked receipt transaction rechecks the stored epoch context against that
+loaded identity. An old revoked provider, unrelated revision or ancestry alone
+cannot authorize current evidence. No original event, scope, receipt identity or
+ordinary consumer rule is rewritten by this cloud-only compatibility check.
+
 Cloud receipt processing retains two transactions: first commit the immutable
 command/finding pair, then independently verify that commit before recording
 its manager acknowledgement. The admitted cloud consumer shares one 60-second

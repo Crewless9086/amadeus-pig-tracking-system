@@ -32,6 +32,7 @@ ACTOR = "service:core.manager_dependency_intake.v1"
 MAX_DEPENDENCIES = 8
 INTAKE_BUDGET_SECONDS = 10
 CLOUD_INTAKE_BUDGET_SECONDS = 60
+CLOUD_API_SERVICE = "srv-d6sijjkhg0os73f7regg"
 _EFFECTS = ["core_finding_append", "core_command_receipt", "manager_receipt_link"]
 _SCOPE_KEYS = {"contract", "mission_id", "mission_identity_digest", "owner_user_id", "owner_binding",
                "producer_revision", "dependencies", "allowed_effects"}
@@ -180,7 +181,7 @@ def _mission_matches(mission, policy, scope):
         and 0 < len(admission["authorization_identity"]) <= 180, "mission_service_admission_missing")
 
 
-def _dependency_matches(case, event, cycle, scope, dep, now):
+def _dependency_matches(case, event, cycle, scope, dep, now, *, latest_producer_revision=None):
     _require(is_legacy_mortality_case(case) and case.get("status") == "waiting_reassessment"
              and not case.get("assigned_worker_id") and case.get("lease_until") is None,
              "dependency_not_idle_pending")
@@ -198,7 +199,9 @@ def _dependency_matches(case, event, cycle, scope, dep, now):
              and payload.get("delivery_confirmed") is False and digest(payload.get("technical_dependency")) == digest(expected)
              and payload.get("cycle_id") == dep["anchor_cycle_id"], "pending_anchor_unproven")
     _require(cycle.get("cycle_id") == dep["anchor_cycle_id"] and cycle.get("status") == "completed"
-             and cycle.get("source_revision") == scope["producer_revision"]
+             and (cycle.get("source_revision") == scope["producer_revision"]
+                  or (latest_producer_revision is not None
+                      and cycle.get("source_revision") == latest_producer_revision))
              and cycle.get("worker_id") == "oom-sakkie-general-manager-v1"
              and cycle.get("trigger_identity") == "oom-sakkie-morning-scheduler:general-manager"
              and _time(cycle["started_at"]) <= _time(event["occurred_at"]) <= now
@@ -226,6 +229,18 @@ def _cloud_epoch_matches(current, expected, context, now):
              and context["scope_sha256"] == digest(current.get("scope_json", current.get("scope")))
              and bool(re.fullmatch(r"[a-f0-9]{32}", str(context["worker_instance"]))),
              "cloud_epoch_not_authorized")
+    # This is the owner-admitted provider material already bound by the cloud
+    # adapter, not a worker-supplied revision or a fresh provider observation.
+    # Recheck loaded identity inside every locked receipt transaction; the
+    # provider observation's ten-minute commissioning limit is not epoch expiry.
+    provider = context["provider"]
+    _require(isinstance(provider, dict)
+             and bool(re.fullmatch(r"[a-f0-9]{40}", str(provider.get("api_revision"))))
+             and provider.get("api_revision") == os.environ.get("RENDER_GIT_COMMIT")
+             and provider.get("api_service_id") == CLOUD_API_SERVICE
+             and os.environ.get("RENDER_SERVICE_ID") == CLOUD_API_SERVICE,
+             "cloud_api_identity_changed")
+    return provider["api_revision"]
 
 
 def _locked_inputs(cur, expected_policy, dep, cloud_epoch=None):
@@ -282,7 +297,9 @@ def _locked_inputs(cur, expected_policy, dep, cloud_epoch=None):
     _require(latest is not None and latest[1] is not None, "current_pending_outcome_missing")
     current_dep = {**dep, "anchor_event_id": latest[0]["event_id"],
                    "anchor_cycle_id": latest[1]["cycle_id"]}
-    _dependency_matches(case, latest[0], latest[1], scope, current_dep, now)
+    latest_producer = _cloud_epoch_matches(policy, expected_policy, cloud_epoch, now)
+    _dependency_matches(case, latest[0], latest[1], scope, current_dep, now,
+                        latest_producer_revision=latest_producer)
     now = _fresh_policy_clock(cur, policy, expected_policy)
     return policy, scope, now
 

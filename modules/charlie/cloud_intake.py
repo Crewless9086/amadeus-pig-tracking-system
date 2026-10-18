@@ -26,7 +26,7 @@ MISSION_ID = "OMQ-20260813-03-CORE-INTAKE-20261010"
 POLICY_ID = "core.manager_dependency_intake.20261010"
 CASE_IDS = frozenset({"OOM-CASE-0AA47A67BCA8B781902CEF95", "OOM-CASE-B59577B008D2E358F64F8771"})
 WORKER_SERVICE = "srv-dacofeoae00c73813eug"
-API_SERVICE = "srv-d6sijjkhg0os73f7regg"
+API_SERVICE = intake.CLOUD_API_SERVICE
 CONTRACT = "core.cloud_receipt_intake.v1"
 MAX_SECONDS = 1200
 MAX_CYCLES = 40
@@ -118,7 +118,13 @@ def _fixed_scope(policy):
     return scope
 
 
-def _validate_inputs(cur, policy, now):
+def _current_api_revision():
+    revision = hex_value(os.environ.get("RENDER_GIT_COMMIT", ""), 40)
+    need(os.environ.get("RENDER_SERVICE_ID") == API_SERVICE, "hosted_api_identity_mismatch")
+    return revision
+
+
+def _validate_inputs(cur, policy, now, *, latest_producer_revision=None):
     scope = _fixed_scope(policy)
     # Reuse the canonical validator without enabling the stored policy.
     prospective = dict(policy, enabled=True, expires_at=(now + timedelta(seconds=1)).isoformat())
@@ -156,7 +162,8 @@ def _validate_inputs(cur, policy, now):
         latest = cur.fetchone()
         need(latest and latest[0] and latest[1], "current_anchor_missing")
         intake._dependency_matches(case, latest[0], latest[1], scope,
-            dict(dep, anchor_event_id=latest[0]["event_id"], anchor_cycle_id=latest[1]["cycle_id"]), now)
+            dict(dep, anchor_event_id=latest[0]["event_id"], anchor_cycle_id=latest[1]["cycle_id"]), now,
+            latest_producer_revision=latest_producer_revision)
     return scope, mission, created
 
 
@@ -260,7 +267,11 @@ def readiness(*, database_url=None, connect_factory=None):
     with _open(database_url, connect_factory) as db, db.cursor() as cur:
         db.connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         policy, now = _policy(cur), _now(cur)
-        scope, mission, created = _validate_inputs(cur, policy, now)
+        # Readiness is prospective: an old revoked epoch cannot name the next
+        # producer. Only this exact hosted API identity may supplement the
+        # immutable original producer for current evidence.
+        scope, mission, created = _validate_inputs(cur, policy, now,
+            latest_producer_revision=_current_api_revision())
         result = _public(policy, now)
         result.update(mission_sha256=intake.digest(mission), created_sha256=intake.digest(created),
                       producer_revision=scope["producer_revision"], receipts=_receipt_counts(cur, policy))
@@ -361,7 +372,9 @@ def create_epoch(payload, *, actor, database_url=None, connect_factory=None):
     with _open(database_url, connect_factory) as db, db.cursor() as cur:
         old, now = _policy(cur, locked=True), _now(cur)
         need(old["enabled"] is False and intake.digest(old) == payload["policy_sha256"], "disabled_policy_preimage_changed")
-        scope, mission, created = _validate_inputs(cur, old, now)
+        provider = _provider(payload["provider"], now)
+        scope, mission, created = _validate_inputs(cur, old, now,
+            latest_producer_revision=provider["api_revision"])
         need(intake.digest(scope) == payload["scope_sha256"] and intake.digest(mission) == payload["mission_sha256"]
              and intake.digest(created) == payload["created_sha256"], "current_world_changed")
         receipts = _receipt_counts(cur, old)
@@ -376,7 +389,6 @@ def create_epoch(payload, *, actor, database_url=None, connect_factory=None):
         if previous:
             need(previous.get("status") == "revoked" and not any(c["status"] == "begun" for c in previous["cycles"]), "prior_cloud_epoch_unclosed")
             need(previous.get("worker_token_sha256") != payload["worker_token_sha256"], "credential_reuse_refused")
-        provider = _provider(payload["provider"], now)
         epoch_id = uuid.uuid4().hex
         expiry = now + timedelta(seconds=payload["duration_seconds"])
         need(intake._time(old["expires_at"]) != expiry, "epoch_expiry_must_change")
@@ -407,8 +419,8 @@ def set_enabled(epoch_id, payload, *, enabled, actor, database_url=None, connect
         if enabled:
             need(epoch["status"] == "prepared_disabled" and old["enabled"] is False
                  and now < intake._time(epoch["expires_at"]), "epoch_not_enableable")
-            _provider(epoch["provider"], now)
-            _validate_inputs(cur, old, now)
+            provider = _provider(epoch["provider"], now)
+            _validate_inputs(cur, old, now, latest_producer_revision=provider["api_revision"])
             _check_epoch_receipt_preimage(cur, old)
             state["status"] = "enabled"
         else:

@@ -67,7 +67,7 @@ class LatencyStore:
                 "issued_at": NOW.isoformat(), "expires_at": expiry, "scope_sha256": intake.digest(scope),
                 "worker_token_sha256": "b"*64, "worker_instance": "c"*32,
                 "provider": {"worker_service_id": worker.WORKER_SERVICE, "worker_deploy_id": "dep-test-worker",
-                    "worker_revision": "e"*40, "api_service_id": "srv-test-api", "api_deploy_id": "dep-test-api",
+                    "worker_revision": "e"*40, "api_service_id": intake.CLOUD_API_SERVICE, "api_deploy_id": "dep-test-api",
                     "api_revision": "e"*40, "observed_at": NOW.isoformat(), "evidence_sha256": "f"*64}}
             self.policy["metadata_json"] = {"cloud_receipt_epoch": {**deepcopy(self.context), "status": "enabled", "cycles": []}}
         self.rows = {"policy": deepcopy(self.policy), "mission": mission, "cases": cases, "events": events,
@@ -166,7 +166,8 @@ class LatencyCursor:
 class ManagerDependencyTimingTests(unittest.TestCase):
     def setUp(self):
         env = patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_OWNER_USER_ID": "42", "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42",
-            "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON": "", "DATABASE_URL": "", "SUPABASE_DB_URL": ""})
+            "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON": "", "DATABASE_URL": "", "SUPABASE_DB_URL": "",
+            "RENDER_GIT_COMMIT": "e"*40, "RENDER_SERVICE_ID": intake.CLOUD_API_SERVICE})
         env.start(); self.addCleanup(env.stop)
 
     def consume(self, store):
@@ -300,7 +301,10 @@ def test_actual_postgres_consumer_with_elapsed_roundtrips(dbcase, monkeypatch, c
         context = {"contract": "core.cloud_receipt_intake.v1", "epoch_id": "a"*32,
             "issued_at": h.now.isoformat(), "expires_at": h.policy["expires_at"],
             "scope_sha256": intake.digest(h.policy["scope"]), "worker_token_sha256": "b"*64,
-            "worker_instance": "c"*32, "provider": {"worker_revision": "d"*40}}
+            "worker_instance": "c"*32, "provider": {"worker_revision": "d"*40,
+                "api_revision": "d"*40, "api_service_id": intake.CLOUD_API_SERVICE}}
+        monkeypatch.setenv("RENDER_GIT_COMMIT", "d"*40)
+        monkeypatch.setenv("RENDER_SERVICE_ID", intake.CLOUD_API_SERVICE)
         metadata = {"cloud_receipt_epoch": {**deepcopy(context), "status": "enabled", "cycles": []}}
         with h.db() as db:
             db.execute("update public.charlie_delegation_policies set metadata_json=%s::jsonb where policy_id=%s",
