@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/charlie-core-tests.yml', 'docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md', 'modules/charlie/cloud_intake.py', 'modules/charlie/manager_dependency_intake.py', 'modules/charlie/native_runner/intake_service.py', 'tests/test_charlie_cloud_intake_postgres.py', 'tests/test_charlie_manager_dependency_timing.py']
+PREDECESSOR_PATHS = ['.github/workflows/charlie-core-tests.yml', 'docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md', 'modules/charlie/cloud_intake.py', 'modules/charlie/manager_dependency_intake.py', 'tests/test_charlie_cloud_current_producer.py', 'tests/test_charlie_manager_dependency_timing.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -55,15 +55,15 @@ READINESS_EFFECTS = {'herdmaster_delivered_breeding_subject_read_context', 'herd
 RETIRED_RENEWAL_EFFECT = 'automatic_once_per_claim_never_attempted_retained_preview_renewal'
 # Synthetic candidate identity permits pre-publication qualification only while
 # pins are pending. Final qualification uses the real pins, never owner approval.
-SYNTHETIC_PINS = {"CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40, "TREE": "c" * 40,
+SYNTHETIC_PINS = {"BRANCH": "codex/synthetic-manager-progress", "CANDIDATE_PR": 9991, "HEAD": "b" * 40, "APPROVED_RUNTIME_HEAD": "b" * 40, "TREE": "c" * 40,
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'BASE': 'd4a6c0aba196d4de633540a9715d5b3bd94ec112', 'CANDIDATE_PR': 1398, 'HEAD': '4cb6a6444486cbe0ee77d3c383358878ed90a803', 'TREE': 'ecb1df0d3c33073d106f2009a4e06ff1c94cfc44', 'APPROVED_RUNTIME_HEAD': '4cb6a6444486cbe0ee77d3c383358878ed90a803', 'BRANCH': 'codex/core-cloud-current-producer-20261018', 'PATHS': ['.github/workflows/charlie-core-tests.yml', 'docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md', 'modules/charlie/cloud_intake.py', 'modules/charlie/manager_dependency_intake.py', 'tests/test_charlie_cloud_current_producer.py', 'tests/test_charlie_manager_dependency_timing.py']}
+FINAL_CANDIDATE_PINS = {'BASE': '0d5dc23dafce4665ac08e430fb8318ad1a83786b', 'CANDIDATE_PR': 1399, 'HEAD': '81bd3b50e07705ab1f6442ad8a00d4db8a4cc987', 'TREE': '7d45d1d460ca03932f5060d8c05561321a5cac96', 'APPROVED_RUNTIME_HEAD': '81bd3b50e07705ab1f6442ad8a00d4db8a4cc987', 'BRANCH': 'codex/core-manager-progress-20261018', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md', 'modules/oom_sakkie/general_manager_worker.py', 'tests/test_oom_sakkie_general_manager_completion_time.py', 'tests/test_oom_sakkie_general_manager_postgres.py', 'tests/test_oom_sakkie_general_manager_worker.py']}
 
-CLOUD_ADDED_EFFECTS = {'core_cloud_receipt_worker_release:srv-dacofeoae00c73813eug:4cb6a6444486cbe0ee77d3c383358878ed90a803', 'existing_web_application_release', 'core_cloud_receipt_epoch_commission:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=4cb6a6444486cbe0ee77d3c383358878ed90a803;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_epoch_revoke:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=4cb6a6444486cbe0ee77d3c383358878ed90a803;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'application_revision_rollback:web:d4a6c0aba196d4de633540a9715d5b3bd94ec112'}
-CLOUD_REMOVED_EFFECTS = {'core_cloud_receipt_epoch_commission:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=c50febb07e1596fa51812e7275caa43d9ea65144;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_worker_token_rotation:service=srv-dacofeoae00c73813eug;key=CORE_CLOUD_INTAKE_EPOCH_TOKEN;preserve=CORE_NATIVE_RUNNER_MODE:receipt_only,all_other_settings,public_ca', 'core_cloud_receipt_worker_release:srv-dacofeoae00c73813eug:c50febb07e1596fa51812e7275caa43d9ea65144', 'core_cloud_receipt_epoch_revoke:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=c50febb07e1596fa51812e7275caa43d9ea65144;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'application_revision_rollback:web:c482856fa0a2bd0b4a9f995cf65314ac900e285b'}
-CLOUD_REMOVED_FORBIDDEN = {'service_configuration_outside:service=srv-dacofeoae00c73813eug;key=CORE_CLOUD_INTAKE_EPOCH_TOKEN;preserve=CORE_NATIVE_RUNNER_MODE:receipt_only,all_other_settings,public_ca'}
+CLOUD_ADDED_EFFECTS = {'application_revision_rollback:web:0d5dc23dafce4665ac08e430fb8318ad1a83786b', 'existing_web_application_release', 'core_cloud_receipt_worker_release:srv-dacofeoae00c73813eug:81bd3b50e07705ab1f6442ad8a00d4db8a4cc987', 'core_cloud_receipt_epoch_revoke:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=81bd3b50e07705ab1f6442ad8a00d4db8a4cc987;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_epoch_commission:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=81bd3b50e07705ab1f6442ad8a00d4db8a4cc987;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0'}
+CLOUD_REMOVED_EFFECTS = {'core_cloud_receipt_epoch_revoke:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=4cb6a6444486cbe0ee77d3c383358878ed90a803;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_worker_release:srv-dacofeoae00c73813eug:4cb6a6444486cbe0ee77d3c383358878ed90a803', 'core_cloud_receipt_epoch_commission:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=4cb6a6444486cbe0ee77d3c383358878ed90a803;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'application_revision_rollback:web:d4a6c0aba196d4de633540a9715d5b3bd94ec112'}
+CLOUD_REMOVED_FORBIDDEN = set()
 CLOUD_ADDED_FORBIDDEN = {'core_cloud_receipt_worker_token_rotation', 'service_deploy_outside:srv-d6sijjkhg0os73f7regg,srv-dacofeoae00c73813eug', 'service_configuration_change', 'windows_or_general_executive_activation'}
 
 def use_synthetic_candidate(test):
@@ -77,6 +77,10 @@ def use_synthetic_candidate(test):
              .replace(f"head {adapter.HEAD}", f"head {pending.get('HEAD', adapter.HEAD)}")
              .replace(f"candidate {adapter.HEAD}", f"candidate {pending.get('HEAD', adapter.HEAD)}")
         for value in adapter.REQUIRED_ACCEPTANCE}
+    pending["ADDED_EFFECTS"] = {value.replace("81bd3b50e07705ab1f6442ad8a00d4db8a4cc987", pending.get("HEAD", adapter.HEAD)) for value in adapter.ADDED_EFFECTS}
+    expected_effects = patch.dict(globals(), {"CLOUD_ADDED_EFFECTS": pending["ADDED_EFFECTS"]})
+    expected_effects.start()
+    test.addCleanup(expected_effects.stop)
     pins = patch.multiple(adapter, **pending)
     pins.start()
     test.addCleanup(pins.stop)
@@ -89,8 +93,8 @@ def fixtures():
         recorded_by=OWNER, now=NOW - timedelta(hours=2))
     prior_contract = {"generation": "synthetic-old-generation", "base_sha": adapter.PREDECESSOR_BASE,
         "branch": adapter.PREDECESSOR_BRANCH, "allowed_files": PREDECESSOR_PATHS, "forbidden_files": ["*"],
-        "allowed_effects": ['application_revision_rollback:web:c482856fa0a2bd0b4a9f995cf65314ac900e285b', 'authenticated_historical_farrowing_review_reply_protected_preview', 'canonical_completed_retained_mortality_delivery_recovery', 'core_cloud_receipt_epoch_commission:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=c50febb07e1596fa51812e7275caa43d9ea65144;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_epoch_revoke:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=c50febb07e1596fa51812e7275caa43d9ea65144;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_worker_release:srv-dacofeoae00c73813eug:c50febb07e1596fa51812e7275caa43d9ea65144', 'core_cloud_receipt_worker_token_rotation:service=srv-dacofeoae00c73813eug;key=CORE_CLOUD_INTAKE_EPOCH_TOKEN;preserve=CORE_NATIVE_RUNNER_MODE:receipt_only,all_other_settings,public_ca', 'current_recipient_authorized_protected_confirmation_delivery', 'existing_task_register_reconciliation', 'existing_web_application_release', 'herdmaster_attributable_approved_purpose_case_completion', 'herdmaster_canonical_domain_scoped_read_answers', 'herdmaster_canonical_purpose_cohort_work_advisory', 'herdmaster_consolidated_purpose_overview', 'herdmaster_current_weighing_status_order_reconciliation', 'herdmaster_delivered_breeding_subject_read_context', 'herdmaster_exact_canonical_advisory_case_disposition', 'herdmaster_exact_retained_farrowing_refresh', 'herdmaster_legacy_mortality_technical_pending_reconciliation', 'herdmaster_owner_confirmed_purpose_batch', 'herdmaster_owner_requested_purpose_review_date', 'herdmaster_protected_body_condition_observation_intake', 'herdmaster_ready_purpose_private_owner_notice', 'herdmaster_stable_sow_litter_identity_reassessment', 'herdmaster_telegram_exact_purpose_review', 'merge', 'oom_sakkie_shared_family_message_presentation', 'oom_sakkie_typed_concise_farm_brief_presentation', 'owner_requested_expired_retained_mortality_confirmation_successor', 'publication', 'repository_candidate_validation', 'repository_test_fixture_write', 'retained_farrowing_configured_owner_informational_review', 'retained_mortality_audited_never_attempted_orphan_claim_replacement', 'retained_mortality_original_report_identity_reassessment', 'retained_mortality_single_first_attempt_presentation_window', 'retained_mortality_source_fenced_atomic_confirmation', 'rootline_proven_no_send_retry_presented_text_binding', 'rootline_verified_current_plan_delivery_advisory_completion', 'verified_same_case_mortality_completion_projection'],
-        "forbidden_effects": ['blanket_task_cleanup', 'cron_deploy', 'customer_message', 'database_migration', 'family_permission_change', 'farm_write', 'hardware_command', 'manual_cron_trigger', 'manufactured_acceptance', 'runtime_source_change_beyond_approved_candidate', 'service_configuration_outside:service=srv-dacofeoae00c73813eug;key=CORE_CLOUD_INTAKE_EPOCH_TOKEN;preserve=CORE_NATIVE_RUNNER_MODE:receipt_only,all_other_settings,public_ca', 'service_deploy_outside:srv-d6sijjkhg0os73f7regg,srv-dacofeoae00c73813eug', 'transport_publication', 'windows_or_general_executive_activation'],
+        "allowed_effects": ['application_revision_rollback:web:d4a6c0aba196d4de633540a9715d5b3bd94ec112', 'authenticated_historical_farrowing_review_reply_protected_preview', 'canonical_completed_retained_mortality_delivery_recovery', 'core_cloud_receipt_epoch_commission:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=4cb6a6444486cbe0ee77d3c383358878ed90a803;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_epoch_revoke:api=srv-d6sijjkhg0os73f7regg;worker=srv-dacofeoae00c73813eug;head=4cb6a6444486cbe0ee77d3c383358878ed90a803;policy=core.manager_dependency_intake.20261010;cases=OOM-CASE-0AA47A67BCA8B781902CEF95,OOM-CASE-B59577B008D2E358F64F8771;max_seconds=1200;model_calls=0', 'core_cloud_receipt_worker_release:srv-dacofeoae00c73813eug:4cb6a6444486cbe0ee77d3c383358878ed90a803', 'current_recipient_authorized_protected_confirmation_delivery', 'existing_task_register_reconciliation', 'existing_web_application_release', 'herdmaster_attributable_approved_purpose_case_completion', 'herdmaster_canonical_domain_scoped_read_answers', 'herdmaster_canonical_purpose_cohort_work_advisory', 'herdmaster_consolidated_purpose_overview', 'herdmaster_current_weighing_status_order_reconciliation', 'herdmaster_delivered_breeding_subject_read_context', 'herdmaster_exact_canonical_advisory_case_disposition', 'herdmaster_exact_retained_farrowing_refresh', 'herdmaster_legacy_mortality_technical_pending_reconciliation', 'herdmaster_owner_confirmed_purpose_batch', 'herdmaster_owner_requested_purpose_review_date', 'herdmaster_protected_body_condition_observation_intake', 'herdmaster_ready_purpose_private_owner_notice', 'herdmaster_stable_sow_litter_identity_reassessment', 'herdmaster_telegram_exact_purpose_review', 'merge', 'oom_sakkie_shared_family_message_presentation', 'oom_sakkie_typed_concise_farm_brief_presentation', 'owner_requested_expired_retained_mortality_confirmation_successor', 'publication', 'repository_candidate_validation', 'repository_test_fixture_write', 'retained_farrowing_configured_owner_informational_review', 'retained_mortality_audited_never_attempted_orphan_claim_replacement', 'retained_mortality_original_report_identity_reassessment', 'retained_mortality_single_first_attempt_presentation_window', 'retained_mortality_source_fenced_atomic_confirmation', 'rootline_proven_no_send_retry_presented_text_binding', 'rootline_verified_current_plan_delivery_advisory_completion', 'verified_same_case_mortality_completion_projection'],
+        "forbidden_effects": ['blanket_task_cleanup', 'core_cloud_receipt_worker_token_rotation', 'cron_deploy', 'customer_message', 'database_migration', 'family_permission_change', 'farm_write', 'hardware_command', 'manual_cron_trigger', 'manufactured_acceptance', 'runtime_source_change_beyond_approved_candidate', 'service_configuration_change', 'service_deploy_outside:srv-d6sijjkhg0os73f7regg,srv-dacofeoae00c73813eug', 'transport_publication', 'windows_or_general_executive_activation'],
         "required_tests": sorted(adapter.REQUIRED_TESTS), "operational_acceptance": ["old fixture only"]}
     prior_receipt = {"status": "valid", "receipt_id": "MAR-" + "A" * 64, "content_sha256": "a" * 64,
         "mission_id": adapter.MISSION_ID, "root_mission_id": adapter.PARENT_ID,
@@ -362,7 +366,7 @@ class CandidatePinTests(unittest.TestCase):
 
     def test_registration_workflow_runs_four_release_suites_and_exact_cloud_candidate(self):
         workflow=(adapter.ROOT / '.github/workflows/oom-desktop-rebind-qualification.yml').read_text()
-        self.assertIn('branches: [codex/core-cloud-current-producer-registration-qualification-20261018]', workflow)
+        self.assertIn('branches: [codex/core-manager-progress-registration-qualification-20261018]', workflow)
         self.assertEqual(workflow.count('runs-on: ubuntu-latest'), 2)
         self.assertNotIn('runs-on: windows-latest', workflow)
         self.assertNotIn('windows-lifecycle:', workflow)
@@ -376,11 +380,13 @@ class CandidatePinTests(unittest.TestCase):
         self.assertEqual(workflow.count('run: python -m pytest tests/test_oom_'), 2)
         for suite in ('candidate_reconciliation', 'registration_sql', 'presend_timeout_correction', 'unsent_confirmation_extension'):
             self.assertIn('test_oom_desktop_'+suite if suite in ('candidate_reconciliation','registration_sql') else 'test_oom_'+suite, workflow)
-        self.assertIn('ref: '+adapter.HEAD,workflow)
-        self.assertIn('EXPECTED_TREE: '+adapter.TREE,workflow)
+        self.assertIn('ref: '+(adapter.HEAD or '81bd3b50e07705ab1f6442ad8a00d4db8a4cc987'),workflow)
+        self.assertIn('EXPECTED_TREE: '+(adapter.TREE or '7d45d1d460ca03932f5060d8c05561321a5cac96'),workflow)
         self.assertIn('tests/test_charlie_cloud_intake.py',workflow)
         self.assertIn('tests/test_charlie_cloud_intake_postgres.py',workflow)
         self.assertIn('tests/test_charlie_cloud_current_producer.py',workflow)
+        for path in ('tests/test_oom_sakkie_general_manager_completion_time.py','tests/test_oom_sakkie_general_manager_worker.py','tests/test_oom_sakkie_general_manager_postgres.py'):
+            self.assertIn(path,workflow)
         self.assertIn('do not prove hosted deployment, scheduled continuity or business acceptance',workflow)
         self.assertEqual(adapter.HEAD, FINAL_CANDIDATE_PINS['HEAD'])
 
@@ -509,12 +515,12 @@ class ReconciliationTests(unittest.TestCase):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
 
-    def test_exact_pr1397_predecessor_head_is_not_its_merge_or_other_history(self):
+    def test_exact_pr1398_predecessor_head_is_not_its_merge_or_other_history(self):
         self.assertEqual((adapter.PREDECESSOR_PR, adapter.PREDECESSOR_HEAD, adapter.PREDECESSOR_BASE,
-            adapter.PREDECESSOR_BRANCH), (1397, 'c50febb07e1596fa51812e7275caa43d9ea65144',
-            'c482856fa0a2bd0b4a9f995cf65314ac900e285b', 'codex/core-cloud-receipt-timeout-recovery-20261018'))
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS), 7)
-        self.assertEqual(len(adapter.PATHS), 6)
+            adapter.PREDECESSOR_BRANCH), (1398, '4cb6a6444486cbe0ee77d3c383358878ed90a803',
+            'd4a6c0aba196d4de633540a9715d5b3bd94ec112', 'codex/core-cloud-current-producer-20261018'))
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS), 6)
+        self.assertEqual(adapter.PATHS,FINAL_CANDIDATE_PINS['PATHS'] or SYNTHETIC_PINS['PATHS'])
         self.assertEqual(adapter.WEB_BASELINE, adapter.BASE)
         for wrong in (adapter.BASE, "f1643d1014d22bc455eef56b919115d1244e1cd7", "f"*40):
             m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
@@ -673,7 +679,7 @@ class ReconciliationTests(unittest.TestCase):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         self.assertIn("existing_web_application_release",m["contract"]["allowed_effects"])
         self.assertIn("application_revision_rollback:web:"+adapter.WEB_ROLLBACK,m["contract"]["allowed_effects"])
-        self.assertEqual(adapter.PREDECESSOR_BASE,'c482856fa0a2bd0b4a9f995cf65314ac900e285b')
+        self.assertEqual(adapter.PREDECESSOR_BASE,'d4a6c0aba196d4de633540a9715d5b3bd94ec112')
         self.assertTrue({"database_migration","farm_write","transport_publication","cron_deploy"}|CLOUD_ADDED_FORBIDDEN<=set(m["contract"]["forbidden_effects"]))
         guards=("Only conclusively departed extra rows outside immutable obligations leave the unknown-purpose veto", "retained members and ambiguous/conflicting lifecycle evidence never do", "verified English/Afrikaans saved-purpose singular/plural wording", "Prior PR1388 registration and web deployment are consumed history", "preserve unrelated provider state without another workflow update or rollback", "Bind the exact current deployment/settings baseline", "uncertain publication outcomes require readback rather than blind retry", "No manual case completion, owner confirmation, callback replay or provider workflow mutation")
         for value in guards:
@@ -1115,10 +1121,13 @@ class ReconciliationTests(unittest.TestCase):
         timing = 'both transactions under one shared 10-second ordinary budget or one shared 60-second budget only after exact cloud-context validation. Preserve connection/statement/lock caps of 3/3/1 seconds, both independently committed transactions and no retries; the worker HTTP socket timeout is 90 seconds, not a total wall-clock guarantee.'
         self.assertEqual(sum(timing in v for v in preserved), 1)
         preserved = {v.replace(timing, 'both transactions under one 10-second budget.') for v in preserved}
+        # Reverse only the reviewed manager-progress clause, retaining the prior 98-domain digest.
+        self.assertEqual(sum(v.startswith('Continue canonical collection and genuine progress') for v in preserved), 1)
+        preserved = {'Continue canonical collection for quiet cases and allow them spare dispatch capacity; do not claim a bounded quiet waiting time under sustained actionable demand. Prove large-backlog selection, same-case promotion after material owner-relevant evidence, disjoint concurrent claims, genuine later retained-card delivery and the protected canonical outcome separately. No additional model call, cadence change or manual scheduler trigger is authorized.' if v.startswith('Continue canonical collection and genuine progress') else v for v in preserved}
         self.assertEqual(adapter.digest(adapter.canonical(sorted(preserved))),'a5b277e4e43e79be96c8f39d31db003dedbf74ded283610badc0467f615567d2')
-        self.assertEqual(adapter.PREDECESSOR_PR,1397)
+        self.assertEqual(adapter.PREDECESSOR_PR,1398)
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(adapter.PREDECESSOR_BASE,'c482856fa0a2bd0b4a9f995cf65314ac900e285b')
+        self.assertEqual(adapter.PREDECESSOR_BASE,'d4a6c0aba196d4de633540a9715d5b3bd94ec112')
 
     def test_core_receipt_and_stopped_source_do_not_grant_activation_or_pickup(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
@@ -1636,16 +1645,16 @@ class ReconciliationTests(unittest.TestCase):
         for name, value in FINAL_CANDIDATE_PINS.items():
             expected = SYNTHETIC_PINS[name] if value is None or value == [] else value
             self.assertEqual(getattr(adapter, name), expected)
-        self.assertEqual(adapter.BASE,'d4a6c0aba196d4de633540a9715d5b3bd94ec112')
-        self.assertEqual(adapter.BRANCH,'codex/core-cloud-current-producer-20261018')
+        self.assertEqual(adapter.BASE,'0d5dc23dafce4665ac08e430fb8318ad1a83786b')
+        self.assertEqual(adapter.BRANCH,FINAL_CANDIDATE_PINS['BRANCH'] or SYNTHETIC_PINS['BRANCH'])
         self.assertEqual(adapter.APPROVED_RUNTIME_HEAD,adapter.HEAD)
         self.assertEqual(adapter.QUALIFICATION_TEST_PATHS,[])
-        self.assertEqual(adapter.PREDECESSOR_PR,1397)
-        self.assertEqual(adapter.PREDECESSOR_HEAD,'c50febb07e1596fa51812e7275caa43d9ea65144')
-        self.assertEqual(adapter.PREDECESSOR_BASE,'c482856fa0a2bd0b4a9f995cf65314ac900e285b')
-        self.assertEqual(adapter.PREDECESSOR_BRANCH,'codex/core-cloud-receipt-timeout-recovery-20261018')
+        self.assertEqual(adapter.PREDECESSOR_PR,1398)
+        self.assertEqual(adapter.PREDECESSOR_HEAD,'4cb6a6444486cbe0ee77d3c383358878ed90a803')
+        self.assertEqual(adapter.PREDECESSOR_BASE,'d4a6c0aba196d4de633540a9715d5b3bd94ec112')
+        self.assertEqual(adapter.PREDECESSOR_BRANCH,'codex/core-cloud-current-producer-20261018')
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),7)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),6)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",
@@ -1801,7 +1810,7 @@ class CloudReleaseScopeProposalTests(unittest.TestCase):
     def test_exact_historical_effect_preservation_and_clause_bounds(self):
         prior=self.m['expected_child_record']['metadata_json']['mission_admission_contract']
         contract=self.m['contract']
-        self.assertEqual(len(prior['allowed_effects']),40)
+        self.assertEqual(len(prior['allowed_effects']),39)
         self.assertEqual(a.REMOVED_EFFECTS,CLOUD_REMOVED_EFFECTS)
         self.assertEqual(a.REMOVED_FORBIDDEN_EFFECTS,CLOUD_REMOVED_FORBIDDEN)
         self.assertEqual(len(a.ADDED_EFFECTS),5)
@@ -1839,7 +1848,7 @@ class CloudReleaseScopeProposalTests(unittest.TestCase):
             with self.subTest(effect=effect.split(':')[0]):
                 m=deepcopy(self.m);m['contract']['forbidden_effects'].remove(effect);self.refused(m)
     def test_fulfilled_token_rotation_and_all_configuration_are_retired(self):
-        original=next(v for v in a.REMOVED_EFFECTS if v.startswith('core_cloud_receipt_worker_token_rotation:'))
+        original='core_cloud_receipt_worker_token_rotation:service=srv-dacofeoae00c73813eug;key=CORE_CLOUD_INTAKE_EPOCH_TOKEN;preserve=CORE_NATIVE_RUNNER_MODE:receipt_only,all_other_settings,public_ca'
         self.assertFalse(any('token_rotation:' in v or 'service_configuration:' in v for v in a.ADDED_EFFECTS))
         self.assertIn('service_configuration_change', a.ADDED_FORBIDDEN_EFFECTS)
         self.assertIn('core_cloud_receipt_worker_token_rotation', a.ADDED_FORBIDDEN_EFFECTS)
@@ -1877,6 +1886,18 @@ class CloudReleaseScopeProposalTests(unittest.TestCase):
                          'Never use worker identity', 'no new rotation/configuration',
                          'Deploy repaired WEB first', 'before WORKER deployment',
                          'One unused recovery epoch only', '<=40 cycles', 'original scope, receipt IDs/payloads'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment,original)
+                m=deepcopy(self.m);v=m['contract']['operational_acceptance'];v[v.index(original)]=original.replace(fragment,'unrestricted')
+                self.refused(m)
+        m=deepcopy(self.m);m['contract']['operational_acceptance'].remove(original);self.refused(m)
+
+    def test_manager_progress_clause_cannot_weaken_identity_chronology_or_limits(self):
+        original=next(v for v in a.REQUIRED_ACCEPTANCE if v.startswith('Continue canonical collection and genuine progress'))
+        for fragment in ('protected urgent', 'at most one of the existing five slots', 'actual locked rows',
+                         'Never target the two proof case IDs', 'fresh aware terminal', 'Never rewrite historical records',
+                         'only frozen original completed==started<event<=started+120s',
+                         'strict started<=event<=completed<=observed', 'one unused receipt-only recovery trial'):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment,original)
                 m=deepcopy(self.m);v=m['contract']['operational_acceptance'];v[v.index(original)]=original.replace(fragment,'unrestricted')

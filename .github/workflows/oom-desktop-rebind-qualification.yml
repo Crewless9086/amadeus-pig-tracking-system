@@ -1,7 +1,7 @@
-name: CORE Cloud Current Producer Release Qualification
+name: CORE Manager Progress Release Qualification
 on:
   push:
-    branches: [codex/core-cloud-current-producer-registration-qualification-20261018]
+    branches: [codex/core-manager-progress-registration-qualification-20261018]
 permissions:
   contents: read
 jobs:
@@ -67,15 +67,15 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 4cb6a6444486cbe0ee77d3c383358878ed90a803
+          ref: 81bd3b50e07705ab1f6442ad8a00d4db8a4cc987
           persist-credentials: false
           fetch-depth: 0
       - name: Verify exact application candidate
         shell: bash
         env:
-          EXPECTED_HEAD: 4cb6a6444486cbe0ee77d3c383358878ed90a803
-          EXPECTED_TREE: ecb1df0d3c33073d106f2009a4e06ff1c94cfc44
-          EXPECTED_BASE: d4a6c0aba196d4de633540a9715d5b3bd94ec112
+          EXPECTED_HEAD: 81bd3b50e07705ab1f6442ad8a00d4db8a4cc987
+          EXPECTED_TREE: 7d45d1d460ca03932f5060d8c05561321a5cac96
+          EXPECTED_BASE: 0d5dc23dafce4665ac08e430fb8318ad1a83786b
         run: |
           set -euo pipefail
           [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
@@ -108,6 +108,9 @@ jobs:
           tests/test_charlie_cloud_current_producer.py
           tests/test_charlie_executive_runtime.py
           tests/test_charlie_mission_control.py
+          tests/test_oom_sakkie_general_manager_completion_time.py
+          tests/test_oom_sakkie_general_manager_worker.py
+          tests/test_oom_sakkie_general_manager_postgres.py
 
   # Exact candidate test job is isolated from helper main-source checkout.
   # Disposable database results do not prove hosted deployment, scheduled continuity or business acceptance.
