@@ -479,7 +479,14 @@ def test_due_selection_orders_then_locks_with_skip_locked_and_limit():
         [], now=NOW, source_revision="abc", brain_guard_audit=audit)
     assert result["success"] is True
     selection = next(sql for sql, _ in commands if "join eligible" in sql)
-    assert "for update of m skip locked limit %s" in selection
+    # All three bounded stages lock before limiting, so the quiet slot can
+    # backfill a locked oldest row without increasing the total claim budget.
+    assert selection.count("for update of m skip locked limit") == 3
+    assert "for update of m skip locked limit 1" in selection
+    assert "e.work_class=1 and m.unknowns='[]'::jsonb" in selection
+    assert "(select count(*) from protected)<b.claim_limit" in selection
+    assert "order by greatest(e.fair_due_at,e.created_at),e.case_id" in selection
+    assert "order by s.dispatch_phase" in selection
     selection_params = next(params for sql, params in commands if "join eligible" in sql)
     assert selection_params[-1] == CLAIM_LIMIT
     assert "partition by work_class,specialist" in selection

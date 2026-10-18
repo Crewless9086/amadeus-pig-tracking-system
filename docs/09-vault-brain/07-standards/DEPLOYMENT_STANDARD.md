@@ -166,6 +166,20 @@ loaded identity. An old revoked provider, unrelated revision or ancestry alone
 cannot authorize current evidence. No original event, scope, receipt identity or
 ordinary consumer rule is rewritten by this cloud-only compatibility check.
 
+General-manager cycles record the actual completion time on success and failure;
+`started_at` remains the admission time. Historical original anchors are not
+rewritten: any separately qualified legacy-timestamp acceptance applies only to
+those frozen originals, while latest producer evidence must have accurate
+chronology. Within the existing five-case claim limit, actionable critical/urgent
+work, expired delegated leases and mortality exceptions retain priority. When
+that work leaves capacity, one slot goes to the oldest due quiet case with no
+owner question, ahead of routine work. Locking skips rows already owned by another
+worker and backfills the next eligible row. This is a reassessment opportunity,
+not a wall-clock guarantee: sustained urgent work or the unchanged 80-second
+cycle budget and 30-second completion reserve can defer it, with failure retained
+honestly. Refresh, notification, confirmation and hardware permissions are
+unchanged; fresh evidence can still trigger existing governed follow-up.
+
 Cloud receipt processing retains two transactions: first commit the immutable
 command/finding pair, then independently verify that commit before recording
 its manager acknowledgement. The admitted cloud consumer shares one 60-second

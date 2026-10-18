@@ -264,7 +264,7 @@ def test_real_postgres_producer_store_refresh_family_delivery_then_no_duplicate(
     assert elapsed < worker.CASE_COMPLETION_RESERVE_SECONDS
 
 
-def test_real_postgres_purpose_decisions_precede_quiet_work_but_not_fresh_protected_urgency(pg):
+def test_real_postgres_urgency_then_one_quiet_reservation_then_purpose_decisions(pg):
     ready=candidate(now=pg.now)
     urgent=pg.value('protected',dedupe_key='herdmaster:retained-mortality:test',urgency='urgent',
         message_family='retained_protected_recovery',evidence_refs=['event:protected'],next_reassessment_at=pg.now)
@@ -275,7 +275,12 @@ def test_real_postgres_purpose_decisions_precede_quiet_work_but_not_fresh_protec
     by_key={v['dedupe_key']:v for v in values}
     pg.cycle(values,refresh=lambda c:by_key[c['dedupe_key']],deliver=lambda c:
         selected.append(c['dedupe_key']) or {'success':True,'delivery_confirmed':False,'telegram_sends':0})
-    assert selected[0]==urgent['dedupe_key'] and selected[1]==ready['dedupe_key']
+    quiet_keys={value['dedupe_key'] for value in quiet}
+    assert selected[0]==urgent['dedupe_key']
+    assert selected[1] in quiet_keys  # One reserved quiet slot follows protected work.
+    assert selected[2]==ready['dedupe_key']  # Purpose decisions precede the routine remainder.
+    assert set(selected[3:]) <= quiet_keys
+    assert len(set(selected))==len(selected)
     assert len(selected)==worker.CLAIM_LIMIT
 
 

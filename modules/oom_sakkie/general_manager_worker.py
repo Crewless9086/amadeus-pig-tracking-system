@@ -291,17 +291,20 @@ class PostgresManagerCaseStore:
                                 as e(dedupe_key text,evidence_refs jsonb)
                             where m.dedupe_key=e.dedupe_key""",
                             (now, json.dumps(replay_epochs)))
-                    # New critical/urgent evidence keeps its first turn even if a
-                    # deadline previously deferred it. Only a finished attempt in
-                    # this generation makes it routine reassessment work; an older
-                    # delivery or a claimed/deferred event is not that evidence.
-                    # Thereafter age advances on every attempt, including failures,
-                    # so unchanged high urgency cannot starve due sibling cases.
+                    # Keep genuine urgent work and expired delegated claims first.
+                    # One existing slot then goes to the oldest due quiet case with
+                    # no owner question, before routine work can consume the budget.
+                    # Each stage locks before limiting: concurrent workers can skip
+                    # an owned quiet row and reserve the next one without duplication.
+                    # This grants a turn only when urgent work leaves capacity; the
+                    # same absolute cycle deadline and owning refresh still apply.
                     cur.execute("""with due as materialized (
                             select m.case_id,m.specialist,m.urgency,m.last_heartbeat_at,
+                                m.status,m.unknowns,m.created_at,
+                                (__MORTALITY_EXCEPTION_PRIORITY__) mortality_exception,
                                 -- Collection already reassesses every case. Give
                                 -- dispatch capacity to potentially actionable work;
-                                -- known quiet cases use only spare capacity. Expired
+                                -- quiet cases normally use spare capacity. Expired
                                 -- delegated leases must still be reclaimed, including
                                 -- quiet/confirmed cases, to unlock later generations.
                                 case when m.status='delegated' then 0
@@ -332,6 +335,8 @@ class PostgresManagerCaseStore:
                             where m.status in ('open','delegated','waiting_reassessment','exception')
                               and m.next_reassessment_at<=%s
                               and (m.lease_until is null or m.lease_until<%s)
+                        ), bounds as materialized (
+                            select %s::timestamptz due_at,%s::integer claim_limit
                         ), eligible as materialized (
                             select *,row_number() over (partition by work_class,specialist order by
                                 fresh_priority,fair_due_at,last_heartbeat_at nulls first,
@@ -339,22 +344,71 @@ class PostgresManagerCaseStore:
                                 when 'due' then 2 when 'planned' then 3 else 4 end,
                                 case_id) specialist_rank
                             from due
+                        ), protected as materialized (
+                            select m.case_id,e.specialist from app_private.oom_manager_cases m
+                            join eligible e using(case_id) cross join bounds b
+                            where (e.status='delegated' or e.mortality_exception
+                                or (e.work_class=0 and e.urgency in ('critical','urgent')))
+                              and m.status in ('open','delegated','waiting_reassessment','exception')
+                              and m.next_reassessment_at<=b.due_at
+                              and (m.lease_until is null or m.lease_until<b.due_at)
+                            order by e.work_class,case when e.specialist_rank=1 then 0 else 1 end,
+                                e.fresh_priority,e.fair_due_at,e.last_heartbeat_at nulls first,
+                                case e.urgency when 'critical' then 0 when 'urgent' then 1
+                                when 'due' then 2 when 'planned' then 3 else 4 end,
+                                case when e.specialist='BEACON' then 0 else 1 end,e.case_id
+                            for update of m skip locked limit (select claim_limit from bounds)
+                        ), reserved_quiet as materialized (
+                            select m.case_id,e.specialist from app_private.oom_manager_cases m
+                            join eligible e using(case_id) cross join bounds b
+                            where e.work_class=1 and m.unknowns='[]'::jsonb
+                              and m.status in ('open','waiting_reassessment','exception')
+                              and m.next_reassessment_at<=b.due_at
+                              and (m.lease_until is null or m.lease_until<b.due_at)
+                              and (select count(*) from protected)<b.claim_limit
+                              and not exists(select 1 from protected p where p.case_id=m.case_id)
+                            order by greatest(e.fair_due_at,e.created_at),e.case_id
+                            for update of m skip locked limit 1
+                        ), remainder as materialized (
+                            select m.case_id from app_private.oom_manager_cases m
+                            join eligible e using(case_id) cross join bounds b
+                            where m.status in ('open','delegated','waiting_reassessment','exception')
+                              and m.next_reassessment_at<=b.due_at
+                              and (m.lease_until is null or m.lease_until<b.due_at)
+                              and not exists(select 1 from protected p where p.case_id=m.case_id)
+                              and not exists(select 1 from reserved_quiet q where q.case_id=m.case_id)
+                            order by e.work_class,case when e.specialist_rank=1
+                                and not exists(select 1 from protected p where p.specialist=e.specialist)
+                                and not exists(select 1 from reserved_quiet q where q.specialist=e.specialist)
+                                then 0 else 1 end,
+                                e.fresh_priority,e.fair_due_at,e.last_heartbeat_at nulls first,
+                                case e.urgency when 'critical' then 0 when 'urgent' then 1
+                                when 'due' then 2 when 'planned' then 3 else 4 end,
+                                case when e.specialist='BEACON' then 0 else 1 end,e.case_id
+                            for update of m skip locked limit (select greatest(0,b.claim_limit
+                                -(select count(*) from protected)
+                                -(select count(*) from reserved_quiet)) from bounds b)
+                        ), selected as (
+                            select case_id,0 dispatch_phase from protected
+                            union all select case_id,1 dispatch_phase from reserved_quiet
+                            union all select case_id,2 dispatch_phase from remainder
                         )
                         select m.case_id,m.dedupe_key,m.specialist,m.urgency,m.status,
                             m.evidence_digest,m.evidence_refs,m.unknowns,m.summary,m.next_action,
                             m.next_reassessment_at,m.generation,m.last_delivery_digest,
                             __PURPOSE_OVERVIEW_COVERAGE__
                         from app_private.oom_manager_cases m join eligible e using(case_id)
-                        order by e.work_class,case when e.specialist_rank=1 then 0 else 1 end,
+                        join selected s using(case_id)
+                        order by s.dispatch_phase,e.work_class,case when e.specialist_rank=1 then 0 else 1 end,
                             e.fresh_priority,e.fair_due_at,e.last_heartbeat_at nulls first,
                             case e.urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
                             case when e.specialist='BEACON' then 0 else 1 end,e.case_id
-                        for update of m skip locked limit %s""".replace(
+                        """.replace(
                             "__PURPOSE_DECISION__", PURPOSE_DECISION_SQL).replace(
                             "__PURPOSE_OVERVIEW_COVERAGE__", _PURPOSE_OVERVIEW_COVERAGE_SQL).replace(
                             "__MORTALITY_EXCEPTION_PRIORITY__", MORTALITY_EXCEPTION_PRIORITY_SQL),
-                        (now, now, CLAIM_LIMIT))
+                        (now, now, now, CLAIM_LIMIT))
                     for row in cur.fetchall():
                         case = _case_row(row)
                         cur.execute("""update app_private.oom_manager_cases set
@@ -627,16 +681,19 @@ class PostgresManagerCaseStore:
                     "exceptions": int(bool(overview_failure)), **overview_failure}
             with self.connect_factory() as cycle_connection:
                 with cycle_connection.cursor() as cur:
+                    # A cycle may emit current events long after its start. Capture
+                    # the terminal observation here, after work and connection setup.
+                    completed_at = _aware(datetime.now(timezone.utc))
                     cur.execute("""update app_private.oom_manager_worker_cycles set heartbeat_at=%s,
                         next_cycle_at=%s,status=%s,case_counts=%s::jsonb,completed_at=%s
-                        where cycle_id=%s""", (now, next_cycle,
+                        where cycle_id=%s""", (completed_at, next_cycle,
                         "failed" if deadline_deferrals else "completed",
-                        json.dumps(counts), now, cycle_id))
+                        json.dumps(counts), completed_at, cycle_id))
             return {"success": not deadline_deferrals,
                 "status": ("general_manager_cycle_deadline_contained"
                            if deadline_deferrals else "general_manager_cycle_completed"),
                 "contract_version": CONTRACT_VERSION, "worker_id": WORKER_ID,
-                "cycle_id": cycle_id, "heartbeat_at": now.isoformat(),
+                "cycle_id": cycle_id, "heartbeat_at": completed_at.isoformat(),
                 "next_cycle_at": next_cycle.isoformat(), "case_results": case_results,
                 **counts, **_zero_effects()}
         except Exception as exc:
@@ -647,9 +704,11 @@ class PostgresManagerCaseStore:
             if isinstance(exc, ManagerCaseError):
                 failure["code"] = str(exc)
             failure_counts = {"brain_guard": brain_guard, "failure": failure}
+            completed_at = _aware(datetime.now(timezone.utc))
             try:
                 with self.connect_factory() as failure_connection:
                     with failure_connection.cursor() as cur:
+                        completed_at = _aware(datetime.now(timezone.utc))
                         cur.execute("""insert into app_private.oom_manager_worker_cycles
                             (cycle_id,worker_id,trigger_identity,source_revision,started_at,heartbeat_at,
                              next_cycle_at,status,case_counts,completed_at)
@@ -657,14 +716,14 @@ class PostgresManagerCaseStore:
                             on conflict(cycle_id) do update set status='failed',heartbeat_at=excluded.heartbeat_at,
                               next_cycle_at=excluded.next_cycle_at,case_counts=excluded.case_counts,
                               completed_at=excluded.completed_at""",
-                            (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now,
-                             next_cycle, json.dumps(failure_counts), now))
+                            (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, completed_at,
+                             next_cycle, json.dumps(failure_counts), completed_at))
             except Exception:
                 pass
             return {"success": False, "status": "general_manager_cycle_failed",
                 "failure_kind": exc.__class__.__name__,
                 "worker_id": WORKER_ID, "cycle_id": cycle_id,
-                "heartbeat_at": now.isoformat(), "next_cycle_at": next_cycle.isoformat(),
+                "heartbeat_at": completed_at.isoformat(), "next_cycle_at": next_cycle.isoformat(),
                 "brain_guard": brain_guard,
                 **_zero_effects()}
         finally:
