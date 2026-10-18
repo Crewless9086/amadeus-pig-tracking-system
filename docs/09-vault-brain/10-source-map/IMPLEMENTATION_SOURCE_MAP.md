@@ -1,5 +1,26 @@
 # Implementation Source Map
 
+## CORE bounded cloud engineering
+
+- Status: implementation under qualification; no autonomous coding outcome yet.
+  Authority remains the CORE identity, owner-command contract and mission workflow.
+- Existing cloud worker entry: scripts/charlie_render_native_runner.py, explicit
+  engineering mode only. It reuses the native structured patch, worktree, model
+  and reviewer interfaces through native_runner/engineering_service.py.
+- Admission: modules/charlie/cloud_engineering.py and the owner/worker routes in
+  modules/charlie/routes.py. One paused canonical mission and append-only events
+  bind the grant, owner correction, exact revisions, single consumed claim,
+  immutable acceptance, time and durable model-spend reservations.
+- Test isolation: native_runner/test_sandbox.py. Strict model accounting:
+  native_runner/model_adapter.py. No farm data, public packaging, merge,
+  deployment, notifications, legacy Cursor retirement or automatic broad pickup.
+- Operational proof and limits: docs/06-operations/CORE_CLOUD_ENGINEERING_TRIAL.md.
+  Existing receipt-only grants remain separate and cannot authorize coding.
+- Qualification: tests/test_charlie_cloud_engineering*.py,
+  tests/test_charlie_native_model_budget.py and
+  tests/test_charlie_native_test_sandbox.py; disposable PostgreSQL and isolated
+  Linux execution are hosted by the existing audit-rails workflow.
+
 ## CORE manager technical-dependency intake
 
 - Status: `LOCAL_NOT_RELEASED`; authority remains `01-identity/CHARLIE_CORE.md`,
