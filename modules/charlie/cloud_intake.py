@@ -192,6 +192,56 @@ def _receipt_counts(cur, policy):
     return records
 
 
+def _receipt_preimage(policy, receipts):
+    return intake.digest({"scope_sha256": intake.digest(policy["scope_json"]), "receipts": receipts})
+
+
+def _partial_pair(cur, policy, receipts):
+    # Only the observed split: committed first pair, missing first link, untouched
+    # second dependency. Counts alone never establish that the pair is reusable.
+    need([r["counts"] for r in receipts] == [[1, 1, 0], [0, 0, 0]], "recovery_receipt_pattern_refused")
+    scope = _fixed_scope(policy)
+    command, _, event, command_id, result = intake._packets(policy, scope, scope["dependencies"][0])
+    intake._readback(cur, command, event, command_id, result)
+
+
+def _recovery_material(cur, policy, receipts):
+    prior = _epoch(policy)
+    need(policy["enabled"] is False and prior["status"] == "revoked"
+         and prior.get("recovery") is None, "prior_recovery_not_eligible")
+    need(prior["scope_sha256"] == intake.digest(policy["scope_json"])
+         and intake._time(prior["expires_at"]) == intake._time(policy["expires_at"]),
+         "prior_epoch_binding_changed")
+    cycles = prior["cycles"]
+    need(len(cycles) == 1 and cycles[0]["status"] == "completed", "prior_failure_not_terminal")
+    cycle = cycles[0]
+    result = cycle.get("result") or {}
+    need(result.get("contract") == CONTRACT and result.get("epoch_id") == prior["epoch_id"]
+         and result.get("request_id") == cycle["request_id"] and result.get("success") is False
+         and result.get("model_calls") == 0 and result.get("farm_actions") == 0
+         and result.get("mission_pickup_attempted") is False
+         and result.get("status") == "receipt_cycle_complete"
+         and result.get("intake") == {"status": "manager_dependency_intake_checked", "failures": 2,
+             "results": [{"status": "manager_dependency_intake_unavailable", "failure_kind": "TimeoutError"}] * 2},
+         "prior_failure_not_recoverable")
+    _partial_pair(cur, policy, receipts)
+    return {"prior_epoch_id": hex_value(prior["epoch_id"], 32),
+            "prior_request_id": hex_value(cycle["request_id"], 32),
+            "receipt_state_sha256": _receipt_preimage(policy, receipts)}
+
+
+def _check_epoch_receipt_preimage(cur, policy):
+    epoch = _epoch(policy)
+    receipts = _receipt_counts(cur, policy)
+    need(epoch.get("receipt_preimage_sha256") == _receipt_preimage(policy, receipts),
+         "receipt_preimage_changed_before_enable")
+    recovery = epoch.get("recovery")
+    if recovery is not None:
+        _partial_pair(cur, policy, receipts)
+        need(recovery["receipt_state_sha256"] == _receipt_preimage(policy, receipts),
+             "recovery_preimage_changed_before_enable")
+
+
 def _public(policy, now):
     epoch = (policy.get("metadata_json") or {}).get(META_KEY)
     packet = {"contract": CONTRACT, "policy_id": POLICY_ID, "mission_id": MISSION_ID,
@@ -201,6 +251,8 @@ def _public(policy, now):
     if isinstance(epoch, dict):
         packet["epoch"] = {k: deepcopy(epoch[k]) for k in (
             "epoch_id", "status", "issued_at", "expires_at", "provider", "scope_sha256", "worker_instance", "cycles")}
+        if epoch.get("recovery") is not None:
+            packet["epoch"]["recovery"] = deepcopy(epoch["recovery"])
     return packet
 
 
@@ -212,6 +264,11 @@ def readiness(*, database_url=None, connect_factory=None):
         result = _public(policy, now)
         result.update(mission_sha256=intake.digest(mission), created_sha256=intake.digest(created),
                       producer_revision=scope["producer_revision"], receipts=_receipt_counts(cur, policy))
+        prior = (policy.get("metadata_json") or {}).get(META_KEY)
+        if prior and prior.get("status") == "revoked" and any(r["counts"] != [0, 0, 0] for r in result["receipts"]):
+            # A read exposes a proposal only; it cannot renew, replay or enable.
+            if any(r["counts"] != [1, 1, 1] for r in result["receipts"]):
+                result["recovery"] = _recovery_material(cur, policy, result["receipts"])
         return result
 
 
@@ -289,8 +346,14 @@ def _save(cur, db, old, updated, kind, actor, now):
 
 
 def create_epoch(payload, *, actor, database_url=None, connect_factory=None):
-    shape(payload, {"policy_sha256", "mission_sha256", "created_sha256", "scope_sha256", "duration_seconds",
-                    "provider", "worker_token_sha256"})
+    keys = {"policy_sha256", "mission_sha256", "created_sha256", "scope_sha256", "duration_seconds",
+            "provider", "worker_token_sha256"}
+    shape(payload, keys | ({"recovery"} if isinstance(payload, dict) and "recovery" in payload else set()))
+    if "recovery" in payload:
+        shape(payload["recovery"], {"prior_epoch_id", "prior_request_id", "receipt_state_sha256"})
+        hex_value(payload["recovery"]["prior_epoch_id"], 32)
+        hex_value(payload["recovery"]["prior_request_id"], 32)
+        hex_value(payload["recovery"]["receipt_state_sha256"])
     for key in ("policy_sha256", "mission_sha256", "created_sha256", "scope_sha256", "worker_token_sha256"):
         hex_value(payload[key])
     need(isinstance(actor, str) and actor.startswith("owner-admin:") and len(actor) <= 200, "owner_principal_required")
@@ -301,7 +364,14 @@ def create_epoch(payload, *, actor, database_url=None, connect_factory=None):
         scope, mission, created = _validate_inputs(cur, old, now)
         need(intake.digest(scope) == payload["scope_sha256"] and intake.digest(mission) == payload["mission_sha256"]
              and intake.digest(created) == payload["created_sha256"], "current_world_changed")
-        need(all(r["counts"] == [0, 0, 0] for r in _receipt_counts(cur, old)), "initial_receipts_not_empty")
+        receipts = _receipt_counts(cur, old)
+        recovery = None
+        if any(r["counts"] != [0, 0, 0] for r in receipts):
+            need("recovery" in payload, "initial_receipts_not_empty")
+            recovery = _recovery_material(cur, old, receipts)
+            need(payload["recovery"] == recovery, "recovery_preimage_changed")
+        else:
+            need("recovery" not in payload, "recovery_not_needed")
         previous = (old.get("metadata_json") or {}).get(META_KEY)
         if previous:
             need(previous.get("status") == "revoked" and not any(c["status"] == "begun" for c in previous["cycles"]), "prior_cloud_epoch_unclosed")
@@ -314,6 +384,7 @@ def create_epoch(payload, *, actor, database_url=None, connect_factory=None):
             "issued_at": now.isoformat(), "expires_at": expiry.isoformat(), "owner_principal": actor,
             "provider": provider, "scope_sha256": intake.digest(scope), "worker_token_sha256": payload["worker_token_sha256"],
             "worker_instance": None, "cycles": [], "prior_policy_sha256": intake.digest(old),
+            "receipt_preimage_sha256": _receipt_preimage(old, receipts), "recovery": recovery,
             "retired_windows_ids": list(RETIRED_WINDOWS_IDS)}
         updated = deepcopy(old)
         updated["expires_at"] = expiry.isoformat()
@@ -338,6 +409,7 @@ def set_enabled(epoch_id, payload, *, enabled, actor, database_url=None, connect
                  and now < intake._time(epoch["expires_at"]), "epoch_not_enableable")
             _provider(epoch["provider"], now)
             _validate_inputs(cur, old, now)
+            _check_epoch_receipt_preimage(cur, old)
             state["status"] = "enabled"
         else:
             state["status"] = "revoked"

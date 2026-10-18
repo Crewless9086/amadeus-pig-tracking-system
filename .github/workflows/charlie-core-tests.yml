@@ -48,6 +48,7 @@ jobs:
           python -m pytest -q -p no:cacheprovider
           tests/test_charlie_manager_dependency_intake.py
           tests/test_charlie_manager_dependency_intake_postgres.py
+          tests/test_charlie_manager_dependency_timing.py
           tests/test_charlie_cloud_intake.py
           tests/test_charlie_cloud_intake_postgres.py
           tests/test_charlie_executive_runtime.py
@@ -358,7 +359,7 @@ jobs:
               module="${module//\//.}"
               echo "::group::$module"
               case "$test_file" in
-                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py|tests/test_charlie_cloud_intake.py|tests/test_charlie_cloud_intake_postgres.py)
+                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py|tests/test_charlie_manager_dependency_timing.py|tests/test_charlie_cloud_intake.py|tests/test_charlie_cloud_intake_postgres.py)
                   timeout 120s python -m pytest -q -p no:cacheprovider --basetemp "$control_root/pytest" "$test_file"
                   ;;
                 *) timeout 120s python -m unittest "$module" -q ;;
