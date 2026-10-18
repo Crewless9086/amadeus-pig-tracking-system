@@ -73,6 +73,17 @@ def prepare_hermes_profile():
 
 
 def main():
+    mode = os.environ.get("CORE_NATIVE_RUNNER_MODE", "builder")
+    if mode == "receipt_only":
+        # Use the deployed image, before disk/Git/profile/model initialization.
+        import sys
+        source = str(Path(__file__).resolve().parents[1])
+        if source not in sys.path:
+            sys.path.insert(0, source)
+        from modules.charlie.native_runner.intake_service import main as receipt_main
+        raise SystemExit(receipt_main())
+    if mode != "builder":
+        raise RuntimeError("render_runner_mode_invalid")
     prepare_hermes_profile()
     prepare_repository()
     argv = [
