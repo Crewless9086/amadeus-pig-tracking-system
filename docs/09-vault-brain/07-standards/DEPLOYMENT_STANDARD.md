@@ -94,7 +94,7 @@ runner identities, signed acknowledgement, fresh heartbeat, independent result,
 next trigger and a later terminal-independent cycle. Historical or failed
 activation identities are immutable and never retried.
 
-Receipt-only manager intake also requires an explicit signed process-containment
+Windows receipt-only manager intake also requires an explicit signed process-containment
 grant bound to the activation ID, intake mode, both source revisions and authority
 expiry. Its aware issuance/expiry interval is at most 1,200 seconds. A missing,
 unknown, substituted or expired grant fails closed. After packet and genuine
@@ -142,6 +142,20 @@ lower bound. More than 4,096 candidates refuses recovery before task/instance
 filtering; all records and the reader are disposed on exit. Task/GUID case handling,
 duplicate rejection, exact authority-window proof and the five-second timeout remain;
 a native upper time bound must not hide a later conflicting duplicate.
+
+Hosted receipt-only intake uses a separate owner-authenticated cloud epoch, never
+reused Windows signatures or local activation identities. It is limited to the
+existing admitted child, policy and two genuine dependencies, zero model cost,
+and at most 1,200 seconds. Exact independent API/worker service, deployment and
+source evidence binds the grant; a worker claim alone proves no provider identity.
+An epoch-specific credential permits only current-epoch polling and receipt
+cycles. Disabled full-row commissioning, explicit enable, expiry and revocation
+preserve the original admission and append-only history. Ordinary executive and
+builder consumers cannot borrow this grant. The worker waits inert before its
+first grant and after revocation, expiry or uncertain outcomes, without invoking
+a model or retrying an ambiguous cycle. Acceptance requires canonical receipt
+readback, exact provider proof and a later independent cycle while the owner's
+terminal is absent; source tests or a manual API cycle do not establish autonomy.
 
 ## Dependency retirement and scheduler singularity
 

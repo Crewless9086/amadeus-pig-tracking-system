@@ -206,7 +206,28 @@ def _dependency_matches(case, event, cycle, scope, dep, now):
     return expected
 
 
-def _locked_inputs(cur, expected_policy, dep):
+def _cloud_epoch_matches(current, expected, context, now):
+    """A cloud grant is not authority for the ordinary executive consumer."""
+    current_epoch = (current.get("metadata_json") or current.get("metadata") or {}).get("cloud_receipt_epoch")
+    expected_epoch = (expected.get("metadata_json") or expected.get("metadata") or {}).get("cloud_receipt_epoch")
+    if current_epoch is None and expected_epoch is None and context is None:
+        return
+    _require(isinstance(current_epoch, dict) and isinstance(expected_epoch, dict)
+             and isinstance(context, dict), "cloud_epoch_context_required")
+    keys = {"contract", "epoch_id", "issued_at", "expires_at", "scope_sha256",
+            "worker_token_sha256", "worker_instance", "provider"}
+    _require(set(context) == keys and all(current_epoch.get(k) == expected_epoch.get(k) == context[k] for k in keys),
+             "cloud_epoch_context_changed")
+    _require(context["contract"] == "core.cloud_receipt_intake.v1"
+             and current_epoch.get("status") == "enabled"
+             and _time(context["issued_at"]) <= now < _time(context["expires_at"])
+             and _time(context["expires_at"]) == _time(current["expires_at"])
+             and context["scope_sha256"] == digest(current.get("scope_json", current.get("scope")))
+             and bool(re.fullmatch(r"[a-f0-9]{32}", str(context["worker_instance"]))),
+             "cloud_epoch_not_authorized")
+
+
+def _locked_inputs(cur, expected_policy, dep, cloud_epoch=None):
     cur.execute("select to_jsonb(p) from public.charlie_delegation_policies p where policy_id=%s for update",
                 (expected_policy["policy_id"],))
     row = cur.fetchone()
@@ -215,6 +236,7 @@ def _locked_inputs(cur, expected_policy, dep):
     cur.execute("select clock_timestamp()")
     now = cur.fetchone()[0]
     scope = _policy_matches(policy, expected_policy, now)
+    _cloud_epoch_matches(policy, expected_policy, cloud_epoch, now)
     _require(dep in scope["dependencies"] and scope["owner_binding"] == _mortality_owner_binding(), "current_owner_changed")
     principal = resolve_family_principal({"telegram_user_id": scope["owner_user_id"],
         "telegram_chat_id": scope["owner_user_id"], "telegram_chat_type": "private"}, os.environ)
@@ -303,9 +325,9 @@ def _readback(cur, command, event, command_id, result):
              "core_command_readback_conflict")
 
 
-def _one_dependency(expected_policy, dep, url, connect_factory, deadline):
+def _one_dependency(expected_policy, dep, url, connect_factory, deadline, cloud_epoch=None):
     with _open(url, connect_factory, deadline) as db, db.cursor() as cur:
-        policy, scope, _ = _locked_inputs(cur, expected_policy, dep)
+        policy, scope, _ = _locked_inputs(cur, expected_policy, dep, cloud_epoch)
         command, payload, event, command_id, result = _packets(policy, scope, dep)
         borrowed = lambda _url: nullcontext(db)
         recorded, status = record_control_command(command, database_url=url, connect_factory=borrowed)
@@ -323,7 +345,7 @@ def _one_dependency(expected_policy, dep, url, connect_factory, deadline):
     # This is a new transaction: no acknowledgement from an uncommitted API result.
     # A crash here is safe: the immutable command/finding above replays exactly.
     with _open(url, connect_factory, deadline) as db, db.cursor() as cur:
-        policy, scope, now = _locked_inputs(cur, expected_policy, dep)
+        policy, scope, now = _locked_inputs(cur, expected_policy, dep, cloud_epoch)
         _readback(cur, command, event, command_id, result)
         now = _fresh_policy_clock(cur, policy, expected_policy)
         link = {"contract": CONTRACT, "dependency_id": dep["dependency_id"], "scope_digest": digest(scope),
@@ -348,7 +370,7 @@ def _one_dependency(expected_policy, dep, url, connect_factory, deadline):
             "status": "intake_linked" if linked else "intake_exact_replay", "link_created": linked}
 
 
-def consume_manager_dependencies(*, mode, policies, database_url=None, connect_factory=None):
+def consume_manager_dependencies(*, mode, policies, database_url=None, connect_factory=None, cloud_epoch=None):
     """Only the existing active executive and an exact service admission can write."""
     candidates = [p for p in policies or [] if isinstance(p, dict) and p.get("capability") == CAPABILITY and p.get("enabled") is True]
     if mode != "active" or not candidates:
@@ -358,13 +380,16 @@ def consume_manager_dependencies(*, mode, policies, database_url=None, connect_f
     policy = candidates[0]
     try:
         scope = validate_scope(policy.get("scope"))
+        marked = (policy.get("metadata_json") or policy.get("metadata") or {}).get("cloud_receipt_epoch")
+        _require((marked is None and cloud_epoch is None) or (isinstance(marked, dict) and isinstance(cloud_epoch, dict)),
+                 "cloud_epoch_context_required")
     except (ValueError, TypeError, KeyError):
         return {"status": "manager_dependency_scope_invalid", "results": [], "failures": 1}
     deadline = time.monotonic() + INTAKE_BUDGET_SECONDS
     results = []
     for dep in scope["dependencies"]:
         try:
-            result = _one_dependency(policy, dep, _database_url(database_url), connect_factory, deadline)
+            result = _one_dependency(policy, dep, _database_url(database_url), connect_factory, deadline, cloud_epoch)
         except IntakeRefused as exc:
             result = {"status": "manager_dependency_intake_refused", "reason": str(exc)}
         except Exception as exc:

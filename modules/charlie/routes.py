@@ -2357,3 +2357,66 @@ def charlie_build_relay_mission_workflow_route(mission_id):
         next_agent=str(payload.get("next_agent") or "").strip(),
     )
     return jsonify(result), status_code
+
+
+# This typed admission surface cannot dispatch the general executive or builder.
+def _cloud_intake_call(callback, *, owner=False):
+    if owner:
+        denied = require_strict_owner_admin_access()
+        if denied:
+            return denied
+    if request.content_length and request.content_length > 16384:
+        return jsonify({"success": False, "status": "cloud_request_bound"}), 413
+    from modules.charlie.cloud_intake import CloudIntakeRefused
+    from modules.charlie.manager_dependency_intake import IntakeRefused
+    try:
+        return jsonify(callback()), 200
+    except (CloudIntakeRefused, IntakeRefused) as exc:
+        return jsonify({"success": False, "status": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"success": False, "status": "cloud_intake_unavailable", "failure_kind": type(exc).__name__}), 503
+
+
+def _cloud_worker_token():
+    value = str(request.headers.get("Authorization") or "")
+    return value[7:] if value.startswith("Bearer ") else ""
+
+
+@charlie_bp.route("/charlie/core/manager-intake/cloud/readiness", methods=["GET"])
+def charlie_cloud_intake_readiness():
+    from modules.charlie.cloud_intake import readiness
+    return _cloud_intake_call(readiness, owner=True)
+
+
+@charlie_bp.route("/charlie/core/manager-intake/cloud/epochs", methods=["POST"])
+def charlie_cloud_intake_epoch():
+    from modules.charlie.cloud_intake import create_epoch
+    return _cloud_intake_call(lambda: create_epoch(request.get_json(silent=True),
+        actor=strict_owner_admin_principal()), owner=True)
+
+
+@charlie_bp.route("/charlie/core/manager-intake/cloud/epochs/<epoch_id>/<operation>", methods=["POST"])
+def charlie_cloud_intake_toggle(epoch_id, operation):
+    from modules.charlie.cloud_intake import set_enabled
+    if operation not in {"enable", "disable"}:
+        return jsonify({"success": False, "status": "cloud_operation_invalid"}), 404
+    return _cloud_intake_call(lambda: set_enabled(epoch_id, request.get_json(silent=True),
+        enabled=operation == "enable", actor=strict_owner_admin_principal()), owner=True)
+
+
+@charlie_bp.route("/charlie/core/manager-intake/cloud/current", methods=["GET"])
+def charlie_cloud_intake_current():
+    from modules.charlie.cloud_intake import current
+    return _cloud_intake_call(lambda: current(_cloud_worker_token()))
+
+
+@charlie_bp.route("/charlie/core/manager-intake/cloud/cycles", methods=["POST"])
+def charlie_cloud_intake_cycle():
+    from modules.charlie.cloud_intake import cycle
+    return _cloud_intake_call(lambda: cycle(request.get_json(silent=True), _cloud_worker_token()))
+
+
+@charlie_bp.route("/charlie/core/manager-intake/cloud/epochs/<epoch_id>/evidence", methods=["GET"])
+def charlie_cloud_intake_evidence(epoch_id):
+    from modules.charlie.cloud_intake import evidence
+    return _cloud_intake_call(lambda: evidence(epoch_id), owner=True)
