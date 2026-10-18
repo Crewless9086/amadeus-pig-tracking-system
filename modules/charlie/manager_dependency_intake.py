@@ -12,7 +12,7 @@ import time
 import sys
 import os
 from contextlib import nullcontext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from modules.oom_sakkie.family_access import resolve_family_principal
 
@@ -31,6 +31,7 @@ CONTRACT = "core.manager_dependency_intake.v1"
 ACTOR = "service:core.manager_dependency_intake.v1"
 MAX_DEPENDENCIES = 8
 INTAKE_BUDGET_SECONDS = 10
+CLOUD_INTAKE_BUDGET_SECONDS = 60
 _EFFECTS = ["core_finding_append", "core_command_receipt", "manager_receipt_link"]
 _SCOPE_KEYS = {"contract", "mission_id", "mission_identity_digest", "owner_user_id", "owner_binding",
                "producer_revision", "dependencies", "allowed_effects"}
@@ -383,9 +384,18 @@ def consume_manager_dependencies(*, mode, policies, database_url=None, connect_f
         marked = (policy.get("metadata_json") or policy.get("metadata") or {}).get("cloud_receipt_epoch")
         _require((marked is None and cloud_epoch is None) or (isinstance(marked, dict) and isinstance(cloud_epoch, dict)),
                  "cloud_epoch_context_required")
+        budget = INTAKE_BUDGET_SECONDS
+        if cloud_epoch is not None:
+            # Only the exact admitted cloud context receives the larger shared
+            # transport budget. Current DB authority is still checked under
+            # locks in both transactions for every dependency.
+            now = datetime.now(timezone.utc)
+            _policy_matches(policy, policy, now)
+            _cloud_epoch_matches(policy, policy, cloud_epoch, now)
+            budget = CLOUD_INTAKE_BUDGET_SECONDS
     except (ValueError, TypeError, KeyError):
         return {"status": "manager_dependency_scope_invalid", "results": [], "failures": 1}
-    deadline = time.monotonic() + INTAKE_BUDGET_SECONDS
+    deadline = time.monotonic() + budget
     results = []
     for dep in scope["dependencies"]:
         try:

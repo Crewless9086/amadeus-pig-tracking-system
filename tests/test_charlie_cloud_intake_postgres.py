@@ -38,7 +38,11 @@ def proposal(h):
         "duration_seconds":1200,"worker_token_sha256":hashlib.sha256(TOKEN.encode()).hexdigest(),
         "provider":{"worker_service_id":cloud.WORKER_SERVICE,"worker_deploy_id":"dep-"+"c"*20,
             "worker_revision":REVISION,"api_service_id":cloud.API_SERVICE,"api_deploy_id":"dep-"+"d"*20,
-            "api_revision":REVISION,"observed_at":ready["server_time"],"evidence_sha256":"e"*64}}
+            "api_revision":REVISION,
+            # A freshly observed provider precedes commissioning; leave 1s for
+            # Docker/host clock adjustment without relaxing production checks.
+            "observed_at":(datetime.fromisoformat(ready["server_time"])-timedelta(seconds=1)).isoformat(),
+            "evidence_sha256":"e"*64}}
 
 
 def prepare(h):
@@ -277,3 +281,128 @@ def test_lost_cycle_completion_stays_begun_with_independent_receipt_readback(h,m
     with pytest.raises(cloud.CloudIntakeRefused,match="cycle_outcome_pending_owner_readback"):
         h.cloud(cloud.cycle,packet(admitted),TOKEN)
     assert len(snapshot(h)["commands"])==2
+
+
+def failed_partial_epoch(h, monkeypatch):
+    """Real first transaction commits; fail before its independent link transaction."""
+    admitted = prepare(h)
+    real_one = cloud.intake._one_dependency
+    real_open = cloud.intake._open
+    first_case = h.deps[0]["case_id"]
+    def fail_between_transactions(expected, dep, url, factory, deadline, cloud_epoch=None):
+        if dep["case_id"] != first_case:
+            raise TimeoutError("synthetic shared budget exhausted")
+        opens = [0]
+        def connect(*args, **kwargs):
+            opens[0] += 1
+            if opens[0] == 2:
+                raise TimeoutError("synthetic stop after committed pair")
+            return real_open(*args, **kwargs)
+        with monkeypatch.context() as local:
+            local.setattr(cloud.intake, "_open", connect)
+            return real_one(expected, dep, url, factory, deadline, cloud_epoch)
+    with monkeypatch.context() as local:
+        local.setattr(cloud.intake, "_one_dependency", fail_between_transactions)
+        failed = h.cloud(cloud.cycle, packet(admitted), TOKEN)
+    assert failed["success"] is False and failed["intake"]["failures"] == 2
+    evidence = h.cloud(cloud.evidence, admitted["epoch"]["epoch_id"])
+    assert [r["counts"] for r in evidence["receipts"]] == [[1,1,0],[0,0,0]]
+    revoked = h.cloud(cloud.set_enabled, admitted["epoch"]["epoch_id"],
+        {"policy_sha256": evidence["policy_sha256"]}, enabled=False, actor="owner-admin:synthetic")
+    return revoked
+
+
+def recovery_proposal(h):
+    ready = h.cloud(cloud.readiness)
+    p = proposal(h)
+    p["recovery"] = ready["recovery"]
+    p["worker_token_sha256"] = hashlib.sha256(("b" * 64).encode()).hexdigest()
+    return p
+
+
+def test_explicit_recovery_preserves_failed_history_and_finishes_same_receipts(h, monkeypatch):
+    failed = failed_partial_epoch(h, monkeypatch)
+    before = snapshot(h); prior_policy = policy_row(h)
+    p = recovery_proposal(h)
+    assert p["recovery"]["prior_epoch_id"] == failed["epoch"]["epoch_id"]
+    # Readiness/proposal never renews a grant or writes a receipt.
+    assert snapshot(h) == before and policy_row(h) == prior_policy
+    prepared = h.cloud(cloud.create_epoch, p, actor="owner-admin:synthetic")
+    assert prepared["epoch"]["epoch_id"] != failed["epoch"]["epoch_id"]
+    assert prepared["epoch"]["recovery"] == p["recovery"] and prepared["enabled"] is False
+    assert snapshot(h)["commands"] == before["commands"]
+    enabled = h.cloud(cloud.set_enabled, prepared["epoch"]["epoch_id"],
+        {"policy_sha256": prepared["policy_sha256"]}, enabled=True, actor="owner-admin:synthetic")
+    result = h.cloud(cloud.cycle, packet(enabled, request_id="4"*32, instance="5"*32), "b"*64)
+    assert result["success"] is True, result
+    assert result["model_calls"] == result["farm_actions"] == 0
+    assert result["mission_pickup_attempted"] is False
+    evidence = h.cloud(cloud.evidence, enabled["epoch"]["epoch_id"])
+    assert all(r["counts"] == [1,1,1] and r["verified"] for r in evidence["receipts"])
+    after = snapshot(h)
+    assert after["cases"] == before["cases"]
+    assert before["commands"][0] in after["commands"]
+    assert all(row in after["findings"] for row in before["findings"])
+    audits = [r[0] for r in after["findings"] if r[0]["event_type"] == "review_note"]
+    assert any(r["metadata_json"].get("prior_policy") == prior_policy for r in audits)
+    monkeypatch.setattr(cloud, "POLL_SECONDS", 0)
+    later = h.cloud(cloud.cycle, packet(enabled, request_id="6"*32, instance="5"*32), "b"*64)
+    assert later["success"] and all(r["status"] == "intake_exact_replay" for r in later["intake"]["results"])
+    assert snapshot(h)["commands"] == after["commands"]
+
+
+@pytest.mark.parametrize("drift", ["missing", "epoch", "request", "digest", "extra", "token"])
+def test_partial_recovery_requires_exact_explicit_owner_preimage_and_new_token(h, monkeypatch, drift):
+    failed_partial_epoch(h, monkeypatch)
+    p = recovery_proposal(h)
+    if drift == "missing": del p["recovery"]
+    elif drift == "epoch": p["recovery"]["prior_epoch_id"] = "e"*32
+    elif drift == "request": p["recovery"]["prior_request_id"] = "e"*32
+    elif drift == "digest": p["recovery"]["receipt_state_sha256"] = "e"*64
+    elif drift == "extra": p["recovery"]["resume_builder"] = True
+    else: p["worker_token_sha256"] = hashlib.sha256(TOKEN.encode()).hexdigest()
+    before = snapshot(h); old = policy_row(h)
+    with pytest.raises((cloud.CloudIntakeRefused, cloud.intake.IntakeRefused)):
+        h.cloud(cloud.create_epoch, p, actor="owner-admin:synthetic")
+    assert snapshot(h) == before and policy_row(h) == old
+
+
+@pytest.mark.parametrize("drift", ["payload", "result", "recorded_by", "begun", "recovery_chain", "wrong_failure", "wrong_request", "prior_scope", "prior_expiry"])
+def test_readiness_never_offers_recovery_for_unverified_or_ineligible_pair(h, monkeypatch, drift):
+    failed_partial_epoch(h, monkeypatch)
+    with h.db() as db:
+        if drift == "payload": db.execute("update public.charlie_control_commands set payload_json=payload_json||%s::jsonb", (json.dumps({"unexpected":True}),))
+        elif drift == "result": db.execute("update public.charlie_control_commands set result_json=result_json||%s::jsonb", (json.dumps({"repair_verified":True}),))
+        elif drift == "recorded_by": db.execute("update public.charlie_mission_events set recorded_by='other' where event_type='finding_recorded'")
+        else:
+            policy = db.execute("select to_jsonb(p) from public.charlie_delegation_policies p").fetchone()[0]
+            epoch = policy["metadata_json"][cloud.META_KEY]
+            if drift == "begun": epoch["cycles"][0]["status"] = "begun"
+            elif drift == "recovery_chain": epoch["recovery"] = {"prior_epoch_id":"a"*32}
+            elif drift == "wrong_failure": epoch["cycles"][0]["result"]["intake"]["results"][0]["failure_kind"] = "OtherError"
+            elif drift == "prior_scope": epoch["scope_sha256"] = "e"*64
+            elif drift == "prior_expiry": epoch["expires_at"] = "2026-01-01T00:00:00+00:00"
+            else: epoch["cycles"][0]["result"]["request_id"] = "e"*32
+            db.execute("update public.charlie_delegation_policies set metadata_json=%s::jsonb", (json.dumps(policy["metadata_json"]),))
+    before = snapshot(h); old = policy_row(h)
+    with pytest.raises((cloud.CloudIntakeRefused, cloud.intake.IntakeRefused)):
+        h.cloud(cloud.readiness)
+    assert snapshot(h) == before and policy_row(h) == old
+
+
+@pytest.mark.parametrize("drift", ["pair", "count", "hold", "generation"])
+def test_recovery_enable_rechecks_receipts_and_current_world(h, monkeypatch, drift):
+    failed_partial_epoch(h, monkeypatch)
+    prepared = h.cloud(cloud.create_epoch, recovery_proposal(h), actor="owner-admin:synthetic")
+    with h.db() as db:
+        if drift == "pair": db.execute("update public.charlie_control_commands set result_json=result_json||%s::jsonb", (json.dumps({"repair_verified":True}),))
+        elif drift == "count": db.execute("delete from public.charlie_control_commands")
+        elif drift == "generation": db.execute("update app_private.oom_manager_cases set generation=generation+1")
+        else: db.execute("""insert into public.charlie_owner_execution_hold_events
+            (event_id,hold_id,mission_id,generation_identity,event_type,reason,owner_identity_hash,authorization_identity)
+            values('REC-H','REC-H',%s,'g','hold_created','test',%s,%s)""",(h.mission["mission_id"],"a"*64,"b"*64))
+    before = snapshot(h); old = policy_row(h)
+    with pytest.raises((cloud.CloudIntakeRefused, cloud.intake.IntakeRefused)):
+        h.cloud(cloud.set_enabled, prepared["epoch"]["epoch_id"], {"policy_sha256": prepared["policy_sha256"]},
+                      enabled=True, actor="owner-admin:synthetic")
+    assert snapshot(h) == before and policy_row(h) == old and old["enabled"] is False

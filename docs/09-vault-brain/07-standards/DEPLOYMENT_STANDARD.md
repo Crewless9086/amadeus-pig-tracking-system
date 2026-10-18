@@ -157,6 +157,25 @@ a model or retrying an ambiguous cycle. Acceptance requires canonical receipt
 readback, exact provider proof and a later independent cycle while the owner's
 terminal is absent; source tests or a manual API cycle do not establish autonomy.
 
+Cloud receipt processing retains two transactions: first commit the immutable
+command/finding pair, then independently verify that commit before recording
+its manager acknowledgement. The admitted cloud consumer shares one 60-second
+budget across its dependencies; ordinary intake remains at 10 seconds. Per-query,
+lock and connection bounds remain unchanged. The worker's 90-second socket
+timeout accommodates the separate admission, processing and completion phases;
+it is not a total request deadline and never authorizes automatic retries.
+
+A revoked, completed first cloud trial that timed out with exactly the first
+committed command/finding pair, no acknowledgement and an untouched second
+case may support one explicit recovery proposal. The owner must bind the prior
+epoch, failed request and current receipt digest, with a new credential and
+fresh provider evidence. Counts alone are insufficient: verify the exact stored
+pair before offering, creating and enabling recovery. Changed receipts, scope,
+expiry, holds or case evidence refuse activation. A recovery grant cannot start
+a further recovery chain. Preserve the prior failed cycle, full policy and audit
+history; never delete receipts or re-enable the failed epoch. A new deployment
+and separately approved trial are required because the failed worker stays inert.
+
 ## Dependency retirement and scheduler singularity
 
 Documented, runtime-loaded, provider-verified, OS-observed and physical evidence

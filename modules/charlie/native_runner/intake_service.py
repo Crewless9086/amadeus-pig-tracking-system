@@ -14,6 +14,7 @@ import uuid
 BASE_URL = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/core/manager-intake/cloud"
 WORKER_SERVICE = "srv-dacofeoae00c73813eug"
 CONTRACT = "core.cloud_receipt_intake.v1"
+HTTP_TIMEOUT_SECONDS = 90
 
 
 class IntakeWorkerRefused(ValueError):
@@ -44,7 +45,9 @@ class ReceiptClient:
             method="POST" if payload is not None else "GET")
         # An ambiguous POST is never retried here. The owner can inspect the
         # persisted begun/completed operation and canonical receipt readback.
-        with self.opener.open(request, timeout=25) as response:
+        # Socket timeout leaves margin for admission (10s), shared intake
+        # (60s) and completion (10s); it is not a total wall-clock deadline.
+        with self.opener.open(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             need(response.status == 200, "api_refused")
             raw = response.read(65537)
             need(len(raw) <= 65536, "api_response_bound")
