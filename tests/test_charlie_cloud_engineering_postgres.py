@@ -360,3 +360,113 @@ def test_false_completion_evidence_cannot_commit_artifact_or_audit(h, kind):
     assert snapshot(h) == before
     retained = op(h, "current", {})["grant"]
     assert retained["state"] == "reviews_passed" and retained["reserved_micro_usd"] == 300000
+
+
+@pytest.mark.parametrize("state", ["issued", "claimed", "baseline_verified", "candidate_prepared", "tests_passed", "reviews_passed"])
+def test_collision_keeps_every_active_cloud_state(h, state):
+    other = "CORE-SYNTHETIC-COMPETITOR"
+    with h.db() as db:
+        seed(db, other)
+        grant = {"state": state, "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+                 "manifest": {"generation": "other-generation"}}
+        db.execute("update public.charlie_missions set metadata_json=%s::jsonb where mission_id=%s",
+                   (json.dumps({core.KEY: grant}), other))
+    before = snapshot(h)
+    with pytest.raises(core.EngineeringRefused, match="competing_writer"):
+        admit(h)
+    assert snapshot(h) == before
+
+
+@pytest.mark.parametrize("kind", [core.KEY, "execution_lease", "hermes_native_execution"])
+@pytest.mark.parametrize("expiry", [None, "2000-01-01T00:00:00Z"])
+def test_collision_missing_or_expired_authority_does_not_block(h, kind, expiry):
+    with h.db() as db:
+        seed(db, "CORE-SYNTHETIC-OLD")
+        key = "claim_expires_at" if kind == "hermes_native_execution" else "expires_at"
+        state = {"state": "issued", "manifest": {"generation": "old"}, key: expiry}
+        db.execute("update public.charlie_missions set metadata_json=%s::jsonb where mission_id=%s",
+                   (json.dumps({kind: state}), "CORE-SYNTHETIC-OLD"))
+    assert admit(h)["grant"]["state"] == "issued"
+
+
+@pytest.mark.parametrize("metadata", [None, [], ["ignored"], "ignored", 12,
+                                       {core.KEY: None}, {"execution_lease": "unknown"}])
+def test_collision_preserves_missing_object_semantics(h, metadata):
+    with h.db() as db:
+        seed(db, "CORE-SYNTHETIC-LEGACY")
+        db.execute("update public.charlie_missions set metadata_json=%s::jsonb where mission_id=%s",
+                   (json.dumps(metadata), "CORE-SYNTHETIC-LEGACY"))
+    assert admit(h)["grant"]["state"] == "issued"
+
+
+@pytest.mark.parametrize("kind", [core.KEY, "execution_lease", "hermes_native_execution"])
+def test_collision_malformed_active_expiry_fails_without_admission(h, kind):
+    with h.db() as db:
+        seed(db, "CORE-SYNTHETIC-MALFORMED")
+        key = "claim_expires_at" if kind == "hermes_native_execution" else "expires_at"
+        grant = {"state": "issued", "manifest": {"generation": "malformed"}, key: "not-a-time"}
+        db.execute("update public.charlie_missions set metadata_json=%s::jsonb where mission_id=%s",
+                   (json.dumps({kind: grant}), "CORE-SYNTHETIC-MALFORMED"))
+    before = snapshot(h)
+    with pytest.raises(psycopg.errors.InvalidDatetimeFormat):
+        admit(h)
+    assert snapshot(h) == before
+
+
+@pytest.mark.parametrize("changed", ["mission", "contract", "operation", "generation"])
+def test_collision_revocation_requires_exact_writer_identity(h, changed):
+    other = "CORE-SYNTHETIC-COMPETITOR"
+    grant = {"state": "issued", "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+             "manifest": {"generation": "active-generation"}}
+    event = {"contract": core.CONTRACT, "operation": "revoke", "generation": "active-generation"}
+    with h.db() as db:
+        seed(db, other)
+        db.execute("update public.charlie_missions set metadata_json=%s::jsonb where mission_id=%s",
+                   (json.dumps({core.KEY: grant}), other))
+        if changed != "mission": event[changed] = "different"
+        db.execute("""insert into public.charlie_mission_events(event_id,mission_id,event_type,metadata_json)
+            values('SYNTHETIC-REVOKE',%s,'review_note',%s::jsonb)""",
+                   (h.mid if changed == "mission" else other, json.dumps(event)))
+    before = snapshot(h)
+    with pytest.raises(core.EngineeringRefused, match="competing_writer"):
+        admit(h)
+    assert snapshot(h) == before
+
+
+def test_collision_materializes_active_candidates_before_history(h):
+    # Retained source/artifact data belongs to history, not current authority.
+    # Use incompressible mission payloads and unrelated events to exercise TOAST.
+    payload = "".join(hashlib.sha256(str(i).encode()).hexdigest() for i in range(4096))
+    with h.db() as db:
+        db.execute("""insert into public.charlie_missions
+            (mission_id,status,source,raw_text,title,urgency,mission_type,approval_level,metadata_json)
+            select 'SYNTHETIC-HISTORY-'||n,'paused','synthetic','history','history','P1','bug fix','LEVEL 3',
+                   jsonb_build_object('historical_source',%s::text)
+            from generate_series(1,250) n""", (payload,))
+        db.execute("""insert into public.charlie_mission_events(event_id,mission_id,event_type,metadata_json)
+            select 'SYNTHETIC-EVENT-'||n,%s,'review_note',
+                   jsonb_build_object('retained_source',%s::text)
+            from generate_series(1,1000) n""", (h.mid, payload[:32768]))
+        db.execute("analyze public.charlie_missions")
+        db.execute("analyze public.charlie_mission_events")
+    # Execute the actual guard and inspect the exact statement it used.
+    with h.db() as db:
+        db.execute("set local statement_timeout='3s'")
+        queries = []
+        class RecordingCursor:
+            def __init__(self, raw): self.raw = raw
+            def execute(self, query, params=None):
+                queries.append((query, params)); self.raw.execute(query, params)
+            def fetchone(self): return self.raw.fetchone()
+        with db.cursor() as cursor:
+            core._collision(RecordingCursor(cursor), h.mid)
+        query, params = queries[0]
+        plan = db.execute("explain (analyze,buffers,format json) " + query, params).fetchone()[0][0]
+        def nodes(node):
+            yield node
+            for child in node.get("Plans", []): yield from nodes(child)
+        history = [node for node in nodes(plan["Plan"]) if node.get("Relation Name") == "charlie_mission_events"]
+        assert history and all(node["Actual Loops"] == 0 for node in history)
+        assert plan["Plan"]["Actual Rows"] == 0
+    # Also retain actual admission's existing deadline, locks and write contract.
+    assert admit(h)["grant"]["state"] == "issued"
