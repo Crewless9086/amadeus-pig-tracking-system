@@ -21,6 +21,12 @@ the actual diff, source and test evidence. The output is a private candidate
 artifact; publication, protected merge and deployment are separate release
 actions. A private artifact is not a deployed farm outcome.
 
+The competing-writer check projects compact grant state and filters active
+cloud candidates before checking their revocation history. It still checks
+legacy and native leases on the current mission and other missions, and keeps
+the existing database deadline and statement/lock limits. No cached authority
+or new database schema is introduced.
+
 The worker stops on unknown outcomes, changed owner instructions, holds,
 expiry, conflicting writers or exhausted budget. Verified test failures and
 concrete reviewer findings can return to the builder for a bounded correction;

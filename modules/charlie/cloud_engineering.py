@@ -340,18 +340,32 @@ def _holds(cur, mission_id):
 
 
 def _collision(cur, mission_id):
-    cur.execute("""select mission_id from public.charlie_missions
-        where (
-          (mission_id<>%s and metadata_json->'cloud_engineering_execution'->>'state' in
+    # Compact mission state once; exclude inactive cloud grants before touching
+    # revocation history. MATERIALIZED prevents planner pull-up from restoring
+    # whole-register history scans or repeated reads of large mission metadata.
+    cur.execute("""with writer_state as materialized (
+          select mission_id,
+                 metadata_json->'cloud_engineering_execution' as engineering,
+                 metadata_json->'execution_lease' as execution_lease,
+                 metadata_json->'hermes_native_execution' as native_execution
+          from public.charlie_missions
+        ), cloud_writers as materialized (
+          select mission_id, engineering->'manifest'->>'generation' as generation
+          from writer_state
+          where mission_id<>%s and engineering->>'state' in
               ('issued','claimed','baseline_verified','candidate_prepared','tests_passed','reviews_passed')
-           and (metadata_json->'cloud_engineering_execution'->>'expires_at')::timestamptz>clock_timestamp()
-           and not exists (select 1 from public.charlie_mission_events e
-               where e.mission_id=charlie_missions.mission_id and e.metadata_json->>'contract'='core.cloud_engineering.v1'
-                 and e.metadata_json->>'operation'='revoke'
-                 and e.metadata_json->>'generation'=charlie_missions.metadata_json->'cloud_engineering_execution'->'manifest'->>'generation'))
-          or (metadata_json->'execution_lease'->>'expires_at')::timestamptz>clock_timestamp()
-          or (metadata_json->'hermes_native_execution'->>'claim_expires_at')::timestamptz>clock_timestamp()
-        ) limit 1""", (mission_id,))
+            and (engineering->>'expires_at')::timestamptz>clock_timestamp()
+        )
+        select mission_id from cloud_writers w
+        where not exists (select 1 from public.charlie_mission_events e
+            where e.mission_id=w.mission_id and e.metadata_json->>'contract'='core.cloud_engineering.v1'
+              and e.metadata_json->>'operation'='revoke'
+              and e.metadata_json->>'generation'=w.generation)
+        union all
+        select mission_id from writer_state
+        where (execution_lease->>'expires_at')::timestamptz>clock_timestamp()
+           or (native_execution->>'claim_expires_at')::timestamptz>clock_timestamp()
+        limit 1""", (mission_id,))
     need(cur.fetchone() is None, "competing_writer")
     cur.execute("""select policy_id from public.charlie_delegation_policies
         where policy_id=%s and enabled is true limit 1""", ("core.manager_dependency_intake.20261010",))
