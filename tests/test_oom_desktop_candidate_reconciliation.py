@@ -59,7 +59,7 @@ SYNTHETIC_PINS = {"BRANCH": "codex/synthetic-manager-progress", "CANDIDATE_PR": 
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'BASE': 'c8a1274aa1d20ff282d8d497b18c1e87335e08ee', 'CANDIDATE_PR': None, 'HEAD': '5b57103e45a23d8b2af28fff654cc5769718efbc', 'TREE': 'c89acad2ffcd8671bad63e4424fce5c87eff3363', 'APPROVED_RUNTIME_HEAD': '5b57103e45a23d8b2af28fff654cc5769718efbc', 'BRANCH': 'codex/core-cloud-collision-query-20261019', 'PATHS': ['docs/06-operations/CORE_CLOUD_ENGINEERING_TRIAL.md', 'modules/charlie/cloud_engineering.py', 'tests/test_charlie_cloud_engineering_postgres.py'], 'QUALIFICATION_TEST_PATHS': []}
+FINAL_CANDIDATE_PINS = {'BASE': 'c8a1274aa1d20ff282d8d497b18c1e87335e08ee', 'CANDIDATE_PR': 1401, 'HEAD': '5b57103e45a23d8b2af28fff654cc5769718efbc', 'TREE': 'c89acad2ffcd8671bad63e4424fce5c87eff3363', 'APPROVED_RUNTIME_HEAD': '5b57103e45a23d8b2af28fff654cc5769718efbc', 'BRANCH': 'codex/core-cloud-collision-query-20261019', 'PATHS': ['docs/06-operations/CORE_CLOUD_ENGINEERING_TRIAL.md', 'modules/charlie/cloud_engineering.py', 'tests/test_charlie_cloud_engineering_postgres.py'], 'QUALIFICATION_TEST_PATHS': []}
 
 CLOUD_ADDED_EFFECTS = {'core_cloud_engineering_worker_release:srv-dacofeoae00c73813eug:5b57103e45a23d8b2af28fff654cc5769718efbc', 'application_revision_rollback:web:c8a1274aa1d20ff282d8d497b18c1e87335e08ee', 'existing_web_application_release'}
 CLOUD_REMOVED_EFFECTS = {'core_cloud_engineering_worker_release:srv-dacofeoae00c73813eug:ded0e9958717ea6c7f8a038e675f173329531b8a', 'application_revision_rollback:web:dfb75ccc07e8f2ade507e4736a74fc7701ec5222'}
