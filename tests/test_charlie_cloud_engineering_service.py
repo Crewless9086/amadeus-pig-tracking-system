@@ -328,3 +328,366 @@ def test_untrusted_or_mutated_exception_diagnostics_cannot_escape(variant):
     svc.run_worker(environ=ENV, client=client, stop=Stop(), report=reports.append, run_factory=Run)
     assert set(reports[-1]) == {"status", "instance", "reason"}
     assert private not in json.dumps(reports) + json.dumps(client.calls)
+
+
+@pytest.fixture
+def response_pipeline(tmp_path, monkeypatch):
+    """Actual worker, adapter, SDK, Git and canonical transitions; no network.
+
+    The test receipt is synthetic: Linux isolation remains separately qualified.
+    This fixture never imports or changes the real mortality target.
+    """
+    import difflib
+    import hashlib
+    import socket
+    import sys
+    from contextlib import nullcontext
+    from dataclasses import replace
+    from datetime import datetime, timedelta, timezone
+    from types import ModuleType
+    import httpx
+    import openai
+    from modules.charlie import cloud_engineering as store
+    from modules.charlie.native_runner.model_adapter import (
+        DEFAULT_MODEL, STRICT_BASE_URL, HermesAuxiliaryModel,
+    )
+
+    state = SimpleNamespace(calls=[], outputs=[], responses=[], reports=[], runs=[],
+        mutate=None, error=None, revoke=False, send_back=False, builders=0)
+    private = "synthetic-private-response-91827"
+    state.private = private
+    def reject_network(*args, **kwargs):
+        pytest.fail("real network attempted")
+    monkeypatch.setattr(socket, "create_connection", reject_network)
+    monkeypatch.setattr(socket.socket, "connect", reject_network)
+    # All Git writes are confined to this fixture, including clone/worktree setup.
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.autocrlf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "false")
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    initial = {"modules/pig_weights/synthetic.py": "def total(values):\n    return values[0]\n",
+               "tests/test_synthetic.py": "def test_one():\n    assert True\n",
+               "docs/09-vault-brain/synthetic.md": "Synthetic governance.\n"}
+    for name, content in initial.items():
+        path = origin / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8", newline="\n")
+    svc.checked_git(["init"], origin)
+    svc.checked_git(["add", "."], origin)
+    svc.checked_git(["-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                     "commit", "-m", "fixture"], origin)
+    revision = svc.checked_git(["rev-parse", "HEAD"], origin)
+    acceptance = "def test_conflicting_duplicate_order():\n    assert True\n"
+    allowed = sorted(name for name in initial if not name.startswith("docs/"))
+    grant = {"contract": store.CONTRACT, "state": "issued", "mission_id": "CORE-SYNTHETIC",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
+        "manifest": {"generation": "d" * 32, "base_sha": revision,
+            "worker_revision": revision, "api_revision": revision, "allowed_files": allowed,
+            "test_paths": ["tests/test_synthetic.py"], "context_paths": sorted(initial),
+            "instruction": "Correct the synthetic total and add regression coverage.",
+            "acceptance_source": acceptance,
+            "acceptance_sha256": hashlib.sha256(acceptance.encode()).hexdigest(),
+            "budget_micro_usd": 700000, "max_seconds": 1200},
+        "reservations": [], "reserved_micro_usd": 0}
+    class Canonical:
+        mission_id = "CORE-SYNTHETIC"
+        def __init__(self):
+            self.grant, self.calls = grant, []
+        def call(self, operation, payload=None):
+            self.calls.append((operation, payload))
+            if operation == "current":
+                return self.grant
+            if self.grant["state"] in store.TERMINAL:
+                raise NativeExecutionError("grant_inactive")
+            self.grant = store.transition(self.grant, operation, payload,
+                                          now=datetime.now(timezone.utc))
+            return self.grant
+    state.client = Canonical()
+    real_git = svc.checked_git
+    def local_fetch(args, cwd):
+        if args[:2] == ["fetch", "--no-tags"]:
+            args = ["fetch", "--no-tags", "--depth=1", str(origin), revision]
+        return real_git(args, cwd)
+    monkeypatch.setattr(svc, "checked_git", local_fetch)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", revision)
+
+    def ready():
+        patch = ""
+        for name in allowed:
+            old = (state.runs[0].worktree / name).read_text()
+            new = old + "# synthetic revision " + str(state.builders) + "\n"
+            patch += "".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
+                                                 fromfile="a/" + name, tofile="b/" + name))
+        return {"state": "PATCH_READY", "context_paths": [], "unified_diff": patch,
+                "test_proposal": ["synthetic fixed suite"], "reason": private}
+    state.ready = ready
+    def handler(request):
+        body = json.loads(request.content)
+        state.calls.append(body)
+        if state.error:
+            raise state.error(private, request=request)
+        builder = "patch" in body["response_format"]["json_schema"]["name"]
+        if builder:
+            state.builders += 1
+            content = state.outputs.pop(0) if state.outputs else ready()
+            if callable(content):
+                content = content()
+        else:
+            content = {"verdict": "SEND_BACK" if state.send_back else "APPROVE",
+                       "findings": ["synthetic revision required"] if state.send_back else []}
+        state.responses.append(content)
+        if state.revoke:
+            state.client.grant = {**state.client.grant, "state": "revoked"}
+        return httpx.Response(200, json={"id": "gen-synthetic-" + str(len(state.calls)),
+            "object": "chat.completion", "created": 1, "model": DEFAULT_MODEL,
+            "choices": [{"index": 0, "finish_reason": "stop", "message": {
+                "role": "assistant", "content": json.dumps(content)}}]})
+    def transport(**kwargs):
+        assert kwargs == {"retries": 0, "verify": True, "trust_env": False}
+        return httpx.MockTransport(handler)
+    parent_http = httpx.Client(transport=httpx.MockTransport(reject_network), trust_env=False)
+    parent = openai.OpenAI(api_key="synthetic-only", base_url=STRICT_BASE_URL,
+                          http_client=parent_http)
+    monkeypatch.setattr(httpx, "HTTPTransport", transport)
+    aux = ModuleType("agent.auxiliary_client")
+    aux.resolve_provider_client = lambda **kwargs: (parent, DEFAULT_MODEL)
+    monkeypatch.setitem(sys.modules, "agent", ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.auxiliary_client", aux)
+    plugins = ModuleType("hermes_cli.plugins")
+    plugins._plugin_home_scope = lambda home: nullcontext()
+    monkeypatch.setitem(sys.modules, "hermes_cli", ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", plugins)
+    class Model(HermesAuxiliaryModel):
+        def complete_structured(self, **kwargs):
+            result = super().complete_structured(**kwargs)
+            return replace(result, **state.mutate(result)) if state.mutate else result
+    class Run(svc.EngineeringRun):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs, root=tmp_path / "private", model_factory=Model)
+            state.runs.append(self)
+        def tests(self, label, *, baseline=False):
+            # Deliberately synthetic receipt, not evidence of a Linux sandbox run.
+            self.check()
+            expected = self.expected_tests
+            code = 1 if baseline else 0
+            phases = {"setup": "passed", "call": "failed" if baseline else "passed",
+                      "teardown": "passed"}
+            receipt = {"returncode": code, "stdout": "test_conflicting_duplicate_order AssertionError",
+                "containment": {"verified": True}, "completion": {"verified": True,
+                    "completed": True, "exitstatus": code, "collection_errors": 0,
+                    "collected": expected, "expected_test_ids": expected,
+                    "expected_passed": not baseline, "all_passed": not baseline,
+                    "outcomes": {name: phases for name in expected}}}
+            svc.write_once(self.directory / (label + "-tests.json"), receipt)
+            return receipt
+    def execute():
+        svc.run_worker(environ={**ENV, "RENDER_GIT_COMMIT": revision}, client=state.client,
+                       stop=Stop(2), report=state.reports.append, run_factory=Run)
+        state.directory = state.runs[0].directory
+        state.grant = state.client.grant
+        state.reason = state.reports[-1].get("reason")
+        assert sum(op == "claim" for op, _ in state.client.calls) == 1
+        assert private not in json.dumps(state.reports)
+        return state
+    state.execute = execute
+    yield state
+    parent.close()
+
+
+def _semantic_response(**changes):
+    return {"state": "PATCH_READY", "context_paths": ["synthetic.py"], "unified_diff": "",
+            "test_proposal": [], "reason": "synthetic-private-response-91827", **changes}
+
+
+@pytest.mark.parametrize("changes,reason", [
+    ({"unified_diff": "not applied"}, "native_patch_state_invalid"),
+    ({"context_paths": []}, "native_patch_state_invalid"),
+    ({"state": "NEEDS_CONTEXT", "context_paths": []}, "native_context_state_invalid"),
+    ({"state": "NEEDS_CONTEXT", "unified_diff": "not applied"}, "native_context_state_invalid"),
+    ({"state": "BLOCKED"}, "native_blocked_state_invalid"),
+    ({"state": "BLOCKED", "context_paths": [], "unified_diff": "not applied"}, "native_blocked_state_invalid"),
+    ({"state": "BLOCKED", "context_paths": [], "reason": " "}, "native_blocked_state_invalid"),
+])
+def test_real_sdk_semantic_recovery_retains_response_and_completes(response_pipeline, changes, reason):
+    import hashlib
+    import stat
+    p = response_pipeline
+    invalid = _semantic_response(**changes)
+    p.outputs = [invalid]
+    p.execute()
+    assert p.grant["state"] == "artifact_ready", p.reports
+    assert len(p.calls) == len(p.grant["reservations"]) == 4
+    assert p.grant["reserved_micro_usd"] == 400000
+    assert len(list(p.directory.glob("model-response-*.json"))) == 4
+    for reservation in p.grant["reservations"]:
+        path = p.directory / ("model-response-" + reservation["request_id"] + ".json")
+        evidence = json.loads(path.read_text())
+        assert len(path.read_bytes()) <= svc.MODEL_RESPONSE_BYTES
+        assert evidence["request_id"] == reservation["request_id"]
+        assert evidence["request_sha256"] == reservation["request_sha256"]
+        audit = p.directory / ("model-" + reservation["request_sha256"] + ".json")
+        assert evidence["audit_sha256"] == hashlib.sha256(audit.read_bytes()).hexdigest()
+        if __import__("os").name != "nt":
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    failure = json.loads((p.directory / "builder-failure-1.json").read_text())
+    assert failure["reason"] == reason
+    raw = json.loads((p.directory / failure["response_evidence"]["file"]).read_text())
+    assert raw["parsed"] == invalid
+    assert failure["response_evidence"]["sha256"] == hashlib.sha256(
+        (p.directory / failure["response_evidence"]["file"]).read_bytes()).hexdigest()
+    assert not (p.directory / "builder-response-1.json").exists()
+    artifact = p.grant["artifact"]
+    assert artifact["iterations"][0]["feedback"] == [{"source": "builder_semantic_validator",
+        "reason": reason, "attempt": 1,
+        "instruction": "Return fields consistent with exactly one response state."}]
+    assert [r["role"] for r in artifact["reviews"]] == ["SECURITY", "FUNCTIONAL"]
+    assert len({call["provider_request_id"] for call in artifact["model_calls"]}) == 4
+    assert p.reports[-1]["status"] == "engineering_worker_inactive"
+    # The next request contains controlled feedback, never the invalid response.
+    messages = p.calls[1]["messages"]
+    assert reason in json.dumps(messages) and "not applied" not in json.dumps(messages)
+    assert "PATCH_READY" in p.calls[0]["messages"][0]["content"]
+
+
+def test_repeated_semantics_exhaust_exactly_three_distinct_reservations(response_pipeline):
+    p = response_pipeline
+    p.outputs = [_semantic_response()] * 3
+    p.execute()
+    assert p.grant["state"] == "blocked" and p.reason == "engineering_revision_limit"
+    assert len(p.calls) == len(p.grant["reservations"]) == 3
+    assert len({row["request_sha256"] for row in p.grant["reservations"]}) == 3
+    assert len(list(p.directory.glob("builder-failure-*.json"))) == 3
+    assert len(list(p.directory.glob("model-response-*.json"))) == 3
+    assert svc.checked_git(["diff", "--name-only"], p.runs[0].worktree) == ""
+    assert not (p.directory / "final-artifact.json").exists()
+
+
+@pytest.mark.parametrize("state,paths", [("NEEDS_CONTEXT", ["synthetic.py"]), ("BLOCKED", [])])
+def test_valid_nonready_remains_terminal(response_pipeline, state, paths):
+    p = response_pipeline
+    p.outputs = [_semantic_response(state=state, context_paths=paths)]
+    p.execute()
+    assert p.reason == "builder_not_ready" and len(p.calls) == 1
+    assert len(list(p.directory.glob("model-response-*.json"))) == 1
+    assert not list(p.directory.glob("builder-failure-*.json"))
+
+
+@pytest.mark.parametrize("kind,expected", [
+    ("no_audit", "strict_model_audit_required"),
+    ("wrong_reservation", "model_response_reservation_invalid"),
+    ("identity", "native_runtime_identity_missing"),
+    ("role", "native_runtime_role_audit_invalid"),
+])
+def test_identity_audit_or_reservation_failure_cannot_recover_semantics(response_pipeline, kind, expected):
+    p = response_pipeline
+    p.outputs = [_semantic_response()]
+    def mutate(result):
+        if kind == "no_audit":
+            return {"audit": {}}
+        if kind == "wrong_reservation":
+            return {"audit": {**result.audit, "request_sha256": "a" * 64}}
+        if kind == "identity":
+            return {"agent_id": ""}
+        return {"audit": {**result.audit, "purpose": "wrong-role"}}
+    p.mutate = mutate
+    p.execute()
+    assert p.reason == expected and len(p.calls) == 1
+    assert not list(p.directory.glob("builder-failure-*.json"))
+    assert len(list(p.directory.glob("model-response-*.json"))) == (0 if kind in {"no_audit", "wrong_reservation"} else 1)
+
+
+@pytest.mark.parametrize("kind", ["network", "unknown_semantic", "adapter_semantic", "structural"])
+def test_unknown_structural_or_ambiguous_failure_is_not_retried(response_pipeline, monkeypatch, kind):
+    import httpx
+    from modules.charlie.native_runner import execution
+    from modules.charlie.native_runner.schemas import NativeSchemaError
+    p = response_pipeline
+    if kind == "network":
+        p.error = httpx.ReadTimeout
+    elif kind == "structural":
+        p.outputs = [_semantic_response(test_proposal=[4])]
+    else:
+        def refuse(*args, **kwargs):
+            raise NativeSchemaError(p.private if kind == "unknown_semantic" else "native_patch_state_invalid")
+        if kind == "unknown_semantic":
+            monkeypatch.setattr(execution, "validate_native_response", refuse)
+        else:
+            # Adapter-raised semantic-looking errors have no returned response.
+            p.mutate = refuse
+    p.execute()
+    assert p.grant["state"] == "blocked" and len(p.calls) == 1
+    assert len(p.grant["reservations"]) == 1
+    assert svc.checked_git(["diff", "--name-only"], p.runs[0].worktree) == ""
+    for path in p.directory.glob("builder-failure-*.json"):
+        assert p.private not in path.read_text()
+    expected = {"network": "hermes_auxiliary_inference_failed",
+                "unknown_semantic": "native_builder_response_invalid",
+                "adapter_semantic": "native_patch_state_invalid",
+                "structural": "native_test_proposal_invalid"}
+    assert p.reason == expected[kind]
+
+
+def test_revoke_after_invalid_response_prevents_next_paid_work(response_pipeline):
+    p = response_pipeline
+    p.outputs = [_semantic_response()]
+    p.revoke = True
+    p.execute()
+    assert p.grant["state"] == "revoked" and p.reason == "grant_inactive"
+    assert len(p.calls) == len(p.grant["reservations"]) == 1
+    assert len(list(p.directory.glob("model-response-*.json"))) == 1
+
+
+@pytest.mark.parametrize("kind", ["response", "audit"])
+def test_private_evidence_has_a_hard_size_bound(response_pipeline, kind):
+    p = response_pipeline
+    if kind == "response":
+        p.outputs = [_semantic_response(reason="x" * svc.MODEL_RESPONSE_BYTES)]
+    else:
+        p.mutate = lambda result: {"audit": {**result.audit, "extra": "x" * svc.MODEL_AUDIT_BYTES}}
+    p.execute()
+    assert p.reason == "model_evidence_size_bound" and len(p.calls) == 1
+    assert not list(p.directory.glob("model-response-*.json"))
+
+
+def test_revision_reviews_cannot_exceed_existing_seven_reservation_budget(response_pipeline):
+    p = response_pipeline
+    p.send_back = True
+    p.execute()
+    assert p.grant["state"] == "blocked"
+    assert len(p.calls) == len(p.grant["reservations"]) == 7
+    assert p.grant["reserved_micro_usd"] == 700000
+    assert p.builders == 3
+    assert not (p.directory / "final-artifact.json").exists()
+
+
+@pytest.mark.parametrize("kind", ["network", "adapter_semantic"])
+def test_prior_response_cannot_justify_retrying_later_ambiguous_failure(response_pipeline, kind):
+    import httpx
+    from modules.charlie.native_runner.schemas import NativeSchemaError
+    p = response_pipeline
+    def first():
+        if kind == "network":
+            p.error = httpx.ReadTimeout
+        return _semantic_response()
+    p.outputs = [first]
+    if kind == "adapter_semantic":
+        def mutate(result):
+            if len(p.calls) == 2:
+                raise NativeSchemaError("native_patch_state_invalid")
+            return {}
+        p.mutate = mutate
+    p.execute()
+    assert p.grant["state"] == "blocked"
+    assert len(p.calls) == len(p.grant["reservations"]) == 2
+    assert len(list(p.directory.glob("model-response-*.json"))) == 1
+    assert svc.checked_git(["diff", "--name-only"], p.runs[0].worktree) == ""
+    if kind == "adapter_semantic":
+        assert json.loads((p.directory / "builder-failure-2.json").read_text())["response_evidence"] is None
+
+
+def test_real_sdk_valid_first_response_preserves_three_call_path(response_pipeline):
+    p = response_pipeline.execute()
+    assert p.grant["state"] == "artifact_ready", p.reports
+    assert len(p.calls) == len(p.grant["reservations"]) == 3
+    assert not list(p.directory.glob("builder-failure-*.json"))

@@ -91,6 +91,31 @@ delivery or model execution. Raw exception text, provider bodies and headers are
 excluded. These contract protections do not establish the cause of any prior
 contained trial or authorize replay of a consumed attempt.
 
+In engineering mode, each successful parsed response is retained before native
+semantic validation as an exclusive private `model-response-<reservation-id>.json`
+file. Its reservation identity and audit digest bind it to the existing strict
+one-attempt model audit. The generation directory stays `0700`; evidence files
+are created `0600`, with limits of 600000 bytes per response envelope and 16384
+bytes per audit. Raw responses remain private and never enter status logs or
+validation feedback. A failed or ambiguous call does not reuse a prior response.
+
+The builder must return all five native fields. `PATCH_READY` requires an empty
+`context_paths` list and a nonempty diff; `NEEDS_CONTEXT` requires paths and an
+empty diff; `BLOCKED` requires empty paths and diff plus a nonblank reason.
+All states require a string reason and a list of strings for `test_proposal`.
+Host role identity is checked before semantic validation. Only
+`native_context_state_invalid`, `native_patch_state_invalid` and
+`native_blocked_state_invalid` can produce fixed validator feedback for the next
+existing builder iteration, after durable response capture and a fresh grant
+check. Invalid patches are never applied. The existing three-iteration limit,
+canonical reservation budget and independent SECURITY/FUNCTIONAL reviews remain
+unchanged; this recovery adds no model or transport retries. Valid NEEDS_CONTEXT
+and BLOCKED responses stay terminal in the cloud engineering loop. Structural,
+identity, audit, unknown and transport failures remain terminal. Private failure
+metadata records only a fixed stage/reason, iteration and evidence reference.
+These protections do not identify the response or exception of a prior trial
+whose response was not retained, and do not authorize another trial.
+
 ## Dedicated host contract
 
 Provision Ubuntu 24.04 LTS with 4 vCPU, 8 GB RAM, and an 80 GB persistent disk.
