@@ -339,7 +339,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt pytest
+      - run: python -m pip install -r requirements.txt pytest openai==2.24.0 httpx==0.28.1
       - name: Run isolated CHARLIE modules with hard timeouts
         shell: bash
         run: |
@@ -360,7 +360,7 @@ jobs:
               module="${module//\//.}"
               echo "::group::$module"
               case "$test_file" in
-                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py|tests/test_charlie_manager_dependency_timing.py|tests/test_charlie_cloud_intake.py|tests/test_charlie_cloud_intake_postgres.py|tests/test_charlie_cloud_current_producer.py|tests/test_charlie_cloud_engineering.py|tests/test_charlie_cloud_engineering_postgres.py|tests/test_charlie_cloud_engineering_service.py|tests/test_charlie_native_model_budget.py|tests/test_charlie_native_test_sandbox.py)
+                tests/test_charlie_manager_dependency_intake.py|tests/test_charlie_manager_dependency_intake_postgres.py|tests/test_charlie_manager_dependency_timing.py|tests/test_charlie_cloud_intake.py|tests/test_charlie_cloud_intake_postgres.py|tests/test_charlie_cloud_current_producer.py|tests/test_charlie_cloud_engineering.py|tests/test_charlie_cloud_engineering_postgres.py|tests/test_charlie_cloud_engineering_service.py|tests/test_charlie_native_model_budget.py|tests/test_charlie_native_model_contract.py|tests/test_charlie_native_test_sandbox.py)
                   timeout 120s python -m pytest -q -p no:cacheprovider --basetemp "$control_root/pytest" "$test_file"
                   ;;
                 *) timeout 120s python -m unittest "$module" -q ;;
