@@ -14,6 +14,15 @@
 - Test isolation: native_runner/test_sandbox.py. Strict model accounting:
   native_runner/model_adapter.py. No farm data, public packaging, merge,
   deployment, notifications, legacy Cursor retirement or automatic broad pickup.
+- Builder response recovery: native_runner/engineering_service.py retains bounded
+  private parsed responses bound to canonical reservations before semantic
+  validation. native_runner/execution.py checks host identity first and provides
+  state-specific field guidance. Only three explicit state-consistency errors
+  can use the existing three builder iterations; validators, canonical budget,
+  terminal nonready responses and independent reviewer gates remain unchanged.
+  tests/test_charlie_cloud_engineering_service.py exercises the real strict
+  adapter/SDK with a synthetic transport, canonical transitions and local Git;
+  its portable receipt fixture does not replace Linux isolation qualification.
 - Operational proof and limits: docs/06-operations/CORE_CLOUD_ENGINEERING_TRIAL.md.
   Existing receipt-only grants remain separate and cannot authorize coding.
 - Qualification: tests/test_charlie_cloud_engineering*.py,

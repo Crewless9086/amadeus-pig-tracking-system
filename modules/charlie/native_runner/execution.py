@@ -352,8 +352,12 @@ class HermesStructuredPatchWorker:
         result = self.llm.complete_structured(
             instructions=(
                 "Act only as a no-tool patch author. Return NEEDS_CONTEXT, PATCH_READY, or BLOCKED. "
-                "Never claim to read files not included in the packet. PATCH_READY must contain a "
-                "unified diff limited to allowed_files and a short test proposal."
+                "Never claim to read files not included in the packet. Return all five fields. "
+                "PATCH_READY: context_paths must be [], unified_diff must be nonempty and limited "
+                "to allowed_files; include a short test_proposal. "
+                "NEEDS_CONTEXT: context_paths must name the needed files, unified_diff must be empty. "
+                "BLOCKED: context_paths must be [], unified_diff must be empty, reason must be nonblank. "
+                "test_proposal is a list of strings and reason is a string in every state."
             ),
             input=[{"type": "text", "text": json.dumps(packet, sort_keys=True)}],
             json_schema=NATIVE_PATCH_SCHEMA,
@@ -364,9 +368,10 @@ class HermesStructuredPatchWorker:
             max_tokens=6000,
             timeout=120,
         )
-        response = validate_native_response(getattr(result, "parsed", None))
+        # An invalid host identity must never become a recoverable schema error.
         identity, runtime = _host_role_identity(
             result, task=task, purpose=purpose, schema_name=schema_name, prefix="HNW-")
+        response = validate_native_response(getattr(result, "parsed", None))
         response["worker_identity"] = identity
         response["worker_agent_id"] = runtime["agent_id"]
         response["worker_task"] = runtime["task"]

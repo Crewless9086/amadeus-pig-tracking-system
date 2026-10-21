@@ -23,10 +23,23 @@ from modules.charlie.native_runner.execution import (
 from modules.charlie.native_runner.intake_service import NoRedirect
 from modules.charlie.native_runner.model_adapter import HermesAuxiliaryModel, model_failure_diagnostics
 from modules.charlie.native_runner.test_sandbox import run_isolated_tests
+from modules.charlie.native_runner.schemas import NativeSchemaError
 
 BASE_URL = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/core/engineering/missions"
 ROOT = Path("/var/data/cloud-engineering")
 ACCEPTANCE_PATH = "tests/test_core_immutable_acceptance.py"
+# Only deterministic, state-field conflicts in a successfully audited builder
+# response can consume another existing builder iteration.
+RECOVERABLE_BUILDER_ERRORS = frozenset({
+    "native_context_state_invalid", "native_patch_state_invalid", "native_blocked_state_invalid",
+})
+BUILDER_SCHEMA_ERRORS = RECOVERABLE_BUILDER_ERRORS | frozenset({
+    "native_response_schema_invalid", "native_response_state_invalid",
+    "native_context_request_invalid", "native_test_proposal_invalid",
+    "native_patch_size_invalid", "native_reason_invalid",
+})
+MODEL_RESPONSE_BYTES = 600000
+MODEL_AUDIT_BYTES = 16384
 
 
 def need(value, reason):
@@ -34,10 +47,14 @@ def need(value, reason):
         raise NativeExecutionError(reason)
 
 
-def write_once(path, value):
+def write_once(path, value, *, max_bytes=None):
     path = Path(path)
     content = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    with path.open("xb") as output:
+    if max_bytes is not None:
+        need(len(content) <= max_bytes, "model_evidence_size_bound")
+    # Exclusive creation is private from the first byte, including on failure.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as output:
         output.write(content)
         output.flush()
         os.fsync(output.fileno())
@@ -150,6 +167,38 @@ class EngineeringRun:
              datetime.fromisoformat(self.grant["expires_at"]), "model_deadline_margin")
         # No refund or retry after this point, including parse errors/timeouts.
 
+    def record_model_response(self, result, request):
+        """Retain successful parsed output before native semantics; never log it."""
+        audit = getattr(result, "audit", None)
+        need(isinstance(audit, dict) and audit.get("strict_budget") is True
+             and type(audit.get("attempt_count")) is int and audit["attempt_count"] == 1,
+             "strict_model_audit_required")
+        audit = dict(audit)
+        request_sha = audit.get("request_sha256")
+        need(isinstance(request_sha, str) and re.fullmatch("[a-f0-9]{64}", request_sha),
+             "model_response_reservation_invalid")
+        reservations = [row for row in self.grant.get("reservations", [])
+                        if row.get("request_sha256") == request_sha]
+        need(len(reservations) == 1, "model_response_reservation_invalid")
+        reservation = reservations[0]
+        request_id = reservation.get("request_id")
+        need(isinstance(request_id, str) and re.fullmatch("[a-f0-9]{32}", request_id)
+             and reservation.get("instance") == self.instance
+             and all(audit.get(key) == reservation.get(key)
+                     for key in ("input_bytes", "max_tokens", "task"))
+             and audit.get("task") == request["task"]
+             and audit.get("max_tokens") == request["max_tokens"],
+             "model_response_reservation_invalid")
+        audit_sha = write_once(self.directory / ("model-" + request_sha + ".json"),
+                               audit, max_bytes=MODEL_AUDIT_BYTES)
+        name = "model-response-" + request_id + ".json"
+        response_sha = write_once(self.directory / name, {
+            "request_id": request_id, "request_sha256": request_sha,
+            "task": audit["task"], "audit_sha256": audit_sha,
+            "parsed": getattr(result, "parsed", None),
+        }, max_bytes=MODEL_RESPONSE_BYTES)
+        return audit, {"file": name, "sha256": response_sha, "request_id": request_id}
+
     def prepare(self):
         self.check()
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -221,12 +270,13 @@ class EngineeringRun:
         calls = []
         run = self
         class ObservedModel:
+            response_evidence = None
+
             def complete_structured(self, **kwargs):
+                # A prior response cannot justify retrying a later ambiguous call.
+                self.response_evidence = None
                 result = raw_model.complete_structured(**kwargs)
-                audit = dict(result.audit)
-                need(audit.get("strict_budget") is True and audit.get("attempt_count") == 1,
-                     "strict_model_audit_required")
-                write_once(run.directory / ("model-" + audit["request_sha256"] + ".json"), audit)
+                audit, self.response_evidence = run.record_model_response(result, kwargs)
                 calls.append(audit)
                 return result
         model = ObservedModel()
@@ -244,7 +294,28 @@ class EngineeringRun:
                       "patch_base": "The current source in this packet. Return a diff against it.",
                       "forbidden_effects": ["publish", "messages", "farm_write", "deploy"],
                       "test_commands": self.manifest["test_paths"]}
-            authored = HermesStructuredPatchWorker(model).complete(packet)
+            try:
+                authored = HermesStructuredPatchWorker(model).complete(packet)
+            except NativeSchemaError as exc:
+                reason = (str(exc) if type(exc) is NativeSchemaError
+                          and str(exc) in BUILDER_SCHEMA_ERRORS else "native_builder_response_invalid")
+                evidence = model.response_evidence
+                write_once(self.directory / ("builder-failure-" + str(attempt) + ".json"), {
+                    "stage": "builder_semantic_validation" if evidence else "builder_completion",
+                    "attempt": attempt,
+                    "reason": reason, "response_evidence": evidence,
+                })
+                # Identity/audit checks must have passed and this precise call
+                # must be durably recorded. Never retry an adapter-raised error.
+                if evidence is None or reason not in RECOVERABLE_BUILDER_ERRORS:
+                    raise NativeExecutionError(reason) from None
+                self.check()
+                feedback = [{"source": "builder_semantic_validator", "reason": reason,
+                             "attempt": attempt,
+                             "instruction": "Return fields consistent with exactly one response state."}]
+                iterations.append({"attempt": attempt, "builder_response": evidence,
+                                   "feedback": feedback})
+                continue
             self.check()
             write_once(self.directory / ("builder-response-" + str(attempt) + ".json"), authored)
             need(authored["state"] == "PATCH_READY", "builder_not_ready")
