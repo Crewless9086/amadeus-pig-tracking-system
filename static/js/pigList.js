@@ -9,8 +9,11 @@ const pigWeighedCount = document.getElementById("pig_weighed_count");
 const pigNoWeightCount = document.getElementById("pig_no_weight_count");
 const pigPenCount = document.getElementById("pig_pen_count");
 const pigVisibleCount = document.getElementById("pig_visible_count");
+const pigClearFilters = document.getElementById("pig_clear_filters");
+const pigQuickViews = [...document.querySelectorAll("[data-herd-view]")];
 
 let allPigs = [];
+let activeQuickView = "all";
 
 function formatTagNumber(value) {
   const raw = String(value || "").trim();
@@ -51,6 +54,10 @@ function formatWeight(pig) {
 
 function formatWeightDate(pig) {
   return displayValue(pig.last_weight_date, "No date");
+}
+
+function animalName(pig) {
+  return displayValue(pig.name || pig.pig_name || pig.animal_name, formatTagNumber(pig.tag_number || pig.pig_id));
 }
 
 function showListMessage(message, type = "error") {
@@ -128,61 +135,62 @@ function appendDetail(parent, label, value) {
 
 function buildPigCard(pig) {
   const card = document.createElement("a");
-  card.className = "pig-list-card";
+  card.className = "herd-animal-card";
   card.href = `/pig/${encodeURIComponent(pig.pig_id)}`;
 
   const topRow = document.createElement("div");
-  topRow.className = "pig-list-top";
+  topRow.className = "herd-animal-top";
 
   const heading = document.createElement("div");
-  heading.className = "pig-list-heading";
+  heading.className = "herd-animal-identity";
 
-  const tag = document.createElement("div");
-  tag.className = "pig-list-tag";
-  tag.textContent = formatTagNumber(pig.tag_number || pig.pig_id);
+  const name = document.createElement("div");
+  name.className = "herd-animal-name";
+  name.textContent = animalName(pig);
 
   const meta = document.createElement("div");
-  meta.className = "pig-list-meta";
-  meta.textContent = `Pig ID: ${pig.pig_id}`;
+  meta.className = "herd-animal-tag";
+  meta.textContent = pig.pig_id;
 
-  heading.appendChild(tag);
+  heading.appendChild(name);
   heading.appendChild(meta);
 
   const action = document.createElement("div");
-  action.className = "pig-list-action";
-  action.textContent = "Open Profile ->";
+  action.className = "herd-animal-open";
+  action.textContent = "Open →";
 
   topRow.appendChild(heading);
   topRow.appendChild(action);
 
   const statusRow = document.createElement("div");
-  statusRow.className = "pig-list-status-row";
+  statusRow.className = "herd-animal-badges";
 
   const penBadge = document.createElement("span");
-  penBadge.className = "pig-list-badge";
+  penBadge.className = "herd-animal-badge";
   penBadge.textContent = penLabel(pig);
 
   const weightBadge = document.createElement("span");
-  weightBadge.className = hasWeight(pig) ? "pig-list-badge pig-list-badge-good" : "pig-list-badge pig-list-badge-muted";
-  weightBadge.textContent = hasWeight(pig) ? "Weighed" : "No weight";
+  weightBadge.className = hasWeight(pig) ? "herd-animal-badge is-muted" : "herd-animal-badge is-alert";
+  weightBadge.textContent = hasWeight(pig) ? "Weight recorded" : "Needs weight";
 
   statusRow.appendChild(penBadge);
   statusRow.appendChild(weightBadge);
 
   const detailGrid = document.createElement("div");
-  detailGrid.className = "pig-list-detail-grid";
-  appendDetail(detailGrid, "Latest Weight", formatWeight(pig));
-  appendDetail(detailGrid, "Weight Date", formatWeightDate(pig));
+  detailGrid.className = "herd-animal-facts";
+  appendDetail(detailGrid, "Latest weight", formatWeight(pig));
+  appendDetail(detailGrid, "Recorded", formatWeightDate(pig));
   appendDetail(detailGrid, "Stage", stageLabel(pig));
   appendDetail(detailGrid, "Purpose", displayValue(pig.purpose, "Not set"));
 
+  [...detailGrid.children].forEach((item) => { item.className = "herd-animal-fact"; });
+
   const hoverDetail = document.createElement("div");
-  hoverDetail.className = "pig-list-hover-detail";
+  hoverDetail.className = "herd-animal-footer";
   hoverDetail.textContent = [
     displayValue(pig.sex, "Sex unknown"),
-    `Pen: ${penLabel(pig)}`,
     `Litter: ${displayValue(pig.litter_id, "None")}`,
-  ].join(" | ");
+  ].join(" · ");
 
   card.appendChild(topRow);
   card.appendChild(statusRow);
@@ -223,6 +231,7 @@ function searchableText(pig) {
     pig.purpose,
     pig.sex,
     pig.litter_id,
+    animalName(pig),
   ]
     .map((value) => String(value || "").toLowerCase())
     .join(" ");
@@ -242,8 +251,15 @@ function filterPigs() {
       !selectedWeight ||
       (selectedWeight === "weighed" && hasWeight(pig)) ||
       (selectedWeight === "missing" && !hasWeight(pig));
+    const stage = optionKey(stageLabel(pig));
+    const purpose = optionKey(pig.purpose);
+    const matchesQuickView =
+      activeQuickView === "all" ||
+      (activeQuickView === "missing" && !hasWeight(pig)) ||
+      (activeQuickView === "breeding" && (purpose.includes("breed") || stage.includes("sow") || stage.includes("boar"))) ||
+      (activeQuickView === "sale" && purpose.includes("sale"));
 
-    return matchesSearch && matchesPen && matchesStage && matchesWeight;
+    return matchesSearch && matchesPen && matchesStage && matchesWeight && matchesQuickView;
   });
 
   renderPigList(filtered);
@@ -269,5 +285,22 @@ pigSearchInput.addEventListener("input", filterPigs);
 pigPenFilter.addEventListener("change", filterPigs);
 pigWeightFilter.addEventListener("change", filterPigs);
 pigStageFilter.addEventListener("change", filterPigs);
+pigClearFilters.addEventListener("click", () => {
+  pigSearchInput.value = "";
+  pigPenFilter.value = "";
+  pigWeightFilter.value = "";
+  pigStageFilter.value = "";
+  activeQuickView = "all";
+  pigQuickViews.forEach((button) => button.classList.toggle("is-active", button.dataset.herdView === "all"));
+  filterPigs();
+  pigSearchInput.focus();
+});
+pigQuickViews.forEach((button) => {
+  button.addEventListener("click", () => {
+    activeQuickView = button.dataset.herdView;
+    pigQuickViews.forEach((item) => item.classList.toggle("is-active", item === button));
+    filterPigs();
+  });
+});
 
 loadPigList();
