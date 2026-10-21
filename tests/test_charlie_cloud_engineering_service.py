@@ -269,3 +269,62 @@ def test_reservation_remains_consumed_when_stop_or_deadline_arrives_before_infer
         run.reserve(request_sha256="b" * 64, input_bytes=200, max_tokens=200, task="charlie_native_builder")
     assert len(reservations) == 1
     assert len(list(tmp_path.glob("reservation-*.json"))) == 1
+
+
+@pytest.mark.parametrize("stage,kind,status", [("resolution", "unexpected_error", None),
+    ("reservation", "unexpected_error", None), ("sdk_submission", "http_status", 400),
+    ("sdk_submission", "http_status", 401), ("sdk_submission", "http_status", 402),
+    ("sdk_submission", "http_status", 429), ("sdk_submission", "timeout", None),
+    ("sdk_submission", "connection", None)])
+def test_adapter_diagnostics_are_logged_without_changing_block_or_repeating(stage, kind, status):
+    from modules.charlie.native_runner.model_adapter import NativeModelFailure
+    error = NativeModelFailure(stage=stage, kind=kind, status=status)
+    client, reports, runs = Client(), [], []
+    class Run:
+        def __init__(self, *args, **kwargs):
+            runs.append(True)
+        def run(self):
+            raise error
+    svc.run_worker(environ=ENV, client=client, stop=Stop(4), report=reports.append, run_factory=Run)
+    event = reports[-1]
+    assert event["status"] == "engineering_worker_contained"
+    assert event["reason"] == "hermes_auxiliary_inference_failed"
+    assert event["model_failure_stage"] == stage and event["model_failure_kind"] == kind
+    assert event.get("model_failure_status") == status
+    assert [op for op, _ in client.calls] == ["current", "claim", "block"]
+    assert client.calls[-1][1] == {"instance": event["instance"], "reason": event["reason"]}
+    assert len(runs) == 1
+
+
+@pytest.mark.parametrize("variant", ["ordinary", "subclass", "stage", "kind", "status", "bool_status", "relation"])
+def test_untrusted_or_mutated_exception_diagnostics_cannot_escape(variant):
+    from modules.charlie.native_runner.model_adapter import NativeModelFailure
+    private = "synthetic-private-body-or-header-92217"
+    if variant == "ordinary":
+        error = NativeExecutionError("hermes_auxiliary_inference_failed")
+    elif variant == "subclass":
+        class Untrusted(NativeModelFailure):
+            pass
+        error = Untrusted(stage="sdk_submission", kind="http_status", status=400)
+    else:
+        error = NativeModelFailure(stage="sdk_submission", kind="http_status", status=400)
+    error.body = error.headers = error.message = private
+    if variant in ("ordinary", "stage"):
+        error.failure_stage = private
+    elif variant == "kind":
+        error.failure_kind = private
+    elif variant == "status":
+        error.failure_status = private
+    elif variant == "bool_status":
+        error.failure_status = True
+    elif variant == "relation":
+        error.failure_stage = "reservation"
+    class Run:
+        def __init__(self, *args, **kwargs):
+            pass
+        def run(self):
+            raise error
+    client, reports = Client(), []
+    svc.run_worker(environ=ENV, client=client, stop=Stop(), report=reports.append, run_factory=Run)
+    assert set(reports[-1]) == {"status", "instance", "reason"}
+    assert private not in json.dumps(reports) + json.dumps(client.calls)

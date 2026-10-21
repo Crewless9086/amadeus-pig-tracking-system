@@ -21,7 +21,7 @@ from modules.charlie.native_runner.execution import (
     NativeAuthorization, NativeExecutionError, NativeWorktree, PatchValidator, run_argv,
 )
 from modules.charlie.native_runner.intake_service import NoRedirect
-from modules.charlie.native_runner.model_adapter import HermesAuxiliaryModel
+from modules.charlie.native_runner.model_adapter import HermesAuxiliaryModel, model_failure_diagnostics
 from modules.charlie.native_runner.test_sandbox import run_isolated_tests
 
 BASE_URL = "https://amadeus-pig-tracking-system.onrender.com/api/charlie/core/engineering/missions"
@@ -375,7 +375,8 @@ def run_worker(*, environ=None, client=None, stop=None, report=None, run_factory
             client.call("block", {"instance": instance, "reason": reason})
         except Exception:
             pass
-        report({"status": "engineering_worker_contained", "instance": instance, "reason": reason})
+        report({"status": "engineering_worker_contained", "instance": instance, "reason": reason,
+                **model_failure_diagnostics(exc)})
         while not stop.wait(30):
             pass
     return 0

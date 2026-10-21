@@ -78,6 +78,19 @@ no-tool canary and verify repository identity, exact revision, disk persistence,
 one local lock, and one canonical writer. Rollback suspends only the worker and
 retains the disk until canonical state and any draft PR are reconciled.
 
+Structured calls validate the native object-schema envelope and a bounded ASCII
+internal schema label before provider resolution or budget reservation. Dotted
+role labels become deterministic wire-safe names; audit identities and every
+schema constraint stay unchanged. Strict engineering requests require endpoint
+parameter support (`require_parameters: true`) alongside the existing fixed
+model, price caps and no-fallback route, with one reserved attempt and no SDK or
+HTTP retry. The existing containment event may report only allowlisted adapter
+failure stage, kind and HTTP status; its reason and canonical block payload stay
+unchanged. Reservation is not proof of submission, and SDK entry is not proof of
+delivery or model execution. Raw exception text, provider bodies and headers are
+excluded. These contract protections do not establish the cause of any prior
+contained trial or authorize replay of a consumed attempt.
+
 ## Dedicated host contract
 
 Provision Ubuntu 24.04 LTS with 4 vCPU, 8 GB RAM, and an 80 GB persistent disk.

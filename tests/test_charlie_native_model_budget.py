@@ -155,7 +155,7 @@ class StrictModelBudgetTests(unittest.TestCase):
         self.assertEqual(self.requests[0]["max_tokens"], 6000)
         self.assertEqual(self.requests[0]["tools"], [])
         self.assertEqual(self.requests[0]["extra_body"], {
-            "provider": {"allow_fallbacks": False, "max_price": {"prompt": 0.25, "completion": 2.0}},
+            "provider": {"allow_fallbacks": False, "require_parameters": True, "max_price": {"prompt": 0.25, "completion": 2.0}},
             "reasoning": {"effort": "low"}})
         self.assertNotIn("temperature", self.requests[0])
         self.assertEqual(self.sdk_options[0]["max_retries"], 0)
