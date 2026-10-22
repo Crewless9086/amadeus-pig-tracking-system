@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 NOW = datetime.now(timezone.utc)
 OWNER = "owner:synthetic-test-owner"
 PRINCIPAL = "codex_desktop:" + adapter.TASK_ID
-PREDECESSOR_PATHS = ['.github/workflows/charlie-core-tests.yml', 'docs/06-operations/CHARLIE_NATIVE_RUNNER.md', 'modules/charlie/native_runner/engineering_service.py', 'modules/charlie/native_runner/model_adapter.py', 'tests/test_charlie_cloud_engineering_service.py', 'tests/test_charlie_native_model_budget.py', 'tests/test_charlie_native_model_contract.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/06-operations/CHARLIE_NATIVE_RUNNER.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'modules/charlie/native_runner/engineering_service.py', 'modules/charlie/native_runner/execution.py', 'tests/test_charlie_cloud_engineering_service.py']
 
 PRESERVED_PREVIEW_EFFECTS = {'current_recipient_authorized_protected_confirmation_delivery',
     'verified_same_case_mortality_completion_projection'}
@@ -522,7 +522,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual((adapter.PREDECESSOR_PR, adapter.PREDECESSOR_HEAD, adapter.PREDECESSOR_BASE,
             adapter.PREDECESSOR_BRANCH), (1403, 'b6843773547c62d7a8b8b641af3fe0e66c87c062',
             '549f3b7bb20bcc4598ee8edc5bf537a0e662e407', 'codex/core-builder-response-recovery-20261021'))
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS), 7)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS), 6)
         self.assertEqual(adapter.PATHS,FINAL_CANDIDATE_PINS['PATHS'] or SYNTHETIC_PINS['PATHS'])
         self.assertEqual(adapter.WEB_BASELINE, adapter.BASE)
         for wrong in (adapter.BASE, "f1643d1014d22bc455eef56b919115d1244e1cd7", "f"*40):
@@ -532,6 +532,52 @@ class ReconciliationTests(unittest.TestCase):
             m["expected_child_sha256"]=adapter.digest(adapter.canonical(m["expected_child_record"]))
             with self.subTest(wrong=wrong), self.assertRaisesRegex(adapter.ReconciliationError,"predecessor_binding_invalid"):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
+
+    def test_pr1403_public_git_path_contract_prepares_and_rejects_inherited_scope(self):
+        # Public git diff 549f3b7..b684377, independent of the adapter's list.
+        exact_paths = [
+            '.github/workflows/oom-sakkie-audit-rails.yml',
+            'docs/06-operations/CHARLIE_NATIVE_RUNNER.md',
+            'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md',
+            'modules/charlie/native_runner/engineering_service.py',
+            'modules/charlie/native_runner/execution.py',
+            'tests/test_charlie_cloud_engineering_service.py',
+        ]
+        observed_paths = adapter.subprocess.check_output([
+            'git', '--no-optional-locks', 'diff', '--name-only',
+            '549f3b7bb20bcc4598ee8edc5bf537a0e662e407',
+            'b6843773547c62d7a8b8b641af3fe0e66c87c062', '--',
+        ], cwd=adapter.ROOT, timeout=30).decode('utf-8').splitlines()
+        self.assertEqual(observed_paths, exact_paths)
+        stale_paths = [
+            '.github/workflows/charlie-core-tests.yml',
+            'docs/06-operations/CHARLIE_NATIVE_RUNNER.md',
+            'modules/charlie/native_runner/engineering_service.py',
+            'modules/charlie/native_runner/model_adapter.py',
+            'tests/test_charlie_cloud_engineering_service.py',
+            'tests/test_charlie_native_model_budget.py',
+            'tests/test_charlie_native_model_contract.py',
+        ]
+        m, a = json.loads(self.args['manifest_bytes']), json.loads(self.args['approval_bytes'])
+        child = m['expected_child_record']
+        child['metadata_json']['mission_admission_contract']['allowed_files'] = exact_paths
+        m['expected_child_sha256'] = adapter.digest(adapter.canonical(child))
+        before = self.snapshot()
+        result = adapter.reconcile_candidate(**encode(m, a),
+            connect_factory=lambda _: self.fail('unexpected connection'))
+        self.assertEqual((result['status'], result['writes']), ('prepared', 0))
+        self.assertEqual(self.snapshot(), before)
+        for wrong in (stale_paths, exact_paths[:-1], exact_paths + ['app.py']):
+            changed = deepcopy(m)
+            child = changed['expected_child_record']
+            child['metadata_json']['mission_admission_contract']['allowed_files'] = wrong
+            changed['expected_child_sha256'] = adapter.digest(adapter.canonical(child))
+            with self.subTest(paths=wrong), patch.object(adapter, 'verify_source_and_candidate') as source:
+                with self.assertRaisesRegex(adapter.ReconciliationError, 'predecessor_binding_invalid'):
+                    adapter.reconcile_candidate(**encode(changed, a),
+                        connect_factory=lambda _: self.fail('unexpected connection'))
+                source.assert_not_called()
+            self.assertEqual(self.snapshot(), before)
 
     def test_source_release_preserves_effects_and_successful_stop_proof(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
@@ -1660,7 +1706,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(adapter.PREDECESSOR_BASE,'549f3b7bb20bcc4598ee8edc5bf537a0e662e407')
         self.assertEqual(adapter.PREDECESSOR_BRANCH,'codex/core-builder-response-recovery-20261021')
         self.assertEqual(adapter.PREDECESSOR_PATHS,PREDECESSOR_PATHS)
-        self.assertEqual(len(adapter.PREDECESSOR_PATHS),7)
+        self.assertEqual(len(adapter.PREDECESSOR_PATHS),6)
         errors={"wrong_ancestor":"approved_runtime_ancestry_changed",
                 "runtime_delta":"qualification_only_test_paths_changed",
                 "test_delta":"qualification_only_test_paths_changed",

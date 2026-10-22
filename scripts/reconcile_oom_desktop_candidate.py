@@ -34,7 +34,7 @@ PREDECESSOR_BASE = '549f3b7bb20bcc4598ee8edc5bf537a0e662e407'
 PREDECESSOR_HEAD = 'b6843773547c62d7a8b8b641af3fe0e66c87c062'
 PREDECESSOR_BRANCH = 'codex/core-builder-response-recovery-20261021'
 PATHS = ['docs/06-operations/CORE_CLOUD_ENGINEERING_TRIAL.md', 'modules/charlie/native_runner/engineering_service.py', 'modules/charlie/native_runner/execution.py', 'tests/test_charlie_cloud_engineering_service.py', 'tests/test_charlie_native_runner.py']
-PREDECESSOR_PATHS = ['.github/workflows/charlie-core-tests.yml', 'docs/06-operations/CHARLIE_NATIVE_RUNNER.md', 'modules/charlie/native_runner/engineering_service.py', 'modules/charlie/native_runner/model_adapter.py', 'tests/test_charlie_cloud_engineering_service.py', 'tests/test_charlie_native_model_budget.py', 'tests/test_charlie_native_model_contract.py']
+PREDECESSOR_PATHS = ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/06-operations/CHARLIE_NATIVE_RUNNER.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'modules/charlie/native_runner/engineering_service.py', 'modules/charlie/native_runner/execution.py', 'tests/test_charlie_cloud_engineering_service.py']
 
 WEB_SERVICE = "srv-d6sijjkhg0os73f7regg"
 WEB_BASELINE = '18de462e8463b44b289b29eda3693606d9b1e43a'
