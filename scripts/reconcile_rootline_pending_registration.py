@@ -283,7 +283,10 @@ def reconcile_pending_succession(manifest_bytes, approval_bytes, *, expected_man
             original=m['expected_child_record']; admission=original['metadata_json']['mission_admission']
             if recorded:
                 h=recorded[0]
-                _require(recorded[1:]==(a['owner_principal'],'workflow_updated') and h.get('version')==VERSION
+                _require(isinstance(h,dict) and set(h)=={'version','manifest','approval',
+                    'manifest_sha256','approval_sha256','previous_record','parent_record',
+                    'preserved_admission','correction','bindings','updated_metadata'}
+                    and recorded[1:]==(a['owner_principal'],'workflow_updated') and h.get('version')==VERSION
                     and h.get('manifest')==m and h.get('approval')==a and h.get('manifest_sha256')==plan['manifest_sha256']
                     and h.get('approval_sha256')==plan['approval_sha256'] and h.get('previous_record')==original
                     and h.get('parent_record')==rows[PARENT_ID] and h.get('preserved_admission')==admission

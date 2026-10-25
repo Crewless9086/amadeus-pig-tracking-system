@@ -115,6 +115,15 @@ class PendingTests(unittest.TestCase):
         for key,value in before[1].items(): self.assertEqual(self.db.events[key],value)
         self.assertEqual(self.db.ops,before[2]); after=self.snapshot()
         self.assertEqual(apply(args,self.db)['writes'],0); self.assertEqual(self.snapshot(),after)
+    def test_replay_refuses_additional_immutable_history_metadata(self):
+        args=encoded(self.m,self.a);apply(args,self.db)
+        event_id=pending.prepare_pending_succession(**args)['event_id']
+        self.db.events[event_id][0]['unrelated_added_history_metadata']='synthetic-drift'
+        before=self.snapshot();write_count=self.db.write_count
+        with self.assertRaisesRegex(pending.ReconciliationError,'replay_history_conflict'):apply(args,self.db)
+        self.assertEqual(self.snapshot(),before)
+        self.assertEqual(self.db.write_count,write_count)
+
     def test_each_write_failure_rolls_back_everything(self):
         for step in (1,2,3):
             self.db.fail_write=step; self.db.write_count=0; before=self.snapshot()
