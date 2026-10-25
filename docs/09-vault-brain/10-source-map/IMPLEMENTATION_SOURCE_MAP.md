@@ -588,7 +588,16 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
   `modules/telemetry/rootline_execution_runtime.py` retain canonical per-zone
   lifecycle and shutdown exceptions. Owner status independently rebuilds this
   lifecycle from canonical history; absent stored fields never establish a
-  resolved exception. Regression: `tests/test_rootline_shutdown_preservation.py`.
+  resolved exception. The shared lifecycle projection gives current holds and
+  unresolved contained/stale parents precedence over historical eligibility or
+  completion, while retaining active/claimed execution safety and shutdown
+  exceptions. Eligibility requires the current artifact, never an old execution
+  reference; unresolved parents name governed reconciliation before another run.
+  Existing typed `zone_decision=Completed` survives planning and owner projections
+  so a fulfilled objective remains Completed with canonical completion evidence,
+  even when no further run is due. Safety holds and unresolved parents still win.
+  Regression: `tests/test_rootline_irrigation_lifecycle.py` and the canonical
+  history-to-observation-to-owner path in `tests/test_rootline_shutdown_preservation.py`.
 - Owner access: `modules/auth/owner_access.py`, `/owner/login`, `/owner/logout`, `/owner/status`, `templates/owner-login.html` and shared `templates/_farm_nav.html`.
 - UI: `static/js/dashboard.js`, `static/js/operationsDetail.js`, `templates/dashboard.html`, `templates/irrigation.html`.
 - Rule: current operational status must not silently fall back to Sheets. Protected evidence remains protected; the UI must direct an unauthenticated owner through the existing session rail and return to the requested page.

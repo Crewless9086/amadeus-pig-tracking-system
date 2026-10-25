@@ -52,7 +52,7 @@ def contained(identity="OLD", zone="B12345"):
     return run(identity, zone, action="contain_zone", state="ambiguous", shutdown_verified=False)
 
 
-def read(rows):
+def read(rows, irrigation_rows=()):
     calls = []
     class Cursor:
         def __enter__(self): return self
@@ -61,6 +61,7 @@ def read(rows):
         def fetchone(self): return (NOW,)
         def fetchall(self):
             if "sam_live_stock_conversation_review_events" in self.query: return [(deepcopy(row),) for row in rows]
+            if "from public.irrigation_events" in self.query: return deepcopy(irrigation_rows)
             return []
     class Connection:
         def __enter__(self): return self
@@ -89,7 +90,7 @@ def test_older_unresolved_survives_new_success_and_raw_unknown_metadata_is_uncha
     assert [(r["execution_id"], r["kind"]) for r in zone["execution_exceptions"]] == [("OLD", "shutdown_unverified")]
     lifecycle = project_zone_lifecycle(zone_id="B12345", recommendation={"status": "Hold"},
         history=zone, execution=zone["latest_execution"], evidence_cutoff=NOW)
-    assert lifecycle["state"] == "Completed"
+    assert lifecycle["state"] == "Held"
     assert lifecycle["execution_exceptions"] == zone["execution_exceptions"]
 
 
@@ -384,7 +385,7 @@ def test_final_planning_observation_keeps_both_zones_and_old_unresolved_exceptio
     before=deepcopy(history)
     observation=_planning_observation(_planning_initial(history),"42","42",NOW.isoformat())
     zones={row["zone_id"]:row for row in observation["zones"]}
-    assert zones["B12345"]["lifecycle"]["state"]=="Completed"
+    assert zones["B12345"]["lifecycle"]["state"]=="Held"
     assert zones["C12345"]["lifecycle"]["state"]=="Failed"
     assert [(row["execution_id"],row["kind"]) for row in
         zones["B12345"]["lifecycle"]["execution_exceptions"]]==[("B-OLD","shutdown_unverified")]
@@ -427,3 +428,219 @@ def test_execution_cycle_persists_full_lifecycle_without_a_command_or_notificati
     assert all(row["lifecycle"]["state"]=="Failed" for row in records[0]["zones"])
     assert {item["execution_id"] for row in records[0]["zones"]
         for item in row["lifecycle"]["execution_exceptions"]}=={"B-OLD","C-OLD"}
+
+def parent_history_rows(zone, *, stale=False):
+    """Synthetic canonical job/segment shape; no live identity or receipt."""
+    from modules.telemetry.rootline_irrigation_job_contract import (
+        build_irrigation_job, project_next_segment,
+    )
+    job = build_irrigation_job(zone_id=zone,
+        operating_date=(NOW-timedelta(days=2)).date().isoformat(),
+        requested_total_seconds=7200, requested_total_minutes=120,
+        maximum_segment_seconds=3599, expected_segment_count=2,
+        plan_identity="SYNTHETIC-PARENT-"+zone)
+    segment = project_next_segment(job, [])
+    identity = "SYNTHETIC-SEGMENT-"+zone
+    claimed, stopped = CLAIM-timedelta(days=2), STOP-timedelta(days=2)
+    deadline = DEADLINE-timedelta(days=2)
+    common = {"execution_id": identity, "zone_id": zone, "job_id": job["job_id"],
+        "segment_number": 1, "segment_identity": segment["segment_identity"],
+        "eligibility_id": "SYNTHETIC-OLD-ELIGIBILITY-"+zone,
+        "claimed_at": claimed.isoformat(), "primary_stop_deadline": deadline.isoformat(),
+        "native_fail_stop_deadline": (deadline+timedelta(seconds=1)).isoformat()}
+    rows = [{**common, **job, "action": "record_eligibility",
+        "requested_total_duration_seconds": 7200, "requested_total_duration_minutes": 120,
+        "governed_executable_duration_seconds": 7198, "plan_generation": job["plan_identity"]},
+        {**common, "action": "claim_before_on", "state": "claimed"}]
+    if stale:
+        rows.append({**common, "action": "record_completed", "state": "Completed",
+            "shutdown_verified": True, "objective_satisfied": True,
+            "verified_runtime_seconds": 3599,
+            "completed_at": stopped.isoformat(),
+            "shutdown_evidence": {"authoritative": True, "state": "OFF",
+                "retrieved_at": stopped.isoformat(), "evidence_id": identity+"-OFF"}})
+    else:
+        rows.extend([{**common, "action": "contain_zone", "state": "ambiguous",
+            "shutdown_verified": False, "reason": "restart_after_pre_on_claim"},
+            {**common, "action": "record_claim_recovery", "state": "claimed_recovery_required",
+             "shutdown_verified": True,
+             "shutdown_evidence": {"authoritative": True, "state": "OFF",
+                "retrieved_at": stopped.isoformat(), "evidence_id": identity+"-OFF"}}])
+    return rows
+
+
+@pytest.mark.parametrize("stale", [False, True])
+@pytest.mark.parametrize("newer_complete", [False, True])
+def test_unresolved_parent_truth_survives_final_observation_and_owner_status(
+        monkeypatch, stale, newer_complete):
+    from modules.telemetry import rootline_execution_runtime as runtime
+    from modules.telemetry import rootline_owner_status as owner
+    rows = [contained("UNRELATED-OLD-B"), contained("UNRELATED-OLD-C", "C12345")]
+    for zone in ("B12345", "C12345"):
+        rows.extend(parent_history_rows(zone, stale=stale))
+        if newer_complete:
+            rows.append(terminal("UNRELATED-NEW-"+zone, zone))
+    history = read(rows)
+    key = "stale_incomplete_parent_jobs" if stale else "contained_parent_jobs"
+    for zone in ("B12345", "C12345"):
+        parent = history["zones"][zone][key][0]
+        assert parent["remaining_seconds"] == (3599 if stale else 7198)
+        assert parent["completed_segment_count"] == (1 if stale else 0)
+    initial = _planning_initial(history)
+    for task in initial["plan"]["candidate_tasks"]:
+        task.update(zone_decision="recovery required", recommendation="Do Not Run",
+            dispatchable=False, reason="The unresolved parent must be reconciled before another run.")
+    before = deepcopy(initial)
+    monkeypatch.setattr(runtime, "_current", lambda *_: initial)
+    observations = []
+    def record(action, identity, payload):
+        assert action == "record_observation" and identity == payload["identity"]
+        observations.append(deepcopy(payload))
+        return {"success": True, "created": True}
+    def store(action, payload):
+        assert action == "load_active"
+        return None
+    result = runtime.run_rootline_execution_cycle(
+        notify=lambda *_: pytest.fail("no lifecycle projection may send a message"),
+        environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"}, now=NOW,
+        store=store, token_store=object(), transport=object(), owner_user_id="42", chat_id="42",
+        observation_store=record)
+    assert result["hardware_commands"] == 0 and result["telegram_messages"] == 0
+    assert len(observations) == 1 and initial == before
+    observation = observations[0]
+    for item in observation["zones"]:
+        lifecycle = item["lifecycle"]
+        assert lifecycle["state"] == "Held"
+        assert "reconcile" in lifecycle["next_action"].lower()
+        assert "before another run" in lifecycle["next_action"].lower()
+        assert "claim" not in lifecycle["next_action"].lower()
+        assert lifecycle["next_action_owner"] == "ROOTLINE"
+        assert "completion_evidence" not in lifecycle
+        assert lifecycle["execution_exceptions"] == history["zones"][item["zone_id"]]["execution_exceptions"]
+        assert lifecycle["execution_exceptions"]
+
+    # Actual owner composition consumes the persisted observation and canonical
+    # history independently; an old stored lifecycle cannot become authority.
+    persisted = deepcopy(observation)
+    for item in persisted["zones"]:
+        item["lifecycle"].update(state="Eligible", next_action="stale claim text")
+    monkeypatch.setattr(owner, "_canonical_evidence", lambda *_: {
+        "operating_date": NOW.date().isoformat(), "weather": {}, "reassessment": persisted})
+    monkeypatch.setattr(owner, "read_latest_zone_water_balances", lambda *_a, **_kw: {})
+    monkeypatch.setattr(owner, "read_canonical_irrigation_history", lambda *_a, **_kw: deepcopy(history))
+    monkeypatch.setattr(owner, "_runtime_and_notification", lambda *_: owner._project_runtime(
+        [(NOW, deepcopy(row)) for row in reversed(rows)]))
+    status, code = owner.get_rootline_owner_status(NOW.date().isoformat(), "synthetic-unused", now=NOW)
+    assert code == 200 and status["safety"]["can_control"] is False
+    assert status["source"]["writes_to_supabase"] is False
+    for item in status["zones"]:
+        assert item["lifecycle"] == next(row["lifecycle"] for row in observation["zones"]
+                                        if row["zone_id"] == item["zone_id"])
+        assert item["water_credit"]["delivered_volume_litres"] == "Unknown"
+    assert initial == before
+
+
+@pytest.mark.parametrize("parent_key", ["contained_parent_jobs", "stale_incomplete_parent_jobs"])
+@pytest.mark.parametrize("source", ["history", "recommendation"])
+def test_unresolved_parent_blocks_stale_recommendation_even_with_eligible_artifact(parent_key, source):
+    values = {"history": {}, "recommendation": {"status": "Recommend"}}
+    values[source][parent_key] = [{"job": {"job_id": "SYNTHETIC-UNRESOLVED"}}]
+    value = project_zone_lifecycle(zone_id="B12345", **values,
+        eligibility={"eligible": True}, execution=terminal("OTHER"))
+    assert value["state"] == "Held" and "completion_evidence" not in value
+    assert "reconcile" in value["next_action"].lower()
+
+
+
+@pytest.mark.parametrize("zone", ["B12345", "C12345"])
+def test_current_canonical_eligibility_artifact_remains_eligible_in_stored_observation(zone):
+    from modules.telemetry.rootline_execution_authority import build_execution_eligibility
+    from modules.telemetry.rootline_execution_runtime import _planning_observation
+    from tests.test_rootline_execution_authority import inputs, NOW as eligibility_now
+    plan, evidence, controller = inputs(zone=zone)
+    artifact = build_execution_eligibility(plan=plan, evidence=evidence,
+        controller=controller, now=eligibility_now)
+    assert artifact["eligible"] is True and artifact["zone_id"] == zone
+    evidence["irrigation_history"] = {"zones": {zone: {"latest_execution": {
+        "action": "record_claim_recovery", "state": "claimed", "shutdown_verified": True,
+        "eligibility_id": "SYNTHETIC-OLD-RESOLVED", "execution_id": "SYNTHETIC-OLD-RESOLVED",
+        "zone_id": zone}}}}
+    before = deepcopy((plan, evidence, artifact))
+    value = _planning_observation({"plan": plan, "evidence": evidence, "artifact": artifact},
+        "42", "42", eligibility_now.isoformat())
+    selected = next(row for row in value["zones"] if row["zone_id"] == zone)
+    assert selected["lifecycle"]["state"] == "Eligible" and not selected["eligibility_blocker"]
+    assert selected["lifecycle"]["next_action_owner"] == "ROOTLINE"
+    assert (plan, evidence, artifact) == before
+
+
+@pytest.mark.parametrize("blocker", ["planner_hold_or_no_dispatchable_zone", "zone_decision_not_run_now"])
+def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composition(monkeypatch, blocker):
+    from modules.telemetry import rootline_owner_status as owner
+    from modules.telemetry.rootline_execution_runtime import _planning_observation
+    from modules.telemetry.rootline_irrigation_job_contract import build_irrigation_job, project_next_segment
+    from modules.telemetry.rootline_irrigation_history import build_typed_history_event
+    rows, typed = [], []
+    for zone in ("B12345", "C12345"):
+        job = build_irrigation_job(zone_id=zone, operating_date=NOW.date().isoformat(),
+            requested_total_seconds=7200, requested_total_minutes=120,
+            maximum_segment_seconds=3599, expected_segment_count=2, plan_identity="SYNTHETIC-FULFILLED")
+        events = [{**job, "action": "record_eligibility",
+            "requested_total_duration_seconds": 7200, "requested_total_duration_minutes": 120,
+            "governed_executable_duration_seconds": 7198, "plan_generation": job["plan_identity"]}]
+        for number in (1, 2):
+            segment = project_next_segment(job, events, rearm_readback_off=True)
+            claimed = CLAIM-timedelta(hours=2-number)
+            stopped = claimed+timedelta(seconds=3599)
+            events.append({**terminal("SYNTHETIC-FULFILLED-"+zone+str(number), zone, stopped=stopped),
+                "claimed_at": claimed.isoformat(), "primary_stop_deadline": stopped.isoformat(),
+                "native_fail_stop_deadline": stopped.isoformat(),
+                "start_evidence": {"authoritative": True, "state": "ON",
+                    "retrieved_at": claimed.isoformat(), "evidence_id": "SYNTHETIC-ON-"+str(number)},
+                "job_id": job["job_id"], "operating_date": job["operating_date"],
+                "segment_number": number, "segment_identity": segment["segment_identity"],
+                "verified_runtime_seconds": 3599, "objective_satisfied": number == 2})
+        assert project_next_segment(job, events)["status"] == "job_completed"
+        rows.extend(events)
+        final = events[-1]
+        typed.append(build_typed_history_event(event_id="SYNTHETIC-COMPLETION-"+zone,
+            event_at=datetime.fromisoformat(final["completed_at"]), event_type="COMPLETED", zone_id=zone,
+            planned_minutes=3599/60, actual_minutes=3599/60,
+            details={"execution_id": final["execution_id"], "start_evidence_id": "SYNTHETIC-ON",
+                "shutdown_evidence_id": "SYNTHETIC-OFF", "maximum_runtime_minutes": 3599/60,
+                "verified_runtime_minutes": 3599/60, "shutdown_verified": True,
+                "objective_satisfied": True, "evidence_cutoff": NOW.isoformat(),
+                "provenance": "synthetic_canonical_completion"}))
+    # psycopg returns timestamptz columns as aware datetime instances.
+    typed = [{**row, "event_at": datetime.fromisoformat(row["event_at"])} for row in typed]
+    history = read(rows, typed)
+    assert all(zone["events"][-1]["qualifies_as_completed_watering"] is True
+               for zone in history["zones"].values())
+    initial = _planning_initial(history)
+    initial["artifact"].update(status=blocker)
+    for task in initial["plan"]["candidate_tasks"]:
+        task.update(zone_decision="Completed", recommendation="Do Not Run",
+                    reason="The current objective was fulfilled.")
+    observation = _planning_observation(initial, "42", "42", NOW.isoformat())
+    specialist = project_water_energy_plan({**initial["plan"], "success": True,
+        "recent_irrigation_history": history}, now=NOW)
+    for item in observation["zones"]:
+        assert item["decision"] == "Not Due" and item["zone_decision"] == "Completed"
+        assert item["lifecycle"]["state"] == "Completed"
+        assert item["lifecycle"]["completion_evidence"]["objective_satisfied"] is True
+        assert specialist["irrigation_lifecycle"][item["zone_id"]]["state"] == "Completed"
+    monkeypatch.setattr(owner, "_canonical_evidence", lambda *_: {
+        "operating_date": NOW.date().isoformat(), "weather": {}, "reassessment": observation})
+    monkeypatch.setattr(owner, "read_latest_zone_water_balances", lambda *_a, **_kw: {})
+    monkeypatch.setattr(owner, "read_canonical_irrigation_history", lambda *_a, **_kw: deepcopy(history))
+    # The owner runtime reader selects only one latest outcome; the other zone
+    # must retain its verified completion from its canonical history as well.
+    latest = next(row for row in reversed(rows) if row.get("action") == "record_completed")
+    monkeypatch.setattr(owner, "_runtime_and_notification", lambda *_: ({}, latest, {}))
+    status, code = owner.get_rootline_owner_status(NOW.date().isoformat(), "synthetic-unused", now=NOW)
+    assert code == 200
+    for item in status["zones"]:
+        assert item["decision"] == "Not Due"
+        assert item["lifecycle"]["state"] == "Completed"
+        assert item["lifecycle"]["completion_evidence"]["objective_satisfied"] is True
+        assert item["water_credit"]["delivered_volume_litres"] == "Unknown"

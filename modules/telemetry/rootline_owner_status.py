@@ -168,6 +168,7 @@ def _specialist_projection(evidence, operating_date, now):
                   or "The scheduler has not persisted a typed current operating-date decision.")
         recommendations.append({"subject": zone,
             "status": {"Run": "Recommend", "Not Due": "Do Not Run"}.get(state, state),
+            "zone_decision": row.get("zone_decision"),
             "reason": reason, "planned_duration_minutes": row.get("planned_duration_minutes"),
             "preferred_window": row.get("feasible_window"),
             "eligibility_blocker": row.get("eligibility_blocker"),
