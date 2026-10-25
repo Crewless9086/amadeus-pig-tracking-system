@@ -364,31 +364,22 @@ class CandidatePinTests(unittest.TestCase):
         verify.assert_not_called()
 
 
-    def test_registration_workflow_runs_four_release_suites_and_exact_cloud_candidate(self):
+    def test_registration_workflow_preserves_four_suites_and_adds_exact_pending_rootline(self):
         workflow=(adapter.ROOT / '.github/workflows/oom-desktop-rebind-qualification.yml').read_text()
-        self.assertIn('branches: [codex/core-builder-contract-qualification-20261022]', workflow)
-        self.assertEqual(workflow.count('runs-on: ubuntu-latest'), 2)
-        self.assertNotIn('runs-on: windows-latest', workflow)
-        self.assertNotIn('windows-lifecycle:', workflow)
-        self.assertNotIn('secrets.', workflow)
-        self.assertNotIn('pull_request_target', workflow)
-        self.assertNotIn('write-all', workflow)
-        self.assertIn('contents: read', workflow)
-        self.assertIn('persist-credentials: false', workflow)
-        self.assertIn('image: postgres:16', workflow)
-        self.assertEqual(workflow.count('run: python -m unittest tests.test_oom_'), 2)
-        self.assertEqual(workflow.count('run: python -m pytest tests/test_oom_'), 2)
-        for suite in ('candidate_reconciliation', 'registration_sql', 'presend_timeout_correction', 'unsent_confirmation_extension'):
-            self.assertIn('test_oom_desktop_'+suite if suite in ('candidate_reconciliation','registration_sql') else 'test_oom_'+suite, workflow)
-        self.assertIn('ref: '+(adapter.HEAD or 'UNBOUND_APPLICATION_HEAD'),workflow)
-        self.assertIn('EXPECTED_TREE: '+(adapter.TREE or 'UNBOUND_APPLICATION_TREE'),workflow)
-        self.assertIn('tests/test_charlie_cloud_intake.py',workflow)
-        self.assertIn('tests/test_charlie_cloud_intake_postgres.py',workflow)
-        self.assertIn('tests/test_charlie_cloud_current_producer.py',workflow)
-        for path in ('tests/test_oom_sakkie_general_manager_completion_time.py','tests/test_oom_sakkie_general_manager_worker.py','tests/test_oom_sakkie_general_manager_postgres.py','tests/test_oom_sakkie_purpose_decision.py'):
-            self.assertIn(path,workflow)
-        self.assertIn('do not prove hosted deployment, scheduled continuity or business acceptance',workflow)
-        self.assertEqual(adapter.HEAD, FINAL_CANDIDATE_PINS['HEAD'])
+        self.assertIn('branches: [codex/rootline-pending-registration-20261025]',workflow)
+        self.assertEqual(workflow.count('runs-on: ubuntu-latest'),1)
+        for forbidden in ('runs-on: windows-latest','secrets.','pull_request_target','write-all',
+                          'manager-dependency-intake:','tests/test_charlie_cloud_intake.py'):
+            self.assertNotIn(forbidden,workflow)
+        for required in ('contents: read','persist-credentials: false','image: postgres:16',
+                         'OOM_DESKTOP_REBIND_TEST_DATABASE_URL','oom_desktop_rebind_test',
+                         'tests.test_oom_desktop_candidate_reconciliation','tests.test_oom_desktop_registration_sql',
+                         'tests/test_oom_presend_timeout_correction.py','tests/test_oom_unsent_confirmation_extension.py',
+                         'tests.test_rootline_pending_registration','tests.test_rootline_pending_registration_sql',
+                         'cb9f89442a472bff3711740cb11d823777104679','71a6ab72ae511110c2580cbb6eb679228bc7d81c',
+                         '18de462e8463b44b289b29eda3693606d9b1e43a'):
+            self.assertIn(required,workflow)
+        self.assertEqual(adapter.HEAD,FINAL_CANDIDATE_PINS['HEAD'])
 
 
 class ReconciliationTests(unittest.TestCase):

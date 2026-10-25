@@ -443,3 +443,276 @@ $bounded_registration$;
 SELECT current_setting('amadeus.registration_result')::jsonb AS registration_result;
 COMMIT;
 '''
+
+
+# The pending successor has its own capture/renderer; the original five-write
+# helper and SQL_TEMPLATE above remain byte-for-byte unchanged.
+_PENDING_CORRECTION_SQL = "insert into public.charlie_mission_events (event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at) values(%s,%s,'owner_correction_recorded',%s,%s,%s::jsonb,%s)"
+_PENDING_HISTORY_SQL = "insert into public.charlie_mission_events (event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at) values(%s,%s,'workflow_updated',%s,%s,%s::jsonb,now())"
+_PENDING_BINDING_SQL = 'update public.charlie_missions m set metadata_json=%s::jsonb,updated_at=now() where mission_id=%s and to_jsonb(m)=%s::jsonb returning mission_id'
+
+
+class PendingCaptureDB(CaptureDB):
+    def __init__(self, plan):
+        super().__init__(plan)
+        r=plan['manifest']['expected_registration']
+        self.events[r['event_id']] = (deepcopy(r['metadata']),r['recorded_by'],'workflow_updated')
+    def cursor(self): return PendingCaptureCursor(self)
+
+
+class PendingCaptureCursor(CaptureCursor):
+    def execute(self,sql,params=None):
+        from scripts import reconcile_rootline_pending_registration as pending
+        q=' '.join(sql.split())
+        if q in {'select pg_advisory_xact_lock(hashtextextended(%s,0))',pending.OWNER_HOLD_QUERY}:
+            # No live state is inferred: capture models only validated preimages.
+            # The resulting SQL always checks real holds under advisory locks.
+            self.results=[];return
+        allowed={x for x in _SQL_SHAPES if x.startswith(('select to_jsonb(m)',
+            'select event_id,metadata_json,recorded_by','select metadata_json,recorded_by,event_type','set local '))}
+        allowed|={_PENDING_CORRECTION_SQL,_PENDING_BINDING_SQL,_PENDING_HISTORY_SQL}
+        if q not in allowed:raise ValueError('pending_capture_unknown_sql')
+        if q==_PENDING_CORRECTION_SQL:
+            if params[0] in self.db.events:raise ValueError('pending_capture_partial_correction')
+            self.db.events[params[0]]=(json.loads(params[4]),params[3],'owner_correction_recorded')
+            self.db.writes.append((sql,deepcopy(params)));self.results=[];return
+        super().execute(sql,params)
+
+
+def capture_pending_plan(arguments, *, authenticated_owner_principal, authenticated_desktop_principal):
+    from scripts import reconcile_rootline_pending_registration as pending
+    plan=pending.prepare_pending_succession(**arguments)
+    db=PendingCaptureDB(plan)
+    with patch.object(store,'_database_url',return_value=''):
+        result=pending.reconcile_pending_succession(**arguments,dry_run=False,
+            authenticated_owner_principal=authenticated_owner_principal,
+            authenticated_desktop_principal=authenticated_desktop_principal,connect_factory=lambda _:db)
+    if result.get('writes')!=3 or [' '.join(q.split()) for q,_ in db.writes]!=[
+        _PENDING_CORRECTION_SQL,_PENDING_BINDING_SQL,_PENDING_HISTORY_SQL]:
+        raise ValueError('pending_helper_three_write_shape_changed')
+    correction,binding,history=[params for _,params in db.writes]
+    return {'shape':pending.VERSION,'original_helper_writes':3,'plan':plan,
+        'correction':json.loads(correction[4]),'updated_metadata':json.loads(binding[0]),
+        'history':json.loads(history[4]),'history_notes':history[2]}
+
+
+def _validate_pending_package(package):
+    from scripts import reconcile_rootline_pending_registration as pending
+    from modules.charlie.mission_control import build_mission_control_event,apply_event_to_projection
+    if set(package)!={'shape','original_helper_writes','plan','correction','updated_metadata','history','history_notes'}:
+        raise ValueError('pending_package_fields')
+    plan=package['plan'];m,a=plan['manifest'],plan['approval']
+    expected=pending.prepare_pending_succession(pending.canonical(m),pending.canonical(a),
+        expected_manifest_sha256=plan['manifest_sha256'],expected_approval_sha256=plan['approval_sha256'])
+    if plan!=expected or package['shape']!=pending.VERSION or type(package['original_helper_writes']) is not int or package['original_helper_writes']!=3:
+        raise ValueError('pending_package_identity')
+    correction=pending._correction(plan,now=pending._time(package['correction']['recorded_at']))
+    if correction!=package['correction'] or not pending._time(a['issued_at'])<=pending._time(correction['recorded_at'])<pending._time(a['expires_at']):
+        raise ValueError('pending_package_correction')
+    bindings=pending._bindings(plan);before=m['expected_child_record'];updated={**before['metadata_json'],**bindings}
+    updated['mission_control_projection']=apply_event_to_projection({**before,'metadata':updated},correction)
+    history={'version':pending.VERSION,'manifest':m,'approval':a,'manifest_sha256':plan['manifest_sha256'],
+        'approval_sha256':plan['approval_sha256'],'previous_record':before,'parent_record':m['expected_parent_record'],
+        'preserved_admission':before['metadata_json']['mission_admission'],'correction':correction,
+        'bindings':bindings,'updated_metadata':updated}
+    if package['updated_metadata']!=updated or package['history']!=history or package['history_notes']!='Owner-approved exact ROOTLINE pending-registration succession.':
+        raise ValueError('pending_package_postimage')
+
+
+def compact_pending_package(package, *, expected_parent_pg_sha256, expected_child_pg_sha256,
+                            expected_registration_pg_sha256):
+    """Keep transfer limits; exact PostgreSQL hashes must come from canonical rows."""
+    _validate_pending_package(package)
+    for value in (expected_parent_pg_sha256,expected_child_pg_sha256,expected_registration_pg_sha256):
+        if not adapter._sha(value):raise ValueError('postgres_preimage_sha256_required')
+    compact=deepcopy(package);m=compact['plan']['manifest']
+    m.pop('expected_parent_record');m.pop('expected_child_record')
+    m['expected_registration'].pop('metadata')
+    compact['expected_parent_pg_sha256']=expected_parent_pg_sha256
+    compact['expected_child_pg_sha256']=expected_child_pg_sha256
+    compact['expected_registration_pg_sha256']=expected_registration_pg_sha256
+    compact['binding_changes']=compact['history']['bindings']
+    compact['binding_changes'].pop('mission_admission_contract')
+    compact['projection']=compact['updated_metadata']['mission_control_projection']
+    compact.pop('history');compact.pop('updated_metadata')
+    return compact
+
+
+def render_pending_sql(package, **postgres_hashes):
+    """Render only. Optional compact form is built from a fully validated package."""
+    _validate_pending_package(package)
+    if postgres_hashes:package=compact_pending_package(package,**postgres_hashes)
+    literal=_literal(package);index=0
+    while '$pending_registration_'+str(index)+'$' in literal:index+=1
+    delimiter='$pending_registration_'+str(index)+'$'
+    return _compact_sql_template(PENDING_SQL_TEMPLATE).replace('$pending_registration$',delimiter).replace('__PENDING_PACKAGE__',literal)
+
+
+PENDING_SQL_TEMPLATE = r"""-- OFFLINE PREPARATION ONLY; independent exact owner approval is mandatory.
+BEGIN;
+SET LOCAL lock_timeout='3s';
+SET LOCAL statement_timeout='10s';
+DO $pending_registration$
+DECLARE
+  p jsonb := __PENDING_PACKAGE__;
+  m jsonb := p->'plan'->'manifest';
+  a jsonb := p->'plan'->'approval';
+  child_id text := m->>'mission_id';
+  parent_id text := m->>'parent_mission_id';
+  owner_id text := a->>'owner_principal';
+  registration_id text := p->'plan'->>'event_id';
+  locked_id text;
+  parent_row jsonb;
+  before_row jsonb;
+  after_row jsonb;
+  original_row jsonb;
+  bindings jsonb;
+  updated_metadata jsonb;
+  history jsonb;
+  old_history jsonb;
+  old_actor text;
+  old_kind text;
+  current_history jsonb;
+  current_actor text;
+  current_kind text;
+  current_admission jsonb;
+  latest_correction jsonb;
+  latest_id text;
+  latest_actor text;
+  registration_time timestamptz := transaction_timestamp();
+  n integer;
+  is_replay boolean := false;
+BEGIN
+  IF current_database()<>'postgres' AND current_database() NOT LIKE 'oom_desktop_rebind_test%'
+    THEN RAISE EXCEPTION 'database_identity_mismatch'; END IF;
+  IF p->>'shape' IS DISTINCT FROM 'rootline_pending_registration_successor_v1'
+    OR p->>'original_helper_writes' IS DISTINCT FROM '3'
+    OR m->>'version' IS DISTINCT FROM p->>'shape'
+    OR a->>'version' IS DISTINCT FROM p->>'shape'
+    OR a->>'decision' IS DISTINCT FROM 'succeed_exact_pending_pr1404_registration_with_rootline_pr1405'
+    OR child_id IS DISTINCT FROM 'OMQ-20260813-03-MORNING-CONTAINMENT'
+    OR parent_id IS DISTINCT FROM 'OMQ-20260813-03'
+    OR m->'candidate'->>'head_sha' IS DISTINCT FROM 'cb9f89442a472bff3711740cb11d823777104679'
+    OR m->'candidate'->>'base_sha' IS DISTINCT FROM '18de462e8463b44b289b29eda3693606d9b1e43a'
+    OR m->'candidate'->>'pr_number' IS DISTINCT FROM '1405'
+    OR a->>'manifest_sha256' IS DISTINCT FROM p->'plan'->>'manifest_sha256'
+    OR m->'desktop'->>'principal' IS DISTINCT FROM 'codex_desktop:'||(a->>'desktop_task_id')
+    THEN RAISE EXCEPTION 'pending_package_identity'; END IF;
+  FOR locked_id IN SELECT value FROM unnest(ARRAY[parent_id,child_id]) AS u(value) ORDER BY value LOOP
+    PERFORM pg_advisory_xact_lock(hashtextextended(locked_id,0));
+  END LOOP;
+  FOR locked_id IN SELECT mission_id FROM public.charlie_missions WHERE mission_id IN(parent_id,child_id) ORDER BY mission_id FOR UPDATE LOOP NULL; END LOOP;
+  IF NOT(clock_timestamp()>=(a->>'issued_at')::timestamptz AND clock_timestamp()<(a->>'expires_at')::timestamptz
+    AND (a->>'expires_at')::timestamptz=(m->>'expires_at')::timestamptz)
+    THEN RAISE EXCEPTION 'approval_expired_under_lock'; END IF;
+  IF EXISTS(SELECT 1 FROM public.charlie_owner_execution_hold_events h WHERE h.mission_id IN(parent_id,child_id)
+    AND h.event_type='hold_created' AND NOT EXISTS(SELECT 1 FROM public.charlie_owner_execution_hold_events r
+      WHERE r.event_type='hold_released' AND r.release_of_event_id=h.event_id))
+    THEN RAISE EXCEPTION 'owner_execution_hold_active'; END IF;
+  SELECT to_jsonb(x) INTO parent_row FROM public.charlie_missions x WHERE x.mission_id=parent_id;
+  SELECT to_jsonb(x) INTO before_row FROM public.charlie_missions x WHERE x.mission_id=child_id;
+  IF before_row IS NULL THEN RAISE EXCEPTION 'mission_record_unavailable'; END IF;
+  IF p ? 'expected_parent_pg_sha256' THEN
+    IF encode(sha256(convert_to(parent_row::text,'UTF8')),'hex') IS DISTINCT FROM p->>'expected_parent_pg_sha256'
+      THEN RAISE EXCEPTION 'parent_state_changed'; END IF;
+  ELSIF parent_row IS DISTINCT FROM m->'expected_parent_record' THEN RAISE EXCEPTION 'parent_state_changed'; END IF;
+  SELECT x.metadata_json,x.recorded_by,x.event_type INTO old_history,old_actor,old_kind
+    FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_id=m->'expected_registration'->>'event_id';
+  IF (CASE WHEN p ? 'expected_registration_pg_sha256' THEN
+      encode(sha256(convert_to(old_history::text,'UTF8')),'hex') IS DISTINCT FROM p->>'expected_registration_pg_sha256'
+    ELSE old_history IS DISTINCT FROM m->'expected_registration'->'metadata' END)
+    OR old_actor IS DISTINCT FROM m->'expected_registration'->>'recorded_by' OR old_kind IS DISTINCT FROM 'workflow_updated'
+    THEN RAISE EXCEPTION 'pending_registration_state_changed'; END IF;
+  SELECT x.event_id,x.metadata_json,x.recorded_by INTO latest_id,latest_correction,latest_actor
+    FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_type='owner_correction_recorded'
+    ORDER BY x.created_at DESC,x.event_id DESC LIMIT 1;
+  SELECT x.metadata_json,x.recorded_by,x.event_type INTO current_history,current_actor,current_kind
+    FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_id=registration_id;
+  IF p ? 'expected_child_pg_sha256' THEN
+    original_row:=CASE WHEN current_history IS NULL THEN before_row ELSE current_history->'previous_record' END;
+    IF encode(sha256(convert_to(original_row::text,'UTF8')),'hex') IS DISTINCT FROM p->>'expected_child_pg_sha256'
+      THEN RAISE EXCEPTION 'predecessor_state_changed'; END IF;
+    m:=m||jsonb_build_object('expected_parent_record',parent_row,'expected_child_record',original_row);
+    m:=jsonb_set(m,'{expected_registration,metadata}',old_history);
+    p:=jsonb_set(p,'{plan,manifest}',m);
+    bindings:=(p->'binding_changes')||jsonb_build_object('mission_admission_contract',m->'contract');
+    updated_metadata:=(original_row->'metadata_json')||bindings||jsonb_build_object('mission_control_projection',p->'projection');
+    history:=jsonb_build_object('version',m->>'version','manifest',m,'approval',a,
+      'manifest_sha256',p->'plan'->>'manifest_sha256','approval_sha256',p->'plan'->>'approval_sha256',
+      'previous_record',original_row,'parent_record',parent_row,
+      'preserved_admission',original_row->'metadata_json'->'mission_admission',
+      'correction',p->'correction','bindings',bindings,'updated_metadata',updated_metadata);
+    p:=p||jsonb_build_object('updated_metadata',updated_metadata,'history',history);
+  END IF;
+  IF current_history IS NOT NULL THEN
+    IF current_history IS DISTINCT FROM p->'history' OR current_actor IS DISTINCT FROM owner_id OR current_kind IS DISTINCT FROM 'workflow_updated'
+      THEN RAISE EXCEPTION 'replay_history_conflict'; END IF;
+    IF before_row-ARRAY['metadata_json','updated_at'] IS DISTINCT FROM (m->'expected_child_record')-ARRAY['metadata_json','updated_at']
+      OR (before_row->'metadata_json')-'mission_admission' IS DISTINCT FROM (p->'updated_metadata')-'mission_admission'
+      THEN RAISE EXCEPTION 'replay_binding_conflict'; END IF;
+    current_admission:=before_row->'metadata_json'->'mission_admission';
+    IF current_admission IS DISTINCT FROM p->'history'->'preserved_admission' AND (
+      current_admission->>'status' IN('valid','consumed','revoked','invalidated')
+      AND current_admission->>'mission_id'=child_id AND current_admission->>'root_mission_id'=parent_id
+      AND current_admission->>'generation'=m->>'generation' AND current_admission->>'head_sha'=m->'candidate'->>'head_sha'
+      AND current_admission->>'base_sha'=m->'candidate'->>'base_sha'
+      AND jsonb_typeof(current_admission->'signed_receipt')='object'
+      AND current_admission->'signed_receipt'->'mission'=jsonb_build_object('mission_id',child_id,'root_mission_id',parent_id,'generation',m->>'generation')
+      AND current_admission->'signed_receipt'->'candidate'->>'head_sha'=current_admission->>'head_sha'
+      AND current_admission->'signed_receipt'->'candidate'->>'base_sha'=current_admission->>'base_sha'
+      AND current_admission->>'content_sha256' ~ '^[0-9a-f]{64}$'
+      AND current_admission->>'authority_key_sha256' ~ '^[0-9a-f]{64}$'
+      AND current_admission->'signed_receipt'->>'content_sha256'=current_admission->>'content_sha256'
+      AND current_admission->'signed_receipt'->>'authority_key_sha256'=current_admission->>'authority_key_sha256'
+      AND current_admission->'signed_receipt'->>'receipt_id'=current_admission->>'receipt_id') IS NOT TRUE
+      THEN RAISE EXCEPTION 'replay_binding_conflict'; END IF;
+    IF latest_id IS DISTINCT FROM p->'correction'->>'event_id' OR latest_correction IS DISTINCT FROM p->'correction' OR latest_actor IS DISTINCT FROM owner_id
+      THEN RAISE EXCEPTION 'replay_correction_conflict'; END IF;
+    is_replay:=true;
+  ELSE
+    IF before_row IS DISTINCT FROM m->'expected_child_record' THEN RAISE EXCEPTION 'predecessor_state_changed'; END IF;
+    IF latest_id IS DISTINCT FROM m->'expected_correction'->>'event_id'
+      OR latest_correction IS DISTINCT FROM m->'expected_correction'->'metadata'
+      OR latest_actor IS DISTINCT FROM m->'expected_correction'->>'recorded_by'
+      THEN RAISE EXCEPTION 'predecessor_correction_changed'; END IF;
+    IF EXISTS(SELECT 1 FROM public.charlie_mission_events x WHERE x.event_id IN(registration_id,p->'correction'->>'event_id'))
+      THEN RAISE EXCEPTION 'partial_audit_conflict'; END IF;
+    IF registration_time<(a->>'issued_at')::timestamptz OR registration_time>=(a->>'expires_at')::timestamptz
+      THEN RAISE EXCEPTION 'registration_timestamp_outside_approval'; END IF;
+    INSERT INTO public.charlie_mission_events(event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
+      VALUES(p->'correction'->>'event_id',child_id,'owner_correction_recorded',p->'correction'->>'summary',owner_id,p->'correction',(p->'correction'->>'recorded_at')::timestamptz);
+    GET DIAGNOSTICS n=ROW_COUNT;
+    IF n<>1 THEN RAISE EXCEPTION 'correction_write_count'; END IF;
+    UPDATE public.charlie_missions x SET metadata_json=p->'updated_metadata',updated_at=now()
+      WHERE x.mission_id=child_id AND to_jsonb(x)=before_row;
+    GET DIAGNOSTICS n=ROW_COUNT;
+    IF n<>1 THEN RAISE EXCEPTION 'conditional_binding_lost'; END IF;
+    INSERT INTO public.charlie_mission_events(event_id,mission_id,event_type,notes,recorded_by,metadata_json,created_at)
+      VALUES(registration_id,child_id,'workflow_updated',p->>'history_notes',owner_id,p->'history',now());
+    GET DIAGNOSTICS n=ROW_COUNT;
+    IF n<>1 THEN RAISE EXCEPTION 'history_write_count'; END IF;
+  END IF;
+  SELECT to_jsonb(x) INTO after_row FROM public.charlie_missions x WHERE x.mission_id=child_id;
+  IF after_row-ARRAY['metadata_json','updated_at'] IS DISTINCT FROM before_row-ARRAY['metadata_json','updated_at']
+    OR (NOT is_replay AND (after_row->'metadata_json' IS DISTINCT FROM p->'updated_metadata'
+      OR after_row->'metadata_json'->'mission_admission' IS DISTINCT FROM m->'expected_child_record'->'metadata_json'->'mission_admission'
+      OR (after_row->>'updated_at')::timestamptz IS DISTINCT FROM registration_time))
+    OR (is_replay AND after_row IS DISTINCT FROM before_row)
+    OR (SELECT to_jsonb(x) FROM public.charlie_missions x WHERE x.mission_id=parent_id) IS DISTINCT FROM parent_row
+    OR NOT EXISTS(SELECT 1 FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_id=registration_id
+      AND x.event_type='workflow_updated' AND x.recorded_by=owner_id AND x.metadata_json=p->'history')
+    OR NOT EXISTS(SELECT 1 FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_id=p->'correction'->>'event_id'
+      AND x.event_type='owner_correction_recorded' AND x.recorded_by=owner_id AND x.metadata_json=p->'correction'
+      AND x.created_at=(p->'correction'->>'recorded_at')::timestamptz)
+    OR NOT EXISTS(SELECT 1 FROM public.charlie_mission_events x WHERE x.mission_id=child_id AND x.event_id=m->'expected_registration'->>'event_id'
+      AND x.event_type='workflow_updated' AND x.recorded_by=old_actor AND x.metadata_json=old_history)
+    THEN RAISE EXCEPTION 'final_readback_mismatch'; END IF;
+  PERFORM set_config('amadeus.pending_registration_result',jsonb_build_object('status',
+    CASE WHEN is_replay THEN 'exact_pending_replay' ELSE 'pending_candidate_succeeded' END,
+    'writes',CASE WHEN is_replay THEN 0 ELSE 3 END,'parent_unchanged',true,
+    'manifest_sha256',p->'plan'->>'manifest_sha256','head_sha',m->'candidate'->>'head_sha')::text,true);
+END
+$pending_registration$;
+SELECT current_setting('amadeus.pending_registration_result')::jsonb AS registration_result;
+COMMIT;
+"""
