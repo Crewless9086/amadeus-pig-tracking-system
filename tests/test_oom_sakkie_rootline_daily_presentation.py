@@ -310,9 +310,10 @@ def test_validated_started_and_failed_lifecycle_override_conflicting_recommendat
     english = compose_daily_rootline_plan(value, language="en")
     afrikaans = compose_daily_rootline_plan(value, language="af")
     assert "B Camp:</b> Currently running" in english
-    assert "C Camp:</b> Held safely — problem under automatic review" in english
+    assert "C Camp:</b> Run outcome unconfirmed — ROOTLINE is reviewing" in english
     assert "B Kamp:</b> Loop tans" in afrikaans
-    assert "C Kamp:</b> Veilig teruggehou — probleem word outomaties nagegaan" in afrikaans
+    assert "C Kamp:</b> Lopie se uitkoms onbevestig — ROOTLINE ondersoek dit" in afrikaans
+    assert "Held safely" not in english and "Veilig teruggehou" not in afrikaans
     for text in (english, afrikaans):
         assert "active_execution" not in text and "contained" not in text
         assert "Lifecycle" not in text and "Lewensiklus" not in text
@@ -327,8 +328,8 @@ def test_every_validated_lifecycle_state_has_human_en_af_projection():
         "Started": ("Currently running", "Loop tans"),
         "Completed": ("Controller OFF verified", "Beheerder AF geverifieer"),
         "Held": ("Not running", "Loop nie"),
-        "Failed": ("Held safely — problem under automatic review",
-                   "Veilig teruggehou — probleem word outomaties nagegaan"),
+        "Failed": ("Run outcome unconfirmed — ROOTLINE is reviewing",
+                   "Lopie se uitkoms onbevestig — ROOTLINE ondersoek dit"),
     }
     for state, (en, af) in expected.items():
         value = result(b="Recommend", c="Recommend") if state == "Eligible" else result(b="Hold", c="Hold")
@@ -343,6 +344,8 @@ def test_every_validated_lifecycle_state_has_human_en_af_projection():
         english = compose_daily_rootline_plan(value, language="en")
         afrikaans = compose_daily_rootline_plan(value, language="af")
         assert en in english and af in afrikaans
+        if state == "Failed":
+            assert "Held safely" not in english and "Veilig teruggehou" not in afrikaans
         assert "internal_reason_token" not in english + afrikaans
         assert "internal_next_action" not in english + afrikaans
 

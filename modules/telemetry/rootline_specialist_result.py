@@ -76,12 +76,16 @@ def build_rootline_specialist_result(
     owner_questions = _owner_questions(plan, evidence, recommendations)
     overall = _overall_status(recommendations)
     cutoff = _evidence_cutoff(plan, generated_at)
+    irrigation_lifecycle = _irrigation_lifecycle(recommendations, evidence.get("irrigation_history"))
     identity_material = {
         "contract": CONTRACT_VERSION,
         "operating_date": selected_date,
         "evidence_generation": plan["evidence_generation"],
         "recommendations": recommendations,
     }
+    exceptions = _lifecycle_exceptions(irrigation_lifecycle)
+    if exceptions:
+        identity_material["execution_exceptions"] = exceptions
     generation = sha256(
         json.dumps(identity_material, sort_keys=True, default=str).encode()
     ).hexdigest().upper()[:16]
@@ -106,8 +110,7 @@ def build_rootline_specialist_result(
         "battery_policy": deepcopy(plan["battery_reserve"]),
         "water_observations": deepcopy(plan["tank_evidence"]),
         "recommendations": recommendations,
-        "irrigation_lifecycle": _irrigation_lifecycle(
-            recommendations, evidence.get("irrigation_history")),
+        "irrigation_lifecycle": irrigation_lifecycle,
         "next_reassessment": reassessment,
         "owner_questions": owner_questions,
         "outcome_separation": {
@@ -131,8 +134,14 @@ def _irrigation_lifecycle(recommendations, irrigation_history):
                if isinstance(row, dict)}
     return {zone: project_zone_lifecycle(zone_id=zone,
         recommendation=indexed.get(zone), history=histories.get(zone),
-        execution=(histories.get(zone) or {}).get("latest_execution"))
+        execution=(histories.get(zone) or {}).get("latest_execution"),
+        evidence_cutoff=(irrigation_history or {}).get("snapshot_cutoff"))
         for zone in ("B12345", "C12345")}
+
+
+def _lifecycle_exceptions(lifecycle):
+    return {zone: row["execution_exceptions"] for zone, row in lifecycle.items()
+            if row.get("execution_exceptions")}
 
 
 def build_current_rootline_specialist_result(
@@ -303,15 +312,20 @@ def project_water_energy_plan(plan, now=None):
 
 def _project_existing_plan(plan, now):
     recommendations = _recommendations_from_tasks(plan.get("candidate_tasks", []))
+    irrigation_lifecycle = _irrigation_lifecycle(recommendations, plan.get("recent_irrigation_history"))
+    generation = plan.get("evidence_generation") or UNAVAILABLE
+    exceptions = _lifecycle_exceptions(irrigation_lifecycle)
+    if exceptions:
+        generation = sha256(json.dumps([generation, exceptions], sort_keys=True).encode()).hexdigest().upper()[:16]
     result_id = (
         f"ROOTLINE-RESULT-{str(plan.get('operating_date')).replace('-', '')}-"
-        f"{str(plan.get('evidence_generation') or 'UNAVAILABLE')}"
+        f"{generation}"
     )
     result = {
         "success": True,
         "contract_version": CONTRACT_VERSION,
         "result_id": result_id,
-        "generation": plan.get("evidence_generation") or UNAVAILABLE,
+        "generation": generation,
         "operating_date": plan.get("operating_date"),
         "operating_timezone": "Africa/Johannesburg",
         "generated_at": now.isoformat(),
@@ -337,8 +351,7 @@ def _project_existing_plan(plan, now):
         "battery_policy": deepcopy(plan.get("battery_reserve") or {}),
         "water_observations": deepcopy(plan.get("tank_evidence") or {}),
         "recommendations": recommendations,
-        "irrigation_lifecycle": _irrigation_lifecycle(
-            recommendations, plan.get("recent_irrigation_history")),
+        "irrigation_lifecycle": irrigation_lifecycle,
         "next_reassessment": (
             {
                 "trigger": "canonical_plan_reassessment",

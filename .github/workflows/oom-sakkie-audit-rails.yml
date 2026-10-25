@@ -382,6 +382,25 @@ jobs:
           python -m pip install pytest
           ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m pytest tests/test_rootline_water_balance.py -q
 
+      - name: Create isolated ROOTLINE history qualification database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --username=postgres rootline_managed
+
+      - name: Prove ROOTLINE filtered history, recovery and shutdown reporting
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_managed
+          ROOTLINE_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_managed
+          PYTHON_DOTENV_DISABLED: "1"
+        run: >-
+          python -B -m pytest -q -p no:cacheprovider
+          tests/test_rootline_irrigation_execution_history_postgres.py
+          tests/test_rootline_managed_evidence_history_postgres.py
+          tests/test_rootline_managed_recovery_planning.py
+          tests/test_rootline_shutdown_preservation.py
+          tests/test_oom_sakkie_rootline_daily_presentation.py
+          tests/test_oom_sakkie_owner_response_composer.py
+
       - name: Run ROOTLINE irrigation job persistence and concurrency gates
         run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m pytest tests/test_rootline_irrigation_execution_store.py -q
 

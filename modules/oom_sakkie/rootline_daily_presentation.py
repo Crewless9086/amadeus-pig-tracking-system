@@ -6,10 +6,12 @@ from datetime import datetime, time, timezone
 import html
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
-from modules.oom_sakkie.rootline_material import rootline_material_digest, owner_reason_material
+from modules.oom_sakkie.rootline_material import (
+    rootline_material_digest, owner_reason_material, rootline_exception_material,
+)
 from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
 from modules.telemetry.rootline_irrigation_lifecycle import (
-    project_zone_lifecycle, validate_zone_lifecycle,
+    project_zone_lifecycle, validate_zone_lifecycle, validated_shutdown_exceptions,
 )
 
 SAST = ZoneInfo("Africa/Johannesburg")
@@ -46,6 +48,8 @@ def owner_notification_required(result: Mapping[str, Any]) -> bool:
     if not isinstance(lifecycle, Mapping):
         # Legacy callers without typed lifecycle keep their existing delivery
         # contract. The production planner always supplies typed lifecycle.
+        return True
+    if rootline_exception_material(result):
         return True
     return any(str((lifecycle.get(zone) or {}).get("state") or "") in {
         "Started", "Completed", "Failed"
@@ -242,6 +246,16 @@ def _decision(value: Any, af: bool) -> str:
 
 def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[str, Any],
                         af: bool, *, zone: str) -> str:
+    exceptions = validated_shutdown_exceptions(lifecycle, zone_id=zone)
+    if exceptions:
+        if any(row["controller_off_verified"] is False for row in exceptions):
+            return ("Afskakeling van 'n aangetekende lopie is onbevestig — ROOTLINE kontroleer dit" if af else
+                    "A recorded run has unverified shutdown — ROOTLINE is checking")
+        if any(row["kind"] == "off_readback_after_deadline" for row in exceptions):
+            return ("'n Lopie is ná sy sperdatum AF geverifieer — hersiening nodig" if af else
+                    "A run was verified OFF after its deadline — review needed")
+        return ("AF geverifieer; afskakelsperdatum moet nagegaan word" if af else
+                "OFF verified; shutdown deadline needs review")
     state = str(lifecycle.get("state") or "Held")
     if state == "Started":
         return "Loop tans" if af else "Currently running"
@@ -269,8 +283,8 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
                     "Not running — does not need watering")
         return "Loop nie" if af else "Not running"
     if state == "Failed":
-        return ("Veilig teruggehou — probleem word outomaties nagegaan" if af else
-                "Held safely — problem under automatic review")
+        return ("Lopie se uitkoms onbevestig — ROOTLINE ondersoek dit" if af else
+                "Run outcome unconfirmed — ROOTLINE is reviewing")
     if state == "Completed":
         if _verified_completion(lifecycle, zone):
             return "Beheerder AF geverifieer" if af else "Controller OFF verified"

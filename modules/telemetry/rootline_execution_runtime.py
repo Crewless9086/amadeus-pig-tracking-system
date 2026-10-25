@@ -45,70 +45,75 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         build_borehole_runtime_eligibility, load_registered_borehole_baseline,
     )
     from modules.telemetry.rootline_managed_devices_runtime import (
-        run_rootline_managed_device_cycle,
+        ManagedDevicePlanningUnavailable, run_rootline_managed_device_cycle,
     )
     def connect_factory():
         return connect_bounded_rootline_postgres(
             database_url=database_url, read_only=True)
-    try:
-        evidence, selected, planned_at = evidence_loader(
-            operating_date=now.date().isoformat(), database_url=database_url, now=now)
-        evidence = _refresh_active_irrigation_readback(evidence, transport, now)
-        plan = build_water_energy_plan(evidence, selected, now=planned_at)
-    except Exception:
-        return {**_safe("managed_device_evidence_unavailable"), "blocks_bc": False}
-    packet = {"irrigation_auxiliary_tasks": plan.get("irrigation_auxiliary_tasks") or [],
-        "auxiliary_safety": {}, "auxiliary_contexts": {}}
-    for task in packet["irrigation_auxiliary_tasks"]:
-        identity = str(task.get("auxiliary_device_id") or "")
-        if identity not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
-            continue
-        contract = rootline_device_registry()[identity]
+    def build_evidence():
         try:
-            packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
-                device_id=contract["device_id"], channel=contract["channel"])
-        except Exception:
-            continue
-    executions = [row for row in evidence.get("fertilizer_executions") or []
-                  if isinstance(row, dict)]
-    packet["auxiliary_contexts"]["FERTILIZER-MIXER-CH2"] = {
-        "plan_generation": str(plan.get("generation") or plan.get("evidence_generation") or ""),
-        "injection_active": any(row.get("device_type") == "fertilizer_injection_valve"
-            and row.get("state") == "Active" for row in executions),
-        "verified_mixing_minutes_today": sum(float(row.get("verified_runtime_minutes") or 0)
-            for row in executions if row.get("device_type") == "fertilizer_mixer"
-            and str(row.get("completed_at") or "")[:10] == now.date().isoformat()),
-        "verified_mixing_sessions_today": sum(1 for row in executions
-            if row.get("device_type") == "fertilizer_mixer"
-            and str(row.get("completed_at") or "")[:10] == now.date().isoformat()
-            and row.get("shutdown_verified") is True),
-        "mixing_history_complete_through": evidence.get("fertilizer_history_complete_through"),
-        "power_suitable": _managed_power_suitable(evidence.get("power")),
-    }
-    active_irrigation = evidence.get("active_irrigation_context")
-    if isinstance(active_irrigation, dict):
-        packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"] = active_irrigation
-    borehole_task = next((row for row in plan.get("candidate_tasks") or []
-        if row.get("task_id") == "borehole"), {})
-    interlocks = evidence.get("borehole_interlocks")
-    if (borehole_task.get("recommendation") == "Recommend"
-            and isinstance(interlocks, dict)):
-        try:
-            baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
-            provider = transport.read_output_state(device_id="1002851416", channel=1)
-            if baseline:
-                packet["borehole_execution"] = build_borehole_runtime_eligibility(
-                    need={"eligible": True, "task_id": "borehole",
-                        "reason": borehole_task.get("reason")}, baseline=baseline,
-                    authority={"inside_standing_authority": True}, provider=provider,
-                    interlocks=interlocks,
-                    energy={"eligible": _managed_power_suitable(evidence.get("power"))},
-                    requested_seconds=min(14400,
-                        int(baseline["maximum_routine_runtime_seconds"])), now=now)
-        except Exception:
-            pass
-    return run_rootline_managed_device_cycle(evidence=packet, transport=transport,
-        environ=source, store=store, connect_factory=connect_factory, now=now)
+            evidence, selected, planned_at = evidence_loader(
+                operating_date=now.date().isoformat(), database_url=database_url, now=now)
+            evidence = _refresh_active_irrigation_readback(evidence, transport, now)
+            plan = build_water_energy_plan(evidence, selected, now=planned_at)
+        except Exception as exc:
+            raise ManagedDevicePlanningUnavailable(
+                {**_safe("managed_device_evidence_unavailable"), "blocks_bc": False}) from exc
+        packet = {"irrigation_auxiliary_tasks": plan.get("irrigation_auxiliary_tasks") or [],
+            "auxiliary_safety": {}, "auxiliary_contexts": {}}
+        for task in packet["irrigation_auxiliary_tasks"]:
+            identity = str(task.get("auxiliary_device_id") or "")
+            if identity not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
+                continue
+            contract = rootline_device_registry()[identity]
+            try:
+                packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
+                    device_id=contract["device_id"], channel=contract["channel"])
+            except Exception:
+                continue
+        executions = [row for row in evidence.get("fertilizer_executions") or []
+                      if isinstance(row, dict)]
+        packet["auxiliary_contexts"]["FERTILIZER-MIXER-CH2"] = {
+            "plan_generation": str(plan.get("generation") or plan.get("evidence_generation") or ""),
+            "injection_active": any(row.get("device_type") == "fertilizer_injection_valve"
+                and row.get("state") == "Active" for row in executions),
+            "verified_mixing_minutes_today": sum(float(row.get("verified_runtime_minutes") or 0)
+                for row in executions if row.get("device_type") == "fertilizer_mixer"
+                and str(row.get("completed_at") or "")[:10] == now.date().isoformat()),
+            "verified_mixing_sessions_today": sum(1 for row in executions
+                if row.get("device_type") == "fertilizer_mixer"
+                and str(row.get("completed_at") or "")[:10] == now.date().isoformat()
+                and row.get("shutdown_verified") is True),
+            "mixing_history_complete_through": evidence.get("fertilizer_history_complete_through"),
+            "power_suitable": _managed_power_suitable(evidence.get("power")),
+        }
+        active_irrigation = evidence.get("active_irrigation_context")
+        if isinstance(active_irrigation, dict):
+            packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"] = active_irrigation
+        borehole_task = next((row for row in plan.get("candidate_tasks") or []
+            if row.get("task_id") == "borehole"), {})
+        interlocks = evidence.get("borehole_interlocks")
+        if (borehole_task.get("recommendation") == "Recommend"
+                and isinstance(interlocks, dict)):
+            try:
+                baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
+                provider = transport.read_output_state(device_id="1002851416", channel=1)
+                if baseline:
+                    packet["borehole_execution"] = build_borehole_runtime_eligibility(
+                        need={"eligible": True, "task_id": "borehole",
+                            "reason": borehole_task.get("reason")}, baseline=baseline,
+                        authority={"inside_standing_authority": True}, provider=provider,
+                        interlocks=interlocks,
+                        energy={"eligible": _managed_power_suitable(evidence.get("power"))},
+                        requested_seconds=min(14400,
+                            int(baseline["maximum_routine_runtime_seconds"])), now=now)
+            except Exception:
+                pass
+        return packet
+
+    return run_rootline_managed_device_cycle(evidence={}, transport=transport,
+        environ=source, store=store, connect_factory=connect_factory, now=now,
+        evidence_factory=build_evidence)
 
 
 def _managed_power_suitable(power):

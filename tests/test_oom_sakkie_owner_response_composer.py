@@ -80,7 +80,8 @@ def test_conversational_rootline_lifecycle_projection_is_recipient_localized():
 
     answer = compose_rootline(packet, language="af")
 
-    assert "<b>B Kamp:</b> Veilig teruggehou" in answer
+    assert "<b>B Kamp:</b> Lopie se uitkoms onbevestig — ROOTLINE ondersoek dit" in answer
+    assert "Veilig teruggehou" not in answer and "Held safely" not in answer
     assert "<b>C Kamp:</b> Moet natgemaak word" in answer
     assert "ROOTLINE heroorweeg die plan outomaties." in answer
     assert "durable_zone_containment" not in answer

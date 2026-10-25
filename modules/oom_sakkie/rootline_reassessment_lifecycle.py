@@ -8,7 +8,7 @@ from modules.oom_sakkie.rootline_daily_presentation import (
     compose_daily_rootline_plan, owner_notification_required,
 )
 from modules.oom_sakkie.rootline_material import (
-    rootline_material_digest,
+    rootline_material_digest, rootline_exception_material,
     stable_reassessment,
 )
 
@@ -55,8 +55,9 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     current_answer = compose_daily_rootline_plan(current, language=language)
     current_owner_plan_reassessment = _owner_plan_reassessment(
         current.get("next_reassessment"))
+    current_exceptions = rootline_exception_material(current)
     current_owner_plan_fingerprint = _owner_plan_fingerprint(
-        current_answer, current_owner_plan_reassessment)
+        current_answer, current_owner_plan_reassessment, current_exceptions)
     # A fresher generation remains durable observation evidence, but is not
     # owner-notification material by itself. Daily and change rails share the
     # date + material identity and stay silent when the supported action did
@@ -81,6 +82,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
                 "next_due_at": _declared_next_due(current),
                 "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
     if (_exact_predecessor_binding(delivered, owner_user_id, chat_id, operating_date)
+            and current_exceptions == _delivered_execution_exceptions(delivered)
             and _legacy_volatile_owner_plan_matches(
                 delivered, current_answer, current_owner_plan_reassessment)):
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
@@ -248,7 +250,7 @@ def _stable_owner_plan(value):
     return "\n".join(lines).strip()
 
 
-def _owner_plan_fingerprint(value, reassessment=None):
+def _owner_plan_fingerprint(value, reassessment=None, execution_exceptions=None):
     stable = _stable_owner_plan(value)
     if not stable:
         return ""
@@ -265,6 +267,8 @@ def _owner_plan_fingerprint(value, reassessment=None):
             "automatic_command", "recovery_if_window_is_missed") if key in structured}
     material = {"version": OWNER_PLAN_FINGERPRINT_VERSION, "owner_text": stable,
                 "reassessment": structured}
+    if execution_exceptions:
+        material["execution_exceptions"] = execution_exceptions
     return hashlib.sha256(json.dumps(material, sort_keys=True,
         separators=(",", ":")).encode()).hexdigest()
 
@@ -283,7 +287,17 @@ def _delivered_owner_plan_fingerprint(delivered):
             "trigger": delivered.get("trigger"),
             "at": delivered.get("next_reassessment_at"),
         })
-    return _owner_plan_fingerprint(delivered.get("answer"), reassessment)
+    return _owner_plan_fingerprint(delivered.get("answer"), reassessment,
+        _delivered_execution_exceptions(delivered))
+
+
+def _delivered_execution_exceptions(delivered):
+    rows = delivered.get("zones") if isinstance(delivered, Mapping) else None
+    if not isinstance(rows, list):
+        return []
+    return rootline_exception_material({"irrigation_lifecycle": {
+        row.get("zone_id"): row.get("lifecycle") for row in rows
+        if isinstance(row, Mapping) and isinstance(row.get("zone_id"), str)}})
 
 
 def _owner_plan_reassessment(value):

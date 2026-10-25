@@ -828,6 +828,14 @@ def _read_managed_device_evidence(database_url, now):
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
                     where event_source='rootline_irrigation_execution'
+                      and (jsonb_typeof(review_json->'rootline_execution')
+                               is distinct from 'object'
+                           or jsonb_typeof(review_json->'rootline_execution'->'action')
+                               is distinct from 'string'
+                           or review_json->'rootline_execution'->>'action' in (
+                               'record_auxiliary_completed', 'mark_active',
+                               'record_completed', 'record_ambiguous_shutdown',
+                               'record_claim_recovery', 'contain_zone'))
                     order by created_at,review_event_id""")
                 executions = [_json_object(row[0]) for row in cursor.fetchall()]
                 cursor.execute("""select review_json->'rootline_operational_intake'->'outcome'
