@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import nullcontext
 
 EVENT_SOURCE = "rootline_irrigation_execution"
 
@@ -35,12 +36,11 @@ def rootline_irrigation_execution_store(action, payload):
         return _bounded_claim(action, _claim_single_auxiliary, body)
     if action == "claim_borehole_before_on":
         return _bounded_claim(action, _claim_borehole_material_load, body)
-    history_created = None
     if action == "record_completed":
-        history_created = _append_history(action, body)
-        if history_created is not True:
-            return {"success": False, "created": False,
-                    "status": "canonical_history_completion_unproven"}
+        return _record_parent_terminal_atomic(action, body)
+    if action == "record_job_resolution" and body.get("resolution") == "Cancelled":
+        return _record_parent_terminal_atomic(action, body)
+    history_created = None
     event_id = _event_id(action, body)
     from modules.sales.sam_live_stock_launch_control import (
         build_sam_live_stock_review_event, record_sam_live_stock_review_event,
@@ -77,6 +77,164 @@ def rootline_irrigation_execution_store(action, payload):
     return {**result, "success": success,
             "created": result.get("created", status < 300),
             "history_event_created": history_created}
+
+
+class _AtomicTerminalWriteFailed(RuntimeError):
+    pass
+
+
+def _record_parent_terminal_atomic(action, body):
+    """Serialize cancellation with BOTH completion rails, not just its audit row."""
+    from modules.oom_sakkie.bounded_postgres_read import (
+        connect_bounded_rootline_postgres, is_database_unavailable,
+    )
+    body = dict(body)
+    controller = body.pop("_current_controller", None)
+    try:
+        with connect_bounded_rootline_postgres(
+                database_url=os.environ.get("DATABASE_URL"), read_only=False) as connection:
+            # Same order as parent transitions and auxiliary final-edge checks.
+            connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            connection.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            now = connection.execute("select clock_timestamp()").fetchone()[0]
+            with connection.cursor() as cursor:
+                cursor.execute("""select review_json->'rootline_execution',created_at
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and (review_json->'rootline_execution'->>'job_id'=%s
+                           or (review_json->'rootline_execution'->>'action'='record_completed'
+                               and review_json->'rootline_execution'->>'execution_id'=%s))
+                    order by created_at,review_event_id""",
+                    (EVENT_SOURCE, body.get("job_id"), body.get("execution_id")))
+                rows = cursor.fetchall()
+            events = [row[0] for row in rows]
+            if action == "record_job_resolution":
+                from modules.telemetry.rootline_parent_job_resolution import (
+                    _recorded_cancellation, build_contained_parent_cancellation,
+                )
+                prior = _recorded_cancellation(events, body, expected=body)
+                if prior is not None:
+                    return {"success": True, "created": False, "resolution": prior,
+                            "history_event_created": False}
+                parent = _locked_contained_parent(connection, body, rows, now)
+                rebuilt = build_contained_parent_cancellation(parent=parent,
+                    controller=controller, authorization={
+                        "mission_id": body.get("mission_id"),
+                        "decision": "cancel_unverified_remainder",
+                        "owner_principal": body.get("owner_principal"),
+                        "job_id": body.get("job_id"), "job_sha256": body.get("job_sha256")},
+                    now=now)
+                if body != rebuilt:
+                    raise ValueError("contained_parent_cancellation_preimage_changed")
+                result = _write_terminal_review(connection, action, rebuilt)
+                return {**result, "history_event_created": False}
+
+            # A duplicate callback may still be acknowledged after the remainder
+            # was cancelled, but must not repair/create any missing history then.
+            existing = _read_terminal_review(connection, action, body)
+            if existing is not None:
+                if (existing != _stored_event_body(action, body, _event_id(action, body))
+                        or not _append_history(action, body, connection=connection, append=False)):
+                    raise _AtomicTerminalWriteFailed("canonical_history_completion_unproven")
+                return {"success": True, "created": False, "history_event_created": False}
+            if any(row.get("action") == "record_completed"
+                   and row.get("execution_id") == body.get("execution_id") for row in events):
+                raise ValueError("canonical_completion_history_conflict")
+            if any(row.get("action") == "record_job_resolution"
+                   and row.get("resolution") == "Cancelled" for row in events):
+                raise ValueError("cancelled_parent_completion_refused")
+            if not _append_history(action, body, connection=connection):
+                raise _AtomicTerminalWriteFailed("canonical_history_completion_unproven")
+            result = _write_terminal_review(connection, action, body)
+            return {**result, "history_event_created": True}
+    except _AtomicTerminalWriteFailed as exc:
+        # This is outside the connection context: both rails have rolled back.
+        return {"success": False, "created": False, "status": str(exc),
+                "history_event_created": False}
+    except Exception as exc:
+        if is_database_unavailable(exc):
+            raise RootlineExecutionStoreUnavailable(action) from exc
+        raise
+
+
+def _locked_contained_parent(connection, body, rows, now):
+    from modules.telemetry.rootline_irrigation_history import (
+        _attach_parent_jobs, project_canonical_irrigation_history,
+    )
+    events = [row[0] for row in rows]
+    # A new active/stopping transition after containment cannot be erased by
+    # the contained-parent projector's deliberate exclusion of old claims.
+    latest = {}
+    transitions = {"claim_before_on", "mark_active", "mark_stopping", "record_completed",
+                   "contain_zone", "record_ambiguous_shutdown", "record_claim_recovery"}
+    for row in events:
+        if row.get("action") in transitions:
+            latest[row.get("execution_id")] = row
+    if any(row.get("action") in {"claim_before_on", "mark_active", "mark_stopping"}
+           for row in latest.values()):
+        raise ValueError("contained_parent_execution_changed")
+    executions = sorted({str(row.get("execution_id")) for row in events if row.get("execution_id")})
+    with connection.cursor() as cursor:
+        cursor.execute("""select irrigation_event_id,event_at,event_type,zone_id,
+            planned_minutes,actual_minutes,details,source_id,actor,created_at
+            from public.irrigation_events
+            where details->>'execution_id'=any(%s)
+            order by event_at,irrigation_event_id""", (executions,))
+        history_rows = cursor.fetchall()
+    completed = {row.get("execution_id") for row in events if row.get("action") == "record_completed"}
+    if any(row[2] in {"PARTIAL", "COMPLETED"}
+           and row[6].get("execution_id") not in completed for row in history_rows):
+        # Legacy history-first completion failures remain evidence, not permission
+        # to cancel their possibly credited runtime as unverified remainder.
+        raise ValueError("contained_parent_completion_history_unreconciled")
+    history = project_canonical_irrigation_history(history_rows, snapshot_cutoff=now)
+    _attach_parent_jobs(history, events, canonical_ordered=True)
+    parents = ((history.get("zones") or {}).get(body.get("zone_id")) or {}).get(
+        "contained_parent_jobs") or []
+    matches = [parent for parent in parents if
+        (parent.get("job") or {}).get("job_id") == body.get("job_id")
+        and (parent.get("job") or {}).get("job_sha256") == body.get("job_sha256")]
+    if len(matches) != 1:
+        raise ValueError("exact_contained_parent_not_current")
+    return matches[0]
+
+
+def _read_terminal_review(connection, action, body):
+    with connection.cursor() as cursor:
+        cursor.execute("""select review_json->'rootline_execution'
+            from public.sam_live_stock_conversation_review_events
+            where review_event_id=%s and event_source=%s""", (_event_id(action, body), EVENT_SOURCE))
+        row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def _write_terminal_review(connection, action, body):
+    from modules.sales.sam_live_stock_launch_control import (
+        build_sam_live_stock_review_event, record_sam_live_stock_review_event,
+    )
+    execution_id = str(body.get("execution_id") or "")
+    event_id = _event_id(action, body)
+    event = build_sam_live_stock_review_event(
+        {"conversation_id": execution_id}, {}, {},
+        {"score": 0, "safe_to_send": False, "recommended_action": action},
+        event_source=EVENT_SOURCE)
+    event.update({"review_event_id": event_id, "chatwoot_conversation_id": execution_id,
+        "review_json": {"rootline_execution": _stored_event_body(action, body, event_id)},
+        "decision_json": {}, "facts_json": {},
+        "customer_message_excerpt": "", "sam_reply_excerpt": ""})
+    # The canonical writer borrows this connection; only the outer context may
+    # commit/rollback. Its caught failures must become an outer rollback.
+    # now() would retain the transaction's pre-lock start time and could place
+    # a waiting writer before the state it just revalidated.
+    recorded_at = connection.execute("select clock_timestamp()").fetchone()[0]
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: nullcontext(connection), created_at=recorded_at)
+    if status >= 400 or result.get("success") is not True:
+        raise _AtomicTerminalWriteFailed("canonical_terminal_audit_write_unproven")
+    stored = _read_terminal_review(connection, action, body)
+    if stored != _stored_event_body(action, body, event_id):
+        raise _AtomicTerminalWriteFailed("canonical_terminal_audit_readback_mismatch")
+    return {**result, "success": True, "resolution": stored}
 
 
 def _stored_event_body(action, body, event_id):
@@ -372,6 +530,15 @@ def _claim_irrigation_output(body):
                 where review_event_id=%s""", (event_id,))
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "execution_replay"}
+            if body.get("job_id"):
+                cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and review_json->'rootline_execution'->>'job_id'=%s
+                      and review_json->'rootline_execution'->>'action'='record_job_resolution'
+                      and review_json->'rootline_execution'->>'resolution'='Cancelled'
+                    limit 1""", (EVENT_SOURCE, str(body["job_id"])))
+                if cursor.fetchone():
+                    return {"success": True, "created": False, "status": "parent_job_cancelled"}
             cursor.execute("""select 1
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
@@ -757,7 +924,7 @@ def _dispatch_auxiliary_on_edge(body):
             return dispatch()
 
 
-def _append_history(action, body):
+def _append_history(action, body, *, connection=None, append=True):
     event_type = {"mark_active": "STARTED", "contain_zone": "AMBIGUOUS",
                   "record_completed": ("COMPLETED" if body.get("objective_satisfied") is True
                                        else "PARTIAL")}.get(action)
@@ -786,18 +953,20 @@ def _append_history(action, body):
         planned_minutes=body.get("planned_runtime_minutes"),actual_minutes=actual)
     try:
         from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
-        with connect_bounded_rootline_postgres(
-                database_url=os.environ.get("DATABASE_URL"), read_only=False) as connection:
+        with (nullcontext(connection) if connection is not None else
+              connect_bounded_rootline_postgres(
+                  database_url=os.environ.get("DATABASE_URL"), read_only=False)) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("""select public.rootline_append_typed_irrigation_event(
-                    %s::text,%s::timestamptz,%s::text,%s::text,
-                    %s::numeric,%s::numeric,%s::jsonb)""",
-                    (event["irrigation_event_id"],event["event_at"],event["event_type"],event["zone_id"],
-                     event["planned_minutes"],event["actual_minutes"],json.dumps(event["details"],
-                     sort_keys=True,separators=(",",":"),default=str)))
-                row=cursor.fetchone()
-                if row and row[0]:
-                    return True
+                if append:
+                    cursor.execute("""select public.rootline_append_typed_irrigation_event(
+                        %s::text,%s::timestamptz,%s::text,%s::text,
+                        %s::numeric,%s::numeric,%s::jsonb)""",
+                        (event["irrigation_event_id"],event["event_at"],event["event_type"],event["zone_id"],
+                         event["planned_minutes"],event["actual_minutes"],json.dumps(event["details"],
+                         sort_keys=True,separators=(",",":"),default=str)))
+                    row=cursor.fetchone()
+                    if row and row[0]:
+                        return True
                 cursor.execute("""select event_at,event_type,zone_id,planned_minutes,
                     actual_minutes,details from public.irrigation_events
                     where irrigation_event_id=%s""", (event["irrigation_event_id"],))

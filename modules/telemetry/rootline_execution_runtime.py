@@ -581,6 +581,9 @@ def _planning_observation(initial, owner, chat, next_due):
     cutoff = str((evidence.get("weather") or {}).get("observed_at") or "")
     tasks = {str(row.get("task_id") or "").removeprefix("irrigation_"): row
              for row in plan.get("candidate_tasks") or [] if isinstance(row, dict)}
+    from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
+    history = evidence.get("irrigation_history") or {}
+    histories = history.get("zones") or {}
     zones = []
     zone_ids = sorted(identity for identity, row in rootline_device_registry().items()
         if row.get("collection")=="irrigation_zones"
@@ -605,7 +608,12 @@ def _planning_observation(initial, owner, chat, next_due):
                           "No canonical zone task is available."),
             "planned_duration_minutes": task.get("planned_duration_minutes"),
             "feasible_window": task.get("preferred_window"),
-            "eligibility_blocker": blocker})
+            "eligibility_blocker": blocker,
+            "lifecycle": project_zone_lifecycle(zone_id=zone, recommendation=task,
+                history=histories.get(zone),
+                execution=(histories.get(zone) or {}).get("latest_execution"),
+                eligibility=artifact if artifact.get("zone_id") == zone else {},
+                evidence_cutoff=history.get("snapshot_cutoff"))})
     material = {"operating_date": operating_date, "generation": generation,
                 "evidence_cutoff": cutoff, "zones": zones}
     digest = _digest(material)
