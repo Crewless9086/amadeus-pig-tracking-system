@@ -26,7 +26,7 @@ from modules.telemetry.rootline_operating_policy import (
     review_policy,
 )
 from modules.telemetry.rootline_parent_job_resolution import (
-    resolve_current_contained_b_parent,
+    resolve_current_contained_parent,
 )
 from modules.telemetry.rootline_ewelink_oauth import (
     OAuthFailure,
@@ -298,7 +298,7 @@ def telemetry_rootline_contained_parent_resolution():
     guard = require_strict_owner_admin_access()
     if guard:
         return guard
-    result, status_code = resolve_current_contained_b_parent(
+    result, status_code = resolve_current_contained_parent(
         request.get_json(silent=True) or {}, strict_owner_admin_principal())
     return jsonify(result), status_code
 

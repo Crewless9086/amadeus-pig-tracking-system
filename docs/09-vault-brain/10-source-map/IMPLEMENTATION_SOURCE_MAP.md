@@ -571,6 +571,24 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
   Architecture, Water And Energy Rules and Source Of Truth Rules.
 - Legacy hybrid status: `modules/telemetry/irrigation_service.py`, `/api/telemetry/irrigation/status`; `auto` falls back to `Amadeus_Irrigation_Logs` when no Supabase daily plan rows exist.
 - Canonical ROOTLINE endpoints: daily advisor, daily brief, daily irrigation plan, water-energy plan and operating policy in `modules/telemetry/telemetry_routes.py` and their services.
+- Exact contained-parent recovery: `modules/telemetry/rootline_parent_job_resolution.py`
+  supports B12345 and C12345 through the existing strict owner-admin
+  `/api/telemetry/rootline/contained-parent-resolution` route. The canonical
+  audit rail retains the first decision and read-only replay, including after
+  the parent disappears from current planning. New cancellation requires exact
+  job identity, proven accounting and fresh authoritative all-OFF evidence from
+  the registered controller. It retires only unverified remainder; it creates
+  no watering credit, clears no unrelated hold and grants no start authority.
+- `modules/telemetry/rootline_irrigation_execution_store.py` revalidates that
+  recovery under the existing coordinator locks. Completion history and audit
+  commit together; a concurrent transition cannot silently alter the recovery
+  preimage. Focused proof: `tests/test_rootline_parent_job_resolution.py` and
+  `tests/test_rootline_parent_job_resolution_postgres.py`.
+- Final execution planning observations in
+  `modules/telemetry/rootline_execution_runtime.py` retain canonical per-zone
+  lifecycle and shutdown exceptions. Owner status independently rebuilds this
+  lifecycle from canonical history; absent stored fields never establish a
+  resolved exception. Regression: `tests/test_rootline_shutdown_preservation.py`.
 - Owner access: `modules/auth/owner_access.py`, `/owner/login`, `/owner/logout`, `/owner/status`, `templates/owner-login.html` and shared `templates/_farm_nav.html`.
 - UI: `static/js/dashboard.js`, `static/js/operationsDetail.js`, `templates/dashboard.html`, `templates/irrigation.html`.
 - Rule: current operational status must not silently fall back to Sheets. Protected evidence remains protected; the UI must direct an unauthenticated owner through the existing session rail and return to the requested page.

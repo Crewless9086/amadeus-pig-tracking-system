@@ -368,3 +368,62 @@ def test_actual_ambiguous_on_coordinator_off_proof_is_not_false_shutdown_uncerta
         assert "afskakeling nog nie bevestig" not in rendered.lower()
         assert "Held safely" not in rendered and "Veilig teruggehou" not in rendered
     assert result["authority"]["command_authority"] is False
+
+
+def _planning_initial(history):
+    return {"plan":{"operating_date":NOW.date().isoformat(),"evidence_generation":"SAME",
+        "candidate_tasks":[{"task_id":"irrigation_"+zone,"zone_decision":"Hold",
+            "recommendation":"Hold","reason":"contained parent"} for zone in ("B12345","C12345")]},
+        "evidence":{"weather":{"observed_at":NOW.isoformat()},"irrigation_history":history},
+        "artifact":{"eligible":False,"status":"contained_parent_unresolved"}}
+
+
+def test_final_planning_observation_keeps_both_zones_and_old_unresolved_exceptions():
+    from modules.telemetry.rootline_execution_runtime import _planning_observation
+    history=read([contained("B-OLD"),terminal("B-NEW"),contained("C-OLD","C12345")])
+    before=deepcopy(history)
+    observation=_planning_observation(_planning_initial(history),"42","42",NOW.isoformat())
+    zones={row["zone_id"]:row for row in observation["zones"]}
+    assert zones["B12345"]["lifecycle"]["state"]=="Completed"
+    assert zones["C12345"]["lifecycle"]["state"]=="Failed"
+    assert [(row["execution_id"],row["kind"]) for row in
+        zones["B12345"]["lifecycle"]["execution_exceptions"]]==[("B-OLD","shutdown_unverified")]
+    assert [(row["execution_id"],row["kind"]) for row in
+        zones["C12345"]["lifecycle"]["execution_exceptions"]]==[("C-OLD","shutdown_unverified")]
+    assert history==before and observation["delivery_state"]=="observation_only"
+    assert "completion_evidence" not in zones["C12345"]["lifecycle"]
+
+
+def test_final_planning_observation_identity_changes_only_with_material_lifecycle_evidence():
+    from modules.telemetry.rootline_execution_runtime import _planning_observation
+    unresolved=_planning_initial(read([contained("B-OLD")]))
+    resolved=_planning_initial(read([contained("B-OLD"),terminal("B-OLD")]))
+    first=_planning_observation(unresolved,"42","42",NOW.isoformat())
+    replay=_planning_observation(deepcopy(unresolved),"42","42",(NOW+timedelta(minutes=30)).isoformat())
+    changed=_planning_observation(resolved,"42","42",NOW.isoformat())
+    assert first["identity"]==replay["identity"]
+    assert first["material_digest"]==replay["material_digest"]
+    assert first["identity"]!=changed["identity"]
+    assert first["material_digest"]!=changed["material_digest"]
+
+
+def test_execution_cycle_persists_full_lifecycle_without_a_command_or_notification(monkeypatch):
+    from modules.telemetry import rootline_execution_runtime as runtime
+    initial=_planning_initial(read([contained("B-OLD"),contained("C-OLD","C12345")]))
+    monkeypatch.setattr(runtime,"_current",lambda *_:initial)
+    records=[]
+    def record(action,identity,payload):
+        assert action=="record_observation" and identity==payload["identity"]
+        records.append(deepcopy(payload)); return {"success":True,"created":True}
+    def store(action,payload):
+        assert action=="load_active"; return None
+    result=runtime.run_rootline_execution_cycle(
+        notify=lambda *_:pytest.fail("this observation must not send a message"),
+        environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
+        token_store=object(),transport=object(),owner_user_id="42",chat_id="42",
+        observation_store=record)
+    assert len(records)==1 and result["hardware_commands"]==0
+    assert result["status"]=="contained_parent_unresolved"
+    assert all(row["lifecycle"]["state"]=="Failed" for row in records[0]["zones"])
+    assert {item["execution_id"] for row in records[0]["zones"]
+        for item in row["lifecycle"]["execution_exceptions"]}=={"B-OLD","C-OLD"}

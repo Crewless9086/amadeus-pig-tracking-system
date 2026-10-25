@@ -396,6 +396,9 @@ jobs:
           python -B -m pytest -q -p no:cacheprovider
           tests/test_rootline_irrigation_execution_history_postgres.py
           tests/test_rootline_managed_evidence_history_postgres.py
+          tests/test_rootline_parent_job_resolution.py
+          tests/test_rootline_parent_job_resolution_postgres.py
+          tests/test_rootline_execution_runtime.py
           tests/test_rootline_managed_recovery_planning.py
           tests/test_rootline_shutdown_preservation.py
           tests/test_oom_sakkie_rootline_daily_presentation.py
