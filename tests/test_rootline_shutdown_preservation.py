@@ -561,10 +561,13 @@ def test_current_canonical_eligibility_artifact_remains_eligible_in_stored_obser
     artifact = build_execution_eligibility(plan=plan, evidence=evidence,
         controller=controller, now=eligibility_now)
     assert artifact["eligible"] is True and artifact["zone_id"] == zone
-    evidence["irrigation_history"] = {"zones": {zone: {"latest_execution": {
-        "action": "record_claim_recovery", "state": "claimed", "shutdown_verified": True,
-        "eligibility_id": "SYNTHETIC-OLD-RESOLVED", "execution_id": "SYNTHETIC-OLD-RESOLVED",
-        "zone_id": zone}}}}
+    evidence["irrigation_history"] = {"snapshot_cutoff": eligibility_now.isoformat(),
+        "zones": {zone: {"latest_execution": {
+            "action": "record_claim_recovery", "state": "claimed", "shutdown_verified": True,
+            "eligibility_id": "SYNTHETIC-OLD-RESOLVED", "execution_id": "SYNTHETIC-OLD-RESOLVED",
+            "zone_id": zone, "claimed_at": (eligibility_now-timedelta(hours=2)).isoformat(),
+            "shutdown_evidence": {"authoritative": True, "state": "OFF",
+                "retrieved_at": (eligibility_now-timedelta(hours=1)).isoformat()}}}}}
     before = deepcopy((plan, evidence, artifact))
     value = _planning_observation({"plan": plan, "evidence": evidence, "artifact": artifact},
         "42", "42", eligibility_now.isoformat())
@@ -644,3 +647,91 @@ def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composi
         assert item["lifecycle"]["state"] == "Completed"
         assert item["lifecycle"]["completion_evidence"]["objective_satisfied"] is True
         assert item["water_credit"]["delivered_volume_litres"] == "Unknown"
+
+
+@pytest.mark.parametrize("state,expected", [("claimed", "Authorized"), ("Active", "Started")])
+@pytest.mark.parametrize("defect", [
+    "missing", "non_mapping", "non_authoritative", "wrong_state", "wrong_execution",
+    "wrong_zone", "wrong_device", "wrong_channel", "naive_time", "contradictory_time",
+    "before_claim", "after_cutoff", "missing_claim", "invalid_start", "missing_cutoff",
+    "invalid_cutoff", "missing_execution_id", "foreign_execution_zone",
+])
+def test_recovery_off_proof_must_be_attributable_before_closing_safety_state(state, expected, defect):
+    recovery = {**terminal(), "action": "record_claim_recovery", "state": state,
+        "device_id": "SYNTHETIC-DEVICE", "channel": 1}
+    cutoff = NOW
+    if defect == "missing": recovery.pop("shutdown_evidence")
+    elif defect == "non_mapping": recovery["shutdown_evidence"] = "OFF"
+    elif defect == "non_authoritative": recovery["shutdown_evidence"]["authoritative"] = False
+    elif defect == "wrong_state": recovery["shutdown_evidence"]["state"] = "Unknown"
+    elif defect.startswith("wrong_"):
+        field = {"wrong_execution": "execution_id", "wrong_zone": "zone_id",
+            "wrong_device": "device_id", "wrong_channel": "channel"}[defect]
+        recovery["shutdown_evidence"][field] = "OTHER"
+    elif defect == "naive_time": recovery["shutdown_evidence"]["retrieved_at"] = STOP.replace(tzinfo=None).isoformat()
+    elif defect == "contradictory_time": recovery["shutdown_evidence"]["observed_at"] = (STOP+timedelta(seconds=1)).isoformat()
+    elif defect == "before_claim": recovery["shutdown_evidence"]["retrieved_at"] = (CLAIM-timedelta(seconds=1)).isoformat()
+    elif defect == "after_cutoff": recovery["shutdown_evidence"]["retrieved_at"] = (NOW+timedelta(seconds=1)).isoformat()
+    elif defect == "missing_claim":
+        recovery.pop("claimed_at"); recovery.pop("start_evidence")
+    elif defect == "invalid_start": recovery["start_evidence"]["authoritative"] = False
+    elif defect == "missing_cutoff": cutoff = None
+    elif defect == "invalid_cutoff": cutoff = "not-a-time"
+    elif defect == "missing_execution_id": recovery.pop("execution_id")
+    elif defect == "foreign_execution_zone": recovery["zone_id"] = "C12345"
+    before = deepcopy(recovery)
+    value = project_zone_lifecycle(zone_id="B12345", recommendation={"status": "Hold"},
+        execution=recovery, eligibility={"eligible": True}, evidence_cutoff=cutoff)
+    assert value["state"] == expected
+    assert value["next_action"] == ("ROOTLINE must continue through the existing claimed execution."
+        if state == "claimed" else "ROOTLINE must verify shutdown and the physical outcome.")
+    assert value["next_action_owner"] == "ROOTLINE"
+    assert value["execution_exceptions"] == project_execution_shutdown_exceptions([recovery], evidence_cutoff=cutoff)
+    assert recovery == before and "completion_evidence" not in value
+
+
+@pytest.mark.parametrize("state", ["claimed", "Active"])
+@pytest.mark.parametrize("proof", ["timely", "late", "deadline_unknown"])
+def test_valid_recovery_off_closes_old_safety_state_without_erasing_shutdown_exception(state, proof):
+    recovery = {**terminal(stopped=DEADLINE+timedelta(seconds=5) if proof == "late" else STOP),
+        "action": "record_claim_recovery", "state": state}
+    recovery["shutdown_evidence"].update(execution_id=recovery["execution_id"], zone_id=recovery["zone_id"])
+    if proof == "deadline_unknown":
+        recovery.pop("primary_stop_deadline"); recovery.pop("native_fail_stop_deadline")
+    value = project_zone_lifecycle(zone_id="B12345", recommendation={"status": "Hold"},
+        execution=recovery, evidence_cutoff=NOW)
+    assert value["state"] == "Held" and "completion_evidence" not in value
+    assert kinds(value["execution_exceptions"]) == ({"off_readback_after_deadline"} if proof == "late"
+        else {"shutdown_deadline_unavailable"} if proof == "deadline_unknown" else set())
+    assert all(row["controller_off_verified"] for row in value["execution_exceptions"])
+
+
+@pytest.mark.parametrize("zone", ["B12345", "C12345"])
+@pytest.mark.parametrize("state,unverified_state", [("claimed", "Authorized"), ("Active", "Started")])
+@pytest.mark.parametrize("valid", [False, True])
+def test_recovery_off_proof_survives_planning_and_actual_owner_projection(monkeypatch, zone, state, unverified_state, valid):
+    from modules.telemetry import rootline_owner_status as owner
+    from modules.telemetry.rootline_execution_runtime import _planning_observation
+    recovery = {**terminal("SYNTHETIC-RECOVERY", zone), "action": "record_claim_recovery", "state": state}
+    if not valid: recovery.pop("shutdown_evidence")
+    rows = [run("SYNTHETIC-RECOVERY", zone), recovery]
+    history = read(rows)
+    initial = _planning_initial(history)
+    initial["artifact"]["status"] = "controller_safety_not_dispatchable"
+    for task in initial["plan"]["candidate_tasks"]:
+        task["reason"] = "controller_safety_not_dispatchable"
+    observation = _planning_observation(initial, "42", "42", NOW.isoformat())
+    expected = "Held" if valid else unverified_state
+    planned = next(row["lifecycle"] for row in observation["zones"] if row["zone_id"] == zone)
+    assert planned["state"] == expected
+    monkeypatch.setattr(owner, "_canonical_evidence", lambda *_: {
+        "operating_date": NOW.date().isoformat(), "weather": {}, "reassessment": observation})
+    monkeypatch.setattr(owner, "read_latest_zone_water_balances", lambda *_a, **_kw: {})
+    monkeypatch.setattr(owner, "read_canonical_irrigation_history", lambda *_a, **_kw: deepcopy(history))
+    monkeypatch.setattr(owner, "_runtime_and_notification", lambda *_: owner._project_runtime(
+        [(NOW, deepcopy(row)) for row in reversed(rows)]))
+    status, code = owner.get_rootline_owner_status(NOW.date().isoformat(), "synthetic-unused", now=NOW)
+    assert code == 200 and status["safety"]["can_control"] is False
+    actual = next(row["lifecycle"] for row in status["zones"] if row["zone_id"] == zone)
+    assert actual == planned and actual["state"] == expected
+    assert kinds(actual["execution_exceptions"]) == (set() if valid else {"shutdown_unverified"})

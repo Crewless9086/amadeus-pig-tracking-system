@@ -116,8 +116,13 @@ def test_current_block_cannot_be_overridden_by_execution_history(zone, recommend
 @pytest.mark.parametrize("state", ["claimed", "claimed_recovery_required"])
 def test_old_eligibility_reference_without_a_current_artifact_is_not_eligibility(state):
     value = project_zone_lifecycle(zone_id="B12345", recommendation=rec(),
+        evidence_cutoff="2026-10-25T21:00:00+00:00",
         execution={"action": "record_claim_recovery", "state": state,
-                   "eligibility_id": "OLD", "shutdown_verified": True})
+            "zone_id": "B12345", "execution_id": "SYNTHETIC-OLD",
+            "eligibility_id": "OLD", "shutdown_verified": True,
+            "claimed_at": "2026-10-25T20:00:00+00:00",
+            "shutdown_evidence": {"authoritative": True, "state": "OFF",
+                "retrieved_at": "2026-10-25T20:30:00+00:00"}})
     assert value["state"] == "Recommended"
 
 

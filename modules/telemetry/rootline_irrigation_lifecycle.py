@@ -50,7 +50,7 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
               or execution_state in {"failed", "ambiguous", "contained"})
     terminal = action == "record_completed" or execution_state == "completed"
     closed = (terminal or action == "record_job_resolution"
-              or (action == "record_claim_recovery" and execution.get("shutdown_verified") is True))
+              or _claim_recovery_closed(execution, zone_id=zone_id, evidence_cutoff=evidence_cutoff))
     started = not closed and (action == "mark_active"
                              or execution_state in {"active", "started", "running"})
     authorized = not closed and (action == "claim_before_on"
@@ -110,6 +110,21 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
                 completed.get("provider_final_off_evidence") or {},
         }
     return result
+
+
+def _claim_recovery_closed(execution, *, zone_id, evidence_cutoff):
+    # A persisted boolean cannot discharge claimed/active shutdown follow-up.
+    # Reuse the canonical identity/time proof, including malformed context and
+    # cutoff checks. Late OFF and unavailable deadlines remain visible exceptions.
+    if (execution.get("action") != "record_claim_recovery"
+            or execution.get("shutdown_verified") is not True
+            or zone_id not in {"B12345", "C12345"}
+            or execution.get("zone_id") != zone_id
+            or not str(execution.get("execution_id") or "").strip()
+            or controller_readback_time(execution, "shutdown_evidence", "OFF") is None):
+        return False
+    return all(row["controller_off_verified"] for row in
+        project_execution_shutdown_exceptions([execution], evidence_cutoff=evidence_cutoff))
 
 
 def controller_readback_time(execution, key, state):
