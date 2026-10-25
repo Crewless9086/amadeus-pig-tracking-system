@@ -541,6 +541,23 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
 - Execution, provider OFF/native shutdown and same-zone daily consumption:
   `modules/telemetry/rootline_irrigation_coordinator.py` and
   `modules/telemetry/rootline_irrigation_execution_store.py`.
+- Active execution history is filtered by device family in the existing
+  execution store; managed-device history filtering remains in
+  `modules/telemetry/rootline_water_energy_plan.py`. Reducers retain canonical
+  chronology and unresolved runs. Disposable PostgreSQL differential tests:
+  `tests/test_rootline_irrigation_execution_history_postgres.py` and
+  `tests/test_rootline_managed_evidence_history_postgres.py`.
+- Managed-device recovery precedes optional plan construction in
+  `modules/telemetry/rootline_managed_devices_runtime.py` and the existing
+  execution runtime; `tests/test_rootline_managed_recovery_planning.py` proves
+  recovery remains reachable when planning fails without granting an ON retry.
+- Unresolved shutdown evidence remains attached to its original execution in
+  `modules/telemetry/rootline_irrigation_lifecycle.py`, passes through the
+  specialist result and existing Oom Sakkie presentation/material comparison,
+  and cannot be cleared merely by a newer displayed run. Coverage:
+  `tests/test_rootline_shutdown_preservation.py`; hosted qualification is in
+  the existing Oom Sakkie audit workflow. This changes neither device authority
+  nor the distinction between verified OFF and a completed watering objective.
 - Fertilizer auxiliary planning/execution:
   `modules/telemetry/rootline_auxiliary_management.py` and
   `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py`.
