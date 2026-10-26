@@ -34,7 +34,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  decision_reader, commissioning_reader, store, transport,
                                  notify, outcome_reader=lambda _identity: None,
                                  eligibility_revalidator=lambda _decision: None, now=None,
-                                 clock=None):
+                                 clock=None, active_only=False):
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
     try:
@@ -44,7 +44,13 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
             autonomous_on_enabled=False, durable_execution_truth_loaded=False,
             current_segment_consumed=False, degraded=True)
     if active:
-        return _recover_or_observe(active, store, transport, notify, outcome_reader, now)
+        result = _recover_or_observe(active, store, transport, notify, outcome_reader, now)
+        return {**result, "active_execution_found": True} if active_only else result
+    if active_only:
+        # A safety tick must never turn a missing/disappearing execution into
+        # permission to start another segment, even if a fresh plan is eligible.
+        return _result("no_active_irrigation", commands=0, messages=0,
+                       active_execution_found=False)
     decision = decision_reader(decision_id)
     commissioning_packet = commissioning_reader(commissioning_id)
     commissioning = _canonical_commissioning(commissioning_packet, commissioning_id, now)

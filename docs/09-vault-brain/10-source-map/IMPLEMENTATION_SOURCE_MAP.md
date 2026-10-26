@@ -1480,6 +1480,21 @@ Current Stage 4 surface:
   `modules/telemetry/rootline_irrigation_execution_store.py` — single-use
   auxiliary start, shutdown recovery and physical-outcome evidence.
 
+- `modules/telemetry/rootline_execution_runtime.py::supervise_rootline_active_execution`
+  reuses the canonical irrigation coordinator in active-only mode before optional
+  report/plan dependencies inside the authenticated scheduler claim. It cannot
+  start a segment, preserves bounded OFF/interlocks and notification identities,
+  and retains observed effects on later failures. The same authenticated minute
+  scheduler claim admits an active-only check even when reporting is not due,
+  preserving the original report cadence. Safety-only replay performs no report
+  or delivery recovery; report-due replay retains its existing delivery rail.
+  `modules/oom_sakkie/automatic_reassessment_store.py` excludes explicit
+  safety-only outcomes from report-due selection, including late completions.
+  New ON still requires the existing enabled
+  authority and fresh planning gates. `tests/test_rootline_active_supervision.py`
+  covers actual gateway/runtime/coordinator shutdown, report failures, exact
+  channels, replay/concurrency, persistence uncertainty and later due ticks.
+
 ## Standing authority and owner-burden control
 
 - `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`

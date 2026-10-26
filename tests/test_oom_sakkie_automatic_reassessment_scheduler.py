@@ -1,3 +1,12 @@
+import pytest
+
+@pytest.fixture(autouse=True)
+def no_active_irrigation_for_reporting_tests(monkeypatch):
+    monkeypatch.setattr("modules.telemetry.rootline_execution_runtime.supervise_rootline_active_execution",
+        lambda **kwargs: {"success": True, "status": "no_active_irrigation",
+            "active_execution_found": False, "hardware_commands": 0,
+            "telegram_sends": 0, "writes_farm_data": False})
+
 from datetime import datetime, timezone
 
 from modules.oom_sakkie.automatic_reassessment_scheduler import (
