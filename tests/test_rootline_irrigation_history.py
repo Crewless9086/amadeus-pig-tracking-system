@@ -372,7 +372,7 @@ def test_production_loader_fetches_claim_recovery_and_preserves_verified_boundar
         def __init__(self): self.query=""; self.queries=[]
         def __enter__(self): return self
         def __exit__(self,*_): return False
-        def execute(self,query,params=None): self.query=query; self.queries.append(query)
+        def execute(self,query,params=None): self.query=query; self.queries.append((query, params))
         def fetchone(self): return (NOW,)
         def fetchall(self):
             if "irrigation_water_credit_events" in self.query: return []
@@ -386,7 +386,8 @@ def test_production_loader_fetches_claim_recovery_and_preserves_verified_boundar
         def __exit__(self,*_): return False
         def cursor(self): return cursor
     history=read_canonical_irrigation_history(connect=lambda:Connection(),now=NOW)
-    assert any("record_claim_recovery" in query for query in cursor.queries)
+    assert any(params and "record_claim_recovery" in params[0]
+        for query, params in cursor.queries if "rootline_execution" in query)
     b=project_zone_lifecycle(zone_id="B12345",recommendation={"status":"Hold"},
         history=history["zones"]["B12345"],
         execution=history["zones"]["B12345"].get("latest_execution"))

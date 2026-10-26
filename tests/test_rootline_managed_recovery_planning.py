@@ -302,11 +302,13 @@ class HistoryConnection:
     def __exit__(self, *_args): return False
     def cursor(self): return self
     def execute(self, query, _params=None):
+        parent_actions = bool(_params and isinstance(_params[0], list)
+                              and "record_job_resolution" in _params[0])
         label = ("outcomes" if "rootline_operational_intake" in query else
                  "credits" if "credit_json" in query else
                  "clock" if "clock_timestamp" in query else
                  "irrigation_events" if "from public.irrigation_events" in query else
-                 "parent_execution_history" if "record_job_resolution" in query else "executions")
+                 "parent_execution_history" if parent_actions else "executions")
         self.calls.append(label)
     def fetchall(self): return []
     def fetchone(self): return (NOW,)

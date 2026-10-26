@@ -92,6 +92,35 @@ def test_locked_projection_reuses_canonical_parent_and_rejects_later_active(zone
         store._locked_contained_parent(EmptyHistory(), packet(case), rows, case.now)
 
 
+@pytest.mark.parametrize("zone", ["B12345", "C12345"])
+@pytest.mark.parametrize("audit_action", ["claim_notification", "record_notification_delivery", "claim_off_attempt"])
+@pytest.mark.parametrize("copied_state", ["claimed", "Active", "Completed"])
+def test_locked_accounting_ignores_copied_state_on_audit_rows(zone, audit_action, copied_state):
+    case = subject(zone)
+    audit = {**(case.completion if copied_state == "Completed" else case.rows[1]),
+        "action": audit_action, "state": copied_state}
+    rows = [(row, case.now) for row in [*case.rows, audit]]
+    parent = store._locked_contained_parent(EmptyHistory(), packet(case), rows, case.now)
+    assert parent["projection"] == case.parent["projection"] | {"command_authority": False}
+    assert parent["remaining_seconds"] == 7198
+    rebuilt = resolution.build_contained_parent_cancellation(parent=parent,
+        controller=case.controller, authorization=case.authorization, now=case.now)
+    expected = packet(case)
+    expected.pop("_current_controller")
+    assert rebuilt == expected
+
+
+@pytest.mark.parametrize("action,state", [("claim_before_on", "claimed"),
+    ("mark_active", "Active"), ("mark_stopping", "Stopping")])
+def test_audit_rows_cannot_hide_a_later_real_transition(action, state):
+    case = subject()
+    later = {**case.rows[1], "action": action, "state": state}
+    audit = {**case.rows[1], "action": "record_notification_delivery", "state": "Contained"}
+    with pytest.raises(ValueError, match="contained_parent_execution_changed"):
+        store._locked_contained_parent(EmptyHistory(), packet(case),
+            [(row, case.now) for row in [*case.rows, later, audit]], case.now)
+
+
 def test_locked_projection_rejects_legacy_history_first_orphan():
     case = subject()
     class OrphanHistory(EmptyHistory):
@@ -217,6 +246,46 @@ def test_first_cancellation_and_new_off_replay_preserve_exact_first_row(database
     with pytest.raises(ValueError, match="history_conflict"):
         cancel(bad)
     assert database.read() == before
+
+
+@pytest.mark.parametrize("zone", ["B12345", "C12345"])
+def test_cancellation_with_auxiliary_audit_rows_preserves_history_and_zero_credit(database, zone):
+    case = subject(zone)
+    audits = [{**(case.completion if state == "Completed" else case.rows[1]),
+        "action": action, "state": state}
+        for action in ("claim_notification", "record_notification_delivery", "claim_off_attempt")
+        for state in ("claimed", "Active", "Completed")]
+    database.seed([*case.rows, *audits])
+    before, before_history = database.read()
+    import psycopg
+    from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
+    with psycopg.connect(database.url) as connection:
+        migration = Path(__file__).resolve().parents[1] / "supabase/migrations/202608150009_create_rootline_water_credit_lifecycle.sql"
+        connection.execute(migration.read_text(encoding="utf-8"))
+    history = read_canonical_irrigation_history(connect=lambda: psycopg.connect(database.url))
+    assert history["status"] == "Available"
+    parent = history["zones"][zone]["contained_parent_jobs"][0]
+    assert parent["remaining_seconds"] == 7198
+    assert parent["projection"]["cumulative_verified_runtime_seconds"] == 0
+    result = cancel(packet(case, parent=parent))
+    after, after_history = database.read()
+    assert result["success"] is True and result["created"] is True
+    assert after[:len(before)] == before
+    assert len(after) == len(before) + 1
+    assert after_history == before_history == []
+    saved = result["resolution"]
+    assert saved["cancelled_unverified_remaining_seconds"] == 7198
+    assert saved["cumulative_verified_runtime_seconds"] == 0
+    assert saved["fabricated_runtime_seconds"] == 0
+    assert saved["water_credit_created"] is False
+    assert cancel(packet(case))["created"] is False
+    assert database.read() == (after, after_history)
+    history = read_canonical_irrigation_history(connect=lambda: psycopg.connect(database.url))
+    assert history["status"] == "Available"
+    assert not history["zones"][zone].get("contained_parent_jobs")
+    assert history["zones"][zone]["verified_completed_day_count"] == 0
+    with psycopg.connect(database.url) as connection:
+        assert connection.execute("select count(*) from public.irrigation_water_credit_events").fetchone()[0] == 0
 
 
 def test_two_cancellations_wait_and_converge_without_overwriting_off_receipt(database, monkeypatch):

@@ -16,6 +16,14 @@ from zoneinfo import ZoneInfo
 SAST = ZoneInfo("Africa/Johannesburg")
 ZONES = {"B12345", "C12345"}
 PARENT_MIDNIGHT_CONTINUITY_MINUTES = 30
+# Both the reader and locked cancellation rebuild account from these facts.
+# Notification/OFF-attempt audit snapshots may copy a lifecycle state but are
+# not a new claim, completion or source of verified runtime.
+PARENT_ACCOUNTING_ACTIONS = (
+    "record_eligibility", "claim_before_on", "mark_active", "record_completed",
+    "record_job_resolution", "contain_zone", "record_ambiguous_shutdown",
+    "record_claim_recovery",
+)
 CONTRACT = "rootline_irrigation_outcome_v1"
 EPOCH_EVENT = "PLANNING_EPOCH_STARTED"
 QUALIFYING_FIELDS = (
@@ -52,10 +60,8 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                     from public.sam_live_stock_conversation_review_events
                     where event_source='rootline_irrigation_execution'
                       and review_json->'rootline_execution'->>'action'
-                          in ('record_eligibility','claim_before_on','mark_active','record_completed',
-                              'record_job_resolution','contain_zone','record_ambiguous_shutdown',
-                              'record_claim_recovery')
-                    order by created_at,review_event_id""")
+                          = any(%s)
+                    order by created_at,review_event_id""", (list(PARENT_ACCOUNTING_ACTIONS),))
                 execution_rows = [row[0] for row in cursor.fetchall()]
         result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
         _attach_parent_jobs(result, execution_rows, canonical_ordered=True)
@@ -134,6 +140,8 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     grouped = {}
     for raw in rows or ():
         row = raw if isinstance(raw, dict) else {}
+        if row.get("action") not in PARENT_ACCOUNTING_ACTIONS:
+            continue
         job_id = str(row.get("job_id") or "")
         if job_id:
             grouped.setdefault(job_id, []).append(row)
