@@ -792,6 +792,7 @@ def _recommendations_from_tasks(tasks):
 
 def _task_plan_projection(task):
     return {
+        "zone_decision": task.get("zone_decision"),
         "planned_start_at": task.get("planned_start_at"),
         "planned_duration_minutes": task.get("planned_duration_minutes"),
         "weekly_cadence": deepcopy(task.get("weekly_cadence")),

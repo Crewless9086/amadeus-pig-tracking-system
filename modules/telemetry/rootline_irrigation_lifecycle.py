@@ -27,22 +27,51 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
     execution_state = str(execution.get("state") or "").casefold()
     decision = str(recommendation.get("status") or recommendation.get("recommendation") or "")
 
-    revalidating = bool(history.get("incomplete_parent_job"))
+    revalidating = bool(history.get("incomplete_parent_job")
+                        or recommendation.get("incomplete_parent_job"))
+    unresolved_parent = any(value.get(key) for value in (history, recommendation)
+        for key in ("contained_parent_jobs", "stale_incomplete_parent_jobs"))
+    # A fulfilled objective is naturally not dispatchable. Preserve that typed
+    # planner decision, but never infer fulfillment from prose or a prior run.
+    completion_decision = recommendation.get("zone_decision") == "Completed"
+    blocker = str(recommendation.get("eligibility_blocker") or "").strip()
+    completion_non_dispatch = completion_decision and blocker in {
+        "", "planner_hold_or_no_dispatchable_zone", "zone_decision_not_run_now"}
+    decisions = {str(recommendation.get(key) or "").strip().casefold()
+                 for key in ("status", "recommendation", "zone_decision")}
+    blocked = ((bool(blocker) and not completion_non_dispatch)
+        or bool(decisions & {"hold", "needs data", "run later", "recovery required"})
+        or (not completion_decision and bool(decisions & {"do not run", "not due"})))
+    parent_next_action = ("ROOTLINE must reconcile the unresolved parent through the existing "
+                          "governed recovery path before another run.")
     completed = _completed(events, execution,
                            allow_historical=not revalidating and not execution)
     failed = (action in {"contain_zone", "record_ambiguous_shutdown"}
               or execution_state in {"failed", "ambiguous", "contained"})
-    started = (action == "mark_active" or execution_state in {"active", "started", "running"})
-    authorized = action == "claim_before_on" or execution_state in {"claimed", "authorized"}
     terminal = action == "record_completed" or execution_state == "completed"
-    eligible = (not terminal and
-        (eligibility.get("eligible") is True or bool(execution.get("eligibility_id"))))
+    closed = (terminal or action == "record_job_resolution"
+              or _claim_recovery_closed(execution, zone_id=zone_id, evidence_cutoff=evidence_cutoff))
+    started = not closed and (action == "mark_active"
+                             or execution_state in {"active", "started", "running"})
+    authorized = not closed and (action == "claim_before_on"
+                                or execution_state in {"claimed", "authorized"})
+    # An execution retains its original eligibility identity after recovery.
+    # Only the current canonical artifact can establish current eligibility.
+    eligible = not terminal and not completion_decision and eligibility.get("eligible") is True
     if failed:
-        state, reason, next_action = "Failed", _reason(execution, recommendation), "ROOTLINE must reconcile and retry only the safe failed manager step."
+        state, reason, next_action = "Failed", _reason(execution, recommendation), (
+            parent_next_action if unresolved_parent else
+            "ROOTLINE must reconcile and retry only the safe failed manager step.")
     elif started:
         state, reason, next_action = "Started", _reason(execution, recommendation), "ROOTLINE must verify shutdown and the physical outcome."
     elif authorized:
         state, reason, next_action = "Authorized", _reason(execution, recommendation), "ROOTLINE must continue through the existing claimed execution."
+    elif unresolved_parent:
+        state, reason, next_action = "Held", (
+            "An unresolved contained or stale parent must be reconciled; "
+            "prior shutdown or completion does not resolve its remaining objective."), parent_next_action
+    elif blocked:
+        state, reason, next_action = "Held", _reason(recommendation), "ROOTLINE must reassess on the declared evidence or due-time trigger."
     elif revalidating and terminal:
         state, reason, next_action = "Revalidating", _reason(recommendation), "ROOTLINE must rebuild fresh eligibility for the remaining segment."
     elif completed:
@@ -81,6 +110,21 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
                 completed.get("provider_final_off_evidence") or {},
         }
     return result
+
+
+def _claim_recovery_closed(execution, *, zone_id, evidence_cutoff):
+    # A persisted boolean cannot discharge claimed/active shutdown follow-up.
+    # Reuse the canonical identity/time proof, including malformed context and
+    # cutoff checks. Late OFF and unavailable deadlines remain visible exceptions.
+    if (execution.get("action") != "record_claim_recovery"
+            or execution.get("shutdown_verified") is not True
+            or zone_id not in {"B12345", "C12345"}
+            or execution.get("zone_id") != zone_id
+            or not str(execution.get("execution_id") or "").strip()
+            or controller_readback_time(execution, "shutdown_evidence", "OFF") is None):
+        return False
+    return all(row["controller_off_verified"] for row in
+        project_execution_shutdown_exceptions([execution], evidence_cutoff=evidence_cutoff))
 
 
 def controller_readback_time(execution, key, state):

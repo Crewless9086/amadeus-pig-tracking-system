@@ -50,7 +50,7 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
             "operational_state": _operational_state(decision, blocker, active),
             "lifecycle": project_zone_lifecycle(zone_id=zone_id,
                 recommendation=recommendation, history=zone_history,
-                execution=execution),
+                execution=execution, evidence_cutoff=history.get("snapshot_cutoff")),
             "reason": _zone_reason(recommendation, balance),
             "planned_minutes": recommendation.get("planned_duration_minutes"),
             "feasible_window": recommendation.get("preferred_window"),
@@ -168,6 +168,7 @@ def _specialist_projection(evidence, operating_date, now):
                   or "The scheduler has not persisted a typed current operating-date decision.")
         recommendations.append({"subject": zone,
             "status": {"Run": "Recommend", "Not Due": "Do Not Run"}.get(state, state),
+            "zone_decision": row.get("zone_decision"),
             "reason": reason, "planned_duration_minutes": row.get("planned_duration_minutes"),
             "preferred_window": row.get("feasible_window"),
             "eligibility_blocker": row.get("eligibility_blocker"),

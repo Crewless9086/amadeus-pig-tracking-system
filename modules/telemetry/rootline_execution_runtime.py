@@ -591,7 +591,9 @@ def _planning_observation(initial, owner, chat, next_due):
     for zone in zone_ids:
         task = tasks.get(zone, {})
         raw = str(task.get("zone_decision") or "Needs Data")
-        decision = raw if raw in {"Run now", "Run later", "Hold", "Needs Data", "Not Due"} else "Needs Data"
+        decision = ("Not Due" if raw == "Completed" else raw
+                    if raw in {"Run now", "Run later", "Hold", "Needs Data", "Not Due"}
+                    else "Needs Data")
         artifact = initial["artifact"]
         per_zone = (artifact.get("zone_eligibility_reasons")
                     if isinstance(artifact.get("zone_eligibility_reasons"), dict) else {})
@@ -604,6 +606,7 @@ def _planning_observation(initial, owner, chat, next_due):
         else:
             blocker = str(per_zone.get(zone) or artifact.get("status") or "")
         zones.append({"zone_id": zone, "decision": "Run" if decision == "Run now" else decision,
+            "zone_decision": raw,
             "reason": str(task.get("reason") or artifact.get("status") or
                           "No canonical zone task is available."),
             "planned_duration_minutes": task.get("planned_duration_minutes"),
