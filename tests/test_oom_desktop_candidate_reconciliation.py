@@ -59,7 +59,7 @@ SYNTHETIC_PINS = {"BRANCH": "codex/synthetic-manager-progress", "CANDIDATE_PR": 
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'BASE': 'fb33f20308372f002fd56a586c1746a5ed451d97', 'HEAD': '63ab48bacfdd3e51c069cb5867028880e923d348', 'TREE': '88bd8e652ac48cbb593f1b79c937f7643e402274', 'CANDIDATE_PR': None, 'APPROVED_RUNTIME_HEAD': '63ab48bacfdd3e51c069cb5867028880e923d348', 'QUALIFICATION_TEST_PATHS': [], 'BRANCH': 'codex/rootline-accounting-reconciliation-20261026', 'PATHS': ['docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'modules/telemetry/rootline_irrigation_history.py', 'tests/test_rootline_irrigation_history.py', 'tests/test_rootline_managed_recovery_planning.py', 'tests/test_rootline_parent_job_resolution_postgres.py']}
+FINAL_CANDIDATE_PINS = {'BASE': 'fb33f20308372f002fd56a586c1746a5ed451d97', 'HEAD': '63ab48bacfdd3e51c069cb5867028880e923d348', 'TREE': '88bd8e652ac48cbb593f1b79c937f7643e402274', 'CANDIDATE_PR': 1408, 'APPROVED_RUNTIME_HEAD': '63ab48bacfdd3e51c069cb5867028880e923d348', 'QUALIFICATION_TEST_PATHS': [], 'BRANCH': 'codex/rootline-accounting-reconciliation-20261026', 'PATHS': ['docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'modules/telemetry/rootline_irrigation_history.py', 'tests/test_rootline_irrigation_history.py', 'tests/test_rootline_managed_recovery_planning.py', 'tests/test_rootline_parent_job_resolution_postgres.py']}
 
 ROOTLINE_ADDED_EFFECTS = {'application_revision_rollback:web:fb33f20308372f002fd56a586c1746a5ed451d97'}
 ROOTLINE_REMOVED_EFFECTS = {'application_revision_rollback:web:3441b01930a06b8c7dc38d2a0d58d58a029947e0'}
