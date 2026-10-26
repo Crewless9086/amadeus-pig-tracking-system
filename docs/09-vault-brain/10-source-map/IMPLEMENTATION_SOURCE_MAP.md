@@ -584,6 +584,14 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
   commit together; a concurrent transition cannot silently alter the recovery
   preimage. Focused proof: `tests/test_rootline_parent_job_resolution.py` and
   `tests/test_rootline_parent_job_resolution_postgres.py`.
+- Parent accounting in `modules/telemetry/rootline_irrigation_history.py`
+  shares one canonical action set between the normal reader and locked rebuild.
+  Notification and OFF-attempt audit snapshots cannot supply a new lifecycle
+  transition or verified runtime merely by copying a state field. The locked
+  store still inspects all events for genuine active/stopping transitions and
+  unmatched completion history before projecting accounting; unknown accounting
+  is never defaulted to zero. Tests cover audit preservation, replay, zero
+  fabricated credit and concurrent completion/cancellation in disposable PostgreSQL.
 - Final execution planning observations in
   `modules/telemetry/rootline_execution_runtime.py` retain canonical per-zone
   lifecycle and shutdown exceptions. Owner status independently rebuilds this
