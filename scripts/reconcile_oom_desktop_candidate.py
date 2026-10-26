@@ -21,7 +21,7 @@ BASE = '3441b01930a06b8c7dc38d2a0d58d58a029947e0'
 # Exact source pins are not approval. Applying the reconciliation still requires
 # independent authenticated owner approval of the exact manifest and scope.
 # Exact source and PR identity are bound; live release authority remains independently bound.
-CANDIDATE_PR = None
+CANDIDATE_PR = 1407
 HEAD = 'cf0cbddcaa216626b3eb99d5b54bb1c6e8f5c2d8'
 TREE = '85ee6b5972bd55b06639e73d2c373b982b0e7f98'
 # Complete candidate identity alone grants no release or farm-write authority.
