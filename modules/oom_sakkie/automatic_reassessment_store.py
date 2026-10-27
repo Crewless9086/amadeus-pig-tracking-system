@@ -37,6 +37,7 @@ def _load(action, identity):
                     where event_source=%s
                       and review_json->'automatic_reassessment'->>'specialist'=%s
                       and review_json->'automatic_reassessment'->>'status' in ('completed','contained')
+                      and coalesce(review_json->'automatic_reassessment'->>'report_work_due','true') <> 'false'
                     order by created_at desc, review_event_id desc limit 1""", (EVENT_SOURCE, identity))
             row = cursor.fetchone()
             return row[0] if row else None

@@ -1184,7 +1184,8 @@ def _canonical_rootline_plan_receipt(current):
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
                                          state_store=None, family_delivery=None, schedule_store=None,
                                          scheduler_now=None, execution_cycle=None,
-                                         managed_device_cycle=None, daily_plan_generator=None):
+                                         managed_device_cycle=None, daily_plan_generator=None,
+                                         active_supervision_cycle=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -1196,7 +1197,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         scheduled_principal = resolve_family_principal({
             "telegram_user_id": scheduled_owner, "telegram_chat_id": scheduled_chat,
             "telegram_chat_type": "private"}, source)
-        if (scheduled_owner not in _allowed_user_ids(source)
+        if (scheduled_owner != scheduled_chat
+                or scheduled_owner not in _allowed_user_ids(source)
                 or scheduled_principal.role is not FamilyRole.OWNER):
             return _gateway_result(False, "rootline_reassessment_owner_binding_denied", policy, 403)
         from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
@@ -1217,15 +1219,17 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 payload.get("evidence_cutoff")).replace("Z", "+00:00"))
             if production_persistence:
                 from modules.oom_sakkie.rootline_operational_adapter import recover_pending_manager_rootline_observation
-                recovery = recover_pending_manager_rootline_observation(database_url=str(
-                    source.get("DATABASE_URL") or "") or None, owner_user_id=scheduled_owner,
-                    chat_id=scheduled_chat, provider_message_id="3717")
-                if recovery.get("success") is not True:
-                    return {"success":False,"status":str(recovery.get("status") or
-                        "rootline_manager_observation_recovery_failed"),"hardware_commands":0,
-                        "telegram_sends":0,"writes_farm_data":False}, 202
                 from modules.telemetry.rootline_specialist_result import refresh_current_rootline_specialist_result
-                base_scheduled_loader = lambda: refresh_current_rootline_specialist_result(now=cutoff())
+                def base_scheduled_loader():
+                    # Evidence recovery belongs to planning, not to the safety
+                    # prerequisite for an already-running canonical segment.
+                    recovery = recover_pending_manager_rootline_observation(database_url=str(
+                        source.get("DATABASE_URL") or "") or None, owner_user_id=scheduled_owner,
+                        chat_id=scheduled_chat, provider_message_id="3717")
+                    if recovery.get("success") is not True:
+                        return {"success": False, "status": str(recovery.get("status") or
+                            "rootline_manager_observation_recovery_failed")}
+                    return refresh_current_rootline_specialist_result(now=cutoff())
             else:
                 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
                 base_scheduled_loader = lambda: build_current_rootline_specialist_result(now=cutoff())
@@ -1309,7 +1313,35 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "hardware_commands": 0, "writes_farm_data": None,
                         "write_state": "unknown"}
             return recover_pending_protected_delivery()
-        def invoke():
+        deliver = family_delivery or deliver_family_result
+        parsed = {"telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
+                  "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
+                  "provider_message_id": f"scheduled:{manual_payload.get('trigger_id')}",
+                  "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
+        def notify(state, execution):
+            zone = str(execution.get("zone_id") or "irrigation")
+            answer = ({"Started": _rootline_irrigation_start_summary(zone, execution),
+                       "Completed": _rootline_irrigation_completion_summary(zone, execution),
+                       "Blocked": (f"<b>IRRIGATION WAITING</b>\n\n{zone} is ready for water but cannot start: "
+                                   f"{execution.get('blocker')}. No owner action is currently required. "
+                                   f"ROOTLINE will reassess at {execution.get('next_reassessment_at') or 'the next automatic check'}."),
+                       "Intervention": (f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} is stopped, but its outcome needs confirmation."
+                                        if execution.get("shutdown_verified") is True
+                                        else f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} shutdown is uncertain. Automatic reuse is contained and owner attention is required.")}
+                      .get(state, f"{zone} irrigation: {state}."))
+            base_identity = str(execution.get("notification_identity")
+                                or execution.get("execution_id") or "")
+            event_identity = f"{base_identity}:{str(state).upper()}"
+            delivery = deliver(parsed, {"success": True, "status": state.lower(),
+                "answer": answer}, specialist="ROOTLINE",
+                mission_id=event_identity, card_mission_id=event_identity)
+            return {**delivery,
+                "provider_delivery_confirmed": bool(delivery.get("telegram_message_id"))
+                    and (delivery.get("success") is True
+                         or delivery.get("provider_delivery_confirmed") is True),
+                "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
+                "provider_message_id": str(delivery.get("telegram_message_id") or "")}
+        def invoke_reports(supervision):
             deliver = family_delivery or deliver_family_result
             if production_persistence:
                 try:
@@ -1324,9 +1356,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0,
                         "writes_farm_data": False, "automatic_irrigation_authority": False,
                         "answer": ("The scheduled assessment could not load its durable context. "
-                                   "No provider or hardware action was attempted.")}
+                                   "Active irrigation supervision is reported separately.")}
             # Establish and read back the canonical date-stable plan before
-            # any manager brief, protected delivery, or execution can occur.
+            # any manager brief, protected delivery, or NEW execution can occur.
             projected_current = None
             plan_projection = {"created": False, "daily_plan": {}}
             if production_persistence or daily_plan_generator is not None:
@@ -1499,7 +1531,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED"))
             managed_result = {"success": True, "status": "managed_devices_disabled",
                 "blocks_bc": False, "hardware_commands": 0, "writes_farm_data": False}
-            if managed_enabled and not mixer_owns_controller:
+            if (managed_enabled and not mixer_owns_controller
+                    and supervision.get("status") in {"no_active_irrigation", "active_segment_owned"}):
                 managed = managed_device_cycle
                 if managed is None:
                     from modules.telemetry.rootline_execution_runtime import (
@@ -1523,38 +1556,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                             + int(mixer_recovery.get("telegram_sends") or 0)
                             + int(plan_result.get("telegram_sends") or 0)}
             if (str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true"
-                    and not mixer_owns_controller):
+                    and not mixer_owns_controller
+                    and supervision.get("active_execution_found") is False):
                 cycle = execution_cycle
                 if cycle is None:
                     from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
                     cycle = run_rootline_execution_cycle
-                parsed = {"telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
-                          "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
-                          "provider_message_id": f"scheduled:{manual_payload.get('trigger_id')}",
-                          "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
-                def notify(state, execution):
-                    zone = str(execution.get("zone_id") or "irrigation")
-                    answer = ({"Started": _rootline_irrigation_start_summary(zone, execution),
-                               "Completed": _rootline_irrigation_completion_summary(zone, execution),
-                               "Blocked": (f"<b>IRRIGATION WAITING</b>\n\n{zone} is ready for water but cannot start: "
-                                           f"{execution.get('blocker')}. No owner action is currently required. "
-                                           f"ROOTLINE will reassess at {execution.get('next_reassessment_at') or 'the next automatic check'}."),
-                               "Intervention": (f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} is stopped, but its outcome needs confirmation."
-                                                if execution.get("shutdown_verified") is True
-                                                else f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} shutdown is uncertain. Automatic reuse is contained and owner attention is required.")}
-                              .get(state, f"{zone} irrigation: {state}."))
-                    base_identity = str(execution.get("notification_identity")
-                                        or execution.get("execution_id") or "")
-                    event_identity = f"{base_identity}:{str(state).upper()}"
-                    delivery = deliver(parsed, {"success": True, "status": state.lower(),
-                        "answer": answer}, specialist="ROOTLINE",
-                        mission_id=event_identity, card_mission_id=event_identity)
-                    return {**delivery,
-                        "provider_delivery_confirmed": bool(delivery.get("telegram_message_id"))
-                            and (delivery.get("success") is True
-                                 or delivery.get("provider_delivery_confirmed") is True),
-                        "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
-                        "provider_message_id": str(delivery.get("telegram_message_id") or "")}
                 cycle_result = dict(cycle(notify=notify, environ=source, now=scheduler_now,
                     owner_user_id=str(manual_payload.get("owner_user_id") or ""),
                     chat_id=str(manual_payload.get("chat_id") or ""),
@@ -1627,8 +1634,54 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "plan_delivery_status": plan_delivery_status,
                     "plan_reassessment_status": plan_reassessment_status,
                     "execution_status": "not_enabled"}
+        def supervise():
+            # Only a newly claimed authenticated minute reaches this path.
+            # Replay recovery above remains delivery-only.
+            supervisor = active_supervision_cycle
+            if supervisor is None:
+                from modules.telemetry.rootline_execution_runtime import supervise_rootline_active_execution
+                supervisor = supervise_rootline_active_execution
+            supervision = dict(supervisor(notify=notify, environ=source, now=scheduler_now,
+                owner_user_id=scheduled_owner, chat_id=scheduled_chat) or {})
+            if (supervision.get("success") is not True
+                    or supervision.get("active_execution_found") not in (True, False)):
+                return {**supervision, "success": False,
+                    "status": "scheduled_rootline_active_supervision_unproven",
+                    "execution_status": str(supervision.get("status") or "unknown"),
+                    "active_supervision_status": str(supervision.get("status") or "unknown")}
+            return supervision
+
+        def invoke_safety_only():
+            supervision = supervise()
+            return {**supervision,
+                "status": ("scheduled_rootline_active_supervised" if supervision.get("success") is True
+                    else "scheduled_rootline_active_supervision_unproven"),
+                "execution_status": str(supervision.get("execution_status") or supervision.get("status") or ""),
+                "active_supervision_status": str(supervision.get("active_supervision_status") or supervision.get("status") or ""),
+                "report_work_due": False}
+
+        def invoke():
+            supervision = supervise()
+            if supervision.get("success") is not True:
+                return supervision
+            try:
+                result = dict(invoke_reports(supervision) or {})
+            except Exception as exc:
+                result = {"success": False, "status": "scheduled_rootline_reporting_unproven",
+                    "error_type": type(exc).__name__, "writes_farm_data": None,
+                    "write_state": "unknown", "report_effects_unknown": True}
+            result["active_supervision_status"] = str(supervision.get("status") or "")
+            if supervision.get("active_execution_found") is True:
+                result["execution_status"] = str(supervision.get("status") or "")
+            for field in ("hardware_commands", "telegram_sends", "telegram_edits"):
+                result[field] = int(result.get(field) or 0) + int(supervision.get(field) or 0)
+            if supervision.get("writes_farm_data") is True:
+                result["writes_farm_data"] = True
+            result["active_supervision_write_attempted"] = supervision.get("active_supervision_write_attempted") is True
+            return result
+
         scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
-            now=scheduler_now, recover_delivery=(recover_delivery_after_plan
+            now=scheduler_now, invoke_not_due=invoke_safety_only, recover_delivery=(recover_delivery_after_plan
                 if production_persistence else None))
         return scheduled, 200 if scheduled.get("success") else 202
     owner = str((payload or {}).get("owner_user_id") or "").strip()

@@ -370,6 +370,8 @@ def test_actual_scheduled_gateway_keeps_first_specialist_history_read_but_skips_
         result, status = handle_rootline_reassessment_trigger(payload,
             {"X-Oom-Sakkie-Telegram-Token": "x" * 40}, env, scheduler_now=NOW,
             specialist_loader=specialist, schedule_store=schedule, state_store=state,
+            active_supervision_cycle=lambda **kwargs: runtime.supervise_rootline_active_execution(
+                store=lambda *args: None, **kwargs),
             daily_plan_generator=lambda _: {"success": True, "status": "daily_plan_created", "readback_bound": True,
                 "daily_plan": {"daily_plan_id": "synthetic-plan", "operating_date": NOW.date().isoformat(), "generation": 1, "evidence_sha256": "a" * 64}},
             family_delivery=lambda *_a, **_k: {"success": True, "status": "family_message_delivered", "telegram_message_id": "synthetic-message", "telegram_sends": 1},

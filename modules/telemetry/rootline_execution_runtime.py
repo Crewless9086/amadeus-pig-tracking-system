@@ -191,6 +191,82 @@ def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
         transport=transport, now=now)
 
 
+def supervise_rootline_active_execution(*, notify, environ=None, now=None,
+        database_url=None, store=rootline_irrigation_execution_store,
+        token_store=None, transport=None, outcome_reader=lambda _identity: None,
+        readback=None, owner_user_id="", chat_id=""):
+    """Supervise a previously claimed B/C obligation; never authorize a new ON.
+
+    Disabling new autonomous starts does not abandon canonical shutdown duties.
+    The coordinator reads the active identity once, and its active-only barrier
+    cannot fall through to eligibility, claiming or a new segment.
+    """
+    source = environ if environ is not None else os.environ
+    if not owner_user_id or owner_user_id != chat_id:
+        return {**_safe("active_supervision_owner_binding_invalid"), "success": False,
+                "active_execution_found": None}
+    effects = {"hardware_commands": 0, "telegram_sends": 0,
+               "active_supervision_write_attempted": False}
+    def current_transport():
+        nonlocal transport
+        if transport is None:
+            canonical_url = str(database_url or source.get("DATABASE_URL") or "").strip()
+            transport = RootlineIFTTTTransport(
+                token_store=token_store or PostgresOAuthTokenStore(canonical_url),
+                environ=source, readback=readback)
+        return transport
+
+    class StopOnlyTransport:
+        def set_state(self, **kwargs):
+            if kwargs.get("state") != "OFF":
+                raise ValueError("active_supervision_forbids_on")
+            adapter = current_transport()
+            effects["hardware_commands"] += 1
+            return adapter.set_state(**kwargs)
+
+        def read_output_state(self, **kwargs):
+            return current_transport().read_output_state(**kwargs)
+
+    active_found = None
+    def tracked_store(action, payload):
+        nonlocal active_found
+        if not action.startswith("load_"):
+            effects["active_supervision_write_attempted"] = True
+        result = store(action, payload)
+        if action == "load_active":
+            active_found = bool(result)
+        return result
+
+    def tracked_notify(state, execution):
+        delivery = notify(state, execution)
+        if isinstance(delivery, dict):
+            effects["telegram_sends"] += int(delivery.get("telegram_sends") or
+                (delivery.get("provider_delivery_confirmed") is True))
+        return delivery
+
+    try:
+        result = advance_irrigation_execution(decision_id="", commissioning_id="",
+            decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
+            store=tracked_store, transport=StopOnlyTransport(), notify=tracked_notify,
+            outcome_reader=outcome_reader, now=now, active_only=True)
+    except Exception as exc:
+        # OFF or a durable write may already have happened. Preserve attempted
+        # effects and uncertainty; never report a clean zero-effect failure.
+        return {**_safe("active_irrigation_supervision_unproven"), "success": False,
+            "error_type": type(exc).__name__, "active_execution_found": active_found,
+            **effects, "writes_farm_data": None if effects["active_supervision_write_attempted"] else False,
+            "write_state": "unknown" if effects["active_supervision_write_attempted"] else "none",
+            "provider_effects_unknown": effects["hardware_commands"] > 0,
+            "recovery_required": True}
+    return {**result, "active_execution_found": active_found,
+        "success": result.get("success") is True and result.get("status") in {
+            "no_active_irrigation", "active_segment_owned", "segment_completed",
+            "segment_stopped_outcome_unconfirmed", "interrupted_start_contained"},
+        "hardware_commands": max(int(result.get("hardware_commands") or 0), effects["hardware_commands"]),
+        "telegram_sends": max(int(result.get("telegram_messages") or 0), effects["telegram_sends"]),
+        "active_supervision_write_attempted": effects["active_supervision_write_attempted"]}
+
+
 def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url=None,
                                  store=rootline_irrigation_execution_store,
                                  token_store=None, transport=None,
