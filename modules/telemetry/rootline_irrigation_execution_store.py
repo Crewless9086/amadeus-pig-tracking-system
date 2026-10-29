@@ -33,6 +33,8 @@ def rootline_irrigation_execution_store(action, payload):
                   "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
                   "record_borehole_completed"}:
         return _guarded_managed_transition(action, body)
+    if action == "reconcile_unstarted_auxiliary":
+        return _reconcile_unstarted_auxiliary(body)
     if action == "dispatch_eskom_command_edge":
         return _dispatch_eskom_command_edge(body)
     execution_id = str(body.get("execution_id") or "").strip()
@@ -268,6 +270,8 @@ def _event_id(action, body):
         material = f"{execution}:ESKOM-COMPLETED"
     elif action in {"claim_auxiliary_dispatch", "claim_borehole_dispatch"}:
         material = f"{execution}:MANAGED-DISPATCH"
+    elif action == "reconcile_unstarted_auxiliary":
+        material = f"{execution}:UNSTARTED-RECONCILIATION"
     elif action == "claim_eskom_dispatch":
         material = f"{execution}:ESKOM-DISPATCH"
     elif (action == "record_job_resolution"
@@ -367,14 +371,7 @@ def _load(action, payload):
                 return [row[0] if isinstance(row[0], dict) else json.loads(row[0])
                         for row in cursor.fetchall()]
             if action == "load_auxiliary_containment":
-                cursor.execute("""select review_json->'rootline_execution'
-                    from public.sam_live_stock_conversation_review_events
-                    where event_source=%s
-                      and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
-                      and review_json->'rootline_execution'->>'action'='contain_auxiliary_device'
-                    order by created_at desc limit 1""", (EVENT_SOURCE,str(payload or "")))
-                row=cursor.fetchone()
-                return {"contained":True,"evidence":row[0]} if row else {"contained":False}
+                return _auxiliary_containment_state(cursor, str(payload or ""))
             if action == "load_auxiliary_history":
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
@@ -979,12 +976,7 @@ def _claim_single_auxiliary(body):
                 (EVENT_SOURCE,EVENT_SOURCE))
             if cursor.fetchone():
                 return {"success":True,"created":False,"status":"auxiliary_active"}
-            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
-                where event_source=%s
-                  and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
-                  and review_json->'rootline_execution'->>'action'='contain_auxiliary_device' limit 1""",
-                (EVENT_SOURCE,auxiliary_id))
-            if cursor.fetchone():
+            if _auxiliary_containment_state(cursor, auxiliary_id)["contained"]:
                 return {"success":True,"created":False,"status":"auxiliary_contained"}
             cursor.execute("""insert into public.sam_live_stock_conversation_review_events
                 (review_event_id,chatwoot_conversation_id,source_agent,event_source,
@@ -1110,6 +1102,139 @@ def _valid_borehole_eligibility(value):
       and all(passed is True for passed in material["gates"].values())
       and material["blockers"]==[])
 
+
+
+_UNSTARTED_RECONCILIATION = "rootline_unstarted_auxiliary_reconciliation.v1"
+
+
+def _event_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     default=str).encode()).hexdigest()
+
+
+def _owner_reconciliation_reference(value):
+    return (isinstance(value, dict) and value.get("source") == "owner_codex_chat"
+        and isinstance(value.get("reference"), str) and bool(value["reference"].strip())
+        and _sha256_text(value.get("artifact_sha256")))
+
+
+def _sha256_text(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def _auxiliary_containment_state(cursor, auxiliary_id):
+    """Only an exact canonical no-dispatch reconciliation supersedes its hold."""
+    cursor.execute("""select review_json->'rootline_execution'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
+          and review_json->'rootline_execution'->>'action' in
+              ('contain_auxiliary_device','reconcile_unstarted_auxiliary')
+        order by created_at,review_event_id""", (EVENT_SOURCE, auxiliary_id))
+    pending = {}; resolved = None
+    for (row,) in cursor.fetchall():
+        if not isinstance(row, dict):
+            return {"contained": True, "evidence": row}
+        if row.get("action") == "contain_auxiliary_device":
+            pending[row.get("event_id")] = row
+            continue
+        held = pending.get(row.get("containment_event_id"))
+        if (held is not None and row.get("contract_version") == _UNSTARTED_RECONCILIATION
+                and row.get("resolution") == "never_dispatched_verified_off"
+                and row.get("execution_id") == held.get("execution_id")
+                and row.get("containment_sha256") == _event_digest(held)
+                and row.get("reservation_preserved") is True and row.get("on_authority") is False
+                and _owner_reconciliation_reference(row.get("owner_instruction"))
+                and _sha256_text(row.get("root_review_sha256"))):
+            history = _managed_edge_rows(cursor, held["execution_id"])
+            if not any(item.get("action") in {"claim_auxiliary_dispatch",
+                    "record_auxiliary_on_outcome", "mark_auxiliary_active"} for item in history):
+                del pending[row["containment_event_id"]]
+                resolved = row
+    if pending:
+        return {"contained": True, "evidence": list(pending.values())[-1]}
+    return {"contained": False, **({"resolution_evidence": resolved} if resolved else {})}
+
+
+def _reconcile_unstarted_auxiliary(body):
+    """Owner-operated, append-only reconciliation; never grants an ON or refunds time."""
+    from datetime import datetime, timedelta, timezone
+    from modules.telemetry.rootline_device_registry import get_device_contract
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    fields = {"execution_id", "auxiliary_device_id", "claim_event_id", "claim_sha256",
+        "containment_event_id", "containment_sha256", "shutdown_evidence",
+        "owner_instruction", "root_review_sha256"}
+    if (set(body) != fields or not str(body.get("execution_id") or "")
+            or body.get("auxiliary_device_id") not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
+            or not all(_sha256_text(body.get(key)) for key in
+                       ("claim_sha256", "containment_sha256", "root_review_sha256"))
+            or not _owner_reconciliation_reference(body.get("owner_instruction"))):
+        return {"success": False, "created": False, "status": "reconciliation_binding_invalid"}
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                                          read_only=False) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            rows = _managed_edge_rows(cursor, body["execution_id"])
+            prior = [row for row in rows if row.get("action") == "reconcile_unstarted_auxiliary"]
+            if prior:
+                exact = len(prior) == 1 and all(prior[0].get(k) == v for k, v in body.items())
+                return {"success": exact, "created": False,
+                        "status": "already_reconciled" if exact else "reconciliation_conflict"}
+            claims = [row for row in rows if row.get("action") == "claim_auxiliary_before_on"]
+            held = _auxiliary_containment_state(cursor, body["auxiliary_device_id"])
+            containment = held.get("evidence") or {}
+            contract = get_device_contract(body["auxiliary_device_id"]) or {}
+            if (len(claims) != 1 or not held["contained"]
+                    or claims[0].get("event_id") != body["claim_event_id"]
+                    or _event_digest(claims[0]) != body["claim_sha256"]
+                    or containment.get("event_id") != body["containment_event_id"]
+                    or _event_digest(containment) != body["containment_sha256"]
+                    or any(containment.get(k) != claims[0].get(k) for k in
+                           ("execution_id", "auxiliary_device_id", "device_id", "channel"))
+                    or claims[0].get("auxiliary_device_id") != body["auxiliary_device_id"]
+                    or claims[0].get("state") != "claimed"
+                    or type(claims[0].get("on_attempts")) is not int or claims[0]["on_attempts"] != 0
+                    or any(claims[0].get(k) != contract.get(k) for k in ("device_id", "channel", "device_type"))
+                    or containment.get("reason") != "restart_or_deadline_ambiguous"
+                    or containment.get("shutdown_verified") is not True
+                    or any(row.get("action") in {"claim_auxiliary_dispatch", "record_auxiliary_on_outcome",
+                        "mark_auxiliary_active", "record_auxiliary_completed",
+                        "record_auxiliary_control_pulse_stopped"} for row in rows)):
+                return {"success": False, "created": False, "status": "never_dispatched_preimage_unproven"}
+            now = datetime.now(timezone.utc)
+            proof = body["shutdown_evidence"]
+            stamp = _time(proof.get("retrieved_at")) if isinstance(proof, dict) else None
+            previous_off = containment.get("shutdown_evidence") or {}
+            contained_off = _time(previous_off.get("retrieved_at")) if isinstance(previous_off, dict) else None
+            if (not isinstance(proof, dict) or proof.get("authoritative") is not True
+                    or proof.get("state") != "OFF" or not _sha256_text(proof.get("evidence_id"))
+                    or proof.get("device_id") != contract["device_id"]
+                    or type(proof.get("channel")) is not int or proof["channel"] != contract["channel"]
+                    or stamp is None or stamp.tzinfo is None
+                    or contained_off is None or contained_off.tzinfo is None or stamp < contained_off
+                    or previous_off.get("authoritative") is not True or previous_off.get("state") != "OFF"
+                    or not timedelta(0) <= now-stamp <= timedelta(seconds=60)):
+                return {"success": False, "created": False, "status": "current_exact_off_unproven"}
+            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events candidate
+                where candidate.event_source=%s
+                  and candidate.review_json->'rootline_execution'->>'action'
+                      in ('claim_auxiliary_before_on','mark_auxiliary_active')
+                  and not exists (select 1 from public.sam_live_stock_conversation_review_events terminal
+                    where terminal.event_source=%s
+                      and terminal.review_json->'rootline_execution'->>'execution_id'=
+                          candidate.review_json->'rootline_execution'->>'execution_id'
+                      and (terminal.review_json->'rootline_execution'->>'action'
+                           in ('record_auxiliary_completed','record_auxiliary_control_pulse_stopped')
+                           or (terminal.review_json->'rootline_execution'->>'action'='contain_auxiliary_device'
+                               and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true')))
+                limit 1""", (EVENT_SOURCE, EVENT_SOURCE))
+            if cursor.fetchone():
+                return {"success": False, "created": False, "status": "auxiliary_owner_still_active"}
+            record = {**body, "contract_version": _UNSTARTED_RECONCILIATION,
+                "resolution": "never_dispatched_verified_off", "on_authority": False,
+                "reservation_preserved": True, "recorded_at": now.isoformat()}
+            return {**_insert_managed_event(cursor, "reconcile_unstarted_auxiliary", record),
+                    "status": "never_dispatched_reconciled"}
 
 def _managed_family(*, borehole):
     return ({"claim":"claim_borehole_before_on", "dispatch":"claim_borehole_dispatch",
