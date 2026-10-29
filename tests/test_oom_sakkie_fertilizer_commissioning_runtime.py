@@ -59,6 +59,7 @@ class Store:
     def __init__(self): self.active = None; self.events = []; self.claims = set(); self.physical = None
     def __call__(self, action, payload):
         if action == "load_active_auxiliary": return self.active
+        if action == "dispatch_auxiliary_on_edge": return payload["dispatch"]()
         if action == "load_auxiliary_history": return []
         if action == "load_auxiliary_physical_outcome": return self.physical
         if action == "load_auxiliary_containment": return {"contained": False}
