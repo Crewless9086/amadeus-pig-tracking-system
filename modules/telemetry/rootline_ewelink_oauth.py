@@ -423,6 +423,8 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
         "observation_fresh": observation_fresh,
         "provider_interlock_supported": provider_interlock_supported,
         "provider_scenes_supported": provider_scenes_supported,
+        "provider_interlock_supplied": "interlock" in params,
+        "provider_scenes_supplied": "scenes" in params or "scene" in params,
         "scene_evidence_conflict": scene_evidence_conflict,
         "retrieved_at": retrieved_at.isoformat(),
         "safety_readback_missing": missing,

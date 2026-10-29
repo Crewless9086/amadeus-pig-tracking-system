@@ -117,3 +117,147 @@ def validate_commissioned_baseline(value, *, device_id, firmware, observed_at):
             "validity_model": "durable_until_material_invalidation",
             "invalidation_triggers": list(INVALIDATION_TRIGGERS),
             "baseline_fresh": True}
+
+
+def canonical_injector_commissioning(snapshot, *, connect_factory):
+    """Resolve CH1's own canonical proof; the historical CH2 proof cannot transfer.
+
+    The device spine verifies all commissioning references and standing authority.
+    Its additional configuration reference binds that proof to the exact current
+    provider baseline, firmware and native stop. This does not authorize a command
+    or assert fertilizer flow; the caller still checks fresh provider safety.
+    """
+    from modules.telemetry.rootline_device_spine import (
+        CanonicalAuthorityResolver, _resolved_evidence, _valid_evidence,
+        load_device_record,
+    )
+    device_key = "ifttt_ewelink:ewelink_owner_account:100204d497:1"
+    if (not callable(connect_factory) or not isinstance(snapshot, dict)
+            or snapshot.get("device_id") != "100204d497"
+            or snapshot.get("commissioned_baseline_fresh") is not True
+            or snapshot.get("observation_fresh") is not True):
+        return None
+    loaded = load_device_record(device_key, connect_factory=connect_factory)
+    if not isinstance(loaded, dict):
+        return None
+    record = loaded.get("device_record") or {}
+    if (record.get("provider") != "ifttt_ewelink"
+            or record.get("provider_account_binding") != "ewelink_owner_account"
+            or record.get("device_id") != "100204d497"
+            or type(record.get("channel")) is not int or record["channel"] != 1
+            or record.get("device_type") != "flow_dependent_injection_valve"
+            or record.get("safe_state") != "OFF"
+            or record.get("commissioning_stage") != "standing_active"
+            or record.get("standing_authority") is not True
+            or type(record.get("maximum_runtime_seconds")) is not int
+            or record["maximum_runtime_seconds"] != 120
+            or type(record.get("native_fail_stop_seconds")) is not int
+            or record["native_fail_stop_seconds"] != 120):
+        return None
+    profile = (record.get("authority_envelope") or {}).get("controller_configuration")
+    if not isinstance(profile, dict):
+        return None
+    material = {key: value for key, value in profile.items() if key != "reference"}
+    expected = {"version": "rootline_fertilizer_channel_configuration.v1",
+        "device_key": device_key, "channel": 1,
+        "controller_baseline_sha256": snapshot.get("commissioned_baseline_sha256"),
+        "firmware": snapshot.get("firmware"),
+        "native_fail_stop_seconds": 120, "power_restoration_state": "OFF"}
+    digest = sha256(json.dumps(expected, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    reference = profile.get("reference")
+    if (material != expected or not expected["controller_baseline_sha256"]
+            or not expected["firmware"] or not _valid_evidence(reference)
+            or reference.get("sha256") != digest
+            or not _resolved_evidence(reference,
+                CanonicalAuthorityResolver(connect_factory).evidence(reference))):
+        return None
+    try:
+        observed = datetime.fromisoformat(snapshot["retrieved_at"].replace("Z", "+00:00"))
+        proved = datetime.fromisoformat(reference["observed_at"].replace("Z", "+00:00"))
+        if observed.tzinfo is None or proved.tzinfo is None or proved > observed:
+            return None
+    except (KeyError, AttributeError, TypeError, ValueError):
+        return None
+    target = next((row for row in snapshot.get("channels") or []
+                   if row.get("channel") == 1), {})
+    if (target.get("native_auto_off_enabled") is not True
+            or type(target.get("native_auto_off_seconds")) is not int
+            or target["native_auto_off_seconds"] != 120
+            or target.get("power_restoration_state") != "OFF"):
+        return None
+    return {"generation": "ROOTLINE-CANONICAL-CHANNEL-" + loaded["evidence_digest"],
+        "registry_generation": loaded["registry_generation"],
+        "evidence_digest": loaded["evidence_digest"],
+        "configuration_reference_sha256": reference["sha256"]}
+
+
+def canonical_borehole_control_paths(snapshot, *, connect_factory):
+    """Project proven unexposed configuration, never live outputs or protections.
+
+    A real configuration reference may be recorded before standing activation.
+    This projection alone is not standing authority and cannot commission a pump.
+    """
+    from modules.telemetry.rootline_device_spine import (
+        CanonicalAuthorityResolver, _resolved_evidence, _valid_evidence,
+        load_device_record,
+    )
+    key = "ewelink:ewelink_owner_account:1002851416:1"
+    if (not isinstance(snapshot, dict) or snapshot.get("device_id") != "1002851416"
+            or snapshot.get("device_model") != "MINIR4" or snapshot.get("device_uiid") != 138
+            or snapshot.get("observation_fresh") is not True):
+        return snapshot
+    loaded = load_device_record(key, connect_factory=connect_factory)
+    record = (loaded or {}).get("device_record") or {}
+    if (record.get("provider") != "ewelink"
+            or record.get("provider_account_binding") != "ewelink_owner_account"
+            or record.get("device_id") != "1002851416" or record.get("channel") != 1
+            or record.get("device_type") != "pump" or record.get("safe_state") != "OFF"):
+        return snapshot
+    profile = (record.get("authority_envelope") or {}).get("controller_configuration")
+    if not isinstance(profile, dict):
+        return snapshot
+    rows = snapshot.get("channels") or []
+    if len(rows) != 1 or rows[0].get("channel") != 1:
+        return snapshot
+    target = rows[0]
+    material = {k: v for k, v in profile.items() if k != "reference"}
+    expected = {"version": "rootline_borehole_controller_configuration.v1",
+        "device_key": key, "firmware": snapshot.get("firmware"),
+        "device_model": "MINIR4", "device_uiid": 138,
+        "native_fail_stop_seconds": target.get("native_auto_off_seconds"),
+        "power_restoration_state": "OFF", "scenes_enabled": False,
+        "interlock_enabled": False}
+    reference = profile.get("reference")
+    digest = sha256(json.dumps(expected, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if (material != expected or not expected["firmware"]
+            or target.get("native_auto_off_enabled") is not True
+            or type(target.get("native_auto_off_seconds")) is not int
+            or not 1 <= target["native_auto_off_seconds"] <= 14400
+            or target.get("power_restoration_state") != "OFF"
+            or not _valid_evidence(reference) or reference.get("sha256") != digest
+            or not _resolved_evidence(reference,
+                CanonicalAuthorityResolver(connect_factory).evidence(reference))):
+        return snapshot
+    try:
+        observed = datetime.fromisoformat(snapshot["retrieved_at"].replace("Z", "+00:00"))
+        proved = datetime.fromisoformat(reference["observed_at"].replace("Z", "+00:00"))
+        if observed.tzinfo is None or proved.tzinfo is None or proved > observed:
+            return snapshot
+    except (KeyError, AttributeError, TypeError, ValueError):
+        return snapshot
+    result = deepcopy(snapshot)
+    for field, supplied in (("scenes_enabled", "provider_scenes_supplied"),
+                            ("interlock_enabled", "provider_interlock_supplied")):
+        if result.get(field) is None and result.get(supplied) is False:
+            result[field] = False
+            result[field.removesuffix("_enabled") + "_evidence_source"] = "canonical_configuration_reference"
+    if result.get("scenes_enabled") is False and result.get("interlock_enabled") is False:
+        missing = [v for v in result.get("safety_readback_missing") or []
+                   if v != "conflicting_control_paths"]
+        result.update(safety_readback_missing=missing,
+            actuation_safety_complete=not missing and result.get("online") is True,
+            canonical_configuration_sha256=digest,
+            canonical_configuration_registry_generation=loaded["registry_generation"])
+        result["actuation_configuration_safe"] = (result["actuation_safety_complete"]
+            and result.get("timers_enabled") is False and target.get("output_state") == "OFF")
+    return result

@@ -7,6 +7,7 @@ from threading import RLock
 from urllib import request, parse
 from modules.telemetry.rootline_energy_policy import managed_energy_decision
 from modules.telemetry.rootline_tuya_readback import read_eskom_switch, NoRedirect
+from modules.telemetry.rootline_device_spine import eskom_hysteresis_profile
 
 
 class EskomObservationCache:
@@ -66,8 +67,13 @@ def run_eskom_cycle(*, power, configuration, canonical, store, now=None,
         and record.get("provider")=="ifttt_smartlife" and record.get("device_type")=="breaker"
         and record.get("provider_account_binding")=="smartlife_owner_account"
         and record.get("commissioning_stage")=="standing_active" and record.get("standing_authority") is True
+        and eskom_hysteresis_profile(record)
+        and record.get("safe_state")=="UNCHANGED"
+        and type(record.get("maximum_runtime_seconds")) is int and record["maximum_runtime_seconds"]==0
+        and type(record.get("native_fail_stop_seconds")) is int and record["native_fail_stop_seconds"]==0
         and record.get("independent_physical_identity_proven") is True
-        and record.get("independent_fail_stop_proven") is True
+        and record.get("independent_electrical_protection_proven") is True
+        and bool(str(record.get("manual_isolation") or "").strip())
         and envelope.get("eskom_policy")=="owner_30_on_35_solar_recovery_off"
         and envelope.get("switch_code")==config.get("ROOTLINE_ESKOM_SWITCH_CODE"))
     if not configured or not bound:

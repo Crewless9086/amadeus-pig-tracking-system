@@ -31,6 +31,23 @@ DEVICE_PROFILES = {
     "generic_relay_output": {"requires_flow": False, "safe_state": "OFF"},
 }
 
+
+def eskom_hysteresis_profile(record: Mapping) -> bool:
+    """Only the governed grid-support breaker retains state without a timer.
+
+    Zero bounds explicitly mean no countdown, not an unbounded pump/valve run.
+    Electrical protection, manual isolation and canonical authority are verified
+    separately below; this predicate alone grants no authority.
+    """
+    envelope = record.get("authority_envelope") or {}
+    return (record.get("device_type") == "breaker"
+        and record.get("provider") == "ifttt_smartlife"
+        and record.get("provider_account_binding") == "smartlife_owner_account"
+        and record.get("adapter_profile") == "smartlife_eskom_hysteresis_v1"
+        and type(record.get("channel")) is int and record["channel"] == 1
+        and envelope.get("eskom_policy") == "owner_30_on_35_solar_recovery_off"
+        and bool(str(envelope.get("switch_code") or "").strip()))
+
 class Actuator(Protocol):
     def read_state(self, device: Mapping) -> Mapping: ...
     def set_on(self, device: Mapping, execution: Mapping) -> Mapping: ...
@@ -159,7 +176,8 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
     if record["commissioning_stage"] not in STAGE_ORDER:
         raise ValueError("rootline_commissioning_stage_invalid")
     profile = DEVICE_PROFILES[record["device_type"]]
-    if str(record["safe_state"]) != str(profile["safe_state"]):
+    eskom = eskom_hysteresis_profile(record)
+    if str(record["safe_state"]) != ("UNCHANGED" if eskom else str(profile["safe_state"])):
         raise ValueError("rootline_device_safe_state_mismatch")
     if not isinstance(record["channel"], int) or record["channel"] < 0:
         raise ValueError("rootline_device_channel_invalid")
@@ -171,7 +189,9 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
     unknown_pre_actuation_bounds = (not actuation_ready
         and record["maximum_runtime_seconds"] == 0
         and record["native_fail_stop_seconds"] == 0)
-    if not profile.get("read_only") and not unknown_pre_actuation_bounds and (
+    if eskom and (record["maximum_runtime_seconds"] != 0 or record["native_fail_stop_seconds"] != 0):
+        raise ValueError("rootline_eskom_countdown_not_permitted")
+    if not eskom and not profile.get("read_only") and not unknown_pre_actuation_bounds and (
             record["maximum_runtime_seconds"] <= 0
             or record["native_fail_stop_seconds"] <= 0
             or record["native_fail_stop_seconds"] > record["maximum_runtime_seconds"]):
@@ -184,6 +204,9 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
             else ("provider_discovered", "readback_proven", "bounded_actuation_ready",
                 "physical_identity_proven", "fail_stop_proven", "replay_proven",
                 "operational_dependencies_proven", "supervised"))
+        if eskom:
+            required = tuple(key for key in required if key != "fail_stop_proven") + (
+                "electrical_protection_proven", "manual_isolation_proven")
         historical = record.get("historical_commissioning_evidence")
         if (not isinstance(evidence, Mapping)
                 or any(not _valid_evidence(evidence.get(key)) for key in required)
@@ -211,7 +234,11 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
                 or str(resolved_authority.get("policy_sha256") or "") !=
                    str(authority.get("policy_sha256") or "")):
             raise ValueError("rootline_standing_authority_unresolved")
-        if profile.get("strict") and (
+        if eskom and (record.get("independent_physical_identity_proven") is not True
+                or record.get("independent_electrical_protection_proven") is not True
+                or not str(record.get("manual_isolation") or "").strip()):
+            raise ValueError("rootline_eskom_electrical_protection_unproven")
+        if not eskom and profile.get("strict") and (
                 record.get("independent_physical_identity_proven") is not True
                 or record.get("independent_fail_stop_proven") is not True):
             raise ValueError("rootline_strict_device_proof_missing")

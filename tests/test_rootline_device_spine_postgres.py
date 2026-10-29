@@ -128,3 +128,38 @@ def test_standing_authority_resolves_only_from_canonical_evidence_and_policy():
         **evidence["supervised"],"sha256":"0"*64}}}
     with pytest.raises(ValueError,match="evidence_unresolved"):
         store_device_record(forged,connect_factory=connect)
+
+
+def test_exact_eskom_profile_persists_without_an_invented_native_timer():
+    suffix=uuid.uuid4().hex; observed="2026-10-29T10:00:00+00:00"
+    stages=("provider_discovered","readback_proven","bounded_actuation_ready",
+        "physical_identity_proven","replay_proven","operational_dependencies_proven",
+        "supervised","electrical_protection_proven","manual_isolation_proven")
+    evidence={}; authority_id="GRID-AUTH-"+suffix; policy_sha=hashlib.sha256(authority_id.encode()).hexdigest()
+    with connect() as db:
+        for stage in stages:
+            identity=suffix+":"+stage; digest=hashlib.sha256(identity.encode()).hexdigest()
+            evidence[stage]={"source":"canonical","evidence_id":identity,
+                "observed_at":observed,"sha256":digest}
+            db.execute("""insert into app_private.rootline_device_commissioning_evidence(
+                evidence_id,source,observed_at,evidence_sha256,evidence_payload)
+                values(%s,'canonical',%s,%s,'{"test_only":true}'::jsonb)""",(identity,observed,digest))
+        db.execute("""insert into app_private.rootline_standing_authorities(
+            standing_authority_id,version,issuer,policy_sha256,active,revoked,policy_payload)
+            values(%s,'1','owner_policy',%s,true,false,'{}')""",(authority_id,policy_sha))
+    row=device("grid-"+suffix,provider="ifttt_smartlife",provider_account_binding="smartlife_owner_account",
+        device_type="breaker",adapter_profile="smartlife_eskom_hysteresis_v1",safe_state="UNCHANGED",
+        maximum_runtime_seconds=0,native_fail_stop_seconds=0,commissioning_stage="standing_active",
+        standing_authority=True,independent_physical_identity_proven=True,
+        independent_electrical_protection_proven=True,commissioning_evidence=evidence,
+        authority_envelope={"standing_authority_id":authority_id,"version":"1","issuer":"owner_policy",
+            "policy_sha256":policy_sha,"revoked":False,"eskom_policy":"owner_30_on_35_solar_recovery_off",
+            "switch_code":"switch"})
+    stored=store_device_record(row,connect_factory=connect)
+    assert load_device_record(stored["device_key"],connect_factory=connect)["device_record"]==row
+    with connect() as db:
+        db.execute("""insert into app_private.rootline_device_evidence_events(
+            event_id,evidence_id,event_type,reason) values(%s,%s,'invalidated','test electrical proof invalidation')""",
+            ("GRID-INVALIDATE-"+suffix,evidence["electrical_protection_proven"]["evidence_id"]))
+    with pytest.raises(ValueError,match="evidence_unresolved"):
+        load_device_record(stored["device_key"],connect_factory=connect)

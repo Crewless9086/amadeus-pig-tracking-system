@@ -100,6 +100,17 @@ decision, command and saved outcome; reconcile only a post-sender readback.
 An interrupted sender without durable outcome cannot resend automatically.
 Absent API entitlement, mapping or commissioning blocks Eskom only, not gravity B/C.
 
+This grid-support breaker uses the exact `smartlife_eskom_hysteresis_v1`
+profile: retain state (`UNCHANGED`) when a fresh transition is not authorized;
+zero maximum/native countdown fields explicitly mean no countdown. An unrelated
+valve timer must not disconnect required grid support before solar recovery.
+The canonical profile instead requires independently proven electrical
+protection and manual isolation, with current canonical evidence references,
+exact physical identity and unrevoked standing policy. This exception belongs
+only to the named 30/35 grid programme; pumps, valves and other breakers retain
+their existing native fail-stop requirements. No electrical proof is inferred
+from a Boolean switch response or an ON/OFF applet.
+
 ### Solar Transfer Pump
 
 - The solar transfer pump is not connected to a smart controller.

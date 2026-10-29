@@ -317,6 +317,7 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
     if device_type == "fertilizer_mixer":
         material["batch_generation"] = context.get("batch_generation")
     if device_type=="fertilizer_injection_valve":
+        material["physical_commissioning_generation"] = safety["physical_commissioning_generation"]
         start_evidence=context["zone_start_evidence"]
         output_evidence=context["zone_output_evidence"]
         material.update({"zone_id":context["active_zone_ids"][0],
@@ -400,6 +401,10 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
             "controller_safety_generation"):
         return False
     if value["device_type"]=="fertilizer_injection_valve":
+        if (not value.get("physical_commissioning_generation") or
+                current_safety.get("physical_commissioning_generation") !=
+                value["physical_commissioning_generation"]):
+            return False
         if (current_context.get("job_id")!=value.get("job_id")
                 or current_context.get("job_sha256")!=value.get("job_sha256")
                 or current_context.get("segment_identity")!=value.get("segment_identity")

@@ -19,7 +19,10 @@ def canonical():
     return {"evidence_digest":"a"*64,"device_record":{"device_id":CONFIG["ROOTLINE_ESKOM_DEVICE_ID"],
         "channel":1,"provider":"ifttt_smartlife","provider_account_binding":"smartlife_owner_account",
         "device_type":"breaker","commissioning_stage":"standing_active","standing_authority":True,
-        "independent_physical_identity_proven":True,"independent_fail_stop_proven":True,"authority_envelope":{
+        "adapter_profile":"smartlife_eskom_hysteresis_v1","safe_state":"UNCHANGED",
+        "maximum_runtime_seconds":0,"native_fail_stop_seconds":0,
+        "manual_isolation":"synthetic labelled isolator",
+        "independent_physical_identity_proven":True,"independent_electrical_protection_proven":True,"authority_envelope":{
             "eskom_policy":"owner_30_on_35_solar_recovery_off","switch_code":"switch_1"}}}
 
 class Store:

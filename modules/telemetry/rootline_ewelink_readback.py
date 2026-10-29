@@ -30,7 +30,7 @@ def read_current_device(*, token_store, environ=None, http_request=None, now=Non
 
 
 def read_registered_device(device_id, *, token_store, environ=None,
-                           http_request=None, now=None):
+                           http_request=None, now=None, commissioning_connect_factory=None):
     """Read an exact registry-bound device without expanding command authority."""
     source = environ if environ is not None else os.environ
     requested = str(device_id or "").strip()
@@ -40,7 +40,7 @@ def read_registered_device(device_id, *, token_store, environ=None,
             or any(row.get("provider_account_binding") != "ewelink_owner_account"
                    for row in contracts)):
         raise OAuthFailure("ewelink_registered_device_rejected")
-    return _read_bound_device(
+    result = _read_bound_device(
         expected=requested,
         token_store=token_store,
         source=source,
@@ -49,6 +49,25 @@ def read_registered_device(device_id, *, token_store, environ=None,
         commissioned_baseline=commissioned_registered_device_baseline(requested),
         registered_discovery_only=False,
     )
+    if requested == "1002851416":
+        connect = commissioning_connect_factory
+        database_url = str(source.get("DATABASE_URL")
+            or getattr(token_store, "database_url", "") or "").strip()
+        if connect is None and database_url:
+            from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+            def connect():
+                return connect_bounded_rootline_postgres(database_url=database_url, read_only=True)
+        if callable(connect):
+            from modules.telemetry.rootline_ewelink_commissioned_baseline import canonical_borehole_control_paths
+            try:
+                result = canonical_borehole_control_paths(result, connect_factory=connect)
+            except Exception:
+                # Keep unsupported facts Unknown when proof cannot be resolved.
+                pass
+            material = {k: v for k, v in result.items() if k != "response_digest"}
+            result["response_digest"] = sha256(json.dumps(material, sort_keys=True,
+                separators=(",", ":"), default=str).encode()).hexdigest()
+    return result
 
 
 def _read_bound_device(*, expected, token_store, source, http_request, now,

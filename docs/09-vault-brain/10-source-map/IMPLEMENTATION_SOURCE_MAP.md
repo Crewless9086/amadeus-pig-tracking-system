@@ -36,6 +36,17 @@
   gaps. `rootline_borehole_commissioning.py` resolves installed protection
   evidence and bounds each supply window by the validated native cap.
   A/E channel mappings remain explicitly plumbing-not-ready and inactive.
+- `rootline_ewelink_commissioned_baseline.py`, `rootline_ewelink_readback.py`
+  and `rootline_ifttt_transport.py` resolve genuine per-channel configuration
+  references from the existing canonical device spine. CH1 cannot borrow CH2's
+  legacy proof; its physical commissioning generation is pinned through the
+  final injection edge. Borehole facts absent from provider GETs remain Unknown
+  unless exact current canonical configuration proves them; provider conflicts
+  always win. `rootline_device_spine.py` distinguishes Eskom's exact state-retaining
+  30/35 profile and canonical electrical/manual-isolation proof from timed valves
+  and pumps. `tests/test_rootline_commissioning_bridges.py` exercises the actual
+  normalizer, canonical loader, transport and eligibility chain; device-spine
+  PostgreSQL qualification covers persistence and invalidation without a timer.
 - Qualification: `tests/test_rootline_integrated_operation.py`,
   `tests/test_rootline_eskom_runtime.py`,
   `tests/test_rootline_managed_evidence_history_postgres.py` and adjacent
