@@ -264,7 +264,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             safety=transport.read_safety_configuration(device_id="1002851416",channel=1)
         except Exception:
             return _borehole_result("borehole_native_readback_unproven",success=False)
-        if safety.get("native_auto_off_enabled") is not True or safety.get("native_auto_off_seconds")!=native:
+        if safety.get("native_inching_enabled") is not True or safety.get("native_inching_seconds")!=native:
             return _borehole_result("borehole_native_readback_changed",success=False)
     # Planning and the native-safety read precede the durable startup window.
     # Keep assessed_at/evidence unchanged; only claim and stop clocks start here.

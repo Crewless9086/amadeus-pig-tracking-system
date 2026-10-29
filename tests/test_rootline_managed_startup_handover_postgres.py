@@ -388,10 +388,115 @@ def test_managed_borehole_native_safety_refusal_stays_before_claim(db):
     now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now)
     class UnsafeTransport(bh.BoreholeTransport):
         def read_safety_configuration(self,**kwargs):
-            return {'native_auto_off_enabled':False,'native_auto_off_seconds':1800}
+            return {'native_inching_enabled':False,'native_inching_seconds':1800}
     transport=UnsafeTransport()
     result=managed.run_rootline_managed_device_cycle(evidence={'borehole_execution':artifact},
         transport=transport,store=store.rootline_irrigation_execution_store,
         environ={'ROOTLINE_BOREHOLE_ENABLED':'true'},now=now)
     assert result['status']=='borehole_native_readback_changed' and transport.commands==[]
     assert [row['action'] for row in rows(db,artifact)]==['record_borehole_eligibility']
+
+
+@pytest.mark.parametrize('configuration',['valid','disabled','changed_duration','missing_duration','wrong_device'])
+def test_managed_borehole_uses_real_transport_safety_and_command_contract(db,configuration):
+    from copy import deepcopy
+    from urllib.parse import urlsplit
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
+    from tests import test_rootline_borehole_commissioning as bh
+    now=datetime.now(timezone.utc)
+    artifact=bh.build_borehole_runtime_eligibility(need={'eligible':True},
+        baseline={**bh.canonical(maximum_routine_runtime_seconds=3600,native_fail_stop_seconds=3600),
+            'registry_generation':3},authority={'inside_standing_authority':True},
+        provider={'authoritative':True,'state':'OFF'},interlocks={'dry_run_safe':True,
+            'low_water_clear':True,'supply_pressure_safe':True,'full_tank_not_blocking':True},
+        energy={'eligible':True},requested_seconds=600,now=now)
+    snapshot={'device_id':'1002851416','provider_control_calls':0,
+        'current_outputs_authoritative':True,'timers_enabled':False,'scenes_enabled':False,
+        'interlock_enabled':False,'response_digest':'a'*64,'retrieved_at':now.isoformat(),
+        'channels':[{'channel':1,'output_state':'OFF','native_auto_off_enabled':True,
+            'native_auto_off_seconds':3600,'power_restoration_state':'OFF'}]}
+    target=snapshot['channels'][0]
+    if configuration=='disabled':target['native_auto_off_enabled']=False
+    if configuration=='changed_duration':target['native_auto_off_seconds']=1800
+    if configuration=='missing_duration':target.pop('native_auto_off_seconds')
+    if configuration=='wrong_device':snapshot['device_id']='wrong-device'
+    requests=[]
+    class Response:
+        status=200
+        def getcode(self):return self.status
+        def __enter__(self):return self
+        def __exit__(self,*_):return False
+        def read(self,_limit):return b'accepted synthetic IFTTT response'
+    def no_network_open(request,timeout):
+        requests.append(request)
+        assert configuration=='valid' and len(requests)==1
+        url=urlsplit(request.full_url)
+        assert (url.scheme,url.netloc,url.path)==('https','maker.ifttt.com',
+            '/trigger/borehole_1_on/with/key/synthetic-only')
+        assert request.get_method()=='POST' and timeout==15
+        assert json.loads(request.data)=={'value1':artifact['execution_id']+':ON',
+            'value2':'1002851416','value3':'1'}
+        target['output_state']='ON'
+        return Response()
+    transport=RootlineIFTTTTransport(token_store=object(),
+        environ={'ROOTLINE_BOREHOLE_ENABLED':'true','ROOTLINE_IFTTT_MAKER_KEY':'synthetic-only'},
+        http_open=no_network_open,readback=lambda **_:deepcopy(snapshot))
+    if configuration!='wrong_device':
+        safety=transport.read_safety_configuration(device_id='1002851416',channel=1)
+        assert 'native_auto_off_enabled' not in safety and 'native_auto_off_seconds' not in safety
+        assert safety['native_inching_enabled']==target['native_auto_off_enabled']
+        assert safety['native_inching_seconds']==target.get('native_auto_off_seconds')
+    result=managed.run_rootline_managed_device_cycle(evidence={'borehole_execution':artifact},
+        transport=transport,store=store.rootline_irrigation_execution_store,
+        environ={'ROOTLINE_BOREHOLE_ENABLED':'true'},now=now)
+    saved=rows(db,artifact)
+    if configuration=='valid':
+        assert result['status']=='borehole_started' and len(requests)==1,result
+        assert result['execution']['provider_start_evidence']['state']=='ON'
+        assert result['execution']['provider_start_evidence']['authoritative'] is True
+        assert sum(row['action']=='claim_borehole_dispatch' for row in saved)==1
+        assert sum(row['action']=='mark_borehole_active' for row in saved)==1
+        assert result['execution']['native_fail_stop_seconds']==3600
+    else:
+        assert result['status'] in {'borehole_native_readback_changed','borehole_native_readback_unproven'}
+        assert requests==[] and [row['action'] for row in saved]==['record_borehole_eligibility']
+
+
+@pytest.mark.parametrize('winner',['mixer','borehole'])
+def test_borehole_and_mixer_claims_are_mutually_exclusive_before_on(db,monkeypatch,winner):
+    now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now)
+    seed(db,'record_borehole_eligibility',artifact)
+    borehole={**artifact,'state':'claimed','claimed_at':now.isoformat(),
+        'primary_stop_deadline':(now+timedelta(seconds=60)).isoformat(),
+        'native_fail_stop_deadline':(now+timedelta(seconds=1800)).isoformat(),
+        'on_attempts':0,'off_attempts':0}
+    mixer={'execution_id':'RACE-MIXER-'+uuid.uuid4().hex,'consumption_key':uuid.uuid4().hex,
+        'auxiliary_device_id':'FERTILIZER-MIXER-CH2','device_type':'fertilizer_mixer',
+        'device_id':'100204d497','channel':2,'state':'claimed','claimed_at':now.isoformat(),
+        'primary_stop_deadline':(now+timedelta(seconds=600)).isoformat(),
+        'maximum_duration_seconds':600,'on_attempts':0,'off_attempts':0}
+    bodies={'mixer':mixer,'borehole':borehole};loser='mixer' if winner=='borehole' else 'borehole'
+    real=bounded.connect_bounded_rootline_postgres;first=[True];inserted=Event();release=Event();competing=Event()
+    @contextmanager
+    def pause_first_commit(**kwargs):
+        owned=first[0];first[0]=False
+        with real(**kwargs) as connection:
+            yield connection
+            if owned:
+                inserted.set();assert release.wait(2)
+    def claim(kind):
+        if kind==loser:competing.set()
+        action='claim_borehole_before_on' if kind=='borehole' else 'claim_auxiliary_before_on'
+        return store.rootline_irrigation_execution_store(action,bodies[kind])
+    with monkeypatch.context() as scoped:
+        scoped.setattr(bounded,'connect_bounded_rootline_postgres',pause_first_commit)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            winning=pool.submit(claim,winner);assert inserted.wait(2)
+            losing=pool.submit(claim,loser);assert competing.wait(2) and not losing.done()
+            release.set();assert winning.result(2)['created']
+            refused=losing.result(2);assert not refused['created'] and refused['status']=='material_load_active'
+    calls=[]
+    assert not dispatch(bodies[loser],loser,lambda:calls.append(loser))['accepted_unambiguous']
+    assert dispatch(bodies[winner],winner,lambda:calls.append(winner) or {'accepted_unambiguous':True})['accepted_unambiguous']
+    assert calls==[winner]

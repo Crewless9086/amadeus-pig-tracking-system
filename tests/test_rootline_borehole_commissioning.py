@@ -119,7 +119,7 @@ class BoreholeTransport:
         return {"authoritative":True,"state":self.state,
             "evidence_id":"PROVIDER-"+self.state}
     def read_safety_configuration(self,**_kwargs):
-        return {"native_auto_off_enabled":True,"native_auto_off_seconds":1800}
+        return {"native_inching_enabled":True,"native_inching_seconds":1800}
 
 
 def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():
