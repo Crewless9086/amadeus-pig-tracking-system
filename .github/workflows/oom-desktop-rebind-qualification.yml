@@ -40,8 +40,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse 696077c52fe3d0b9f514ea0994d3807ba569a3bf^{tree})" = 37e4170edbd72c51ea61a8dd33e8849c63d5777c
-          test "$(git merge-base 0a74d0d7d384baf930ddee1101ee7e11c81937f9 696077c52fe3d0b9f514ea0994d3807ba569a3bf)" = 0a74d0d7d384baf930ddee1101ee7e11c81937f9
+          test "$(git rev-parse 2d8f174d4b7578bb592ac8f09060895bdec41af8^{tree})" = 6b43273f76091c4c2400074eb4c39f0cfa07728a
+          test "$(git merge-base 0a74d0d7d384baf930ddee1101ee7e11c81937f9 2d8f174d4b7578bb592ac8f09060895bdec41af8)" = 0a74d0d7d384baf930ddee1101ee7e11c81937f9
       - name: Preserve ordinary registration qualification
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation tests.test_oom_desktop_registration_sql -v
       - name: Preserve pre-send metadata correction qualification
@@ -51,15 +51,15 @@ jobs:
       - name: Load exact reviewed integrated-operation application for qualification
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 696077c52fe3d0b9f514ea0994d3807ba569a3bf
+          ref: 2d8f174d4b7578bb592ac8f09060895bdec41af8
           persist-credentials: false
           fetch-depth: 0
       - name: Verify reviewed integrated-operation application checkout
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 696077c52fe3d0b9f514ea0994d3807ba569a3bf
-          test "$(git rev-parse HEAD^{tree})" = 37e4170edbd72c51ea61a8dd33e8849c63d5777c
+          test "$(git rev-parse HEAD)" = 2d8f174d4b7578bb592ac8f09060895bdec41af8
+          test "$(git rev-parse HEAD^{tree})" = 6b43273f76091c4c2400074eb4c39f0cfa07728a
       - name: Prepare isolated canonical ROOTLINE fixture prerequisites
         env:
           PGPASSWORD: postgres
@@ -81,6 +81,7 @@ jobs:
           tests/test_oom_sakkie_rootline_reassessment_delivery.py
           tests/test_rootline_active_supervision.py
           tests/test_rootline_borehole_commissioning.py
+          tests/test_rootline_commissioning_bridges.py
           tests/test_rootline_device_spine_postgres.py
           tests/test_rootline_eskom_runtime.py
           tests/test_rootline_ewelink_oauth.py
