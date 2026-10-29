@@ -235,3 +235,54 @@ def test_legacy_on_outcome_without_new_marker_is_already_consumed(db,kind):
     calls=[]
     assert not dispatch(body,kind,lambda:calls.append('ON'))['accepted_unambiguous']
     assert calls==[] and not any(r['action']==family['dispatch'] for r in rows(db,body))
+
+
+@pytest.mark.parametrize('kind',['mixer','injector','borehole'])
+def test_legacy_active_without_claim_keeps_safety_off(db,kind):
+    from modules.telemetry.rootline_irrigation_coordinator import advance_auxiliary_execution
+    from modules.telemetry.rootline_borehole_commissioning import advance_borehole_execution
+    now=datetime.now(timezone.utc)
+    row={'execution_id':'ORPHAN-'+__import__('uuid').uuid4().hex,'state':'Active',
+         'claimed_at':(now-timedelta(seconds=601)).isoformat(),
+         'primary_stop_deadline':(now-timedelta(seconds=1)).isoformat(),
+         'maximum_duration_seconds':600,'on_attempts':1,
+         'start_evidence':{'authoritative':True,'state':'ON','retrieved_at':(now-timedelta(seconds=601)).isoformat()},
+         'provider_start_evidence':{'authoritative':True,'state':'ON'},
+         'auxiliary_device_id':'FERTILIZER-MIXER-CH2','device_type':'fertilizer_mixer',
+         'device_id':'100204d497','channel':2}
+    if kind=='borehole':row['device_key']='ewelink:ewelink_owner_account:1002851416:1'
+    if kind=='injector':row.update(auxiliary_device_id='FERTILIZER-INJECTION-CH1',device_type='fertilizer_injection_valve',channel=1)
+    seed(db,'mark_borehole_active' if kind=='borehole' else 'mark_auxiliary_active',row)
+    calls=[]
+    class Transport:
+        def set_state(self,**kw):calls.append(kw['state']);return {'accepted_unambiguous':True}
+        def read_output_state(self,**kw):return {'authoritative':True,'state':'OFF' if calls else 'ON',
+            'evidence_id':'ACTUAL-SYNTHETIC','retrieved_at':datetime.now(timezone.utc).isoformat()}
+    fn=advance_borehole_execution if kind=='borehole' else advance_auxiliary_execution
+    result=fn(eligibility=None,store=store.rootline_irrigation_execution_store,transport=Transport(),now=now)
+    assert calls==['OFF'],result
+
+@pytest.mark.parametrize('kind',['mixer','injector','borehole'])
+@pytest.mark.parametrize('mismatch',['device','family','state','execution'])
+def test_orphan_off_requires_exact_active_identity(db,kind,mismatch):
+    body,family=execution(db,kind)
+    # Give the orphan a fresh identity so no canonical claim can mask this check.
+    body={**body,'execution_id':'ORPHAN-BAD-'+uuid.uuid4().hex,'state':'Active'}
+    action=family['active']
+    if mismatch=='device':
+        if kind=='borehole':body['device_key']='ewelink:ewelink_owner_account:wrong:1'
+        else:body['channel']=4
+    elif mismatch=='family':action='mark_auxiliary_active' if kind=='borehole' else 'mark_borehole_active'
+    elif mismatch=='state':body['state']='Unknown'
+    seed(db,action,body)
+    target={**body,'execution_id':'OTHER-'+uuid.uuid4().hex} if mismatch=='execution' else body
+    assert not off(target,family)['created']
+    assert not dispatch(body,kind,lambda:{'accepted_unambiguous':True})['accepted_unambiguous']
+
+@pytest.mark.parametrize('attempt',[0,4,True,'1'])
+def test_orphan_off_retains_numeric_attempt_bound_and_unique_marker(db,attempt):
+    body,family=execution(db,'mixer');body={**body,'execution_id':'ORPHAN-LIMIT-'+uuid.uuid4().hex,'state':'Active'}
+    seed(db,family['active'],body)
+    assert not store.rootline_irrigation_execution_store(family['off'],{'execution_id':body['execution_id'],'attempt':attempt})['created']
+    assert off(body,family)['created']
+    assert not off(body,family)['created']

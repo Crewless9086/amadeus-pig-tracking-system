@@ -1178,7 +1178,20 @@ def _guarded_managed_transition(action, body):
                         or body.get("state")!="Active" or body.get("on_attempts")!=1):
                     return {"success":False,"created":False,"status":"managed_start_ownership_retired"}
             elif action==family["off"]:
-                if (not any(row.get("action")==family["claim"] for row in rows)
+                # The loader also supports legacy Active rows whose original
+                # claim is unavailable. Preserve their safety OFF, never ON.
+                from modules.telemetry.rootline_device_registry import get_device_contract
+                def exact_active(row):
+                    if row.get("action")!=family["active"] or row.get("state")!="Active":
+                        return False
+                    if borehole:
+                        return row.get("device_key")=="ewelink:ewelink_owner_account:1002851416:1"
+                    identity=row.get("auxiliary_device_id")
+                    contract=get_device_contract(identity) or {}
+                    return (identity in {"FERTILIZER-MIXER-CH2","FERTILIZER-INJECTION-CH1"}
+                        and all(row.get(key)==contract.get(key)
+                            for key in ("device_id","channel","device_type")))
+                if (not any(row.get("action")==family["claim"] or exact_active(row) for row in rows)
                         or type(body.get("attempt")) is not int or not 1<=body["attempt"]<=3):
                     return {"success":False,"created":False,"status":"managed_off_claim_invalid"}
             return _insert_managed_event(cursor,action,body)
