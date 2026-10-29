@@ -8,6 +8,7 @@ import ast
 from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from functools import partial
 import inspect
 
 import pytest
@@ -159,12 +160,30 @@ def invoke(store, transport, loader, *, function=None, environ=None, now=NOW):
         store=store, token_store=object(), transport=transport, evidence_loader=loader)
 
 
+@pytest.mark.parametrize("read_delay_seconds", [0, 2])
 @pytest.mark.parametrize("kind", [None, "mixer", "injector", "borehole"])
-def test_healthy_predecessor_results_and_canonical_effects_match(kind, record_property):
+def test_healthy_predecessor_results_and_canonical_effects_match(
+        kind, read_delay_seconds, record_property, monkeypatch):
+    # Both ordering paths run the actual coordinators against the same elapsed
+    # provider-read clock. Independent wall-clock instants cannot be compared
+    # byte-for-byte now that completion correctly records time after readback.
+    clock = [NOW]
+    monkeypatch.setattr(managed, "advance_auxiliary_execution", partial(
+        managed.advance_auxiliary_execution, clock=lambda: clock[0]))
+    monkeypatch.setattr(managed, "advance_borehole_execution", partial(
+        managed.advance_borehole_execution, clock=lambda: clock[0]))
+
+    class TimedOffOnlyTransport(OffOnlyTransport):
+        def read_output_state(self, **kwargs):
+            result = super().read_output_state(**kwargs)
+            clock[0] += timedelta(seconds=read_delay_seconds)
+            return {**result, "retrieved_at": clock[0].isoformat()}
+
     old_store, new_store = Store(kind), Store(kind)
-    old_transport, new_transport = OffOnlyTransport(), OffOnlyTransport()
+    old_transport, new_transport = TimedOffOnlyTransport(), TimedOffOnlyTransport()
     old_loader, new_loader = Evidence(), Evidence()
     old = invoke(old_store, old_transport, old_loader, function=predecessor())
+    clock[0] = NOW
     new = invoke(new_store, new_transport, new_loader)
     assert new == old
     assert new_store.calls == (old_store.calls * 2 if kind is None else old_store.calls)
@@ -172,9 +191,19 @@ def test_healthy_predecessor_results_and_canonical_effects_match(kind, record_pr
     assert new_transport.commands == old_transport.commands
     assert len(old_loader.calls) == 1
     assert len(new_loader.calls) == (1 if kind is None else 0)
+    if kind is not None:
+        expected_completion = (NOW + timedelta(seconds=read_delay_seconds)).isoformat()
+        completed = new["execution"]
+        assert completed["completed_at"] == expected_completion
+        shutdown = completed["provider_final_off_evidence" if kind == "borehole" else "shutdown_evidence"]
+        assert shutdown["retrieved_at"] == expected_completion
+        assert new_store.writes[-1][1]["completed_at"] == expected_completion
+        assert [command["state"] for command in new_transport.commands] == ["OFF"]
+        if kind != "borehole":
+            assert completed["accounted_mixing_seconds"] == (300 if kind == "mixer" else 0)
+            assert completed["physical_outcome_verified"] is False
     record_property("optional_planning_before", len(old_loader.calls))
     record_property("optional_planning_after", len(new_loader.calls))
-
 
 @pytest.mark.parametrize("kind,status", [("mixer", "auxiliary_completed"), ("injector", "auxiliary_control_pulse_off_verified"), ("borehole", "borehole_completed")])
 def test_failed_optional_planner_no_longer_prevents_due_recovery(kind, status):
