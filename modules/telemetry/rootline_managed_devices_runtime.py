@@ -147,6 +147,13 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     borehole = packet.get("borehole_execution") or {}
     if (not active_borehole and isinstance(borehole, dict) and borehole.get("eligible") is True
             and _enabled(source, "ROOTLINE_BOREHOLE_ENABLED")):
+        try:
+            recorded = store("record_borehole_eligibility", borehole)
+        except RootlineExecutionStoreUnavailable:
+            recorded = None
+        if not isinstance(recorded, dict) or recorded.get("success") is not True:
+            return {**_safe("borehole_eligibility_persistence_unproven", blocks_bc=False),
+                "success": False}
         result = advance_borehole_execution(eligibility=borehole, store=store,
             transport=transport, now=now)
         return {**result, "managed_device": "BOREHOLE-1-MINI-R4-CH1",

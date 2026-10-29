@@ -119,7 +119,7 @@ class BoreholeTransport:
         return {"authoritative":True,"state":self.state,
             "evidence_id":"PROVIDER-"+self.state}
     def read_safety_configuration(self,**_kwargs):
-        return {"native_auto_off_enabled":True,"native_auto_off_seconds":1800}
+        return {"native_inching_enabled":True,"native_inching_seconds":1800}
 
 
 def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():
@@ -130,7 +130,7 @@ def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():
         "full_tank_not_blocking":True},energy={"eligible":True},requested_seconds=60,now=NOW)
     store=BoreholeStore(); transport=BoreholeTransport()
     started=advance_borehole_execution(eligibility=artifact,store=store,
-      transport=transport,now=NOW)
+      transport=transport,now=NOW,clock=lambda:NOW)
     assert started["status"]=="borehole_started"
     assert [row["state"] for row in transport.commands]==["ON"]
     completed=advance_borehole_execution(eligibility=artifact,store=store,
@@ -150,7 +150,7 @@ def test_ambiguous_or_unverified_start_is_off_contained_never_completed():
                       BoreholeTransport(on_readback="Unknown")):
         store=BoreholeStore()
         result=advance_borehole_execution(eligibility=artifact,store=store,
-          transport=transport,now=NOW)
+          transport=transport,now=NOW,clock=lambda:NOW)
         assert result["success"] is False
         assert result["status"]=="borehole_start_failure_contained"
         assert [row["state"] for row in transport.commands]==["ON","OFF"]

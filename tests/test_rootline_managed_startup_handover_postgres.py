@@ -286,3 +286,217 @@ def test_orphan_off_retains_numeric_attempt_bound_and_unique_marker(db,attempt):
     assert not store.rootline_irrigation_execution_store(family['off'],{'execution_id':body['execution_id'],'attempt':attempt})['created']
     assert off(body,family)['created']
     assert not off(body,family)['created']
+
+
+def borehole_start_artifact(now):
+    from tests import test_rootline_borehole_commissioning as bh
+    return bh.build_borehole_runtime_eligibility(need={'eligible':True},
+        baseline={**bh.canonical(),'registry_generation':2},
+        authority={'inside_standing_authority':True},provider={'authoritative':True,'state':'OFF'},
+        interlocks={'dry_run_safe':True,'low_water_clear':True,'supply_pressure_safe':True,
+            'full_tank_not_blocking':True},energy={'eligible':True},requested_seconds=60,now=now)
+
+
+def test_managed_borehole_persists_exact_eligibility_and_claims_after_delayed_reads(db,monkeypatch):
+    from functools import partial
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from tests import test_rootline_borehole_commissioning as bh
+    scheduler_time=datetime.now(timezone.utc)-timedelta(seconds=31)
+    artifact=borehole_start_artifact(scheduler_time); events=[]; safety_finished=[]
+    class DelayedTransport(bh.BoreholeTransport):
+        def read_safety_configuration(self,**kwargs):
+            # Virtual provider latency: no sleeps and no change to the store's real clock.
+            safety_finished.append(datetime.now(timezone.utc))
+            return super().read_safety_configuration(**kwargs)
+    def claim_clock():
+        assert safety_finished, 'claim clock must be read after native safety'
+        return safety_finished[-1]
+    def actual_store(action,body):
+        events.append(action)
+        return store.rootline_irrigation_execution_store(action,body)
+    monkeypatch.setattr(managed,'advance_borehole_execution',partial(
+        bh.advance_borehole_execution,clock=claim_clock))
+    transport=DelayedTransport()
+    result=managed.run_rootline_managed_device_cycle(evidence=None,transport=transport,
+        evidence_factory=lambda:{'borehole_execution':artifact},store=actual_store,
+        environ={'ROOTLINE_BOREHOLE_ENABLED':'true'},now=scheduler_time)
+    assert result['status']=='borehole_started',result
+    assert [row['state'] for row in transport.commands]==['ON']
+    saved=rows(db,artifact)
+    canonical=next(row for row in saved if row['action']=='record_borehole_eligibility')
+    claimed=next(row for row in saved if row['action']=='claim_borehole_before_on')
+    assert all(canonical[key]==value for key,value in artifact.items())
+    assert all(claimed[key]==value for key,value in artifact.items())
+    assert datetime.fromisoformat(claimed['claimed_at'])==safety_finished[0]
+    assert datetime.fromisoformat(claimed['claimed_at'])-scheduler_time>=timedelta(seconds=31)
+    assert datetime.fromisoformat(claimed['primary_stop_deadline'])==safety_finished[0]+timedelta(seconds=60)
+    assert datetime.fromisoformat(claimed['native_fail_stop_deadline'])==safety_finished[0]+timedelta(seconds=1800)
+    assert claimed['assessed_at']==scheduler_time.isoformat()
+    assert events.index('record_borehole_eligibility')<events.index('claim_borehole_before_on')
+    assert sum(row['action']=='claim_borehole_dispatch' for row in saved)==1
+
+
+def test_borehole_direct_unrecorded_eligibility_is_still_refused_by_real_claim(db):
+    from tests import test_rootline_borehole_commissioning as bh
+    now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now);transport=bh.BoreholeTransport()
+    result=bh.advance_borehole_execution(eligibility=artifact,store=store.rootline_irrigation_execution_store,
+        transport=transport,now=now)
+    assert result['status']=='borehole_claim_conflict'
+    assert transport.commands==[] and rows(db,artifact)==[]
+
+
+@pytest.mark.parametrize('failure',[None,{'success':False},'unavailable'])
+def test_managed_borehole_eligibility_persistence_denial_never_claims(db,failure):
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from tests import test_rootline_borehole_commissioning as bh
+    now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now);transport=bh.BoreholeTransport();actions=[]
+    def failing_store(action,body):
+        actions.append(action)
+        if action=='record_borehole_eligibility':
+            assert body==artifact
+            if failure=='unavailable':raise store.RootlineExecutionStoreUnavailable('synthetic persistence failure')
+            return failure
+        return store.rootline_irrigation_execution_store(action,body)
+    result=managed.run_rootline_managed_device_cycle(evidence={'borehole_execution':artifact},
+        transport=transport,store=failing_store,environ={'ROOTLINE_BOREHOLE_ENABLED':'true'},now=now)
+    assert not result['success'] and result['status']=='borehole_eligibility_persistence_unproven'
+    assert not result['blocks_bc'] and transport.commands==[] and rows(db,artifact)==[]
+    assert 'claim_borehole_before_on' not in actions
+
+
+@pytest.mark.parametrize('gate',['active_only','disabled','ineligible'])
+def test_managed_borehole_start_gates_do_not_record_or_command(db,gate):
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from tests import test_rootline_borehole_commissioning as bh
+    now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now);transport=bh.BoreholeTransport();actions=[]
+    def actual_store(action,body):
+        actions.append(action)
+        return store.rootline_irrigation_execution_store(action,body)
+    def factory():
+        assert gate!='active_only','active-only must not invoke the planner'
+        return {'borehole_execution':{**artifact,'eligible':gate!='ineligible'}}
+    result=managed.run_rootline_managed_device_cycle(evidence=None,evidence_factory=factory,
+        transport=transport,store=actual_store,environ={'ROOTLINE_BOREHOLE_ENABLED':str(gate!='disabled').lower()},
+        now=now,allow_new_starts=gate!='active_only')
+    assert result['hardware_commands']==0 and transport.commands==[] and rows(db,artifact)==[]
+    assert not any(action.startswith(('record_','claim_','dispatch_')) for action in actions)
+
+
+def test_managed_borehole_native_safety_refusal_stays_before_claim(db):
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from tests import test_rootline_borehole_commissioning as bh
+    now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now)
+    class UnsafeTransport(bh.BoreholeTransport):
+        def read_safety_configuration(self,**kwargs):
+            return {'native_inching_enabled':False,'native_inching_seconds':1800}
+    transport=UnsafeTransport()
+    result=managed.run_rootline_managed_device_cycle(evidence={'borehole_execution':artifact},
+        transport=transport,store=store.rootline_irrigation_execution_store,
+        environ={'ROOTLINE_BOREHOLE_ENABLED':'true'},now=now)
+    assert result['status']=='borehole_native_readback_changed' and transport.commands==[]
+    assert [row['action'] for row in rows(db,artifact)]==['record_borehole_eligibility']
+
+
+@pytest.mark.parametrize('configuration',['valid','disabled','changed_duration','missing_duration','wrong_device'])
+def test_managed_borehole_uses_real_transport_safety_and_command_contract(db,configuration):
+    from copy import deepcopy
+    from urllib.parse import urlsplit
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
+    from tests import test_rootline_borehole_commissioning as bh
+    now=datetime.now(timezone.utc)
+    artifact=bh.build_borehole_runtime_eligibility(need={'eligible':True},
+        baseline={**bh.canonical(maximum_routine_runtime_seconds=3600,native_fail_stop_seconds=3600),
+            'registry_generation':3},authority={'inside_standing_authority':True},
+        provider={'authoritative':True,'state':'OFF'},interlocks={'dry_run_safe':True,
+            'low_water_clear':True,'supply_pressure_safe':True,'full_tank_not_blocking':True},
+        energy={'eligible':True},requested_seconds=600,now=now)
+    snapshot={'device_id':'1002851416','provider_control_calls':0,
+        'current_outputs_authoritative':True,'timers_enabled':False,'scenes_enabled':False,
+        'interlock_enabled':False,'response_digest':'a'*64,'retrieved_at':now.isoformat(),
+        'channels':[{'channel':1,'output_state':'OFF','native_auto_off_enabled':True,
+            'native_auto_off_seconds':3600,'power_restoration_state':'OFF'}]}
+    target=snapshot['channels'][0]
+    if configuration=='disabled':target['native_auto_off_enabled']=False
+    if configuration=='changed_duration':target['native_auto_off_seconds']=1800
+    if configuration=='missing_duration':target.pop('native_auto_off_seconds')
+    if configuration=='wrong_device':snapshot['device_id']='wrong-device'
+    requests=[]
+    class Response:
+        status=200
+        def getcode(self):return self.status
+        def __enter__(self):return self
+        def __exit__(self,*_):return False
+        def read(self,_limit):return b'accepted synthetic IFTTT response'
+    def no_network_open(request,timeout):
+        requests.append(request)
+        assert configuration=='valid' and len(requests)==1
+        url=urlsplit(request.full_url)
+        assert (url.scheme,url.netloc,url.path)==('https','maker.ifttt.com',
+            '/trigger/borehole_1_on/with/key/synthetic-only')
+        assert request.get_method()=='POST' and timeout==15
+        assert json.loads(request.data)=={'value1':artifact['execution_id']+':ON',
+            'value2':'1002851416','value3':'1'}
+        target['output_state']='ON'
+        return Response()
+    transport=RootlineIFTTTTransport(token_store=object(),
+        environ={'ROOTLINE_BOREHOLE_ENABLED':'true','ROOTLINE_IFTTT_MAKER_KEY':'synthetic-only'},
+        http_open=no_network_open,readback=lambda **_:deepcopy(snapshot))
+    if configuration!='wrong_device':
+        safety=transport.read_safety_configuration(device_id='1002851416',channel=1)
+        assert 'native_auto_off_enabled' not in safety and 'native_auto_off_seconds' not in safety
+        assert safety['native_inching_enabled']==target['native_auto_off_enabled']
+        assert safety['native_inching_seconds']==target.get('native_auto_off_seconds')
+    result=managed.run_rootline_managed_device_cycle(evidence={'borehole_execution':artifact},
+        transport=transport,store=store.rootline_irrigation_execution_store,
+        environ={'ROOTLINE_BOREHOLE_ENABLED':'true'},now=now)
+    saved=rows(db,artifact)
+    if configuration=='valid':
+        assert result['status']=='borehole_started' and len(requests)==1,result
+        assert result['execution']['provider_start_evidence']['state']=='ON'
+        assert result['execution']['provider_start_evidence']['authoritative'] is True
+        assert sum(row['action']=='claim_borehole_dispatch' for row in saved)==1
+        assert sum(row['action']=='mark_borehole_active' for row in saved)==1
+        assert result['execution']['native_fail_stop_seconds']==3600
+    else:
+        assert result['status'] in {'borehole_native_readback_changed','borehole_native_readback_unproven'}
+        assert requests==[] and [row['action'] for row in saved]==['record_borehole_eligibility']
+
+
+@pytest.mark.parametrize('winner',['mixer','borehole'])
+def test_borehole_and_mixer_claims_are_mutually_exclusive_before_on(db,monkeypatch,winner):
+    now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now)
+    seed(db,'record_borehole_eligibility',artifact)
+    borehole={**artifact,'state':'claimed','claimed_at':now.isoformat(),
+        'primary_stop_deadline':(now+timedelta(seconds=60)).isoformat(),
+        'native_fail_stop_deadline':(now+timedelta(seconds=1800)).isoformat(),
+        'on_attempts':0,'off_attempts':0}
+    mixer={'execution_id':'RACE-MIXER-'+uuid.uuid4().hex,'consumption_key':uuid.uuid4().hex,
+        'auxiliary_device_id':'FERTILIZER-MIXER-CH2','device_type':'fertilizer_mixer',
+        'device_id':'100204d497','channel':2,'state':'claimed','claimed_at':now.isoformat(),
+        'primary_stop_deadline':(now+timedelta(seconds=600)).isoformat(),
+        'maximum_duration_seconds':600,'on_attempts':0,'off_attempts':0}
+    bodies={'mixer':mixer,'borehole':borehole};loser='mixer' if winner=='borehole' else 'borehole'
+    real=bounded.connect_bounded_rootline_postgres;first=[True];inserted=Event();release=Event();competing=Event()
+    @contextmanager
+    def pause_first_commit(**kwargs):
+        owned=first[0];first[0]=False
+        with real(**kwargs) as connection:
+            yield connection
+            if owned:
+                inserted.set();assert release.wait(2)
+    def claim(kind):
+        if kind==loser:competing.set()
+        action='claim_borehole_before_on' if kind=='borehole' else 'claim_auxiliary_before_on'
+        return store.rootline_irrigation_execution_store(action,bodies[kind])
+    with monkeypatch.context() as scoped:
+        scoped.setattr(bounded,'connect_bounded_rootline_postgres',pause_first_commit)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            winning=pool.submit(claim,winner);assert inserted.wait(2)
+            losing=pool.submit(claim,loser);assert competing.wait(2) and not losing.done()
+            release.set();assert winning.result(2)['created']
+            refused=losing.result(2);assert not refused['created'] and refused['status']=='material_load_active'
+    calls=[]
+    assert not dispatch(bodies[loser],loser,lambda:calls.append(loser))['accepted_unambiguous']
+    assert dispatch(bodies[winner],winner,lambda:calls.append(winner) or {'accepted_unambiguous':True})['accepted_unambiguous']
+    assert calls==[winner]
