@@ -19,6 +19,7 @@ def connect():
 @pytest.fixture(scope="module", autouse=True)
 def exact_migration():
     with connect() as db:
+        db.execute("create extension if not exists pgcrypto")
         db.execute("create schema if not exists app_private")
         db.execute("""create table if not exists app_private.oom_protected_action_claims(
           callback_token text primary key)""")

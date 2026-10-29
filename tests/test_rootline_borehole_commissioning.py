@@ -14,7 +14,8 @@ def provider(**changes):
     value.update(changes); return value
 def canonical(**changes):
     value={"current":True,"device_identity":"BOREHOLE-1-MINI-R4-CH1","device_id":"1002851416","channel":1,
-      "commissioning_generation":1,"baseline_sha256":"a"*64,"maximum_routine_runtime_seconds":1800}
+      "commissioning_generation":1,"baseline_sha256":"a"*64,"maximum_routine_runtime_seconds":1800,
+      "native_fail_stop_seconds":1800}
     value.update(changes); return value
 def physical(**changes):
     value={key:True for key in ("supervised","pump_started","water_flow_observed","native_auto_off_observed","pump_stopped","water_flow_stopped","manual_off_and_isolation_proven")}
@@ -31,6 +32,15 @@ def test_provider_ready_prepares_only_protected_supervised_commissioning():
     assert value["eligible_for_protected_commissioning"] is True
     assert value["blockers"]==["canonical_commissioned_baseline_absent"]
     assert value["hardware_commands"]==value["provider_control_calls"]==0
+
+def test_controller_only_readiness_uses_actual_native_cap_without_flow_claim():
+    value=assess_borehole_commissioning_readiness(provider(native_auto_off_seconds=1800),now=NOW)
+    assert value["eligible_for_protected_commissioning"]
+    assert value["maximum_test_seconds"]==1800 and value["governance_maximum_seconds"]==14400
+    assert value["physical_final_off_required"] is False
+    assert value["commissioning_fields"]["supply_pressure_or_flow_observation"]=="Unknown"
+    unsafe=assess_borehole_commissioning_readiness(provider(native_auto_off_enabled=False),now=NOW)
+    assert unsafe["maximum_test_seconds"] is None and not unsafe["eligible_for_protected_commissioning"]
 def test_ambiguity_fails_closed():
     value=assess_borehole_commissioning_readiness(provider(channels=[{"channel":1,"output_state":"Unknown"}],timers_enabled="Unknown"),now=NOW)
     assert "exact_provider_device_channel_off_identity_unproven" in value["blockers"] and value["eligible_for_protected_commissioning"] is False
@@ -107,6 +117,8 @@ class BoreholeTransport:
     def read_output_state(self,**_kwargs):
         return {"authoritative":True,"state":self.state,
             "evidence_id":"PROVIDER-"+self.state}
+    def read_safety_configuration(self,**_kwargs):
+        return {"native_auto_off_enabled":True,"native_auto_off_seconds":1800}
 
 
 def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():

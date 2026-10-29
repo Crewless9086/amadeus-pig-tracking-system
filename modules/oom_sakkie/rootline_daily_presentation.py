@@ -251,11 +251,9 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
         if any(row["controller_off_verified"] is False for row in exceptions):
             return ("Afskakeling van 'n aangetekende lopie is onbevestig — ROOTLINE kontroleer dit" if af else
                     "A recorded run has unverified shutdown — ROOTLINE is checking")
-        if any(row["kind"] == "off_readback_after_deadline" for row in exceptions):
-            return ("'n Lopie is ná sy sperdatum AF geverifieer — hersiening nodig" if af else
-                    "A run was verified OFF after its deadline — review needed")
-        return ("AF geverifieer; afskakelsperdatum moet nagegaan word" if af else
-                "OFF verified; shutdown deadline needs review")
+        # A later OFF observation does not establish an overrun. Retain that
+        # historical diagnostic in the ledger; current decisions use current
+        # state once shutdown is verified, rather than repeating an old alarm.
     state = str(lifecycle.get("state") or "Held")
     if state == "Started":
         return "Loop tans" if af else "Currently running"

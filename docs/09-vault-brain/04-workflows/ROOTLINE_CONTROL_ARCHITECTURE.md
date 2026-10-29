@@ -30,7 +30,9 @@ authority identity/version, exact device/channel, evidence cutoff, maximum
 runtime and idempotency key before ON. ON is attempted once. Ambiguity causes
 containment, never automatic ON retry. OFF is exact-channel and safely
 repeatable only inside bounded recovery until authoritative shutdown is proven.
-Completion requires the device-specific provider and physical outcome; an
+Completion requires the device-specific evidence defined by the focused Water
+And Energy Rules. Governed supply/pulse controller completion uses exact fresh
+ON/OFF readbacks; physical flow and volume remain separate and may be Unknown. An
 energized relay or accepted request is never enough.
 
 Routine B/C work may use only the explicitly enabled standing envelope in the
@@ -89,7 +91,9 @@ must own validation, commands, locks, safety policy, idempotency, audit,
 verification, and recovery. IFTTT—or a future adapter—may remain only a thin
 actuator bridge.
 
-The platform behind IFTTT is **Unknown — owner/hardware inventory required**.
+The registered irrigation and fertilizer controllers and Borehole 1 use eWeLink;
+the separately configured Eskom breaker uses SmartLife/Tuya. Exact device/channel
+and commissioning evidence is required for each; no platform-wide inheritance.
 Do not infer Home Assistant, Sonoff, Tuya, Shelly, ESP hardware, or any other
 platform without authoritative inventory evidence.
 
@@ -235,6 +239,11 @@ exception identity.
 
 ## Hardware Inventory And Owner Decisions
 
+The table below records the original discovery checklist, not a declaration that
+the now-registered controllers are unknown. Exact current bindings are in the
+typed registry and focused Water And Energy Rules; activation and outcome proof
+are recorded in the current mission handover.
+
 Every value below requires authoritative confirmation. Do not fill blanks by
 inference.
 
@@ -258,13 +267,48 @@ inference.
 
 ## Borehole 1 MINI R4 intake boundary
 
-Provider discovery currently identifies reported device `1002851416`, SONOFF MINI R4,
-displayed as `Boorgat 1 Krag Toevoer`, logical channel 1. This is a registry identity only:
-it has no approved ON/OFF event binding, no enabled authority flag and no commissioned
-physical outcome. Its commissioning contract must prove a bounded native fail-OFF,
+Device `1002851416`, SONOFF MINI R4/UIID138, displayed as
+`Boorgat 1 Krag Toevoer`, has one physical output (logical channel 1). Provider
+switch placeholders do not create four physical channels. Its paired events are
+`borehole_1_on` and `borehole_1_off`; event setup alone grants no authority.
+Its commissioning contract must prove a bounded native fail-OFF,
 power restoration OFF, timers/scenes/interlocks disabled, current provider OFF, no ON
-retry, and separately observed pump start, water flow, pump stop and stopped flow.
-Electrical state alone never proves pumping or water delivery.
+retry and resolved installed protections. Authoritative provider ON then OFF
+proves the governed supply cycle under the owner's current rules. It never
+proves pumping or water delivery. Four hours is a ceiling; a shorter exact
+validated native limit bounds every window and must not be extended.
+
+## Integrated supervision and evidence ownership
+
+The authenticated minute claim supervises active B/C, mixer, injector and
+borehole duties independently of expensive report cadence. All new starts
+retain fresh planning, per-device authority and final-edge checks. Shared
+irrigation/auxiliary locks protect the actual physical conflict; an independent
+borehole supply window does not claim the gravity irrigation controller.
+
+One canonical current decision feeds execution, the daily card and the
+specialist response. A planned Hold cannot be promoted by a second advisory
+override. A nominal two-hour B/C parent has two 3,599-second segments (7,198
+bounded seconds), with fresh reassessment and verified OFF before segment two.
+The first segment does not discharge the full parent/day obligation.
+
+Status rendering preserves provider receipt timestamps and distinguishes them
+from device-event time. A later OFF observation proves OFF at that observation;
+it does not establish the exact stop instant or actual overrun. Keep the
+historical record, but do not repeatedly escalate a resolved historical gap as
+a current unsafe output. Unknown current shutdown remains an exception.
+
+Mixer reservations, premix and completed controller intervals share the same
+SAST-day 30-minute budget. Injection uses the active canonical zone, exact fresh
+ON, two 120-second pulses and verified OFF, spacing and final flush. Pulse
+control completion does not depend on a flow sensor or manufacture a dose.
+
+Eskom uses the existing event rail and canonical device authority, fixed-host
+signed Tuya GET readback and exact IFTTT events. Claims compare the latest
+completed transition under lock; a durable dispatch reservation is single-use.
+The final raw-power freshness check and provider send remain inside the
+exclusive transition fence. Only a durable sender outcome and later readback
+permit completion; an interrupted sender cannot automatically replay.
 
 | Phase | Outcome and gate |
 | ---: | --- |
@@ -290,6 +334,9 @@ Every phase reports:
 - autonomous authority enabled.
 
 ## Reconciliation Record
+
+The following table is the historical initial-delivery record. It does not
+override the integrated contract above or establish current commissioning.
 
 | Classification | Reconciliation |
 | --- | --- |

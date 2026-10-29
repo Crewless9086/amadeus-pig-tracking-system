@@ -23,6 +23,7 @@ def artifact():
         "commissioned": True, "physical_commissioning_generation": "COMMISSION-CH2",
         "observed_at": NOW.isoformat()}
     context = {"plan_generation": "PLAN-3676", "injection_active": False,
+        "reserved_mixing_seconds_today":0,"mixing_history_valid":True,
         "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
         "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True,
         "prior_shutdown_unverified": False}

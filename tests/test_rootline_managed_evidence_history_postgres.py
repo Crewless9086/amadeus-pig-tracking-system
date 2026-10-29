@@ -163,7 +163,7 @@ def history(monkeypatch, record_property):
                             record_property(f"{phase}_{label}_{key}", value)
             return SimpleNamespace(value=new[0], error=new[1], before=before, after=after)
 
-        yield SimpleNamespace(seed=seed, compare=compare)
+        yield SimpleNamespace(seed=seed, compare=compare, fixture_url=fixture_url)
     finally:
         # All test connections have exited. No FORCE, termination or broad cleanup.
         with psycopg.connect(admin_url, autocommit=True, connect_timeout=3) as admin:
@@ -186,8 +186,10 @@ def completed_auxiliary(identity="mix", device_type="fertilizer_mixer", **extra)
     return {"action": "record_auxiliary_completed", "execution_id": identity,
         "auxiliary_device_id": "FERTILIZER-MIXER-CH2" if device_type == "fertilizer_mixer" else "FERTILIZER-INJECTION-CH1",
         "device_type": device_type, "shutdown_verified": True, "zone_execution_id": "zone-run",
+        "control_completed": True, "pulse_number": 1,
         "completed_at": (NOW - timedelta(minutes=5)).isoformat(),
-        "shutdown_evidence": {"state": "OFF", "authoritative": True, "evidence_id": identity + "-off"}, **extra}
+        "shutdown_evidence": {"state": "OFF", "authoritative": True,
+            "retrieved_at": (NOW - timedelta(minutes=5)).isoformat(), "evidence_id": identity + "-off"}, **extra}
 
 
 def interlocks(when=NOW, **extra):
@@ -207,7 +209,7 @@ def test_unrelated_heavy_history_preserves_old_unfinished_run_and_all_outcomes(h
     history.seed([completed_auxiliary(), completed_auxiliary("pulse", "fertilizer_injection_valve")], start=2000)
     outcomes = [{"fertilizer_batch_observation": {"event_type": "fertilizer_batch_prepared",
                     "observed_at": (NOW - timedelta(hours=2)).isoformat()}},
-                need(), {"borehole_interlocks": interlocks()}]
+                need(), {"provider_message_id":"synthetic-safe-1","borehole_interlocks": interlocks()}]
     history.seed(outcomes, outcomes=True)
     result = history.compare()
     assert result.error is None and result.value["status"] == "Available"
@@ -241,7 +243,11 @@ def test_auxiliary_completion_types_and_verification_are_preserved(history, devi
     history.seed([active(), item])
     result = history.compare()
     assert result.error is None
-    assert result.value["fertilizer_executions"] == ([item] if verified is True else [])
+    # Preserve uncertain reservations in the ledger: discarding them could
+    # restart a mixer indefinitely. Consumers still require exact proof.
+    assert result.value["fertilizer_executions"] == [item]
+    context=result.value["active_irrigation_context"]
+    assert context["completed_pulses"] == (1 if verified is True and device_type == "fertilizer_injection_valve" else 0)
 
 
 @pytest.mark.parametrize("changes", [
@@ -277,7 +283,10 @@ def test_batch_need_and_interlock_chronology_remains_exact(history):
     assert result.error is None
     assert result.value["fertilizer_batch_observations"] == [old_batch, prepared, refill]
     assert result.value["active_irrigation_context"]["fertilizer_needed"] is False
-    assert result.value["borehole_interlocks"] == interlocks(supply_pressure_safe=False)
+    # Unattributed positive assertions cannot clear/establish safe facts;
+    # the attributable unsafe fact is retained independently of omissions.
+    assert result.value["borehole_interlocks"] == {
+        "observed_at":NOW.isoformat(),"supply_pressure_safe":False}
     assert result.after["outcomes"]["rows"] == 5
 
 
@@ -296,7 +305,7 @@ def test_replays_and_same_timestamp_use_existing_event_id_order(history, reverse
     assert result.error is None
     context = result.value["active_irrigation_context"]
     assert context["zone_execution_id"] == "second" and context["fertilizer_needed"] is False
-    assert context["completed_pulses"] == 2
+    assert context["completed_pulses"] == 1  # Same execution replay is one pulse.
 
 
 @pytest.mark.parametrize("action", ["mark_active", "record_auxiliary_completed", "record_completed",
@@ -311,7 +320,8 @@ def test_legacy_json_string_relevant_execution_is_still_processed(history, actio
     if action == "record_auxiliary_completed":
         assert result.value["fertilizer_executions"] == [row]
     elif action == "mark_active":
-        assert result.value["active_irrigation_context"]["fertilizer_needed"] is True
+        # Standing programme does not manufacture a prepared physical batch.
+        assert result.value["active_irrigation_context"]["fertilizer_needed"] is False
     else:
         assert result.value["active_irrigation_context"] is None
     assert result.after["executions"]["rows"] == 2
@@ -354,3 +364,106 @@ def test_malformed_batch_event_type_preserves_existing_failure(history, kind):
     history.seed([{"fertilizer_batch_observation": {"event_type": kind, "observed_at": NOW.isoformat()}}], outcomes=True)
     result = history.compare()
     assert result.error[1] == "TypeError"
+
+
+@pytest.fixture
+def grid_store(history,monkeypatch):
+    """Actual production SQL in a fresh loopback-only database and real schema."""
+    import psycopg
+    from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    url=history.fixture_url; monkeypatch.setenv("DATABASE_URL",url)
+    with psycopg.connect(url) as connection:
+        connection.execute("create schema if not exists app_private")
+        connection.execute("create table app_private.migration_log(migration_id text primary key,description text)")
+        for role in ("anon","authenticated"):
+            if not connection.execute("select 1 from pg_roles where rolname=%s",(role,)).fetchone():
+                from psycopg import sql
+                connection.execute(sql.SQL("create role {}").format(sql.Identifier(role)))
+        connection.execute(Path("supabase/migrations/202608170001_add_rootline_device_registry.sql").read_text(encoding="utf-8"))
+        connection.execute("""insert into app_private.rootline_standing_authorities
+            (standing_authority_id,version,issuer,policy_sha256,active,policy_payload)
+            values('synthetic-grid','1','synthetic-owner',%s,true,'{}')""",("a"*64,))
+        connection.execute("""insert into app_private.rootline_device_registry
+            (device_key,contract_version,device_record,commissioning_stage,standing_authority_id,
+                standing_authority_version,evidence_digest,registry_generation)
+            values('ifttt_smartlife:smartlife_owner_account:synthetic-grid-001:1','rootline_device_spine.v1',
+                '{}','standing_active','synthetic-grid','1',%s,1)""",("a"*64,))
+    def body(identity="synthetic-grid-run",expected=None,age_seconds=0):
+        now=datetime.now(timezone.utc)
+        power={"observed_at":(now-timedelta(seconds=age_seconds)).isoformat(),
+            "battery_soc_pct":29,"solar_power_w":0,"load_power_w":1000,
+            "grid_power_w":0,"battery_power_w":1000,"battery_state":"discharging"}
+        return {"execution_id":identity,"device_key":"ifttt_smartlife:smartlife_owner_account:synthetic-grid-001:1",
+            "device_id":"synthetic-grid-001","desired_state":"ON","expected_transition_id":expected,
+            "baseline_sha256":"a"*64,"power_evidence":power,
+            "decision":managed_energy_decision(power,now=now),"previous_readback":{
+                "authoritative":True,"device_id":"synthetic-grid-001","state":"OFF",
+                "retrieved_at":now.isoformat(),"evidence_id":"synthetic-off"}}
+    def readback():
+        # Use the disposable database clock for this synthetic provider receipt;
+        # Windows and the container may have distinct subsecond clock offsets.
+        with psycopg.connect(url) as connection:
+            observed=connection.execute("select clock_timestamp()").fetchone()[0]
+        return {"authoritative":True,"device_id":"synthetic-grid-001","state":"ON",
+            "retrieved_at":observed.isoformat(),"evidence_id":"synthetic-on"}
+    return SimpleNamespace(store=rootline_irrigation_execution_store,body=body,readback=readback,url=url)
+
+
+def test_grid_stale_observer_cannot_claim_after_completed_transition(grid_store):
+    g=grid_store; first=g.body(); stale=g.body("stale-observer")
+    assert g.store("claim_eskom_before_command",first)["created"]
+    edge=g.store("dispatch_eskom_command_edge",{**first,"dispatch":lambda:{"accepted_unambiguous":True}})
+    assert edge["dispatched"]
+    assert g.store("record_eskom_completed",{**first,"readback":g.readback()})["success"]
+    refused=g.store("claim_eskom_before_command",stale)
+    assert not refused["created"] and refused["status"]=="eskom_observation_version_changed"
+
+
+def test_grid_final_edge_fences_sender_and_requires_post_return_observation(grid_store):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    g=grid_store; body=g.body();entered=Event();release=Event()
+    assert g.store("claim_eskom_before_command",body)["created"]
+    def send():
+        entered.set(); assert release.wait(2)
+        return {"accepted_unambiguous":True}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        edge=pool.submit(g.store,"dispatch_eskom_command_edge",{**body,"dispatch":send})
+        assert entered.wait(2)
+        premature=g.readback()
+        completion=pool.submit(g.store,"record_eskom_completed",{**body,"readback":premature})
+        assert not completion.done()
+        release.set()
+        assert edge.result(timeout=3)["dispatched"]
+        assert not completion.result(timeout=3)["success"]
+    assert g.store("record_eskom_completed",{**body,"readback":g.readback()})["success"]
+    assert not g.store("dispatch_eskom_command_edge",{**body,
+        "dispatch":lambda:pytest.fail("completed sender cannot replay")})["dispatched"]
+
+
+def test_grid_crash_without_outcome_cannot_complete_or_resend(grid_store):
+    g=grid_store;body=g.body();assert g.store("claim_eskom_before_command",body)["created"]
+    calls=[]
+    def interrupted():
+        calls.append("one attempt");raise RuntimeError("synthetic interruption before durable outcome")
+    with pytest.raises(RuntimeError):
+        g.store("dispatch_eskom_command_edge",{**body,"dispatch":interrupted})
+    assert not g.store("record_eskom_completed",{**body,"readback":g.readback()})["success"]
+    assert not g.store("claim_eskom_before_command",g.body("replacement"))["created"]
+    assert not g.store("dispatch_eskom_command_edge",{**body,
+        "dispatch":lambda:pytest.fail("interrupted sender cannot replay")})["dispatched"]
+    assert len(calls)==1
+
+
+def test_grid_final_edge_rechecks_energy_after_waiting_for_lock(grid_store):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    import psycopg
+    g=grid_store;body=g.body(age_seconds=901)
+    # Simulate the previously fresh decision retained while provider calls took
+    # it beyond the 15-minute boundary. Production SQL reevaluates raw evidence.
+    body["decision"]={**body["decision"],"fresh":True,"eskom_requested_state":"ON"}
+    assert g.store("claim_eskom_before_command",body)["created"]
+    result=g.store("dispatch_eskom_command_edge",{**body,"dispatch":lambda:pytest.fail("stale edge cannot send")})
+    assert not result["dispatched"] and result["status"]=="eskom_edge_evidence_stale"

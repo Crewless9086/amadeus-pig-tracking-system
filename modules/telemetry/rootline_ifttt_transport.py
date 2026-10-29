@@ -84,7 +84,8 @@ class RootlineIFTTTTransport:
                 and target.get("output_state") == "OFF"
                 and target.get("power_restoration_state") == "OFF"
                 and target.get("native_auto_off_enabled") is True
-                and int(target.get("native_auto_off_seconds") or 0) == 14400)
+                and type(target.get("native_auto_off_seconds")) is int
+                and 1 <= target["native_auto_off_seconds"] <= 14400)
         if (snapshot.get("actuation_safety_complete") is not True
                 or snapshot.get("current_outputs_authoritative") is not True
                 or snapshot.get("timers_enabled") is not False
@@ -109,8 +110,10 @@ class RootlineIFTTTTransport:
                     and assigned.get("identity") != "FERTILIZER-INJECTION-CH1"):
                 return False
             assigned_row = rows.get(assigned_channel) or {}
-            if (str(self.environ.get(assigned["authority_flag"]) or "").lower() == "true"
-                    or assigned_row.get("native_auto_off_enabled") is not True
+            # Both capabilities may be authorized for sequential operation.
+            # The all-outputs-OFF check above and canonical dispatch locks prevent
+            # simultaneous use; a sibling enable flag is not an ON reading.
+            if (assigned_row.get("native_auto_off_enabled") is not True
                     or int(assigned_row.get("native_auto_off_seconds") or 0)
                         != int(assigned["native_fail_stop_seconds"])):
                 return False
@@ -135,6 +138,9 @@ class RootlineIFTTTTransport:
     def set_state(self, *, device_id, channel, state, idempotency_key):
         contract = self._binding(device_id, channel)
         state = str(state or "").upper()
+        if (contract["collection"] == "irrigation_zones"
+                and contract.get("commissioned") is not True):
+            return {"accepted_unambiguous": False, "status": "irrigation_output_not_commissioned"}
         if (state == "ON" and contract["collection"] == "irrigation_auxiliary_devices"
                 and str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"
                 and not (callable(self.auxiliary_on_authorizer)

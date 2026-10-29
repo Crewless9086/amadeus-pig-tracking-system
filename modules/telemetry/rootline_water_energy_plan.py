@@ -171,6 +171,20 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         mixing_history_complete_through=evidence.get(
             "fertilizer_history_complete_through"),
         active_irrigation_context=evidence.get("active_irrigation_context"), now=now)
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    energy = managed_energy_decision(power, now=now,
+        reserve_pct=reserve["governing_reserve_soc_pct"])
+    from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
+    mixing = mixing_daily_accounting(evidence.get("fertilizer_executions"), now=now,
+        batch=fertilizer_batch)
+    for task in auxiliary["irrigation_auxiliary_tasks"]:
+        if task.get("device_type") != "fertilizer_mixer" or task.get("decision") != "Run now":
+            continue
+        if not energy["mixing_eligible"]:
+            task.update(decision="Run later", reason="fresh_power_or_discretionary_reserve_required")
+        elif evidence.get("active_irrigation_context") or (mixing["premix_verified"]
+                and any(row.get("recommendation") == "Recommend" and str(row.get("task_id") or "").startswith("irrigation_") for row in tasks)):
+            task.update(decision="Run later", reason="irrigation_and_injection_opportunity_first")
     status = _overall_status(tasks)
     evidence_observed_at = _latest_observed_at(power, weather, forecast, tanks, now)
     canonical_evidence = {
@@ -228,6 +242,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         },
         "rain_capture": rain,
         "battery_reserve": reserve,
+        "managed_energy_decision": energy,
         "tank_evidence": {
             "status": tank_state["overall"],
             "storage_reported_count": (tanks.get("storage_fraction") or [tanks.get("storage_reported_count")])[0],
@@ -738,11 +753,14 @@ def _normalize_power(packet):
         "observed_at": source.get("last_reading_at"),
         "stale_after_minutes": source.get("stale_after_minutes", 15),
         "battery_soc_pct": current.get("battery_soc_pct"),
+        "battery_power_w": current.get("battery_power_w"),
+        "battery_state": current.get("battery_state"),
         "solar_power_w": current.get("solar_power_w"),
         "load_power_w": current.get("load_power_w"),
         "grid_power_w": current.get("grid_power_w"),
         "grid_state": current.get("grid_state"),
         "status": packet.get("status"),
+        "conflicting": packet.get("conflicting") is True or current.get("conflicting") is True,
     }
 
 
@@ -833,7 +851,9 @@ def _read_managed_device_evidence(database_url, now):
                            or jsonb_typeof(review_json->'rootline_execution'->'action')
                                is distinct from 'string'
                            or review_json->'rootline_execution'->>'action' in (
-                               'record_auxiliary_completed', 'mark_active',
+                               'record_auxiliary_completed', 'claim_auxiliary_before_on',
+                               'record_auxiliary_control_pulse_stopped', 'contain_auxiliary_device',
+                               'mark_auxiliary_active', 'mark_active',
                                'record_completed', 'record_ambiguous_shutdown',
                                'record_claim_recovery', 'contain_zone'))
                     order by created_at,review_event_id""")
@@ -849,12 +869,14 @@ def _read_managed_device_evidence(database_url, now):
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
     executions = [row for row in executions if isinstance(row, dict)]
     outcomes = [row for row in outcomes if isinstance(row, dict)]
-    auxiliary = [row for row in executions if row.get("action") ==
-        "record_auxiliary_completed" and row.get("shutdown_verified") is True]
+    auxiliary = [row for row in executions if row.get("auxiliary_device_id") in {
+        "FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}]
     active = _latest_open_irrigation_execution(executions)
     batch_observations = []
-    fertilizer_needed = None
-    borehole_interlocks = None
+    # The standing programme applies to eligible B/C runs. A fresh explicit
+    # exclusion still wins; the programme does not establish a physical batch.
+    fertilizer_needed = True
+    interlock_observations = []
     for outcome in outcomes:
         observation = outcome.get("fertilizer_batch_observation")
         if _valid_fertilizer_batch_observation(observation):
@@ -865,17 +887,25 @@ def _read_managed_device_evidence(database_url, now):
                     <= timedelta(hours=24)):
             fertilizer_needed = outcome["fertilizer_needed"]
         candidate = outcome.get("borehole_interlocks")
-        if _valid_borehole_interlocks(candidate, now):
-            borehole_interlocks = dict(candidate)
+        if isinstance(candidate, dict):
+            interlock_observations.append({**candidate,"provider_message_id":
+                candidate.get("provider_message_id") or outcome.get("provider_message_id")})
     batch = build_fertilizer_batch_lifecycle(observations=batch_observations,
         executions=auxiliary, now=_as_za(now))
     context = _active_irrigation_context(active, auxiliary, fertilizer_needed,
         batch.get("batch_generation"))
+    if context:
+        from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
+        mix = mixing_daily_accounting(auxiliary, now=_as_za(now), batch=batch)
+        context["premix_verified"] = (batch.get("state") == "batch_reported_prepared"
+            and mix["premix_verified"])
+        context["fertilizer_needed"] = (fertilizer_needed
+            and batch.get("state") == "batch_reported_prepared")
     return {"status": "Available", "fertilizer_batch_observations": batch_observations,
         "fertilizer_executions": auxiliary,
         "fertilizer_history_complete_through": _as_za(now).isoformat(),
         "active_irrigation_context": context,
-        "borehole_interlocks": borehole_interlocks}
+        "borehole_interlocks": _project_borehole_interlocks(interlock_observations, now)}
 
 
 def _latest_open_irrigation_execution(events):
@@ -914,10 +944,25 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
     if (active.get("device_id") != zone_binding.get("device_id")
             or active.get("channel") != zone_binding.get("channel")):
         return None
-    pulses = [row for row in auxiliary
+    pulses = {row.get("execution_id"): row for row in auxiliary
         if row.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
-        and row.get("zone_execution_id") == execution_id]
-    prior = pulses[-1].get("shutdown_evidence") if pulses else None
+        and row.get("device_type") == "fertilizer_injection_valve"
+        and row.get("zone_execution_id") == execution_id
+        and row.get("action") == "record_auxiliary_completed"
+        and row.get("control_completed") is True and row.get("shutdown_verified") is True}
+    pulses = sorted(pulses.values(), key=lambda row: int(row.get("pulse_number") or 0))
+    from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time
+    start_at = controller_readback_time(active, "start_evidence", "ON")
+    if start_at is None:
+        return None
+    start = {**start, "observed_at": start_at.isoformat(), "zone_execution_id": execution_id}
+    prior = None
+    if pulses:
+        pulse = pulses[-1]
+        stopped = controller_readback_time(pulse, "shutdown_evidence", "OFF")
+        if stopped:
+            prior = {**pulse["shutdown_evidence"], "observed_at": stopped.isoformat(),
+                "zone_execution_id": execution_id, "shutdown_verified": True}
     return {"plan_generation": str(active.get("evidence_generation") or ""),
         "batch_generation": str(batch_generation or ""),
         "fertilizer_needed": fertilizer_needed is True,
@@ -930,23 +975,77 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
         "zone_output_evidence": {**start, "zone_execution_id": execution_id},
         "irrigation_stop_deadline": active.get("primary_stop_deadline"),
         "completed_pulses": len(pulses), "prior_pulse_shutdown_evidence": prior,
-        "mixer_active": False, "prior_shutdown_unverified": False}
+        "mixer_active": False, "prior_shutdown_unverified": any(
+            row.get("action") == "contain_auxiliary_device"
+            and row.get("shutdown_verified") is not True for row in auxiliary)}
 
 
 def _valid_fertilizer_batch_observation(value):
     return (isinstance(value, dict) and value.get("event_type") in {
-        "fertilizer_batch_prepared", "water_only_refill"}
+        "fertilizer_batch_prepared", "water_only_refill", "fertilizer_batch_empty",
+        "fertilizer_batch_unsafe", "fertilizer_batch_not_ready"}
         and _managed_time(value.get("observed_at")) is not None)
+
+
+def _project_borehole_interlocks(rows, now):
+    """Keep each latest attributable safety fact; omissions cannot clear faults."""
+    current = _as_za(now).astimezone(timezone.utc)
+    ordered = sorted(((_managed_time(row.get("observed_at")), row) for row in rows
+        if isinstance(row, dict) and _managed_time(row.get("observed_at")) is not None),
+        key=lambda pair:pair[0])
+    facts={}
+    positive=("dry_run_safe","low_water_clear","supply_pressure_safe","full_tank_not_blocking")
+    negative=("manual_isolation_active","full_tank_cutoff_fault")
+    for at,row in ordered:
+        if at>current: continue
+        attributable=bool(row.get("evidence_id") or row.get("provider_message_id"))
+        for key in positive+negative:
+            if type(row.get(key)) is not bool: continue
+            unsafe = row[key] is (key in negative)
+            if key in facts and facts[key][0] == at and facts[key][1] != row[key]:
+                facts[key]=(at,key in negative)
+                continue
+            if unsafe:
+                facts[key]=(at,row[key])
+            elif attributable and (key in negative or current-at<=timedelta(minutes=15)):
+                facts[key]=(at,row[key])
+    if not facts:
+        return None
+    return {**{key:value for key,(at,value) in facts.items()},
+        "observed_at":max(at for at,_ in facts.values()).isoformat()}
+
+
+def read_current_borehole_faults(database_url, *, now):
+    """One bounded safety read, independent of reports and planning history."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with connect_bounded_rootline_postgres(database_url=database_url) as connection:
+        rows=connection.execute("""select review_json->'rootline_operational_intake'->'outcome'
+            from public.sam_live_stock_conversation_review_events
+            where event_source='oom_sakkie_rootline_operational_intake'
+              and review_json->'rootline_operational_intake'->>'state'
+                in ('completed','contextual_followup_completed')
+              and jsonb_typeof(review_json->'rootline_operational_intake'->'outcome'->'borehole_interlocks')='object'
+            order by created_at,review_event_id""").fetchall()
+    observations=[]
+    for row in rows:
+        outcome=_json_object(row[0]) or {}; fact=outcome.get("borehole_interlocks") or {}
+        observations.append({**fact,"provider_message_id":fact.get("provider_message_id") or outcome.get("provider_message_id")})
+    facts=_project_borehole_interlocks(observations,now) or {}
+    return not (any(facts.get(key) is False for key in ("dry_run_safe","low_water_clear","supply_pressure_safe"))
+        or facts.get("manual_isolation_active") is True or facts.get("full_tank_cutoff_fault") is True)
 
 
 def _valid_borehole_interlocks(value, now):
     observed = _managed_time(value.get("observed_at")) if isinstance(value, dict) else None
     current = _as_za(now).astimezone(timezone.utc)
-    return (isinstance(value, dict) and observed is not None
-        and timedelta(0) <= current-observed <= timedelta(minutes=15)
-        and all(type(value.get(key)) is bool for key in (
-            "dry_run_safe", "low_water_clear", "supply_pressure_safe",
-            "full_tank_not_blocking")))
+    fields = ("dry_run_safe", "low_water_clear", "supply_pressure_safe", "full_tank_not_blocking")
+    if not isinstance(value, dict) or observed is None or observed > current:
+        return False
+    # Unsafe reports do not become safe merely by aging out. A later fresh
+    # complete observation may supersede them; missing facts never clear them.
+    unsafe = any(value.get(key) is False for key in fields) or value.get("manual_isolation_active") is True
+    return unsafe or (current-observed <= timedelta(minutes=15)
+        and all(type(value.get(key)) is bool for key in fields))
 
 
 def _json_object(value):
@@ -1172,29 +1271,9 @@ def _rain_effect(weather, weather_state, forecast, forecast_state):
 
 
 def _borehole_task(tanks, tank_state, demand, rain, reserve):
-    urgent = demand.get("status") == "urgent"
-    storage = _tank_amount(tanks, "storage")
-    if rain["borehole_avoidance_signal"] and not urgent:
-        rec, reason = "Do Not Run", (
-            "Fresh live rain; avoid unnecessary borehole pumping."
-            if rain["current_rain_status"] == "Hold"
-            else "Fresh credible forecast indicates meaningful roof-capture rain."
-        )
-    elif tank_state["storage"] in {"stale", UNAVAILABLE} or storage is None:
-        rec, reason = "Needs Data", "Fresh storage count is unavailable."
-    elif tanks.get("storage_state") == "FULL" and not urgent:
-        rec, reason = "Do Not Run", "Storage was explicitly observed FULL."
-    elif urgent:
-        rec, reason = "Recommend", "Urgent water continuity can justify grid exposure."
-    else:
-        rec, reason = "Hold", (
-            "Standing water continuity is protected; current storage evidence does "
-            "not support borehole catch-up before the next reassessment."
-        )
-    return _task("borehole", rec, reason, "overnight_or_surplus_solar", [
-        "fresh_storage_observation", "genuine_water_need",
-        "SmartLife_device_binding_unresolved",
-    ], reserve)
+    return _task("borehole", "Recommend",
+        "Protect water continuity: keep borehole supply available under fresh battery/grid protections; the internal full-tank cutoff controls pumping.",
+        "standing_supply_with_native_fail_stop", ["fresh_energy_and_canonical_device_authority"], reserve)
 
 
 def _transfer_task(tanks, tank_state, demand, reserve):

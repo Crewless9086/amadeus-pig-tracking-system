@@ -267,7 +267,7 @@ def test_replay_and_concurrent_same_bucket_supervise_once(reports):
     assert sum(value["hardware_commands"] for value, _, _, _ in results) == 1
 
 
-def test_before_deadline_retains_managed_devices_but_shutdown_tick_does_not(reports):
+def test_each_minute_supervises_managed_devices_but_shutdown_tick_forbids_new_starts(reports):
     managed_calls = []
     env = {**ENV, "ROOTLINE_FERTILIZER_INJECTION_ENABLED": "true"}
     # Use the actual gateway, runtime and coordinator with a fake managed edge.
@@ -278,10 +278,10 @@ def test_before_deadline_retains_managed_devices_but_shutdown_tick_does_not(repo
             family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"},
             active_supervision_cycle=supervisor(store, transport),
             execution_cycle=lambda **k: pytest.fail("new B/C cycle after active supervision"),
-            managed_device_cycle=lambda **k: managed_calls.append(due) or {
+            managed_device_cycle=lambda **k: managed_calls.append((due,k["allow_new_starts"])) or {
                 "success": True, "status": "no_active_managed_device", "blocks_bc": False})
         handle_rootline_reassessment_trigger(payload(), HEADERS, env, **options)
-    assert managed_calls == [False]
+    assert managed_calls == [(False,True),(True,False)]
 
 
 def test_existing_injector_shutdown_interlock_is_preserved(monkeypatch):
@@ -411,6 +411,7 @@ def test_production_plan_recovery_failure_happens_only_after_supervision(reports
     value, status = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
         schedule_store=ScheduleStore(), scheduler_now=NOW,
         active_supervision_cycle=supervisor(store, transport),
+        managed_device_cycle=lambda **k: {"success":True,"status":"no_active_managed_device","blocks_bc":False},
         family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"})
     assert status == 202 and value["status"] == "scheduled_rootline_daily_plan_persistence_ambiguous"
     assert value["execution_status"] == "segment_completed" and value["hardware_commands"] == 1

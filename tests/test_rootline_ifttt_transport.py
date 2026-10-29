@@ -47,9 +47,9 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         self.assertEqual(result["event"], "irrigation_1_ch1_on")
         self.assertEqual(len(calls), 1)
         self.assertNotIn("protected-secret", repr(result))
-        with self.assertRaisesRegex(ValueError, "binding_invalid"):
-            transport.set_state(device_id="100204e9bc", channel=3, state="ON",
-                                idempotency_key="X")
+        disabled=transport.set_state(device_id="100204e9bc", channel=3, state="ON",idempotency_key="X")
+        self.assertEqual(disabled["status"],"irrigation_output_not_commissioned")
+        self.assertEqual(len(calls),1)
 
     def test_missing_secret_or_ambiguous_provider_never_claims_acceptance(self):
         transport, calls = self.transport(environ={})
@@ -128,6 +128,7 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         safety_value=transport.read_safety_configuration(device_id="100204d497",channel=2)
         context={"plan_generation":"PLAN-EDGE","injection_active":False,
             "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
+            "reserved_mixing_seconds_today":0,"mixing_history_valid":True,
             "mixing_history_complete_through":now.isoformat(),"power_suitable":True}
         artifact=build_auxiliary_eligibility(task={
             "auxiliary_device_id":"FERTILIZER-MIXER-CH2","planned_seconds":1800},safety=safety_value,
@@ -174,7 +175,7 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
                 device_id="100204d497",channel=2)["authoritative"])
         assigned,_=self.transport(self.fertilizer_snapshot(),environ={
             "ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true"})
-        self.assertFalse(assigned.read_safety_configuration(
+        self.assertTrue(assigned.read_safety_configuration(
             device_id="100204d497",channel=2)["authoritative"])
 
     def test_mixer_boundary_blocks_missing_or_wrong_target_auto_off(self):

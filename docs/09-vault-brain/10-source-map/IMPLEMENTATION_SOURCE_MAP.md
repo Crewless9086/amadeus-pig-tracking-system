@@ -1,5 +1,49 @@
 # Implementation Source Map
 
+## ROOTLINE integrated operation
+
+- `modules/telemetry/rootline_execution_runtime.py`,
+  `rootline_managed_devices_runtime.py` and the authenticated scheduled handler
+  in `modules/oom_sakkie/telegram_gateway.py` supervise existing managed duties
+  before optional reports. Fresh energy and attributable borehole faults are
+  separate from the planning factory and do not suppress independent gravity B/C.
+- `rootline_irrigation_execution_store.py`, `rootline_irrigation_history.py`,
+  `rootline_execution_authority.py` and `rootline_adaptive_irrigation.py` retain
+  two-segment parent accounting and fresh continuation. Current specialist and
+  owner messages consume the same canonical decision and preserve actual
+  controller receipt clocks without claiming physical stop time or water volume.
+- `rootline_auxiliary_management.py`, `rootline_irrigation_coordinator.py` and
+  `rootline_water_energy_plan.py` own the shared daily mixing reservations,
+  prepared-batch lifecycle, active-zone preflow, two bounded pulses and flush.
+  The existing protected commissioning producer/finalizer in
+  `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py` uses that same
+  reservation ledger and fresh power policy; controller-cycle proof remains
+  separate from physical flow evidence.
+  `modules/oom_sakkie/operational_specialist_intake.py` supplies real authenticated,
+  deduplicated batch facts on the existing intake rail.
+- `rootline_energy_policy.py` owns fresh 30/35 solar-recovery hysteresis and
+  separate discretionary mixer reserve. `rootline_eskom_runtime.py` binds that
+  decision to canonical grid authority and locked single-use dispatch/outcome;
+  `rootline_tuya_readback.py` implements fixed-host, signed, bounded exact-device
+  GETs with sanitized plan/access errors. No source configuration enables it.
+  A bounded per-process observation throttle skips deadband reads and polls
+  unchanged/failed decisions at most every 15 minutes. Changed decisions and
+  post-command verification require fresh reads; cached state grants no command.
+  At one existing process this is at most 8,640 baseline GETs per 30-day month,
+  plus transitions/restarts. It is not an account-wide provider quota cap.
+- `rootline_ewelink_oauth.py` recognizes the exact registered MINI R4/UIID138
+  single physical outlet without hiding native timer or competing-schedule
+  gaps. `rootline_borehole_commissioning.py` resolves installed protection
+  evidence and bounds each supply window by the validated native cap.
+  A/E channel mappings remain explicitly plumbing-not-ready and inactive.
+- Qualification: `tests/test_rootline_integrated_operation.py`,
+  `tests/test_rootline_eskom_runtime.py`,
+  `tests/test_rootline_managed_evidence_history_postgres.py` and adjacent
+  gateway, managed-recovery, coordinator, transport, history, intake and
+  commissioning suites. Pure tests use synthetic providers; native PostgreSQL
+  tests are restricted to a disposable local database. Implementation does not
+  establish deployment, device commissioning or unattended owner acceptance.
+
 ## CORE bounded cloud engineering
 
 - Status: implementation under qualification; no autonomous coding outcome yet.

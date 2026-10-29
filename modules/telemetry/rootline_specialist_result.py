@@ -427,7 +427,7 @@ def _recommendations(
         task = deepcopy(tasks.get(task_id) or {})
         status = _public_status(task.get("recommendation"))
         reason = task.get("reason") or "Canonical task evidence is unavailable."
-        if identity == "borehole" and forecast_only_delay:
+        if identity == "borehole" and forecast_only_delay and task.get("preferred_window") != "standing_supply_with_native_fail_stop":
             if water_demand.get("status") == "urgent":
                 status, reason = _borehole_after_forecast_delay(plan, evidence)
             elif delay_active:
@@ -460,16 +460,8 @@ def _recommendations(
                 evidence.get("weather")
                 if isinstance(evidence.get("weather"), dict) else {}
             )
-            if (
-                _public_status(zone.get("recommendation")) == "Recommend"
-                and _observed_local_rain(evidence, now) is False
-            ):
-                status = "Recommend"
-                reason = (
-                    "Daily Advisor supports this zone and fresh current local "
-                    "weather does not show live rain. Forecast alone cannot "
-                    "indefinitely suppress the recommendation."
-                )
+            # The composed task already reconciles advisor, fresh need, parent
+            # remainder and safety. Do not publish a second contrary decision.
         if identity == "solar_transfer_dependency":
             if status == "Recommend":
                 status = "Hold"

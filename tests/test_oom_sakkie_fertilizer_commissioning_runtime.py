@@ -76,12 +76,12 @@ class Store:
 
 class Transport:
     auxiliary_on_authorizer = None
-    def __init__(self): self.state = "OFF"; self.commands = []
+    def __init__(self): self.state = "OFF"; self.commands = []; self.now=NOW
     def read_safety_configuration(self, **_kwargs):
         return {**safety(), "output_state": self.state}
     def read_output_state(self, **_kwargs):
         return {"authoritative": True, "state": self.state,
-                "evidence_id": "OUTPUT-" + self.state, "retrieved_at": NOW.isoformat()}
+                "evidence_id": "OUTPUT-" + self.state, "retrieved_at": self.now.isoformat()}
     def set_state(self, *, device_id, channel, state, idempotency_key):
         if state == "ON" and (not callable(self.auxiliary_on_authorizer)
                 or not self.auxiliary_on_authorizer(
@@ -132,12 +132,14 @@ def test_scheduler_recovers_after_native_deadline_and_never_retries_on():
         acceptance_loader=lambda *_args: True)
     assert started["status"] == "auxiliary_started"
     transport.state = "OFF"  # native provider auto-OFF
+    transport.now=NOW+timedelta(seconds=1801)
     completed = recover_fertilizer_commissioning(now=NOW + timedelta(seconds=1801),
         store=store, transport=transport)
     assert completed["status"] == "auxiliary_completed"
     assert [row[0] for row in transport.commands] == ["ON", "OFF"]
     assert completed["mixing_enabled"] is True
     assert completed["injection_enabled"] is False
+    assert completed["commissioning_outcome"]["execution"]["physical_outcome_verified"] is False
 
 
 def test_natural_physical_followup_is_retained_and_enables_only_mixing_after_shutdown():
@@ -157,6 +159,7 @@ def test_natural_physical_followup_is_retained_and_enables_only_mixing_after_shu
         acceptance_loader=lambda *_args: True)
     assert retained["requires_visible_notification"] is True
     transport.state = "OFF"
+    transport.now=NOW+timedelta(seconds=1801)
     completed = recover_fertilizer_commissioning(now=NOW + timedelta(seconds=1801),
         store=store, transport=transport)
     assert completed["mixing_enabled"] is True
@@ -248,6 +251,7 @@ def test_protected_mixer_never_recovers_an_unrelated_active_auxiliary():
     eligibility = build_auxiliary_eligibility(
         task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2", "planned_seconds": 1800}, safety=safety(),
         context={"plan_generation": "PLAN", "injection_active": False,
+            "reserved_mixing_seconds_today":0,"mixing_history_valid":True,
             "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
             "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True,
             "prior_shutdown_unverified": False},
@@ -267,6 +271,7 @@ def test_protected_callback_recovers_durable_completion_after_claim_write_crash(
     eligibility = build_auxiliary_eligibility(
         task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2", "planned_seconds": 1800}, safety=safety(),
         context={"plan_generation": "PLAN", "injection_active": False,
+            "reserved_mixing_seconds_today":0,"mixing_history_valid":True,
             "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
             "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True,
             "prior_shutdown_unverified": False},

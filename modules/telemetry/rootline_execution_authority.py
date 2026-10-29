@@ -108,8 +108,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "storage_replenishment_assumed_required": True,
         "current_contradictory_evidence": False}
     obligation = task.get("weekly_obligation") if isinstance(task.get("weekly_obligation"), dict) else {}
-    if (obligation.get("status") != "available"
-            or int(obligation.get("delivery_debt_days") or 0) <= 0):
+    if obligation.get("status") != "available":
         return _none("weekly_delivery_debt_not_dispatchable")
     controller_status = _controller(controller, zone, now)
     if not controller_status:
@@ -155,6 +154,12 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         return _none("canonical_job_history_invalid")
     if segment.get("status") != "segment_ready":
         return _none(segment.get("status") or "canonical_job_not_dispatchable")
+    # A verified partial parent owns its remaining obligation. Requiring a new
+    # whole-day debt here can strand segment two after segment one's history.
+    continuing = (parent_job is not None and segment["segment_number"] > 1
+                  and segment["cumulative_verified_runtime_seconds"] > 0)
+    if int(obligation.get("delivery_debt_days") or 0) <= 0 and not continuing:
+        return _none("weekly_delivery_debt_not_dispatchable")
     consumption_key = "ROOTLINE-IRRIGATION-CONSUMPTION-" + _digest({
         "source_plan_generation": source_plan_generation,
         "operating_date": operating_date,

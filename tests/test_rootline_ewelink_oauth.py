@@ -11,6 +11,27 @@ from modules.telemetry.rootline_ewelink_oauth import (
 from modules.telemetry import rootline_ewelink_oauth as oauth_module
 
 NOW = datetime(2026, 8, 6, 8, 0, tzinfo=timezone.utc)
+
+
+def test_exact_mini_r4_projects_only_physical_outlet_and_preserves_unsafe_timers():
+    device={"deviceid":"1002851416","productModel":"MINIR4","extra":{"uiid":138},
+        "name":"Boorgat 1 Krag Toevoer","online":True,"params":{
+            "switches":[{"outlet":i,"switch":"off"} for i in range(4)],
+            "configure":[{"outlet":0,"startup":"off","width":30000}],
+            "pulses":[{"outlet":0,"pulse":"off","switch":"off","width":500}],
+            "timers":[{"enabled":1,"type":"repeat"},{"enabled":1,"type":"repeat"}]}}
+    result=normalize_device_readback(device=device,status={},retrieved_at=NOW)
+    assert result["physical_output_count"]==1 and len(result["channels"])==1
+    assert result["channels"][0]=={"channel":1,"output_state":"OFF",
+        "native_auto_off_enabled":False,"native_auto_off_seconds":0.5,"power_restoration_state":"OFF"}
+    assert result["timers_enabled"] is True and result["actuation_configuration_safe"] is False
+    assert result["commissioned_baseline_id"] is None
+    assert "native_auto_off_duration" not in result["safety_readback_missing"]
+    assert "conflicting_control_paths" in result["safety_readback_missing"]
+    for changes in ({"deviceid":"other"},{"productModel":"other"},{"extra":{"uiid":9}}):
+        unknown=normalize_device_readback(device={**device,**changes},status={},retrieved_at=NOW)
+        assert len(unknown["channels"])==4
+        assert "native_auto_off_duration" in unknown["safety_readback_missing"]
 REDIRECT = "https://amadeus-pig-tracking-system.onrender.com/api/rootline/provider/ewelink/oauth/callback"
 
 

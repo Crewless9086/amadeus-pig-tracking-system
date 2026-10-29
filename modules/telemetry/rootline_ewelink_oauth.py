@@ -260,9 +260,9 @@ def _current_output_status(params):
     return outlets == {0, 1, 2, 3}
 
 
-def _missing_safety_status(params):
-    pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"})
-    configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"})
+def _missing_safety_status(params, outlets=(0, 1, 2, 3)):
+    pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"}, outlets)
+    configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"}, outlets)
     checks = {
         "native_auto_off_enabled": bool(pulses),
         "native_auto_off_duration": bool(pulses) and all(
@@ -283,11 +283,24 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
     device_params = device.get("params") if isinstance(device.get("params"), dict) else {}
     status_params = status.get("params") if isinstance(status.get("params"), dict) else {}
     params = {**device_params, **status_params}
-    if not _current_output_status(params):
+    # The exact registered MINI R4/UIID138 reports four switch placeholders,
+    # but only outlet zero exists physically. Never infer this device class
+    # from missing fields or apply it to an unknown four-channel controller.
+    single = (device.get("deviceid") == "1002851416"
+        and device.get("productModel") == "MINIR4"
+        and (device.get("extra") or {}).get("uiid") == 138)
+    outlets = (0,) if single else (0, 1, 2, 3)
+    outputs = _outlet_records(params.get("switches"), "switch", {"on", "off"})
+    if single and outputs:
+        outputs = {0: outputs[0]}
+    elif single:
+        outputs = _outlet_records(params.get("switches"), "switch", {"on", "off"}, outlets)
+        if not outputs and params.get("switch") in {"on", "off"}:
+            outputs = {0: {"switch": params["switch"], "outlet": 0}}
+    if not outputs:
         raise OAuthFailure("ewelink_device_status_incomplete")
-    outputs = _outlet_records(params["switches"], "switch", {"on", "off"})
-    pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"})
-    configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"})
+    pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"}, outlets)
+    configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"}, outlets)
     retrieved_at = _aware(retrieved_at)
     provider_timestamp_supplied = False
     observed_at = None
@@ -313,7 +326,7 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
     timers = params.get("timers") if isinstance(params.get("timers"), list) else None
     scenes, provider_scenes_supported, scene_evidence_conflict = _scene_evidence(params)
     interlock = params.get("interlock")
-    missing = _missing_safety_status(params)
+    missing = _missing_safety_status(params, outlets)
     if provider_timestamp_supplied and not timestamp_fresh:
         missing.append("provider_timestamp")
     # UIID9 documents switches, pulses, configure and timers.  It does not
@@ -355,10 +368,10 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
         "output_state": outputs[outlet]["switch"].upper(),
         "native_auto_off_enabled": ((pulses.get(outlet) or {}).get("pulse") == "on")
             if outlet in pulses else None,
-        "native_auto_off_seconds": ((pulses.get(outlet) or {}).get("width") // 1000)
+        "native_auto_off_seconds": _native_seconds((pulses.get(outlet) or {}).get("width"))
             if isinstance((pulses.get(outlet) or {}).get("width"), int) else None,
         "power_restoration_state": (configured.get(outlet) or {}).get("startup", "").upper() or None,
-    } for outlet in range(4)]
+    } for outlet in outlets]
     safety_complete = not missing and device.get("online") is True
     configuration_safe = (safety_complete and all(
         row["output_state"] == "OFF"
@@ -375,6 +388,10 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
         "actuation_configuration_safe": configuration_safe,
         "actuation_eligible": False,
         "device_id": str(device.get("deviceid") or ""),
+        "device_name": str(device.get("name") or ""),
+        "device_model": str(device.get("productModel") or ""),
+        "device_uiid": (device.get("extra") or {}).get("uiid"),
+        "physical_output_count": len(outlets),
         "online": device.get("online") is True,
         "firmware": firmware,
         "channels": channel_rows,
@@ -413,8 +430,8 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
     }
 
 
-def _outlet_records(value, field, allowed):
-    if not isinstance(value, list) or len(value) != 4:
+def _outlet_records(value, field, allowed, outlets=(0, 1, 2, 3)):
+    if not isinstance(value, list) or len(value) != len(outlets):
         return {}
     result = {}
     for item in value:
@@ -422,7 +439,11 @@ def _outlet_records(value, field, allowed):
                 or item.get("outlet") in result or item.get(field) not in allowed):
             return {}
         result[item["outlet"]] = item
-    return result if set(result) == {0, 1, 2, 3} else {}
+    return result if set(result) == set(outlets) else {}
+
+
+def _native_seconds(milliseconds):
+    return milliseconds // 1000 if milliseconds % 1000 == 0 else milliseconds / 1000
 
 
 def _timer_disabled(value):

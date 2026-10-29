@@ -46,7 +46,7 @@ def safety(device="injection",**changes):
 
 def injection_context(**changes):
     value={"plan_generation":"PLAN-1","batch_generation":"BATCH-1",
-        "fertilizer_needed":True,
+        "fertilizer_needed":True,"premix_verified":True,
         "job_id":"ROOTLINE-IRRIGATION-JOB-"+"A"*24,"job_sha256":"a"*64,
         "segment_identity":"ROOTLINE-JOB-SEGMENT-"+"B"*24,
         "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EXEC-1",
@@ -70,8 +70,10 @@ def injection_eligibility(**context_changes):
 def mixer_eligibility(**context_changes):
     context={"plan_generation":"PLAN-MIX-1","injection_active":False,
         "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
+        "mixing_history_valid":True,"reserved_mixing_seconds_today":0,
         "mixing_history_complete_through":NOW.isoformat(),"power_suitable":True}
     context.update(context_changes)
+    context["reserved_mixing_seconds_today"] = float(context.get("verified_mixing_minutes_today") or 0)*60
     return build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-MIXER-CH2",
         "planned_seconds":int((30-float(context.get("verified_mixing_minutes_today") or 0))*60)},
         safety=safety("mixer"),context=context,
@@ -230,14 +232,16 @@ def test_auxiliary_tasks_never_become_zones_and_power_only_defers_mixing():
         mixing_history_complete_through=NOW.isoformat(),now=NOW)
     assert missing["irrigation_auxiliary_tasks"][0]["decision"]=="Needs Data"
     low=build_auxiliary_tasks(batch=batch,power={"battery_soc_pct":20,
-        "solar_power_w":0,"grid_power_w":0},
+        "solar_power_w":0,"grid_power_w":0,"load_power_w":1000,"observed_at":NOW.isoformat()},
         mixing_history_complete_through=NOW.isoformat(),now=NOW)
     assert low["irrigation_zones"]==[] and low["zone_delivery_debt_changes"]==0
     tasks={row["device_type"]:row for row in low["irrigation_auxiliary_tasks"]}
     assert tasks["fertilizer_mixer"]["decision"]=="Run later"
     assert tasks["fertilizer_injection_valve"]["does_not_block_bc_irrigation"] is True
     capped=build_auxiliary_tasks(batch=batch,verified_mixing=[{
-        "shutdown_verified":True,"verified_runtime_minutes":30,
+        "execution_id":"MIX-TODAY","device_type":"fertilizer_mixer",
+        "claimed_at":"2026-08-09T06:30:00+02:00","maximum_duration_seconds":1800,
+        "shutdown_verified":True,"accounted_mixing_seconds":1800,"control_completed":True,
         "completed_at":"2026-08-09T07:00:00+02:00"}],
         mixing_history_complete_through=NOW.isoformat(),now=NOW)
     mixer=next(row for row in capped["irrigation_auxiliary_tasks"]
@@ -298,7 +302,7 @@ class Transport:
         if kwargs["state"]=="OFF" and accepted:self.read="OFF"
         return {"accepted_unambiguous":accepted}
     def read_output_state(self,**_kwargs):return {"authoritative":True,"state":self.read,
-        "evidence_id":"READ-1"}
+        "evidence_id":"READ-1", "retrieved_at":(NOW+timedelta(seconds=120 if self.read=='OFF' else 0)).isoformat()}
     def read_safety_configuration(self,**kwargs):
         return safety("injection" if kwargs["channel"]==1 else "mixer")
 
@@ -315,14 +319,15 @@ def test_coordinator_exactly_once_replay_completion_and_bounded_off():
         transport=transport,revalidate=lambda _artifact:injection_context(),
         now=NOW+timedelta(seconds=121))
     assert started["status"]=="auxiliary_started" and replay["status"]=="auxiliary_active"
-    assert completed["status"]=="auxiliary_control_pulse_off_verified"
+    assert completed["status"]=="auxiliary_injection_control_completed"
     assert duplicate["status"]=="auxiliary_claim_conflict"
     assert [row["state"] for row in transport.calls]==["ON","OFF"]
     assert completed["execution"]["nutrient_dose"]=="Unknown"
     assert completed["execution"]["verified_runtime_seconds"] is None
     assert completed["execution"]["maximum_runtime_seconds"]==120
-    assert completed["execution"]["completion_scope"]=="control_off_only"
-    assert not any(action=="record_auxiliary_completed" for action,_ in store.rows)
+    assert completed["execution"]["completion_scope"]=="provider_canonical_control_pulse"
+    assert completed["physical_delivery_verified"] is False
+    assert any(action=="record_auxiliary_completed" for action,_ in store.rows)
 
 
 def test_injection_delivery_completion_requires_exact_bound_canonical_provider_and_physical_evidence():
@@ -338,10 +343,10 @@ def test_injection_delivery_completion_requires_exact_bound_canonical_provider_a
         "clean_water_preflow_verified":True,"clean_water_flush_verified":False}
     result=advance_auxiliary_execution(eligibility=artifact,store=store,
         transport=transport,now=NOW+timedelta(seconds=121))
-    assert result["status"]=="auxiliary_injection_delivery_verified"
+    assert result["status"]=="auxiliary_injection_control_completed"
     assert result["physical_delivery_verified"] is True
     assert result["execution"]["completion_scope"]==(
-        "provider_canonical_physical_pulse_delivery")
+        "provider_canonical_control_pulse")
     assert result["execution"]["fertilizer_lifecycle_completed"] is False
     assert result["execution"]["postflow_flush_required"] is True
     assert any(action=="record_auxiliary_completed" for action,_ in store.rows)
@@ -368,9 +373,9 @@ def test_injection_mismatched_or_incomplete_evidence_never_promotes_delivery(fie
         field:replacement})
     result=advance_auxiliary_execution(eligibility=artifact,store=store,
         transport=transport,now=NOW+timedelta(seconds=121))
-    assert result["status"]=="auxiliary_control_pulse_off_verified"
+    assert result["status"]=="auxiliary_injection_control_completed"
     assert result["physical_delivery_verified"] is False
-    assert not any(action=="record_auxiliary_completed" for action,_ in store.rows)
+    assert any(action=="record_auxiliary_completed" for action,_ in store.rows)
 
 
 def test_concurrent_consumption_creates_exactly_one_on_attempt():
@@ -391,6 +396,7 @@ def test_emergency_off_is_exact_bound_and_authoritatively_verified():
         transport=transport,revalidate=lambda _artifact:{
             "plan_generation":"PLAN-MIX-1","injection_active":False,
             "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
+            "reserved_mixing_seconds_today":0,"mixing_history_valid":True,
             "mixing_history_complete_through":NOW.isoformat(),"power_suitable":True},
         now=NOW)
     assert started["status"]=="auxiliary_started"

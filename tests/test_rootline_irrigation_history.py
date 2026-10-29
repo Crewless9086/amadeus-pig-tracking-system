@@ -213,7 +213,7 @@ def test_late_midnight_completion_keeps_parent_date_and_bounded_segment_two_cont
             2026, 8, 24, 0, 1, tzinfo=ZA).isoformat()}
     _attach_parent_jobs(history, [eligibility, completion])
     zone = history["zones"]["B12345"]
-    assert zone["verified_completed_days"] == ["2026-08-23"]
+    assert zone["verified_completed_days"] == []  # first segment is not the two-segment objective
     parent = zone["incomplete_parent_job"]
     assert parent["job"]["operating_date"] == "2026-08-23"
     assert parent["cross_operating_date_continuation"] is True

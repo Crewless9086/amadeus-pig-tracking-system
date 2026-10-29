@@ -27,7 +27,7 @@ from modules.telemetry.rootline_water_energy_plan import (
 def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
-        evidence_loader=read_current_water_energy_evidence):
+        evidence_loader=read_current_water_energy_evidence, allow_new_starts=True):
     """Advance one need-driven Mixer, Injector, or Borehole task, if proven.
 
     This composes existing planners, canonical device records and coordinators.
@@ -39,7 +39,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     database_url = str(database_url or source.get("DATABASE_URL") or "").strip()
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
-        token_store=token_store, environ=source, readback=read_current_device)
+        token_store=token_store, environ=source)
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     from modules.telemetry.rootline_borehole_commissioning import (
         build_borehole_runtime_eligibility, load_registered_borehole_baseline,
@@ -47,9 +47,21 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     from modules.telemetry.rootline_managed_devices_runtime import (
         ManagedDevicePlanningUnavailable, run_rootline_managed_device_cycle,
     )
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    power_cache = {}
+    def current_energy():
+        from modules.telemetry.power_service import get_current_power_state
+        from modules.telemetry.rootline_water_energy_plan import _normalize_power
+        if "value" not in power_cache:
+            packet, status = get_current_power_state(database_url=database_url)
+            power_cache["value"] = _normalize_power(packet) if status < 400 else {}
+        return managed_energy_decision(power_cache["value"], now=now)
     def connect_factory():
         return connect_bounded_rootline_postgres(
             database_url=database_url, read_only=True)
+    def current_borehole_safety():
+        from modules.telemetry.rootline_water_energy_plan import read_current_borehole_faults
+        return read_current_borehole_faults(database_url,now=now)
     def build_evidence():
         try:
             evidence, selected, planned_at = evidence_loader(
@@ -73,28 +85,33 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                 continue
         executions = [row for row in evidence.get("fertilizer_executions") or []
                       if isinstance(row, dict)]
+        from modules.telemetry.rootline_auxiliary_management import (
+            mixing_daily_accounting, build_fertilizer_batch_lifecycle)
+        batch = build_fertilizer_batch_lifecycle(
+            observations=evidence.get("fertilizer_batch_observations"),
+            executions=executions, now=now)
+        mixing = mixing_daily_accounting(executions, now=now, batch=batch)
         packet["auxiliary_contexts"]["FERTILIZER-MIXER-CH2"] = {
             "plan_generation": str(plan.get("generation") or plan.get("evidence_generation") or ""),
-            "injection_active": any(row.get("device_type") == "fertilizer_injection_valve"
-                and row.get("state") == "Active" for row in executions),
-            "verified_mixing_minutes_today": sum(float(row.get("verified_runtime_minutes") or 0)
-                for row in executions if row.get("device_type") == "fertilizer_mixer"
-                and str(row.get("completed_at") or "")[:10] == now.date().isoformat()),
-            "verified_mixing_sessions_today": sum(1 for row in executions
-                if row.get("device_type") == "fertilizer_mixer"
-                and str(row.get("completed_at") or "")[:10] == now.date().isoformat()
-                and row.get("shutdown_verified") is True),
+            "batch_generation": batch["batch_generation"],
+            # The managed cycle excludes canonical active claims before and
+            # after this factory. Historical Active rows survive completion.
+            "injection_active": False,
+            "reserved_mixing_seconds_today": mixing["reserved_seconds"],
+            "mixing_history_valid": mixing["history_valid"],
+            "verified_mixing_sessions_today": mixing["sessions"],
             "mixing_history_complete_through": evidence.get("fertilizer_history_complete_through"),
-            "power_suitable": _managed_power_suitable(evidence.get("power")),
+            "power_suitable": managed_energy_decision(evidence.get("power"), now=now)["mixing_eligible"],
         }
         active_irrigation = evidence.get("active_irrigation_context")
         if isinstance(active_irrigation, dict):
             packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"] = active_irrigation
+            from modules.telemetry.rootline_auxiliary_management import fertilizer_control_progress
+            packet["fertilizer_control_progress"] = fertilizer_control_progress(active_irrigation, now=now)
         borehole_task = next((row for row in plan.get("candidate_tasks") or []
             if row.get("task_id") == "borehole"), {})
-        interlocks = evidence.get("borehole_interlocks")
-        if (borehole_task.get("recommendation") == "Recommend"
-                and isinstance(interlocks, dict)):
+        interlocks = evidence.get("borehole_interlocks") or {}
+        if borehole_task.get("recommendation") == "Recommend":
             try:
                 baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
                 provider = transport.read_output_state(device_id="1002851416", channel=1)
@@ -104,26 +121,43 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                             "reason": borehole_task.get("reason")}, baseline=baseline,
                         authority={"inside_standing_authority": True}, provider=provider,
                         interlocks=interlocks,
-                        energy={"eligible": _managed_power_suitable(evidence.get("power"))},
+                        energy={"eligible": managed_energy_decision(evidence.get("power"), now=now)["borehole_eligible"]},
                         requested_seconds=min(14400,
                             int(baseline["maximum_routine_runtime_seconds"])), now=now)
+                else:
+                    packet["borehole_readiness"] = "canonical_commissioning_required"
             except Exception:
-                pass
+                packet["borehole_readiness"] = "canonical_protection_evidence_unavailable"
+        from modules.telemetry.rootline_energy_policy import eskom_connector_readiness
+        packet["eskom_connector"] = eskom_connector_readiness(source)
         return packet
 
-    return run_rootline_managed_device_cycle(evidence={}, transport=transport,
+    result = run_rootline_managed_device_cycle(evidence={}, transport=transport,
         environ=source, store=store, connect_factory=connect_factory, now=now,
-        evidence_factory=build_evidence)
+        evidence_factory=build_evidence, allow_new_starts=allow_new_starts,
+        energy_reader=current_energy,borehole_safety_reader=current_borehole_safety)
+    if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
+        return result
+    from modules.telemetry.rootline_device_spine import load_device_record
+    from modules.telemetry.rootline_eskom_runtime import run_eskom_cycle
+    try:
+        current_energy()
+        canonical = load_device_record("ifttt_smartlife:smartlife_owner_account:"
+            +str(source.get("ROOTLINE_ESKOM_DEVICE_ID") or "")+":1", connect_factory=connect_factory)
+        grid = run_eskom_cycle(power=power_cache["value"],configuration=source,
+            canonical=canonical,store=store,now=now,allow_new_commands=allow_new_starts)
+    except Exception:
+        grid = {"success":False,"status":"eskom_readiness_unavailable","hardware_commands":0}
+    # Grid exceptions remain local. They do not suppress gravity irrigation.
+    return {**result,"eskom":grid,
+        "hardware_commands":result.get("hardware_commands",0)+grid.get("hardware_commands",0),
+        "writes_farm_data":result.get("writes_farm_data") is True or grid.get("writes_farm_data") is True,
+        "effects_unknown":result.get("effects_unknown") is True or grid.get("effects_unknown") is True}
 
 
-def _managed_power_suitable(power):
-    value = power if isinstance(power, dict) else {}
-    fields = ("battery_soc_pct", "solar_power_w", "grid_power_w")
-    if any(value.get(field) is None for field in fields):
-        return False
-    return (float(value["battery_soc_pct"]) >= 50
-        or float(value["solar_power_w"]) >= 1200
-        or float(value["grid_power_w"]) > 0)
+def _managed_power_suitable(power, now=None):
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    return managed_energy_decision(power, now=now or datetime.now(timezone.utc))["mixing_eligible"]
 
 
 def _refresh_active_irrigation_readback(evidence, transport, now):
@@ -141,15 +175,19 @@ def _refresh_active_irrigation_readback(evidence, transport, now):
         current = transport.read_output_state(device_id=device_id, channel=channel)
     except Exception:
         return evidence
+    from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time
+    bound = {"device_id": device_id, "channel": channel,
+        "execution_id": context.get("zone_execution_id"), "start_evidence": current}
+    observed = controller_readback_time(bound, "start_evidence", "ON")
     if (not isinstance(current, dict) or current.get("authoritative") is not True
             or current.get("state") != "ON" or not (current.get("evidence_id")
-                or current.get("response_digest"))):
+                or current.get("response_digest")) or observed is None):
         return evidence
     refreshed = dict(evidence); updated = dict(context)
     updated["zone_output_evidence"] = {**current,
         "evidence_id": str(current.get("evidence_id") or current.get("response_digest")),
         "zone_execution_id": str(context.get("zone_execution_id") or ""),
-        "observed_at": now.isoformat()}
+        "observed_at": observed.isoformat()}
     refreshed["active_irrigation_context"] = updated
     return refreshed
 

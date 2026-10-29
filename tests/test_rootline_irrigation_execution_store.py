@@ -18,6 +18,17 @@ from modules.telemetry.rootline_irrigation_execution_store import (
 )
 
 
+def _disposable_irrigation_schema(connection):
+    """Install real prerequisite migrations in the isolated test database."""
+    connection.execute("create schema if not exists app_private")
+    connection.execute("""create table if not exists app_private.migration_log(
+        migration_id text primary key, description text not null)""")
+    for name in ("202605210005_create_telemetry_power_tables.sql",
+                 "202605230001_create_irrigation_tables.sql",
+                 "202607070001_create_sam_live_stock_conversation_review_events.sql"):
+        connection.execute(Path("supabase/migrations", name).read_text(encoding="utf-8"))
+
+
 def test_zone_stopping_recovery_never_aliases_borehole_or_auxiliary_loader():
     stopping={"action":"mark_stopping","execution_id":"ROOTLINE-ZONE-1",
         "zone_id":"B12345","state":"stopping"}
@@ -333,11 +344,8 @@ def test_persisted_second_segment_claim_is_concurrent_single_use(monkeypatch):
         rootline_irrigation_execution_store,
     )
     url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"]; monkeypatch.setenv("DATABASE_URL",url)
-    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
-    history=Path("supabase/migrations/202605230001_create_irrigation_tables.sql")
     with psycopg.connect(url) as connection:
-        connection.execute(history.read_text(encoding="utf-8"))
-        connection.execute(migration.read_text(encoding="utf-8"))
+        _disposable_irrigation_schema(connection)
     suffix=uuid.uuid4().hex; job=f"ROOTLINE-JOB-{suffix}"; execution=f"EXEC-2-{suffix}"
     eligibility=f"ELIG-2-{suffix}"; digest="b"*64; consumption=f"ROOTLINE-BC-{suffix}"
     prior={"action":"record_completed","execution_id":f"EXEC-1-{suffix}","job_id":job,
@@ -389,8 +397,7 @@ def test_auxiliary_claim_and_off_identities_are_stable_and_separate():
 def test_auxiliary_consumption_is_atomic_without_blocking_bc_claim(monkeypatch):
     import psycopg
     url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"];monkeypatch.setenv("DATABASE_URL",url)
-    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
-    with psycopg.connect(url) as connection:connection.execute(migration.read_text(encoding="utf-8"))
+    with psycopg.connect(url) as connection: _disposable_irrigation_schema(connection)
     suffix=uuid.uuid4().hex;key=f"ROOTLINE-AUX-CONSUME-{suffix}"
     parent=f"ROOTLINE-PARENT-{suffix}";job=f"ROOTLINE-IRRIGATION-JOB-{suffix[:24].upper()}"
     job_sha="a"*64;segment=f"ROOTLINE-JOB-SEGMENT-{suffix[:24].upper()}"
@@ -435,13 +442,12 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
     import hashlib
     import psycopg
     url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"];monkeypatch.setenv("DATABASE_URL",url)
-    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
-    with psycopg.connect(url) as connection:connection.execute(migration.read_text(encoding="utf-8"))
+    with psycopg.connect(url) as connection: _disposable_irrigation_schema(connection)
     suffix=uuid.uuid4().hex;execution=f"ROOTLINE-BOREHOLE-{suffix[:24].upper()}"
     aux=f"ROOTLINE-AUX-{suffix}";digest="b"*64
     material={"contract_version":"rootline_borehole_runtime_eligibility.v1",
         "device_key":"ewelink:ewelink_owner_account:1002851416:1","baseline_sha256":"a"*64,
-        "registry_generation":7,"need_sha256":"c"*64,"evidence_sha256":"d"*64,
+        "registry_generation":7,"need_sha256":"c"*64,"evidence_sha256":hashlib.sha256(suffix.encode()).hexdigest(),
         "requested_seconds":900,"assessed_at":"2026-08-21T12:00:00+00:00",
         "gates":{key:True for key in ("canonical_need","commissioned_baseline",
             "standing_authority","provider_off","dry_run","low_water","supply_pressure",
@@ -472,7 +478,7 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
         {"action":"contain_auxiliary_device","execution_id":aux,"shutdown_verified":True})
     with ThreadPoolExecutor(max_workers=2) as pool:
         claims=list(pool.map(lambda _:_claim_borehole_material_load(body),(1,2)))
-    assert sum(row.get("created") is True for row in claims)==1
+    assert sum(row.get("created") is True for row in claims)==1, claims
     assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
     # A terminal record from another claim family, or asserted containment,
     # cannot release a borehole claim merely because it reuses execution_id.
@@ -500,7 +506,11 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
         "segment_number":1}
     insert(f"IRRIGATION-ELIGIBILITY-{suffix}",irrigation_execution,
         "record_eligibility",{"action":"record_eligibility",**irrigation_body})
-    assert _claim_irrigation_output(irrigation_body)["status"]=="controller_active"
+    # The independent borehole supply does not own the gravity B/C controller.
+    assert _claim_irrigation_output(irrigation_body)["created"] is True
+    assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
+    insert(f"IRRIGATION-TERMINAL-{suffix}",irrigation_execution,"record_completed",
+        {"action":"record_completed","execution_id":irrigation_execution,"shutdown_verified":True})
     for attempt in (1,2):
         rootline_irrigation_execution_store("record_borehole_off_outcome",{
             "execution_id":execution,"attempt":attempt,"accepted":True})
@@ -572,10 +582,8 @@ def test_consumption_key_is_atomically_single_use_across_regenerated_executions(
     import psycopg
     url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"]
     monkeypatch.setenv("DATABASE_URL",url)
-    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
     with psycopg.connect(url) as connection:
-        connection.execute(Path("supabase/migrations/202605230001_create_irrigation_tables.sql").read_text(encoding="utf-8"))
-        connection.execute(migration.read_text(encoding="utf-8"))
+        _disposable_irrigation_schema(connection)
     suffix=uuid.uuid4().hex
     key=f"ROOTLINE-BC-CONSUMPTION-{suffix}"
     def claim(index):

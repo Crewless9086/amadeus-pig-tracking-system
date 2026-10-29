@@ -208,26 +208,8 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
     now = _evaluation_time(now, deterministic_now)
     if not isinstance(history, list):
         return _result("commissioning_history_readback_unavailable")
-    today = now.date()
-    completed = [row for row in history if _time(row.get("completed_at"))
-                 and _time(row.get("completed_at")).date() == today
-                 and row.get("shutdown_verified") is True]
-    minutes = sum(float(row.get("verified_runtime_seconds") or 0) / 60
-                  for row in completed)
-    plan_generation = sha256(json.dumps({
-        "mission_id": MISSION_ID,
-        "provider_message_id": str(parsed.get("provider_message_id") or ""),
-        "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
-        "controller_generation": safety.get("controller_safety_generation"),
-        "controller_digest": safety.get("response_digest"),
-        "power_generation": power.get("generation"),
-    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    context = {"plan_generation": plan_generation, "injection_active": False,
-        "verified_mixing_minutes_today": minutes,
-        "verified_mixing_sessions_today": len(completed),
-        "mixing_history_complete_through": now.isoformat(),
-        "power_suitable": power.get("suitable") is True,
-        "prior_shutdown_unverified": False}
+    context = _mixer_context(parsed,now,safety,power,history)
+    minutes = context["reserved_mixing_seconds_today"]/60
     eligibility = build_auxiliary_eligibility(
         task={"auxiliary_device_id": MIXER_ID,
             "planned_seconds": max(0, min(1800, int((30-minutes)*60)))},
@@ -321,10 +303,12 @@ def _finalize(outcome, store):
     execution = outcome.get("execution") if isinstance(outcome, dict) else None
     if (outcome.get("status") == "auxiliary_completed" and isinstance(execution, dict)
             and execution.get("shutdown_verified") is True
-            and execution.get("physical_outcome_verified") is True):
+            and execution.get("control_completed") is True):
         stored = store("record_mixing_commissioned", {"execution_id": execution["execution_id"],
             "auxiliary_device_id": MIXER_ID, "commissioning_id": MISSION_ID,
             "shutdown_evidence": execution.get("shutdown_evidence"),
+            "control_completion_proof":execution.get("control_completion_proof"),
+            "physical_outcome_verified":execution.get("physical_outcome_verified") is True,
             "physical_outcome_evidence": execution.get("physical_outcome_evidence"),
             "mixing_enabled": True, "injection_enabled": False})
         outcome = {**outcome, "mixing_enabled": bool(isinstance(stored, dict)
@@ -356,11 +340,11 @@ def _load_power(now):
     # Mixer commissioning reads only the canonical power projection. Tank,
     # irrigation, weather and forecast projections are deliberately out of scope.
     from modules.telemetry.power_service import get_current_power_state
-    packet, _status = get_current_power_state(database_url=os.environ.get("DATABASE_URL"))
-    power = packet.get("current") if isinstance(packet, dict) else {}
-    soc = _number(power.get("battery_soc_pct")); solar = _number(power.get("solar_power_w"))
-    grid = _number(power.get("grid_power_w"))
-    suitable = None if None in (soc, solar, grid) else not (soc < 50 and solar < 1200 and grid <= 0)
+    from modules.telemetry.rootline_water_energy_plan import _normalize_power
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    packet, status = get_current_power_state(database_url=os.environ.get("DATABASE_URL"))
+    power = _normalize_power(packet) if status<400 else {}
+    suitable = managed_energy_decision(power,now=now)["mixing_eligible"]
     generation = sha256(json.dumps(power, sort_keys=True, default=str).encode()).hexdigest()
     return {"suitable": suitable, "generation": generation,
         "observed_at": power.get("observed_at")}
@@ -375,19 +359,15 @@ def _current_mixer_eligibility(*, parsed, now, store, transport, power_loader=No
     context = _mixer_context(parsed, now, safety, power, history)
     eligibility = build_auxiliary_eligibility(
         task={"auxiliary_device_id": MIXER_ID,
-            "planned_seconds": max(0, min(1800, int((30-float(
-                context.get("verified_mixing_minutes_today") or 0))*60)))},
+            "planned_seconds": max(0,min(1800,1800-context["reserved_mixing_seconds_today"]))},
         safety=safety, context=context,
         flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED": True}, now=now)
     return eligibility, context
 
 
 def _mixer_context(parsed, now, safety, power, history):
-    completed = [row for row in history if _time(row.get("completed_at"))
-        and _time(row.get("completed_at")).date() == now.date()
-        and row.get("shutdown_verified") is True]
-    minutes = sum(float(row.get("verified_runtime_seconds") or 0) / 60
-                  for row in completed)
+    from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
+    account=mixing_daily_accounting(history,now=now)
     generation = sha256(json.dumps({
         "mission_id": MISSION_ID,
         "provider_message_id": str(parsed.get("provider_message_id") or ""),
@@ -397,8 +377,10 @@ def _mixer_context(parsed, now, safety, power, history):
         "power_generation": power.get("generation"),
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"plan_generation": generation, "injection_active": False,
-        "verified_mixing_minutes_today": minutes,
-        "verified_mixing_sessions_today": len(completed),
+        "reserved_mixing_seconds_today":account["reserved_seconds"],
+        "mixing_history_valid":account["history_valid"],
+        "verified_mixing_minutes_today":account["controller_completed_seconds"]/60,
+        "verified_mixing_sessions_today":account["sessions"],
         "mixing_history_complete_through": now.isoformat(),
         "power_suitable": power.get("suitable") is True,
         "prior_shutdown_unverified": False}
@@ -480,12 +462,12 @@ def _present(outcome):
     elif status == "auxiliary_completed":
         enabled = outcome.get("mixing_enabled") is True
         answer = ("<b>✅ FERTILIZER MIXER — COMPLETED</b>\n\n"
-                  "Provider ON-to-OFF and bounded shutdown are verified. Fertilizer mixing is now commissioned; "
+                  "The mixer controller cycle and bounded shutdown are verified against its existing commissioned binding; "
                   "injection stays disabled until an eligible irrigation segment."
                   if enabled else
                   "<b>✅ FERTILIZER MIXER — STOPPED</b>\n\n"
                   "Provider shutdown is verified and the bounded run is closed. Mixing remains "
-                  "pending the physical recirculation and pump observation; fertilizer injection stays disabled.")
+                  "pending its complete control-cycle evidence; fertilizer injection stays disabled.")
     elif status in {"auxiliary_active", "auxiliary_claim_in_progress"}:
         answer = ""
     elif "intervention" in status or "contained" in status or "unverified" in status:
