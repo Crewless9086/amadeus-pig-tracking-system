@@ -164,7 +164,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
 
 
 def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=None, now=None,
-                                stop_for_energy=False):
+                                stop_for_energy=False, clock=None):
     """Advance one typed irrigation-auxiliary execution on the existing rail.
 
     This function owns no planner or provider mapping.  It consumes one
@@ -173,9 +173,10 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     never removed.
     """
     now = _aware(now or datetime.now(timezone.utc))
+    clock = clock or (lambda: datetime.now(timezone.utc))
     active = store("load_active_auxiliary", None)
     if active:
-        return _recover_auxiliary(active, store, transport, now, stop_for_energy=stop_for_energy)
+        return _recover_auxiliary(active, store, transport, now, stop_for_energy=stop_for_energy, clock=clock)
     artifact = validate_auxiliary_eligibility(eligibility, now=now)
     if not artifact:
         return _aux_result("auxiliary_not_eligible")
@@ -215,8 +216,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     dispatch=lambda:transport.set_state(device_id=execution["device_id"],
         channel=execution["channel"],state="ON",
         idempotency_key=execution["execution_id"]+":ON")
-    accepted=(store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
-        if execution["device_type"]=="fertilizer_injection_valve" else dispatch())
+    accepted=store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
     store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
     if accepted.get("accepted_unambiguous") is not True:
         recovery=_bounded_auxiliary_off(execution,store,transport)
@@ -288,10 +288,10 @@ def emergency_off_auxiliary_execution(*, store, transport,
         execution_id=active.get("execution_id"))
 
 
-def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False):
+def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=None):
     deadline=_timestamp(active.get("primary_stop_deadline"))
     claimed_at=_timestamp(active.get("claimed_at"))
-    if (active.get("state")=="claimed" and claimed_at is not None
+    if (active.get("state") in {"claimed","claimed_recovery_required"} and claimed_at is not None
             and timedelta(0)<=now-claimed_at<=timedelta(seconds=30)):
         return _aux_result("auxiliary_claim_in_progress",execution=active)
     if active.get("state") in {"claimed","claimed_recovery_required"} or deadline is None:
@@ -315,6 +315,8 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False):
         return _aux_result("auxiliary_shutdown_intervention_required",
             commands=recovery["commands"],state="Intervention",fertilizer_debt=True,
             auxiliary_contained=True)
+    # OFF/readback may take seconds. Completion must use the actual later clock.
+    now = _aware((clock or (lambda: datetime.now(timezone.utc)))())
     physical = store("load_auxiliary_physical_outcome", active["execution_id"])
     injection = active.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
     from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time

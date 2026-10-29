@@ -74,8 +74,11 @@ The confirmed high-level water path is:
 Installed pump protections and current observations are different evidence.
 The installed profile must resolve to canonical evidence with exact source,
 identity, timestamp and digest, device binding and manual-isolation proof.
-Owner-confirmed internal protection and storage-full cutoff do not imply every
-unreported protection subtype or a current all-clear. Explicit unsafe facts
+The owner confirms automatic dry-run shutdown, storage-full cutoff and manual
+OFF/isolation. Confirmed dry-run shutdown governs source-water absence; no
+additional positive pressure reading, flow-meter gate or unreported protection
+subtype is required for this installed profile. Missing water/pressure
+measurements remain Unknown, not a current all-clear. Explicit unsafe facts
 persist until a later attributable correction; omission, stale positive
 readings or out-of-order ingestion cannot clear them. Normal full-tank cutoff
 is expected, while a cutoff fault is unsafe. Do not request daily synthetic

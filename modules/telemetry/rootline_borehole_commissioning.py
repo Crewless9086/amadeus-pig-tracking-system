@@ -146,12 +146,17 @@ def borehole_protection_assessment(baseline, observations, *, now):
         and verified is not None and verified <= now
         and profile.get("manual_isolation_proven") is True)
     isolated = observations.get("manual_isolation_active") is True
+    installed_dry_run = (bound and profile.get("pump_controller_internal_protection") is True
+        and "dry_run" in (profile.get("covered_risks") or []))
+    # Confirmed dry-run shutdown protects source-water absence. Pressure is not
+    # an additional measurement prerequisite under the installed profile: this
+    # is policy eligibility, never a fabricated pressure or current-water fact.
+    installed = {"dry_run":installed_dry_run, "low_water":installed_dry_run,
+        "supply_pressure":bound}
     fields = {"dry_run":"dry_run_safe", "low_water":"low_water_clear",
         "supply_pressure":"supply_pressure_safe"}
     gates = {gate: not isolated and observations.get(live) is not False
-        and (observations.get(live) is True or (bound
-            and profile.get("pump_controller_internal_protection") is True
-            and gate in (profile.get("covered_risks") or []))) for gate, live in fields.items()}
+        and (observations.get(live) is True or installed[gate]) for gate, live in fields.items()}
     # Normal full storage is an expected controller cutoff, not a pump fault.
     gates["full_tank"] = (not isolated and observations.get("full_tank_cutoff_fault") is not True
         and (observations.get("full_tank_not_blocking") is True
@@ -232,12 +237,17 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
         "command_authority": False, "hardware_commands": 0}
 
 
-def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False):
+def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False, clock=None):
     """Advance one exact Borehole execution with one ON and bounded OFF recovery."""
     from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
     now = _aware(now or datetime.now(timezone.utc))
+    clock = clock or (lambda: datetime.now(timezone.utc))
     active = store("load_active_borehole", None)
     if isinstance(active, dict):
+        claimed_at = _time(active.get("claimed_at"))
+        if (active.get("state") in {"claimed","claimed_recovery_required"}
+                and claimed_at is not None and timedelta(0)<=now-claimed_at<=timedelta(seconds=30)):
+            return _borehole_result("borehole_claim_in_progress",execution=active)
         start = active.get("provider_start_evidence") or {}
         if start.get("authoritative") is not True or start.get("state") != "ON":
             return _contain_failed_borehole_start(
@@ -245,7 +255,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         deadline = _time(active.get("primary_stop_deadline"))
         if active.get("state") == "Active" and deadline is not None and now < deadline and not stop_for_energy:
             return _borehole_result("borehole_active", execution=active)
-        return _finish_borehole({**active, "energy_stop":stop_for_energy}, store, transport, now)
+        return _finish_borehole({**active, "energy_stop":stop_for_energy}, store, transport, now, clock=clock)
     if not _valid_borehole_eligibility(eligibility):
         return _borehole_result("borehole_eligibility_invalid", success=False)
     native=eligibility.get("native_fail_stop_seconds",14400)
@@ -263,8 +273,9 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     claim = store("claim_borehole_before_on", execution)
     if not isinstance(claim, dict) or claim.get("created") is not True:
         return _borehole_result("borehole_claim_conflict")
-    on = transport.set_state(device_id="1002851416", channel=1, state="ON",
-        idempotency_key=execution["execution_id"] + ":ON")
+    on = store("dispatch_borehole_on_edge", {**execution, "dispatch":lambda:
+        transport.set_state(device_id="1002851416", channel=1, state="ON",
+            idempotency_key=execution["execution_id"] + ":ON")})
     store("record_borehole_on_outcome", {**execution, "on_attempts": 1, "on_outcome": on})
     if on.get("accepted_unambiguous") is not True:
         return _contain_failed_borehole_start(
@@ -275,11 +286,14 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             {**execution, "reason": "start_unverified"}, store, transport)
     active = {**execution, "state": "Active", "on_attempts": 1,
         "provider_start_evidence": started}
-    store("mark_borehole_active", active)
+    marked=store("mark_borehole_active", active)
+    if not isinstance(marked,dict) or marked.get("success") is not True:
+        return _contain_failed_borehole_start(
+            {**active,"reason":"active_persistence_unproven"},store,transport)
     return _borehole_result("borehole_started", commands=1, execution=active)
 
 
-def _finish_borehole(active, store, transport, now):
+def _finish_borehole(active, store, transport, now, *, clock=None):
     commands = 0
     prior = store("load_borehole_off_attempts", active["execution_id"]) or []
     used = {int(row.get("attempt") or 0) for row in prior if isinstance(row, dict)}
@@ -303,6 +317,7 @@ def _finish_borehole(active, store, transport, now):
             "provider_final_off_evidence": final})
         return _borehole_result("borehole_shutdown_unverified", commands=commands,
             success=False, execution=active)
+    now=_aware((clock or (lambda: datetime.now(timezone.utc)))())
     canonical = {"execution_id": active["execution_id"], "final_state": "OFF",
         "evidence_id": "CANONICAL-" + _digest({"execution": active["execution_id"],
             "final": final})[:24].upper()}

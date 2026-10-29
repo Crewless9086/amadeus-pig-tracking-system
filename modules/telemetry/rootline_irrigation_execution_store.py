@@ -25,8 +25,14 @@ def rootline_irrigation_execution_store(action, payload):
                   "load_active_borehole", "load_borehole_off_attempts", "load_eskom_events"}:
         return _load(action, payload)
     body = dict(payload or {})
-    if action == "dispatch_auxiliary_on_edge":
-        return _dispatch_auxiliary_on_edge(body)
+    if action in {"dispatch_auxiliary_on_edge", "dispatch_borehole_on_edge"}:
+        return _dispatch_managed_on_edge(body, borehole=action == "dispatch_borehole_on_edge")
+    if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
+                  "mark_auxiliary_active", "mark_borehole_active",
+                  "contain_auxiliary_device", "contain_borehole",
+                  "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
+                  "record_borehole_completed"}:
+        return _guarded_managed_transition(action, body)
     if action == "dispatch_eskom_command_edge":
         return _dispatch_eskom_command_edge(body)
     execution_id = str(body.get("execution_id") or "").strip()
@@ -260,6 +266,8 @@ def _event_id(action, body):
         material = f"{execution}:CONTROLLER-SEQUENCE-COMPLETED"
     elif action == "record_eskom_completed":
         material = f"{execution}:ESKOM-COMPLETED"
+    elif action in {"claim_auxiliary_dispatch", "claim_borehole_dispatch"}:
+        material = f"{execution}:MANAGED-DISPATCH"
     elif action == "claim_eskom_dispatch":
         material = f"{execution}:ESKOM-DISPATCH"
     elif (action == "record_job_resolution"
@@ -1103,38 +1111,152 @@ def _valid_borehole_eligibility(value):
       and material["blockers"]==[])
 
 
-def _dispatch_auxiliary_on_edge(body):
-    """Hold parent and auxiliary locks through the injection provider ON edge."""
-    dispatch=body.pop("dispatch",None)
-    if not callable(dispatch) or body.get("device_type")!="fertilizer_injection_valve":
-        return {"accepted_unambiguous":False,"status":"atomic_on_edge_invalid"}
+def _managed_family(*, borehole):
+    return ({"claim":"claim_borehole_before_on", "dispatch":"claim_borehole_dispatch",
+        "active":"mark_borehole_active", "off":"claim_borehole_off_attempt",
+        "outcome":"record_borehole_on_outcome",
+        "terminals":{"record_borehole_completed", "contain_borehole"}} if borehole else
+        {"claim":"claim_auxiliary_before_on", "dispatch":"claim_auxiliary_dispatch",
+        "active":"mark_auxiliary_active", "off":"claim_auxiliary_off_attempt",
+        "outcome":"record_auxiliary_on_outcome",
+        "terminals":{"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
+                     "contain_auxiliary_device"}})
+
+
+def _managed_edge_rows(cursor, execution_id):
+    cursor.execute("""select review_json->'rootline_execution'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s and review_json->'rootline_execution'->>'execution_id'=%s
+        order by created_at,review_event_id""", (EVENT_SOURCE, str(execution_id)))
+    return [row[0] if isinstance(row[0],dict) else json.loads(row[0])
+            for row in cursor.fetchall()]
+
+
+def _managed_claim_matches(rows, body, family):
+    claims=[row for row in rows if row.get("action")==family["claim"]]
+    if len(claims)!=1:
+        return False
+    # Every persisted claim field remains immutable at both dispatch and activation.
+    claim=claims[0]
+    return all(body.get(key)==value for key,value in claim.items()
+        if key not in {"action","event_id","state","on_attempts","off_attempts"})
+
+
+def _managed_edge_retired(rows, family):
+    return any(row.get("action") in family["terminals"] | {family["off"]}
+               for row in rows)
+
+
+def _insert_managed_event(cursor, action, body):
+    event_id=_event_id(action,body)
+    cursor.execute("""insert into public.sam_live_stock_conversation_review_events
+        (review_event_id,chatwoot_conversation_id,source_agent,event_source,
+         recommended_action,review_json)
+        values (%s,%s,'rootline_backend',%s,%s,%s::jsonb)
+        on conflict (review_event_id) do nothing""", (event_id,str(body["execution_id"]),
+        EVENT_SOURCE,action,json.dumps({"rootline_execution":
+            _stored_event_body(action,body,event_id)},sort_keys=True,separators=(",",":"),default=str)))
+    return {"success":True,"created":cursor.rowcount==1,"event_id":event_id}
+
+
+def _guarded_managed_transition(action, body):
+    """OFF ownership and activation share the sender's exact existing locks."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    borehole="borehole" in action;family=_managed_family(borehole=borehole)
+    if not str(body.get("execution_id") or ""):
+        return {"success":False,"created":False,"status":"execution_identity_missing"}
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
                                            read_only=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
-            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
-                where claim.event_source=%s
-                  and claim.review_json->'rootline_execution'->>'action'='claim_before_on'
-                  and claim.review_json->'rootline_execution'->>'execution_id'=%s
-                  and claim.review_json->'rootline_execution'->>'job_id'=%s
-                  and claim.review_json->'rootline_execution'->>'job_sha256'=%s
-                  and claim.review_json->'rootline_execution'->>'segment_identity'=%s
-                  and claim.review_json->'rootline_execution'->>'zone_id'=%s
-                  and not exists (select 1 from public.sam_live_stock_conversation_review_events stop
-                    where stop.event_source=%s
-                      and stop.review_json->'rootline_execution'->>'execution_id'=%s
-                      and stop.review_json->'rootline_execution'->>'action' in
-                        ('mark_stopping','record_completed','contain_zone',
-                         'record_ambiguous_shutdown','record_claim_recovery')) limit 1""",
-                (EVENT_SOURCE,body.get("zone_execution_id"),body.get("job_id"),
-                 body.get("job_sha256"),body.get("segment_identity"),body.get("zone_id"),
-                 EVENT_SOURCE,body.get("zone_execution_id")))
-            if not cursor.fetchone():
-                return {"accepted_unambiguous":False,
-                    "status":"parent_edge_authority_revoked"}
-            return dispatch()
+            rows=_managed_edge_rows(cursor,body["execution_id"])
+            if action==family["active"]:
+                if (not _managed_claim_matches(rows,body,family)
+                        or _managed_edge_retired(rows,family)
+                        or not any(row.get("action")==family["dispatch"] for row in rows)
+                        or body.get("state")!="Active" or body.get("on_attempts")!=1):
+                    return {"success":False,"created":False,"status":"managed_start_ownership_retired"}
+            elif action==family["off"]:
+                if (not any(row.get("action")==family["claim"] for row in rows)
+                        or type(body.get("attempt")) is not int or not 1<=body["attempt"]<=3):
+                    return {"success":False,"created":False,"status":"managed_off_claim_invalid"}
+            return _insert_managed_event(cursor,action,body)
+
+
+def _dispatch_auxiliary_on_edge(body):
+    # Retain the internal entry point for existing direct callers.
+    return _dispatch_managed_on_edge(body,borehole=False)
+
+
+def _dispatch_managed_on_edge(body, *, borehole):
+    """Commit one attempt before I/O; serialize final ON against all OFF claims.
+
+    A crash between the two transactions consumes the attempt without sending.
+    A crash/exception after sending cannot make the attempt reusable.
+    """
+    from datetime import datetime, timedelta, timezone
+    from modules.telemetry.rootline_device_registry import get_device_contract
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    body=dict(body);dispatch=body.pop("dispatch",None);family=_managed_family(borehole=borehole)
+    identity="BOREHOLE-1-MINI-R4-CH1" if borehole else body.get("auxiliary_device_id")
+    contract=get_device_contract(identity) or {}
+    if (not callable(dispatch) or identity not in ({"BOREHOLE-1-MINI-R4-CH1"} if borehole
+            else {"FERTILIZER-MIXER-CH2","FERTILIZER-INJECTION-CH1"})
+            or (borehole and body.get("device_key")!="ewelink:ewelink_owner_account:1002851416:1")
+            or (not borehole and (body.get("device_id")!=contract.get("device_id")
+                or body.get("channel")!=contract.get("channel")
+                or body.get("device_type")!=contract.get("device_type")))):
+        return {"accepted_unambiguous":False,"status":"atomic_on_edge_invalid"}
+    def permitted(rows):
+        now=datetime.now(timezone.utc);claimed=_time(body.get("claimed_at"));deadline=_time(body.get("primary_stop_deadline"))
+        return (claimed is not None and claimed.tzinfo is not None and deadline is not None
+            and deadline.tzinfo is not None and timedelta(0)<=now-claimed<=timedelta(seconds=30)
+            and now<deadline and _managed_claim_matches(rows,body,family)
+            and not _managed_edge_retired(rows,family)
+            and not any(row.get("action") in {family["active"],family["outcome"]} for row in rows))
+    # Unique review_event_id is the existing database-backed at-most-once fence.
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            rows=_managed_edge_rows(cursor,body.get("execution_id"))
+            if not permitted(rows):
+                return {"accepted_unambiguous":False,"status":"managed_start_ownership_retired"}
+            if not _insert_managed_event(cursor,family["dispatch"],body)["created"]:
+                return {"accepted_unambiguous":False,"status":"managed_dispatch_already_consumed"}
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            rows=_managed_edge_rows(cursor,body["execution_id"])
+            if not permitted(rows):
+                return {"accepted_unambiguous":False,"status":"managed_start_ownership_retired"}
+            if not borehole and body["device_type"]=="fertilizer_injection_valve":
+                cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
+                    where claim.event_source=%s
+                      and claim.review_json->'rootline_execution'->>'action'='claim_before_on'
+                      and claim.review_json->'rootline_execution'->>'execution_id'=%s
+                      and claim.review_json->'rootline_execution'->>'job_id'=%s
+                      and claim.review_json->'rootline_execution'->>'job_sha256'=%s
+                      and claim.review_json->'rootline_execution'->>'segment_identity'=%s
+                      and claim.review_json->'rootline_execution'->>'zone_id'=%s
+                      and not exists (select 1 from public.sam_live_stock_conversation_review_events stop
+                        where stop.event_source=%s
+                          and stop.review_json->'rootline_execution'->>'execution_id'=%s
+                          and stop.review_json->'rootline_execution'->>'action' in
+                            ('mark_stopping','record_completed','contain_zone',
+                             'record_ambiguous_shutdown','record_claim_recovery')) limit 1""",
+                    (EVENT_SOURCE,body.get("zone_execution_id"),body.get("job_id"),
+                     body.get("job_sha256"),body.get("segment_identity"),body.get("zone_id"),
+                     EVENT_SOURCE,body.get("zone_execution_id")))
+                if not cursor.fetchone():
+                    return {"accepted_unambiguous":False,
+                        "status":"parent_edge_authority_revoked"}
+            try:
+                return dispatch()
+            except Exception:
+                return {"accepted_unambiguous":False,"status":"managed_sender_outcome_unknown"}
 
 
 def _append_history(action, body, *, connection=None, append=True):

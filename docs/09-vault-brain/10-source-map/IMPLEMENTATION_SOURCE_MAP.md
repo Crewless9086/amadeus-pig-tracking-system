@@ -21,6 +21,11 @@
   separate from physical flow evidence.
   `modules/oom_sakkie/operational_specialist_intake.py` supplies real authenticated,
   deduplicated batch facts on the existing intake rail.
+- Managed auxiliary and borehole starts commit one unique dispatch marker before
+  provider I/O. The final ON edge, OFF ownership and Active publication share the
+  existing canonical locks; recovery or an unknown send cannot permit a later ON
+  or resurrect a retired run. Fresh claimed starts have a bounded 30-second
+  handover, and completion records the actual post-readback clock.
 - `rootline_energy_policy.py` owns fresh 30/35 solar-recovery hysteresis and
   separate discretionary mixer reserve. `rootline_eskom_runtime.py` binds that
   decision to canonical grid authority and locked single-use dispatch/outcome;

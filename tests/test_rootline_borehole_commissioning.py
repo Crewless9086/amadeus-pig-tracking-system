@@ -94,6 +94,7 @@ class BoreholeStore:
     def __init__(self): self.active=None; self.events=[]
     def __call__(self, action, body):
         if action=="load_active_borehole": return self.active
+        if action=="dispatch_borehole_on_edge": return body["dispatch"]()
         if action=="load_borehole_off_attempts": return []
         if action in {"claim_borehole_before_on","claim_borehole_off_attempt"}:
             if action=="claim_borehole_before_on": self.active=dict(body)
