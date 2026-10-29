@@ -23,12 +23,14 @@ EVENTS = {
 
 class RootlineIFTTTTransport:
     def __init__(self, *, token_store, environ=None, http_open=None,
-                 readback=None, auxiliary_on_authorizer=None):
+                 readback=None, auxiliary_on_authorizer=None,
+                 commissioning_connect_factory=None):
         self.environ = environ if environ is not None else os.environ
         self.token_store = token_store
         self.http_open = http_open or urllib_request.urlopen
         self.readback = readback
         self.auxiliary_on_authorizer = auxiliary_on_authorizer
+        self.commissioning_connect_factory = commissioning_connect_factory
 
     def read_safety_configuration(self, *, device_id, channel):
         contract = self._binding(device_id, channel)
@@ -38,8 +40,19 @@ class RootlineIFTTTTransport:
         channel_commissioning = (contract["identity"] in {
             "FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
             and channel in supervised_channels)
+        commissioning_generation = (snapshot.get("commissioned_baseline_id")
+            if channel_commissioning else None)
+        if contract["identity"] == "FERTILIZER-INJECTION-CH1":
+            # CH2's historical proof never commissions CH1. Resolve the exact
+            # injector's current canonical evidence on every safety read, also
+            # at the coordinator's final command edge (no cached authority).
+            canonical = self._injector_commissioning(snapshot)
+            channel_commissioning = canonical is not None
+            commissioning_generation = canonical["generation"] if canonical else None
         if contract["collection"] == "irrigation_zones":
             channel_commissioning = bool(snapshot.get("commissioned_baseline_id"))
+            commissioning_generation = (snapshot.get("commissioned_baseline_id")
+                if channel_commissioning else None)
         authoritative = snapshot.get("actuation_configuration_safe") is True
         if contract["collection"] == "irrigation_auxiliary_devices":
             authoritative = self._auxiliary_commissioning_boundary_safe(
@@ -62,14 +75,34 @@ class RootlineIFTTTTransport:
             "scenes_enabled": snapshot.get("scenes_enabled"),
             "baseline_id": snapshot.get("commissioned_baseline_id"),
             "controller_safety_generation": snapshot.get("commissioned_baseline_id"),
-            "physical_commissioning_generation": (snapshot.get("commissioned_baseline_id")
-                if channel_commissioning else None),
+            "physical_commissioning_generation": commissioning_generation,
             "commissioned": channel_commissioning,
             "response_digest": snapshot.get("response_digest"),
             "observed_at": snapshot.get("retrieved_at"),
             "relevant_outputs_off": all(
                 item.get("output_state") == "OFF" for item in snapshot["channels"]),
         }
+
+    def _injector_commissioning(self, snapshot):
+        from modules.telemetry.rootline_ewelink_commissioned_baseline import (
+            canonical_injector_commissioning,
+        )
+        connect = self.commissioning_connect_factory
+        if connect is None:
+            database_url = str(self.environ.get("DATABASE_URL")
+                or getattr(self.token_store, "database_url", "") or "").strip()
+            if not database_url:
+                return None
+            from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+            def connect():
+                return connect_bounded_rootline_postgres(
+                    database_url=database_url, read_only=True)
+        try:
+            return canonical_injector_commissioning(snapshot, connect_factory=connect)
+        except Exception:
+            # Missing/invalidated proof or a failed canonical read cannot grant
+            # ON. Existing OFF supervision never needs this commissioning gate.
+            return None
 
     def _auxiliary_commissioning_boundary_safe(self, snapshot, contract, target):
         """Project exact supervised safety without weakening full-device evidence."""
@@ -84,7 +117,8 @@ class RootlineIFTTTTransport:
                 and target.get("output_state") == "OFF"
                 and target.get("power_restoration_state") == "OFF"
                 and target.get("native_auto_off_enabled") is True
-                and int(target.get("native_auto_off_seconds") or 0) == 14400)
+                and type(target.get("native_auto_off_seconds")) is int
+                and 1 <= target["native_auto_off_seconds"] <= 14400)
         if (snapshot.get("actuation_safety_complete") is not True
                 or snapshot.get("current_outputs_authoritative") is not True
                 or snapshot.get("timers_enabled") is not False
@@ -109,8 +143,10 @@ class RootlineIFTTTTransport:
                     and assigned.get("identity") != "FERTILIZER-INJECTION-CH1"):
                 return False
             assigned_row = rows.get(assigned_channel) or {}
-            if (str(self.environ.get(assigned["authority_flag"]) or "").lower() == "true"
-                    or assigned_row.get("native_auto_off_enabled") is not True
+            # Both capabilities may be authorized for sequential operation.
+            # The all-outputs-OFF check above and canonical dispatch locks prevent
+            # simultaneous use; a sibling enable flag is not an ON reading.
+            if (assigned_row.get("native_auto_off_enabled") is not True
                     or int(assigned_row.get("native_auto_off_seconds") or 0)
                         != int(assigned["native_fail_stop_seconds"])):
                 return False
@@ -135,6 +171,9 @@ class RootlineIFTTTTransport:
     def set_state(self, *, device_id, channel, state, idempotency_key):
         contract = self._binding(device_id, channel)
         state = str(state or "").upper()
+        if (contract["collection"] == "irrigation_zones"
+                and contract.get("commissioned") is not True):
+            return {"accepted_unambiguous": False, "status": "irrigation_output_not_commissioned"}
         if (state == "ON" and contract["collection"] == "irrigation_auxiliary_devices"
                 and str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"
                 and not (callable(self.auxiliary_on_authorizer)

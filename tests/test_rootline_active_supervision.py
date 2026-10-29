@@ -207,6 +207,30 @@ def test_no_active_and_failed_plan_never_starts_or_reads_provider(reports):
     assert starts == messages == transport.calls == []
 
 
+@pytest.mark.parametrize("eskom_enabled,active_row,expected", [
+    ("true",None,True),("false",None,False),("true",active(due=False),True),
+    ("true",active(due=True),False)])
+def test_actual_scheduler_managed_gate_honors_eskom_only_and_existing_stop_duty(
+        reports,eskom_enabled,active_row,expected):
+    calls=[]
+    gateway(ExecutionStore(active_row),Transport(),source_env={**ENV,
+        "ROOTLINE_AUTONOMOUS_BC_ENABLED":"false",
+        "ROOTLINE_FERTILIZER_MIXING_ENABLED":"false",
+        "ROOTLINE_FERTILIZER_INJECTION_ENABLED":"false",
+        "ROOTLINE_BOREHOLE_ENABLED":"false","ROOTLINE_ESKOM_ENABLED":eskom_enabled},
+        managed_device_cycle=lambda **kw:calls.append(kw) or {
+            "success":True,"status":"no_active_managed_device","blocks_bc":False})
+    assert len(calls)==1 and calls[0]["allow_new_starts"] is expected
+
+
+def test_eskom_flag_cannot_bypass_scheduler_authentication(reports):
+    calls=[]
+    value,status=handle_rootline_reassessment_trigger(payload(),{},
+        {**ENV,"ROOTLINE_ESKOM_ENABLED":"true"},
+        managed_device_cycle=lambda **kw:calls.append(kw))
+    assert status==403 and not value["success"] and not calls
+
+
 def test_unauthenticated_and_wrong_private_chat_never_reach_supervision():
     calls = []
     for headers, body in [({}, payload()), (HEADERS, payload(chat_id="43"))]:
@@ -267,7 +291,7 @@ def test_replay_and_concurrent_same_bucket_supervise_once(reports):
     assert sum(value["hardware_commands"] for value, _, _, _ in results) == 1
 
 
-def test_before_deadline_retains_managed_devices_but_shutdown_tick_does_not(reports):
+def test_each_minute_supervises_managed_devices_but_shutdown_tick_forbids_new_starts(reports):
     managed_calls = []
     env = {**ENV, "ROOTLINE_FERTILIZER_INJECTION_ENABLED": "true"}
     # Use the actual gateway, runtime and coordinator with a fake managed edge.
@@ -278,10 +302,10 @@ def test_before_deadline_retains_managed_devices_but_shutdown_tick_does_not(repo
             family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"},
             active_supervision_cycle=supervisor(store, transport),
             execution_cycle=lambda **k: pytest.fail("new B/C cycle after active supervision"),
-            managed_device_cycle=lambda **k: managed_calls.append(due) or {
+            managed_device_cycle=lambda **k: managed_calls.append((due,k["allow_new_starts"])) or {
                 "success": True, "status": "no_active_managed_device", "blocks_bc": False})
         handle_rootline_reassessment_trigger(payload(), HEADERS, env, **options)
-    assert managed_calls == [False]
+    assert managed_calls == [(False,True),(True,False)]
 
 
 def test_existing_injector_shutdown_interlock_is_preserved(monkeypatch):
@@ -411,6 +435,7 @@ def test_production_plan_recovery_failure_happens_only_after_supervision(reports
     value, status = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
         schedule_store=ScheduleStore(), scheduler_now=NOW,
         active_supervision_cycle=supervisor(store, transport),
+        managed_device_cycle=lambda **k: {"success":True,"status":"no_active_managed_device","blocks_bc":False},
         family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"})
     assert status == 202 and value["status"] == "scheduled_rootline_daily_plan_persistence_ambiguous"
     assert value["execution_status"] == "segment_completed" and value["hardware_commands"] == 1

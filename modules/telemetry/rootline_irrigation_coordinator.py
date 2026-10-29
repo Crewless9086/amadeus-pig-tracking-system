@@ -163,7 +163,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                    autonomous_on_enabled=True, writes_farm_data=True)
 
 
-def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=None, now=None):
+def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=None, now=None,
+                                stop_for_energy=False):
     """Advance one typed irrigation-auxiliary execution on the existing rail.
 
     This function owns no planner or provider mapping.  It consumes one
@@ -174,7 +175,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     now = _aware(now or datetime.now(timezone.utc))
     active = store("load_active_auxiliary", None)
     if active:
-        return _recover_auxiliary(active, store, transport, now)
+        return _recover_auxiliary(active, store, transport, now, stop_for_energy=stop_for_energy)
     artifact = validate_auxiliary_eligibility(eligibility, now=now)
     if not artifact:
         return _aux_result("auxiliary_not_eligible")
@@ -203,6 +204,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         "segment_identity":artifact.get("segment_identity"),
         "zone_execution_id":artifact.get("zone_execution_id"),
         "pulse_number":artifact.get("pulse_number"),
+        "batch_generation":artifact.get("batch_generation"),
         "maximum_duration_seconds":artifact["maximum_duration_seconds"],
         "claimed_at":now.isoformat(),"primary_stop_deadline":(
             now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat(),
@@ -235,7 +237,15 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         return _aux_result("auxiliary_start_unverified",commands=1+recovery["commands"],
             state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
     active={**execution,"state":"Active","on_attempts":1,"start_evidence":started}
-    store("mark_auxiliary_active",active)
+    marked=store("mark_auxiliary_active",active)
+    if not isinstance(marked,dict) or marked.get("success") is not True:
+        recovery=_bounded_auxiliary_off(active,store,transport)
+        shutdown=_read_auxiliary_output(active,transport)
+        store("contain_auxiliary_device",{**active,"reason":"active_persistence_unproven",
+            "shutdown_verified":shutdown.get("authoritative") is True and shutdown.get("state")=="OFF",
+            "shutdown_evidence":shutdown})
+        return _aux_result("auxiliary_active_persistence_unproven",commands=1+recovery["commands"],
+            state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
     return _aux_result("auxiliary_started",commands=1,state="Started",execution=active)
 
 
@@ -278,7 +288,7 @@ def emergency_off_auxiliary_execution(*, store, transport,
         execution_id=active.get("execution_id"))
 
 
-def _recover_auxiliary(active,store,transport,now):
+def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False):
     deadline=_timestamp(active.get("primary_stop_deadline"))
     claimed_at=_timestamp(active.get("claimed_at"))
     if (active.get("state")=="claimed" and claimed_at is not None
@@ -292,7 +302,8 @@ def _recover_auxiliary(active,store,transport,now):
             "shutdown_verified":verified,"shutdown_evidence":shutdown})
         return _aux_result("auxiliary_restart_contained",commands=recovery["commands"],
             state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
-    if now<deadline:
+    energy_pause = stop_for_energy and active.get("device_type") == "fertilizer_mixer" and now < deadline
+    if now<deadline and not energy_pause:
         return _aux_result("auxiliary_active",execution=active)
     recovery=_bounded_auxiliary_off(active,store,transport)
     shutdown=_read_auxiliary_output(active,transport)
@@ -306,53 +317,66 @@ def _recover_auxiliary(active,store,transport,now):
             auxiliary_contained=True)
     physical = store("load_auxiliary_physical_outcome", active["execution_id"])
     injection = active.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
+    from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time
+    start_at = controller_readback_time(active, "start_evidence", "ON")
+    stopped_at = controller_readback_time({**active, "shutdown_evidence": shutdown},
+        "shutdown_evidence", "OFF")
+    contract = get_device_contract(active.get("auxiliary_device_id")) or {}
+    control_verified = (active.get("device_id") == contract.get("device_id")
+        and active.get("channel") == contract.get("channel")
+        and start_at is not None and stopped_at is not None
+        and claimed_at is not None and claimed_at <= start_at < deadline <= stopped_at <= now
+        and active.get("on_attempts") == 1
+        and 0 < int(active.get("maximum_duration_seconds") or 0)
+            <= int(contract.get("native_fail_stop_seconds") or 0))
     if injection:
         physical_verified = _injection_delivery_verified(active, physical, shutdown)
     else:
-        start = active.get("start_evidence") if isinstance(
-            active.get("start_evidence"), dict) else {}
-        physical_verified = (active.get("auxiliary_device_id") ==
-            "FERTILIZER-MIXER-CH2" and active.get("device_id") == "100204d497"
-            and active.get("channel") == 2
-            and 1 <= int(active.get("maximum_duration_seconds") or 0) <= 1800
-            and start.get("authoritative") is True and start.get("state") == "ON"
-            and shutdown.get("authoritative") is True and shutdown.get("state") == "OFF")
+        physical_verified = False
     completed={**active,"state":"Completed","shutdown_verified":True,
         "shutdown_evidence":shutdown,"completed_at":now.isoformat(),
         "maximum_runtime_seconds":active["maximum_duration_seconds"],
         "verified_runtime_seconds":None,"physical_outcome":"Unknown",
         "nutrient_dose":"Unknown","concentration":"Unknown",
         "delivered_volume":"Unavailable",
+        "control_completed": control_verified,
+        "control_completion_proof": "authoritative_provider_on_then_off" if control_verified else None,
+        "accounted_mixing_seconds": (int(active["maximum_duration_seconds"])
+            if control_verified and not injection else 0),
         "physical_outcome_verified":physical_verified,
         "physical_outcome_evidence":({"proof":"provider_app_on_to_off",
             "start_evidence":active.get("start_evidence"),
             "shutdown_evidence":shutdown} if physical_verified and not injection
             else physical if physical_verified else None)}
-    # An authoritative OFF readback proves only that the bounded control pulse
-    # stopped. It is not fertilizer-delivery evidence. Keep an unverified
-    # injection out of completed history so pulse count, real-flow
-    # commissioning and owner-facing completion cannot inherit an OFF receipt.
-    completion_action = ("record_auxiliary_completed" if physical_verified
-        or not injection else "record_auxiliary_control_pulse_stopped")
-    if injection and not physical_verified:
+    # The standing time programme completes from bound ON/OFF control evidence.
+    # Physical flow remains a separate optional fact, never a pulse-count gate.
+    completion_action = ("record_auxiliary_completed" if control_verified
+        else "record_auxiliary_control_pulse_stopped")
+    if not control_verified:
         completed.update({"state":"ControlPulseStopped",
             "delivery_state":"Unverified","fertilizer_delivery_verified":False,
             "completion_scope":"control_off_only","fertilizer_debt":True})
     elif injection:
-        completed.update({"delivery_state":"Verified",
-            "fertilizer_delivery_verified":True,
-            "completion_scope":"provider_canonical_physical_pulse_delivery",
+        completed.update({"delivery_state":"Verified" if physical_verified else "Unmeasured",
+            "fertilizer_delivery_verified":physical_verified,
+            "completion_scope":"provider_canonical_control_pulse",
             "fertilizer_lifecycle_completed":False,
             "postflow_flush_required":True})
+    if energy_pause:
+        completed.update(energy_pause=True, fertilizer_debt=False,
+            state="Paused", completion_scope="early_controller_off_budget_retained")
     recorded=store(completion_action,completed)
     if not isinstance(recorded,dict) or recorded.get("success") is not True:
         return _aux_result("auxiliary_completion_persistence_unproven",
             commands=recovery["commands"],state="Intervention",fertilizer_debt=True)
-    if injection and not physical_verified:
+    if not control_verified:
+        if energy_pause:
+            return _aux_result("mixing_paused_for_energy", commands=recovery["commands"],
+                state="Paused", execution=completed)
         return _aux_result("auxiliary_control_pulse_off_verified",
             commands=recovery["commands"],state="Intervention",fertilizer_debt=True,
             execution=completed,physical_delivery_verified=False)
-    return _aux_result("auxiliary_injection_delivery_verified" if injection
+    return _aux_result("auxiliary_injection_control_completed" if injection
         else "auxiliary_completed",commands=recovery["commands"],
         state="Completed",execution=completed,
         physical_delivery_verified=physical_verified)
@@ -401,7 +425,8 @@ def _read_auxiliary_output(execution,transport):
 
 def _aux_result(status,*,commands=0,state=None,fertilizer_debt=False,
                 auxiliary_contained=False,**extra):
-    return {"success":True,"status":status,"hardware_commands":commands,
+    return {"success":state != "Intervention","status":status,"hardware_commands":commands,
+        "writes_farm_data": commands > 0,
         "notification_state":state,"fertilizer_debt":fertilizer_debt,
         "auxiliary_contained":auxiliary_contained,"irrigation_may_continue":True,
         "irrigation_shutdown_authority_unchanged":True,"borehole_authority":False,

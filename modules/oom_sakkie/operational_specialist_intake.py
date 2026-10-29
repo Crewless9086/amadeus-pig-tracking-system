@@ -188,6 +188,10 @@ def handle_operational_specialist_message(
         and not semantic.get("protected_preview_required"))
     commissioning_request = is_exact_fertilizer_commissioning_request(parsed)
     commissioning_command = bool(_FERTILIZER_COMMISSIONING_COMMAND.fullmatch(text))
+    batch_fact = _fertilizer_batch_fact(text)
+    if batch_fact:
+        return _record_fertilizer_batch_fact(parsed, gateway_authority, batch_fact,
+            now=now, store=operation_store or _operation_event_store)
     pending = _pending_specialist_context(
         parsed, pending_specialist_loader or _load_pending_specialist_context)
     if pending and pending.get("binding_error"):
@@ -296,6 +300,63 @@ def handle_operational_specialist_message(
         outcome["acceptance_receipt_event_id"] = receipt_id
         outcome["acceptance_receipt_created"] = recorded.get("created") is True
     return outcome, 200
+
+
+def _fertilizer_batch_fact(text):
+    match = re.fullmatch(r"(?:the\s+)?fertili[sz]er\s+batch\s+(?:is\s+)?"
+        r"(prepared|ready|empty|unsafe|not ready)(?:\s+today)?[.!]?", text.strip(), re.I)
+    return ({"prepared":"fertilizer_batch_prepared", "ready":"fertilizer_batch_prepared",
+        "empty":"fertilizer_batch_empty", "unsafe":"fertilizer_batch_unsafe",
+        "not ready":"fertilizer_batch_not_ready"}.get(match.group(1).casefold()) if match else None)
+
+
+def _record_fertilizer_batch_fact(parsed, gateway_authority, kind, *, now, store):
+    """Record an authenticated physical batch report on the existing intake rail.
+
+    This is an observation, not device commissioning or an equipment command.
+    A provider replay retains its original observation time and cannot refresh it.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    at = _time(parsed.get("provider_timestamp"))
+    provider = str(parsed.get("provider_message_id") or "")
+    authority = bind_gateway_owner_authority(gateway_authority, ROOTLINE_READ_ONLY_TOOL)
+    if (not provider or at is None or not validates_rootline_gateway_authority(authority)
+            or authority.owner_user_id != str(parsed.get("telegram_user_id") or "")
+            or authority.private_chat_id != str(parsed.get("telegram_chat_id") or "")
+            or not 0 <= (now-at).total_seconds() <= 300):
+        return _contained(parsed, "fertilizer_batch_owner_observation_invalid", now), 409
+    mission = _mission(parsed)
+    context = {"mission_id":mission, "provider_message_id":provider,
+        "provider_timestamp":at.isoformat(), "event_type":kind,
+        "content_sha256":hashlib.sha256(str(parsed.get("text") or "").encode()).hexdigest()}
+    try:
+        prior = list(store("load", mission, None) or [])
+        done = next((row for row in reversed(prior) if row.get("state") == "completed"), None)
+        if done:
+            if done.get("context") != context:
+                return _contained(parsed, "fertilizer_batch_replay_conflict", now), 409
+            return {**done["outcome"], "replay_suppressed":True, "writes_farm_data":False}, 200
+        claim_id=mission+"-BATCH-CLAIM"
+        claim=store("record",claim_id,{"event_id":claim_id,"mission_id":mission,
+            "state":"batch_observation_claimed","context":context})
+        if claim.get("success") is not True or claim.get("created") is not True:
+            return _contained(parsed,"fertilizer_batch_claim_already_owned",now),409
+        outcome = {"handled":True, "success":True, "status":"specialist_accepted",
+            "specialist_identity":"ROOTLINE", "mission_id":mission,
+            "provider_message_id":provider, "hardware_commands":0, "provider_control_calls":0,
+            "writes_farm_data":True, "sends_telegram":False,
+            "fertilizer_batch_observation":{"event_type":kind, "observed_at":at.isoformat(),
+                "provider_message_id":provider, "source":"authenticated_owner_observation"},
+            "answer":("🌿 <b>ROOTLINE — FERTILIZER</b>\n\n• Batch preparation recorded. ROOTLINE will check mixing and eligible irrigation."
+                if kind == "fertilizer_batch_prepared" else
+                "🌿 <b>ROOTLINE — FERTILIZER</b>\n\n• Batch marked unavailable. Water-only irrigation can continue safely."),
+            "question_count":0}
+        saved = _record_terminal(store, mission, context, outcome)
+        if saved.get("success") is not True:
+            return _persistence_failed(parsed, now)
+        return outcome, 200
+    except Exception:
+        return _persistence_failed(parsed, now)
 
 
 def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observation_writer, now, store):

@@ -22,11 +22,13 @@ def rootline_irrigation_execution_store(action, payload):
                   "load_active_auxiliary", "load_auxiliary_off_attempts",
                   "load_auxiliary_containment", "load_auxiliary_history",
                   "load_auxiliary_physical_outcome", "load_job_events",
-                  "load_active_borehole", "load_borehole_off_attempts"}:
+                  "load_active_borehole", "load_borehole_off_attempts", "load_eskom_events"}:
         return _load(action, payload)
     body = dict(payload or {})
     if action == "dispatch_auxiliary_on_edge":
         return _dispatch_auxiliary_on_edge(body)
+    if action == "dispatch_eskom_command_edge":
+        return _dispatch_eskom_command_edge(body)
     execution_id = str(body.get("execution_id") or "").strip()
     if not execution_id:
         return {"success": False, "created": False}
@@ -36,6 +38,10 @@ def rootline_irrigation_execution_store(action, payload):
         return _bounded_claim(action, _claim_single_auxiliary, body)
     if action == "claim_borehole_before_on":
         return _bounded_claim(action, _claim_borehole_material_load, body)
+    if action == "claim_eskom_before_command":
+        return _bounded_claim(action, _claim_eskom_command, body)
+    if action == "record_eskom_completed":
+        return _complete_eskom_command(body)
     if action == "record_completed":
         return _record_parent_terminal_atomic(action, body)
     if action == "record_job_resolution" and body.get("resolution") == "Cancelled":
@@ -64,6 +70,8 @@ def rootline_irrigation_execution_store(action, payload):
             # active-parent check. Lock order is identical everywhere.
             connection.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             connection.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+        if action in {"record_eskom_completed", "record_eskom_command_outcome"}:
+            connection.execute("select pg_advisory_xact_lock(%s)",(1874320914,))
         return connection
     result, status = record_sam_live_stock_review_event(event,
         connect_factory=connect_for_event)
@@ -244,10 +252,16 @@ def _stored_event_body(action, body, event_id):
 
 def _event_id(action, body):
     execution = str(body.get("execution_id") or "")
-    if action in {"claim_before_on", "claim_auxiliary_before_on", "claim_borehole_before_on"}:
+    if action in {"claim_before_on", "claim_auxiliary_before_on", "claim_borehole_before_on", "claim_eskom_before_command"}:
         material = f"{execution}:CLAIM"
     elif action == "claim_notification":
         material = f"{execution}:NOTIFY:{body.get('notification_state')}"
+    elif action == "record_fertilizer_sequence_completed":
+        material = f"{execution}:CONTROLLER-SEQUENCE-COMPLETED"
+    elif action == "record_eskom_completed":
+        material = f"{execution}:ESKOM-COMPLETED"
+    elif action == "claim_eskom_dispatch":
+        material = f"{execution}:ESKOM-DISPATCH"
     elif (action == "record_job_resolution"
             and body.get("contract_version") == "rootline_parent_job_terminal_resolution.v1"
             and body.get("resolution") == "Cancelled"):
@@ -271,6 +285,14 @@ def _load(action, payload):
     try:
       with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
+            if action == "load_eskom_events":
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s and review_json->'rootline_execution'->>'device_key'=%s
+                      and review_json->'rootline_execution'->>'action' in
+                          ('claim_eskom_before_command','claim_eskom_dispatch','record_eskom_command_outcome','record_eskom_completed')
+                    order by created_at,review_event_id""", (EVENT_SOURCE,str(payload or "")))
+                return [row[0] if isinstance(row[0],dict) else json.loads(row[0]) for row in cursor.fetchall()]
             if action in {"load_active", "load_active_auxiliary", "load_active_borehole"}:
                 borehole=action=="load_active_borehole"; auxiliary=action=="load_active_auxiliary"
                 claim_action=("claim_borehole_before_on" if borehole else
@@ -349,10 +371,11 @@ def _load(action, payload):
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
                     where event_source=%s
-                      and review_json->'rootline_execution'->>'action'=
-                          'record_auxiliary_completed'
+                      and review_json->'rootline_execution'->>'action' in (
+                          'record_auxiliary_completed','claim_auxiliary_before_on',
+                          'mark_auxiliary_active','contain_auxiliary_device')
                       and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
-                    order by created_at""", (EVENT_SOURCE, str(payload or "")))
+                    order by created_at,review_event_id""", (EVENT_SOURCE, str(payload or "")))
                 return [row[0] if isinstance(row[0], dict) else json.loads(row[0])
                         for row in cursor.fetchall()]
             if action == "load_auxiliary_physical_outcome":
@@ -502,6 +525,151 @@ def _bounded_claim(action, claim, body):
         raise
 
 
+def _claim_eskom_command(body):
+    """Consume one grid transition; an unresolved claim forbids another one."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    key=str(body.get("device_key") or ""); device=str(body.get("device_id") or "")
+    decision=body.get("decision") or {}; previous=body.get("previous_readback") or {}
+    if (key != "ifttt_smartlife:smartlife_owner_account:"+device+":1"
+            or not device or body.get("desired_state") not in {"ON","OFF"}
+            or decision.get("fresh") is not True
+            or decision.get("eskom_requested_state") != body.get("desired_state")
+            or previous.get("authoritative") is not True or previous.get("device_id") != device
+            or previous.get("state") == body.get("desired_state")):
+        return {"success":False,"created":False,"status":"eskom_claim_invalid"}
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False) as connection, connection.cursor() as cursor:
+        cursor.execute("select pg_advisory_xact_lock(%s)",(1874320914,))
+        cursor.execute("""select 1 from app_private.rootline_device_registry r
+            where r.device_key=%s and r.evidence_digest=%s
+              and r.commissioning_stage='standing_active' and not r.authority_revoked
+              and exists(select 1 from app_private.rootline_standing_authorities a
+                where a.standing_authority_id=r.standing_authority_id
+                  and a.version=r.standing_authority_version and a.active and not a.revoked
+                  and not exists(select 1 from app_private.rootline_authority_events e
+                    where e.standing_authority_id=a.standing_authority_id and e.version=a.version
+                      and e.event_type in ('revoked','superseded')))""",(key,body.get("baseline_sha256")))
+        if not cursor.fetchone():
+            return {"success":True,"created":False,"status":"eskom_canonical_authority_changed"}
+        cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events c
+            where c.event_source=%s and c.review_json->'rootline_execution'->>'device_key'=%s
+              and c.review_json->'rootline_execution'->>'action'='claim_eskom_before_command'
+              and not exists(select 1 from public.sam_live_stock_conversation_review_events t
+                where t.event_source=%s and t.review_json->'rootline_execution'->>'action'='record_eskom_completed'
+                  and t.review_json->'rootline_execution'->>'execution_id'=c.review_json->'rootline_execution'->>'execution_id')
+            limit 1""",(EVENT_SOURCE,key,EVENT_SOURCE))
+        if cursor.fetchone():
+            return {"success":True,"created":False,"status":"eskom_pending_command"}
+        cursor.execute("""select review_json->'rootline_execution'->>'execution_id'
+            from public.sam_live_stock_conversation_review_events
+            where event_source=%s and review_json->'rootline_execution'->>'device_key'=%s
+              and review_json->'rootline_execution'->>'action'='record_eskom_completed'
+            order by created_at desc,review_event_id desc limit 1""",(EVENT_SOURCE,key))
+        latest=cursor.fetchone()
+        if (latest[0] if latest else None)!=body.get("expected_transition_id"):
+            return {"success":True,"created":False,"status":"eskom_observation_version_changed"}
+        event_id=_event_id("claim_eskom_before_command",body)
+        cursor.execute("""insert into public.sam_live_stock_conversation_review_events
+            (review_event_id,chatwoot_conversation_id,source_agent,event_source,recommended_action,review_json)
+            values(%s,%s,'rootline_backend',%s,'claim_eskom_before_command',%s::jsonb)
+            on conflict(review_event_id) do nothing""",(event_id,body["execution_id"],EVENT_SOURCE,
+                json.dumps({"rootline_execution":_stored_event_body("claim_eskom_before_command",body,event_id)},
+                    sort_keys=True,separators=(",",":"),default=str)))
+        return {"success":True,"created":cursor.rowcount==1}
+
+
+def _eskom_locked_events(connection, body):
+    connection.execute("select pg_advisory_xact_lock(%s)",(1874320914,))
+    return [row[0] for row in connection.execute("""select review_json->'rootline_execution'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s and review_json->'rootline_execution'->>'device_key'=%s
+        order by created_at,review_event_id""",(EVENT_SOURCE,body.get("device_key"))).fetchall()]
+
+
+def _dispatch_eskom_command_edge(body):
+    """Keep the exclusive transition fence until the provider has returned.
+
+    The claim committed earlier is never undone. If this transaction loses its
+    outcome, no later tick may resend or complete that unresolved claim.
+    """
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    from datetime import datetime, timedelta
+    body=dict(body); dispatch=body.pop("dispatch",None)
+    if not callable(dispatch):
+        return {"success":False,"dispatched":False}
+    # Commit a single-use dispatch reservation before entering the provider
+    # transaction. An interrupted sender cannot reopen its edge on rollback.
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False) as connection:
+        rows=_eskom_locked_events(connection,body)
+        matching=[row for row in rows if row.get("execution_id")==body.get("execution_id")]
+        if (not any(row.get("action")=="claim_eskom_before_command" for row in matching)
+                or any(row.get("action") in {"claim_eskom_dispatch","record_eskom_command_outcome",
+                    "record_eskom_completed"} for row in matching)):
+            return {"success":False,"dispatched":False,"status":"eskom_dispatch_already_consumed"}
+        _write_terminal_review(connection,"claim_eskom_dispatch",{
+            "execution_id":body.get("execution_id"),"device_key":body.get("device_key")})
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False) as connection:
+        rows=_eskom_locked_events(connection,body)
+        matching=[row for row in rows if row.get("execution_id")==body.get("execution_id")]
+        claim=next((row for row in matching if row.get("action")=="claim_eskom_before_command"),None)
+        if (claim is None or any(row.get("action") in {"record_eskom_command_outcome",
+                "record_eskom_completed"} for row in matching)
+                or any(claim.get(key)!=value for key,value in body.items())):
+            return {"success":False,"dispatched":False,"status":"eskom_edge_claim_changed"}
+        current=connection.execute("select clock_timestamp()").fetchone()[0]
+        decision=managed_energy_decision(body.get("power_evidence"),now=current)
+        try:
+            observed=datetime.fromisoformat(body["previous_readback"]["retrieved_at"].replace("Z","+00:00"))
+            fresh=timedelta(0)<=current-observed<=timedelta(minutes=2)
+        except (KeyError,TypeError,ValueError): fresh=False
+        if not fresh or not decision["fresh"] or decision["eskom_requested_state"]!=body.get("desired_state"):
+            return {"success":False,"dispatched":False,"status":"eskom_edge_evidence_stale"}
+        authority=connection.execute("""select 1 from app_private.rootline_device_registry r
+            where r.device_key=%s and r.evidence_digest=%s
+              and r.commissioning_stage='standing_active' and not r.authority_revoked
+              and exists(select 1 from app_private.rootline_standing_authorities a
+                where a.standing_authority_id=r.standing_authority_id
+                  and a.version=r.standing_authority_version and a.active and not a.revoked
+                  and not exists(select 1 from app_private.rootline_authority_events e
+                    where e.standing_authority_id=a.standing_authority_id and e.version=a.version
+                      and e.event_type in ('revoked','superseded')))""",
+            (body.get("device_key"),body.get("baseline_sha256"))).fetchone()
+        if not authority:
+            return {"success":False,"dispatched":False,"status":"eskom_edge_authority_changed"}
+        outcome=dispatch()
+        returned_at=connection.execute("select clock_timestamp()").fetchone()[0]
+        saved=_write_terminal_review(connection,"record_eskom_command_outcome",{
+            **body,"outcome":outcome,"dispatch_returned_at":returned_at.isoformat()})
+        return {**saved,"dispatched":outcome.get("command_not_sent") is not True}
+
+
+def _complete_eskom_command(body):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from datetime import datetime, timedelta
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False) as connection:
+        rows=_eskom_locked_events(connection,body)
+        matching=[row for row in rows if row.get("execution_id")==body.get("execution_id")]
+        claim=next((row for row in matching if row.get("action")=="claim_eskom_before_command"),None)
+        outcome=next((row for row in matching if row.get("action")=="record_eskom_command_outcome"),None)
+        readback=body.get("readback") or {}
+        try:
+            observed=datetime.fromisoformat(readback["retrieved_at"].replace("Z","+00:00"))
+            returned=datetime.fromisoformat(outcome["dispatch_returned_at"].replace("Z","+00:00"))
+            current=connection.execute("select clock_timestamp()").fetchone()[0]
+            current_after_sender=returned<=observed<=current and current-observed<=timedelta(minutes=2)
+        except (KeyError,TypeError,ValueError): current_after_sender=False
+        if (not claim or not outcome or (outcome.get("outcome") or {}).get("command_not_sent") is True
+                or not current_after_sender
+                or readback.get("authoritative") is not True or readback.get("device_id")!=claim.get("device_id")
+                or readback.get("state")!=claim.get("desired_state")):
+            return {"success":False,"created":False,"status":"eskom_sender_outcome_unproven"}
+        return _write_terminal_review(connection,"record_eskom_completed",body)
+
+
 def _claim_irrigation_output(body):
     """Atomically serialize irrigation and consume one governed output authority."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
@@ -559,7 +727,7 @@ def _claim_irrigation_output(body):
                 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
                   and claim.review_json->'rootline_execution'->>'action'
-                      in ('claim_before_on','claim_borehole_before_on')
+                      in ('claim_before_on')
                   and not exists (
                     select 1 from public.sam_live_stock_conversation_review_events terminal
                     where terminal.event_source=%s
@@ -749,6 +917,44 @@ def _claim_single_auxiliary(body):
                 (EVENT_SOURCE,event_id,consumption_key))
             if cursor.fetchone():
                 return {"success":True,"created":False,"status":"eligibility_already_consumed"}
+            # The global and auxiliary locks serialize these budget checks with
+            # every new claim. A changed plan cannot purchase a second pulse or
+            # refund a mixer reservation after uncertain/failed execution.
+            if body.get("device_type") == "fertilizer_injection_valve":
+                cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
+                      and review_json->'rootline_execution'->>'zone_execution_id'=%s
+                      and review_json->'rootline_execution'->>'pulse_number'=%s limit 1""",
+                    (EVENT_SOURCE, str(body.get("zone_execution_id") or ""),
+                     str(body.get("pulse_number") or "")))
+                if cursor.fetchone():
+                    return {"success":True,"created":False,"status":"pulse_already_claimed"}
+            elif body.get("device_type") == "fertilizer_mixer":
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and review_json->'rootline_execution'->>'device_type'='fertilizer_mixer'
+                      and review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
+                    order by created_at,review_event_id""", (EVENT_SOURCE,))
+                from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
+                from datetime import datetime
+                at = datetime.fromisoformat(str(body.get("claimed_at") or ""))
+                account = mixing_daily_accounting([row[0] for row in cursor.fetchall()]
+                    + [{**body, "action":"claim_auxiliary_before_on"}], now=at)
+                if not account["history_valid"] or account["reserved_seconds"] > 1800:
+                    return {"success":True,"created":False,"status":"daily_mixing_budget_unavailable"}
+            cursor.execute("""select review_json->'rootline_execution'
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s and review_json->'rootline_execution'->>'action'
+                    in ('claim_borehole_before_on','record_borehole_completed')
+                order by created_at,review_event_id""", (EVENT_SOURCE,))
+            borehole_rows = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
+            closed = {row.get("execution_id") for row in borehole_rows if _verified_borehole_completion(row)}
+            if (body.get("device_type") != "fertilizer_injection_valve"
+                    and any(row.get("action") == "claim_borehole_before_on"
+                        and row.get("execution_id") not in closed for row in borehole_rows)):
+                return {"success":True,"created":False,"status":"material_load_active"}
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
                   and claim.review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
@@ -796,8 +1002,8 @@ def _claim_borehole_material_load(body):
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
                                            read_only=False) as connection:
       with connection.cursor() as cursor:
-        # Same lock as irrigation: borehole pumping and irrigation are exclusive
-        # material loads unless a future commissioned policy explicitly changes it.
+        # The common output lock serializes claims. Gravity B/C is not a pump
+        # load; a mixer remains a conflicting material load.
         cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
         cursor.execute("""select review_json->'rootline_execution'
           from public.sam_live_stock_conversation_review_events
@@ -816,7 +1022,7 @@ def _claim_borehole_material_load(body):
             return {"success":True,"created":False,"status":"canonical_borehole_eligibility_unproven"}
         cursor.execute(f"""select 1 from public.sam_live_stock_conversation_review_events c
           where c.event_source=%s and c.review_json->'rootline_execution'->>'action'
-            in ('claim_before_on','claim_auxiliary_before_on','claim_borehole_before_on') and not exists(
+            in ('claim_auxiliary_before_on','claim_borehole_before_on') and not exists(
               select 1 from public.sam_live_stock_conversation_review_events t
               where t.event_source=%s and t.review_json->'rootline_execution'->>'execution_id'=
                 c.review_json->'rootline_execution'->>'execution_id' and
@@ -874,12 +1080,19 @@ def _valid_borehole_eligibility(value):
     material={key:value.get(key) for key in ("contract_version","device_key",
       "baseline_sha256","registry_generation","need_sha256","evidence_sha256",
       "requested_seconds","assessed_at","gates","blockers")}
+    version=material["contract_version"]
+    if version=="rootline_borehole_runtime_eligibility.v2":
+        native=value.get("native_fail_stop_seconds")
+        if (type(native) is not int or type(value.get("requested_seconds")) is not int
+                or not 0<value["requested_seconds"]<=native<=14400):
+            return False
+        material["native_fail_stop_seconds"]=native
     digest=hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),
       default=str).encode()).hexdigest()
     required_gates={"canonical_need","commissioned_baseline","standing_authority",
       "provider_off","dry_run","low_water","supply_pressure","full_tank",
       "energy","concurrency","bounded_runtime"}
-    return (material["contract_version"]=="rootline_borehole_runtime_eligibility.v1"
+    return (version in {"rootline_borehole_runtime_eligibility.v1","rootline_borehole_runtime_eligibility.v2"}
       and material["device_key"]=="ewelink:ewelink_owner_account:1002851416:1"
       and value.get("eligibility_sha256")==digest
       and value.get("execution_id")=="ROOTLINE-BOREHOLE-"+digest[:24].upper()
@@ -942,6 +1155,11 @@ def _append_history(action, body, *, connection=None, append=True):
         "shutdown_evidence_id": (body.get("shutdown_evidence") or {}).get("evidence_id") or "Unavailable",
         "shutdown_verified": body.get("shutdown_verified") is True,
         "objective_satisfied": body.get("objective_satisfied") is True,
+        "job_id": body.get("job_id"),
+        "job_sha256": body.get("job_sha256"),
+        "job_completed": body.get("job_completed"),
+        "segment_number": body.get("segment_number"),
+        "cumulative_verified_runtime_seconds": body.get("cumulative_verified_runtime_seconds"),
         "evidence_cutoff": body.get("completed_at") or body.get("claimed_at"),
         "shutdown_observed_at": body.get("completed_at"),
         "provenance": "rootline_execution_coordinator",

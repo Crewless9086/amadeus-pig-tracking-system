@@ -16,7 +16,7 @@ blocks only the dependent action or claim.
 
 Status: owner-confirmed operating knowledge
 
-Last governance reconciliation: 2026-08-12
+Last governance reconciliation: 2026-10-29 (integrated-operation owner corrections).
 
 Purpose: provide the controlling business and physical-system rules for ROOTLINE water, energy, weather, and future device-management work.
 
@@ -42,7 +42,12 @@ The confirmed high-level water path is:
   channel 1, with exact IFTTT events `borehole_1_on` and `borehole_1_off`. It is a
   distinct typed device and authority domain; B/C irrigation or fertilizer
   commissioning never grants borehole authority.
-- Power restoration is OFF and native inching/auto-OFF is four hours. Under the
+- Power restoration must be OFF. Four hours is the governance ceiling, not a
+  claim about current native configuration. Every supply window is bounded by
+  the shorter, exact native fail-stop proven in its current canonical baseline
+  and provider readback. The earlier statement that four-hour inching was
+  already installed was not verified by the 29 October provider snapshot.
+  Under the
   owner's standing authority, fresh authoritative provider/app OFF -> ON -> OFF
   is sufficient commissioning and operational proof; routine physical presence,
   preview and confirmation are not required.
@@ -58,8 +63,53 @@ The confirmed high-level water path is:
   may not infer pumped volume or storage fill merely because the smart plug was ON.
 - The approximately 1.2 kW inverter load is supporting evidence only and never
   a gate or stop condition.
-- Once the exact canonical action and applicable authority are governed, nighttime is the borehole catch-up window. ROOTLINE chooses start time and duration from water continuity, storage/reservoir evidence, actual rain, forecast reliability, battery/solar/grid evidence, and expected need.
+- Once separately commissioned and enabled, Borehole 1 is normally supplied
+  throughout the day and night through supervised bounded windows. Solar,
+  then battery, then grid support water availability. Forecast rain or a full
+  tank observation alone does not cancel this supply programme: the installed
+  full-tank cutoff controls pumping. Fresh low-energy or explicit unsafe/isolation
+  evidence still stops or prevents the affected window.
 - The internal full-tank cutoff means an energized overnight window is not itself proof of needless pumping, but ROOTLINE must verify actual outcome rather than equating plug state with water movement.
+
+Installed pump protections and current observations are different evidence.
+The installed profile must resolve to canonical evidence with exact source,
+identity, timestamp and digest, device binding and manual-isolation proof.
+Owner-confirmed internal protection and storage-full cutoff do not imply every
+unreported protection subtype or a current all-clear. Explicit unsafe facts
+persist until a later attributable correction; omission, stale positive
+readings or out-of-order ingestion cannot clear them. Normal full-tank cutoff
+is expected, while a cutoff fault is unsafe. Do not request daily synthetic
+tank, pressure or dry-run confirmations when the installed profile governs.
+
+### Eskom supply policy
+
+The owner's continuous borehole/grid programme uses fresh battery SOC of 30%
+or below to request Eskom ON. Eskom OFF requires SOC at least 35% and solar
+actually charging/recovering the battery; grid-only charging cannot authorize
+OFF. Between these boundaries retain the current breaker state. Unknown,
+conflicting or stale power/charging direction cannot authorize a transition.
+These thresholds supersede the general discretionary reserve only for this
+continuous-supply programme. Mixer reserve remains separately protected.
+
+The exact SmartLife `Eskom Grid` device and switch DP are private configuration,
+not source constants. IFTTT `eskom_grid_on`/`eskom_grid_off` must be paired with
+authenticated exact-device Tuya online/switch readback and canonical standing
+commissioning. Grid watts are not a breaker-state substitute. Consume a durable
+transition and dispatch reservation before sending; serialize the final fresh
+decision, command and saved outcome; reconcile only a post-sender readback.
+An interrupted sender without durable outcome cannot resend automatically.
+Absent API entitlement, mapping or commissioning blocks Eskom only, not gravity B/C.
+
+This grid-support breaker uses the exact `smartlife_eskom_hysteresis_v1`
+profile: retain state (`UNCHANGED`) when a fresh transition is not authorized;
+zero maximum/native countdown fields explicitly mean no countdown. An unrelated
+valve timer must not disconnect required grid support before solar recovery.
+The canonical profile instead requires independently proven electrical
+protection and manual isolation, with current canonical evidence references,
+exact physical identity and unrevoked standing policy. This exception belongs
+only to the named 30/35 grid programme; pumps, valves and other breakers retain
+their existing native fail-stop requirements. No electrical proof is inferred
+from a Boolean switch response or an ON/OFF applet.
 
 ### Solar Transfer Pump
 
@@ -140,10 +190,9 @@ ROOTLINE must learn forecast reliability by retaining privacy-safe predicted-ver
 - Water is a standing essential requirement, not an optional demand Charl must repeatedly classify as `needed` or `urgent`.
 - Avoidable grid use should be minimized across days and months.
 - Grid-supported pumping is permitted when genuinely required to protect water continuity.
-- ROOTLINE should conserve battery/grid capacity on days when pumping is not needed so capacity remains available on poor-weather or high-water-demand days.
-- Expected rain may justify a bounded delay, but it may not create an avoidable water shortage.
-- If expected rain fails, ROOTLINE should recover the missed pumping opportunity rather than wait indefinitely.
-- When storage and reservoir evidence show adequate water, ROOTLINE may stop at an owner-approved SOC threshold to avoid unnecessary grid use.
+- Conserve discretionary battery/grid use. The separately commissioned,
+  normally-on borehole supply follows the 30/35 policy above; forecast rain or
+  adequate storage alone must not suppress its supply availability.
 - When both storage and reservoir are low, water wins: ROOTLINE may recommend governed overnight grid-backed pumping even when battery energy is low.
 
 Current owner-confirmed energy boundaries:
@@ -155,7 +204,10 @@ Current owner-confirmed energy boundaries:
 - the current poor/uncertain evidence policy may govern at 70%;
 - prepaid grid energy is approximately R9/kWh and historically about R2,000 per month, but billing-grade reconciliation is still required.
 
-Present solar production alone is not sufficient reason to reduce the governing reserve.
+Present solar production alone is not sufficient reason to reduce the governing
+reserve. Fresh net solar headroom may support a bounded mixer opportunity without
+spending battery reserve; the active mixer checks current load without counting
+its own load twice. Loss of sufficient power stops the current mixing window.
 
 ## Irrigation And Fertilizer Context
 
@@ -183,6 +235,10 @@ Irrigation eligibility, runtime, weather, available water, and energy must be re
 - The owner target is to irrigate each of B and C Camp approximately four days per week, normally for about two hours because they are drip systems, while optimizing for adequate soil water and yield rather than mechanically following a calendar.
 - This weekly requirement is the default agronomic obligation. Charl must not repeatedly report that a camp visibly needs water before ROOTLINE can plan or execute routine irrigation. A visual observation is useful priority/correction evidence, not a standing prerequisite.
 - ROOTLINE must maintain per-zone weekly delivery debt from verified completed segments. Weather, observed rain, season, water availability, power, prior outcome and owner correction may move, shorten, recover or hold a segment, but an absent visual report must not silently erase the weekly obligation.
+- A nominal two-hour parent uses two 3,599-second bounded segments (7,198
+  seconds), not a third two-second run. Credit the full daily objective only
+  after both segments are complete. Fresh verified segment-one OFF permits
+  reassessment of the remainder; a new wet/not-needed decision can still hold it.
 - ROOTLINE must produce a fresh plan for each operating day from crop/season need, recent completed irrigation, soil or other available need evidence, storage/reservoir evidence, and observed and forecast weather. B/C valve actuation is gravity-fed and must not be delayed, held, scored down, or made `Needs Data` because of battery SOC, solar, load, grid state, forecast-derived reserve, or stale power telemetry. Power may be reported as wider farm context, but it is not a B/C irrigation eligibility or timing gate.
 - Under the current envelope ROOTLINE may run B only, C only, or both sequentially; it may shorten a run, move it, or hold it. Concurrent B/C is a future expansion requiring separate hydraulic/electrical commissioning, exact owner authorization, reviewed implementation and explicit activation; it does not inherit current B/C standing authority. The plan must state what will run, when, for how long, why, and when it will reassess.
 - Summer generally favours night irrigation so water can enter the soil with lower avoidable loss. Winter or current conditions may support daytime irrigation. Clock time is an adaptive decision, not a fixed rule.
@@ -334,7 +390,9 @@ Confirmed direction:
   proven, and enough remaining segment time exists for the pulse and flush;
 - the stated injection-duration evidence conflicts: 60 seconds was supplied as a maximum while the owner also indicated longer than 60 seconds may be preferable.
 
-The historical app used two-minute injection windows. ROOTLINE must derive future pulse timing from the reviewed fertilizer structure and physical flow/concentration evidence rather than preserve those clock times blindly.
+The historical app used two-minute injection windows. Current pulse timing is
+the owner-approved bounded programme below, not replay of legacy clock schedules.
+Absent flow or concentration evidence does not block its controller sequence.
 
 The owner regards temporary static-line contact with this natural mixture as low risk. This does not prove relay identity, deterministic OFF, timing accuracy, or successful injection.
 
@@ -385,13 +443,16 @@ Initial owner operating envelope for commissioning and planning:
 - clean-water pre-flow before the first pulse: at least 10 minutes;
 - clean-water flush after the final pulse: at least 10 minutes;
 - minimum spacing between injection pulses remains 10 minutes;
-- mix for approximately five minutes before the first irrigation segment and again before
-  a subsequent segment when fertilizer will be injected;
-- independent daily mixing may total at most 30 minutes, split into smaller sections as
-  energy conditions permit;
-- channel 2 requires an independently verified native mixing fail-stop before autonomous
-  use; the initial target is five minutes per mixing segment, with no more than 30 verified
-  minutes per day;
+- mixing has an independent daily target and ceiling of 30 minutes, split into
+  suitable energy opportunities. Premixing counts toward the same total;
+- the same prepared batch's qualified mixing earlier that day may support
+  injection. Do not require another five-minute mix before every segment or
+  exceed the daily ceiling after the target has already been met;
+- channel 2 requires its independently verified native 1,800-second fail-stop
+  before autonomous use; routine opportunities may use smaller 600-second
+  windows. Durable reserved/completed controller time, including premix,
+  shares the 1,800-second SAST-day ceiling. Count uncertain/interrupted
+  reservations conservatively; never refund unknown time into endless retries;
 - the mixer/pump path is treated as an approximately 1 kW material load until measured;
 - B/C gravity-fed irrigation remains independent of farm energy state, while fertilizer
   mixing may be optimized against energy evidence;
@@ -402,18 +463,25 @@ Initial owner operating envelope for commissioning and planning:
   commissioning, native fail-stop proof, deterministic OFF, replay proof and separate
   activation authority.
 
-The operating envelope establishes how to execute a supported fertilizer task; it does not
-establish when fertilizer is agronomically required, the mixture's concentration/recipe,
-or whether B and C should receive the same fertilizer programme. Those remain separate
-eligibility evidence and must not be inferred from an available/full tank.
+The standing programme below establishes the intended B/C frequency. It does
+not establish nutrient dose, concentration or agronomic benefit.
 
 The initial owner fertilizer programme is to inject during every eligible B or C irrigation
 run because the farm is rebuilding the soil. This establishes intended frequency, but it
-does not prove dose or concentration. ROOTLINE must mix before injection and track the Monday
-batch, subsequent injection events and water-only refill/dilution. Autonomous dosing must
-remain bounded by measured or owner-approved batch capacity, recipe and injection flow; a
-fixed valve duration must not be presented as a fixed nutrient dose until those facts are
-known.
+does not prove dose or concentration. ROOTLINE tracks the weekly prepared batch,
+same-batch mixing, subsequent pulses and refill/dilution. A real prepared-batch
+record is required; empty, unsafe and not-ready reports suspend fertilizer.
+Authenticated owner intake supports `Fertilizer batch prepared`, `Fertilizer
+batch empty`, `Fertilizer batch unsafe` and `Fertilizer batch not ready`; replay
+preserves the original observation time. No daily fertilizer-needed prompt is
+required. A missing batch produces one fertilizer-specific gap while water-only
+irrigation remains possible.
+
+Exact ON/OFF readbacks, two bounded 120-second controller pulses, the spacing,
+preflow and final flush establish controller-sequence completion. A flow sensor,
+batch recipe, concentration or measured volume is not a prerequisite for that
+control programme. Never describe controller completion as verified flow,
+litres delivered, nutrient dose or soil benefit.
 
 ## Future SmartLife, SONOFF, And IFTTT Setup
 
@@ -427,6 +495,11 @@ An unused channel must be recorded as:
 - no assumed equipment, flow, energy, or farm effect.
 
 Creating an IFTTT function does not prove a physical device mapping and does not grant ROOTLINE actuation authority. A commissioned mapping likewise does not grant another device class authority or prove a specific farm outcome.
+
+A camp is irrigation controller channel 4 and E camp channel 3. Their paired
+events are `irrigation_1_ch4_on/off` and `irrigation_1_ch3_on/off` respectively.
+Both remain plumbing-not-ready, uncommissioned and inactive until the owner
+confirms completed pipework and the exact commissioning/activation gate passes.
 
 The future setup runbook must record, without storing secrets:
 
@@ -456,7 +529,9 @@ requiring replenishment by default unless credible current evidence says otherwi
 
 This assumption creates neither litres nor millimetres, does not create water credit, and
 does not authorize Borehole 1. Borehole actuation still requires its own commissioned
-provider identity, fail-OFF contract, conflict isolation and physical pump/water proof.
+provider identity, fail-OFF contract, conflict isolation and resolved installed
+protections. Provider ON/OFF proves the governed supply cycle; it does not prove
+physical pump operation or water movement.
 
 These rules authorize observation, reasoning, adaptive planning and owner summaries. They document the owner-approved standing B/C envelope, but do not themselves enable its production runtime flag. Hardware configuration, activation and expansion remain separate protected decisions.
 
@@ -482,5 +557,5 @@ private mutation path, weaken confirmation or reinterpret completion.
 Hardware actions require explicit owner authorization unless they fall inside
 an explicitly enabled and proven standing envelope. Voice transcription,
 Telegram delivery, UI clicks and semantic interpretation are intent evidence,
-not actuation authority. Completion requires the device-specific provider and
-physical verification defined above.
+not actuation authority. Completion requires the device-specific verification
+defined above; control completion and physical delivery remain distinct.

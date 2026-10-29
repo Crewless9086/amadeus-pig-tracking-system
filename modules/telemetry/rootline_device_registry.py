@@ -13,6 +13,22 @@ import json
 CONTRACT_VERSION = "rootline_device_contract.v1"
 
 _DEVICES = {
+    "A12345": {
+        "collection":"irrigation_zones", "device_type":"irrigation_zone_valve",
+        "provider":"ifttt_ewelink", "provider_account_binding":"ewelink_owner_account",
+        "device_id":"100204e9bc", "device_name":"IRRIGATION (1) - Left", "channel":4,
+        "on_event":"irrigation_1_ch4_on", "off_event":"irrigation_1_ch4_off", "native_fail_stop_seconds":3599,
+        "authority_flag":"ROOTLINE_A_ENABLED", "commissioned":False,
+        "plumbing_ready":False, "readiness":"await_owner_confirmed_pipework_and_commissioning",
+    },
+    "E12345": {
+        "collection":"irrigation_zones", "device_type":"irrigation_zone_valve",
+        "provider":"ifttt_ewelink", "provider_account_binding":"ewelink_owner_account",
+        "device_id":"100204e9bc", "device_name":"IRRIGATION (1) - Left", "channel":3,
+        "on_event":"irrigation_1_ch3_on", "off_event":"irrigation_1_ch3_off", "native_fail_stop_seconds":3599,
+        "authority_flag":"ROOTLINE_E_ENABLED", "commissioned":False,
+        "plumbing_ready":False, "readiness":"await_owner_confirmed_pipework_and_commissioning",
+    },
     "B12345": {
         "collection": "irrigation_zones", "device_type": "irrigation_zone_valve",
         "provider": "ifttt_ewelink", "provider_account_binding": "ewelink_owner_account",

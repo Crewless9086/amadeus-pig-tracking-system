@@ -25,18 +25,20 @@ def assess_borehole_commissioning_readiness(readback, *, canonical=None, physica
                                         (readback, canonical, physical))
     observed = _time(readback.get("retrieved_at") or readback.get("trusted_receipt_at"))
     channels = list(readback.get("channels") or ())
+    target=channels[0] if len(channels)==1 and channels[0].get("channel")==1 else {}
+    safety={**readback,**target}
     exact = (readback.get("device_id") == device["device_id"]
              and readback.get("device_name") == device["device_name"]
-             and str(readback.get("model") or "").upper().replace(" ", "") == "MINIR4"
-             and channels == [{"channel": 1, "output_state": "OFF"}])
+             and str(readback.get("model") or readback.get("device_model") or "").upper().replace(" ", "") == "MINIR4"
+             and len(channels)==1 and target.get("output_state")=="OFF")
     current = observed is not None and not now < observed and now - observed <= READBACK_MAX_AGE
-    fail_off = (readback.get("native_auto_off_enabled") is True
-                and type(readback.get("native_auto_off_seconds")) is int
-                and 1 <= readback["native_auto_off_seconds"] <= COMMISSIONING_TEST_MAX_SECONDS)
+    fail_off = (safety.get("native_auto_off_enabled") is True
+                and type(safety.get("native_auto_off_seconds")) is int
+                and 1 <= safety["native_auto_off_seconds"] <= COMMISSIONING_TEST_MAX_SECONDS)
     conflicts = (readback.get("timers_enabled") is False
                  and readback.get("scenes_enabled") is False
                  and readback.get("interlock_enabled") is False
-                 and readback.get("power_restoration_state") == "OFF")
+                 and safety.get("power_restoration_state") == "OFF")
     canonical_ok = _canonical_baseline_valid(canonical, device)
     blockers = []
     if not exact: blockers.append("exact_provider_device_channel_off_identity_unproven")
@@ -53,7 +55,8 @@ def assess_borehole_commissioning_readiness(readback, *, canonical=None, physica
         "provider": device["provider"], "provider_account_binding": device["provider_account_binding"],
         "device_id": device["device_id"], "device_name": device["device_name"],
         "model": device["model"], "channel": 1, "safe_state": "OFF",
-        "maximum_test_seconds": COMMISSIONING_TEST_MAX_SECONDS,
+        "maximum_test_seconds": safety["native_auto_off_seconds"] if fail_off else None,
+        "governance_maximum_seconds": COMMISSIONING_TEST_MAX_SECONDS,
         "native_fail_off_required": True, "all_other_channels_off_required": True,
         "no_on_retry": True, "safe_repeated_off": True,
         "provider_off_verification_required": True, "physical_final_off_required": False,
@@ -82,16 +85,20 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
         "provider": provider, "interlocks": interlocks, "energy": energy,
         "concurrency": concurrency}.items()}
     maximum = packets["commissioned_baseline"].get("maximum_routine_runtime_seconds")
+    native=packets["commissioned_baseline"].get("native_fail_stop_seconds",maximum)
     seconds_ok = (type(requested_seconds) is int and requested_seconds > 0
-                  and type(maximum) is int and requested_seconds <= maximum)
+                  and type(maximum) is int and type(native) is int
+                  and requested_seconds <= min(maximum,native,14400))
+    protection = borehole_protection_assessment(packets["commissioned_baseline"],
+        packets["interlocks"], now=now)
     gates = {"canonical_need": packets["need"].get("eligible") is True,
         "commissioned_baseline": packets["commissioned_baseline"].get("current") is True,
         "standing_authority": packets["authority"].get("inside_standing_authority") is True,
         "provider_off": packets["provider"].get("authoritative") is True and packets["provider"].get("state") == "OFF",
-        "dry_run": packets["interlocks"].get("dry_run_safe") is True,
-        "low_water": packets["interlocks"].get("low_water_clear") is True,
-        "supply_pressure": packets["interlocks"].get("supply_pressure_safe") is True,
-        "full_tank": packets["interlocks"].get("full_tank_not_blocking") is True,
+        "dry_run": protection["dry_run"],
+        "low_water": protection["low_water"],
+        "supply_pressure": protection["supply_pressure"],
+        "full_tank": protection["full_tank"],
         "energy": packets["energy"].get("eligible") is True,
         "concurrency": packets["concurrency"].get("no_conflicting_material_load") is True
             and packets["concurrency"].get("borehole_claim_available") is True,
@@ -122,6 +129,36 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
         "eligible_for_coordinator": False}
 
 
+def borehole_protection_assessment(baseline, observations, *, now):
+    """Separate installed protections from transient physical observations.
+
+    A standing installed profile is accepted only from the loaded canonical
+    commissioning envelope, positively bound to this device and evidence.
+    Unknown protection types remain unknown. This does not report water level,
+    pressure or current pumping, and an explicit unsafe/isolation observation
+    always blocks the corresponding duty.
+    """
+    baseline, observations = dict(baseline or {}), dict(observations or {})
+    profile = baseline.get("installed_protection_profile") or {}
+    verified = _time((profile.get("reference") or {}).get("observed_at"))
+    bound = (baseline.get("current") is True and baseline.get("device_key") == DEVICE_KEY
+        and profile.get("device_key") == DEVICE_KEY and profile.get("canonical_reference_resolved") is True
+        and verified is not None and verified <= now
+        and profile.get("manual_isolation_proven") is True)
+    isolated = observations.get("manual_isolation_active") is True
+    fields = {"dry_run":"dry_run_safe", "low_water":"low_water_clear",
+        "supply_pressure":"supply_pressure_safe"}
+    gates = {gate: not isolated and observations.get(live) is not False
+        and (observations.get(live) is True or (bound
+            and profile.get("pump_controller_internal_protection") is True
+            and gate in (profile.get("covered_risks") or []))) for gate, live in fields.items()}
+    # Normal full storage is an expected controller cutoff, not a pump fault.
+    gates["full_tank"] = (not isolated and observations.get("full_tank_cutoff_fault") is not True
+        and (observations.get("full_tank_not_blocking") is True
+            or (bound and profile.get("full_tank_cutoff_installed") is True)))
+    return gates
+
+
 def load_registered_borehole_baseline(*, connect_factory):
     """Load the canonical device spine and accept only a commissioned pump baseline.
 
@@ -149,14 +186,26 @@ def load_registered_borehole_baseline(*, connect_factory):
         and 0 < record["native_fail_stop_seconds"] <= record["maximum_runtime_seconds"])
     if not exact:
         return None
+    profile = (record.get("authority_envelope") or {}).get("installed_protections") or {}
+    reference = profile.get("reference") or {}
+    installed = None
+    if profile:
+        from modules.telemetry.rootline_device_spine import (
+            CanonicalAuthorityResolver, _valid_evidence, _resolved_evidence)
+        material = {key:value for key,value in profile.items() if key != "reference"}
+        if (_valid_evidence(reference) and reference.get("sha256") == _digest(material)
+                and profile.get("device_key") == DEVICE_KEY
+                and _resolved_evidence(reference,CanonicalAuthorityResolver(connect_factory).evidence(reference))):
+            installed = {**profile,"canonical_reference_resolved":True}
     return {"current": True, "device_identity": IDENTITY, "device_key": DEVICE_KEY,
         "provider": record["provider"], "provider_account_binding": record["provider_account_binding"],
         "device_id": record["device_id"], "channel": record["channel"],
         "safe_state": record["safe_state"], "registry_generation": loaded["registry_generation"],
         "baseline_sha256": loaded["evidence_digest"],
-        "maximum_routine_runtime_seconds": record["maximum_runtime_seconds"],
+        "maximum_routine_runtime_seconds": min(record["maximum_runtime_seconds"],record["native_fail_stop_seconds"],14400),
         "native_fail_stop_seconds": record["native_fail_stop_seconds"],
-        "authority_envelope": dict(record.get("authority_envelope") or {})}
+        "authority_envelope": dict(record.get("authority_envelope") or {}),
+        "installed_protection_profile":installed}
 
 
 def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
@@ -168,11 +217,12 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
         requested_seconds=requested_seconds, execution_id="PENDING", now=now)
     blockers = [item for item in plan["blockers"]
         if item != "canonical_validator_and_coordinator_integration_absent"]
-    material = {"contract_version": "rootline_borehole_runtime_eligibility.v1",
+    material = {"contract_version": "rootline_borehole_runtime_eligibility.v2",
         "device_key": DEVICE_KEY, "baseline_sha256": baseline.get("baseline_sha256"),
         "registry_generation": baseline.get("registry_generation"),
         "need_sha256": _digest(dict(need or {})), "evidence_sha256": plan["evidence_sha256"],
-        "requested_seconds": requested_seconds, "assessed_at": plan["prepared_at"],
+        "requested_seconds": requested_seconds, "native_fail_stop_seconds":baseline.get("native_fail_stop_seconds"),
+        "assessed_at": plan["prepared_at"],
         "gates": plan["gates"], "blockers": blockers}
     digest = _digest(material)
     execution_id = "ROOTLINE-BOREHOLE-" + digest[:24].upper()
@@ -182,7 +232,7 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
         "command_authority": False, "hardware_commands": 0}
 
 
-def advance_borehole_execution(*, eligibility, store, transport, now=None):
+def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False):
     """Advance one exact Borehole execution with one ON and bounded OFF recovery."""
     from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
     now = _aware(now or datetime.now(timezone.utc))
@@ -193,14 +243,22 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None):
             return _contain_failed_borehole_start(
                 {**active, "reason": "restart_without_verified_start"}, store, transport)
         deadline = _time(active.get("primary_stop_deadline"))
-        if active.get("state") == "Active" and deadline is not None and now < deadline:
+        if active.get("state") == "Active" and deadline is not None and now < deadline and not stop_for_energy:
             return _borehole_result("borehole_active", execution=active)
-        return _finish_borehole(active, store, transport, now)
+        return _finish_borehole({**active, "energy_stop":stop_for_energy}, store, transport, now)
     if not _valid_borehole_eligibility(eligibility):
         return _borehole_result("borehole_eligibility_invalid", success=False)
+    native=eligibility.get("native_fail_stop_seconds",14400)
+    if eligibility.get("contract_version")=="rootline_borehole_runtime_eligibility.v2":
+        try:
+            safety=transport.read_safety_configuration(device_id="1002851416",channel=1)
+        except Exception:
+            return _borehole_result("borehole_native_readback_unproven",success=False)
+        if safety.get("native_auto_off_enabled") is not True or safety.get("native_auto_off_seconds")!=native:
+            return _borehole_result("borehole_native_readback_changed",success=False)
     execution = {**eligibility, "state": "claimed", "claimed_at": now.isoformat(),
         "primary_stop_deadline": (now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
-        "native_fail_stop_deadline": (now + timedelta(seconds=14400)).isoformat(),
+        "native_fail_stop_deadline": (now + timedelta(seconds=native)).isoformat(),
         "on_attempts": 0, "off_attempts": 0}
     claim = store("claim_borehole_before_on", execution)
     if not isinstance(claim, dict) or claim.get("created") is not True:
@@ -311,12 +369,6 @@ def _canonical_baseline_valid(value, device):
         and type(value.get("commissioning_generation")) is int
         and value.get("commissioning_generation") > 0
         and len(str(value.get("baseline_sha256") or "")) == 64)
-
-
-def _physical_baseline_valid(value):
-    required = ("supervised", "pump_started", "water_flow_observed", "native_auto_off_observed",
-                "pump_stopped", "water_flow_stopped", "manual_off_and_isolation_proven")
-    return all(value.get(key) is True for key in required)
 
 
 def _digest(value):

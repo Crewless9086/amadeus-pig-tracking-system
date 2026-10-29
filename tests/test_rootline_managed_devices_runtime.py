@@ -58,7 +58,8 @@ class Transport:
         return safety(device)
 
     def read_output_state(self, **_kwargs):
-        return {"authoritative": True, "state": self.state, "evidence_id": "STATE-1"}
+        return {"authoritative": True, "state": self.state, "evidence_id": "STATE-1",
+            "retrieved_at":NOW.isoformat()}
 
     def set_state(self, **kwargs):
         self.calls.append(kwargs)
@@ -85,7 +86,8 @@ def evidence():
         "auxiliary_safety": {"FERTILIZER-MIXER-CH2": safety()},
         "auxiliary_contexts": {"FERTILIZER-MIXER-CH2": {
             "plan_generation": "PLAN-1", "injection_active": False,
-            "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
+            "reserved_mixing_seconds_today": 0, "mixing_history_valid":True,
+            "verified_mixing_sessions_today": 0,
             "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True}}}
 
 
@@ -127,7 +129,7 @@ def test_disabled_flag_cannot_consume_a_valid_task_or_command():
 def injection_evidence():
     start = (NOW - timedelta(minutes=10)).isoformat()
     context = {"plan_generation": "PLAN-INJECT-1", "batch_generation": "BATCH-1",
-        "fertilizer_needed": True, "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24,
+        "fertilizer_needed": True, "premix_verified":True, "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24,
         "job_sha256": "a" * 64, "segment_identity": "ROOTLINE-JOB-SEGMENT-" + "B" * 24,
         "active_zone_ids": ["B12345"], "zone_execution_id": "ZONE-EXEC-1",
         "zone_start_evidence": {"evidence_id": "START-1", "zone_execution_id": "ZONE-EXEC-1",
@@ -166,7 +168,9 @@ def test_scheduler_recovers_active_split_mixer_to_final_off_without_on_retry():
         "claimed_at": (NOW - timedelta(minutes=6)).isoformat(),
         "primary_stop_deadline": (NOW - timedelta(seconds=1)).isoformat(),
         "maximum_duration_seconds": 300,
-        "start_evidence": {"authoritative": True, "state": "ON"}}
+        "on_attempts":1,
+        "start_evidence": {"authoritative": True, "state": "ON",
+            "retrieved_at":(NOW-timedelta(minutes=5)).isoformat()}}
     transport = Transport(state="ON")
     result = run_rootline_managed_device_cycle(evidence={}, transport=transport,
         environ={}, store=store, canonical_loader=canonical, now=NOW)
@@ -257,7 +261,15 @@ def test_default_loader_refreshes_active_zone_then_scheduler_starts_injector(mon
     outcome = {"fertilizer_batch_observation": {"event_type": "fertilizer_batch_prepared",
             "observed_at": NOW.isoformat()}, "fertilizer_needed": True,
         "fertilizer_need_observed_at": NOW.isoformat()}
-    patch_default_sources(monkeypatch, ManagedConnection([outcome], [active]))
+    from modules.telemetry.rootline_auxiliary_management import build_fertilizer_batch_lifecycle
+    outcome["fertilizer_batch_observation"]["observed_at"] = (NOW-timedelta(hours=1)).isoformat()
+    batch = build_fertilizer_batch_lifecycle(observations=[outcome["fertilizer_batch_observation"]], now=NOW)
+    mix = {"action":"record_auxiliary_completed", "execution_id":"MIX-1",
+        "auxiliary_device_id":"FERTILIZER-MIXER-CH2", "device_type":"fertilizer_mixer",
+        "claimed_at":(NOW-timedelta(minutes=30)).isoformat(), "maximum_duration_seconds":600,
+        "control_completed":True, "shutdown_verified":True, "accounted_mixing_seconds":600,
+        "completed_at":(NOW-timedelta(minutes=20)).isoformat(), "batch_generation":batch["batch_generation"]}
+    patch_default_sources(monkeypatch, ManagedConnection([outcome], [active,mix]))
     monkeypatch.setattr("modules.telemetry.rootline_managed_devices_runtime.load_device_record",
         lambda *_args, **_kwargs: canonical("ifttt_ewelink:ewelink_owner_account:100204d497:1"))
     transport = Transport(); store = Store()
@@ -318,7 +330,7 @@ def test_canonical_managed_reader_composes_active_injector_and_fresh_borehole_fa
     outcome = {"fertilizer_batch_observation": {"event_type": "fertilizer_batch_prepared",
             "observed_at": NOW.isoformat()}, "fertilizer_needed": True,
         "fertilizer_need_observed_at": NOW.isoformat(),
-        "borehole_interlocks": {"observed_at": NOW.isoformat(), "dry_run_safe": True,
+        "borehole_interlocks": {"observed_at": NOW.isoformat(), "provider_message_id":"synthetic-owner-fact", "dry_run_safe": True,
             "low_water_clear": True, "supply_pressure_safe": True,
             "full_tank_not_blocking": True}}
     monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",

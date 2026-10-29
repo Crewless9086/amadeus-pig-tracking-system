@@ -1114,18 +1114,10 @@ def _farm_manager_operational_fallback(*, parsed, principal, capability, replay_
 
 
 def _controller_reading(execution, key, state):
-    from collections.abc import Mapping
-    evidence = execution.get(key)
-    if (not isinstance(evidence, Mapping) or evidence.get("authoritative") is not True
-            or str(evidence.get("state") or "").upper() != state):
-        return ""
-    from datetime import datetime
+    from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time
     from zoneinfo import ZoneInfo
-    try:
-        at = datetime.fromisoformat(str(evidence.get("observed_at") or "").replace("Z", "+00:00"))
-        if at.tzinfo is None:
-            return ""
-    except ValueError:
+    at = controller_readback_time(execution, key, state)
+    if at is None:
         return ""
     return at.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%Y-%m-%d %H:%M:%S SAST")
 
@@ -1526,29 +1518,18 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             plan_delivery_confirmed = plan_http_status == 200
             plan_delivery_status = ("delivered_current_irrigation_plan"
                 if plan_delivery_confirmed else "current_irrigation_plan_delivery_unconfirmed")
-            managed_enabled = any(str(source.get(flag) or "").lower() == "true" for flag in (
-                "ROOTLINE_FERTILIZER_MIXING_ENABLED",
-                "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED"))
-            managed_result = {"success": True, "status": "managed_devices_disabled",
-                "blocks_bc": False, "hardware_commands": 0, "writes_farm_data": False}
-            if (managed_enabled and not mixer_owns_controller
-                    and supervision.get("status") in {"no_active_irrigation", "active_segment_owned"}):
-                managed = managed_device_cycle
-                if managed is None:
-                    from modules.telemetry.rootline_execution_runtime import (
-                        run_rootline_managed_device_reassessment,
-                    )
-                    managed = run_rootline_managed_device_reassessment
-                managed_result = dict(managed(environ=source, now=scheduler_now) or {})
-                if managed_result.get("blocks_bc") is True:
+            # Already advanced in this authenticated minute, before optional
+            # report/delivery work. Never execute it again after reporting.
+            managed_result = supervision.get("managed_device_result") or {}
+            if managed_result.get("blocks_bc") is True:
                     return {**plan_result,
                         "success": plan_delivery_confirmed and managed_result.get("success") is True,
                         "status": "scheduled_rootline_managed_device_advanced",
                         "plan_delivery_status": plan_delivery_status,
                         "plan_reassessment_status": plan_reassessment_status,
                         "execution_status": str(managed_result.get("status") or ""),
-                        "hardware_commands": int(managed_result.get("hardware_commands") or 0),
-                        "writes_farm_data": bool(managed_result.get("writes_farm_data")),
+                        "hardware_commands": 0,
+                        "writes_farm_data": plan_projection.get("created") is True,
                         "fertilizer_commissioning_status": str(mixer_recovery.get("status") or ""),
                         "daily_presentation_status": str(daily.get("status") or ""),
                         "daily_presentation_identity": str(daily.get("daily_identity") or ""),
@@ -1649,6 +1630,33 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "status": "scheduled_rootline_active_supervision_unproven",
                     "execution_status": str(supervision.get("status") or "unknown"),
                     "active_supervision_status": str(supervision.get("status") or "unknown")}
+            managed_enabled = any(str(source.get(flag) or "").lower() == "true" for flag in (
+                "ROOTLINE_FERTILIZER_MIXING_ENABLED",
+                "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED",
+                "ROOTLINE_ESKOM_ENABLED"))
+            if production_persistence or managed_device_cycle is not None or managed_enabled:
+                managed = managed_device_cycle
+                if managed is None:
+                    from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
+                    managed = run_rootline_managed_device_reassessment
+                try:
+                    managed_result = dict(managed(environ=source, now=scheduler_now,
+                        allow_new_starts=managed_enabled and supervision.get("status") in {
+                            "no_active_irrigation", "active_segment_owned"}) or {})
+                except Exception as exc:
+                    managed_result = {"success": False, "status": "managed_supervision_unproven",
+                        "error_type": type(exc).__name__, "hardware_commands": 0,
+                        "effects_unknown": True, "blocks_bc": True}
+                supervision["managed_device_result"] = managed_result
+                supervision["managed_device_status"] = str(managed_result.get("status") or "unknown")
+                supervision["hardware_commands"] = int(supervision.get("hardware_commands") or 0) + int(
+                    managed_result.get("hardware_commands") or 0)
+                if managed_result.get("writes_farm_data") is True or managed_result.get("hardware_commands"):
+                    supervision["writes_farm_data"] = True
+                if managed_result.get("effects_unknown") is True:
+                    supervision["effects_unknown"] = True
+                if managed_result.get("success") is not True:
+                    supervision["success"] = False
             return supervision
 
         def invoke_safety_only():

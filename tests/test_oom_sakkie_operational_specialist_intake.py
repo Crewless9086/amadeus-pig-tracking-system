@@ -54,6 +54,27 @@ def result():
             "hardware_commands": 0,
             "evidence_cutoff": NOW.isoformat(), "result_id": "ROOTLINE-RESULT-1"}
 
+
+def test_actual_batch_intake_authentication_and_replay_feed_batch_lifecycle(operation_store):
+    from modules.telemetry.rootline_auxiliary_management import build_fertilizer_batch_lifecycle
+    message={**parsed(),"text":"Fertilizer batch is prepared today."}
+    authority=issue_gateway_owner_authority("42","42")
+    first,status=handle_operational_specialist_message(message,authority,now=NOW)
+    assert status==200 and first["hardware_commands"]==0 and first["writes_farm_data"]
+    batch=build_fertilizer_batch_lifecycle(observations=[first["fertilizer_batch_observation"]],now=NOW)
+    assert batch["state"]=="batch_reported_prepared"
+    replay,status=handle_operational_specialist_message(message,authority,now=NOW+timedelta(seconds=30))
+    assert status==200 and replay["replay_suppressed"] and not replay["writes_farm_data"]
+    assert replay["fertilizer_batch_observation"]==first["fertilizer_batch_observation"]
+    assert len(operation_store)==2
+    conflict,status=handle_operational_specialist_message({**message,"text":"Fertilizer batch empty"},authority,now=NOW)
+    assert status==409 and len(operation_store)==2
+
+
+def test_batch_observation_without_owner_authority_has_no_write(operation_store):
+    result,status=handle_operational_specialist_message({**parsed(),"text":"Fertilizer batch ready"},None,now=NOW)
+    assert status==409 and result["hardware_commands"]==0 and not operation_store
+
 def test_fresh_authenticated_presence_is_accepted_without_hardware_authority():
     value, status = handle_operational_specialist_message(parsed(),
         issue_gateway_owner_authority("42", "42"), now=NOW, rootline_dispatcher=lambda _context: result())

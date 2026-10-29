@@ -136,7 +136,7 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     """Project incomplete immutable jobs without treating a segment as a day close."""
     from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
     _attach_latest_zone_executions(history, rows, canonical_ordered=canonical_ordered)
-    _attribute_parent_operating_dates(history, rows)
+    completed_execution_ids = set()
     grouped = {}
     for raw in rows or ():
         row = raw if isinstance(raw, dict) else {}
@@ -170,7 +170,12 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
             projection = project_next_segment(job, events, rearm_readback_off=True)
         except Exception:
             projection = {"status": "canonical_job_history_invalid", "command_authority": False}
-        if projection.get("status") in {"job_completed", "job_cancelled"}:
+        if projection.get("status") == "job_completed":
+            completed_execution_ids.update(str(row.get("execution_id") or "") for row in events
+                if row.get("action") == "record_completed" and row.get("shutdown_verified") is True
+                and row.get("segment_number") == job.get("expected_segment_count"))
+            continue
+        if projection.get("status") == "job_cancelled":
             continue
         completed_segments = [row for row in events
             if row.get("action") == "record_completed"
@@ -233,6 +238,7 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     for zone, values in contained_by_zone.items():
         if values:
             history["zones"][zone]["contained_parent_jobs"] = values
+    _attribute_parent_operating_dates(history, rows, completed_execution_ids=completed_execution_ids)
 
 
 def _cross_midnight_continuation(job, completed, cutoff, current_date):
@@ -253,13 +259,19 @@ def _valid_terminal_defer(row):
     return row.get("resolution_sha256") == _digest({key: row.get(key) for key in keys})
 
 
-def _attribute_parent_operating_dates(history, rows):
-    dates = {str(row.get("execution_id") or ""): str(row.get("operating_date") or "")
+def _attribute_parent_operating_dates(history, rows, *, completed_execution_ids=()):
+    completions = {str(row.get("execution_id") or ""): row
         for row in rows or () if isinstance(row, dict) and row.get("action") == "record_completed"
         and str(row.get("operating_date") or "")}
     for zone in (history.get("zones") or {}).values():
         for event in zone.get("events") or ():
-            operating_date = dates.get(str(event.get("execution_id") or ""))
+            completion = completions.get(str(event.get("execution_id") or "")) or {}
+            operating_date = completion.get("operating_date")
+            # Reconcile older typed history from its canonical execution without
+            # rewriting it. A successful segment never closes a partial parent.
+            if completion.get("job_id") and str(completion.get("execution_id") or "") not in completed_execution_ids:
+                event["qualifies_as_completed_watering"] = False
+                event["classification"] = "verified_segment_parent_incomplete"
             if operating_date and event.get("qualifies_as_completed_watering") is True:
                 event["operating_date"] = operating_date
         zone["verified_completed_days"] = sorted({
@@ -353,6 +365,8 @@ def _qualifies(row, cutoff):
         return False, "shutdown_unverified"
     if details.get("objective_satisfied") is not True:
         return False, "objective_not_satisfied"
+    if details.get("job_id") and details.get("job_completed") is not True:
+        return False, "verified_segment_parent_incomplete"
     return True, "verified_completed_watering"
 
 

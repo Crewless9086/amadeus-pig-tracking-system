@@ -21,6 +21,7 @@ TASK_CONTRACT = "rootline_irrigation_auxiliary_task.v1"
 ELIGIBILITY_CONTRACT = "rootline_auxiliary_eligibility.v1"
 MAX_MIX_SECONDS = 1800
 MAX_DAILY_MIX_MINUTES = 30
+MIX_SESSION_SECONDS = 600
 INJECTION_SECONDS = 120
 MIN_PREFLOW_SECONDS = 600
 MIN_PULSE_SPACING_SECONDS = 600
@@ -45,7 +46,12 @@ def build_fertilizer_batch_lifecycle(*, observations=None, executions=None, now=
     refill = [row for row in observations if row.get("event_type") == "water_only_refill"
               and _time(row.get("observed_at")) is not None
               and period_start <= _time(row.get("observed_at")) <= now.astimezone(timezone.utc)]
-    state = "batch_reported_prepared" if latest else "monday_batch_due"
+    adverse = [row for row in observations if row.get("event_type") in {
+        "fertilizer_batch_empty", "fertilizer_batch_unsafe", "fertilizer_batch_not_ready"}
+        and _time(row.get("observed_at")) is not None
+        and period_start <= _time(row["observed_at"]) <= now.astimezone(timezone.utc)]
+    state = ("batch_unavailable" if adverse else
+        "batch_reported_prepared" if latest else "monday_batch_due")
     scoped_executions=[row for row in executions
         if row.get("shutdown_verified") is True
         and _time(row.get("completed_at")) is not None
@@ -71,7 +77,14 @@ def build_fertilizer_batch_lifecycle(*, observations=None, executions=None, now=
         "emit":state=="monday_batch_due" and previous_work_item_key !=
             f"ROOTLINE-FERTILIZER-BATCH-{monday.date().isoformat()}",
         "owner_text":"Please prepare this week's fertilizer batch."}
-    return {**material,"batch_generation":"ROOTLINE-BATCH-"+digest[:24].upper(),
+    # Executions do not create a new physical batch identity. Refills invalidate
+    # a previous premix through mixed_after, without inventing a fresh batch.
+    identity = _digest({"week_start": material["week_start"],
+        "batch_timestamp": material["batch_timestamp"]})
+    mixed_after = max([period_start] + [_time(row["observed_at"]) for row in refill])
+    return {**material,"batch_generation":"ROOTLINE-BATCH-"+identity[:24].upper(),
+        "mixed_after": mixed_after.isoformat(),
+        "preparation_intake_hint": "Tell Oom Sakkie: Fertilizer batch prepared today.",
         "batch_sha256":digest,"monday_work_item":reminder,"command_authority":False,
         "hardware_control":False}
 
@@ -123,35 +136,35 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
                           mixing_history_complete_through=None,
                           active_irrigation_context=None, now=None):
     now=_aware(now or datetime.now(timezone.utc)); power=power if isinstance(power,dict) else {}
-    verified_mixing=[row for row in verified_mixing or [] if isinstance(row,dict)
-                     and row.get("shutdown_verified") is True]
     today=now.astimezone(SAST).date().isoformat()
-    used=sum(float(row.get("verified_runtime_minutes") or 0) for row in verified_mixing
-             if str(row.get("completed_at") or "")[:10]==today)
+    accounting = mixing_daily_accounting(verified_mixing, now=now, batch=batch)
+    used = accounting["reserved_seconds"] / 60
     remaining=max(0,MAX_DAILY_MIX_MINUTES-used)
     complete_at=_time(mixing_history_complete_through)
-    history_complete=(complete_at is not None
+    history_complete=(accounting["history_valid"] and complete_at is not None
         and timedelta(0)<=now-complete_at<=timedelta(minutes=5))
-    has_power=all(power.get(field) is not None for field in
-                  ("battery_soc_pct","solar_power_w","grid_power_w"))
-    low_power=(has_power and float(power["battery_soc_pct"])<50
-               and float(power["solar_power_w"])<1200
-               and float(power["grid_power_w"])<=0)
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    energy = managed_energy_decision(power, now=now)
+    has_power = energy["fresh"]
+    low_power = not energy["mixing_eligible"]
     batch_ready=batch.get("state")=="batch_reported_prepared"
     mixer_status=("Await batch" if not batch_ready
-                  else "Needs Data" if not history_complete else "Completed" if remaining==0
+                  else "Needs Data" if not history_complete else (
+                      "Completed" if accounting["controller_completed_seconds"] >= 1800
+                      else "Budget reserved") if remaining==0
                   else "Needs Data" if not has_power
                   else "Run later" if low_power else "Run now")
     mixer={"contract_version":TASK_CONTRACT,"auxiliary_task_id":
         f"ROOTLINE-MIX-{today}","collection":"irrigation_auxiliary_tasks",
         "auxiliary_device_id":"FERTILIZER-MIXER-CH2","device_type":"fertilizer_mixer",
-        "decision":mixer_status,"planned_seconds":min(MAX_MIX_SECONDS,int(remaining*60))
+        "decision":mixer_status,"planned_seconds":min(MIX_SESSION_SECONDS,int(remaining*60))
             if history_complete else 0,
-        "verified_minutes_today":used if history_complete else "Unknown",
+        "reserved_minutes_today":used if history_complete else "Unknown",
+        "controller_completed_minutes_today":accounting["controller_completed_seconds"]/60,
         "remaining_verified_minutes_today":remaining if history_complete else "Unknown",
         "reason":("fertilizer_batch_not_reported_prepared" if not batch_ready
                   else "mixing_history_incomplete" if not history_complete
-                  else "daily_verified_mixing_cap_reached" if remaining==0
+                  else "daily_mixing_budget_reserved" if remaining==0
                   else "power_evidence_unavailable" if not has_power
                   else "prefer_solar_or_soc_window" if low_power
                   else "batch_support_mixing"),
@@ -171,6 +184,88 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
     return {"irrigation_auxiliary_devices":["FERTILIZER-INJECTION-CH1",
         "FERTILIZER-MIXER-CH2"],"irrigation_auxiliary_tasks":[mixer,injection],
         "irrigation_zones":[],"zone_delivery_debt_changes":0}
+
+
+def mixing_daily_accounting(executions, *, now, batch=None):
+    """Charge each durable reservation once, including interrupted/unknown work.
+
+    A reserved controller duration is not observed physical mixing time. Missing
+    legacy duration evidence is unknown, never a fabricated zero or completion.
+    The same projection is used by planning and the transaction-locked claim.
+    """
+    now = _aware(now); batch = batch or {}
+    day = now.astimezone(SAST).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = day + timedelta(days=1)
+    groups = {}
+    valid = True
+    for row in executions or []:
+        if not isinstance(row, dict) or row.get("device_type") != "fertilizer_mixer":
+            continue
+        identity = str(row.get("execution_id") or "")
+        if not identity:
+            valid = False
+            continue
+        groups.setdefault(identity, []).append(row)
+    reserved = completed = sessions = 0
+    premix = None
+    for rows in groups.values():
+        claims = [row for row in rows if row.get("action") == "claim_auxiliary_before_on"]
+        row = claims[0] if claims else rows[-1]
+        at = _time(row.get("claimed_at"))
+        seconds = row.get("maximum_duration_seconds")
+        if at is None or type(seconds) is not int or not 0 < seconds <= MAX_MIX_SECONDS:
+            # Unknown historical work is relevant only if it could be today's.
+            stamp = _time(row.get("completed_at"))
+            if stamp is None or day <= stamp < end:
+                valid = False
+            continue
+        overlap = max(0, int((min(at + timedelta(seconds=seconds), end)
+            - max(at, day)).total_seconds()))
+        reserved += overlap
+        sessions += int(overlap > 0)
+        done = next((item for item in reversed(rows)
+            if item.get("control_completed") is True
+            and item.get("shutdown_verified") is True
+            and item.get("accounted_mixing_seconds") == seconds), None)
+        if done:
+            completed += overlap
+            stopped = _time(done.get("completed_at"))
+            disturbed = _time(batch.get("mixed_after"))
+            if (overlap > 0 and stopped and disturbed
+                    and day <= stopped < end and disturbed <= stopped <= now
+                    and done.get("batch_generation") == batch.get("batch_generation")):
+                if premix is None or stopped > _time(premix["completed_at"]):
+                    premix = done
+    return {"reserved_seconds": reserved, "controller_completed_seconds": completed,
+        "sessions": sessions, "history_valid": valid,
+        "premix_verified": premix is not None, "premix_execution": premix}
+
+
+def fertilizer_control_progress(context, *, now):
+    """Verify timed clean-water postflow from current bound controller evidence.
+
+    This proves the control sequence, not litres, nutrient dose or physical flow.
+    It never delays the parent shutdown or grants another injection pulse.
+    """
+    context = context if isinstance(context, dict) else {}
+    output = context.get("zone_output_evidence") or {}
+    prior = context.get("prior_pulse_shutdown_evidence") or {}
+    observed = _time(output.get("observed_at")); stopped = _time(prior.get("observed_at"))
+    identity = context.get("zone_execution_id")
+    proven = (bool(identity) and context.get("completed_pulses") == 2
+        and output.get("zone_execution_id") == identity and output.get("state") == "ON"
+        and output.get("authoritative") is True and observed is not None
+        and timedelta(0) <= now-observed <= timedelta(minutes=5)
+        and prior.get("zone_execution_id") == identity and prior.get("shutdown_verified") is True
+        and stopped is not None and observed-stopped >= timedelta(seconds=MIN_FLUSH_SECONDS))
+    if not proven:
+        return {"completed":False, "status":"await_verified_postflow"}
+    material={key:context.get(key) for key in ("zone_execution_id","job_id","job_sha256",
+        "segment_identity","batch_generation")}
+    return {**material, "execution_id":"ROOTLINE-FERTILIZER-SEQUENCE-"+_digest(material)[:24].upper(),
+        "completed":True, "status":"controller_sequence_completed", "pulse_count":2,
+        "flush_control_evidence":deepcopy(output), "final_injector_off_evidence":deepcopy(prior),
+        "delivered_volume":"Unavailable", "nutrient_dose":"Unknown", "physical_flow_verified":False}
 
 
 def auxiliary_notification_projection(*, fertilizer_included=False, batch=None,
@@ -219,7 +314,10 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
         safety["controller_safety_generation"],"provider_output_state":safety["output_state"],
         "decision_at":now.isoformat(),"expires_at":(now+timedelta(minutes=5)).isoformat(),
         "single_use":True,"simultaneous_with_other_auxiliary":False}
+    if device_type == "fertilizer_mixer":
+        material["batch_generation"] = context.get("batch_generation")
     if device_type=="fertilizer_injection_valve":
+        material["physical_commissioning_generation"] = safety["physical_commissioning_generation"]
         start_evidence=context["zone_start_evidence"]
         output_evidence=context["zone_output_evidence"]
         material.update({"zone_id":context["active_zone_ids"][0],
@@ -303,6 +401,10 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
             "controller_safety_generation"):
         return False
     if value["device_type"]=="fertilizer_injection_valve":
+        if (not value.get("physical_commissioning_generation") or
+                current_safety.get("physical_commissioning_generation") !=
+                value["physical_commissioning_generation"]):
+            return False
         if (current_context.get("job_id")!=value.get("job_id")
                 or current_context.get("job_sha256")!=value.get("job_sha256")
                 or current_context.get("segment_identity")!=value.get("segment_identity")
@@ -348,6 +450,7 @@ def _injection_gate(context,now):
     if now-start_at<timedelta(seconds=MIN_PREFLOW_SECONDS):
         return "clean_water_preflow_incomplete"
     if context.get("mixer_active") is True: return "mixer_must_be_off"
+    if context.get("premix_verified") is not True: return "current_batch_premix_unproven"
     if pulse not in (0,1): return "two_pulse_limit_reached"
     prior=context.get("prior_pulse_shutdown_evidence") if isinstance(
         context.get("prior_pulse_shutdown_evidence"),dict) else {}
@@ -375,7 +478,9 @@ def _mixing_gate(context,now,*,runtime):
     complete_at=_time(context.get("mixing_history_complete_through"))
     if complete_at is None or not timedelta(0)<=now-complete_at<=timedelta(minutes=5):
         return "mixing_history_incomplete"
-    used=float(context.get("verified_mixing_minutes_today") or 0)
+    if context.get("mixing_history_valid") is not True:
+        return "mixing_history_incomplete"
+    used=float(context.get("reserved_mixing_seconds_today") or 0) / 60
     if int(context.get("verified_mixing_sessions_today") or 0)>=6:
         return "daily_mixing_session_cap_reached"
     if used+int(runtime)/60>MAX_DAILY_MIX_MINUTES: return "daily_mixing_cap_reached"

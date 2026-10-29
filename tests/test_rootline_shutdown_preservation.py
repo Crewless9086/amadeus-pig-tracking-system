@@ -257,7 +257,8 @@ def test_owner_warning_overrides_ordinary_safe_completion_and_flows_to_manager(s
 @pytest.mark.parametrize("language", ["en","af"])
 def test_late_off_warning_is_not_duration_or_delivered_volume_claim(language):
     text=compose_daily_rootline_plan(owner_result(late=True),language=language)
-    assert ("after its deadline" if language=="en" else "ná sy sperdatum") in text
+    assert ("after its deadline" if language=="en" else "ná sy sperdatum") not in text
+    assert owner_result(late=True)["irrigation_lifecycle"]["B12345"]["execution_exceptions"]
     assert "minutes" not in text and "litres" not in text
 
 
@@ -294,13 +295,13 @@ def test_same_prose_different_run_not_suppressed_and_identical_exception_replay_
 
 
 @pytest.mark.parametrize("change", ["stop_deadline","controller_off_at"])
-def test_same_prose_changed_material_proof_is_not_suppressed(change):
+def test_historical_off_timestamp_changes_do_not_reemit_resolved_warning(change):
     rows,store=memory();first=owner_result(late=True);second=deepcopy(first)
     item=second["irrigation_lifecycle"]["B12345"]["execution_exceptions"][0]
     item[change]=(datetime.fromisoformat(item[change])+timedelta(seconds=1)).isoformat()
     assert compose_daily_rootline_plan(first)==compose_daily_rootline_plan(second)
-    a=reassess(first,store);deliver(a,store)
-    assert reassess(second,store)["notify_owner"] is True
+    assert reassess(first,store)["notify_owner"] is False
+    assert reassess(second,store)["notify_owner"] is False
 
 
 def test_legacy_text_only_delivery_cannot_hide_current_exception():

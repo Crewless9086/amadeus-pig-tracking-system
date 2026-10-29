@@ -109,24 +109,24 @@ class WaterEnergyPlanTests(unittest.TestCase):
         self.assertEqual(plan["current_power"]["status"], "fresh")
         self.assertTrue(plan["candidate_tasks"])
 
-    def test_current_rain_avoids_unnecessary_borehole(self):
+    def test_current_rain_does_not_cancel_standing_borehole_supply(self):
         wet = evidence()["weather"] | {"rain_rate_mm_h": 0.21}
         plan = self.build(weather=wet, water_demand={"status": "normal"})
-        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Do Not Run")
+        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Recommend")
 
-    def test_forecast_rain_avoids_nonurgent_borehole(self):
+    def test_forecast_rain_does_not_cancel_standing_borehole_supply(self):
         wet_forecast = evidence()["forecast"] | {
             "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}]
         }
         plan = self.build(forecast=wet_forecast, water_demand={"status": "normal"})
         self.assertTrue(plan["rain_capture"]["borehole_avoidance_signal"])
-        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Do Not Run")
+        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Recommend")
 
     def test_rain_hold_release_requires_complete_active_policy_evidence(self):
         incomplete = evidence()["weather"] | {"rain_rate_mm_h": 0}
         held = self.build(weather=incomplete, water_demand={"status": "normal"})
         self.assertEqual(held["rain_capture"]["rain_hold_state"], "Unknown")
-        self.assertEqual(self.task(held, "borehole")["recommendation"], "Hold")
+        self.assertEqual(self.task(held, "borehole")["recommendation"], "Recommend")
         recommend_zone = evidence()["irrigation"] | {
             "zones": [{"zone_id": "B12345", "recommendation": "Recommend"}]
         }
@@ -161,13 +161,13 @@ class WaterEnergyPlanTests(unittest.TestCase):
     def test_missing_tanks_does_not_erase_power_and_blocks_water_conclusions(self):
         plan = self.build(tanks={})
         self.assertEqual(plan["tank_evidence"]["status"], "Unavailable")
-        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Needs Data")
+        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Recommend")
         self.assertEqual(plan["current_power"]["battery_soc_pct"], 75)
 
     def test_storage_full_and_urgent_grid_continuity(self):
         full = evidence()["tanks"] | {"storage_reported_count": 5, "storage_state": "FULL"}
         plan = self.build(tanks=full, water_demand={"status": "normal"})
-        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Do Not Run")
+        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Recommend")
 
         low_power = evidence()["power"] | {"battery_soc_pct": 45}
         urgent = self.build(power=low_power, water_demand={"status": "urgent"})
@@ -200,7 +200,7 @@ class WaterEnergyPlanTests(unittest.TestCase):
         stale = evidence()["tanks"] | {"observed_at": "2026-07-26T10:00:00+02:00"}
         plan = self.build(tanks=stale)
         self.assertEqual(plan["tank_evidence"]["status"], "stale")
-        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Needs Data")
+        self.assertEqual(self.task(plan, "borehole")["recommendation"], "Recommend")
 
     def test_conflicting_or_malformed_time_evidence_fails_closed(self):
         plan = self.build(power={"observed_at": "malformed", "battery_soc_pct": 80})

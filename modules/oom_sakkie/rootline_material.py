@@ -48,7 +48,8 @@ def rootline_exception_material(result):
         return []
     return [item for zone in ("B12345", "C12345")
             for item in validated_shutdown_exceptions(
-                validate_zone_lifecycle(lifecycles.get(zone), zone_id=zone), zone_id=zone)]
+                validate_zone_lifecycle(lifecycles.get(zone), zone_id=zone), zone_id=zone)
+            if item.get("controller_off_verified") is not True]
 
 
 def stable_reassessment(value):

@@ -1,8 +1,8 @@
 """Recovery reaches the real managed cycle/coordinators before optional planning.
 
-Synthetic stores/transports deny every ON edge. The predecessor reference is
-reconstructed by inlining the unchanged factory body; qualification separately
-compares that AST with the exact pre-change source, not a copied coordinator.
+Synthetic stores/transports deny every ON edge. The eager-ordering reference
+inlines the current factory solely to demonstrate the report/recovery ordering
+failure. It is not an assertion of byte-equivalence with an earlier release.
 """
 import ast
 from collections import Counter
@@ -21,6 +21,15 @@ NOW = datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc)
 FLAGS = ("ROOTLINE_FERTILIZER_MIXING_ENABLED", "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED")
 
 
+@pytest.fixture(autouse=True)
+def fresh_synthetic_power(monkeypatch):
+    monkeypatch.setattr(plan_module,"read_current_borehole_faults",lambda *_,**__:True)
+    monkeypatch.setattr("modules.telemetry.power_service.get_current_power_state",
+        lambda **_: ({"success":True,"source":{"last_reading_at":NOW.isoformat()},
+            "current":{"battery_soc_pct":90,"solar_power_w":3000,"load_power_w":1000,
+                "grid_power_w":0,"battery_power_w":-2000,"battery_state":"charging"}},200))
+
+
 def predecessor_ast():
     node = ast.parse(inspect.getsource(runtime.run_rootline_managed_device_reassessment)).body[0]
     index = next(i for i, n in enumerate(node.body) if isinstance(n, ast.FunctionDef) and n.name == "build_evidence")
@@ -32,7 +41,10 @@ def predecessor_ast():
     failure_result = handler.body[0].exc.args[0]
     handler.body = [ast.Return(value=failure_result)]
     handler.name = None
-    call = deepcopy(node.body[-1])
+    invocation = next(n.value for n in node.body if isinstance(n,ast.Assign)
+        and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name)
+        and n.value.func.id == "run_rootline_managed_device_cycle")
+    call = ast.Return(value=deepcopy(invocation))
     assert isinstance(call, ast.Return)
     call.value.keywords = [kw for kw in call.value.keywords if kw.arg != "evidence_factory"]
     next(kw for kw in call.value.keywords if kw.arg == "evidence").value = ast.Name(id="packet", ctx=ast.Load())
@@ -53,7 +65,9 @@ def active(kind="mixer", *, due=True, claimed=False):
     row = {"execution_id": "synthetic-" + kind, "state": "claimed_recovery_required" if claimed else "Active",
         "primary_stop_deadline": (NOW + timedelta(seconds=-1 if due else 60)).isoformat(),
         "claimed_at": (NOW - timedelta(minutes=6)).isoformat(), "maximum_duration_seconds": 300,
-        "start_evidence": {"authoritative": True, "state": "ON"},
+        "on_attempts":1,
+        "start_evidence": {"authoritative": True, "state": "ON",
+            "retrieved_at":(NOW-timedelta(minutes=5)).isoformat()},
         "provider_start_evidence": {"authoritative": True, "state": "ON"}}
     if kind != "borehole":
         row.update({"auxiliary_device_id": "FERTILIZER-INJECTION-CH1" if kind == "injector" else "FERTILIZER-MIXER-CH2",
@@ -120,7 +134,7 @@ class OffOnlyTransport:
         self.reads.append(kwargs)
         if self.raise_read:
             raise RuntimeError("synthetic-provider-read-error")
-        return {"authoritative": self.verified, "state": "OFF" if self.verified else "Unknown", "evidence_id": "synthetic-final-off"}
+        return {"authoritative": self.verified, "state": "OFF" if self.verified else "Unknown", "evidence_id": "synthetic-final-off", "retrieved_at":NOW.isoformat()}
 
     def read_safety_configuration(self, **kwargs):
         self.safety_reads.append(kwargs)
@@ -170,7 +184,7 @@ def test_failed_optional_planner_no_longer_prevents_due_recovery(kind, status):
     assert prior_store.calls == prior_transport.commands == []
     store, transport, loader = Store(kind), OffOnlyTransport(), Evidence(fail=True)
     result = invoke(store, transport, loader, environ={FLAGS[0]: "true"})
-    assert result["status"] == status and result["blocks_bc"] is True
+    assert result["status"] == status and result["blocks_bc"] is (kind != "borehole")
     assert result["managed_device_recovery"] is True and loader.calls == []
     assert [c["state"] for c in transport.commands] == ["OFF"]
     assert all(not action.endswith("before_on") for action in store.calls)
@@ -189,12 +203,12 @@ def test_active_not_due_skips_planning_without_extra_active_reads(kind):
         "load_active_auxiliary": 1, "load_active_borehole": 2})
 
 
-def test_auxiliary_priority_when_both_are_active_is_unchanged():
+def test_each_existing_active_duty_receives_supervision_before_optional_reports():
     store, transport, loader = Store("mixer", both=True), OffOnlyTransport(), Evidence(fail=True)
     result = invoke(store, transport, loader)
-    assert result["status"] == "auxiliary_completed" and store.borehole is not None
-    assert all(c["device_id"] == "100204d497" for c in transport.commands)
-    assert store.loads["load_active_borehole"] == 1 and loader.calls == []
+    assert result["status"] == "managed_devices_supervised" and store.borehole is None
+    assert {c["device_id"] for c in transport.commands} == {"100204d497", "1002851416"}
+    assert store.loads["load_active_borehole"] == 2 and loader.calls == []
 
 
 @pytest.mark.parametrize("kind", ["mixer", "borehole"])
@@ -202,7 +216,7 @@ def test_active_disappearing_on_coordinator_reload_never_mints_new_on(kind):
     store, transport, loader = Store(kind, vanish=True), OffOnlyTransport(), Evidence(fail=True)
     result = invoke(store, transport, loader)
     assert result["status"] == ("auxiliary_not_eligible" if kind == "mixer" else "borehole_eligibility_invalid")
-    assert result["blocks_bc"] is True and transport.commands == loader.calls == store.writes == []
+    assert result["blocks_bc"] is (kind != "borehole") and transport.commands == loader.calls == store.writes == []
 
 
 @pytest.mark.parametrize("kind", ["mixer", "borehole"])
@@ -214,7 +228,7 @@ def test_ambiguous_off_uses_existing_three_attempt_budget_and_replay_containment
     assert first["status"] == second["status"] == expected
     assert first["hardware_commands"] == 3 and second["hardware_commands"] == 0
     assert len(transport.commands) == 3 and len({c["idempotency_key"] for c in transport.commands}) == 3
-    assert first["blocks_bc"] is second["blocks_bc"] is True and loader.calls == []
+    assert first["blocks_bc"] is second["blocks_bc"] is (kind != "borehole") and loader.calls == []
     assert not any(action in {"record_auxiliary_completed", "record_borehole_completed"} for action, _ in store.writes)
 
 
@@ -238,7 +252,7 @@ def test_readback_failure_remains_unknown_and_never_records_completion(kind):
 def test_unavailable_canonical_store_holds_before_optional_planner(action):
     store, loader, transport = Store(fail_action=action), Evidence(fail=True), OffOnlyTransport()
     result = invoke(store, transport, loader)
-    assert result["status"] == "managed_device_store_unavailable" and result["blocks_bc"] is False
+    assert result["status"] == "managed_device_store_unavailable" and result["blocks_bc"] is True
     assert loader.calls == transport.commands == []
 
 
@@ -265,12 +279,14 @@ def test_idle_original_planning_error_result_is_preserved(monkeypatch, stage):
     assert new == old == {**runtime._safe("managed_device_evidence_unavailable"), "blocks_bc": False}
 
 
-def test_later_packet_error_still_propagates_instead_of_becoming_planning_hold():
+def test_legacy_unknown_mixer_duration_is_held_without_fabricated_budget():
     def bad_packet(**kwargs):
         return {"fertilizer_executions": [{"device_type": "fertilizer_mixer", "completed_at": NOW.isoformat(),
                   "verified_runtime_minutes": "not-a-number"}]}, NOW.date().isoformat(), kwargs["now"]
     for fn in (predecessor(), runtime.run_rootline_managed_device_reassessment):
-        with pytest.raises(ValueError): invoke(Store(), OffOnlyTransport(), bad_packet, function=fn)
+        transport=OffOnlyTransport()
+        result=invoke(Store(),transport,bad_packet,function=fn)
+        assert result["status"]=="no_eligible_managed_device_task" and transport.commands==[]
 
 
 @pytest.mark.parametrize("flag", FLAGS)
@@ -398,11 +414,11 @@ def test_activity_appearing_during_planning_is_recovered_before_any_new_start(ki
         if kind in {"borehole", "both"}: store.borehole = active("borehole")
         return {}, NOW.date().isoformat(), kwargs["now"]
     result = invoke(store, transport, load, environ={flag: "true" for flag in FLAGS})
-    assert result["status"] == ("borehole_completed" if kind == "borehole" else "auxiliary_completed")
+    assert result["status"] == ({"borehole":"borehole_completed", "both":"managed_devices_supervised"}.get(kind, "auxiliary_completed"))
     assert result["managed_device_recovery"] is True and len(calls) == 1
-    assert [c["state"] for c in transport.commands] == ["OFF"]
+    assert [c["state"] for c in transport.commands] == ["OFF"] * (2 if kind == "both" else 1)
     assert not any(action.endswith("before_on") for action in store.calls)
-    if kind == "both": assert store.borehole is not None
+    if kind == "both": assert store.borehole is None
 
 
 @pytest.mark.parametrize("action", ["load_active_auxiliary", "load_active_borehole"])
@@ -412,5 +428,5 @@ def test_post_planning_store_unavailable_holds_before_any_start(action):
         calls.append(1); store.fail_action = action
         return {}, NOW.date().isoformat(), kwargs["now"]
     result = invoke(store, transport, load, environ={flag: "true" for flag in FLAGS})
-    assert result["status"] == "managed_device_store_unavailable" and result["blocks_bc"] is False
+    assert result["status"] == "managed_device_store_unavailable" and result["blocks_bc"] is True
     assert calls == [1] and transport.commands == store.writes == []
