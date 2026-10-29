@@ -1632,7 +1632,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "active_supervision_status": str(supervision.get("status") or "unknown")}
             managed_enabled = any(str(source.get(flag) or "").lower() == "true" for flag in (
                 "ROOTLINE_FERTILIZER_MIXING_ENABLED",
-                "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED"))
+                "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED",
+                "ROOTLINE_ESKOM_ENABLED"))
             if production_persistence or managed_device_cycle is not None or managed_enabled:
                 managed = managed_device_cycle
                 if managed is None:

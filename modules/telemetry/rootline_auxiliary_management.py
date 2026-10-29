@@ -231,8 +231,8 @@ def mixing_daily_accounting(executions, *, now, batch=None):
             completed += overlap
             stopped = _time(done.get("completed_at"))
             disturbed = _time(batch.get("mixed_after"))
-            if (stopped and disturbed and disturbed <= stopped <= now
-                    and now - stopped <= timedelta(hours=24)
+            if (overlap > 0 and stopped and disturbed
+                    and day <= stopped < end and disturbed <= stopped <= now
                     and done.get("batch_generation") == batch.get("batch_generation")):
                 if premix is None or stopped > _time(premix["completed_at"]):
                     premix = done

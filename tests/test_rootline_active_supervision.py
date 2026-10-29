@@ -207,6 +207,30 @@ def test_no_active_and_failed_plan_never_starts_or_reads_provider(reports):
     assert starts == messages == transport.calls == []
 
 
+@pytest.mark.parametrize("eskom_enabled,active_row,expected", [
+    ("true",None,True),("false",None,False),("true",active(due=False),True),
+    ("true",active(due=True),False)])
+def test_actual_scheduler_managed_gate_honors_eskom_only_and_existing_stop_duty(
+        reports,eskom_enabled,active_row,expected):
+    calls=[]
+    gateway(ExecutionStore(active_row),Transport(),source_env={**ENV,
+        "ROOTLINE_AUTONOMOUS_BC_ENABLED":"false",
+        "ROOTLINE_FERTILIZER_MIXING_ENABLED":"false",
+        "ROOTLINE_FERTILIZER_INJECTION_ENABLED":"false",
+        "ROOTLINE_BOREHOLE_ENABLED":"false","ROOTLINE_ESKOM_ENABLED":eskom_enabled},
+        managed_device_cycle=lambda **kw:calls.append(kw) or {
+            "success":True,"status":"no_active_managed_device","blocks_bc":False})
+    assert len(calls)==1 and calls[0]["allow_new_starts"] is expected
+
+
+def test_eskom_flag_cannot_bypass_scheduler_authentication(reports):
+    calls=[]
+    value,status=handle_rootline_reassessment_trigger(payload(),{},
+        {**ENV,"ROOTLINE_ESKOM_ENABLED":"true"},
+        managed_device_cycle=lambda **kw:calls.append(kw))
+    assert status==403 and not value["success"] and not calls
+
+
 def test_unauthenticated_and_wrong_private_chat_never_reach_supervision():
     calls = []
     for headers, body in [({}, payload()), (HEADERS, payload(chat_id="43"))]:

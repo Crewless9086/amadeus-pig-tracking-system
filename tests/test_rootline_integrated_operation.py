@@ -73,6 +73,28 @@ def test_mixer_reservation_crossing_sast_midnight_charges_both_days():
     assert mixing_daily_accounting([row],now=NOW-timedelta(days=1))["reserved_seconds"]==300
 
 
+@pytest.mark.parametrize("claimed,stopped,expected_reserved,expected_premix",[
+    ("2026-10-28T23:30:00+02:00","2026-10-28T23:40:00+02:00",0,False),
+    ("2026-10-28T23:50:00+02:00","2026-10-29T00:00:00+02:00",0,False),
+    ("2026-10-28T23:55:00+02:00","2026-10-29T00:05:00+02:00",300,True),
+    ("2026-10-29T00:00:00+02:00","2026-10-29T00:10:00+02:00",600,True),
+    ("2026-10-29T00:00:00+02:00","2026-10-29T00:11:00+02:00",600,False)])
+def test_premix_requires_current_sast_day_work_not_rolling_24_hours(
+        claimed,stopped,expected_reserved,expected_premix):
+    now=datetime.fromisoformat("2026-10-29T00:10:00+02:00")
+    row=mixer_row(claimed_at=claimed,batch_generation="BATCH-CURRENT")
+    done={**row,"action":"record_auxiliary_completed","control_completed":True,
+        "shutdown_verified":True,"accounted_mixing_seconds":600,"completed_at":stopped}
+    batch={"batch_generation":"BATCH-CURRENT","mixed_after":"2026-10-28T10:00:00+02:00"}
+    result=mixing_daily_accounting([row,done],now=now,batch=batch)
+    assert result["reserved_seconds"]==result["controller_completed_seconds"]==expected_reserved
+    assert result["premix_verified"] is expected_premix
+    assert not mixing_daily_accounting([row,done],now=now,
+        batch={**batch,"batch_generation":"OTHER-BATCH"})["premix_verified"]
+    assert not mixing_daily_accounting([row,done],now=now,
+        batch={**batch,"mixed_after":"2026-10-29T00:11:00+02:00"})["premix_verified"]
+
+
 def test_batch_identity_does_not_change_when_mixing_finishes_and_unsafe_wins():
     observation={"event_type":"fertilizer_batch_prepared","observed_at":NOW.isoformat()}
     first=build_fertilizer_batch_lifecycle(observations=[observation],now=NOW)
