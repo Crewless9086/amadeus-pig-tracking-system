@@ -18,11 +18,16 @@ from modules.telemetry.rootline_device_registry import (
     validate_device_registry,
 )
 from modules.telemetry.rootline_irrigation_coordinator import (
-    advance_auxiliary_execution, emergency_off_auxiliary_execution,
+    advance_auxiliary_execution as _advance_auxiliary_execution, emergency_off_auxiliary_execution,
     _recover_or_observe,
 )
 
 NOW=datetime(2026,8,9,8,0,tzinfo=timezone.utc)
+
+
+def advance_auxiliary_execution(**kwargs):
+    kwargs.setdefault("clock", lambda: kwargs.get("now", NOW))
+    return _advance_auxiliary_execution(**kwargs)
 
 
 def resign(row):
@@ -153,7 +158,7 @@ def test_injection_requires_exact_zone_preflow_spacing_flush_and_only_two_pulses
             "shutdown_verified":True,"observed_at":(NOW-timedelta(seconds=600)).isoformat()},
             "irrigation_stop_deadline":(NOW+timedelta(seconds=719)).isoformat()},
             "clean_water_flush_window_incomplete"),
-        ({"mixer_active":True},"mixer_must_be_off"),
+
         ({"completed_pulses":2},"two_pulse_limit_reached"),
     ]
     for changes,status in cases:
@@ -185,7 +190,8 @@ def test_mixing_thirty_minute_fail_stop_daily_cap_and_low_power_deferral():
     assert mixer_eligibility(verified_mixing_minutes_today=30)["status"]=="planned_mixing_runtime_invalid"
     assert mixer_eligibility(verified_mixing_sessions_today=6)["status"]=="daily_mixing_session_cap_reached"
     assert mixer_eligibility(power_suitable=False)["status"]=="low_power_mix_deferred"
-    assert mixer_eligibility(injection_active=True)["status"]=="injection_must_be_off"
+    assert mixer_eligibility(injection_active=True)["eligible"] is True
+    assert injection_eligibility(mixer_active=True)["eligible"] is True
 
 
 def test_batch_lifecycle_monday_dedup_dilution_and_unknown_nutrients():
@@ -272,6 +278,13 @@ class Store:
         self.active=None;self.rows=[];self.consumed=set();self.off=[];self.lock=Lock()
         self.contained=False;self.physical=None
     def __call__(self,action,payload):
+        if action=="load_active":
+            ctx=injection_context()
+            return {"execution_id":ctx["zone_execution_id"],"state":"Active",
+                "device_id":"100204e9bc","channel":1,"zone_id":"B12345",
+                "primary_stop_deadline":ctx["irrigation_stop_deadline"],
+                **{key:ctx[key] for key in ("job_id","job_sha256","segment_identity")}}
+        if action=="load_active_auxiliaries":return [self.active] if self.active else []
         if action=="load_active_auxiliary":return self.active
         if action=="load_auxiliary_containment":return {"contained":self.contained}
         if action=="load_auxiliary_off_attempts":return list(self.off)
@@ -301,8 +314,10 @@ class Transport:
         accepted=self.on if kwargs["state"]=="ON" else self.off
         if kwargs["state"]=="OFF" and accepted:self.read="OFF"
         return {"accepted_unambiguous":accepted}
-    def read_output_state(self,**_kwargs):return {"authoritative":True,"state":self.read,
-        "evidence_id":"READ-1", "retrieved_at":(NOW+timedelta(seconds=120 if self.read=='OFF' else 0)).isoformat()}
+    def read_output_state(self,**_kwargs):
+        state="ON" if _kwargs.get("device_id")=="100204e9bc" else self.read
+        return {"authoritative":True,"state":state,"evidence_id":"READ-1",
+            "retrieved_at":(NOW+timedelta(seconds=120 if state=='OFF' else 0)).isoformat()}
     def read_safety_configuration(self,**kwargs):
         return safety("injection" if kwargs["channel"]==1 else "mixer")
 

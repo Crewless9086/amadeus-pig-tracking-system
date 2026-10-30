@@ -19,8 +19,9 @@ Existing active irrigation and managed-device shutdown duties receive the
 authenticated minute scheduler lane even when report generation is not due or
 fails. New starts still require current exact authority and their own complete
 gates. Borehole or Eskom readiness must not block independent gravity B/C work.
-Mixing and injection share physical mutual exclusion and a durable daily mixing
-budget. Controller completion never implies litres, nutrients or pump flow.
+Only irrigation valves share global operating mutual exclusion. Mixer,
+injector, borehole and Eskom may operate independently under their individual
+safety and authority gates. Mixing retains its durable daily budget. Controller completion never implies litres, nutrients or pump flow.
 
 ## Operating Personality
 

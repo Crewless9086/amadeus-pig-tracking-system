@@ -14,7 +14,9 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 SAST = ZoneInfo("Africa/Johannesburg")
-ZONES = {"B12345", "C12345"}
+from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
+
+ZONES = commissioned_irrigation_contracts()
 PARENT_MIDNIGHT_CONTINUITY_MINUTES = 30
 # Both the reader and locked cancellation rebuild account from these facts.
 # Notification/OFF-attempt audit snapshots may copy a lifecycle state but are
@@ -246,7 +248,13 @@ def _cross_midnight_continuation(job, completed, cutoff, current_date):
         return False
     times = [_timestamp(row.get("completed_at")) for row in completed]
     latest = max((value for value in times if value is not None), default=None)
-    return bool(latest and latest.astimezone(SAST).date().isoformat() == current_date
+    # Preserve the same bounded handover either side of midnight.
+    try:
+        previous_date = (datetime.fromisoformat(current_date).date() - timedelta(days=1)).isoformat()
+    except ValueError:
+        return False
+    return bool(latest and job.get("operating_date") == previous_date
+        and latest.astimezone(SAST).date().isoformat() in {previous_date, current_date}
         and timedelta(0) <= cutoff-latest <= timedelta(minutes=PARENT_MIDNIGHT_CONTINUITY_MINUTES))
 
 

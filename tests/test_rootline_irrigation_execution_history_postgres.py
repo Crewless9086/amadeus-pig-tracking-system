@@ -242,8 +242,18 @@ def test_replay_order_and_inactive_rows_preserve_latest_candidate(history, load,
     history.seed([{"action": claim, "execution_id": "old"}], start=-200)
     history.seed([{"action": active, "execution_id": "inactive", "state": "Idle"}], start=400)
     history.seed([{"action": "record_eligibility", "execution_id": "noise"}], start=600)
-    result = history.compare(load)
-    assert result.error is None and result.value == latest
+    if load == "load_active_auxiliary":
+        # Independent auxiliary work must all survive the replay reducer. A
+        # scalar read cannot silently choose one when identity is ambiguous.
+        ambiguous = history.compare(load)
+        assert ambiguous.error[1] == "RootlineExecutionStoreUnavailable"
+        assert "auxiliary_device_selector_required" in ambiguous.error[2]
+        result = history.compare("load_active_auxiliaries")
+        assert result.error is None and result.value == [latest, {
+            "action": claim, "execution_id": "old", "state": "claimed_recovery_required"}]
+    else:
+        result = history.compare(load)
+        assert result.error is None and result.value == latest
     assert result.before["rows"] == 5 and result.after["rows"] == 4
 
 

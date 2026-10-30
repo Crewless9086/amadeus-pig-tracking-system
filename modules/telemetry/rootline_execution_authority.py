@@ -12,7 +12,7 @@ import json
 from modules.telemetry.rootline_irrigation_job_contract import (
     build_irrigation_job, project_next_segment,
 )
-from modules.telemetry.rootline_device_registry import rootline_device_registry
+from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
 
 MAX_SECONDS = 3599
 CONTRACT_VERSION = "rootline_execution_eligibility.v5"
@@ -21,12 +21,14 @@ STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 def build_execution_eligibility(*, plan, evidence, controller, now=None,
                                 job_event_reader=lambda _job_id: (),
-                                zone_containment_reader=lambda _zone_id: {}):
+                                zone_containment_reader=lambda _zone_id: {}, enabled_zone_ids=None):
     now = _aware(now or datetime.now(timezone.utc))
     if not isinstance(plan, dict) or not isinstance(evidence, dict):
         return _none("canonical_plan_unavailable")
     tasks = [item for item in plan.get("candidate_tasks") or [] if isinstance(item, dict)]
     zones = _zone_contracts()
+    if enabled_zone_ids is not None:
+        zones = {key: value for key, value in zones.items() if key in enabled_zone_ids}
     candidates = []
     zone_eligibility_reasons = {}
     for task in tasks:
@@ -47,7 +49,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             parent_date_current=parent_date_current)
         zone_eligibility_reasons[zone] = exclusion or "eligible_candidate"
         if not exclusion:
-            candidates.append((int(task.get("rank") or 999), zone, task))
+            candidates.append((0 if parent_job else 1, int(task.get("rank") or 999), zone, task))
     if not candidates:
         unresolved = [task for task in tasks
             if isinstance(task.get("incomplete_parent_job"), dict)]
@@ -71,7 +73,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
                 "job_resolution": {**material, "resolution_sha256": digest,
                     "execution_id": "ROOTLINE-JOB-RESOLUTION-" + digest[:24].upper()}}
         return _none("planner_hold_or_no_dispatchable_zone")
-    _, zone, task = min(candidates, key=lambda row: (row[0], row[1]))
+    _, _, zone, task = min(candidates, key=lambda row: (row[0], row[1], row[2]))
     irrigation = evidence.get("irrigation") if isinstance(evidence.get("irrigation"), dict) else {}
     advisor_zones = irrigation.get("zones") if isinstance(irrigation.get("zones"), list) else []
     advisor_zone = next((row for row in advisor_zones
@@ -356,13 +358,7 @@ def _controller(value, zone, now):
 
 
 def _zone_contracts(registry=None):
-    rows = registry if isinstance(registry, dict) else rootline_device_registry()
-    return {identity: row for identity, row in rows.items()
-            if row.get("collection") == "irrigation_zones"
-            and row.get("device_type") == "irrigation_zone_valve"
-            and row.get("commissioned") is True
-            and str(row.get("commissioning_id") or "")
-            and isinstance(row.get("commissioning_generation"), int)}
+    return commissioned_irrigation_contracts(registry)
 
 
 def _command_mapping(contract):

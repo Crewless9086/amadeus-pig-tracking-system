@@ -14,7 +14,9 @@ from zoneinfo import ZoneInfo
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
-ZONES = {"B12345": {"channel": 1}, "C12345": {"channel": 2}}
+from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
+
+ZONES = commissioned_irrigation_contracts()
 DECISIONS = {
     "Run now", "Run later", "Hold", "Needs Data", "Completed",
     "Reassess after segment one", "recovery required",

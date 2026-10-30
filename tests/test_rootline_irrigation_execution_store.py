@@ -443,6 +443,10 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
     import psycopg
     url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"];monkeypatch.setenv("DATABASE_URL",url)
     with psycopg.connect(url) as connection: _disposable_irrigation_schema(connection)
+    import importlib
+    event_source="rootline-borehole-test-"+uuid.uuid4().hex
+    monkeypatch.setattr(importlib.import_module("modules.telemetry.rootline_irrigation_execution_store"),
+        "EVENT_SOURCE",event_source)
     suffix=uuid.uuid4().hex;execution=f"ROOTLINE-BOREHOLE-{suffix[:24].upper()}"
     aux=f"ROOTLINE-AUX-{suffix}";digest="b"*64
     material={"contract_version":"rootline_borehole_runtime_eligibility.v1",
@@ -463,22 +467,27 @@ def test_borehole_claim_restart_replay_off_and_cross_load_final_state(monkeypatc
         with psycopg.connect(url) as connection:
             connection.execute("""insert into public.sam_live_stock_conversation_review_events
               (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
-              values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
-              (event_id,identity,action,json.dumps({"rootline_execution":body})))
+              values (%s,%s,%s,%s,%s::jsonb)""",
+              (event_id,identity,event_source,action,json.dumps({"rootline_execution":body})))
     insert(f"ELIG-{suffix}",execution,"record_borehole_eligibility",
         {"action":"record_borehole_eligibility",**artifact})
     insert(f"AUX-CLAIM-{suffix}",aux,"claim_auxiliary_before_on",
-        {"action":"claim_auxiliary_before_on","execution_id":aux})
+        {"action":"claim_auxiliary_before_on","execution_id":aux,
+         "auxiliary_device_id":"FERTILIZER-MIXER-CH2","device_id":"100204d497","channel":2})
     insert(f"AUX-CONTAIN-{suffix}",aux,"contain_auxiliary_device",
         {"action":"contain_auxiliary_device","execution_id":aux,"shutdown_verified":False})
     body=dict(artifact)
-    blocked=_claim_borehole_material_load(body)
-    assert blocked["status"]=="material_load_active"
-    insert(f"AUX-CONTAIN-VERIFIED-{suffix}",aux,"contain_auxiliary_device",
-        {"action":"contain_auxiliary_device","execution_id":aux,"shutdown_verified":True})
+    # A pending mixer claim owns its output, not the independent borehole.
+    # Asserted auxiliary containment does not retire its pending work.
+    assert rootline_irrigation_execution_store("load_active_auxiliary",
+        "FERTILIZER-MIXER-CH2")["execution_id"]==aux
     with ThreadPoolExecutor(max_workers=2) as pool:
         claims=list(pool.map(lambda _:_claim_borehole_material_load(body),(1,2)))
     assert sum(row.get("created") is True for row in claims)==1, claims
+    assert rootline_irrigation_execution_store("load_active_auxiliary",
+        "FERTILIZER-MIXER-CH2")["execution_id"]==aux
+    insert(f"AUX-CONTAIN-VERIFIED-{suffix}",aux,"contain_auxiliary_device",
+        {"action":"contain_auxiliary_device","execution_id":aux,"shutdown_verified":True})
     assert rootline_irrigation_execution_store("load_active_borehole",None)["execution_id"]==execution
     # A terminal record from another claim family, or asserted containment,
     # cannot release a borehole claim merely because it reuses execution_id.

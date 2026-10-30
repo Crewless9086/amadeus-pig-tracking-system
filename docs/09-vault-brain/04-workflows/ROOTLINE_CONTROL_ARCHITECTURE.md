@@ -281,10 +281,22 @@ validated native limit bounds every window and must not be extended.
 ## Integrated supervision and evidence ownership
 
 The authenticated minute claim supervises active B/C, mixer, injector and
-borehole duties independently of expensive report cadence. All new starts
-retain fresh planning, per-device authority and final-edge checks. Shared
-irrigation/auxiliary locks protect the actual physical conflict; an independent
-borehole supply window does not claim the gravity irrigation controller.
+borehole duties before optional planning and reports. The same minute control
+claim may admit eligible work independently of report cadence. After verified
+OFF and fresh reassessment, a continuing irrigation parent has priority over
+new irrigation work, in that pass or the next minute pass. An incomplete parent
+may cross midnight only within the bounded handover period; weather, need,
+containment, authority, OFF/rearm and remaining-runtime checks still apply.
+
+All irrigation valves remain globally sequential. Mixer, injector, borehole
+and Eskom may overlap under their own authority, power, safety and dependency
+rules. Shared transaction locks serialize admission and command edges; each
+device owns its own claim, deadline and containment. Every known active device
+must receive supervision even when another device's evidence or provider fails.
+An already-ON auxiliary sibling requires exact current canonical ownership and
+native safety. Injection also requires its exact irrigation parent to remain ON.
+Current weather and dry-clearance history must share one coherent cutoff and
+observation identity; mismatched, stale, rainy or unhealthy evidence holds.
 
 One canonical current decision feeds execution, the daily card and the
 specialist response. A planned Hold cannot be promoted by a second advisory

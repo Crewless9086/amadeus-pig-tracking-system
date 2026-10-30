@@ -35,7 +35,7 @@ def test_late_active_refusal_never_reports_started_and_recovers_off(kind):
                 'mixing_history_valid':True,'reserved_mixing_seconds_today':0,
                 'mixing_history_complete_through':aux.NOW.isoformat(),'power_suitable':True}
         result=advance_auxiliary_execution(eligibility=artifact,store=store,transport=transport,
-            now=aux.NOW,revalidate=lambda _:context)
+            now=aux.NOW,clock=lambda:aux.NOW,revalidate=lambda _:context)
         calls=transport.calls
     assert 'started' not in result['status']
     assert [r['state'] for r in calls]==['ON','OFF']

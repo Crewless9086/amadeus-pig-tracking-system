@@ -19,7 +19,7 @@ class RootlineExecutionStoreUnavailable(RuntimeError):
 
 def rootline_irrigation_execution_store(action, payload):
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
-                  "load_active_auxiliary", "load_auxiliary_off_attempts",
+                  "load_active_auxiliary", "load_active_auxiliaries", "load_auxiliary_off_attempts",
                   "load_auxiliary_containment", "load_auxiliary_history",
                   "load_auxiliary_physical_outcome", "load_job_events",
                   "load_active_borehole", "load_borehole_off_attempts", "load_eskom_events"}:
@@ -305,8 +305,9 @@ def _load(action, payload):
                           ('claim_eskom_before_command','claim_eskom_dispatch','record_eskom_command_outcome','record_eskom_completed')
                     order by created_at,review_event_id""", (EVENT_SOURCE,str(payload or "")))
                 return [row[0] if isinstance(row[0],dict) else json.loads(row[0]) for row in cursor.fetchall()]
-            if action in {"load_active", "load_active_auxiliary", "load_active_borehole"}:
-                borehole=action=="load_active_borehole"; auxiliary=action=="load_active_auxiliary"
+            if action in {"load_active", "load_active_auxiliary", "load_active_auxiliaries", "load_active_borehole"}:
+                borehole=action=="load_active_borehole"
+                auxiliary=action in {"load_active_auxiliary", "load_active_auxiliaries"}
                 claim_action=("claim_borehole_before_on" if borehole else
                     "claim_auxiliary_before_on" if auxiliary else "claim_before_on")
                 active_action=("mark_borehole_active" if borehole else
@@ -342,12 +343,21 @@ def _load(action, payload):
                         candidates.setdefault(identity,item)
                     elif _is_active_candidate(item, active_action, claim_action):
                         candidates.setdefault(identity, item)
+                active = []
                 for identity, item in candidates.items():
                     if identity not in terminal:
+                        if auxiliary and payload is not None and item.get("auxiliary_device_id") != payload:
+                            continue
                         if item.get("action") == claim_action:
                             item = {**item, "state": "claimed_recovery_required"}
-                        return item
-                return None
+                        active.append(item)
+                if action == "load_active_auxiliaries":
+                    return active
+                if auxiliary and len(active) > 1:
+                    # A caller without an exact device must never accidentally
+                    # supervise a sibling when both independently own work.
+                    raise RootlineExecutionStoreUnavailable("auxiliary_device_selector_required")
+                return active[0] if active else None
             if action == "load_job_events":
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
@@ -949,20 +959,12 @@ def _claim_single_auxiliary(body):
                     + [{**body, "action":"claim_auxiliary_before_on"}], now=at)
                 if not account["history_valid"] or account["reserved_seconds"] > 1800:
                     return {"success":True,"created":False,"status":"daily_mixing_budget_unavailable"}
-            cursor.execute("""select review_json->'rootline_execution'
-                from public.sam_live_stock_conversation_review_events
-                where event_source=%s and review_json->'rootline_execution'->>'action'
-                    in ('claim_borehole_before_on','record_borehole_completed')
-                order by created_at,review_event_id""", (EVENT_SOURCE,))
-            borehole_rows = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
-            closed = {row.get("execution_id") for row in borehole_rows if _verified_borehole_completion(row)}
-            if (body.get("device_type") != "fertilizer_injection_valve"
-                    and any(row.get("action") == "claim_borehole_before_on"
-                        and row.get("execution_id") not in closed for row in borehole_rows)):
-                return {"success":True,"created":False,"status":"material_load_active"}
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
                   and claim.review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
+                  and (claim.review_json->'rootline_execution'->>'auxiliary_device_id'=%s
+                    or (claim.review_json->'rootline_execution'->>'device_id'=%s
+                        and claim.review_json->'rootline_execution'->>'channel'=%s))
                   and not exists (select 1 from public.sam_live_stock_conversation_review_events terminal
                     where terminal.event_source=%s
                       and terminal.review_json->'rootline_execution'->>'execution_id'=
@@ -973,7 +975,8 @@ def _claim_single_auxiliary(body):
                               'contain_auxiliary_device'
                             and terminal.review_json->'rootline_execution'->>
                               'shutdown_verified'='true'))) limit 1""",
-                (EVENT_SOURCE,EVENT_SOURCE))
+                (EVENT_SOURCE,auxiliary_id,str(body.get("device_id") or ""),
+                 str(body.get("channel") or ""),EVENT_SOURCE))
             if cursor.fetchone():
                 return {"success":True,"created":False,"status":"auxiliary_active"}
             if _auxiliary_containment_state(cursor, auxiliary_id)["contained"]:
@@ -1002,8 +1005,8 @@ def _claim_borehole_material_load(body):
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
                                            read_only=False) as connection:
       with connection.cursor() as cursor:
-        # The common output lock serializes claims. Gravity B/C is not a pump
-        # load; a mixer remains a conflicting material load.
+        # The common output lock serializes admission, not operating duration.
+        # Only a prior borehole claim conflicts; other devices own their outputs.
         cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
         cursor.execute("""select review_json->'rootline_execution'
           from public.sam_live_stock_conversation_review_events
@@ -1022,7 +1025,7 @@ def _claim_borehole_material_load(body):
             return {"success":True,"created":False,"status":"canonical_borehole_eligibility_unproven"}
         cursor.execute(f"""select 1 from public.sam_live_stock_conversation_review_events c
           where c.event_source=%s and c.review_json->'rootline_execution'->>'action'
-            in ('claim_auxiliary_before_on','claim_borehole_before_on') and not exists(
+            in ('claim_borehole_before_on') and not exists(
               select 1 from public.sam_live_stock_conversation_review_events t
               where t.event_source=%s and t.review_json->'rootline_execution'->>'execution_id'=
                 c.review_json->'rootline_execution'->>'execution_id' and

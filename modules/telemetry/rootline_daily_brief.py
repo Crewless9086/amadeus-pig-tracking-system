@@ -8,6 +8,7 @@ from modules.telemetry.power_service import get_current_power_state
 from modules.telemetry.rollup_service import get_daily_rollup_compare
 from modules.telemetry.weather_service import (
     get_current_weather_state,
+    get_weather_control_snapshot,
     get_weather_dry_release_evidence,
     get_weather_forecast,
     get_weather_today_summary,
@@ -19,11 +20,11 @@ SPRINKLER_WIND_CAUTION_KMH = 30
 RAIN_CAUTION_MM = 0.5
 
 
-def get_rootline_daily_brief(brief_date=None, readers=None):
-    selected_date = str(brief_date or datetime.now(ZA_TZ).date().isoformat())[:10]
+def get_rootline_daily_brief(brief_date=None, readers=None, *, now=None, database_url=None):
+    now = now or datetime.now(ZA_TZ)
+    selected_date = str(brief_date or now.astimezone(ZA_TZ).date().isoformat())[:10]
     readers = readers or {
-        "weather_current": lambda: get_current_weather_state(),
-        "rain_release": lambda: get_weather_dry_release_evidence(),
+        "weather_snapshot": lambda: get_weather_control_snapshot(database_url=database_url, now=now),
         "weather_today": lambda: get_weather_today_summary(selected_date),
         "forecast": lambda: get_weather_forecast(3),
         "power": lambda: get_current_power_state(),
@@ -37,6 +38,10 @@ def get_rootline_daily_brief(brief_date=None, readers=None):
     evidence = run_bounded_read_group(
         {name:lambda reader=reader:_safe_read(reader)
          for name,reader in readers.items()},max_workers=4)
+    if "weather_snapshot" in evidence:
+        snapshot = evidence["weather_snapshot"]
+        evidence["weather_current"] = snapshot.get("weather_current") or {}
+        evidence["rain_release"] = snapshot.get("rain_release") or {}
     return build_rootline_daily_brief(evidence, selected_date), 200
 
 
@@ -175,6 +180,7 @@ def build_rootline_daily_brief(evidence, brief_date):
             "pressure_hpa": weather_values.get("pressure_hpa") if weather else None,
         },
         "rain_release_evidence": rain_release,
+        "current_weather_packet": weather,
         "today_weather": {
             "availability": "Available" if today else "Unavailable",
             "coverage_pct": today.get("window", {}).get("coverage_pct") if today else None,

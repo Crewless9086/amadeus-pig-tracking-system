@@ -486,6 +486,24 @@ batch recipe, concentration or measured volume is not a prerequisite for that
 control programme. Never describe controller completion as verified flow,
 litres delivered, nutrient dose or soil benefit.
 
+## Independent device operation and irrigation handover
+
+Only irrigation valves must remain sequential across all commissioned zones.
+Mixer, fertilizer injector, borehole and Eskom may operate together when each
+has its own current authority and safety proof. Mixing is not an injector OFF
+prerequisite and borehole operation does not reserve the mixer's operating time.
+Injection still requires one actual active irrigation parent, proven preflow,
+the same-batch premix, bounded pulses, spacing, verified shutdown and final flush.
+Loss of the parent dependency stops the injector without abandoning other duties.
+
+Control runs on the authenticated minute cadence independently of reports.
+After verified segment OFF, prefer the eligible remaining parent segment over
+a new camp's job. Reassess immediately or on the next minute tick; do not wait
+for a report. A segment ending on either side of midnight retains the same
+bounded 30-minute continuation opportunity, without creating irrigation credit
+or bypassing fresh need, weather, containment or authority checks. Uncommissioned
+or disabled zones remain ineligible; A/E remain inactive until their stated gates.
+
 ## Future SmartLife, SONOFF, And IFTTT Setup
 
 Future setup should create consistent ON and OFF functions for intended channels, including currently unused channels when useful for later installation.
