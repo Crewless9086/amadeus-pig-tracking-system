@@ -1349,8 +1349,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "writes_farm_data": False, "automatic_irrigation_authority": False,
                         "answer": ("The scheduled assessment could not load its durable context. "
                                    "Active irrigation supervision is reported separately.")}
-            # Establish and read back the canonical date-stable plan before
-            # any manager brief, protected delivery, or NEW execution can occur.
+            # Control has already advanced under this minute claim. Establish
+            # and read back the date-stable reporting plan before any brief or
+            # protected delivery; reporting failure cannot undo control effects.
             projected_current = None
             plan_projection = {"created": False, "daily_plan": {}}
             if production_persistence or daily_plan_generator is not None:
@@ -1589,6 +1590,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
                             "no_active_irrigation", "active_segment_owned", "segment_completed",
                             "segment_stopped_outcome_unconfirmed"}) or {})
+                    if not managed_result:
+                        raise ValueError("managed_supervision_result_missing")
                 except Exception as exc:
                     managed_result = {"success": False, "status": "managed_supervision_unproven",
                         "error_type": type(exc).__name__, "hardware_commands": 0,
@@ -1617,6 +1620,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         owner_user_id=scheduled_owner, chat_id=scheduled_chat,
                         next_reassessment_at=str(payload.get("next_due_at") or payload.get("due_at") or ""),
                         observation_store=state_store) or {})
+                    if not control:
+                        raise ValueError("irrigation_control_result_missing")
                 except Exception as exc:
                     control = {"success": False, "status": "irrigation_control_unproven",
                         "error_type": type(exc).__name__, "effects_unknown": True}

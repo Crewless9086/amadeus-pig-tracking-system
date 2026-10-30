@@ -48,6 +48,8 @@ class ExecutionStore:
                 raise RootlineExecutionStoreUnavailable("synthetic failure")
             if action == "load_active":
                 return deepcopy(self.active)
+            if action == "load_active_auxiliaries":
+                return [deepcopy(self.auxiliary)] if self.auxiliary else []
             if action == "load_active_auxiliary":
                 return deepcopy(self.auxiliary)
             if action == "load_off_attempts":
@@ -324,10 +326,14 @@ def test_existing_injector_shutdown_interlock_is_preserved(monkeypatch):
 def test_late_reporting_exception_preserves_verified_stop(reports, monkeypatch):
     monkeypatch.setattr("modules.oom_sakkie.telegram_gateway.reassess_rootline",
         lambda **k: (_ for _ in ()).throw(RuntimeError("late presentation failure")))
-    value, status, starts, _ = gateway(ExecutionStore(active()), Transport())
+    schedules = ScheduleStore()
+    value, status, starts, _ = gateway(ExecutionStore(active()), Transport(), schedules=schedules)
     assert status == 202 and value["status"] == "scheduled_rootline_reporting_unproven"
     assert value["hardware_commands"] == 1 and value["writes_farm_data"] is True
     assert value["report_effects_unknown"] is True and len(starts) == 1
+    outcome = next(row for key, row in schedules.rows.items() if key.endswith(":outcome"))
+    assert outcome["report_effects_unknown"] is True
+    assert outcome["provider_effects_unknown"] is value["provider_effects_unknown"] is False
 
 
 @pytest.mark.parametrize("zone", ["B12345", "C12345"])
@@ -667,3 +673,77 @@ def test_late_safety_outcome_cannot_replace_newer_report_due(sql_schedule_store,
         invoke=lambda: pytest.fail("late safety outcome must not accelerate reports"),
         invoke_not_due=lambda: {"success": True, "status": "no_active_irrigation"})
     assert datetime.fromisoformat(result["next_due_at"]) == next_report
+
+
+@pytest.mark.parametrize("report_due", [True, False])
+def test_actual_managed_provider_failure_preserves_uncertainty_in_durable_schedule(report_due):
+    from modules.telemetry.rootline_managed_devices_runtime import run_rootline_managed_device_cycle
+
+    schedules = ScheduleStore()
+    if not report_due:
+        schedules.rows["prior:outcome"] = {"specialist": "ROOTLINE", "status": "completed",
+            "next_due_at": (NOW + timedelta(minutes=30)).isoformat()}
+    store = ExecutionStore()
+    store.auxiliary = {"execution_id": "SYNTHETIC-MIXER", "state": "Active",
+        "auxiliary_device_id": "FERTILIZER-MIXER-CH2", "device_type": "fertilizer_mixer",
+        "device_id": "100204d497", "channel": 2, "maximum_duration_seconds": 300,
+        "claimed_at": (NOW - timedelta(minutes=6)).isoformat(), "on_attempts": 1,
+        "primary_stop_deadline": (NOW - timedelta(seconds=1)).isoformat()}
+
+    class FailedProvider(Transport):
+        def set_state(self, **kwargs):
+            assert kwargs["state"] == "OFF" and kwargs["channel"] == 2
+            self.calls.append(kwargs)
+            raise RuntimeError("synthetic provider timeout after command attempt")
+
+    transport = FailedProvider()
+    managed = partial(run_rootline_managed_device_cycle, evidence={}, store=store,
+        transport=transport, clock=lambda: NOW)
+    forbidden = lambda *a, **k: pytest.fail("uncertain device effects cannot enter reporting")
+    value, status, starts, messages = gateway(store, transport, schedules=schedules,
+        source_env={**ENV, "ROOTLINE_AUTONOMOUS_BC_ENABLED": "false"},
+        managed_device_cycle=managed, specialist_loader=forbidden, daily_plan_generator=forbidden)
+    assert status == 202 and value["success"] is False
+    assert value["effects_unknown"] is value["provider_effects_unknown"] is True
+    assert value["managed_device_status"] == "auxiliary_supervision_unproven"
+    assert value["execution_status"] == "auxiliary_supervision_unproven"
+    assert value["hardware_commands"] == len(transport.calls) == 1
+    assert store.auxiliary is not None and starts == messages == []
+    outcome = schedules.rows[value["schedule_identity"] + ":outcome"]
+    assert outcome["status"] == "contained" and outcome["report_work_due"] is report_due
+    assert outcome["provider_effects_unknown"] is True and outcome["report_effects_unknown"] is False
+    assert outcome["hardware_commands"] == 1
+    assert outcome["execution_status"] == "auxiliary_supervision_unproven"
+    replay = gateway(store, transport, schedules=schedules, source_env={**ENV,
+        "ROOTLINE_AUTONOMOUS_BC_ENABLED": "false"}, managed_device_cycle=managed,
+        specialist_loader=forbidden)[0]
+    assert replay["status"] == "scheduled_reassessment_replayed_noop"
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.parametrize("report_due", [True, False])
+@pytest.mark.parametrize("failure", ["empty", "malformed", "exception"])
+@pytest.mark.parametrize("stream", ["irrigation", "managed"])
+def test_unknown_control_result_contains_before_report_or_delivery(report_due, failure, stream):
+    schedules = ScheduleStore(); calls = []
+    if not report_due:
+        schedules.rows["prior:outcome"] = {"specialist": "ROOTLINE", "status": "completed",
+            "next_due_at": (NOW + timedelta(minutes=30)).isoformat()}
+    def control(**kwargs):
+        calls.append("control")
+        if failure == "exception":
+            raise RuntimeError("synthetic control result unavailable")
+        return object() if failure == "malformed" else None
+    forbidden = lambda *a, **k: pytest.fail("reporting cannot run after unknown control")
+    cycle = {"execution_cycle" if stream == "irrigation" else "managed_device_cycle": control}
+    value, status, starts, messages = gateway(ExecutionStore(), Transport(), schedules=schedules,
+        specialist_loader=forbidden, daily_plan_generator=forbidden, **cycle)
+    assert status == 202 and value["success"] is False and value["terminal_outcome"] == "contained"
+    assert calls == ["control"] and messages == []
+    expected = "irrigation_control_unproven" if stream == "irrigation" else "managed_supervision_unproven"
+    assert value["irrigation_admission_status" if stream == "irrigation" else "managed_device_status"] == expected
+    assert starts == []
+    outcome = schedules.rows[value["schedule_identity"] + ":outcome"]
+    assert outcome["status"] == "contained" and outcome["report_work_due"] is report_due
+    assert outcome["provider_effects_unknown"] is value["provider_effects_unknown"] is True
+    assert outcome["report_effects_unknown"] is False
