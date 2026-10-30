@@ -100,8 +100,7 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
         "supply_pressure": protection["supply_pressure"],
         "full_tank": protection["full_tank"],
         "energy": packets["energy"].get("eligible") is True,
-        "concurrency": packets["concurrency"].get("no_conflicting_material_load") is True
-            and packets["concurrency"].get("borehole_claim_available") is True,
+        "concurrency": packets["concurrency"].get("borehole_claim_available") is True,
         "bounded_runtime": seconds_ok}
     blockers = [name for name, passed in gates.items() if not passed]
     identity = str(execution_id or "").strip()
@@ -218,7 +217,7 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
     """Build one immutable canonical eligibility identity; never claim or command."""
     plan = prepare_borehole_execution_plan(need=need, commissioned_baseline=baseline,
         authority=authority, provider=provider, interlocks=interlocks, energy=energy,
-        concurrency={"no_conflicting_material_load": True, "borehole_claim_available": True},
+        concurrency={"borehole_claim_available": True},
         requested_seconds=requested_seconds, execution_id="PENDING", now=now)
     blockers = [item for item in plan["blockers"]
         if item != "canonical_validator_and_coordinator_integration_absent"]

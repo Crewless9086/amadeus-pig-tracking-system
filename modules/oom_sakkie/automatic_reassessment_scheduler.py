@@ -77,14 +77,19 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
             "success": False, "schedule_identity": identity,
             "invocation_receipt": digest, "terminal_outcome": "claimed"}
     try:
-        # The optional callback is a no-new-start safety obligation, admitted
-        # by this same minute claim. It must not run report/planning work.
+        # The optional callback advances control under the same minute claim,
+        # including eligible starts and device planning, without running reports.
         result = dict((invoke if reports_due else invoke_not_due)() or {})
     except Exception:
         result = _contained("scheduled_reassessment_specialist_failure")
+    # Managed control uses effects_unknown; keep that uncertainty in the
+    # durable provider field for both report-due and intervening minute ticks.
+    # Reporting uncertainty is independent and must not imply provider effects.
+    result["provider_effects_unknown"] = (result.get("provider_effects_unknown") is True
+        or result.get("effects_unknown") is True)
     terminal = "completed" if result.get("success") is True else "contained"
-    # A safety-only outcome preserves the reporting due time exactly. The
-    # existing minute scheduler can still claim its next safety check without
+    # A control-only outcome preserves the reporting due time exactly. The
+    # existing minute scheduler can claim the next control pass without
     # accelerating reports or adding another timer/queue.
     next_due = _next_due(now, result) if reports_due else owned_due.astimezone(SAST)
     safety_next = (_bucket(now.astimezone(SAST)) + timedelta(minutes=CADENCE_MINUTES)).isoformat()

@@ -395,6 +395,9 @@ jobs:
         run: >-
           python -B -m pytest -q -p no:cacheprovider
           tests/test_rootline_managed_startup_handover_postgres.py
+          tests/test_rootline_timing_concurrency.py
+          tests/test_rootline_timing_concurrency_postgres.py
+          tests/test_oom_sakkie_fertilizer_commissioning_runtime.py
           tests/test_rootline_unstarted_auxiliary_reconciliation_postgres.py
           tests/test_rootline_managed_startup_handover.py
           tests/test_rootline_irrigation_execution_history_postgres.py

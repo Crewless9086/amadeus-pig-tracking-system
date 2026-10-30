@@ -10,7 +10,7 @@ from modules.telemetry.rootline_ewelink_commissioned_baseline import (
     commissioned_controller_baseline, commissioned_registered_device_baseline,
 )
 from modules.telemetry.rootline_device_registry import (
-    commissioned_irrigation_contract, rootline_device_registry,
+    commissioned_irrigation_contract, commissioned_irrigation_contracts, rootline_device_registry,
 )
 from modules.telemetry.rootline_ewelink_oauth_store import PostgresOAuthTokenStore
 from modules.telemetry.rootline_ewelink_readback import read_current_device
@@ -27,15 +27,16 @@ from modules.telemetry.rootline_water_energy_plan import (
 def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
-        evidence_loader=read_current_water_energy_evidence, allow_new_starts=True):
-    """Advance one need-driven Mixer, Injector, or Borehole task, if proven.
+        evidence_loader=read_current_water_energy_evidence, allow_new_starts=True, clock=None):
+    """Supervise owned devices and advance independently eligible managed tasks.
 
     This composes existing planners, canonical device records and coordinators.
     Missing fertilizer-batch, active-irrigation, water-need or interlock evidence
     produces a no-command result local to the managed device.
     """
     source = environ if environ is not None else os.environ
-    now = _aware(now or datetime.now(timezone.utc))
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    now = _aware(now or clock())
     database_url = str(database_url or source.get("DATABASE_URL") or "").strip()
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
@@ -65,7 +66,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     def build_evidence():
         try:
             evidence, selected, planned_at = evidence_loader(
-                operating_date=now.date().isoformat(), database_url=database_url, now=now)
+                database_url=database_url, now=now)
             evidence = _refresh_active_irrigation_readback(evidence, transport, now)
             plan = build_water_energy_plan(evidence, selected, now=planned_at)
         except Exception as exc:
@@ -94,9 +95,6 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         packet["auxiliary_contexts"]["FERTILIZER-MIXER-CH2"] = {
             "plan_generation": str(plan.get("generation") or plan.get("evidence_generation") or ""),
             "batch_generation": batch["batch_generation"],
-            # The managed cycle excludes canonical active claims before and
-            # after this factory. Historical Active rows survive completion.
-            "injection_active": False,
             "reserved_mixing_seconds_today": mixing["reserved_seconds"],
             "mixing_history_valid": mixing["history_valid"],
             "verified_mixing_sessions_today": mixing["sessions"],
@@ -135,7 +133,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     result = run_rootline_managed_device_cycle(evidence={}, transport=transport,
         environ=source, store=store, connect_factory=connect_factory, now=now,
         evidence_factory=build_evidence, allow_new_starts=allow_new_starts,
-        energy_reader=current_energy,borehole_safety_reader=current_borehole_safety)
+        energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock)
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
         return result
     from modules.telemetry.rootline_device_spine import load_device_record
@@ -333,7 +331,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
             outcome_reader=outcome_reader, now=now, clock=clock)
     if not owner_user_id or owner_user_id != chat_id:
         return _safe("canonical_observation_binding_invalid")
-    initial = _current(evidence_loader, readback, token_store, source, database_url, now, store)
+    initial = _current(evidence_loader, readback, token_store, source, database_url, now, store,
+        require_enabled=True)
     observation = _planning_observation(initial, owner_user_id, chat_id,
                                         next_reassessment_at)
     if observation_store is None:
@@ -384,7 +383,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     def revalidate(_decision):
         current_now = _aware(clock())
         return _current(evidence_loader, readback, token_store, source,
-                        database_url, current_now, store)["artifact"]
+                        database_url, current_now, store, require_enabled=True)["artifact"]
     return advance_irrigation_execution(decision_id=decision["decision_id"],
         commissioning_id=commissioning_id, decision_reader=lambda _identity: decision,
         commissioning_reader=lambda _identity: commissioning, store=store,
@@ -499,7 +498,7 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
 
 
 def _current(evidence_loader, readback, token_store, source, database_url, now,
-             store=rootline_irrigation_execution_store):
+             store=rootline_irrigation_execution_store, *, require_enabled=False):
     try:
         from modules.telemetry.rootline_bounded_read_group import (
             RootlineReadGroupDeadlineExceeded,
@@ -521,7 +520,8 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
     artifact = build_execution_eligibility(
         plan=plan, evidence=evidence, controller=controller, now=now,
         job_event_reader=lambda job_id: store("load_job_events", job_id),
-        zone_containment_reader=lambda zone_id: store("load_zone_containment", zone_id))
+        zone_containment_reader=lambda zone_id: store("load_zone_containment", zone_id),
+        enabled_zone_ids=commissioned_irrigation_contracts(environ=source) if require_enabled else None)
     resolution = artifact.get("job_resolution") if isinstance(artifact, dict) else None
     if isinstance(resolution, dict):
         recorded = store("record_job_resolution", resolution)

@@ -109,7 +109,7 @@ def build_fertilized_irrigation_sequence(*, zone_id, irrigation_runtime_seconds=
     stages=[
         {"stage":"pre_mix","device_type":"fertilizer_mixer","maximum_seconds":1800,
          "optional_when":"fresh_verified_mix_already_exists"},
-        {"stage":"verify_mixer_off","required":True},
+        {"stage":"verify_current_batch_premix","required":True},
         {"stage":"start_irrigation","zone_id":zone_id,"via":"existing_bc_coordinator"},
         {"stage":"clean_water_preflow","minimum_seconds":600},
         {"stage":"injection_pulse_1","device_type":"fertilizer_injection_valve",
@@ -125,7 +125,7 @@ def build_fertilized_irrigation_sequence(*, zone_id, irrigation_runtime_seconds=
     return {"contract_version":"rootline_fertilized_irrigation_sequence.v1",
         "collection":"irrigation_auxiliary_tasks","zone_id":zone_id,
         "irrigation_runtime_seconds":int(irrigation_runtime_seconds),"stages":stages,
-        "mixing_and_injection_simultaneous":False,"max_injection_pulses":2,
+        "mixing_and_injection_simultaneous":True,"max_injection_pulses":2,
         "irrigation_may_complete_if_fertilizer_fails":True,
         "fertilizer_debt_recorded_separately":True,"nutrient_dose":"Unknown",
         "concentration":"Unknown","delivered_volume":"Unavailable",
@@ -313,7 +313,7 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
         "plan_generation":generation,"controller_safety_generation":
         safety["controller_safety_generation"],"provider_output_state":safety["output_state"],
         "decision_at":now.isoformat(),"expires_at":(now+timedelta(minutes=5)).isoformat(),
-        "single_use":True,"simultaneous_with_other_auxiliary":False}
+        "single_use":True,"simultaneous_with_other_auxiliary":True}
     if device_type == "fertilizer_mixer":
         material["batch_generation"] = context.get("batch_generation")
     if device_type=="fertilizer_injection_valve":
@@ -374,7 +374,7 @@ def validate_auxiliary_eligibility(value, *, now=None):
             or value.get("command_authority") is not True
             or value.get("hardware_control") is not True
             or value.get("single_use") is not True
-            or value.get("simultaneous_with_other_auxiliary") is not False
+            or value.get("simultaneous_with_other_auxiliary") is not True
             or value.get("consumption_key")!=expected_consumption
             or value.get("device_contract_sha256")!=contract.get("contract_sha256")
             or value.get("device_id")!=contract.get("device_id")
@@ -449,7 +449,6 @@ def _injection_gate(context,now):
         return "active_zone_unverified"
     if now-start_at<timedelta(seconds=MIN_PREFLOW_SECONDS):
         return "clean_water_preflow_incomplete"
-    if context.get("mixer_active") is True: return "mixer_must_be_off"
     if context.get("premix_verified") is not True: return "current_batch_premix_unproven"
     if pulse not in (0,1): return "two_pulse_limit_reached"
     prior=context.get("prior_pulse_shutdown_evidence") if isinstance(
@@ -474,7 +473,6 @@ def _injection_gate(context,now):
 def _mixing_gate(context,now,*,runtime):
     if not 1 <= int(runtime or 0) <= MAX_MIX_SECONDS:
         return "planned_mixing_runtime_invalid"
-    if context.get("injection_active") is True: return "injection_must_be_off"
     complete_at=_time(context.get("mixing_history_complete_through"))
     if complete_at is None or not timedelta(0)<=now-complete_at<=timedelta(minutes=5):
         return "mixing_history_incomplete"

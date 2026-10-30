@@ -48,6 +48,8 @@ class ExecutionStore:
                 raise RootlineExecutionStoreUnavailable("synthetic failure")
             if action == "load_active":
                 return deepcopy(self.active)
+            if action == "load_active_auxiliaries":
+                return [deepcopy(self.auxiliary)] if self.auxiliary else []
             if action == "load_active_auxiliary":
                 return deepcopy(self.auxiliary)
             if action == "load_off_attempts":
@@ -178,7 +180,7 @@ def test_overdue_active_stops_before_actual_daily_report_timeout(reports, monkey
     assert status == 202 and value["status"] == "scheduled_reassessment_evidence_deadline_exceeded"
     assert value["execution_status"] == "segment_completed"
     assert value["hardware_commands"] == 1 and value["telegram_sends"] == 1
-    assert value["writes_farm_data"] is True and starts == []
+    assert value["writes_farm_data"] is True and len(starts) == 1
     assert store.active is None and len(messages) == 1
     assert "controller OFF" in messages[0][0][1]["answer"]
     outcome = next(row for key, row in schedules.rows.items() if key.endswith(":outcome"))
@@ -187,29 +189,29 @@ def test_overdue_active_stops_before_actual_daily_report_timeout(reports, monkey
 
 
 @pytest.mark.parametrize("flag", ["false", "true"])
-def test_plan_failure_cannot_delay_existing_shutdown_or_enable_new_on(reports, flag):
+def test_report_plan_failure_cannot_delay_shutdown_or_independent_control(reports, flag):
     store = ExecutionStore(active()); transport = Transport()
     value, status, starts, _ = gateway(store, transport,
         daily_plan_generator=lambda _: (_ for _ in ()).throw(RuntimeError("plan unavailable")))
     assert status == 202 and value["execution_status"] == "segment_completed"
     assert value["hardware_commands"] == 1 and value["writes_farm_data"] is True
-    assert starts == []
+    assert len(starts) == 1 and value["irrigation_admission_status"] == "not_eligible"
     # The runtime itself also supervises OFF while the autonomous-start flag is absent.
     assert run_supervisor(ExecutionStore(active()), Transport(), environ={
         "ROOTLINE_AUTONOMOUS_BC_ENABLED": flag})["status"] == "segment_completed"
 
 
-def test_no_active_and_failed_plan_never_starts_or_reads_provider(reports):
+def test_failed_report_plan_preserves_independent_ineligible_control(reports):
     store = ExecutionStore(); transport = Transport(fail_read=True)
     value, _, starts, messages = gateway(store, transport,
         daily_plan_generator=lambda _: (_ for _ in ()).throw(RuntimeError("plan unavailable")))
     assert value["active_supervision_status"] == "no_active_irrigation"
-    assert starts == messages == transport.calls == []
+    assert len(starts) == 1 and messages == transport.calls == []
 
 
 @pytest.mark.parametrize("eskom_enabled,active_row,expected", [
     ("true",None,True),("false",None,False),("true",active(due=False),True),
-    ("true",active(due=True),False)])
+    ("true",active(due=True),True)])
 def test_actual_scheduler_managed_gate_honors_eskom_only_and_existing_stop_duty(
         reports,eskom_enabled,active_row,expected):
     calls=[]
@@ -291,7 +293,7 @@ def test_replay_and_concurrent_same_bucket_supervise_once(reports):
     assert sum(value["hardware_commands"] for value, _, _, _ in results) == 1
 
 
-def test_each_minute_supervises_managed_devices_but_shutdown_tick_forbids_new_starts(reports):
+def test_each_minute_supervises_managed_devices_and_reassesses_after_verified_shutdown(reports):
     managed_calls = []
     env = {**ENV, "ROOTLINE_FERTILIZER_INJECTION_ENABLED": "true"}
     # Use the actual gateway, runtime and coordinator with a fake managed edge.
@@ -301,11 +303,11 @@ def test_each_minute_supervises_managed_devices_but_shutdown_tick_forbids_new_st
             schedule_store=ScheduleStore(), scheduler_now=NOW,
             family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"},
             active_supervision_cycle=supervisor(store, transport),
-            execution_cycle=lambda **k: pytest.fail("new B/C cycle after active supervision"),
+            execution_cycle=lambda **k: {"success":True,"status":"not_eligible"},
             managed_device_cycle=lambda **k: managed_calls.append((due,k["allow_new_starts"])) or {
                 "success": True, "status": "no_active_managed_device", "blocks_bc": False})
         handle_rootline_reassessment_trigger(payload(), HEADERS, env, **options)
-    assert managed_calls == [(False,True),(True,False)]
+    assert managed_calls == [(False,True),(True,True)]
 
 
 def test_existing_injector_shutdown_interlock_is_preserved(monkeypatch):
@@ -324,10 +326,14 @@ def test_existing_injector_shutdown_interlock_is_preserved(monkeypatch):
 def test_late_reporting_exception_preserves_verified_stop(reports, monkeypatch):
     monkeypatch.setattr("modules.oom_sakkie.telegram_gateway.reassess_rootline",
         lambda **k: (_ for _ in ()).throw(RuntimeError("late presentation failure")))
-    value, status, starts, _ = gateway(ExecutionStore(active()), Transport())
+    schedules = ScheduleStore()
+    value, status, starts, _ = gateway(ExecutionStore(active()), Transport(), schedules=schedules)
     assert status == 202 and value["status"] == "scheduled_rootline_reporting_unproven"
     assert value["hardware_commands"] == 1 and value["writes_farm_data"] is True
-    assert value["report_effects_unknown"] is True and starts == []
+    assert value["report_effects_unknown"] is True and len(starts) == 1
+    outcome = next(row for key, row in schedules.rows.items() if key.endswith(":outcome"))
+    assert outcome["report_effects_unknown"] is True
+    assert outcome["provider_effects_unknown"] is value["provider_effects_unknown"] is False
 
 
 @pytest.mark.parametrize("zone", ["B12345", "C12345"])
@@ -383,7 +389,7 @@ def test_active_duty_owns_next_minute_despite_long_report_plan_and_later_tick(re
     second, _, starts2, _ = gateway(store, transport, schedules=schedules, scheduler_now=later,
         request_payload=payload(due_at=later.isoformat(), trigger_timestamp=later.isoformat()))
     assert second["execution_status"] == "segment_stopped_outcome_unconfirmed"
-    assert len(transport.calls) == 1 and starts == starts2 == []
+    assert len(transport.calls) == 1 and starts == [] and len(starts2) == 1
     assert len([k for k in schedules.rows if k.endswith(":outcome")]) == 2
 
 
@@ -413,7 +419,7 @@ def test_outcome_write_failure_keeps_off_effect_and_cannot_claim_completion(repo
     assert status == 202 and value["status"] == "scheduled_reassessment_outcome_unproven"
     assert value["hardware_commands"] == 1 and value["writes_farm_data"] is True
     assert value["outcome_recorded"] is False and value["terminal_outcome"] == "claimed"
-    assert value["active_supervision_status"] == "segment_completed" and starts == []
+    assert value["active_supervision_status"] == "segment_completed" and len(starts) == 1
 
 
 def test_production_plan_recovery_failure_happens_only_after_supervision(reports, monkeypatch):
@@ -435,6 +441,7 @@ def test_production_plan_recovery_failure_happens_only_after_supervision(reports
     value, status = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
         schedule_store=ScheduleStore(), scheduler_now=NOW,
         active_supervision_cycle=supervisor(store, transport),
+        execution_cycle=lambda **k: {"success": True, "status": "not_eligible"},
         managed_device_cycle=lambda **k: {"success":True,"status":"no_active_managed_device","blocks_bc":False},
         family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"})
     assert status == 202 and value["status"] == "scheduled_rootline_daily_plan_persistence_ambiguous"
@@ -447,13 +454,13 @@ def test_seeded_future_report_does_not_block_safety_or_run_reports(has_active):
     schedules.rows["prior:outcome"] = {"specialist": "ROOTLINE", "status": "completed",
         "next_due_at": report_due.isoformat()}
     store = ExecutionStore(active() if has_active else None); transport = Transport()
-    def forbidden(*args, **kwargs): pytest.fail("report/new-start work is not due")
+    def forbidden(*args, **kwargs): pytest.fail("report work is not due")
     value, status, starts, messages = gateway(store, transport, schedules=schedules,
-        specialist_loader=forbidden, daily_plan_generator=forbidden, execution_cycle=forbidden)
+        specialist_loader=forbidden, daily_plan_generator=forbidden)
     assert status == 200 and value["status"] == "scheduled_rootline_active_supervised"
     assert datetime.fromisoformat(value["next_due_at"]) == report_due
     assert value["hardware_commands"] == len(transport.calls) == int(has_active)
-    assert starts == [] and len(messages) == int(has_active)
+    assert len(starts) == 1 and len(messages) == int(has_active)
     assert len(schedules.rows) == 3
     own_outcome = [v for k, v in schedules.rows.items() if k != "prior:outcome" and k.endswith(":outcome")][0]
     assert own_outcome["report_work_due"] is False
@@ -666,3 +673,77 @@ def test_late_safety_outcome_cannot_replace_newer_report_due(sql_schedule_store,
         invoke=lambda: pytest.fail("late safety outcome must not accelerate reports"),
         invoke_not_due=lambda: {"success": True, "status": "no_active_irrigation"})
     assert datetime.fromisoformat(result["next_due_at"]) == next_report
+
+
+@pytest.mark.parametrize("report_due", [True, False])
+def test_actual_managed_provider_failure_preserves_uncertainty_in_durable_schedule(report_due):
+    from modules.telemetry.rootline_managed_devices_runtime import run_rootline_managed_device_cycle
+
+    schedules = ScheduleStore()
+    if not report_due:
+        schedules.rows["prior:outcome"] = {"specialist": "ROOTLINE", "status": "completed",
+            "next_due_at": (NOW + timedelta(minutes=30)).isoformat()}
+    store = ExecutionStore()
+    store.auxiliary = {"execution_id": "SYNTHETIC-MIXER", "state": "Active",
+        "auxiliary_device_id": "FERTILIZER-MIXER-CH2", "device_type": "fertilizer_mixer",
+        "device_id": "100204d497", "channel": 2, "maximum_duration_seconds": 300,
+        "claimed_at": (NOW - timedelta(minutes=6)).isoformat(), "on_attempts": 1,
+        "primary_stop_deadline": (NOW - timedelta(seconds=1)).isoformat()}
+
+    class FailedProvider(Transport):
+        def set_state(self, **kwargs):
+            assert kwargs["state"] == "OFF" and kwargs["channel"] == 2
+            self.calls.append(kwargs)
+            raise RuntimeError("synthetic provider timeout after command attempt")
+
+    transport = FailedProvider()
+    managed = partial(run_rootline_managed_device_cycle, evidence={}, store=store,
+        transport=transport, clock=lambda: NOW)
+    forbidden = lambda *a, **k: pytest.fail("uncertain device effects cannot enter reporting")
+    value, status, starts, messages = gateway(store, transport, schedules=schedules,
+        source_env={**ENV, "ROOTLINE_AUTONOMOUS_BC_ENABLED": "false"},
+        managed_device_cycle=managed, specialist_loader=forbidden, daily_plan_generator=forbidden)
+    assert status == 202 and value["success"] is False
+    assert value["effects_unknown"] is value["provider_effects_unknown"] is True
+    assert value["managed_device_status"] == "auxiliary_supervision_unproven"
+    assert value["execution_status"] == "auxiliary_supervision_unproven"
+    assert value["hardware_commands"] == len(transport.calls) == 1
+    assert store.auxiliary is not None and starts == messages == []
+    outcome = schedules.rows[value["schedule_identity"] + ":outcome"]
+    assert outcome["status"] == "contained" and outcome["report_work_due"] is report_due
+    assert outcome["provider_effects_unknown"] is True and outcome["report_effects_unknown"] is False
+    assert outcome["hardware_commands"] == 1
+    assert outcome["execution_status"] == "auxiliary_supervision_unproven"
+    replay = gateway(store, transport, schedules=schedules, source_env={**ENV,
+        "ROOTLINE_AUTONOMOUS_BC_ENABLED": "false"}, managed_device_cycle=managed,
+        specialist_loader=forbidden)[0]
+    assert replay["status"] == "scheduled_reassessment_replayed_noop"
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.parametrize("report_due", [True, False])
+@pytest.mark.parametrize("failure", ["empty", "malformed", "exception"])
+@pytest.mark.parametrize("stream", ["irrigation", "managed"])
+def test_unknown_control_result_contains_before_report_or_delivery(report_due, failure, stream):
+    schedules = ScheduleStore(); calls = []
+    if not report_due:
+        schedules.rows["prior:outcome"] = {"specialist": "ROOTLINE", "status": "completed",
+            "next_due_at": (NOW + timedelta(minutes=30)).isoformat()}
+    def control(**kwargs):
+        calls.append("control")
+        if failure == "exception":
+            raise RuntimeError("synthetic control result unavailable")
+        return object() if failure == "malformed" else None
+    forbidden = lambda *a, **k: pytest.fail("reporting cannot run after unknown control")
+    cycle = {"execution_cycle" if stream == "irrigation" else "managed_device_cycle": control}
+    value, status, starts, messages = gateway(ExecutionStore(), Transport(), schedules=schedules,
+        specialist_loader=forbidden, daily_plan_generator=forbidden, **cycle)
+    assert status == 202 and value["success"] is False and value["terminal_outcome"] == "contained"
+    assert calls == ["control"] and messages == []
+    expected = "irrigation_control_unproven" if stream == "irrigation" else "managed_supervision_unproven"
+    assert value["irrigation_admission_status" if stream == "irrigation" else "managed_device_status"] == expected
+    assert starts == []
+    outcome = schedules.rows[value["schedule_identity"] + ":outcome"]
+    assert outcome["status"] == "contained" and outcome["report_work_due"] is report_due
+    assert outcome["provider_effects_unknown"] is value["provider_effects_unknown"] is True
+    assert outcome["report_effects_unknown"] is False

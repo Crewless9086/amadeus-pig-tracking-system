@@ -7,6 +7,7 @@ identity. Auxiliary authority remains independently disabled by default.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone, timedelta
 import os
 from urllib import parse as urllib_parse, request as urllib_request
 from modules.telemetry.rootline_device_registry import (
@@ -24,13 +25,14 @@ EVENTS = {
 class RootlineIFTTTTransport:
     def __init__(self, *, token_store, environ=None, http_open=None,
                  readback=None, auxiliary_on_authorizer=None,
-                 commissioning_connect_factory=None):
+                 commissioning_connect_factory=None, auxiliary_active_reader=None):
         self.environ = environ if environ is not None else os.environ
         self.token_store = token_store
         self.http_open = http_open or urllib_request.urlopen
         self.readback = readback
         self.auxiliary_on_authorizer = auxiliary_on_authorizer
         self.commissioning_connect_factory = commissioning_connect_factory
+        self.auxiliary_active_reader = auxiliary_active_reader
 
     def read_safety_configuration(self, *, device_id, channel):
         contract = self._binding(device_id, channel)
@@ -80,7 +82,10 @@ class RootlineIFTTTTransport:
             "response_digest": snapshot.get("response_digest"),
             "observed_at": snapshot.get("retrieved_at"),
             "relevant_outputs_off": all(
-                item.get("output_state") == "OFF" for item in snapshot["channels"]),
+                item.get("output_state") == "OFF" for item in snapshot["channels"]
+                if contract["collection"] == "irrigation_zones"
+                or item.get("channel") == channel
+                or item.get("channel") not in device_channel_assignments(device_id)),
         }
 
     def _injector_commissioning(self, snapshot):
@@ -125,7 +130,10 @@ class RootlineIFTTTTransport:
                 or snapshot.get("scenes_enabled") is not False
                 or snapshot.get("interlock_enabled") is not False
                 or set(rows) != {1, 2, 3, 4}
-                or any(row.get("output_state") != "OFF" for row in rows.values())
+                or target.get("output_state") != "OFF"
+                or any(row.get("output_state") not in {"ON", "OFF"} for row in rows.values())
+                or any(rows[channel].get("output_state") != "OFF"
+                       for channel in set(rows) - set(assignments))
                 or any(row.get("power_restoration_state") != "OFF"
                        for row in rows.values())):
             return False
@@ -143,13 +151,24 @@ class RootlineIFTTTTransport:
                     and assigned.get("identity") != "FERTILIZER-INJECTION-CH1"):
                 return False
             assigned_row = rows.get(assigned_channel) or {}
-            # Both capabilities may be authorized for sequential operation.
-            # The all-outputs-OFF check above and canonical dispatch locks prevent
-            # simultaneous use; a sibling enable flag is not an ON reading.
+            # A commissioned sibling can operate independently. Its exact
+            # state and native shutdown remain proven; unassigned outputs must
+            # remain OFF. Atomic per-device claims prevent duplicate ownership.
             if (assigned_row.get("native_auto_off_enabled") is not True
                     or int(assigned_row.get("native_auto_off_seconds") or 0)
                         != int(assigned["native_fail_stop_seconds"])):
                 return False
+            if assigned_row.get("output_state") == "ON":
+                try:
+                    reader = self.auxiliary_active_reader
+                    if reader is None:
+                        from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+                        reader = lambda identity: rootline_irrigation_execution_store("load_active_auxiliary", identity)
+                    active = reader(assigned["identity"])
+                    if not active_auxiliary_output_owned(active, assigned, snapshot.get("retrieved_at")):
+                        return False
+                except Exception:
+                    return False
         return True
 
     def configuration_status(self, *, device_id, channel):
@@ -228,3 +247,33 @@ class RootlineIFTTTTransport:
             return find_device_contract(device_id, channel)
         except (TypeError, ValueError):
             raise ValueError("rootline_device_transport_binding_invalid")
+
+
+def active_auxiliary_output_owned(active, contract, observed_at):
+    """Prove one already-ON sibling belongs to its current bounded execution."""
+    if not isinstance(active, dict) or not isinstance(contract, dict):
+        return False
+    try:
+        def parse(value):
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError("auxiliary_time_provenance_missing")
+            return parsed.astimezone(timezone.utc)
+        observed = parse(observed_at)
+        claimed = parse(active.get("claimed_at"))
+        deadline = parse(active.get("primary_stop_deadline"))
+        start = active.get("start_evidence") or {}
+        started = parse(start.get("retrieved_at") or start.get("observed_at"))
+        return (active.get("state") == "Active" and active.get("on_attempts") == 1
+            and bool(active.get("execution_id"))
+            and active.get("auxiliary_device_id") == contract.get("identity")
+            and active.get("device_id") == contract.get("device_id")
+            and active.get("channel") == contract.get("channel")
+            and type(active.get("maximum_duration_seconds")) is int
+            and 0 < active["maximum_duration_seconds"] <= contract["native_fail_stop_seconds"]
+            and claimed <= started <= observed < deadline
+            and deadline <= claimed + timedelta(seconds=active["maximum_duration_seconds"])
+            and start.get("authoritative") is True and start.get("state") == "ON"
+            and bool(start.get("evidence_id") or start.get("response_digest")))
+    except (ValueError, TypeError, KeyError, OverflowError):
+        return False

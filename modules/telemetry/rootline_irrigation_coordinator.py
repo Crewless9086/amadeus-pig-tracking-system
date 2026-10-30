@@ -164,7 +164,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
 
 
 def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=None, now=None,
-                                stop_for_energy=False, clock=None):
+                                stop_for_energy=False, clock=None, auxiliary_device_id=None,
+                                expected_execution_id=None):
     """Advance one typed irrigation-auxiliary execution on the existing rail.
 
     This function owns no planner or provider mapping.  It consumes one
@@ -174,9 +175,15 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     """
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
-    active = store("load_active_auxiliary", None)
+    selected = auxiliary_device_id or (eligibility or {}).get("auxiliary_device_id")
+    active = store("load_active_auxiliary", selected)
     if active:
+        if ((selected and active.get("auxiliary_device_id") != selected)
+                or (expected_execution_id and active.get("execution_id") != expected_execution_id)):
+            return _aux_result("auxiliary_recovery_identity_changed", state="Intervention")
         return _recover_auxiliary(active, store, transport, now, stop_for_energy=stop_for_energy, clock=clock)
+    if expected_execution_id:
+        return _aux_result("auxiliary_recovery_already_terminal")
     artifact = validate_auxiliary_eligibility(eligibility, now=now)
     if not artifact:
         return _aux_result("auxiliary_not_eligible")
@@ -192,6 +199,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
             device_id=artifact["device_id"],channel=artifact["channel"])
     except Exception:
         current_safety={}
+    now = _aware(clock())
     if not revalidate_auxiliary_execution_edge(artifact,current_context=current_context,
             current_safety=current_safety,now=now):
         return _aux_result("auxiliary_edge_revalidation_failed")
@@ -210,6 +218,15 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         "claimed_at":now.isoformat(),"primary_stop_deadline":(
             now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat(),
         "state":"claimed","on_attempts":0,"off_attempts":0}
+    if (execution.get("device_type") == "fertilizer_injection_valve"
+            and not _injection_parent_still_on(execution, store, transport, now, clock=clock)):
+        return _aux_result("auxiliary_irrigation_dependency_unproven")
+    now = _aware(clock())
+    if not revalidate_auxiliary_execution_edge(artifact, current_context=current_context,
+            current_safety=current_safety, now=now):
+        return _aux_result("auxiliary_edge_revalidation_failed")
+    execution.update(claimed_at=now.isoformat(), primary_stop_deadline=(
+        now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat())
     claim=store("claim_auxiliary_before_on",execution)
     if not isinstance(claim,dict) or claim.get("created") is not True:
         return _aux_result("auxiliary_claim_conflict")
@@ -250,7 +267,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
 
 
 def emergency_off_auxiliary_execution(*, store, transport,
-                                      reason="emergency_off", expected_device_id=None):
+                                      reason="emergency_off", expected_device_id=None,
+                                      expected_execution_id=None):
     """Drive one exact active auxiliary output to authoritative OFF.
 
     Emergency shutdown never grants ON authority and reuses the existing
@@ -258,13 +276,14 @@ def emergency_off_auxiliary_execution(*, store, transport,
     binding prevents injection, borehole or unrelated outputs from inheriting
     a Mixer's stop request.
     """
-    active = store("load_active_auxiliary", None)
+    expected_identity=(expected_device_id or EMERGENCY_OFF_AUXILIARY_DEVICE_ID)
+    active = store("load_active_auxiliary", expected_identity)
     if not isinstance(active, dict):
         return _aux_result("auxiliary_emergency_off_no_active_execution")
-    expected_identity=(expected_device_id or EMERGENCY_OFF_AUXILIARY_DEVICE_ID)
     expected=get_device_contract(expected_identity)
     if (not expected or expected_identity not in {
             "FERTILIZER-MIXER-CH2","FERTILIZER-INJECTION-CH1"}
+            or (expected_execution_id and active.get("execution_id") != expected_execution_id)
             or active.get("auxiliary_device_id") != expected_identity
             or active.get("device_id") != expected.get("device_id")
             or active.get("channel") != expected.get("channel")):
@@ -302,6 +321,14 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
             "shutdown_verified":verified,"shutdown_evidence":shutdown})
         return _aux_result("auxiliary_restart_contained",commands=recovery["commands"],
             state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
+    if (active.get("device_type") == "fertilizer_injection_valve" and now < deadline
+            and not _injection_parent_still_on(active, store, transport, now, clock=clock)):
+        # A sibling mixer cannot hide a lost irrigation dependency. Stop only
+        # this injector; its native deadline and the parent's OFF remain owned.
+        return emergency_off_auxiliary_execution(store=store, transport=transport,
+            reason="active_irrigation_dependency_lost",
+            expected_device_id="FERTILIZER-INJECTION-CH1",
+            expected_execution_id=active.get("execution_id"))
     energy_pause = stop_for_energy and active.get("device_type") == "fertilizer_mixer" and now < deadline
     if now<deadline and not energy_pause:
         return _aux_result("auxiliary_active",execution=active)
@@ -382,6 +409,30 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
         else "auxiliary_completed",commands=recovery["commands"],
         state="Completed",execution=completed,
         physical_delivery_verified=physical_verified)
+
+
+
+def _injection_parent_still_on(active, store, transport, now, *, clock=None):
+    try:
+        parent = store("load_active", None)
+        if (not isinstance(parent, dict) or parent.get("state") != "Active"
+                or parent.get("execution_id") != active.get("zone_execution_id")
+                or any(parent.get(key) != active.get(key)
+                       for key in ("job_id", "job_sha256", "segment_identity", "zone_id"))):
+            return False
+        deadline = _timestamp(parent.get("primary_stop_deadline"))
+        if deadline is None or deadline <= now:
+            return False
+        binding = _output_binding(parent)
+        output = transport.read_output_state(device_id=binding["device_id"],
+            channel=binding["channel"])
+        observed = _timestamp(output.get("retrieved_at"))
+        checked_at = _aware(clock()) if clock else now
+        return (deadline > checked_at and output.get("authoritative") is True and output.get("state") == "ON"
+            and bool(output.get("evidence_id")) and observed is not None
+            and timedelta(0) <= checked_at-observed <= timedelta(minutes=5))
+    except Exception:
+        return False
 
 
 def _injection_delivery_verified(active, physical, shutdown):
@@ -546,7 +597,7 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
 
 
 def _stop_bound_injection(parent,store,transport):
-    auxiliary=store("load_active_auxiliary",None)
+    auxiliary=store("load_active_auxiliary","FERTILIZER-INJECTION-CH1")
     if (not isinstance(auxiliary,dict)
             or auxiliary.get("auxiliary_device_id")!="FERTILIZER-INJECTION-CH1"):
         return _aux_result("no_bound_injection")

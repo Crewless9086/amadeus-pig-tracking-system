@@ -64,7 +64,7 @@ _DEVICES = {
         "commissioning_generation": None, "commissioned": False,
         "authority_flag": "ROOTLINE_FERTILIZER_INJECTION_ENABLED",
         "dependencies": ["exactly_one_active_bc_zone", "verified_preflow",
-                         "mixer_off", "verified_shutdown", "clean_water_flush"],
+                         "current_batch_premix", "verified_shutdown", "clean_water_flush"],
     },
     "FERTILIZER-MIXER-CH2": {
         "collection": "irrigation_auxiliary_devices", "device_type": "fertilizer_mixer",
@@ -81,7 +81,7 @@ _DEVICES = {
         "manual_isolation": "co_located_manual_valve_owner_reported",
         "commissioning_generation": None, "commissioned": False,
         "authority_flag": "ROOTLINE_FERTILIZER_MIXING_ENABLED",
-        "dependencies": ["injection_off", "verified_shutdown", "daily_verified_minutes_cap"],
+        "dependencies": ["verified_shutdown", "daily_verified_minutes_cap"],
     },
     "BOREHOLE-1-MINI-R4-CH1": {
         "collection": "irrigation_auxiliary_devices",
@@ -100,7 +100,7 @@ _DEVICES = {
         "authority_flag": "ROOTLINE_BOREHOLE_ENABLED",
         "dependencies": ["exact_provider_binding", "native_fail_off_proof",
             "all_conflicting_paths_disabled", "authoritative_provider_on_then_off",
-            "canonical_water_need", "exclusive_material_load_claim"],
+            "canonical_water_need", "exclusive_borehole_claim"],
     },
 }
 
@@ -142,10 +142,29 @@ def commissioned_irrigation_contract(identity, registry=None):
             or row.get("collection") != "irrigation_zones"
             or row.get("device_type") != "irrigation_zone_valve"
             or row.get("commissioned") is not True
+            or row.get("plumbing_ready") is False
             or not str(row.get("commissioning_id") or "")
             or not isinstance(row.get("commissioning_generation"), int)):
         raise ValueError("rootline_irrigation_output_not_commissioned")
     return deepcopy(row)
+
+
+def commissioned_irrigation_contracts(registry=None, *, environ=None):
+    """Select commissioned zones, optionally restricted to enabled authority flags."""
+    rows = registry if isinstance(registry, dict) else rootline_device_registry()
+    result = {}
+    for identity, row in rows.items():
+        if (row.get("collection") != "irrigation_zones"
+                or row.get("device_type") != "irrigation_zone_valve"
+                or row.get("commissioned") is not True
+                or row.get("plumbing_ready") is False
+                or not str(row.get("commissioning_id") or "")
+                or type(row.get("commissioning_generation")) is not int):
+            continue
+        if environ is not None and str(environ.get(row.get("authority_flag")) or "").lower() != "true":
+            continue
+        result[identity] = deepcopy(row)
+    return result
 
 
 def validate_device_registry(registry=None):

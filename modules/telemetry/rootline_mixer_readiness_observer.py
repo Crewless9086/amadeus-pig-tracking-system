@@ -43,7 +43,7 @@ def collect_mixer_readiness(*, now: datetime, token_store=None, readback=None,
         now=observed_at,
     )
     ledger = execution_store or rootline_irrigation_execution_store
-    active = ledger("load_active_auxiliary", None)
+    active = ledger("load_active_auxiliary", DEVICE_IDENTITY)
     channel = _channel(provider)
     checks = {
         "provider_account_bound": provider.get("authoritative") is True,

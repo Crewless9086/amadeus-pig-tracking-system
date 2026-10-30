@@ -194,7 +194,8 @@ def test_actual_coordinator_claim_dispatch_and_late_mark_path(db,kind,late_off,m
             context['zone_output_evidence']['zone_execution_id']=parent_id
             artifact=aux.build_auxiliary_eligibility(task={'auxiliary_device_id':'FERTILIZER-INJECTION-CH1'},
                 safety=aux.safety(),context=context,flags={'ROOTLINE_FERTILIZER_INJECTION_ENABLED':True},now=now)
-            parent={**context,'execution_id':context['zone_execution_id'],'zone_id':'B12345'}
+            parent={**context,'execution_id':context['zone_execution_id'],'zone_id':'B12345',
+                'device_id':'100204e9bc','channel':1,'primary_stop_deadline':context['irrigation_stop_deadline']}
             seed(db,'claim_before_on',parent);seed(db,'mark_active',{**parent,'state':'Active'})
         else:
             artifact=aux.mixer_eligibility()
@@ -464,7 +465,7 @@ def test_managed_borehole_uses_real_transport_safety_and_command_contract(db,con
 
 
 @pytest.mark.parametrize('winner',['mixer','borehole'])
-def test_borehole_and_mixer_claims_are_mutually_exclusive_before_on(db,monkeypatch,winner):
+def test_borehole_and_mixer_admission_serializes_but_both_may_operate(db,monkeypatch,winner):
     now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now)
     seed(db,'record_borehole_eligibility',artifact)
     borehole={**artifact,'state':'claimed','claimed_at':now.isoformat(),
@@ -495,8 +496,9 @@ def test_borehole_and_mixer_claims_are_mutually_exclusive_before_on(db,monkeypat
             winning=pool.submit(claim,winner);assert inserted.wait(2)
             losing=pool.submit(claim,loser);assert competing.wait(2) and not losing.done()
             release.set();assert winning.result(2)['created']
-            refused=losing.result(2);assert not refused['created'] and refused['status']=='material_load_active'
+            accepted=losing.result(2);assert accepted['created']
     calls=[]
-    assert not dispatch(bodies[loser],loser,lambda:calls.append(loser))['accepted_unambiguous']
-    assert dispatch(bodies[winner],winner,lambda:calls.append(winner) or {'accepted_unambiguous':True})['accepted_unambiguous']
-    assert calls==[winner]
+    for kind in (winner,loser):
+        assert dispatch(bodies[kind],kind,lambda kind=kind:calls.append(kind) or {'accepted_unambiguous':True})['accepted_unambiguous']
+        assert not dispatch(bodies[kind],kind,lambda:calls.append('duplicate'))['accepted_unambiguous']
+    assert calls==[winner,loser]

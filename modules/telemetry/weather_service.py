@@ -236,6 +236,60 @@ def get_current_weather_state(database_url=None):
     return _format_current_weather_response(row), 200
 
 
+def get_weather_control_snapshot(database_url=None, *, now=None):
+    """Read current weather and its exact dry interval in one database snapshot.
+
+    The selected durable reading is at or before the caller's cutoff. The dry
+    interval ends at that same reading, including under concurrent/backdated
+    ingestion; current provider health remains an independent fail-closed gate.
+    """
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+    database_url = _database_url(database_url)
+    if not database_url:
+        return _not_configured()
+    cutoff = now or datetime.now(timezone.utc)
+    try:
+        with connect_bounded_read(database_url=database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select ts.source_id, ts.display_name, ts.provider, ts.stale_after_minutes,
+                           wr.reading_at, wr.temperature_c, wr.humidity_pct,
+                           wr.wind_speed_kmh, wr.wind_gust_kmh, wr.wind_direction_deg,
+                           wr.rain_rate_mm_h, wr.rain_today_mm, wr.pressure_hpa,
+                           wls.flags, wls.summary_status, wls.summary_headline, wls.summary_notes,
+                           (select jsonb_agg(jsonb_build_array(h.reading_at, h.rain_rate_mm_h)
+                                            order by h.reading_at)
+                              from public.weather_readings h
+                             where h.source_id=ts.source_id
+                               and h.reading_at between wr.reading_at - interval '35 minutes'
+                                                    and wr.reading_at)
+                      from public.telemetry_sources ts
+                      left join public.weather_latest_state wls using(source_id)
+                      left join lateral (select * from public.weather_readings r
+                          where r.source_id=ts.source_id and r.reading_at <= %s
+                          order by r.reading_at desc limit 1) wr on true
+                     where ts.source_id=%s
+                """, (cutoff, DEFAULT_WEATHER_SOURCE_ID))
+                row = cursor.fetchone()
+    except Exception as exc:
+        return _service_failed("weather_control_snapshot_failed",
+            "Coherent local weather evidence read failed.", exc)
+    if not row or not row[4]:
+        return {"success": False, "status": "weather_control_snapshot_unavailable"}, 200
+    weather = _format_current_weather_response(row[:17], now=cutoff)
+    flags = dict(row[13] or {})
+    healthy = bool(row[14]) and str(row[14]).lower() not in {
+        "offline", "error", "critical", "unavailable"}
+    healthy = healthy and not any(flags.get(key) is True for key in (
+        "station_stale", "telemetry_conflict", "provider_error", "source_unhealthy"))
+    rows = [(datetime.fromisoformat(str(value[0]).replace("Z", "+00:00")), value[1])
+            for value in row[17] or []]
+    release = build_weather_dry_release_evidence(rows, evaluated_at=cutoff,
+        stale_after_minutes=int(row[3]), provider_healthy=healthy)
+    return {"success": True, "snapshot_cutoff": cutoff.isoformat(),
+        "weather_current": weather, "rain_release": release}, 200
+
+
 def get_weather_dry_release_evidence(database_url=None, *, now=None):
     """Prove the governed dry interval from durable local-station readings."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
@@ -574,13 +628,13 @@ def _normalize_forecast_payload(payload):
     return rows
 
 
-def _format_current_weather_response(row):
+def _format_current_weather_response(row, *, now=None):
     (
         source_id, display_name, provider, stale_after_minutes, reading_at,
         temperature, humidity, wind_speed, wind_gust, wind_direction,
         rain_rate, rain_today, pressure, flags, summary_status, summary_headline, summary_notes,
     ) = row
-    age_minutes = max(0, int((datetime.now(timezone.utc) - reading_at.astimezone(timezone.utc)).total_seconds() // 60))
+    age_minutes = max(0, int(((now or datetime.now(timezone.utc)) - reading_at.astimezone(timezone.utc)).total_seconds() // 60))
     is_stale = age_minutes > int(stale_after_minutes)
     flags = dict(flags or {})
     flags["station_stale"] = is_stale

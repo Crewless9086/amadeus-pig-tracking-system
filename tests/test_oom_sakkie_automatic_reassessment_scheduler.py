@@ -289,8 +289,8 @@ def test_gateway_scheduled_unchanged_records_receipt_and_zero_io():
     assert result["writes_farm_data"] is False and len(rows) == 2
 
 
-def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_commands():
-    rows,schedules=memory_store(); cycles=[]; deliveries=[]
+def test_independent_control_precedes_plan_projection_and_delivery_with_zero_hardware_commands():
+    rows,schedules=memory_store(); cycles=[]; deliveries=[]; order=[]
     lifecycle = {}
     env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
          "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
@@ -299,11 +299,11 @@ def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_c
     bound={**scheduled_payload(),"owner_user_id":"42","chat_id":"42","trigger":"declared_time",
            "trigger_id":"AUTO-1","trigger_timestamp":"2026-08-05T10:15:00+02:00"}
     def cycle(**kwargs):
-        cycles.append(kwargs)
+        cycles.append(kwargs); order.append("control")
         return {"success":True,"status":"zone_contained","hardware_commands":0,
                 "telegram_messages":0,"writes_farm_data":False}
     def deliver(*args,**kwargs):
-        deliveries.append((args,kwargs)); return {"success":True,"status":"family_message_delivered",
+        deliveries.append((args,kwargs)); order.append("delivery"); return {"success":True,"status":"family_message_delivered",
             "telegram_message_id":"9100","telegram_sends":1}
     current = {"success":True,"overall_status":"Hold","operating_date":"2026-08-05",
         "result_id":"RESULT-1","generation":"GEN-1",
@@ -322,7 +322,7 @@ def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_c
             lifecycle[identity] = {**lifecycle[identity], **payload}; return {"success":True}
     projected=[]
     def generate(result):
-        projected.append(result)
+        projected.append(result); order.append("projection")
         return {"success":True,"status":"daily_plan_created","created":True,
             "readback_bound":True,"daily_plan":{
                 "daily_plan_id":"ROOTLINE-DAILY-PLAN-20260805",
@@ -332,7 +332,8 @@ def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_c
         state_store=state,
         scheduler_now=NOW,family_delivery=deliver,execution_cycle=cycle,
         specialist_loader=lambda:current,daily_plan_generator=generate)
-    assert status==200 and value["status"]=="scheduled_rootline_plan_and_execution_cycle_completed"
+    assert status==200 and value["status"]=="rootline_reassessment_changed"
+    assert order == ["control", "projection", "delivery"]
     assert value["plan_delivery_status"]=="delivered_current_irrigation_plan"
     assert value["plan_reassessment_status"]=="rootline_reassessment_changed"
     assert value["execution_status"]=="zone_contained"
@@ -344,7 +345,7 @@ def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_c
     assert value["daily_plan_id"] == "ROOTLINE-DAILY-PLAN-20260805"
 
 
-def test_daily_plan_persistence_failure_contains_execution_and_delivery():
+def test_daily_plan_persistence_failure_preserves_control_and_contains_delivery():
     _, schedules = memory_store(); calls=[]
     env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
          "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
@@ -358,17 +359,21 @@ def test_daily_plan_persistence_failure_contains_execution_and_delivery():
     value,status=handle_rootline_reassessment_trigger(bound,
         {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
         state_store=lambda *a:None,scheduler_now=NOW,specialist_loader=lambda:current,
-        daily_plan_generator=lambda _result: (_ for _ in ()).throw(RuntimeError("db")),
+        daily_plan_generator=lambda _result: (calls.append("projection") or
+            (_ for _ in ()).throw(RuntimeError("db"))),
         family_delivery=lambda *a,**k:calls.append("send"),
-        execution_cycle=lambda **k:calls.append("execute"))
+        execution_cycle=lambda **k:calls.append("control") or {
+            "success": True, "status": "zone_contained", "hardware_commands": 0,
+            "telegram_sends": 0, "writes_farm_data": False})
     assert status==202
     assert value["status"]=="scheduled_rootline_daily_plan_persistence_ambiguous"
     assert value["hardware_commands"]==0 and value["writes_farm_data"] is None
     assert value["write_state"]=="unknown"
-    assert calls==[]
+    assert value["execution_status"] == "zone_contained"
+    assert value["telegram_sends"] == 0 and calls == ["control", "projection"]
 
 
-def test_empty_plan_receipt_fails_before_any_delivery_or_execution():
+def test_empty_plan_receipt_fails_before_delivery_after_safe_control():
     _, schedules = memory_store(); calls=[]
     env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
          "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
@@ -382,12 +387,17 @@ def test_empty_plan_receipt_fails_before_any_delivery_or_execution():
         state_store=lambda *a:None,scheduler_now=NOW,
         specialist_loader=lambda:{"success":True,"operating_date":"2026-08-05",
             "evidence_cutoff":"2026-08-05T10:14:00+02:00"},
-        daily_plan_generator=lambda _result:{},
+        daily_plan_generator=lambda _result:calls.append("projection") or {},
         family_delivery=lambda *a,**k:calls.append("send"),
-        execution_cycle=lambda **k:calls.append("execute"))
+        execution_cycle=lambda **k:calls.append("control") or {
+            "success": True, "status": "zone_contained", "hardware_commands": 0,
+            "telegram_sends": 0, "writes_farm_data": False})
     assert status==202
     assert value["status"]=="scheduled_rootline_daily_plan_persistence_ambiguous"
-    assert value["write_state"]=="unknown" and calls==[]
+    assert value["write_state"]=="unknown" and calls==["control", "projection"]
+    assert value["execution_status"] == "zone_contained"
+    assert value["hardware_commands"] == value["telegram_sends"] == 0
+    assert value["writes_farm_data"] is None
 
 
 def test_plan_delivery_failure_and_containment_return_exact_separate_statuses():
@@ -416,7 +426,8 @@ def test_plan_delivery_failure_and_containment_return_exact_separate_statuses():
             "telegram_sends":0},
         execution_cycle=lambda **k:{"success":True,"status":"zone_contained",
             "hardware_commands":0,"writes_farm_data":False})
-    assert status==202 and result["status"]=="scheduled_rootline_plan_or_execution_contained"
+    assert status==202 and result["status"]=="scheduled_reassessment_delivery_contained"
+    assert result["terminal_outcome"] == "contained"
     assert result["plan_delivery_status"]=="current_irrigation_plan_delivery_unconfirmed"
     assert result["plan_reassessment_status"]=="rootline_reassessment_changed"
     assert result["execution_status"]=="zone_contained"

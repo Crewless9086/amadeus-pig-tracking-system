@@ -386,6 +386,7 @@ def read_current_water_energy_evidence(
         get_weather_forecast,
     )
     from modules.telemetry.rootline_daily_advisor import get_rootline_daily_advisor
+    from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
 
     now = _as_za(now or datetime.now(timezone.utc))
     selected = str(operating_date or now.date().isoformat())[:10]
@@ -397,9 +398,8 @@ def read_current_water_energy_evidence(
     from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
     readers = {
         "power": lambda: get_current_power_state(database_url=database_url),
-        "weather": lambda: get_current_weather_state(database_url=database_url),
         "forecast": lambda: get_weather_forecast(days=3, database_url=database_url),
-        "advisor": lambda: get_rootline_daily_advisor(selected, now=now),
+        "advisor": lambda: get_rootline_daily_advisor(selected, now=now, database_url=database_url),
         "balances": lambda: read_latest_zone_water_balances(database_url, now=now),
         "history": lambda: _read_historical_context(database_url),
         "irrigation_history": lambda: _read_recent_irrigation_history(database_url, now),
@@ -414,9 +414,10 @@ def read_current_water_energy_evidence(
     # database outage.
     loaded = run_bounded_read_group(readers,max_workers=4,deadline_seconds=25)
     power_packet, _ = loaded["power"]
-    weather_packet, _ = loaded["weather"]
     forecast_packet, _ = loaded["forecast"]
     advisor, _ = loaded["advisor"]
+    # Use the same current row that proved the advisor's dry interval.
+    weather_packet = advisor.get("current_weather_packet") or {}
     balances = loaded["balances"]
     irrigation_history = loaded["irrigation_history"]
     water_credits = irrigation_history.get("water_credits") or {
@@ -462,7 +463,8 @@ def read_current_water_energy_evidence(
             "adaptive_management": {
                 "enabled": True,
                 "contract_version": "rootline_adaptive_irrigation_v1",
-                "zones": [{"zone_id": "B12345"}, {"zone_id": "C12345"}],
+                "zones": [{"zone_id": identity} for identity in
+                    commissioned_irrigation_contracts()],
                 "target_days_per_week": 4,
                 "max_execution_minutes": 60,
                 "simultaneous_zones_allowed": False,

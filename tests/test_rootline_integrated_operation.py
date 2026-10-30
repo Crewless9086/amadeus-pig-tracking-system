@@ -109,6 +109,8 @@ def test_batch_identity_does_not_change_when_mixing_finishes_and_unsafe_wins():
 class Store:
     def __init__(self): self.active=None; self.rows=[]; self.claims=set(); self.off=set()
     def __call__(self,action,payload):
+        if action=="load_active": return active_zone()
+        if action=="load_active_auxiliaries": return [self.active] if self.active else []
         if action=="load_active_auxiliary": return self.active
         if action=="load_active_borehole": return None
         if action=="load_auxiliary_containment": return None
@@ -165,10 +167,10 @@ def test_real_controller_pulses_advance_twice_without_flow_sensor_and_preserve_f
             flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},now=transport.now)
         assert artifact["eligible"] and artifact["pulse_number"]==expected_pulse
         started=advance_auxiliary_execution(eligibility=artifact,store=store,transport=transport,
-            revalidate=lambda _:context,now=transport.now)
+            revalidate=lambda _:context,now=transport.now,clock=lambda:transport.now)
         assert started["status"]=="auxiliary_started"
         transport.now+=timedelta(seconds=120)
-        stopped=advance_auxiliary_execution(eligibility={},store=store,transport=transport,now=transport.now)
+        stopped=advance_auxiliary_execution(eligibility={},store=store,transport=transport,now=transport.now,clock=lambda:transport.now)
         assert stopped["status"]=="auxiliary_injection_control_completed"
         assert stopped["physical_delivery_verified"] is False
     context=_active_irrigation_context(active,store.rows,True,"BATCH-1")
@@ -199,7 +201,7 @@ def test_active_mixer_is_stopped_on_low_power_even_when_new_starts_disabled():
         "start_evidence":{"authoritative":True,"state":"ON","retrieved_at":NOW.isoformat()}}
     transport.states[2]="ON";transport.now=NOW+timedelta(seconds=60)
     result=run_rootline_managed_device_cycle(evidence={},transport=transport,store=store,
-        now=transport.now,allow_new_starts=False,energy_reader=lambda:{"mixing_eligible":False})
+        now=transport.now,clock=lambda:transport.now,allow_new_starts=False,energy_reader=lambda:{"mixing_eligible":False})
     assert result["status"]=="mixing_paused_for_energy"
     assert [row["state"] for row in transport.calls]==["OFF"]
     assert mixing_daily_accounting(store.rows,now=transport.now)["reserved_seconds"]==600

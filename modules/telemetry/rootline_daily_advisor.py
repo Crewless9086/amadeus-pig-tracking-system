@@ -179,12 +179,13 @@ C12345_CANARY_SHA256 = "ef388830f14056bf7baea2915950a655ae77c8f7c058b8e1f9f1c926
 
 
 def get_rootline_daily_advisor(
-    advisor_date=None, brief_reader=None, policy_reader=None, now=None
+    advisor_date=None, brief_reader=None, policy_reader=None, now=None, database_url=None
 ):
     selected_date = str(
         advisor_date or (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ).date().isoformat()
     )[:10]
-    reader = brief_reader or (lambda: get_rootline_daily_brief(selected_date))
+    reader = brief_reader or (lambda: get_rootline_daily_brief(
+        selected_date, now=now, database_url=database_url))
     # The brief and active policy are independent read models. Load them in
     # parallel so their bounded waits cannot accumulate inside an owner
     # callback worker.
@@ -247,6 +248,7 @@ def build_rootline_daily_advisor(brief, advisor_date, active_policy=None, now=No
         "mode": "owner_read_only_command_inert",
         "operating_date": advisor_date,
         "generated_at": generated_at,
+        "current_weather_packet": brief.get("current_weather_packet") if brief else None,
         "executive_summary": _executive_summary(zones, weather, forecast),
         "weather": {
             "current_status": _evidence_status(weather),

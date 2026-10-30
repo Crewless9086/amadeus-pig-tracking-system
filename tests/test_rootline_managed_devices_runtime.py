@@ -1,13 +1,31 @@
 from datetime import datetime, timedelta, timezone
 
 from modules.telemetry.rootline_managed_devices_runtime import (
-    run_rootline_managed_device_cycle,
+    run_rootline_managed_device_cycle as _managed_cycle,
 )
 from modules.telemetry.rootline_execution_runtime import (
-    run_rootline_managed_device_reassessment,
+    run_rootline_managed_device_reassessment as _managed_reassessment,
 )
 
 NOW = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
+
+
+def run_rootline_managed_device_cycle(**kwargs):
+    kwargs.setdefault("clock", lambda: kwargs.get("now", NOW))
+    return _managed_cycle(**kwargs)
+
+
+def run_rootline_managed_device_reassessment(**kwargs):
+    kwargs.setdefault("clock", lambda: kwargs.get("now", NOW))
+    return _managed_reassessment(**kwargs)
+
+
+def active_parent():
+    ctx = injection_evidence()["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"]
+    return {"execution_id": ctx["zone_execution_id"], "state": "Active",
+        "device_id": "100204e9bc", "channel": 1, "zone_id": "B12345",
+        "primary_stop_deadline": ctx["irrigation_stop_deadline"],
+        **{key: ctx[key] for key in ("job_id", "job_sha256", "segment_identity")}}
 
 
 class Store:
@@ -17,8 +35,12 @@ class Store:
         self.rows = []
 
     def __call__(self, action, payload):
+        if action == "load_active":
+            return active_parent()
+        if action == "load_active_auxiliaries":
+            return [self.active_aux] if self.active_aux else []
         if action == "load_active_auxiliary":
-            return self.active_aux
+            return self.active_aux if not self.active_aux or self.active_aux.get("auxiliary_device_id") == payload else None
         if action == "load_active_borehole":
             return self.active_borehole
         if action == "load_auxiliary_containment":
@@ -112,7 +134,7 @@ def test_need_task_canonical_authority_and_fresh_edge_start_exact_mixer_once():
     result = run_rootline_managed_device_cycle(evidence=evidence(), transport=transport,
         environ={"ROOTLINE_FERTILIZER_MIXING_ENABLED": "true"}, store=store,
         canonical_loader=canonical, now=NOW)
-    assert result["status"] == "auxiliary_started" and result["blocks_bc"] is True
+    assert result["status"] == "auxiliary_started" and result["blocks_bc"] is False
     assert [(row["device_id"], row["channel"], row["state"])
         for row in transport.calls] == [("100204d497", 2, "ON")]
     assert any(action == "record_auxiliary_eligibility" for action, _ in store.rows)

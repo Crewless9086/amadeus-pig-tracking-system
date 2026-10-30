@@ -412,7 +412,7 @@ def test_final_planning_observation_identity_changes_only_with_material_lifecycl
 def test_execution_cycle_persists_full_lifecycle_without_a_command_or_notification(monkeypatch):
     from modules.telemetry import rootline_execution_runtime as runtime
     initial=_planning_initial(read([contained("B-OLD"),contained("C-OLD","C12345")]))
-    monkeypatch.setattr(runtime,"_current",lambda *_:initial)
+    monkeypatch.setattr(runtime,"_current",lambda *_,**__:initial)
     records=[]
     def record(action,identity,payload):
         assert action=="record_observation" and identity==payload["identity"]
@@ -492,7 +492,7 @@ def test_unresolved_parent_truth_survives_final_observation_and_owner_status(
         task.update(zone_decision="recovery required", recommendation="Do Not Run",
             dispatchable=False, reason="The unresolved parent must be reconciled before another run.")
     before = deepcopy(initial)
-    monkeypatch.setattr(runtime, "_current", lambda *_: initial)
+    monkeypatch.setattr(runtime, "_current", lambda *_,**__: initial)
     observations = []
     def record(action, identity, payload):
         assert action == "record_observation" and identity == payload["identity"]
