@@ -21,7 +21,11 @@ def weather_db(db,monkeypatch):
     monkeypatch.setattr(weather,"DEFAULT_WEATHER_SOURCE_ID",source)
     with psycopg.connect(db) as c:
         migrations=Path(__file__).resolve().parents[1]/"supabase/migrations"
-        for name in ("202605210005_create_telemetry_power_tables.sql","202605220001_create_telemetry_weather_tables.sql"):
+        # Telemetry migrations record their application in the foundation log.
+        # Install it here so this fixture does not depend on another test file.
+        for name in ("202605210001_foundation_migration_log.sql",
+                     "202605210005_create_telemetry_power_tables.sql",
+                     "202605220001_create_telemetry_weather_tables.sql"):
             c.execute((migrations/name).read_text(encoding="utf-8"))
         c.execute("insert into public.telemetry_sources (source_id,source_type,display_name,provider,stale_after_minutes) values (%s,'weather','synthetic station','synthetic',30)",(source,))
         c.execute("insert into public.weather_latest_state (source_id,reading_at,flags,summary_status,summary_headline,summary_notes) values (%s,%s,'{}','ok','dry','[]')",(source,NOW-timedelta(minutes=1)))
