@@ -502,3 +502,66 @@ def test_borehole_and_mixer_admission_serializes_but_both_may_operate(db,monkeyp
         assert dispatch(bodies[kind],kind,lambda kind=kind:calls.append(kind) or {'accepted_unambiguous':True})['accepted_unambiguous']
         assert not dispatch(bodies[kind],kind,lambda:calls.append('duplicate'))['accepted_unambiguous']
     assert calls==[winner,loser]
+
+
+@pytest.mark.parametrize("phase", ["final_dispatch", "active_supervision"])
+@pytest.mark.parametrize("conflict", ["both_bc", "a_on", "unknown", "missing", "read_failure"])
+def test_actual_atomic_injector_path_refuses_new_physical_dependency_conflict(db, monkeypatch, phase, conflict):
+    from tests import test_rootline_fertilizer_auxiliary as aux
+    from tests.test_rootline_ifttt_transport import irrigation_snapshot
+    from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
+    from modules.telemetry.rootline_irrigation_coordinator import advance_auxiliary_execution
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(aux, "NOW", now)
+    context = aux.injection_context()
+    parent_id = "PARENT-"+uuid.uuid4().hex
+    context["zone_execution_id"] = parent_id
+    context["zone_start_evidence"]["zone_execution_id"] = parent_id
+    context["zone_output_evidence"]["zone_execution_id"] = parent_id
+    artifact = aux.build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},
+        safety=aux.safety(), context=context, flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True}, now=now)
+    assert artifact["eligible"]
+    parent = {**context, "execution_id":parent_id, "zone_id":"B12345", "device_id":"100204e9bc",
+        "channel":1, "primary_stop_deadline":context["irrigation_stop_deadline"]}
+    seed(db, "claim_before_on", parent)
+    seed(db, "mark_active", {**parent,"state":"Active"})
+    class Physical(aux.Transport):
+        left_reads = 0
+        def read_output_state(self, **kwargs):
+            if kwargs["device_id"] != "100204e9bc":
+                return super().read_output_state(**kwargs)
+            self.left_reads += 1
+            value = irrigation_snapshot(now)
+            at_conflict = self.left_reads >= (2 if phase == "final_dispatch" else 3)
+            if at_conflict:
+                if conflict == "read_failure": raise TimeoutError("offline native read failure")
+                if conflict == "both_bc": value["channels"][1]["output_state"] = "ON"
+                if conflict == "a_on": value["channels"][3]["output_state"] = "ON"
+                if conflict == "unknown": value["channels"][2]["output_state"] = "Unknown"
+                if conflict == "missing": value["channels"].pop()
+            return RootlineIFTTTTransport(token_store=None, environ={},
+                readback=lambda **_:value).read_output_state(**kwargs)
+    transport = Physical()
+    def advance(at):
+        return advance_auxiliary_execution(eligibility=artifact,
+            store=store.rootline_irrigation_execution_store, transport=transport,
+            revalidate=lambda _:context, now=at, clock=lambda:at)
+    result = advance(now)
+    if phase == "active_supervision":
+        assert result["status"] == "auxiliary_started"
+        result = advance(now+timedelta(seconds=10))
+        assert result["status"] == "auxiliary_emergency_off_verified"
+    assert [(row["device_id"],row["channel"],row["state"]) for row in transport.calls] == (
+        [("100204d497",1,"ON"),("100204d497",1,"OFF")] if phase == "active_supervision"
+        else [("100204d497",1,"OFF")])
+    recorded = rows(db, artifact)
+    assert sum(r["action"] == store._managed_family(borehole=False)["dispatch"] for r in recorded) == 1
+    outcome = next(r["on_outcome"] for r in recorded if r["action"] == "record_auxiliary_on_outcome")
+    if phase == "final_dispatch":
+        assert outcome["provider_command_attempted"] is False
+        assert result["hardware_commands"] == 1
+    assert not any(r["action"] == "record_auxiliary_completed" for r in recorded)
+    assert store.rootline_irrigation_execution_store("load_active", None)["execution_id"] == parent_id
+    command_count = len(transport.calls)
+    advance(now+timedelta(seconds=11))
+    assert len(transport.calls) == command_count

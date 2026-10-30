@@ -1,3 +1,4 @@
+from tests.test_rootline_ifttt_transport import irrigation_output
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
@@ -137,6 +138,8 @@ class Transport:
             "controller_safety_generation":"SAFE","physical_commissioning_generation":"BOUND",
             "commissioned":True,"observed_at":self.now.isoformat()}
     def read_output_state(self,*,device_id,channel):
+        if device_id=="100204e9bc":
+            return irrigation_output(self.now,channel=channel)
         return {"authoritative":True,"state":"ON" if device_id=="100204e9bc" else self.states[channel],
             "device_id":device_id,"channel":channel,"evidence_id":"FAKE-"+self.now.isoformat(),
             "retrieved_at":self.now.isoformat()}
