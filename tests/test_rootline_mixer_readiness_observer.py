@@ -150,3 +150,24 @@ def test_registry_binding_drift_fails_before_provider_or_ledger_calls(monkeypatc
     with pytest.raises(ValueError, match="rootline_mixer_registry_binding_invalid"):
         collect_mixer_readiness(now=NOW, token_store=object(), readback=unexpected,
             execution_store=unexpected)
+
+
+@pytest.mark.parametrize("mixer_active", [False, True])
+def test_readiness_selects_mixer_under_independent_injector_operation(mixer_active):
+    from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
+    calls = []
+    def ledger(action, selector):
+        calls.append((action, selector))
+        if selector is None:
+            raise RootlineExecutionStoreUnavailable("auxiliary_device_selector_required")
+        assert action == "load_active_auxiliary" and selector == "FERTILIZER-MIXER-CH2"
+        return {"execution_id":"MIXER-OWNED"} if mixer_active else None
+    def overlapping_provider(*args, **kwargs):
+        snapshot = provider(*args, **kwargs)
+        snapshot["channels"][0]["output_state"] = "ON"
+        return snapshot
+    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=overlapping_provider,
+        execution_store=ledger)[0]
+    assert calls == [("load_active_auxiliary", "FERTILIZER-MIXER-CH2")]
+    assert row["unknowns"] == (["no_conflicting_active_execution"] if mixer_active else [])
+    assert row["equipment_evidence"]["provider_readiness_proven"] is (not mixer_active)

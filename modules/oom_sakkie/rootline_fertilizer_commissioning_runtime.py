@@ -44,7 +44,7 @@ def prepare_fertilizer_commissioning(*, owner_result, parsed, gateway_authority=
     source = environ if environ is not None else os.environ
     token_store = token_store or PostgresOAuthTokenStore()
     transport = transport or RootlineIFTTTTransport(token_store=token_store, environ=source)
-    if store("load_active_auxiliary", None):
+    if store("load_active_auxiliary", MIXER_ID):
         return _result("commissioning_active_execution_conflict")
     try:
         eligibility, context = _current_mixer_eligibility(
@@ -87,7 +87,7 @@ def execute_protected_fertilizer_commissioning(*, eligibility, parsed, now=None,
     source = environ if environ is not None else os.environ
     token_store = token_store or PostgresOAuthTokenStore()
     transport = transport or RootlineIFTTTTransport(token_store=token_store, environ=source)
-    active = store("load_active_auxiliary", None)
+    active = store("load_active_auxiliary", MIXER_ID)
     if active:
         exact_active = (isinstance(active, dict)
             and active.get("execution_id") == artifact.get("execution_id")
@@ -98,7 +98,8 @@ def execute_protected_fertilizer_commissioning(*, eligibility, parsed, now=None,
         if not exact_active:
             return _result("commissioning_active_execution_conflict")
         outcome = advance_auxiliary_execution(eligibility={}, store=store,
-            transport=transport, revalidate=lambda _artifact: {}, now=now)
+            transport=transport, revalidate=lambda _artifact: {}, now=now,
+            auxiliary_device_id=MIXER_ID, expected_execution_id=active["execution_id"])
         return _finalize(outcome, store)
     try:
         current_safety = transport.read_safety_configuration(device_id=DEVICE_ID, channel=2)
@@ -126,7 +127,7 @@ def execute_protected_fertilizer_commissioning(*, eligibility, parsed, now=None,
             store("load_auxiliary_history", MIXER_ID))
     try:
         outcome = advance_auxiliary_execution(eligibility=artifact, store=store,
-            transport=transport, revalidate=revalidate, now=now)
+            transport=transport, revalidate=revalidate, now=now, auxiliary_device_id=MIXER_ID)
     finally:
         transport.auxiliary_on_authorizer = None
     return _finalize(outcome, store)
@@ -174,18 +175,22 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
         token_store=token_store, environ=source)
 
     # An already claimed proof always recovers/observes through the same rail.
-    active = store("load_active_auxiliary", None)
+    active = store("load_active_auxiliary", MIXER_ID)
     if active:
+        if not _active_mixer_bound(active):
+            return _result("commissioning_active_execution_conflict")
         facts = ((parsed.get("semantic") or {}).get("commissioning_facts")
                  if isinstance(parsed.get("semantic"), dict) else None)
         recorded_physical = isinstance(facts, dict) and bool(facts)
         if recorded_physical:
-            store("record_auxiliary_physical_outcome", {"execution_id": active["execution_id"],
+            store("record_auxiliary_physical_outcome", {**facts,
+                "execution_id": active["execution_id"], "auxiliary_device_id": MIXER_ID,
+                "device_id": DEVICE_ID, "channel": 2,
                 "provider_message_id": str(parsed.get("provider_message_id") or ""),
-                "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
-                **facts})
+                "provider_timestamp": str(parsed.get("provider_timestamp") or "")})
         outcome = advance_auxiliary_execution(eligibility={}, store=store,
-            transport=transport, revalidate=lambda _artifact: {}, now=now)
+            transport=transport, revalidate=lambda _artifact: {}, now=now,
+            auxiliary_device_id=MIXER_ID, expected_execution_id=active["execution_id"])
         presented = _finalize(outcome, store)
         if recorded_physical and outcome.get("status") in {
                 "auxiliary_active", "auxiliary_claim_in_progress"}:
@@ -249,7 +254,7 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
 
     try:
         outcome = advance_auxiliary_execution(eligibility=eligibility, store=store,
-            transport=transport, revalidate=revalidate, now=now)
+            transport=transport, revalidate=revalidate, now=now, auxiliary_device_id=MIXER_ID)
     finally:
         transport.auxiliary_on_authorizer = None
     return _finalize(outcome, store)
@@ -274,14 +279,23 @@ def recover_fertilizer_commissioning(*, now=None, environ=None, store=None,
                                      token_store=None, transport=None):
     """Scheduler-owned recovery/verification for a claimed mixer proof."""
     now = _aware(now or datetime.now(timezone.utc)); store = store or rootline_irrigation_execution_store
-    active = store("load_active_auxiliary", None)
-    if not active or active.get("auxiliary_device_id") != MIXER_ID:
+    active = store("load_active_auxiliary", MIXER_ID)
+    if not active:
         return _result("no_active_fertilizer_commissioning")
+    if not _active_mixer_bound(active):
+        return _result("commissioning_active_execution_conflict")
     source = environ if environ is not None else os.environ
     token_store = token_store or PostgresOAuthTokenStore()
     transport = transport or RootlineIFTTTTransport(token_store=token_store, environ=source)
     return _finalize(advance_auxiliary_execution(eligibility={}, store=store,
-        transport=transport, revalidate=lambda _artifact: {}, now=now), store)
+        transport=transport, revalidate=lambda _artifact: {}, now=now,
+        auxiliary_device_id=MIXER_ID, expected_execution_id=active["execution_id"]), store)
+
+
+def _active_mixer_bound(active):
+    return (isinstance(active, dict) and bool(active.get("execution_id"))
+        and active.get("auxiliary_device_id") == MIXER_ID
+        and active.get("device_id") == DEVICE_ID and active.get("channel") == 2)
 
 
 def emergency_off_fertilizer_mixer(*, reason="emergency_off", environ=None,
@@ -376,7 +390,7 @@ def _mixer_context(parsed, now, safety, power, history):
         "controller_digest": safety.get("response_digest"),
         "power_generation": power.get("generation"),
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return {"plan_generation": generation, "injection_active": False,
+    return {"plan_generation": generation,
         "reserved_mixing_seconds_today":account["reserved_seconds"],
         "mixing_history_valid":account["history_valid"],
         "verified_mixing_minutes_today":account["controller_completed_seconds"]/60,

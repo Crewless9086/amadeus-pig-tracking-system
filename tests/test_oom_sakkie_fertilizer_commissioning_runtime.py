@@ -1,4 +1,9 @@
 from datetime import datetime, timedelta, timezone
+from copy import deepcopy
+
+import pytest
+
+from modules.oom_sakkie import rootline_fertilizer_commissioning_runtime as commissioning
 
 from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
     _evaluation_time, continue_fertilizer_commissioning,
@@ -11,6 +16,17 @@ from modules.telemetry.rootline_auxiliary_management import build_auxiliary_elig
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 
 NOW = datetime(2026, 8, 10, 6, 51, 14, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def coordinator_clock(monkeypatch):
+    # These historical scenarios inject an evaluation instant. Preserve the
+    # actual coordinator while explicitly supplying its new command-edge clock.
+    advance = commissioning.advance_auxiliary_execution
+    def at_test_time(**kwargs):
+        kwargs.setdefault("clock", lambda: kwargs["now"])
+        return advance(**kwargs)
+    monkeypatch.setattr(commissioning, "advance_auxiliary_execution", at_test_time)
 
 
 def test_live_evaluation_clock_is_sampled_after_provider_io(monkeypatch):
@@ -340,3 +356,131 @@ def test_default_transport_reads_the_exact_registered_fertilizer_controller(monk
             "prior_shutdown_unverified": False},
         flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED": True}, now=NOW)
     assert denied["status"] == "auxiliary_safety_unproven"
+
+
+class IndependentAuxiliaryStore(Store):
+    def __init__(self, mixer=None, *, replacement=None):
+        super().__init__()
+        self.active = deepcopy(mixer)
+        self.injector = {"execution_id": "INJECTOR-OWNED", "state": "Active",
+            "auxiliary_device_id": "FERTILIZER-INJECTION-CH1", "device_id": "100204d497",
+            "device_type": "fertilizer_injection_valve", "channel": 1, "on_attempts": 1,
+            "claimed_at": NOW.isoformat(), "maximum_duration_seconds": 120,
+            "primary_stop_deadline": (NOW+timedelta(seconds=120)).isoformat()}
+        self.selectors = []
+        self.replacement = replacement
+
+    def __call__(self, action, payload):
+        if action == "load_active_auxiliary":
+            self.selectors.append(payload)
+            if payload is None:
+                from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
+                raise RootlineExecutionStoreUnavailable("auxiliary_device_selector_required")
+            assert payload == commissioning.MIXER_ID
+            if self.replacement and len(self.selectors) == 2:
+                return {**deepcopy(self.active), **self.replacement}
+            return deepcopy(self.active)
+        return super().__call__(action, payload)
+
+
+def owned_mixer():
+    artifact, _ = commissioning._current_mixer_eligibility(parsed=parsed(), now=NOW,
+        store=Store(), transport=Transport(),
+        power_loader=lambda _now: {"suitable": True, "generation": "POWER-1"})
+    active = {**artifact, "state": "Active", "claimed_at": NOW.isoformat(),
+        "primary_stop_deadline": (NOW+timedelta(seconds=1800)).isoformat(),
+        "on_attempts": 1, "off_attempts": 0,
+        "start_evidence": {"authoritative": True, "state": "ON", "evidence_id": "MIXER-ON",
+            "retrieved_at": NOW.isoformat()}}
+    return artifact, active
+
+
+def mixer_call(caller, store, transport, artifact, *, at=NOW, facts=None):
+    if caller == "scheduled":
+        return recover_fertilizer_commissioning(now=at, store=store, transport=transport,
+            token_store=object())
+    if caller == "protected":
+        return execute_protected_fertilizer_commissioning(eligibility=artifact,
+            parsed=parsed(), now=at, store=store, transport=transport, token_store=object())
+    message = parsed()
+    if facts is not None:
+        message["semantic"] = {"commissioning_facts": facts}
+    return continue_fertilizer_commissioning(owner_result=owner_result(), parsed=message,
+        gateway_authority=authority(), now=at, store=store, transport=transport,
+        token_store=object(), acceptance_loader=lambda *_args: True)
+
+
+@pytest.mark.parametrize("caller", ["scheduled", "protected", "owner_followup"])
+def test_overlap_recovery_selects_only_the_exact_mixer(caller):
+    artifact, active = owned_mixer()
+    store = IndependentAuxiliaryStore(active); transport = Transport()
+    result = mixer_call(caller, store, transport, artifact)
+    assert result["status"] == "auxiliary_active"
+    assert store.selectors == [commissioning.MIXER_ID, commissioning.MIXER_ID]
+    assert result["hardware_commands"] == 0 and transport.commands == []
+    assert store.events == [] and store.injector["execution_id"] == "INJECTOR-OWNED"
+
+
+@pytest.mark.parametrize("caller", ["scheduled", "protected", "owner_followup"])
+def test_mixer_recovery_rejects_execution_change_after_selection(caller):
+    artifact, active = owned_mixer()
+    store = IndependentAuxiliaryStore(active, replacement={"execution_id": "DIFFERENT-MIXER"})
+    transport = Transport()
+    result = mixer_call(caller, store, transport, artifact)
+    assert result["status"] == "auxiliary_recovery_identity_changed"
+    assert result["hardware_commands"] == 0 and transport.commands == [] and store.events == []
+
+
+def test_scheduled_overlap_stops_only_mixer_and_replay_does_not_stop_injector():
+    artifact, active = owned_mixer()
+    store = IndependentAuxiliaryStore(active); transport = Transport()
+    transport.now = NOW+timedelta(seconds=1801)
+    original_injector = deepcopy(store.injector)
+    completed = mixer_call("scheduled", store, transport, artifact, at=transport.now)
+    assert completed["status"] == "auxiliary_completed"
+    assert transport.commands == [("OFF", active["execution_id"]+":OFF:1")]
+    assert store.injector == original_injector
+    replay = mixer_call("scheduled", store, transport, artifact, at=transport.now)
+    assert replay["status"] == "no_active_fertilizer_commissioning"
+    assert len(transport.commands) == 1
+    assert all(row["execution_id"] == active["execution_id"] for _,row in store.events)
+
+
+def test_overlap_observation_is_bound_to_selected_mixer_not_semantic_identity():
+    artifact, active = owned_mixer()
+    store = IndependentAuxiliaryStore(active); transport = Transport()
+    result = mixer_call("owner_followup", store, transport, artifact, facts={
+        "mixer_recirculating": True, "pump_expected": True,
+        "execution_id": "INJECTOR-OWNED", "auxiliary_device_id": "FERTILIZER-INJECTION-CH1",
+        "device_id": "OTHER", "channel": 1})
+    recorded = [row for action,row in store.events if action == "record_auxiliary_physical_outcome"]
+    assert result["status"] == "auxiliary_active" and len(recorded) == 1
+    assert recorded[0]["execution_id"] == active["execution_id"]
+    assert (recorded[0]["auxiliary_device_id"], recorded[0]["device_id"], recorded[0]["channel"]) == (
+        commissioning.MIXER_ID, commissioning.DEVICE_ID, 2)
+    assert recorded[0]["mixer_recirculating"] is True and transport.commands == []
+
+
+@pytest.mark.parametrize("caller", ["scheduled", "owner_followup"])
+@pytest.mark.parametrize("wrong", [{"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},
+    {"device_id":"OTHER"}, {"channel":1}, {"execution_id":""}])
+def test_mismatched_mixer_snapshot_cannot_receive_observation_or_recovery(caller, wrong):
+    artifact, active = owned_mixer()
+    store = IndependentAuxiliaryStore({**active, **wrong}); transport = Transport()
+    result = mixer_call(caller, store, transport, artifact, facts={"mixer_recirculating": True})
+    assert result["status"] == "commissioning_active_execution_conflict"
+    assert store.events == [] and transport.commands == []
+
+
+def test_preview_ignores_independent_injector_but_blocks_existing_mixer():
+    artifact, active = owned_mixer()
+    for mixer, expected in ((None,"commissioning_protected_preview_ready"),
+            (active,"commissioning_active_execution_conflict")):
+        store = IndependentAuxiliaryStore(mixer); transport = Transport()
+        result = commissioning.prepare_fertilizer_commissioning(owner_result=owner_result(),
+            parsed=parsed(), gateway_authority=authority(), now=NOW,
+            store=store, transport=transport, token_store=object(), acceptance_loader=lambda *_args:True,
+            power_loader=lambda _now:{"suitable":True,"generation":"POWER-1"})
+        assert result["status"] == expected
+        assert store.selectors == [commissioning.MIXER_ID] and store.events == [] and transport.commands == []
+        assert "injection_active" not in result.get("current_context", {})
