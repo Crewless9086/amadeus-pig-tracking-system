@@ -1,3 +1,4 @@
+from tests.test_rootline_ifttt_transport import irrigation_output
 """Actual canonical loader -> normalized readback -> safety/eligibility contracts.
 
 All records/transports below are synthetic; the SQL-shaped adapter is read-only.
@@ -124,11 +125,13 @@ def injector_database(snapshot):
 def context():
     return {"plan_generation": "P", "batch_generation": "B", "fertilizer_needed": True,
         "premix_verified": True, "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24,
+        "fertilizer_history_complete_through": NOW.isoformat(),
         "job_sha256": "a" * 64, "segment_identity": "ROOTLINE-JOB-SEGMENT-" + "B" * 24,
         "active_zone_ids": ["B12345"], "zone_execution_id": "Z", "completed_pulses": 0,
+        "zone_device_id": "100204e9bc", "zone_channel": 1,
         "zone_start_evidence": {"evidence_id": "START", "zone_execution_id": "Z",
             "observed_at": (NOW-timedelta(seconds=600)).isoformat()},
-        "zone_output_evidence": {"evidence_id": "OUTPUT", "zone_execution_id": "Z",
+        "zone_output_evidence": {**irrigation_output(NOW), "zone_execution_id": "Z",
             "observed_at": NOW.isoformat(), "state": "ON"},
         "irrigation_stop_deadline": (NOW+timedelta(seconds=1800)).isoformat(),
         "mixer_active": False, "prior_shutdown_unverified": False}

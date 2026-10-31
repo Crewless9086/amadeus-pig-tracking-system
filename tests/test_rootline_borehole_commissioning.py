@@ -95,6 +95,12 @@ class BoreholeStore:
     def __call__(self, action, body):
         if action=="load_active_borehole": return self.active
         if action=="dispatch_borehole_on_edge": return body["dispatch"]()
+        if action=="dispatch_borehole_off_edge":
+            return {**body["dispatch"](), "provider_command_attempted":True}
+        if action=="record_borehole_aborted":
+            # This unit stub has no canonical claim/barrier proof. Native tests
+            # below the real store own terminal retirement qualification.
+            return {"success":False,"provider_final_off_evidence":body["read_final_off"]()}
         if action=="load_borehole_off_attempts": return []
         if action in {"claim_borehole_before_on","claim_borehole_off_attempt"}:
             if action=="claim_borehole_before_on": self.active=dict(body)
@@ -117,7 +123,8 @@ class BoreholeTransport:
         self.state="OFF"; return {"accepted_unambiguous":True,"status":"accepted"}
     def read_output_state(self,**_kwargs):
         return {"authoritative":True,"state":self.state,
-            "evidence_id":"PROVIDER-"+self.state}
+            "device_id":"1002851416","channel":1,"evidence_id":"a"*64,
+            "retrieved_at":datetime.now(timezone.utc).isoformat()}
     def read_safety_configuration(self,**_kwargs):
         return {"native_inching_enabled":True,"native_inching_seconds":1800}
 

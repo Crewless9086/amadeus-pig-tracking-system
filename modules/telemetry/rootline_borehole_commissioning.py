@@ -296,23 +296,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
 
 
 def _finish_borehole(active, store, transport, now, *, clock=None):
-    commands = 0
-    prior = store("load_borehole_off_attempts", active["execution_id"]) or []
-    used = {int(row.get("attempt") or 0) for row in prior if isinstance(row, dict)}
-    for attempt in range(1, 4):
-        if attempt in used:
-            continue
-        claim = store("claim_borehole_off_attempt", {"execution_id": active["execution_id"],
-            "attempt": attempt})
-        if not isinstance(claim, dict) or claim.get("created") is not True:
-            continue
-        outcome = transport.set_state(device_id="1002851416", channel=1, state="OFF",
-            idempotency_key=f"{active['execution_id']}:OFF:{attempt}")
-        commands += 1
-        store("record_borehole_off_outcome", {"execution_id": active["execution_id"],
-            "attempt": attempt, "outcome": outcome})
-        if outcome.get("accepted_unambiguous") is True:
-            break
+    commands = _stop_borehole(active, store, transport)
     final = _read_borehole(transport)
     if final.get("authoritative") is not True or final.get("state") != "OFF":
         store("contain_borehole", {**active, "shutdown_verified": False,
@@ -337,26 +321,37 @@ def _finish_borehole(active, store, transport, now, *, clock=None):
     return _borehole_result("borehole_completed", commands=commands, execution=completed)
 
 
-def _contain_failed_borehole_start(execution, store, transport):
-    """A failed ON edge may drive OFF but can never create completion truth."""
+def _stop_borehole(execution, store, transport):
+    """The store consumes each OFF slot before its lock-serialized provider send."""
     commands = 0
     prior = store("load_borehole_off_attempts", execution["execution_id"]) or []
     used = {int(row.get("attempt") or 0) for row in prior if isinstance(row, dict)}
     for attempt in range(1, 4):
         if attempt in used:
             continue
-        claim = store("claim_borehole_off_attempt", {"execution_id": execution["execution_id"],
-            "attempt": attempt})
-        if not isinstance(claim, dict) or claim.get("created") is not True:
-            continue
-        outcome = transport.set_state(device_id="1002851416", channel=1, state="OFF",
-            idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")
-        commands += 1
-        store("record_borehole_off_outcome", {"execution_id": execution["execution_id"],
-            "attempt": attempt, "outcome": outcome})
+        outcome = store("dispatch_borehole_off_edge", {"execution_id": execution["execution_id"],
+            "attempt": attempt, "dispatch": lambda attempt=attempt:
+                transport.set_state(device_id="1002851416", channel=1, state="OFF",
+                    idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")})
+        if not isinstance(outcome, dict):
+            break
+        commands += int(outcome.get("provider_command_attempted") is True)
         if outcome.get("accepted_unambiguous") is True:
             break
-    final = _read_borehole(transport)
+    return commands
+
+
+def _contain_failed_borehole_start(execution, store, transport):
+    """A failed ON edge may drive OFF but can never create completion truth."""
+    commands = _stop_borehole(execution, store, transport)
+    aborted = store("record_borehole_aborted", {**execution,
+        "read_final_off": lambda: _read_borehole(transport)})
+    if (isinstance(aborted, dict) and aborted.get("success") is True
+            and isinstance(aborted.get("execution"), dict)):
+        return _borehole_result("borehole_start_aborted", commands=commands,
+            success=False, writes_farm_data=aborted.get("created") is True,
+            execution=aborted["execution"])
+    final = ((aborted or {}).get("provider_final_off_evidence") or {}) if isinstance(aborted, dict) else {}
     verified = final.get("authoritative") is True and final.get("state") == "OFF"
     contained = {**execution, "shutdown_verified": verified,
         "provider_final_off_evidence": final}

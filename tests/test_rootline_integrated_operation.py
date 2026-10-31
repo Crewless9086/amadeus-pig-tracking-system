@@ -1,3 +1,4 @@
+from tests.test_rootline_ifttt_transport import irrigation_output
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
@@ -137,6 +138,8 @@ class Transport:
             "controller_safety_generation":"SAFE","physical_commissioning_generation":"BOUND",
             "commissioned":True,"observed_at":self.now.isoformat()}
     def read_output_state(self,*,device_id,channel):
+        if device_id=="100204e9bc":
+            return irrigation_output(self.now,channel=channel)
         return {"authoritative":True,"state":"ON" if device_id=="100204e9bc" else self.states[channel],
             "device_id":device_id,"channel":channel,"evidence_id":"FAKE-"+self.now.isoformat(),
             "retrieved_at":self.now.isoformat()}
@@ -161,6 +164,7 @@ def test_real_controller_pulses_advance_twice_without_flow_sensor_and_preserve_f
         transport.now=NOW+timedelta(seconds=seconds)
         context=_active_irrigation_context(active,store.rows,True,"BATCH-1")
         context["premix_verified"]=True
+        context["fertilizer_history_complete_through"]=transport.now.isoformat()
         context=_refresh_active_irrigation_readback({"active_irrigation_context":context},transport,transport.now)["active_irrigation_context"]
         artifact=build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},
             safety=transport.read_safety_configuration(device_id="100204d497",channel=1),context=context,
@@ -254,6 +258,8 @@ def test_borehole_energy_shutdown_precedes_its_four_hour_deadline():
     def store(action,payload):
         if action=="load_active_borehole":return active
         if action=="load_borehole_off_attempts":return []
+        if action=="dispatch_borehole_off_edge":
+            return {**payload["dispatch"](),"provider_command_attempted":True}
         rows.append((action,payload));return {"success":True,"created":True}
     transport=Transport()
     result=advance_borehole_execution(eligibility={},store=store,transport=transport,now=NOW,stop_for_energy=True)

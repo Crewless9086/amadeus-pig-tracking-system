@@ -230,9 +230,26 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     claim=store("claim_auxiliary_before_on",execution)
     if not isinstance(claim,dict) or claim.get("created") is not True:
         return _aux_result("auxiliary_claim_conflict")
-    dispatch=lambda:transport.set_state(device_id=execution["device_id"],
-        channel=execution["channel"],state="ON",
-        idempotency_key=execution["execution_id"]+":ON")
+    def dispatch():
+        # The snapshot may change after claim; recheck inside the existing
+        # atomic command fence immediately before the provider ON request.
+        if (execution.get("device_type") == "fertilizer_injection_valve"
+                and not _injection_parent_still_on(execution, store, transport,
+                    _aware(clock()), clock=clock)):
+            return {"accepted_unambiguous": False,
+                "status": "auxiliary_irrigation_dependency_unproven",
+                "provider_command_attempted": False}
+        # A slow final provider read can consume programme/flush time or age
+        # the original evidence. Revalidate at the actual command edge.
+        if not revalidate_auxiliary_execution_edge(artifact,
+                current_context=current_context, current_safety=current_safety,
+                now=_aware(clock())):
+            return {"accepted_unambiguous": False,
+                "status": "auxiliary_edge_revalidation_failed",
+                "provider_command_attempted": False}
+        return transport.set_state(device_id=execution["device_id"],
+            channel=execution["channel"], state="ON",
+            idempotency_key=execution["execution_id"]+":ON")
     accepted=store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
     store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
     if accepted.get("accepted_unambiguous") is not True:
@@ -244,7 +261,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         store("record_auxiliary_exception",{**execution,"reason":"ambiguous_on",
             "fertilizer_debt":True,"shutdown_verified":verified})
         return _aux_result("auxiliary_ambiguous_on_contained" if verified
-            else "auxiliary_shutdown_intervention_required",commands=1+recovery["commands"],
+            else "auxiliary_shutdown_intervention_required",
+            commands=(0 if accepted.get("provider_command_attempted") is False else 1)+recovery["commands"],
             state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
     started=_read_auxiliary_output(execution,transport)
     if started.get("authoritative") is not True or started.get("state")!="ON":
@@ -424,13 +442,18 @@ def _injection_parent_still_on(active, store, transport, now, *, clock=None):
         if deadline is None or deadline <= now:
             return False
         binding = _output_binding(parent)
+        if (parent.get("device_id") != binding["device_id"]
+                or type(parent.get("channel")) is not int
+                or parent["channel"] != binding["channel"]):
+            return False
         output = transport.read_output_state(device_id=binding["device_id"],
             channel=binding["channel"])
         observed = _timestamp(output.get("retrieved_at"))
         checked_at = _aware(clock()) if clock else now
-        return (deadline > checked_at and output.get("authoritative") is True and output.get("state") == "ON"
-            and bool(output.get("evidence_id")) and observed is not None
-            and timedelta(0) <= checked_at-observed <= timedelta(minutes=5))
+        from modules.telemetry.rootline_ifttt_transport import irrigation_dependency_verified
+        return (deadline > checked_at and observed is not None
+            and irrigation_dependency_verified(output, device_id=binding["device_id"],
+                channel=binding["channel"], now=checked_at))
     except Exception:
         return False
 

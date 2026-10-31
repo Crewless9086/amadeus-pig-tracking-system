@@ -1,3 +1,4 @@
+from tests.test_rootline_ifttt_transport import irrigation_output
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -52,12 +53,14 @@ def safety(device="injection",**changes):
 def injection_context(**changes):
     value={"plan_generation":"PLAN-1","batch_generation":"BATCH-1",
         "fertilizer_needed":True,"premix_verified":True,
+        "fertilizer_history_complete_through": NOW.isoformat(),
         "job_id":"ROOTLINE-IRRIGATION-JOB-"+"A"*24,"job_sha256":"a"*64,
         "segment_identity":"ROOTLINE-JOB-SEGMENT-"+"B"*24,
         "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EXEC-1",
+        "zone_device_id":"100204e9bc","zone_channel":1,
         "zone_start_evidence":{"evidence_id":"START-1","zone_execution_id":"ZONE-EXEC-1",
             "observed_at":(NOW-timedelta(seconds=600)).isoformat()},
-        "zone_output_evidence":{"evidence_id":"OUTPUT-1","zone_execution_id":"ZONE-EXEC-1",
+        "zone_output_evidence":{**irrigation_output(NOW),"zone_execution_id":"ZONE-EXEC-1",
             "observed_at":NOW.isoformat(),"state":"ON"},
         "irrigation_stop_deadline":(NOW+timedelta(seconds=1800)).isoformat(),
         "completed_pulses":0,
@@ -315,7 +318,9 @@ class Transport:
         if kwargs["state"]=="OFF" and accepted:self.read="OFF"
         return {"accepted_unambiguous":accepted}
     def read_output_state(self,**_kwargs):
-        state="ON" if _kwargs.get("device_id")=="100204e9bc" else self.read
+        if _kwargs.get("device_id")=="100204e9bc":
+            return irrigation_output(NOW,channel=_kwargs["channel"])
+        state=self.read
         return {"authoritative":True,"state":state,"evidence_id":"READ-1",
             "retrieved_at":(NOW+timedelta(seconds=120 if state=='OFF' else 0)).isoformat()}
     def read_safety_configuration(self,**kwargs):

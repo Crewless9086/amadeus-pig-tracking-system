@@ -372,15 +372,11 @@ def _classify(score, need, policy, weather, water, power, now):
     # B/C are gravity-fed. Power remains reported evidence, but it cannot
     # block, rank or time these commissioned irrigation zones.
     if policy.get("gravity_fed_bc", True):
-        if policy["season"] == "summer" and not (now.hour >= 18 or now.hour < 6):
-            return "Run later", "Summer evaporation favours an evening or night window."
         return "Run now", "Weekly irrigation demand, water and dry observed weather support one bounded gravity-fed segment."
     if not power_fresh:
         return "Run later", "Water need is supported but fresh power evidence is required at execution time."
     season = policy["season"]
     surplus = (_number(power.get("solar_power_w")) or 0) > (_number(power.get("load_power_w")) or 0)
-    if season == "summer" and not (now.hour >= 18 or now.hour < 6):
-        return "Run later", "Summer evaporation favours an evening or night window."
     if season == "winter" and 9 <= now.hour < 16 and surplus and soc is not None and soc >= reserve:
         return "Run now", "Winter daylight, surplus solar and reserve margin support a bounded daytime segment."
     if soc is not None and soc >= reserve:
@@ -462,10 +458,6 @@ def _window(decision, policy, power, now):
         return "now_after_fresh_execution_revalidation"
     if decision != "Run later":
         return "on_material_evidence_change"
-    if policy["season"] == "summer":
-        return "next_evening_or_night_window"
-    if policy["season"] == "winter":
-        return "next_supported_daylight_power_window"
     return "next_supported_power_and_water_window"
 
 

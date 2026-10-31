@@ -6,6 +6,7 @@ identity. Auxiliary authority remains independently disabled by default.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from datetime import datetime, timezone, timedelta
 import os
@@ -20,6 +21,80 @@ EVENTS = {
     (1, "ON"): "irrigation_1_ch1_on", (1, "OFF"): "irrigation_1_ch1_off",
     (2, "ON"): "irrigation_1_ch2_on", (2, "OFF"): "irrigation_1_ch2_off",
 }
+
+
+def output_evidence_from_snapshot(snapshot, *, device_id, channel):
+    """Preserve target readback and full irrigation-output dependency evidence."""
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    channels = snapshot.get("channels")
+    rows = [row for row in (channels if isinstance(channels, list) else []) if isinstance(row, dict)
+            and type(row.get("channel")) is int and row["channel"] == channel]
+    matched = (snapshot.get("device_id") == device_id and type(channel) is int
+        and len(rows) == 1)
+    result = {"authoritative": matched and snapshot.get("current_outputs_authoritative") is True,
+        "state": rows[0].get("output_state") if matched else "Unknown",
+        "device_id": snapshot.get("device_id"),
+        "channel": rows[0].get("channel") if matched else None,
+        "evidence_id": snapshot.get("response_digest"),
+        "retrieved_at": snapshot.get("retrieved_at")}
+    if device_id == DEVICE_ID and type(channel) is int and channel in (1, 2):
+        result["irrigation_output_evidence"] = {
+            "device_id": snapshot.get("device_id"),
+            "current_outputs_authoritative": snapshot.get("current_outputs_authoritative"),
+            "provider_control_calls": snapshot.get("provider_control_calls"),
+            "response_digest": snapshot.get("response_digest"),
+            "retrieved_at": snapshot.get("retrieved_at"),
+            "channels": deepcopy(channels),
+        }
+    return result
+
+
+def irrigation_dependency_verified(output, *, device_id, channel, now):
+    """Require one exact B/C output ON and all other irrigation outputs OFF."""
+    if (device_id != DEVICE_ID or type(channel) is not int or channel not in (1, 2)
+            or not isinstance(output, dict) or output.get("authoritative") is not True
+            or output.get("state") != "ON" or output.get("device_id") != device_id
+            or type(output.get("channel")) is not int or output["channel"] != channel):
+        return False
+    proof = output.get("irrigation_output_evidence")
+    if (not isinstance(proof, dict) or proof.get("device_id") != device_id
+            or proof.get("current_outputs_authoritative") is not True
+            or not isinstance(proof.get("response_digest"), str)
+            or len(proof["response_digest"]) != 64
+            or any(char not in "0123456789abcdef" for char in proof["response_digest"])
+            or type(proof.get("provider_control_calls")) is not int
+            or proof["provider_control_calls"] != 0
+            or proof["response_digest"] != output.get("evidence_id")
+            or proof.get("retrieved_at") != output.get("retrieved_at")
+            or ("response_digest" in output
+                and output["response_digest"] != proof["response_digest"])):
+        return False
+    rows = proof.get("channels")
+    if (not isinstance(rows, list) or len(rows) != 4
+            or any(not isinstance(row, dict) or type(row.get("channel")) is not int
+                   for row in rows)
+            or {row["channel"] for row in rows} != {1, 2, 3, 4}
+            or any(row.get("output_state") != ("ON" if row["channel"] == channel else "OFF")
+                   for row in rows)):
+        return False
+    raw_observed = proof.get("retrieved_at")
+    if not isinstance(raw_observed, (str, datetime)):
+        return False
+    try:
+        observed = (raw_observed if isinstance(raw_observed, datetime) else
+            datetime.fromisoformat(raw_observed.replace("Z", "+00:00")))
+        if "observed_at" in output:
+            reported = output["observed_at"]
+            reported = (reported if isinstance(reported, datetime) else
+                datetime.fromisoformat(str(reported).replace("Z", "+00:00")))
+            if reported != observed:
+                return False
+        return (isinstance(now, datetime) and now.tzinfo is not None
+            and now.utcoffset() is not None and observed.tzinfo is not None
+            and observed.utcoffset() is not None
+            and timedelta(0) <= now-observed <= timedelta(minutes=5))
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 class RootlineIFTTTTransport:
@@ -181,11 +256,7 @@ class RootlineIFTTTTransport:
 
     def read_output_state(self, *, device_id, channel):
         snapshot = self._snapshot(device_id, channel)
-        row = self._channel(snapshot, channel)
-        return {"authoritative": snapshot.get("current_outputs_authoritative") is True,
-                "state": row.get("output_state"),
-                "evidence_id": snapshot.get("response_digest"),
-                "retrieved_at": snapshot.get("retrieved_at")}
+        return output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
 
     def set_state(self, *, device_id, channel, state, idempotency_key):
         contract = self._binding(device_id, channel)
