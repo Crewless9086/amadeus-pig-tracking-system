@@ -1,0 +1,163 @@
+name: ROOTLINE Ordinary Registration Qualification
+on:
+  push:
+    branches: [codex/rootline-ewelink-demand-registration-20261031]
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: oom_desktop_rebind_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d oom_desktop_rebind_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHON_DOTENV_DISABLED: '1'
+      OOM_PROTECTED_ACTION_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_managed
+      ROOTLINE_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_managed
+      OOM_DESKTOP_REBIND_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oom_desktop_rebind_test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Verify exact ROOTLINE application identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse 8c1f126477fe2394e9eb661040f9b0ddf824f869^{tree})" = f2651db8133eab77cbce1dd1466e63949797af9a
+          test "$(git merge-base 81cfab7bf12b87f4216aa1b42ece2e9c99d91b98 8c1f126477fe2394e9eb661040f9b0ddf824f869)" = 81cfab7bf12b87f4216aa1b42ece2e9c99d91b98
+      - name: Preserve ordinary registration qualification
+        run: python -m unittest tests.test_oom_desktop_candidate_reconciliation tests.test_oom_desktop_registration_sql -v
+      - name: Preserve pre-send metadata correction qualification
+        run: python -m pytest tests/test_oom_presend_timeout_correction.py -q -p no:cacheprovider
+      - name: Preserve one-time unsent expiry qualification
+        run: python -m pytest tests/test_oom_unsent_confirmation_extension.py -q -p no:cacheprovider
+      - name: Load exact reviewed integrated-operation application for qualification
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 8c1f126477fe2394e9eb661040f9b0ddf824f869
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify reviewed integrated-operation application checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 8c1f126477fe2394e9eb661040f9b0ddf824f869
+          test "$(git rev-parse HEAD^{tree})" = f2651db8133eab77cbce1dd1466e63949797af9a
+      - name: Prepare isolated canonical ROOTLINE fixture prerequisites
+        env:
+          PGPASSWORD: postgres
+        run: |
+          createdb --host=127.0.0.1 --username=postgres rootline_managed
+          psql --host=127.0.0.1 --username=postgres --dbname=rootline_managed --set=ON_ERROR_STOP=1 <<'SQL'
+          do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
+          do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
+          do $$ begin create role service_role nologin bypassrls; exception when duplicate_object then null; end $$;
+          SQL
+      - name: Qualify exact integrated operation and preserved ROOTLINE guards
+        run: >-
+          python -m pytest -q -p no:cacheprovider
+          tests/test_oom_sakkie_automatic_reassessment_scheduler.py
+          tests/test_oom_sakkie_fertilizer_commissioning_runtime.py
+          tests/test_oom_sakkie_operational_specialist_intake.py
+          tests/test_oom_sakkie_rootline_daily_presentation.py
+          tests/test_oom_sakkie_rootline_protected_mixer.py
+          tests/test_oom_sakkie_rootline_reassessment_delivery.py
+          tests/test_rootline_active_supervision.py
+          tests/test_rootline_borehole_commissioning.py
+          tests/test_rootline_commissioning_bridges.py
+          tests/test_rootline_device_spine_postgres.py
+          tests/test_rootline_eskom_runtime.py
+          tests/test_rootline_ewelink_oauth.py
+          tests/test_rootline_ewelink_request_budget.py
+          tests/test_rootline_ewelink_request_budget_postgres.py
+          tests/test_rootline_ewelink_request_budget_workload.py
+          tests/test_rootline_execution_runtime.py
+          tests/test_rootline_fertilizer_auxiliary.py
+          tests/test_rootline_ifttt_transport.py
+          tests/test_rootline_integrated_operation.py
+          tests/test_rootline_irrigation_execution_history_postgres.py
+          tests/test_rootline_irrigation_execution_store.py
+          tests/test_rootline_irrigation_history.py
+          tests/test_rootline_irrigation_lifecycle.py
+          tests/test_rootline_managed_devices_runtime.py
+          tests/test_rootline_managed_evidence_history_postgres.py
+          tests/test_rootline_managed_recovery_planning.py
+          tests/test_rootline_owner_status.py
+          tests/test_rootline_parent_job_resolution.py
+          tests/test_rootline_parent_job_resolution_postgres.py
+          tests/test_rootline_shutdown_preservation.py
+          tests/test_rootline_specialist_result.py
+          tests/test_rootline_water_energy_plan.py
+          tests/test_rootline_managed_startup_handover.py
+          tests/test_rootline_managed_startup_handover_postgres.py
+          tests/test_rootline_unstarted_auxiliary_reconciliation_postgres.py
+          tests/test_rootline_mixer_readiness_observer.py
+          tests/test_rootline_timing_concurrency.py
+          tests/test_rootline_timing_concurrency_postgres.py
+          tests/test_rootline_injector_output_guard.py
+          tests/test_rootline_adaptive_irrigation.py
+
+
+  historical_pending:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: oom_desktop_rebind_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d oom_desktop_rebind_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHON_DOTENV_DISABLED: '1'
+      OOM_DESKTOP_REBIND_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oom_desktop_rebind_test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 1a38895ac8882fceb1eb7c291bc07dd9ec95eabf
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Verify exact ROOTLINE application identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 1a38895ac8882fceb1eb7c291bc07dd9ec95eabf
+          test "$(git rev-parse cb9f89442a472bff3711740cb11d823777104679^{tree})" = 71a6ab72ae511110c2580cbb6eb679228bc7d81c
+          test "$(git merge-base 18de462e8463b44b289b29eda3693606d9b1e43a cb9f89442a472bff3711740cb11d823777104679)" = 18de462e8463b44b289b29eda3693606d9b1e43a
+      - name: Preserve ordinary registration qualification
+        run: python -m unittest tests.test_oom_desktop_candidate_reconciliation tests.test_oom_desktop_registration_sql -v
+      - name: Prove exact pending ROOTLINE succession and SQL parity
+        run: python -m unittest tests.test_rootline_pending_registration tests.test_rootline_pending_registration_sql -v
+      - name: Preserve pre-send metadata correction qualification
+        run: python -m pytest tests/test_oom_presend_timeout_correction.py -q -p no:cacheprovider
+      - name: Preserve one-time unsent expiry qualification
+        run: python -m pytest tests/test_oom_unsent_confirmation_extension.py -q -p no:cacheprovider
+# Qualification only; no registration, merge, deployment or activation authority.
