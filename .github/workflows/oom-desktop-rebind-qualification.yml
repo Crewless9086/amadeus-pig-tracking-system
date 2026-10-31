@@ -40,8 +40,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse 8c779dff5231b51ac5cc3e760e2777539644fb4d^{tree})" = 958ce4a3b20b7866d18c9488d6a86706bf5f6731
-          test "$(git merge-base a70ab01c273335fa5ec945cd93c0e16c4af92070 8c779dff5231b51ac5cc3e760e2777539644fb4d)" = a70ab01c273335fa5ec945cd93c0e16c4af92070
+          test "$(git rev-parse 7d10a063cc65d2a32d71406ed832e1eed6c8be6a^{tree})" = 63d0c4a8cf2a5d683a6165ef2741ea468d6f4cd6
+          test "$(git merge-base a70ab01c273335fa5ec945cd93c0e16c4af92070 7d10a063cc65d2a32d71406ed832e1eed6c8be6a)" = a70ab01c273335fa5ec945cd93c0e16c4af92070
       - name: Preserve ordinary registration qualification
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation tests.test_oom_desktop_registration_sql -v
       - name: Preserve pre-send metadata correction qualification
@@ -51,15 +51,15 @@ jobs:
       - name: Load exact reviewed integrated-operation application for qualification
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 8c779dff5231b51ac5cc3e760e2777539644fb4d
+          ref: 7d10a063cc65d2a32d71406ed832e1eed6c8be6a
           persist-credentials: false
           fetch-depth: 0
       - name: Verify reviewed integrated-operation application checkout
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 8c779dff5231b51ac5cc3e760e2777539644fb4d
-          test "$(git rev-parse HEAD^{tree})" = 958ce4a3b20b7866d18c9488d6a86706bf5f6731
+          test "$(git rev-parse HEAD)" = 7d10a063cc65d2a32d71406ed832e1eed6c8be6a
+          test "$(git rev-parse HEAD^{tree})" = 63d0c4a8cf2a5d683a6165ef2741ea468d6f4cd6
       - name: Prepare isolated canonical ROOTLINE fixture prerequisites
         env:
           PGPASSWORD: postgres

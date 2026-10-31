@@ -59,7 +59,7 @@ SYNTHETIC_PINS = {"BRANCH": "codex/synthetic-manager-progress", "CANDIDATE_PR": 
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1414, 'HEAD': '8c779dff5231b51ac5cc3e760e2777539644fb4d', 'TREE': '958ce4a3b20b7866d18c9488d6a86706bf5f6731', 'APPROVED_RUNTIME_HEAD': '8c779dff5231b51ac5cc3e760e2777539644fb4d', 'BASE': 'a70ab01c273335fa5ec945cd93c0e16c4af92070', 'BRANCH': 'codex/rootline-injector-output-guard-20261030', 'PATHS': ['docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/telemetry/rootline_adaptive_irrigation.py', 'modules/telemetry/rootline_auxiliary_management.py', 'modules/telemetry/rootline_execution_runtime.py', 'modules/telemetry/rootline_ifttt_transport.py', 'modules/telemetry/rootline_irrigation_coordinator.py', 'modules/telemetry/rootline_water_energy_plan.py', 'tests/test_rootline_adaptive_irrigation.py', 'tests/test_rootline_commissioning_bridges.py', 'tests/test_rootline_fertilizer_auxiliary.py', 'tests/test_rootline_ifttt_transport.py', 'tests/test_rootline_injector_output_guard.py', 'tests/test_rootline_integrated_operation.py', 'tests/test_rootline_managed_devices_runtime.py', 'tests/test_rootline_managed_startup_handover_postgres.py', 'tests/test_rootline_shutdown_preservation.py', 'tests/test_rootline_water_energy_plan.py'], 'QUALIFICATION_TEST_PATHS': []}
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1414, 'HEAD': '7d10a063cc65d2a32d71406ed832e1eed6c8be6a', 'TREE': '63d0c4a8cf2a5d683a6165ef2741ea468d6f4cd6', 'APPROVED_RUNTIME_HEAD': '7d10a063cc65d2a32d71406ed832e1eed6c8be6a', 'BASE': 'a70ab01c273335fa5ec945cd93c0e16c4af92070', 'BRANCH': 'codex/rootline-injector-output-guard-20261030', 'PATHS': ['docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md', 'docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/telemetry/rootline_adaptive_irrigation.py', 'modules/telemetry/rootline_auxiliary_management.py', 'modules/telemetry/rootline_borehole_commissioning.py', 'modules/telemetry/rootline_execution_runtime.py', 'modules/telemetry/rootline_ifttt_transport.py', 'modules/telemetry/rootline_irrigation_coordinator.py', 'modules/telemetry/rootline_irrigation_execution_store.py', 'modules/telemetry/rootline_water_energy_plan.py', 'tests/test_rootline_adaptive_irrigation.py', 'tests/test_rootline_borehole_commissioning.py', 'tests/test_rootline_commissioning_bridges.py', 'tests/test_rootline_fertilizer_auxiliary.py', 'tests/test_rootline_ifttt_transport.py', 'tests/test_rootline_injector_output_guard.py', 'tests/test_rootline_integrated_operation.py', 'tests/test_rootline_managed_devices_runtime.py', 'tests/test_rootline_managed_recovery_planning.py', 'tests/test_rootline_managed_startup_handover_postgres.py', 'tests/test_rootline_shutdown_preservation.py', 'tests/test_rootline_water_energy_plan.py'], 'QUALIFICATION_TEST_PATHS': []}
 
 ROOTLINE_ADDED_EFFECTS = {'application_revision_rollback:web:a70ab01c273335fa5ec945cd93c0e16c4af92070'}
 ROOTLINE_REMOVED_EFFECTS = {'application_revision_rollback:web:776c23add1c2b2761f94c1036380d0b3ec63bd2a'}
@@ -652,7 +652,7 @@ class ReconciliationTests(unittest.TestCase):
         clauses=m['contract']['operational_acceptance']
         notification=[v for v in clauses if v.startswith('Close only the existing ROOTLINE current-plan delivery advisory')]
         self.assertEqual(len(notification),1)
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         guards=('complete positive canonical observation and provider-confirmed delivery proof',
             'same current private recipient, SAST operating date and canonical plan material',
             'lowercase 64-hex SHA-256 material','exact event/identity/provider-message refs',
@@ -704,16 +704,16 @@ class ReconciliationTests(unittest.TestCase):
             with self.subTest(effect=effect),self.assertRaises(adapter.ReconciliationError):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail('unexpected connection'))
 
-    def test_only_exact_109_acceptance_clauses_are_allowed_and_other_lists_remain_100(self):
+    def test_only_exact_110_acceptance_clauses_are_allowed_and_other_lists_remain_100(self):
         m,a=json.loads(self.args['manifest_bytes']),json.loads(self.args['approval_bytes'])
-        self.assertEqual(len(m['contract']['operational_acceptance']),109)
+        self.assertEqual(len(m['contract']['operational_acceptance']),110)
         adapter.prepare_reconciliation(**encode(m,a))
-        for kind in ('missing','arbitrary','110th'):
+        for kind in ('missing','arbitrary','111th'):
             changed=deepcopy(m)
             if kind=='missing':changed['contract']['operational_acceptance'].pop()
             elif kind=='arbitrary':changed['contract']['operational_acceptance'][0]='not an approved acceptance clause'
-            else:changed['contract']['operational_acceptance'].append('not an approved 110th clause')
-            expected='contract_lists_invalid' if kind=='110th' else 'approved_scope_delta_changed'
+            else:changed['contract']['operational_acceptance'].append('not an approved 111th clause')
+            expected='contract_lists_invalid' if kind=='111th' else 'approved_scope_delta_changed'
             with self.subTest(kind=kind),self.assertRaisesRegex(adapter.ReconciliationError,expected):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail('unexpected connection'))
         for field in ('forbidden_files','allowed_effects','forbidden_effects','required_tests'):
@@ -784,8 +784,8 @@ class ReconciliationTests(unittest.TestCase):
                 adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         m["contract"]["operational_acceptance"].append("No new protected-preview activation authority.")
-        # The acceptance-only bound rejects an appended 110th clause before scope comparison.
-        self.assertEqual(len(m["contract"]["operational_acceptance"]), 110)
+        # The acceptance-only bound rejects an appended 111th clause before scope comparison.
+        self.assertEqual(len(m["contract"]["operational_acceptance"]), 111)
         with self.assertRaisesRegex(adapter.ReconciliationError,"contract_lists_invalid"):
             adapter.reconcile_candidate(**encode(m,a),connect_factory=lambda _:self.fail("unexpected connection"))
 
@@ -1027,7 +1027,7 @@ class ReconciliationTests(unittest.TestCase):
             (set(prior["allowed_effects"]) - adapter.REMOVED_EFFECTS) | adapter.ADDED_EFFECTS)
         self.assertIn("farm_write", m["contract"]["forbidden_effects"])
         clauses=m["contract"]["operational_acceptance"]
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         self.assertTrue(all(0 < len(value) <= 2000 for value in clauses))
         shared=[value for value in clauses if value.startswith(PRIOR_COHORT_ACCEPTANCE)]
         self.assertEqual(len(shared),1)
@@ -1061,7 +1061,7 @@ class ReconciliationTests(unittest.TestCase):
         clauses=m["contract"]["operational_acceptance"]
         qualification=[v for v in clauses if v.startswith(prior_qualification)]
         self.assertEqual(len(qualification),1)
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         self.assertTrue(all(0<len(v)<=2000 for v in clauses))
         self.assertIn("tests/test_oom_sakkie_purpose_refresh.py",qualification[0])
         for before,after in (
@@ -1100,7 +1100,7 @@ class ReconciliationTests(unittest.TestCase):
         clauses=m["contract"]["operational_acceptance"]
         preview=[v for v in clauses if v.startswith("Display the single-pig purpose preview")]
         self.assertEqual(len(preview),1)
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         self.assertTrue(all(0<len(v)<=2000 for v in clauses))
         for before,after in (
                 ("canonical herdmaster_purpose_correction_v2 decisions/effects contract", "legacy approved/planned_updates"),
@@ -1136,7 +1136,7 @@ class ReconciliationTests(unittest.TestCase):
         clauses=m["contract"]["operational_acceptance"]
         pending=[v for v in clauses if v.startswith("Reconcile retained HERDMASTER mortality and mortality-cluster advisories")]
         self.assertEqual(len(pending),1)
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         for guard_text in (
                 "Current work and collector failures take precedence",
                 "absence, unknown identity or incomplete evidence never proves welfare completion",
@@ -1169,10 +1169,11 @@ class ReconciliationTests(unittest.TestCase):
     def test_101_current_rootline_preservation_clauses_and_prior_98_domain_digest(self):
         prefixes=('Release only exact ROOTLINE','Only existing web service',
             'Require independently authenticated fresh owner approval','Require a genuinely valid current PR1413 admission',
-            'Preserve every existing B/C','Preserve the completed historical B/C','Before accepting the integrated-operation outcome','Qualify exact injector-output and all-hours drip safety')
+            'Preserve every existing B/C','Preserve the completed historical B/C','Before accepting the integrated-operation outcome','Qualify exact injector-output and all-hours drip safety',
+            'Qualify safely aborted borehole startup retirement')
         release={v for v in adapter.REQUIRED_ACCEPTANCE if v.startswith(prefixes)}
         preserved=adapter.REQUIRED_ACCEPTANCE-release
-        self.assertEqual(len(release),8)
+        self.assertEqual(len(release),9)
         self.assertEqual(len(preserved),101)
         # Frozen from immutable 1a38895a historical source after its reviewed PR1405 retirement rules.
         self.assertEqual(adapter.digest(adapter.canonical(sorted(preserved))),'2107ede4481eaeddd60e9689d751317f62815f81390a621f87772917726b6894')
@@ -1194,7 +1195,7 @@ class ReconciliationTests(unittest.TestCase):
     def test_core_receipt_and_stopped_source_do_not_grant_activation_or_pickup(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         clauses=m["contract"]["operational_acceptance"]
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         self.assertTrue(all(0<len(v)<=2000 for v in clauses))
         for guard_text in ('durable receipt, not worker selection, pickup, repair execution or welfare completion', 'exact enabled expiring policy', 'explicit receipt-only mission admission', 'current owner/dependency/event/cycle/source binding', 'holds, supersession, idle state and lease fences in both transactions', 'one shared 10-second ordinary budget', 'one shared 60-second budget only after exact cloud-context validation', 'Commit the canonical CORE finding before separate committed readback/backlink', 'replay creates no duplicate or invented acknowledgement', 'source chronology, false completion flags', 'no receipt or healthy web response proves an owner outcome', 'CORE remains parked and suspended', 'historical CORE approvals cannot authorize this release', 'does not create new ON, controller, borehole, fertilizer, schedule, configuration or token authority', 'all prior CORE/ROOTLINE registration, correction, attempt, approval and hold history'):
             changed=deepcopy(m)
@@ -1215,14 +1216,14 @@ class ReconciliationTests(unittest.TestCase):
         first='Prepare condition_observation only from a genuine current authenticated owner report naming one exact current canonical animal and its finite nonboolean body-condition score. Preserve explicit observation date and date-only precision or a supplied aware instant; reject missing, future, invalid or conflicting observation dates before claim creation. Date-only normalization is a disclosed storage convention, not an invented physical observation time. Prior read context, a score alone, a pronoun or an old condition question cannot supply missing animal identity, observation facts or confirmation authority.'
         second='Render the exact animal, score, observation date and precision in the existing protected preview. Require the currently authorized private owner and the exact bound current claim, preview digest, card and genuine confirmation before one canonical append. Cancelled, expired, revoked, cross-recipient, changed-identity or changed-preview claims refuse. Preserve original provider evidence, idempotency and atomic transaction boundaries; successful replay records no second observation.'
         self.assertIn(first+"\n\n"+second,adapter.REQUIRED_ACCEPTANCE)
-        self.assertEqual(len(adapter.REQUIRED_ACCEPTANCE),109)
+        self.assertEqual(len(adapter.REQUIRED_ACCEPTANCE),110)
 
     def test_purpose_completion_requires_positive_complete_attributable_fenced_evidence(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         clauses=m["contract"]["operational_acceptance"]
         completion=[value for value in clauses if value.startswith("Complete only the same existing purpose-review case")]
         self.assertEqual(len(completion),1)
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         self.assertTrue(all(0<len(value)<=2000 for value in clauses))
         for before,after in (
                 ("positive current canonical correction evidence, never collector omission or disappearance", "collector disappearance alone"),
@@ -1279,12 +1280,12 @@ class ReconciliationTests(unittest.TestCase):
         prior_first="Mark an overdue recorded exposure removal plan only against the supplied canonical packet's aware farm-date cutoff, never the wall clock. Missing, naive, invalid, future-start or conflicting dates remain explicit uncertainty. An open exposure record does not prove current physical presence, removal, mating or pregnancy and does not authorize physical work."
         prior_second='Preserve the existing displayed task order and question priority. Ask a named current-status and actual-removal-date question only for the supported exposure-only worklist; require the animal name and observation date in a genuine reply. Do not replace a higher-priority condition question, infer a farm fact from a planned date or create new continuation authority.'
         self.assertIn(prior_first+"\n\n"+prior_second,clauses)
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
 
     def test_telegram_scope_requires_full_membership_exact_confirmation_and_quiet_followup(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         clauses=m["contract"]["operational_acceptance"]
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         self.assertTrue(all(0<len(v)<=2000 for v in clauses))
         guards=("complete immutable full-membership proof", "original per-pig obligation epochs retained across partial successors",
             "capped or unproven legacy groups remain unresolved", "one authenticated private owner",
@@ -1333,7 +1334,7 @@ class ReconciliationTests(unittest.TestCase):
     def test_overview_continuity_and_consumed_schema_history_cannot_be_weakened(self):
         m,a=json.loads(self.args["manifest_bytes"]),json.loads(self.args["approval_bytes"])
         clauses=m["contract"]["operational_acceptance"]
-        self.assertEqual(len(clauses),109)
+        self.assertEqual(len(clauses),110)
         self.assertTrue(all(0<len(v)<=2000 for v in clauses))
         guards=('original signed PR1413 receipt', "all prior CORE/ROOTLINE registration, correction, attempt, approval and hold history",
             "five-write registration and web-only release scope", "fresh child and parent preimages",
@@ -1469,7 +1470,7 @@ class ReconciliationTests(unittest.TestCase):
         for clause in retired_clauses:
             self.assertFalse(any(clause in value for value in m["contract"]["operational_acceptance"]))
             changed=deepcopy(m);changed["contract"]["operational_acceptance"].append(clause)
-            self.assertEqual(len(changed["contract"]["operational_acceptance"]), 110)
+            self.assertEqual(len(changed["contract"]["operational_acceptance"]), 111)
             with self.subTest(retired_clause=clause),self.assertRaisesRegex(adapter.ReconciliationError,"contract_lists_invalid"):
                 adapter.reconcile_candidate(**encode(changed,a),connect_factory=lambda _:self.fail("unexpected connection"))
         for effect in (RETIRED_RENEWAL_EFFECT,"manual_unsent_claim_expiry_extension",
@@ -1876,7 +1877,7 @@ class RootlineReleaseScopeProposalTests(unittest.TestCase):
         self.assertEqual(len(a.ADDED_FORBIDDEN_EFFECTS),0)
         self.assertEqual(set(contract['allowed_effects']),(set(prior['allowed_effects'])-a.REMOVED_EFFECTS)|a.ADDED_EFFECTS)
         self.assertEqual(set(contract['forbidden_effects']),set(prior['forbidden_effects'])-a.REMOVED_FORBIDDEN_EFFECTS|a.ADDED_FORBIDDEN_EFFECTS)
-        self.assertEqual(len(contract['operational_acceptance']),109)
+        self.assertEqual(len(contract['operational_acceptance']),110)
         self.assertTrue(all(0<len(c)<=2000 for c in contract['operational_acceptance']))
         a.prepare_reconciliation(**self.args)
     def test_broad_effect_additions_refused(self):
@@ -2032,6 +2033,52 @@ class RootlineReleaseScopeProposalTests(unittest.TestCase):
                 m=deepcopy(self.m);values=m['contract']['operational_acceptance']
                 values[values.index(clause)]=clause.replace(fragment,'WEAKENED')
                 self.refused(m)
+
+    def test_borehole_aborted_start_requires_locked_proof_and_truthful_effects(self):
+        clause=next(v for v in a.REQUIRED_ACCEPTANCE
+            if v.startswith('Qualify safely aborted borehole startup retirement'))
+        for fragment in ('shared device/session lock', 'no canonical Active/completed start evidence',
+                'complete bounded locked history', 'fresh exact provider OFF read',
+                'matching device/channel, digest and genuine aware retrieval timestamp checked against the actual post-read clock without retimestamping',
+                'malformed, duplicate, conflicting, stale, future, crossed or truncated',
+                'historical containment summaries alone cannot retire a claim',
+                'distinct Aborted terminal', 'successful canonical persistence',
+                'original failed identity, consumed ON marker and every historical event',
+                'Never invent successful ON, completed pumping, duration, water credit or parent completion',
+                'existing shutdown budget', 'consume ambiguous attempts without retry',
+                'local ON/OFF dispatch callbacks with retirement',
+                'late callbacks cannot act after retirement or affect a fresh successor',
+                'Do not claim remote IFTTT queue drainage or fencing of already-running old-source senders',
+                'live acceptance requires no-old-sender evidence',
+                'failed-persistence history unresolved', 'reject replay of the old identity',
+                'genuine fresh identity and all current eligibility/authority gates',
+                'actual canonical lifecycle writes truthfully as farm writes',
+                'including disposable PostgreSQL',
+                'grants no manual recovery, live retirement, farm-write, provider, credential, configuration, activation or equipment authority'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment,clause)
+                m=deepcopy(self.m);values=m['contract']['operational_acceptance']
+                values[values.index(clause)]=clause.replace(fragment,'WEAKENED')
+                self.refused(m)
+        m=deepcopy(self.m);m['contract']['operational_acceptance'].remove(clause)
+        self.refused(m)
+
+    def test_prior_injector_identity_and_incomplete_borehole_scope_are_refused(self):
+        for key,value in (('head_sha','8c779dff5231b51ac5cc3e760e2777539644fb4d'),
+                          ('tree_sha','958ce4a3b20b7866d18c9488d6a86706bf5f6731')):
+            with self.subTest(key=key):
+                m=deepcopy(self.m);m['candidate'][key]=value;self.refused(m)
+        additions=('docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md',
+                   'modules/telemetry/rootline_borehole_commissioning.py',
+                   'modules/telemetry/rootline_irrigation_execution_store.py',
+                   'tests/test_rootline_borehole_commissioning.py',
+                   'tests/test_rootline_managed_recovery_planning.py')
+        self.assertEqual(len(a.PATHS),23)
+        for path in additions:
+            with self.subTest(path=path):
+                self.assertIn(path,a.PATHS)
+                m=deepcopy(self.m);m['candidate']['changed_files'].remove(path)
+                m['contract']['allowed_files'].remove(path);self.refused(m)
 
     def test_actual_unassigned_pr_remains_inert(self):
         with patch.object(a,'CANDIDATE_PR',None),patch.object(a,'verify_source_and_candidate') as source:
