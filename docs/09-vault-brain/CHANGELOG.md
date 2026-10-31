@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-31 - All-hours gravity-fed drip eligibility
+
+Status: LOCAL_NOT_RELEASED.
+
+- Apply the owner-approved 24-hour need/weather policy to commissioned B/C
+  drip irrigation; remove summer daylight deferral and fixed 22:00 advice.
+- Preserve fresh rain/dry-release checks, weekly obligations, sequential
+  valves, exact authority and native backup shutoffs. A/E activation remains
+  separately gated; source qualification does not prove automatic operation.
+
 ## 2026-10-12 - Windows provider process chain and pre-starter recovery
 
 Status: LOCAL_NOT_RELEASED.

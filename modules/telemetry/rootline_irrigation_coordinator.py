@@ -239,6 +239,14 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
             return {"accepted_unambiguous": False,
                 "status": "auxiliary_irrigation_dependency_unproven",
                 "provider_command_attempted": False}
+        # A slow final provider read can consume programme/flush time or age
+        # the original evidence. Revalidate at the actual command edge.
+        if not revalidate_auxiliary_execution_edge(artifact,
+                current_context=current_context, current_safety=current_safety,
+                now=_aware(clock())):
+            return {"accepted_unambiguous": False,
+                "status": "auxiliary_edge_revalidation_failed",
+                "provider_command_attempted": False}
         return transport.set_state(device_id=execution["device_id"],
             channel=execution["channel"], state="ON",
             idempotency_key=execution["execution_id"]+":ON")

@@ -226,6 +226,62 @@ def test_final_slow_read_past_parent_deadline_never_sends_on():
     assert [r["state"] for r in transport.calls] == ["OFF"]
 
 
+@pytest.mark.parametrize("completed_pulses,required", [(0,1440),(1,720)])
+@pytest.mark.parametrize("margin,delay,starts", [(0,0,True),(1,1,True),(0,1,False),(30,31,False)])
+def test_final_provider_read_preserves_full_programme_and_flush_time(completed_pulses, required, margin, delay, starts):
+    current = [NOW]
+    context = aux.injection_context(completed_pulses=completed_pulses,
+        irrigation_stop_deadline=(NOW+timedelta(seconds=required+margin)).isoformat(),
+        prior_pulse_shutdown_evidence={"evidence_id":"PULSE-1-OFF",
+            "zone_execution_id":"ZONE-EXEC-1", "shutdown_verified":True,
+            "observed_at":(NOW-timedelta(seconds=600)).isoformat()})
+    original = aux.Store()
+    def store(action,payload):
+        result = original(action,payload)
+        return {**result,"primary_stop_deadline":context["irrigation_stop_deadline"]} if action == "load_active" else result
+    def after_read(number):
+        if number == 2: current[0] = NOW+timedelta(seconds=delay)
+    transport = PhysicalTransport([irrigation_snapshot(NOW)], after_read=after_read)
+    result = run(store,transport,context=context,clock=lambda:current[0])
+    assert len(original.consumed) == 1 and transport.left_reads == 2
+    assert [r["state"] for r in transport.calls] == (["ON"] if starts else ["OFF"])
+    assert result["hardware_commands"] == 1
+    if starts:
+        assert result["status"] == "auxiliary_started"
+    else:
+        outcome = next(row["on_outcome"] for action,row in original.rows if action == "record_auxiliary_on_outcome")
+        assert outcome["provider_command_attempted"] is False
+        assert outcome["status"] == "auxiliary_edge_revalidation_failed"
+        assert all((r["device_id"],r["channel"]) == ("100204d497",1) for r in transport.calls)
+        run(store,transport,context=context,clock=lambda:current[0])
+        assert all(r["state"] == "OFF" for r in transport.calls)
+
+
+@pytest.mark.parametrize("aged_evidence", ["safety","context_output"])
+def test_final_provider_read_rechecks_full_evidence_freshness(aged_evidence):
+    current = [NOW]
+    context = aux.injection_context()
+    if aged_evidence == "context_output":
+        at = NOW-timedelta(seconds=300)
+        context["zone_output_evidence"] = {**irrigation_output(at),
+            "zone_execution_id":"ZONE-EXEC-1","observed_at":at.isoformat()}
+    def after_read(number):
+        if number == 2: current[0] = NOW+timedelta(seconds=1)
+    transport = PhysicalTransport([irrigation_snapshot(NOW),
+        irrigation_snapshot(NOW+timedelta(seconds=1))], after_read=after_read)
+    if aged_evidence == "safety":
+        transport.read_safety_configuration = lambda **_:aux.safety(
+            observed_at=(NOW-timedelta(seconds=300)).isoformat())
+    store = aux.Store()
+    result = run(store,transport,context=context,clock=lambda:current[0])
+    assert len(store.consumed) == 1 and transport.left_reads == 2
+    assert result["hardware_commands"] == 1
+    assert [(r["device_id"],r["channel"],r["state"]) for r in transport.calls] == [("100204d497",1,"OFF")]
+    outcome = next(row["on_outcome"] for action,row in store.rows if action == "record_auxiliary_on_outcome")
+    assert outcome["provider_command_attempted"] is False
+    assert outcome["status"] == "auxiliary_edge_revalidation_failed"
+
+
 @pytest.mark.parametrize("parent_changes", [
     {"device_id":"100204d497"}, {"channel":True}, {"channel":2},
     {"zone_id":"C12345"}, {"state":"Completed"}, {"execution_id":"OTHER"}])

@@ -130,21 +130,26 @@ class AdaptiveIrrigationTests(unittest.TestCase):
                             "standing_owner_policy_no_current_contradiction"
                             for row in result.values()))
 
-    def test_summer_prefers_evening_and_winter_can_prefer_daylight(self):
-        summer = evidence()
-        summer["policy"]["season"] = "summer"
-        noon = NOW.replace(hour=12)
-        for key in ("power", "local_weather", "forecast", "water"):
-            summer[key]["observed_at"] = noon.isoformat()
-        summer_result = zones(build_adaptive_irrigation_decisions(summer, now=noon))
-        self.assertTrue(all(row["decision"] == "Run later" for row in summer_result.values()))
-        self.assertTrue(all(row["preferred_window"] == "next_evening_or_night_window"
-                            for row in summer_result.values()))
-        winter = evidence()
-        for key in ("power", "local_weather", "forecast", "water"):
-            winter[key]["observed_at"] = noon.isoformat()
-        winter_result = zones(build_adaptive_irrigation_decisions(winter, now=noon))
-        self.assertTrue(all(row["decision"] == "Run now" for row in winter_result.values()))
+    def test_need_and_weather_allow_bounded_drip_in_every_hour_and_season(self):
+        for season in ("summer", "winter", "shoulder"):
+            for hour in range(24):
+                with self.subTest(season=season, hour=hour):
+                    at = NOW.replace(hour=hour)
+                    item = evidence()
+                    item["policy"]["season"] = season
+                    item["power"] = {}
+                    for key in ("local_weather", "forecast", "water"):
+                        item[key]["observed_at"] = at.isoformat()
+                    for row in item["zones"]:
+                        row["visible_need_observed_at"] = at.isoformat()
+                        row["completion_ledger_complete_through"] = at.isoformat()
+                    result = build_adaptive_irrigation_decisions(item, now=at)
+                    self.assertFalse(result["simultaneous_zones_allowed"])
+                    for row in result["zones"]:
+                        self.assertEqual(row["decision"], "Run now")
+                        self.assertEqual(row["preferred_window"], "now_after_fresh_execution_revalidation")
+                        self.assertEqual(row["proposed_segment_minutes"], 60)
+                        self.assertFalse(row["command_authority"])
 
     def test_segment_one_requires_fresh_reassessment_before_segment_two(self):
         item = evidence()
