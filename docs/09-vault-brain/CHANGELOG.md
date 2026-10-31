@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-10-31 - Safely aborted borehole startup retirement
+
+Status: LOCAL_NOT_RELEASED.
+
+- Retire a failed startup only through exact canonical claim and OFF-barrier
+  evidence plus a fresh provider OFF read serialized with every ON/OFF sender.
+- Preserve the failed attempt, three durable OFF slots and old-identity replay
+  fences. A later operation needs fresh eligibility; no pumping or water credit
+  follows from aborting. Source qualification does not prove live recovery.
+
 ## 2026-10-31 - All-hours gravity-fed drip eligibility
 
 Status: LOCAL_NOT_RELEASED.

@@ -258,6 +258,8 @@ def test_borehole_energy_shutdown_precedes_its_four_hour_deadline():
     def store(action,payload):
         if action=="load_active_borehole":return active
         if action=="load_borehole_off_attempts":return []
+        if action=="dispatch_borehole_off_edge":
+            return {**payload["dispatch"](),"provider_command_attempted":True}
         rows.append((action,payload));return {"success":True,"created":True}
     transport=Transport()
     result=advance_borehole_execution(eligibility={},store=store,transport=transport,now=NOW,stop_for_energy=True)

@@ -213,12 +213,15 @@ def test_actual_coordinator_claim_dispatch_and_late_mark_path(db,kind,late_off,m
     result=run(eligibility=artifact,store=actual_store,transport=transport,now=now,**extra)
     calls=transport.commands if kind=='borehole' else transport.calls
     assert [c['state'] for c in calls]==(['ON','OFF'] if late_off else ['ON']), result
-    assert result['status']==(('borehole_start_failure_contained' if kind=='borehole'
+    assert result['status']==(('borehole_start_aborted' if kind=='borehole'
         else 'auxiliary_active_persistence_unproven') if late_off else
         ('borehole_started' if kind=='borehole' else 'auxiliary_started'))
     recorded=rows(db,{'execution_id':artifact['execution_id']})
     assert sum(r['action']==family['dispatch'] for r in recorded)==1
     assert sum(r['action']==family['active'] for r in recorded)==(0 if late_off else 1)
+    if late_off and kind == 'borehole':
+        aborted = next(row for row in recorded if row['action'] == 'record_borehole_aborted')
+        assert aborted['on_attempts'] == 1 and aborted['off_attempts'] == 2
 
 @pytest.mark.parametrize('kind',['mixer','injector','borehole'])
 def test_expired_exact_claim_never_sends(db,kind):
@@ -289,10 +292,10 @@ def test_orphan_off_retains_numeric_attempt_bound_and_unique_marker(db,attempt):
     assert not off(body,family)['created']
 
 
-def borehole_start_artifact(now):
+def borehole_start_artifact(now, registry_generation=2):
     from tests import test_rootline_borehole_commissioning as bh
     return bh.build_borehole_runtime_eligibility(need={'eligible':True},
-        baseline={**bh.canonical(),'registry_generation':2},
+        baseline={**bh.canonical(),'registry_generation':registry_generation},
         authority={'inside_standing_authority':True},provider={'authoritative':True,'state':'OFF'},
         interlocks={'dry_run_safe':True,'low_water_clear':True,'supply_pressure_safe':True,
             'full_tank_not_blocking':True},energy={'eligible':True},requested_seconds=60,now=now)
@@ -617,3 +620,413 @@ def test_atomic_injector_dispatch_revalidates_flush_after_final_read(db,monkeypa
         assert not any(r["action"] == "record_auxiliary_completed" for r in recorded)
         advance()
         assert [r["state"] for r in transport.calls] == ["OFF"]
+
+
+def failed_borehole_claim(db, *, age_seconds=31, off_slots=0, registry_generation=2):
+    at = datetime.now(timezone.utc)
+    artifact = borehole_start_artifact(at, registry_generation=registry_generation)
+    assert store.rootline_irrigation_execution_store("record_borehole_eligibility", artifact)["success"]
+    claim = {**artifact, "claimed_at": (at-timedelta(seconds=age_seconds)).isoformat(),
+        "primary_stop_deadline": (at+timedelta(seconds=60)).isoformat(),
+        "native_fail_stop_deadline": (at+timedelta(seconds=1800)).isoformat(),
+        "state": "claimed", "on_attempts": 0, "off_attempts": 0}
+    assert store.rootline_irrigation_execution_store("claim_borehole_before_on", claim)["created"]
+    for attempt in range(1, off_slots+1):
+        assert store.rootline_irrigation_execution_store("claim_borehole_off_attempt",
+            {"execution_id": claim["execution_id"], "attempt": attempt})["created"]
+    return claim
+
+
+def fresh_borehole_off():
+    from modules.telemetry.rootline_ifttt_transport import output_evidence_from_snapshot
+    return output_evidence_from_snapshot({"device_id": "1002851416",
+        "channels": [{"channel": 1, "output_state": "OFF"}],
+        "current_outputs_authoritative": True, "response_digest": "d"*64,
+        "retrieved_at": datetime.now(timezone.utc).isoformat()}, device_id="1002851416", channel=1)
+
+
+def abort_borehole(claim, reader=fresh_borehole_off):
+    return store.rootline_irrigation_execution_store("record_borehole_aborted",
+        {**claim, "reason": "restart_without_verified_start", "read_final_off": reader})
+
+
+def send_borehole_off(claim, sender, attempt=1):
+    return store.rootline_irrigation_execution_store("dispatch_borehole_off_edge",
+        {"execution_id": claim["execution_id"], "attempt": attempt, "dispatch": sender})
+
+
+def test_failed_borehole_three_exhausted_off_slots_need_new_proof_not_old_containment(db):
+    from modules.telemetry.rootline_borehole_commissioning import (
+        advance_borehole_execution, _contain_failed_borehole_start)
+    from tests.test_rootline_borehole_commissioning import BoreholeTransport
+    claim = failed_borehole_claim(db, off_slots=3)
+    old = fresh_borehole_off(); old["retrieved_at"] = "2026-01-01T00:00:00+00:00"
+    seed(db, "contain_borehole", {**claim, "shutdown_verified": True,
+        "provider_final_off_evidence": old})
+    original = rows(db, claim)
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)
+    transport = BoreholeTransport()
+    result = advance_borehole_execution(eligibility=None, store=store.rootline_irrigation_execution_store,
+        transport=transport, now=datetime.now(timezone.utc))
+    assert result["status"] == "borehole_start_aborted" and not result["success"]
+    assert result["hardware_commands"] == 0 and transport.commands == []
+    assert result["writes_farm_data"] is True
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None) is None
+    saved = rows(db, claim)
+    assert saved[:-1] == original and saved[-1]["state"] == "Aborted"
+    assert saved[-1]["objective_satisfied"] is False
+    assert saved[-1]["on_attempts"] == 0 and saved[-1]["off_attempts"] == 3
+    assert saved[-1]["provider_final_off_evidence"]["retrieved_at"] != old["retrieved_at"]
+    assert not any(row["action"] in {"mark_borehole_active", "record_borehole_completed"} for row in saved)
+    replay = _contain_failed_borehole_start(claim, store.rootline_irrigation_execution_store, transport)
+    assert replay["status"] == "borehole_start_aborted" and replay["writes_farm_data"] is False
+    assert replay["hardware_commands"] == 0 and rows(db, claim) == saved
+    assert not store.rootline_irrigation_execution_store("claim_borehole_before_on", claim)["created"]
+    called = []
+    assert not dispatch(claim, "borehole", lambda: called.append("ON"))["accepted_unambiguous"]
+    assert not send_borehole_off(claim, lambda: called.append("OFF"))["provider_command_attempted"]
+    assert called == []
+    fresh = failed_borehole_claim(db)
+    assert fresh["execution_id"] != claim["execution_id"]
+
+
+@pytest.mark.parametrize("field,value", [("authoritative", False), ("authoritative", "true"),
+    ("state", "ON"), ("device_id", "other"), ("channel", 2), ("channel", True),
+    ("evidence_id", ""), ("evidence_id", " "*64), ("evidence_id", "synthetic-generic"),
+    ("retrieved_at", None), ("retrieved_at", "bad"), ("retrieved_at", "2026-01-01T00:00:00+00:00"),
+    ("retrieved_at", "2099-01-01T00:00:00+00:00"), ("retrieved_at", "2026-10-31T01:00:00"),
+    ("execution_id", "other")])
+def test_borehole_abort_refuses_inexact_stale_future_or_unbound_off(db, field, value):
+    claim = failed_borehole_claim(db, off_slots=1)
+    result = abort_borehole(claim, lambda: {**fresh_borehole_off(), field: value})
+    assert not result["success"]
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)["execution_id"] == claim["execution_id"]
+    assert not any(row["action"] == "record_borehole_aborted" for row in rows(db, claim))
+    candidate = borehole_start_artifact(datetime.now(timezone.utc))
+    seed(db, "record_borehole_eligibility", candidate)
+    assert not store.rootline_irrigation_execution_store("claim_borehole_before_on", candidate)["created"]
+
+
+def test_borehole_abort_requires_read_after_lock_and_preserves_provider_timestamp(db):
+    claim = failed_borehole_claim(db, off_slots=1)
+    cached = fresh_borehole_off()
+    assert not abort_borehole(claim, lambda: cached)["success"]
+    observed = []
+    def read():
+        proof = fresh_borehole_off(); observed.append(proof); return proof
+    result = abort_borehole(claim, read)
+    assert result["success"] and result["created"]
+    assert result["execution"]["provider_final_off_evidence"]["retrieved_at"] == observed[0]["retrieved_at"]
+
+
+@pytest.mark.parametrize("conflict", ["no_barrier", "active", "completed", "claim_digest", "consumption", "reader"])
+def test_borehole_abort_requires_original_claim_barrier_and_failed_lifecycle(db, conflict):
+    claim = failed_borehole_claim(db, off_slots=0 if conflict == "no_barrier" else 1)
+    candidate = dict(claim)
+    if conflict in {"active", "completed"}:
+        seed(db, "mark_borehole_active" if conflict == "active" else "record_borehole_completed",
+            {**claim, "state": "Active" if conflict == "active" else "Completed"})
+    elif conflict == "claim_digest": candidate["eligibility_sha256"] = "f"*64
+    elif conflict == "consumption": candidate["consumption_key"] = "borehole:"+"f"*64
+    called = []
+    def read(): called.append(True); return fresh_borehole_off()
+    result = abort_borehole(candidate, None if conflict == "reader" else read)
+    assert not result["success"] and called == []
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)
+    assert not any(row["action"] == "record_borehole_aborted" for row in rows(db, claim))
+
+
+@pytest.mark.parametrize("field", ["state", "shutdown_verified", "canonical_abort_evidence",
+    "provider_final_off_evidence", "abort_read_started_at", "consumption_key", "terminal_contract", "event_id"])
+def test_malformed_abort_row_never_clears_inventory_or_admission(db, field, monkeypatch):
+    from copy import deepcopy
+    import psycopg
+    claim = failed_borehole_claim(db, off_slots=1)
+    captured = []; insert = store._insert_managed_event
+    def capture(cursor, action, body):
+        if action == "record_borehole_aborted":
+            captured.append(deepcopy(body))
+            raise RuntimeError("capture valid candidate before append")
+        return insert(cursor, action, body)
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "_insert_managed_event", capture)
+        with pytest.raises(RuntimeError, match="capture valid candidate"):
+            abort_borehole(claim)
+    terminal = captured[0]
+    terminal[field] = None
+    # Append a deliberately malformed historical envelope without changing or
+    # disabling the real append-only trigger or rewriting an existing event.
+    with psycopg.connect(db) as connection:
+        connection.execute("""insert into public.sam_live_stock_conversation_review_events
+            (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+            values (%s,%s,%s,'record_borehole_aborted',%s::jsonb)""",
+            (store._event_id("record_borehole_aborted", claim), claim["execution_id"], store.EVENT_SOURCE,
+             json.dumps({"rootline_execution": terminal})))
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)
+    next_claim = borehole_start_artifact(datetime.now(timezone.utc))
+    seed(db, "record_borehole_eligibility", next_claim)
+    assert not store.rootline_irrigation_execution_store("claim_borehole_before_on", next_claim)["created"]
+    assert not abort_borehole(claim)["success"]
+
+
+def test_borehole_abort_exact_duplicate_reads_once_and_mismatched_identity_refuses(db):
+    claim = failed_borehole_claim(db, off_slots=1); called = []
+    def read(): called.append(True); return fresh_borehole_off()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: abort_borehole(claim, read), range(2)))
+    assert all(result["success"] for result in results)
+    assert sum(result["created"] for result in results) == 1 and called == [True]
+    assert results[0]["execution"] == results[1]["execution"]
+    assert not abort_borehole({**claim, "consumption_key": "other"}, read)["success"]
+    assert called == [True]
+    assert sum(row["action"] == "record_borehole_aborted" for row in rows(db, claim)) == 1
+
+
+def test_borehole_abort_waits_for_inflight_off_and_then_denies_old_off(db):
+    claim = failed_borehole_claim(db); entered = Event(); release = Event(); abort_started = Event(); order = []
+    def send():
+        assert any(row["action"] == "claim_borehole_off_attempt" for row in rows(db, claim))
+        order.append("OFF-enter"); entered.set(); assert release.wait(3)
+        order.append("OFF-exit"); return {"accepted_unambiguous": True}
+    def read(): order.append("READ"); return fresh_borehole_off()
+    def retire(): abort_started.set(); return abort_borehole(claim, read)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stopping = pool.submit(send_borehole_off, claim, send)
+        assert entered.wait(3)
+        retiring = pool.submit(retire); assert abort_started.wait(3)
+        assert not retiring.done()
+        release.set()
+        assert stopping.result(3)["provider_command_attempted"]
+        assert retiring.result(3)["success"]
+    assert order == ["OFF-enter", "OFF-exit", "READ"]
+    new_claim = failed_borehole_claim(db)
+    assert not send_borehole_off(claim, lambda: order.append("late-OFF"), attempt=2)["provider_command_attempted"]
+    assert not dispatch(claim, "borehole", lambda: order.append("late-ON"))["accepted_unambiguous"]
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)["execution_id"] == new_claim["execution_id"]
+    assert order == ["OFF-enter", "OFF-exit", "READ"]
+
+
+def test_borehole_recovery_waits_for_inflight_on_before_off_and_abort(db):
+    from modules.telemetry.rootline_borehole_commissioning import advance_borehole_execution
+    from tests.test_rootline_borehole_commissioning import BoreholeTransport
+    claim = failed_borehole_claim(db, age_seconds=0)
+    entered = Event(); release = Event(); recovery_started = Event(); order = []
+    def on():
+        order.append("ON-enter"); entered.set(); assert release.wait(3)
+        order.append("ON-exit"); return {"accepted_unambiguous": True}
+    class Transport(BoreholeTransport):
+        def set_state(self, **kwargs):
+            order.append(kwargs["state"]); return super().set_state(**kwargs)
+        def read_output_state(self, **kwargs):
+            order.append("READ"); return super().read_output_state(**kwargs)
+    def recover():
+        recovery_started.set()
+        return advance_borehole_execution(eligibility=None, store=store.rootline_irrigation_execution_store,
+            transport=Transport(), now=datetime.now(timezone.utc)+timedelta(seconds=31))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        starting = pool.submit(dispatch, claim, "borehole", on)
+        assert entered.wait(3)
+        recovering = pool.submit(recover); assert recovery_started.wait(3)
+        assert not recovering.done()
+        release.set()
+        assert starting.result(3)["accepted_unambiguous"]
+        assert recovering.result(3)["status"] == "borehole_start_aborted"
+    assert order == ["ON-enter", "ON-exit", "OFF", "READ"]
+    assert not store.rootline_irrigation_execution_store("mark_borehole_active",
+        {**claim, "state": "Active", "on_attempts": 1})["success"]
+
+
+def test_retirement_between_off_reservation_and_sender_prevents_late_off(db, monkeypatch):
+    claim = failed_borehole_claim(db); real = bounded.connect_bounded_rootline_postgres
+    connections = 0; called = []; new_claims = []
+    def before_second(**kwargs):
+        nonlocal connections
+        connections += 1
+        if connections == 2:
+            assert abort_borehole(claim)["success"]
+            new_claims.append(failed_borehole_claim(db))
+        return real(**kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(bounded, "connect_bounded_rootline_postgres", before_second)
+        result = send_borehole_off(claim, lambda: called.append("OFF"))
+    assert result["status"] == "borehole_execution_retired" and not result["provider_command_attempted"]
+    assert called == []
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)["execution_id"] == new_claims[0]["execution_id"]
+
+
+def test_off_crash_consumes_slot_and_duplicate_never_replays_sender(db, monkeypatch):
+    claim = failed_borehole_claim(db); real = bounded.connect_bounded_rootline_postgres
+    connections = 0; called = []
+    def fail_second(**kwargs):
+        nonlocal connections
+        connections += 1
+        if connections == 2: raise RuntimeError("synthetic crash after OFF slot commit")
+        return real(**kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(bounded, "connect_bounded_rootline_postgres", fail_second)
+        with pytest.raises(RuntimeError, match="after OFF slot"):
+            send_borehole_off(claim, lambda: called.append("OFF"))
+    assert not send_borehole_off(claim, lambda: called.append("OFF"))["provider_command_attempted"]
+    assert called == []
+    assert sum(row["action"] == "claim_borehole_off_attempt" for row in rows(db, claim)) == 1
+    assert abort_borehole(claim)["success"]
+
+
+def test_abort_persistence_failure_keeps_claim_and_attempt_evidence(db, monkeypatch):
+    claim = failed_borehole_claim(db, off_slots=1); original = rows(db, claim)
+    insert = store._insert_managed_event
+    def fail_terminal(cursor, action, body):
+        result = insert(cursor, action, body)
+        if action == "record_borehole_aborted": raise RuntimeError("synthetic terminal persistence failure")
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "_insert_managed_event", fail_terminal)
+        with pytest.raises(RuntimeError, match="terminal persistence"):
+            abort_borehole(claim)
+    assert rows(db, claim) == original
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)
+    assert abort_borehole(claim)["success"]
+
+
+@pytest.mark.parametrize("off_slots", [0, 3])
+def test_actual_managed_abort_does_not_restart_same_cycle_or_reuse_old_eligibility(db, off_slots):
+    from modules.telemetry.rootline_managed_devices_runtime import run_rootline_managed_device_cycle
+    from tests.test_rootline_borehole_commissioning import BoreholeTransport
+    claim = failed_borehole_claim(db, off_slots=off_slots); transport = BoreholeTransport()
+    recovery_commands = ["OFF"] if off_slots == 0 else []
+    def cycle(artifact):
+        return run_rootline_managed_device_cycle(evidence={"borehole_execution": artifact},
+            transport=transport, store=store.rootline_irrigation_execution_store,
+            environ={"ROOTLINE_BOREHOLE_ENABLED": "true"})
+    recovered = cycle(claim)
+    assert recovered["status"] == "borehole_start_aborted" and not recovered["success"]
+    assert recovered["writes_farm_data"] is True and recovered["hardware_commands"] == len(recovery_commands)
+    assert [row["state"] for row in transport.commands] == recovery_commands
+    assert cycle(claim)["status"] == "borehole_claim_conflict"
+    assert [row["state"] for row in transport.commands] == recovery_commands
+    fresh = borehole_start_artifact(datetime.now(timezone.utc))
+    assert cycle(fresh)["status"] == "borehole_started"
+    assert [row["state"] for row in transport.commands] == recovery_commands+["ON"]
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)["execution_id"] == fresh["execution_id"]
+
+
+@pytest.mark.parametrize("failure", ["ambiguous", "exception"])
+def test_failed_borehole_off_is_bounded_across_restart_then_fresh_read_retires(db, failure):
+    from modules.telemetry.rootline_borehole_commissioning import advance_borehole_execution
+    claim = failed_borehole_claim(db); commands = []; verified = [False]
+    class Transport:
+        def set_state(self, **kwargs):
+            assert kwargs["state"] == "OFF"; commands.append(kwargs)
+            if failure == "exception": raise RuntimeError("synthetic OFF response loss")
+            return {"accepted_unambiguous": False}
+        def read_output_state(self, **kwargs):
+            assert kwargs == {"device_id": "1002851416", "channel": 1}
+            return fresh_borehole_off() if verified[0] else {"authoritative": False, "state": "Unknown"}
+    def advance():
+        return advance_borehole_execution(eligibility=None, store=store.rootline_irrigation_execution_store,
+            transport=Transport(), now=datetime.now(timezone.utc))
+    first = advance()
+    assert first["status"] == "borehole_shutdown_unverified" and first["hardware_commands"] == 3
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)
+    assert advance()["hardware_commands"] == 0
+    assert len(commands) == 3 and len({row["idempotency_key"] for row in commands}) == 3
+    verified[0] = True
+    last = advance()
+    assert last["status"] == "borehole_start_aborted" and last["hardware_commands"] == 0
+    assert len(commands) == 3
+    assert not any(row["action"] == "record_borehole_completed" for row in rows(db, claim))
+
+
+@pytest.mark.parametrize("aborted", [False, True])
+def test_borehole_recovery_does_not_block_independent_bc_and_mixer_admission(db, aborted):
+    claim = failed_borehole_claim(db, off_slots=1)
+    if aborted: assert abort_borehole(claim)["success"]
+    suffix = uuid.uuid4().hex; at = datetime.now(timezone.utc)
+    job = "INDEPENDENT-JOB-"+suffix
+    seed(db, "record_completed", {"execution_id": "PRIOR-"+suffix, "job_id": job,
+        "segment_number": 1, "shutdown_verified": True})
+    bc = {"execution_id": "INDEPENDENT-BC-"+suffix, "eligibility_id": "ELIG-"+suffix,
+        "eligibility_sha256": "b"*64, "operating_date": at.date().isoformat(),
+        "zone_id": "B12345", "job_id": job, "segment_number": 2,
+        "consumption_key": "BC-CONSUME-"+suffix, "predecessor_off_rearm_verified": True}
+    seed(db, "record_eligibility", bc)
+    assert store.rootline_irrigation_execution_store("claim_before_on", bc)["created"]
+    mixer = {"execution_id": "INDEPENDENT-MIXER-"+suffix, "consumption_key": "MIX-"+suffix,
+        "auxiliary_device_id": "FERTILIZER-MIXER-CH2", "device_type": "fertilizer_mixer",
+        "device_id": "100204d497", "channel": 2, "state": "claimed", "claimed_at": at.isoformat(),
+        "primary_stop_deadline": (at+timedelta(seconds=600)).isoformat(),
+        "maximum_duration_seconds": 600, "on_attempts": 0, "off_attempts": 0}
+    assert store.rootline_irrigation_execution_store("claim_auxiliary_before_on", mixer)["created"]
+    active = store.rootline_irrigation_execution_store("load_active_borehole", None)
+    assert active is None if aborted else active["execution_id"] == claim["execution_id"]
+
+
+def test_borehole_abort_preserves_old_generation_then_new_claim_uses_current_generation(db, monkeypatch):
+    from modules.telemetry import rootline_borehole_commissioning as borehole
+    claim = failed_borehole_claim(db, off_slots=1, registry_generation=3)
+    def forbidden(**kwargs):
+        raise AssertionError("Retirement must not replace the original claim with a current registry record")
+    with monkeypatch.context() as patch:
+        patch.setattr(borehole, "load_registered_borehole_baseline", forbidden)
+        result = abort_borehole(claim)
+    assert result["success"] and result["execution"]["registry_generation"] == 3
+    fresh = borehole_start_artifact(datetime.now(timezone.utc), registry_generation=4)
+    seed(db, "record_borehole_eligibility", fresh)
+    assert store.rootline_irrigation_execution_store("claim_borehole_before_on", fresh)["created"]
+    assert store.rootline_irrigation_execution_store("load_active_borehole", None)["registry_generation"] == 4
+
+
+def test_borehole_exact_completed_replay_is_acknowledged_and_changed_terminal_refuses(db):
+    from tests.test_rootline_borehole_commissioning import BoreholeTransport, advance_borehole_execution
+    at = datetime.now(timezone.utc); artifact = borehole_start_artifact(at)
+    seed(db, "record_borehole_eligibility", artifact)
+    transport = BoreholeTransport()
+    started = advance_borehole_execution(eligibility=artifact, store=store.rootline_irrigation_execution_store,
+        transport=transport, now=at)
+    assert started["status"] == "borehole_started"
+    completed = advance_borehole_execution(eligibility=None, store=store.rootline_irrigation_execution_store,
+        transport=transport, now=at+timedelta(seconds=61))["execution"]
+    replay = store.rootline_irrigation_execution_store("record_borehole_completed", completed)
+    assert replay["success"] and not replay["created"]
+    changed = {**completed, "completed_at": (at+timedelta(seconds=62)).isoformat()}
+    assert not store.rootline_irrigation_execution_store("record_borehole_completed", changed)["success"]
+    assert [row["state"] for row in transport.commands] == ["ON", "OFF"]
+    assert sum(row["action"] == "record_borehole_completed" for row in rows(db, artifact)) == 1
+    aborted_claim = failed_borehole_claim(db, off_slots=1)
+    assert abort_borehole(aborted_claim)["success"]
+    assert not store.rootline_irrigation_execution_store("record_borehole_completed",
+        {**completed, "execution_id": aborted_claim["execution_id"]})["success"]
+
+
+def test_actual_transport_abort_retains_exact_fresh_provider_identity(db):
+    from modules.telemetry.rootline_borehole_commissioning import advance_borehole_execution
+    from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
+    claim = failed_borehole_claim(db); requests = []; observations = []
+    class Response:
+        status = 202
+        def getcode(self): return self.status
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def read(self, limit): return b'accepted synthetic OFF'
+    def http_open(request, timeout):
+        assert request.get_method() == "POST" and timeout == 15
+        assert "/trigger/borehole_1_off/with/key/synthetic-only" in request.full_url
+        assert json.loads(request.data)["value1"] == claim["execution_id"]+":OFF:1"
+        requests.append(request); return Response()
+    def readback(**kwargs):
+        snapshot = {"device_id": "1002851416", "provider_control_calls": 0,
+            "current_outputs_authoritative": True, "response_digest": "e"*64,
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+            "channels": [{"channel": 1, "output_state": "OFF"}]}
+        observations.append(snapshot); return snapshot
+    transport = RootlineIFTTTTransport(token_store=object(),
+        environ={"ROOTLINE_IFTTT_MAKER_KEY": "synthetic-only"},
+        http_open=http_open, readback=readback)
+    result = advance_borehole_execution(eligibility=None, store=store.rootline_irrigation_execution_store,
+        transport=transport, now=datetime.now(timezone.utc))
+    assert result["status"] == "borehole_start_aborted" and result["hardware_commands"] == 1
+    assert len(requests) == len(observations) == 1
+    proof = result["execution"]["provider_final_off_evidence"]
+    assert proof["device_id"] == "1002851416" and proof["channel"] == 1
+    assert proof["retrieved_at"] == observations[0]["retrieved_at"]
+    assert proof["evidence_id"] == observations[0]["response_digest"]

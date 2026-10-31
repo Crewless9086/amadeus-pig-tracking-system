@@ -35,6 +35,14 @@ And Energy Rules. Governed supply/pulse controller completion uses exact fresh
 ON/OFF readbacks; physical flow and volume remain separate and may be Unknown. An
 energized relay or accepted request is never enough.
 
+A failed borehole startup may retire as Aborted only after the canonical claim
+and consumed OFF barrier are bound to a fresh exact provider OFF read under the
+same locks that serialize ON and OFF dispatch. An old containment summary cannot
+release it. OFF reservations remain consumed across crashes; delayed commands
+must refuse after retirement. The failed execution and its consumption identity
+remain recorded, without completion or water-delivery credit. Later eligible
+work requires a fresh assessment and execution identity.
+
 Routine B/C work may use only the explicitly enabled standing envelope in the
 Water And Energy Rules. Fertiliser mixer, injection and borehole remain
 independent protected profiles until their own commissioning and activation

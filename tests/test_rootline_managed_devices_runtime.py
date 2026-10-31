@@ -58,6 +58,10 @@ class Store:
             return []
         if action == "dispatch_auxiliary_on_edge":
             return payload["dispatch"]()
+        if action == "dispatch_borehole_off_edge":
+            return {**payload["dispatch"](), "provider_command_attempted": True}
+        if action == "record_borehole_aborted":
+            return {"success": False, "provider_final_off_evidence": payload["read_final_off"]()}
         if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt"}:
             self.rows.append((action, payload)); return {"success": True, "created": True}
         if action in {"record_auxiliary_eligibility", "record_auxiliary_on_outcome"}:

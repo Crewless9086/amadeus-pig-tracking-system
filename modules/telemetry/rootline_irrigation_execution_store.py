@@ -25,6 +25,10 @@ def rootline_irrigation_execution_store(action, payload):
                   "load_active_borehole", "load_borehole_off_attempts", "load_eskom_events"}:
         return _load(action, payload)
     body = dict(payload or {})
+    if action == "dispatch_borehole_off_edge":
+        return _dispatch_borehole_off_edge(body)
+    if action == "record_borehole_aborted":
+        return _record_borehole_aborted(body)
     if action in {"dispatch_auxiliary_on_edge", "dispatch_borehole_on_edge"}:
         return _dispatch_managed_on_edge(body, borehole=action == "dispatch_borehole_on_edge")
     if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
@@ -270,6 +274,8 @@ def _event_id(action, body):
         material = f"{execution}:ESKOM-COMPLETED"
     elif action in {"claim_auxiliary_dispatch", "claim_borehole_dispatch"}:
         material = f"{execution}:MANAGED-DISPATCH"
+    elif action == "record_borehole_aborted":
+        material = f"{execution}:BOREHOLE-ABORTED"
     elif action == "reconcile_unstarted_auxiliary":
         material = f"{execution}:UNSTARTED-RECONCILIATION"
     elif action == "claim_eskom_dispatch":
@@ -307,6 +313,8 @@ def _load(action, payload):
                 return [row[0] if isinstance(row[0],dict) else json.loads(row[0]) for row in cursor.fetchall()]
             if action in {"load_active", "load_active_auxiliary", "load_active_auxiliaries", "load_active_borehole"}:
                 borehole=action=="load_active_borehole"
+                if borehole:
+                    return _active_borehole(_borehole_state_rows(cursor))
                 auxiliary=action in {"load_active_auxiliary", "load_active_auxiliaries"}
                 claim_action=("claim_borehole_before_on" if borehole else
                     "claim_auxiliary_before_on" if auxiliary else "claim_before_on")
@@ -458,10 +466,9 @@ def _verified_terminal_containment_resolution(containment, terminal):
 def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
     action = str(item.get("action") or "") if isinstance(item, dict) else ""
     if borehole:
-        # Containment records the unresolved safety incident; it cannot prove
-        # that the physical pump and water flow stopped.  Only the strict,
-        # execution-bound three-domain completion contract releases a borehole
-        # claim.
+        # Aborts additionally require the original canonical claim and OFF
+        # barrier, checked by _borehole_terminal_proven. A containment summary
+        # alone never releases a claim.
         return _verified_borehole_completion(item)
     if auxiliary:
         return (action in {"record_auxiliary_completed",
@@ -516,6 +523,103 @@ def _verified_borehole_completion(item):
               and (item.get("provider_start_evidence") or {}).get("state") == "ON")
              or (not provider_mode and physical.get("pump_stopped") is True
                  and physical.get("water_flow_stopped") is True)))
+
+
+_BOREHOLE_ABORT_CONTRACT = "rootline_borehole_aborted_start.v1"
+_BOREHOLE_STATE_ACTIONS = {
+    "claim_borehole_before_on", "mark_borehole_active", "claim_borehole_off_attempt",
+    "record_borehole_completed", "record_borehole_aborted", "contain_borehole",
+}
+
+
+def _borehole_state_rows(cursor):
+    cursor.execute("""select review_json->'rootline_execution'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s
+          and (jsonb_typeof(review_json->'rootline_execution') is distinct from 'object'
+            or jsonb_typeof(review_json->'rootline_execution'->'action') is distinct from 'string'
+            or review_json->'rootline_execution'->>'action'=any(%s))
+        order by created_at desc,review_event_id""", (EVENT_SOURCE, sorted(_BOREHOLE_STATE_ACTIONS)))
+    return [row[0] if isinstance(row[0], dict) else json.loads(row[0])
+            for row in cursor.fetchall()]
+
+
+def _borehole_abort_canonical(claim, barrier, provider, read_started_at, aborted_at):
+    evidence = {"execution_id": claim["execution_id"], "device_key": claim["device_key"],
+        "consumption_key": claim["consumption_key"], "claim_event_id": claim["event_id"],
+        "claim_sha256": _event_digest(claim), "off_barrier_event_id": barrier["event_id"],
+        "off_barrier_sha256": _event_digest(barrier), "final_state": "OFF"}
+    return {**evidence, "evidence_id": "CANONICAL-ABORT-" + _event_digest({
+        **evidence, "provider_final_off_evidence": provider,
+        "abort_read_started_at": read_started_at, "aborted_at": aborted_at})}
+
+
+def _verified_borehole_abort(item, rows):
+    """A failed startup retires only with its actual canonical claim and OFF fence."""
+    from datetime import timedelta
+    if (not isinstance(item, dict) or item.get("action") != "record_borehole_aborted"
+            or item.get("terminal_contract") != _BOREHOLE_ABORT_CONTRACT
+            or item.get("state") != "Aborted" or item.get("shutdown_verified") is not True
+            or item.get("operational_proof") != "startup_aborted_provider_off"
+            or item.get("objective_satisfied") is not False
+            or item.get("event_id") != _event_id("record_borehole_aborted", item)):
+        return False
+    identity = item.get("execution_id")
+    matching = [row for row in rows if row.get("execution_id") == identity]
+    claims = [row for row in matching if row.get("action") == "claim_borehole_before_on"]
+    if (len(claims) != 1 or not _valid_borehole_eligibility(claims[0])
+            or sum(row.get("action") == "record_borehole_aborted" for row in matching) > 1
+            or any(row.get("action") in {"mark_borehole_active", "record_borehole_completed"}
+                   for row in matching)):
+        return False
+    claim = claims[0]
+    if (claim.get("event_id") != _event_id("claim_borehole_before_on", claim)
+            or not _managed_claim_matches(matching, item, _managed_family(borehole=True))):
+        return False
+    canonical = item.get("canonical_abort_evidence")
+    provider = item.get("provider_final_off_evidence")
+    if not isinstance(canonical, dict) or not isinstance(provider, dict):
+        return False
+    barriers = [row for row in matching if row.get("action") == "claim_borehole_off_attempt"
+        and row.get("event_id") == canonical.get("off_barrier_event_id")
+        and type(row.get("attempt")) is int and 1 <= row["attempt"] <= 3
+        and row.get("event_id") == _event_id("claim_borehole_off_attempt", row)]
+    started, observed, finished = map(_time, (item.get("abort_read_started_at"),
+        provider.get("retrieved_at"), item.get("aborted_at")))
+    if (len(barriers) != 1 or any(at is None or at.tzinfo is None
+            for at in (started, observed, finished))
+            or not started <= observed <= finished or finished-observed > timedelta(minutes=5)
+            or provider.get("execution_id") != identity
+            or provider.get("device_id") != "1002851416"
+            or type(provider.get("channel")) is not int or provider["channel"] != 1
+            or provider.get("authoritative") is not True or provider.get("state") != "OFF"
+            or not _sha256_text(provider.get("evidence_id"))):
+        return False
+    return canonical == _borehole_abort_canonical(claim, barriers[0], provider,
+        item["abort_read_started_at"], item["aborted_at"])
+
+
+def _borehole_terminal_proven(rows):
+    return any(_verified_borehole_completion(row) or _verified_borehole_abort(row, rows)
+               for row in rows)
+
+
+def _active_borehole(rows):
+    """Use identical terminal proof for inventory and locked new-claim admission."""
+    candidates = {}
+    by_execution = {}
+    for row in rows:
+        if isinstance(row.get("action"), (list, dict)):
+            raise RootlineExecutionStoreUnavailable("borehole_event_action_invalid")
+        identity = str(row.get("execution_id") or "")
+        by_execution.setdefault(identity, []).append(row)
+        if _is_active_candidate(row, "mark_borehole_active", "claim_borehole_before_on"):
+            candidates.setdefault(identity, row)
+    for identity, row in candidates.items():
+        if not _borehole_terminal_proven(by_execution[identity]):
+            return ({**row, "state": "claimed_recovery_required"}
+                if row.get("action") == "claim_borehole_before_on" else row)
+    return None
 
 
 def _is_active_candidate(item, active_action, claim_action):
@@ -1023,49 +1127,7 @@ def _claim_borehole_material_load(body):
         if (not _valid_borehole_eligibility(canonical)
                 or any(body.get(field)!=canonical.get(field) for field in immutable)):
             return {"success":True,"created":False,"status":"canonical_borehole_eligibility_unproven"}
-        cursor.execute(f"""select 1 from public.sam_live_stock_conversation_review_events c
-          where c.event_source=%s and c.review_json->'rootline_execution'->>'action'
-            in ('claim_borehole_before_on') and not exists(
-              select 1 from public.sam_live_stock_conversation_review_events t
-              where t.event_source=%s and t.review_json->'rootline_execution'->>'execution_id'=
-                c.review_json->'rootline_execution'->>'execution_id' and
-                ((c.review_json->'rootline_execution'->>'action'='claim_before_on' and
-                  (t.review_json->'rootline_execution'->>'action'='record_completed' or
-                   (t.review_json->'rootline_execution'->>'action'='contain_zone' and
-                    t.review_json->'rootline_execution'->>'shutdown_verified'='true'))) or
-                 (c.review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on' and
-                  (t.review_json->'rootline_execution'->>'action' in
-                    ('record_auxiliary_completed','record_auxiliary_control_pulse_stopped') or
-                   (t.review_json->'rootline_execution'->>'action'='contain_auxiliary_device' and
-                    t.review_json->'rootline_execution'->>'shutdown_verified'='true'))) or
-                 (c.review_json->'rootline_execution'->>'action'='claim_borehole_before_on' and
-                  t.review_json->'rootline_execution'->>'action'='record_borehole_completed' and
-                  t.review_json->'rootline_execution'->>'shutdown_verified'='true' and
-                  length(btrim(coalesce(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
-                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'execution_id'=
-                    t.review_json->'rootline_execution'->>'execution_id' and
-                  t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'final_state'='OFF' and
-                  length(btrim(coalesce(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
-                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'execution_id'=
-                    t.review_json->'rootline_execution'->>'execution_id' and
-                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'authoritative'='true' and
-                  t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'state'='OFF' and
-                  btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
-                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                  ((t.review_json->'rootline_execution'->>'operational_proof'='provider_app_on_to_off' and
-                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'authoritative'='true' and
-                    t.review_json->'rootline_execution'->'provider_start_evidence'->>'state'='ON') or
-                   (length(btrim(coalesce(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',''),{_EVIDENCE_ID_TRIM_SQL}))>0 and
-                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'execution_id'=
-                      t.review_json->'rootline_execution'->>'execution_id' and
-                    btrim(t.review_json->'rootline_execution'->'canonical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
-                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                    btrim(t.review_json->'rootline_execution'->'provider_final_off_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) <>
-                      btrim(t.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL}) and
-                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true' and
-                    t.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true'))))) limit 1""",
-          (EVENT_SOURCE,EVENT_SOURCE))
-        if cursor.fetchone():
+        if _active_borehole(_borehole_state_rows(cursor)) is not None:
             return {"success":True,"created":False,"status":"material_load_active"}
         cursor.execute("""insert into public.sam_live_stock_conversation_review_events
           (review_event_id,chatwoot_conversation_id,source_agent,event_source,recommended_action,review_json)
@@ -1243,7 +1305,7 @@ def _managed_family(*, borehole):
     return ({"claim":"claim_borehole_before_on", "dispatch":"claim_borehole_dispatch",
         "active":"mark_borehole_active", "off":"claim_borehole_off_attempt",
         "outcome":"record_borehole_on_outcome",
-        "terminals":{"record_borehole_completed", "contain_borehole"}} if borehole else
+        "terminals":{"record_borehole_completed", "record_borehole_aborted", "contain_borehole"}} if borehole else
         {"claim":"claim_auxiliary_before_on", "dispatch":"claim_auxiliary_dispatch",
         "active":"mark_auxiliary_active", "off":"claim_auxiliary_off_attempt",
         "outcome":"record_auxiliary_on_outcome",
@@ -1299,6 +1361,14 @@ def _guarded_managed_transition(action, body):
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             rows=_managed_edge_rows(cursor,body["execution_id"])
+            if borehole and action in {family["off"], "record_borehole_completed"}:
+                if _borehole_terminal_proven(rows):
+                    if action == "record_borehole_completed":
+                        event_id = _event_id(action, body)
+                        exact = _stored_event_body(action, body, event_id)
+                        if any(row == exact and _verified_borehole_completion(row) for row in rows):
+                            return {"success":True,"created":False,"event_id":event_id}
+                    return {"success":False,"created":False,"status":"borehole_execution_retired"}
             if action==family["active"]:
                 if (not _managed_claim_matches(rows,body,family)
                         or _managed_edge_retired(rows,family)
@@ -1323,6 +1393,104 @@ def _guarded_managed_transition(action, body):
                         or type(body.get("attempt")) is not int or not 1<=body["attempt"]<=3):
                     return {"success":False,"created":False,"status":"managed_off_claim_invalid"}
             return _insert_managed_event(cursor,action,body)
+
+
+def _dispatch_borehole_off_edge(body):
+    """Consume one existing OFF slot durably, then serialize its sender with retirement."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    dispatch = body.get("dispatch")
+    if not callable(dispatch):
+        return {"accepted_unambiguous":False, "provider_command_attempted":False,
+            "status":"borehole_off_dispatch_invalid"}
+    slot = {"execution_id":body.get("execution_id"), "attempt":body.get("attempt")}
+    claimed = _guarded_managed_transition("claim_borehole_off_attempt", slot)
+    if claimed.get("created") is not True:
+        return {"accepted_unambiguous":False, "provider_command_attempted":False,
+            "status":"borehole_off_attempt_unavailable"}
+    # A crash here consumes the slot. Neither a restart nor a duplicate sender
+    # can reuse it. All provider I/O below remains inside the shared locks.
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                                           read_only=False) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            rows = _managed_edge_rows(cursor, slot["execution_id"])
+            if _borehole_terminal_proven(rows):
+                return {"accepted_unambiguous":False, "provider_command_attempted":False,
+                    "status":"borehole_execution_retired"}
+            try:
+                outcome = dispatch()
+            except Exception:
+                outcome = {"accepted_unambiguous":False, "status":"borehole_off_outcome_unknown"}
+            if not isinstance(outcome, dict):
+                outcome = {"accepted_unambiguous":False, "status":"borehole_off_outcome_unknown"}
+            _insert_managed_event(cursor, "record_borehole_off_outcome", {**slot, "outcome":outcome})
+            return {**outcome, "provider_command_attempted":True}
+
+
+def _record_borehole_aborted(body):
+    """Retire a failed startup from fresh OFF while all old ON/OFF senders are fenced."""
+    from datetime import datetime, timezone
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    read_final_off = body.pop("read_final_off", None)
+    if not callable(read_final_off) or not str(body.get("execution_id") or ""):
+        return {"success":False,"created":False,"status":"borehole_abort_reader_required"}
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                                           read_only=False) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            rows = _managed_edge_rows(cursor, body["execution_id"])
+            family = _managed_family(borehole=True)
+            claims = [row for row in rows if row.get("action") == family["claim"]]
+            if (not _managed_claim_matches(rows, body, family) or len(claims) != 1
+                    or not _valid_borehole_eligibility(claims[0])):
+                return {"success":False,"created":False,"status":"borehole_abort_claim_unproven"}
+            previous = [row for row in rows if row.get("action") == "record_borehole_aborted"]
+            if previous:
+                if len(previous) == 1 and _verified_borehole_abort(previous[0], rows):
+                    return {"success":True,"created":False,"status":"borehole_already_aborted",
+                        "execution":previous[0]}
+                return {"success":False,"created":False,"status":"borehole_abort_conflict"}
+            barriers = [row for row in rows if row.get("action") == family["off"]
+                and type(row.get("attempt")) is int and 1 <= row["attempt"] <= 3
+                and row.get("event_id") == _event_id(family["off"], row)]
+            if (not barriers or any(row.get("action") in {family["active"], "record_borehole_completed"}
+                                    for row in rows)):
+                return {"success":False,"created":False,"status":"borehole_abort_barrier_unproven"}
+            # The barrier is durable before this read and also retires late ON.
+            # Waiting OFF senders must recheck this terminal before provider I/O.
+            read_started_at = datetime.now(timezone.utc).isoformat()
+            try:
+                final = read_final_off()
+            except Exception:
+                final = None
+            aborted_at = datetime.now(timezone.utc).isoformat()
+            final = dict(final) if isinstance(final, dict) else {}
+            if final.get("execution_id", body["execution_id"]) != body["execution_id"]:
+                return {"success":False,"created":False,"status":"borehole_abort_off_unproven"}
+            provider = {**final, "execution_id":body["execution_id"]}
+            claim = claims[0]
+            aborted = {**claim, "action":"record_borehole_aborted", "state":"Aborted",
+                "terminal_contract":_BOREHOLE_ABORT_CONTRACT, "reason":body.get("reason"),
+                # These count durable consumed attempts, not proven HTTP sends
+                # or pumping. Keep the original claim and every outcome intact.
+                "on_attempts":int(any(row.get("action") in {family["dispatch"], family["outcome"]}
+                    for row in rows)),
+                "off_attempts":len({row["attempt"] for row in barriers}),
+                "abort_read_started_at":read_started_at, "aborted_at":aborted_at,
+                "shutdown_verified":True, "objective_satisfied":False,
+                "operational_proof":"startup_aborted_provider_off",
+                "provider_final_off_evidence":provider,
+                "canonical_abort_evidence":_borehole_abort_canonical(claim, barriers[0],
+                    provider, read_started_at, aborted_at)}
+            aborted["event_id"] = _event_id("record_borehole_aborted", aborted)
+            if not _verified_borehole_abort(aborted, rows):
+                return {"success":False,"created":False,"status":"borehole_abort_off_unproven",
+                    "provider_final_off_evidence":final}
+            result = _insert_managed_event(cursor, "record_borehole_aborted", aborted)
+            return {**result, "status":"borehole_start_aborted", "execution":
+                _stored_event_body("record_borehole_aborted", aborted, result["event_id"])}
 
 
 def _dispatch_auxiliary_on_edge(body):
