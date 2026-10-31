@@ -447,6 +447,14 @@ def _injection_gate(context,now):
             context.get("zone_execution_id") or output.get("state")!="ON"
             or output_at is None or not timedelta(0)<=now-output_at<=timedelta(minutes=5)):
         return "active_zone_unverified"
+    from modules.telemetry.rootline_ifttt_transport import irrigation_dependency_verified
+    binding = get_device_contract(zones[0])
+    if (context.get("zone_device_id") != binding["device_id"]
+            or type(context.get("zone_channel")) is not int
+            or context["zone_channel"] != binding["channel"]
+            or not irrigation_dependency_verified(output,
+                device_id=binding["device_id"], channel=binding["channel"], now=now)):
+        return "active_irrigation_outputs_unverified"
     if now-start_at<timedelta(seconds=MIN_PREFLOW_SECONDS):
         return "clean_water_preflow_incomplete"
     if context.get("premix_verified") is not True: return "current_batch_premix_unproven"

@@ -165,23 +165,29 @@ def _refresh_active_irrigation_readback(evidence, transport, now):
     context = evidence.get("active_irrigation_context")
     if not isinstance(context, dict):
         return evidence
+    # A failed fresh read must not leave historical ON evidence eligible.
+    refreshed = dict(evidence); updated = dict(context)
+    updated["zone_output_evidence"] = {}
+    refreshed["active_irrigation_context"] = updated
     device_id = str(context.get("zone_device_id") or "")
     channel = context.get("zone_channel")
     if not device_id or type(channel) is not int:
-        return evidence
+        return refreshed
     try:
         current = transport.read_output_state(device_id=device_id, channel=channel)
     except Exception:
-        return evidence
+        return refreshed
     from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time
+    from modules.telemetry.rootline_ifttt_transport import irrigation_dependency_verified
     bound = {"device_id": device_id, "channel": channel,
         "execution_id": context.get("zone_execution_id"), "start_evidence": current}
     observed = controller_readback_time(bound, "start_evidence", "ON")
     if (not isinstance(current, dict) or current.get("authoritative") is not True
             or current.get("state") != "ON" or not (current.get("evidence_id")
-                or current.get("response_digest")) or observed is None):
-        return evidence
-    refreshed = dict(evidence); updated = dict(context)
+                or current.get("response_digest")) or observed is None
+            or not irrigation_dependency_verified(current, device_id=device_id,
+                channel=channel, now=now)):
+        return refreshed
     updated["zone_output_evidence"] = {**current,
         "evidence_id": str(current.get("evidence_id") or current.get("response_digest")),
         "zone_execution_id": str(context.get("zone_execution_id") or ""),

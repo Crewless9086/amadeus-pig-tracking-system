@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest import mock
 
@@ -260,7 +260,7 @@ class WaterEnergyPlanTests(unittest.TestCase):
         b_camp = self.task(plan, "irrigation_B12345")
         self.assertEqual(b_camp["recommendation"], "Recommend")
         self.assertEqual(b_camp["planned_duration_minutes"], 120)
-        self.assertEqual(b_camp["planned_start_at"], "12:30 SAST")
+        self.assertEqual(b_camp["planned_start_at"], "now_after_fresh_execution_revalidation")
         self.assertIn("Crop/soil evidence is unavailable", b_camp["reason"])
         self.assertTrue(b_camp["advisory_plan_supported"])
         self.assertTrue(b_camp["actuation_blocked"])
@@ -414,6 +414,118 @@ class WaterEnergyPlanTests(unittest.TestCase):
         self.assertGreater(tasks["irrigation_C12345"]["need_score"],
                            tasks["irrigation_B12345"]["need_score"])
         self.assertEqual(tasks["irrigation_C12345"]["rank"],1)
+
+
+class AllHoursDripEligibilityTests(unittest.TestCase):
+    def inputs(self, at):
+        from tests.test_rootline_execution_authority import inputs
+        _, item, controller = inputs(weather_at=at, water_at=at)
+        controller["trusted_receipt_at"] = at.isoformat()
+        item["tanks"] = {"observed_at":at.isoformat(),
+            "reservoir_state":"FULL","reservoir_reported_count":9}
+        item["power"] = {}
+        item["irrigation"].update(advisor_generated_at=at.isoformat(),
+            advisor_operating_date=at.date().isoformat(),
+            zones=[{"zone_id":zone,"live_rain_release_proven":True}
+                   for zone in ("B12345","C12345")],
+            adaptive_management={"enabled":True,"zones":[
+                {"zone_id":zone} for zone in ("B12345","C12345","A12345","E12345")]})
+        item["irrigation_history"] = {"status":"Available","zones":{
+            zone:{"events":[],"complete_through":at.isoformat()}
+            for zone in ("B12345","C12345")}}
+        return item, controller
+
+    def eligibility(self, item, controller, at, zone):
+        from modules.telemetry.rootline_execution_authority import build_execution_eligibility
+        plan = build_water_energy_plan(item, now=at)
+        result = build_execution_eligibility(plan=plan, evidence=item,
+            controller=controller, now=at, enabled_zone_ids={zone})
+        return plan, result
+
+    def test_real_planner_and_authority_allow_every_hour_without_power_or_visual_report(self):
+        for month in (1,7,10):
+            identities = {}
+            for hour in range(24):
+                at = NOW.replace(month=month, day=8, hour=hour)
+                for zone in ("B12345","C12345"):
+                    with self.subTest(month=month,hour=hour,zone=zone):
+                        item, controller = self.inputs(at)
+                        plan, result = self.eligibility(item,controller,at,zone)
+                        self.assertTrue(result["eligible"],result)
+                        self.assertEqual(result["zone_id"],zone)
+                        self.assertEqual(result["operating_date"],at.date().isoformat())
+                        self.assertEqual(result["maximum_duration_seconds"],3599)
+                        self.assertEqual(result["expected_segment_count"],2)
+                        self.assertEqual(result["governed_executable_duration_seconds"],7198)
+                        identities.setdefault(zone,result["job_id"])
+                        self.assertEqual(result["job_id"],identities[zone])
+                        _, replay = self.eligibility(item,controller,at,zone)
+                        self.assertEqual(replay["consumption_key"],result["consumption_key"])
+                        tasks = [row for row in plan["candidate_tasks"]
+                                 if row["task_id"].startswith("irrigation_")]
+                        self.assertEqual({row["task_id"] for row in tasks},
+                            {"irrigation_B12345","irrigation_C12345"})
+                        for row in tasks:
+                            self.assertEqual(row["preferred_window"],"now_after_fresh_execution_revalidation")
+                            self.assertFalse(row["simultaneous_with_other_zone"])
+                            self.assertFalse(row["command_created"])
+
+    def test_all_hours_preserve_weather_debt_water_shutdown_and_repeat_guards(self):
+        for hour in range(24):
+            at = NOW.replace(month=1,day=8,hour=hour)
+            for case in ("rain","stale_weather","dry_release","unknown_ledger",
+                         "water_shortage","shutdown_uncertain","completed_today","sibling_on"):
+                with self.subTest(hour=hour,case=case):
+                    item, controller = self.inputs(at)
+                    if case == "rain": item["weather"]["rain_rate_mm_h"] = 1
+                    elif case == "stale_weather": item["weather"]["observed_at"] = (at-timedelta(minutes=31)).isoformat()
+                    elif case == "dry_release":
+                        for row in item["irrigation"]["zones"]: row["live_rain_release_proven"] = False
+                    elif case == "unknown_ledger": item["irrigation_history"] = {}
+                    elif case == "water_shortage": item["tanks"]["dry_supply"] = True
+                    elif case == "shutdown_uncertain":
+                        for row in item["irrigation"]["zones"]:
+                            row["latest_segment"] = {"segment_number":1,"state":"Failed","shutdown_verified":False}
+                    elif case == "completed_today":
+                        for zone, row in item["irrigation_history"]["zones"].items():
+                            row["events"] = [{"qualifies_as_completed_watering":True,
+                                "event_at_sast":at.isoformat(),"shutdown_verified":True,
+                                "objective_satisfied":True,"verified_runtime_minutes":120,
+                                "execution_id":zone+"-COMPLETED","provenance":"verified_controller"}]
+                    elif case == "sibling_on": controller["channels"][1]["output_state"] = "ON"
+                    _, result = self.eligibility(item,controller,at,"B12345")
+                    self.assertFalse(result["eligible"],result)
+                    self.assertFalse(result["command_authority"])
+
+    def test_midnight_uses_new_local_operating_day_without_reusing_consumption(self):
+        keys = []
+        for at in (NOW.replace(month=1,day=8,hour=23,minute=59),
+                   NOW.replace(month=1,day=9,hour=0,minute=0)):
+            item, controller = self.inputs(at)
+            _, result = self.eligibility(item,controller,at,"B12345")
+            self.assertTrue(result["eligible"],result)
+            self.assertEqual(result["operating_date"],at.date().isoformat())
+            keys.append(result["consumption_key"])
+        self.assertNotEqual(*keys)
+
+    def test_legacy_owner_advice_has_no_fixed_hour_or_power_window(self):
+        for hour in range(24):
+            with self.subTest(hour=hour):
+                at = NOW.replace(month=1,hour=hour)
+                item = evidence(power={})
+                item["weather"]["observed_at"] = at.isoformat()
+                item["tanks"].update(observed_at=at.isoformat(),reservoir_reported_count=9)
+                item["irrigation"]["owner_candidate"] = {
+                    "zone_id":"B12345","operating_date":at.date().isoformat(),
+                    "source":"owner_confirmed_test"}
+                plan = build_water_energy_plan(item,now=at)
+                rows = {row["task_id"]:row for row in plan["candidate_tasks"]}
+                self.assertEqual(rows["irrigation_B12345"]["planned_start_at"],
+                    "now_after_fresh_execution_revalidation")
+                self.assertTrue(rows["irrigation_B12345"]["actuation_blocked"])
+                self.assertIsNone(rows["irrigation_C12345"]["planned_start_at"])
+                self.assertEqual(rows["irrigation_C12345"]["preferred_window"],
+                    "on_material_evidence_change")
 
 
 if __name__ == "__main__":

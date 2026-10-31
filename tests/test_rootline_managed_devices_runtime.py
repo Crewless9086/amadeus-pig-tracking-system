@@ -1,3 +1,4 @@
+from tests.test_rootline_ifttt_transport import irrigation_output
 from datetime import datetime, timedelta, timezone
 
 from modules.telemetry.rootline_managed_devices_runtime import (
@@ -80,6 +81,8 @@ class Transport:
         return safety(device)
 
     def read_output_state(self, **_kwargs):
+        if _kwargs.get("device_id")=="100204e9bc":
+            return irrigation_output(NOW,channel=_kwargs["channel"])
         return {"authoritative": True, "state": self.state, "evidence_id": "STATE-1",
             "retrieved_at":NOW.isoformat()}
 
@@ -154,9 +157,10 @@ def injection_evidence():
         "fertilizer_needed": True, "premix_verified":True, "job_id": "ROOTLINE-IRRIGATION-JOB-" + "A" * 24,
         "job_sha256": "a" * 64, "segment_identity": "ROOTLINE-JOB-SEGMENT-" + "B" * 24,
         "active_zone_ids": ["B12345"], "zone_execution_id": "ZONE-EXEC-1",
+        "zone_device_id": "100204e9bc", "zone_channel": 1,
         "zone_start_evidence": {"evidence_id": "START-1", "zone_execution_id": "ZONE-EXEC-1",
             "observed_at": start},
-        "zone_output_evidence": {"evidence_id": "OUTPUT-1", "zone_execution_id": "ZONE-EXEC-1",
+        "zone_output_evidence": {**irrigation_output(NOW), "zone_execution_id": "ZONE-EXEC-1",
             "observed_at": NOW.isoformat(), "state": "ON"},
         "irrigation_stop_deadline": (NOW + timedelta(minutes=30)).isoformat(),
         "completed_pulses": 0, "mixer_active": False, "prior_shutdown_unverified": False}

@@ -204,12 +204,12 @@ def test_malformed_action_retains_raw_metadata_without_new_proof(value):
 
 def test_actual_transport_proof_shape_and_legacy_timestamp_alias_are_supported():
     from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
-    transport=object.__new__(RootlineIFTTTTransport)
-    transport._snapshot=lambda device,channel:{"current_outputs_authoritative":True,
-        "retrieved_at":STOP.isoformat(),"response_digest":"OFF-READ"}
-    transport._channel=lambda snapshot,channel:{"output_state":"OFF"}
-    proof=transport.read_output_state(device_id="synthetic",channel=1)
-    row=terminal(); row["shutdown_evidence"]=proof
+    from tests.test_rootline_ifttt_transport import irrigation_snapshot
+    snapshot=irrigation_snapshot(STOP,states={1:"OFF"})
+    transport=RootlineIFTTTTransport(token_store=None,environ={},
+        readback=lambda **_:snapshot)
+    proof=transport.read_output_state(device_id="100204e9bc",channel=1)
+    row=terminal(device_id="100204e9bc",channel=1); row["shutdown_evidence"]=proof
     assert exceptions([row])==[]
     row["shutdown_evidence"]["observed_at"]=row["shutdown_evidence"].pop("retrieved_at")
     assert exceptions([row])==[]
@@ -257,7 +257,7 @@ def test_owner_warning_overrides_ordinary_safe_completion_and_flows_to_manager(s
 @pytest.mark.parametrize("language", ["en","af"])
 def test_late_off_warning_is_not_duration_or_delivered_volume_claim(language):
     text=compose_daily_rootline_plan(owner_result(late=True),language=language)
-    assert ("after its deadline" if language=="en" else "ná sy sperdatum") not in text
+    assert ("after its deadline" if language=="en" else "nÃ¡ sy sperdatum") not in text
     assert owner_result(late=True)["irrigation_lifecycle"]["B12345"]["execution_exceptions"]
     assert "minutes" not in text and "litres" not in text
 

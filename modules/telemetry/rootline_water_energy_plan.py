@@ -1452,7 +1452,8 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "Not selected for today's proportional B-Camp plan; retain the four-day "
             "weekly target and reassess from completed-irrigation evidence."
         )
-        start = _adaptive_irrigation_start(now, power, power_state, reserve)
+        start = ("now_after_fresh_execution_revalidation" if rec == "Recommend"
+                 else "on_material_evidence_change")
         result.append(_task(
             f"irrigation_{zone_id}", rec, reason, start,
             ["recent_completed_irrigation_unavailable", "crop_soil_need_unavailable",
@@ -1491,17 +1492,6 @@ def _tank_amount(tanks, name):
 
 def _fraction_full(value):
     return isinstance(value,(list,tuple)) and len(value)==2 and value[1]>0 and value[0]==value[1]
-
-
-def _adaptive_irrigation_start(now, power, power_state, reserve):
-    surplus = (_number(power.get("solar_power_w")) or 0) > (_number(power.get("load_power_w")) or 0)
-    soc = _number(power.get("battery_soc_pct"))
-    if (power_state == "fresh" and surplus and soc is not None
-            and soc >= reserve["governing_reserve_soc_pct"] and now.hour < 15):
-        minute = 30 if now.minute < 30 else 0
-        hour = now.hour if minute == 30 else now.hour + 1
-        return f"{hour:02d}:{minute:02d} SAST"
-    return "22:00 SAST"
 
 
 def _irrigation_season(now):

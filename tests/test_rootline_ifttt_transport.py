@@ -1,4 +1,6 @@
 import unittest
+from hashlib import sha256
+import json
 from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +20,21 @@ def snapshot(**changes):
                 "power_restoration_state": "OFF"} for i in range(1, 5)]}
     value.update(changes)
     return value
+
+
+def irrigation_snapshot(now, *, channel=1, states=None):
+    value = snapshot(retrieved_at=now.isoformat())
+    for row in value["channels"]:
+        row["output_state"] = ((states or {}).get(row["channel"],
+            "ON" if row["channel"] == channel else "OFF"))
+    value["response_digest"] = sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+    return value
+
+
+def irrigation_output(now, *, channel=1, states=None):
+    value = irrigation_snapshot(now, channel=channel, states=states)
+    return RootlineIFTTTTransport(token_store=None, environ={},
+        readback=lambda **_: value).read_output_state(device_id="100204e9bc", channel=channel)
 
 
 class Response:
