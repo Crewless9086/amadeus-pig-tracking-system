@@ -336,7 +336,13 @@ def _default_injector_clock_case(monkeypatch, *, channel=1, canonical_delay=0,
         return plan
     monkeypatch.setattr(runtime,"build_water_energy_plan",observed_planner)
     if borehole_delay:
-        monkeypatch.setattr("modules.telemetry.rootline_borehole_commissioning.load_registered_borehole_baseline",lambda **_:None)
+        from tests.test_rootline_borehole_commissioning import canonical as borehole_baseline
+        baseline = {**borehole_baseline(), "registry_generation": 2}
+        outcome["borehole_interlocks"] = {"observed_at": NOW.isoformat(),
+            "provider_message_id": "synthetic-owner-fact", "dry_run_safe": True,
+            "low_water_clear": True, "supply_pressure_safe": True, "full_tank_not_blocking": True}
+        monkeypatch.setattr("modules.telemetry.rootline_borehole_commissioning.load_registered_borehole_baseline",
+            lambda **_: baseline)
     class DelayedTransport(Transport):
         def read_safety_configuration(self, **kwargs):
             current[0] += timedelta(seconds=safety_delay)
@@ -371,7 +377,8 @@ def _default_injector_clock_case(monkeypatch, *, channel=1, canonical_delay=0,
             "primary_stop_deadline":active["primary_stop_deadline"]} if action == "load_active" else result
     transport = DelayedTransport()
     result = _managed_reassessment(
-        environ={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true"},
+        environ={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true",
+            "ROOTLINE_BOREHOLE_ENABLED":"true" if borehole_delay else "false"},
         database_url="postgres://test", store=store, token_store=object(),
         transport=transport, now=start, clock=lambda:current[0])
     return result, transport, original, plans, current[0]
@@ -556,7 +563,7 @@ def test_current_borehole_fault_reader_keeps_negative_facts_across_read_delay(mo
     assert results==[False]
 
 
-@pytest.mark.parametrize("power_offset,eligible", [(6,True),(11,False),(-901,False)])
+@pytest.mark.parametrize("power_offset,eligible", [(0,True),(-895,False),(6,False),(11,False),(-901,False)])
 def test_borehole_eligibility_assesses_power_after_baseline_and_provider_reads(monkeypatch,power_offset,eligible):
     from modules.telemetry import rootline_managed_devices_runtime as managed
     from tests.test_rootline_borehole_commissioning import canonical as baseline
@@ -582,9 +589,12 @@ def test_borehole_eligibility_assesses_power_after_baseline_and_provider_reads(m
     monkeypatch.setattr("modules.telemetry.rootline_borehole_commissioning.load_registered_borehole_baseline",load_baseline)
     monkeypatch.setattr(managed,"run_rootline_managed_device_cycle",cycle)
     transport=Reader()
-    _managed_reassessment(environ={},database_url="synthetic",store=Store(),token_store=object(),
+    _managed_reassessment(environ={"ROOTLINE_BOREHOLE_ENABLED":"true"},database_url="synthetic",store=Store(),token_store=object(),
         transport=transport,now=NOW,clock=lambda:current[0],
         evidence_loader=lambda **_: (deepcopy(evidence),NOW.date().isoformat(),NOW))
+    if power_offset in {6, 11, -901}:
+        assert "borehole_execution" not in packets[0] and outputs == []
+        return
     artifact=packets[0]["borehole_execution"]
     assert artifact["eligible"] is eligible
     assert artifact["assessed_at"]==outputs[0]["retrieved_at"]==(NOW+timedelta(seconds=10)).isoformat()

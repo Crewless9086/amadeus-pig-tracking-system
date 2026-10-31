@@ -359,12 +359,18 @@ def test_transport_exchanges_once_with_bounded_timeout_and_rejects_redirect(monk
     import json
     target = "https://eu-apia.coolkit.cc/v2/user/oauth/token"
     calls = []
+    accounted = []
+    from modules.telemetry.rootline_ewelink_request_budget import RequestBudget
+    def synthetic_budget(_self, **kwargs):
+        accounted.append((kwargs["region"], kwargs["endpoint"]))
+        return kwargs["send"](15)
+    monkeypatch.setattr(RequestBudget, "dispatch", synthetic_budget)
     class Response:
         def __init__(self, final_url): self.final_url = final_url
         def __enter__(self): return self
         def __exit__(self, *args): return False
         def geturl(self): return self.final_url
-        def read(self): return json.dumps({"error": 0, "data": {"ok": True}}).encode()
+        def read(self, limit=-1): return json.dumps({"error": 0, "data": {"ok": True}}).encode()
     class Opener:
         def __init__(self, final_url): self.final_url = final_url
         def open(self, request, timeout):
@@ -374,6 +380,7 @@ def test_transport_exchanges_once_with_bounded_timeout_and_rejects_redirect(monk
     body = {"code": "one-use", "redirectUrl": REDIRECT, "grantType": "authorization_code"}
     assert oauth_module._provider_request("POST", target, body=body, mode="signed", environ=env()) == {"ok": True}
     assert len(calls) == 1 and calls[0][:2] == (target, 15)
+    assert accounted == [("eu", "/v2/user/oauth/token")]
     assert re.fullmatch(r"[A-Za-z0-9]{8}", calls[0][2])
 
     monkeypatch.setattr(oauth_module.urllib.request, "build_opener",

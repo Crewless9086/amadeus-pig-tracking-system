@@ -173,9 +173,11 @@ def test_disposable_postgres_one_credit_per_execution_and_conflict():
                     separators=(",", ":"))))
     with psycopg.connect(url, connect_timeout=10) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("""insert into public.sam_live_stock_conversation_review_events(event_source,review_json)
-                values('rootline_irrigation_execution',%s::jsonb)""",
-                (json.dumps({"rootline_execution": execution}, sort_keys=True),))
+            cursor.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,event_source,review_json)
+                values(%s,'rootline_irrigation_execution',%s::jsonb)""",
+                ("SYNTHETIC-"+uuid.uuid4().hex,
+                 json.dumps({"rootline_execution": execution}, sort_keys=True)))
             cursor.execute("select public.rootline_append_water_volume_evidence(%s,%s,%s,%s,%s::jsonb)",
                 (evidence["evidence_id"], evidence["evidence_type"], evidence["zone_id"],
                  evidence["evidence_sha256"], json.dumps(evidence, sort_keys=True,

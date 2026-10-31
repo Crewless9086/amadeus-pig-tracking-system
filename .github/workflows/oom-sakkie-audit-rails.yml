@@ -394,6 +394,9 @@ jobs:
           PYTHON_DOTENV_DISABLED: "1"
         run: >-
           python -B -m pytest -q -p no:cacheprovider
+          tests/test_rootline_ewelink_request_budget.py
+          tests/test_rootline_ewelink_request_budget_postgres.py
+          tests/test_rootline_ewelink_request_budget_workload.py
           tests/test_rootline_managed_startup_handover_postgres.py
           tests/test_rootline_timing_concurrency.py
           tests/test_rootline_timing_concurrency_postgres.py

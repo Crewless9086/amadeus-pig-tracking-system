@@ -18,6 +18,8 @@ class RootlineExecutionStoreUnavailable(RuntimeError):
 
 
 def rootline_irrigation_execution_store(action, payload):
+    if action == "record_execution_not_dispatched":
+        return {"success": False, "created": False, "status": "use_locked_no_send_retirement"}
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
                   "load_active_auxiliary", "load_active_auxiliaries", "load_auxiliary_off_attempts",
                   "load_auxiliary_containment", "load_auxiliary_history",
@@ -29,6 +31,8 @@ def rootline_irrigation_execution_store(action, payload):
         return _dispatch_borehole_off_edge(body)
     if action == "record_borehole_aborted":
         return _record_borehole_aborted(body)
+    if action == "retire_not_dispatched_execution":
+        return _retire_not_dispatched_execution(body)
     if action in {"dispatch_auxiliary_on_edge", "dispatch_borehole_on_edge"}:
         return _dispatch_managed_on_edge(body, borehole=action == "dispatch_borehole_on_edge")
     if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
@@ -276,6 +280,8 @@ def _event_id(action, body):
         material = f"{execution}:MANAGED-DISPATCH"
     elif action == "record_borehole_aborted":
         material = f"{execution}:BOREHOLE-ABORTED"
+    elif action == "record_execution_not_dispatched":
+        material = f"{execution}:PROVEN-NO-SEND"
     elif action == "reconcile_unstarted_auxiliary":
         material = f"{execution}:UNSTARTED-RECONCILIATION"
     elif action == "claim_eskom_dispatch":
@@ -325,7 +331,8 @@ def _load(action, payload):
                     "record_auxiliary_control_pulse_stopped","contain_auxiliary_device"}
                     if auxiliary else {"record_completed","contain_zone",
                         "record_ambiguous_shutdown","record_claim_recovery"})
-                relevant_actions = terminal_actions | {claim_action, active_action}
+                relevant_actions = terminal_actions | {claim_action, active_action,
+                    "record_execution_not_dispatched", "record_on_outcome", "record_auxiliary_on_outcome"}
                 if not auxiliary and not borehole:
                     relevant_actions.add("mark_stopping")
                 # Keep malformed and legacy JSON-string envelopes for the existing
@@ -339,9 +346,12 @@ def _load(action, payload):
                                is distinct from 'string'
                            or review_json->'rootline_execution'->>'action'=any(%s))
                     order by created_at desc""", (EVENT_SOURCE, sorted(relevant_actions)))
-                terminal = set(); candidates = {}
-                for row in cursor.fetchall():
-                    item = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                loaded = [row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                    for row in cursor.fetchall()]
+                terminal = {row.get("execution_id") for row in loaded
+                    if _verified_not_dispatched(row, loaded)}
+                candidates = {}
+                for item in loaded:
                     identity = str(item.get("execution_id") or "")
                     if item.get("action") in terminal_actions:
                         if _terminal_closes_active(item, auxiliary=auxiliary, borehole=borehole):
@@ -358,6 +368,8 @@ def _load(action, payload):
                             continue
                         if item.get("action") == claim_action:
                             item = {**item, "state": "claimed_recovery_required"}
+                        if _no_send_preimage(loaded, identity) is not None:
+                            item = {**item, "on_not_dispatched": True}
                         active.append(item)
                 if action == "load_active_auxiliaries":
                     return active
@@ -372,10 +384,13 @@ def _load(action, payload):
                     where event_source=%s
                       and review_json->'rootline_execution'->>'job_id'=%s
                       and review_json->'rootline_execution'->>'action'
-                          in ('claim_before_on','mark_active','record_completed','record_job_resolution')
+                          in ('claim_before_on','mark_active','record_completed','record_job_resolution',
+                              'record_execution_not_dispatched','record_on_outcome')
                     order by created_at,review_event_id""", (EVENT_SOURCE, str(payload or "")))
-                return [row[0] if isinstance(row[0],dict) else json.loads(row[0])
+                events = [row[0] if isinstance(row[0],dict) else json.loads(row[0])
                         for row in cursor.fetchall()]
+                retired = {row.get("execution_id") for row in events if _verified_not_dispatched(row, events)}
+                return [row for row in events if row.get("execution_id") not in retired]
             if action in {"load_off_attempts","load_auxiliary_off_attempts","load_borehole_off_attempts"}:
                 outcome_action=("record_borehole_off_outcome" if action=="load_borehole_off_attempts"
                     else "record_auxiliary_off_outcome" if action=="load_auxiliary_off_attempts"
@@ -396,7 +411,8 @@ def _load(action, payload):
                     where event_source=%s
                       and review_json->'rootline_execution'->>'action' in (
                           'record_auxiliary_completed','claim_auxiliary_before_on',
-                          'mark_auxiliary_active','contain_auxiliary_device')
+                          'mark_auxiliary_active','contain_auxiliary_device',
+                          'record_execution_not_dispatched','record_auxiliary_on_outcome')
                       and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
                     order by created_at,review_event_id""", (EVENT_SOURCE, str(payload or "")))
                 return [row[0] if isinstance(row[0], dict) else json.loads(row[0])
@@ -529,6 +545,7 @@ _BOREHOLE_ABORT_CONTRACT = "rootline_borehole_aborted_start.v1"
 _BOREHOLE_STATE_ACTIONS = {
     "claim_borehole_before_on", "mark_borehole_active", "claim_borehole_off_attempt",
     "record_borehole_completed", "record_borehole_aborted", "contain_borehole",
+    "record_execution_not_dispatched", "record_borehole_on_outcome",
 }
 
 
@@ -601,6 +618,7 @@ def _verified_borehole_abort(item, rows):
 
 def _borehole_terminal_proven(rows):
     return any(_verified_borehole_completion(row) or _verified_borehole_abort(row, rows)
+               or _verified_not_dispatched(row, rows)
                for row in rows)
 
 
@@ -617,8 +635,11 @@ def _active_borehole(rows):
             candidates.setdefault(identity, row)
     for identity, row in candidates.items():
         if not _borehole_terminal_proven(by_execution[identity]):
-            return ({**row, "state": "claimed_recovery_required"}
+            result = ({**row, "state": "claimed_recovery_required"}
                 if row.get("action") == "claim_borehole_before_on" else row)
+            if _no_send_preimage(by_execution[identity], identity) is not None:
+                result = {**result, "on_not_dispatched": True}
+            return result
     return None
 
 
@@ -642,6 +663,116 @@ def _bounded_claim(action, claim, body):
         if is_database_unavailable(exc):
             raise RootlineExecutionStoreUnavailable(action) from exc
         raise
+
+
+def _no_send_preimage(rows, execution_id):
+    matching = [row for row in rows if row.get("execution_id") == execution_id]
+    claims = [row for row in matching if row.get("action") in {
+        "claim_before_on", "claim_auxiliary_before_on", "claim_borehole_before_on"}]
+    outcomes = [row for row in matching if row.get("action") in {
+        "record_on_outcome", "record_auxiliary_on_outcome", "record_borehole_on_outcome"}]
+    if (len(claims) != 1 or len(outcomes) != 1
+            or (outcomes[0].get("on_outcome") or {}).get("provider_command_attempted") is not False
+            or (outcomes[0].get("on_outcome") or {}).get("accepted_unambiguous") is not False
+            or any(row.get("action") in {"mark_active", "mark_auxiliary_active", "mark_borehole_active"}
+                for row in matching)):
+        return None
+    claim = claims[0]
+    if not claim.get("provider_capacity_permit"):
+        return None
+    return claim, outcomes[0]
+
+
+def _verified_not_dispatched(item, rows):
+    from datetime import timedelta
+    if (not isinstance(item, dict) or item.get("action") != "record_execution_not_dispatched"
+            or item.get("terminal_contract") != "rootline_proven_no_send.v1"
+            or item.get("not_dispatched_verified") is not True
+            or item.get("event_id") != _event_id("record_execution_not_dispatched", item)):
+        return False
+    preimage = _no_send_preimage(rows, item.get("execution_id"))
+    if not preimage:
+        return False
+    claim, outcome = preimage
+    evidence = item.get("shutdown_evidence") or {}
+    started, observed, finished = map(_time, (item.get("read_started_at"),
+        evidence.get("retrieved_at"), item.get("retired_at")))
+    device = claim.get("device_id") or ("1002851416" if claim.get("device_key") ==
+        "ewelink:ewelink_owner_account:1002851416:1" else None)
+    channel = claim.get("channel") or (1 if device == "1002851416" else None)
+    return (item.get("claim_event_id") == claim.get("event_id")
+        and item.get("claim_sha256") == _event_digest(claim)
+        and item.get("outcome_event_id") == outcome.get("event_id")
+        and item.get("outcome_sha256") == _event_digest(outcome)
+        and evidence.get("authoritative") is True and evidence.get("state") == "OFF"
+        and evidence.get("device_id") == device and evidence.get("channel") == channel
+        and _sha256_text(evidence.get("evidence_id") or evidence.get("response_digest"))
+        and all(at is not None and at.tzinfo is not None for at in (started, observed, finished))
+        and started <= observed <= finished and finished-observed <= timedelta(seconds=60))
+
+
+def _retire_not_dispatched_execution(body):
+    """Retire a locally refused ON only after exact canonical no-send and fresh OFF.
+
+    This cannot reconcile an absent/ambiguous response or an historical failed
+    startup.  It preserves the claim/outcome and credits no runtime or delivery.
+    """
+    from datetime import timedelta
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+    read = body.get("read_final_off")
+    identity = str(body.get("execution_id") or "")
+    if not identity or not callable(read):
+        return {"success": False, "created": False}
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False) as connection, connection.cursor() as cursor:
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+        rows = _managed_edge_rows(cursor, identity)
+        existing = next((row for row in rows if _verified_not_dispatched(row, rows)), None)
+        if existing:
+            return {"success": True, "created": False, "execution": existing}
+        preimage = _no_send_preimage(rows, identity)
+        if not preimage:
+            return {"success": False, "created": False, "status": "no_send_preimage_unproven"}
+        claim, outcome = preimage
+        started = connection.execute("select clock_timestamp()").fetchone()[0]
+        try:
+            with execution_duty(claim, deadline=started+timedelta(seconds=8)):
+                evidence = read()
+        except Exception:
+            evidence = {}
+        finished = connection.execute("select clock_timestamp()").fetchone()[0]
+        retired = {**claim, "state": "NotDispatched", "terminal_contract": "rootline_proven_no_send.v1",
+            "not_dispatched_verified": True, "shutdown_verified": True,
+            "objective_satisfied": False, "claim_event_id": claim["event_id"],
+            "claim_sha256": _event_digest(claim), "outcome_event_id": outcome["event_id"],
+            "outcome_sha256": _event_digest(outcome), "shutdown_evidence": evidence,
+            "read_started_at": started.isoformat(), "retired_at": finished.isoformat()}
+        retired = _stored_event_body("record_execution_not_dispatched", retired,
+            _event_id("record_execution_not_dispatched", retired))
+        if not _verified_not_dispatched(retired, rows):
+            return {"success": False, "created": False, "status": "no_send_off_proof_pending"}
+        result = _insert_managed_event(cursor, "record_execution_not_dispatched", retired)
+        return {**result, "execution": retired, "status": "execution_not_dispatched"}
+
+
+def _not_dispatched_ids(cursor):
+    """Verify stored terminal markers against their actual canonical preimages."""
+    cursor.execute("""select review_json->'rootline_execution'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s
+          and review_json->'rootline_execution'->>'action'='record_execution_not_dispatched'""",
+        (EVENT_SOURCE,))
+    terminals = [row[0] for row in cursor.fetchall()]
+    identities = [row.get("execution_id") for row in terminals if isinstance(row, dict)]
+    if not identities:
+        return []
+    cursor.execute("""select review_json->'rootline_execution'
+        from public.sam_live_stock_conversation_review_events
+        where event_source=%s and chatwoot_conversation_id=any(%s)""", (EVENT_SOURCE, identities))
+    events = [row[0] for row in cursor.fetchall()]
+    return [row["execution_id"] for row in terminals if _verified_not_dispatched(row, events)]
 
 
 def _claim_eskom_command(body):
@@ -813,6 +944,7 @@ def _claim_irrigation_output(body):
                                            read_only=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            retired_no_send = _not_dispatched_ids(cursor)
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
                 where review_event_id=%s""", (event_id,))
             if cursor.fetchone():
@@ -831,7 +963,8 @@ def _claim_irrigation_output(body):
                 where event_source=%s
                   and review_json->'rootline_execution'->>'action'='claim_before_on'
                   and review_json->'rootline_execution'->>'consumption_key'=%s
-                limit 1""", (EVENT_SOURCE, consumption_key))
+                  and not (review_json->'rootline_execution'->>'execution_id'=any(%s))
+                limit 1""", (EVENT_SOURCE, consumption_key, retired_no_send))
             if cursor.fetchone():
                 return {"success": True, "created": False,
                         "status": "eligibility_already_consumed"}
@@ -845,6 +978,7 @@ def _claim_irrigation_output(body):
             cursor.execute(f"""select 1
                 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
+                  and not (claim.review_json->'rootline_execution'->>'execution_id'=any(%s))
                   and claim.review_json->'rootline_execution'->>'action'
                       in ('claim_before_on')
                   and not exists (
@@ -880,7 +1014,7 @@ def _claim_irrigation_output(body):
                             btrim(terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'evidence_id',{_EVIDENCE_ID_TRIM_SQL})
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'pump_stopped'='true'
                           and terminal.review_json->'rootline_execution'->'physical_completion_evidence'->>'water_flow_stopped'='true')))
-                limit 1""", (EVENT_SOURCE, EVENT_SOURCE))
+                limit 1""", (EVENT_SOURCE, retired_no_send, EVENT_SOURCE))
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "controller_active"}
             cursor.execute("""insert into public.sam_live_stock_conversation_review_events
@@ -926,12 +1060,14 @@ def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
             limit 1""", (EVENT_SOURCE, job_id, segment_number-1))
         if not cursor.fetchone():
             return "prior_segment_off_rearm_unproven"
+        retired_no_send = _not_dispatched_ids(cursor)
         cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
             where event_source=%s
               and review_json->'rootline_execution'->>'action'='claim_before_on'
               and review_json->'rootline_execution'->>'job_id'=%s
               and (review_json->'rootline_execution'->>'segment_number')::int=%s
-            limit 1""", (EVENT_SOURCE, job_id, segment_number))
+              and not (review_json->'rootline_execution'->>'execution_id'=any(%s))
+            limit 1""", (EVENT_SOURCE, job_id, segment_number, retired_no_send))
         return "job_segment_already_claimed" if cursor.fetchone() else None
     # Reuse the canonical typed-history verifier rather than approximating its
     # digest, evidence, cutoff, runtime and replay rules in SQL. These rows and
@@ -990,6 +1126,7 @@ def _claim_single_auxiliary(body):
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            retired_no_send = _not_dispatched_ids(cursor)
             if body.get("device_type") == "fertilizer_injection_valve":
                 job_id=str(body.get("job_id") or "");job_sha=str(body.get("job_sha256") or "")
                 segment=str(body.get("segment_identity") or "");zone=str(body.get("zone_id") or "")
@@ -1032,8 +1169,9 @@ def _claim_single_auxiliary(body):
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
                 where event_source=%s and (review_event_id=%s or
                   (review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
-                   and review_json->'rootline_execution'->>'consumption_key'=%s)) limit 1""",
-                (EVENT_SOURCE,event_id,consumption_key))
+                   and review_json->'rootline_execution'->>'consumption_key'=%s
+                   and not (review_json->'rootline_execution'->>'execution_id'=any(%s)))) limit 1""",
+                (EVENT_SOURCE,event_id,consumption_key,retired_no_send))
             if cursor.fetchone():
                 return {"success":True,"created":False,"status":"eligibility_already_consumed"}
             # The global and auxiliary locks serialize these budget checks with
@@ -1044,9 +1182,10 @@ def _claim_single_auxiliary(body):
                     where event_source=%s
                       and review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
                       and review_json->'rootline_execution'->>'zone_execution_id'=%s
-                      and review_json->'rootline_execution'->>'pulse_number'=%s limit 1""",
+                      and review_json->'rootline_execution'->>'pulse_number'=%s
+                      and not (review_json->'rootline_execution'->>'execution_id'=any(%s)) limit 1""",
                     (EVENT_SOURCE, str(body.get("zone_execution_id") or ""),
-                     str(body.get("pulse_number") or "")))
+                     str(body.get("pulse_number") or ""), retired_no_send))
                 if cursor.fetchone():
                     return {"success":True,"created":False,"status":"pulse_already_claimed"}
             elif body.get("device_type") == "fertilizer_mixer":
@@ -1059,12 +1198,14 @@ def _claim_single_auxiliary(body):
                 from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
                 from datetime import datetime
                 at = datetime.fromisoformat(str(body.get("claimed_at") or ""))
-                account = mixing_daily_accounting([row[0] for row in cursor.fetchall()]
+                account = mixing_daily_accounting([row[0] for row in cursor.fetchall()
+                    if row[0].get("execution_id") not in retired_no_send]
                     + [{**body, "action":"claim_auxiliary_before_on"}], now=at)
                 if not account["history_valid"] or account["reserved_seconds"] > 1800:
                     return {"success":True,"created":False,"status":"daily_mixing_budget_unavailable"}
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
+                  and not (claim.review_json->'rootline_execution'->>'execution_id'=any(%s))
                   and claim.review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
                   and (claim.review_json->'rootline_execution'->>'auxiliary_device_id'=%s
                     or (claim.review_json->'rootline_execution'->>'device_id'=%s
@@ -1079,7 +1220,7 @@ def _claim_single_auxiliary(body):
                               'contain_auxiliary_device'
                             and terminal.review_json->'rootline_execution'->>
                               'shutdown_verified'='true'))) limit 1""",
-                (EVENT_SOURCE,auxiliary_id,str(body.get("device_id") or ""),
+                (EVENT_SOURCE,retired_no_send,auxiliary_id,str(body.get("device_id") or ""),
                  str(body.get("channel") or ""),EVENT_SOURCE))
             if cursor.fetchone():
                 return {"success":True,"created":False,"status":"auxiliary_active"}
@@ -1305,12 +1446,13 @@ def _managed_family(*, borehole):
     return ({"claim":"claim_borehole_before_on", "dispatch":"claim_borehole_dispatch",
         "active":"mark_borehole_active", "off":"claim_borehole_off_attempt",
         "outcome":"record_borehole_on_outcome",
-        "terminals":{"record_borehole_completed", "record_borehole_aborted", "contain_borehole"}} if borehole else
+        "terminals":{"record_borehole_completed", "record_borehole_aborted", "contain_borehole",
+            "record_execution_not_dispatched"}} if borehole else
         {"claim":"claim_auxiliary_before_on", "dispatch":"claim_auxiliary_dispatch",
         "active":"mark_auxiliary_active", "off":"claim_auxiliary_off_attempt",
         "outcome":"record_auxiliary_on_outcome",
         "terminals":{"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
-                     "contain_auxiliary_device"}})
+                     "contain_auxiliary_device", "record_execution_not_dispatched"}})
 
 
 def _managed_edge_rows(cursor, execution_id):

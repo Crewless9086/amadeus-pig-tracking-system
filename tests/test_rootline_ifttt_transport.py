@@ -58,8 +58,12 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
 
     def test_exact_bc_state_setting_events_only(self):
         transport, calls = self.transport()
-        result = transport.set_state(device_id="100204e9bc", channel=1, state="ON",
-                                     idempotency_key="EXEC-1:ON")
+        from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+        with execution_duty({"execution_id": "EXEC-1", "provider_capacity_permit": "synthetic",
+                "claimed_at": "2026-10-31T18:00:00Z", "primary_stop_deadline": "2026-10-31T18:10:00Z"}), \
+                patch("modules.telemetry.rootline_ewelink_request_budget.RequestBudget.begin_on", return_value=float("inf")):
+            result = transport.set_state(device_id="100204e9bc", channel=1, state="ON",
+                                         idempotency_key="EXEC-1:ON")
         self.assertTrue(result["accepted_unambiguous"])
         self.assertEqual(result["event"], "irrigation_1_ch1_on")
         self.assertEqual(len(calls), 1)
@@ -126,8 +130,12 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         enabled,calls=self.transport(fertilizer,environ={"ROOTLINE_IFTTT_MAKER_KEY":"secret",
             "ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true",
             "ROOTLINE_FERTILIZER_MIXING_ENABLED":"true"})
-        injection=enabled.set_state(device_id="100204d497",channel=1,state="ON",
-            idempotency_key="AUX-1:ON")
+        from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+        with execution_duty({"execution_id": "AUX-1", "provider_capacity_permit": "synthetic",
+                "claimed_at": "2026-10-31T18:00:00Z", "primary_stop_deadline": "2026-10-31T18:02:00Z"}), \
+                patch("modules.telemetry.rootline_ewelink_request_budget.RequestBudget.begin_on", return_value=float("inf")):
+            injection=enabled.set_state(device_id="100204d497",channel=1,state="ON",
+                idempotency_key="AUX-1:ON")
         mixing=enabled.set_state(device_id="100204d497",channel=2,state="OFF",
             idempotency_key="AUX-2:OFF")
         self.assertEqual(injection["event"],"controller_1_ch1_on")

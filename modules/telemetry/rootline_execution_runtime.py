@@ -77,7 +77,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             evidence, selected, _planned_at = evidence_loader(
                 database_url=database_url, now=read_at)
             evidence = _refresh_active_irrigation_readback(
-                evidence, transport, read_at, clock=clock)
+                evidence, transport, read_at, clock=clock, only_when_due=True,
+                injection_enabled=str(source.get("ROOTLINE_FERTILIZER_INJECTION_ENABLED") or "").lower() == "true")
             decision_at = current_decision_time(selected)
             plan = build_water_energy_plan(evidence, selected, now=decision_at)
         except Exception as exc:
@@ -85,16 +86,6 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                 {**_safe("managed_device_evidence_unavailable"), "blocks_bc": False}) from exc
         packet = {"irrigation_auxiliary_tasks": plan.get("irrigation_auxiliary_tasks") or [],
             "auxiliary_safety": {}, "auxiliary_contexts": {}}
-        for task in packet["irrigation_auxiliary_tasks"]:
-            identity = str(task.get("auxiliary_device_id") or "")
-            if identity not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
-                continue
-            contract = rootline_device_registry()[identity]
-            try:
-                packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
-                    device_id=contract["device_id"], channel=contract["channel"])
-            except Exception:
-                continue
         # Safety reads can consume time too. Assess the unchanged evidence at
         # the current clock; its observed timestamps and read cutoff stay intact.
         decision_at = current_decision_time(selected)
@@ -120,15 +111,48 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"] = active_irrigation
             from modules.telemetry.rootline_auxiliary_management import fertilizer_control_progress
             packet["fertilizer_control_progress"] = fertilizer_control_progress(active_irrigation, now=decision_at)
+        from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
+        flags = {key: str(source.get(key) or "").lower() == "true" for key in (
+            "ROOTLINE_FERTILIZER_MIXING_ENABLED", "ROOTLINE_FERTILIZER_INJECTION_ENABLED")}
+        for task in packet["irrigation_auxiliary_tasks"]:
+            identity = str(task.get("auxiliary_device_id") or "")
+            if task.get("decision") != "Run now" or identity not in packet["auxiliary_contexts"]:
+                continue
+            preflight = build_auxiliary_eligibility(task=task, safety=None,
+                context=packet["auxiliary_contexts"][identity], flags=flags,
+                now=current_decision_time(selected), _provider_preflight=True)
+            if preflight.get("provider_read_required") is not True:
+                continue
+            contract = rootline_device_registry()[identity]
+            try:
+                packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
+                    device_id=contract["device_id"], channel=contract["channel"])
+            except Exception:
+                continue
         borehole_task = next((row for row in plan.get("candidate_tasks") or []
             if row.get("task_id") == "borehole"), {})
         interlocks = evidence.get("borehole_interlocks") or {}
-        if borehole_task.get("recommendation") == "Recommend":
+        if (borehole_task.get("recommendation") == "Recommend"
+                and str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true"):
             try:
                 baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
-                provider = transport.read_output_state(device_id="1002851416", channel=1)
                 decision_at = current_decision_time(selected)
                 if baseline:
+                    from modules.telemetry.rootline_borehole_commissioning import prepare_borehole_execution_plan
+                    request = dict(need={"eligible": True, "task_id": "borehole",
+                            "reason": borehole_task.get("reason")}, commissioned_baseline=baseline,
+                        authority={"inside_standing_authority": True}, provider={},
+                        interlocks=interlocks,
+                        energy={"eligible": managed_energy_decision(evidence.get("power"), now=decision_at)["borehole_eligible"]},
+                        concurrency={"borehole_claim_available": True},
+                        requested_seconds=min(14400, int(baseline["maximum_routine_runtime_seconds"])),
+                        execution_id="PENDING", now=decision_at)
+                    preflight = prepare_borehole_execution_plan(**request)
+                    if any(not passed for gate, passed in preflight["gates"].items() if gate != "provider_off"):
+                        packet["borehole_readiness"] = "borehole_prerequisites_unproven"
+                        return packet
+                    provider = transport.read_output_state(device_id="1002851416", channel=1)
+                    decision_at = current_decision_time(selected)
                     packet["borehole_execution"] = build_borehole_runtime_eligibility(
                         need={"eligible": True, "task_id": "borehole",
                             "reason": borehole_task.get("reason")}, baseline=baseline,
@@ -176,7 +200,8 @@ def _managed_power_suitable(power, now=None):
     return managed_energy_decision(power, now=now or datetime.now(timezone.utc))["mixing_eligible"]
 
 
-def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None):
+def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
+                                       only_when_due=False, injection_enabled=True):
     """Refresh only the exact canonical active B/C execution's ON evidence."""
     if not isinstance(evidence, dict):
         return evidence
@@ -187,17 +212,27 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None)
     refreshed = dict(evidence); updated = dict(context)
     updated["zone_output_evidence"] = {}
     refreshed["active_irrigation_context"] = updated
+    if only_when_due:
+        from modules.telemetry.rootline_auxiliary_management import injection_parent_read_due
+        # Disabling new pulses does not discard the final flush already owed
+        # by a completed two-pulse sequence on this exact active parent.
+        if ((not injection_enabled and context.get("completed_pulses") != 2)
+                or not injection_parent_read_due(context, now=now)):
+            return refreshed
     device_id = str(context.get("zone_device_id") or "")
     channel = context.get("zone_channel")
     if not device_id or type(channel) is not int:
         return refreshed
     try:
-        current = transport.read_output_state(device_id=device_id, channel=channel)
+        from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+        with execution_duty({"execution_id": context.get("zone_execution_id")},
+                deadline=context.get("irrigation_stop_deadline")):
+            current = transport.read_output_state(device_id=device_id, channel=channel)
     except Exception:
         return refreshed
     # Production passes its independent clock. A read timestamp never advances
     # the clock or widens the future/stale evidence limits.
-    checked_at = _aware(clock()) if clock is not None else _aware(now)
+    checked_at = _aware((clock or (lambda: datetime.now(timezone.utc)))())
     from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time
     from modules.telemetry.rootline_ifttt_transport import irrigation_dependency_verified
     bound = {"device_id": device_id, "channel": channel,
@@ -359,7 +394,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     if not owner_user_id or owner_user_id != chat_id:
         return _safe("canonical_observation_binding_invalid")
     initial = _current(evidence_loader, readback, token_store, source, database_url, now, store,
-        require_enabled=True)
+        require_enabled=True, clock=clock)
     observation = _planning_observation(initial, owner_user_id, chat_id,
                                         next_reassessment_at)
     if observation_store is None:
@@ -410,12 +445,12 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     def revalidate(_decision):
         current_now = _aware(clock())
         return _current(evidence_loader, readback, token_store, source,
-                        database_url, current_now, store, require_enabled=True)["artifact"]
+                        database_url, current_now, store, require_enabled=True, clock=clock)["artifact"]
     return advance_irrigation_execution(decision_id=decision["decision_id"],
         commissioning_id=commissioning_id, decision_reader=lambda _identity: decision,
         commissioning_reader=lambda _identity: commissioning, store=store,
         transport=transport, notify=notify, outcome_reader=outcome_reader,
-        eligibility_revalidator=revalidate, now=now, clock=clock)
+        eligibility_revalidator=revalidate, now=_aware(clock()), clock=clock)
 
 
 def _same_delegated_execution(expected, current):
@@ -479,7 +514,7 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
           store=store,transport=transport,notify=notify,outcome_reader=outcome_reader,
           now=now,clock=clock)
     try:
-        current=_current(evidence_loader,readback,token_store,source,database_url,now,store)
+        current=_current(evidence_loader,readback,token_store,source,database_url,now,store,clock=clock)
     except RootlineExecutionStoreUnavailable:
         return _execution_store_hold()
     artifact=current["artifact"]
@@ -516,16 +551,16 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     transport=transport or RootlineIFTTTTransport(token_store=token_store,environ=source,readback=readback)
     def revalidate(_decision):
         return _current(evidence_loader,readback,token_store,source,database_url,
-          _aware(clock()),store)["artifact"]
+          _aware(clock()),store,clock=clock)["artifact"]
     return advance_irrigation_execution(decision_id=decision["decision_id"],
       commissioning_id=commissioning_id,decision_reader=lambda _identity:decision,
       commissioning_reader=lambda _identity:commissioning,store=store,transport=transport,
       notify=notify,outcome_reader=outcome_reader,eligibility_revalidator=revalidate,
-      now=now,clock=clock)
+      now=_aware(clock()),clock=clock)
 
 
 def _current(evidence_loader, readback, token_store, source, database_url, now,
-             store=rootline_irrigation_execution_store, *, require_enabled=False):
+             store=rootline_irrigation_execution_store, *, require_enabled=False, clock=None):
     try:
         from modules.telemetry.rootline_bounded_read_group import (
             RootlineReadGroupDeadlineExceeded,
@@ -543,12 +578,20 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         raise RootlineExecutionStoreUnavailable("load_canonical_irrigation_history")
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
     _persist_stale_parent_resolutions(plan, store)
-    controller = readback(token_store=token_store, environ=source, now=now)
-    artifact = build_execution_eligibility(
-        plan=plan, evidence=evidence, controller=controller, now=now,
+    eligibility_args = dict(plan=plan, evidence=evidence,
         job_event_reader=lambda job_id: store("load_job_events", job_id),
         zone_containment_reader=lambda zone_id: store("load_zone_containment", zone_id),
         enabled_zone_ids=commissioned_irrigation_contracts(environ=source) if require_enabled else None)
+    artifact = build_execution_eligibility(**eligibility_args, controller=None,
+        now=now, _provider_preflight=True)
+    controller = {}
+    if artifact.get("provider_read_required") is True:
+        controller = readback(token_store=token_store, environ=source, now=now)
+        # Evaluate original evidence at the independent post-I/O clock. Never
+        # refresh a weather/history timestamp merely because a request finished.
+        checked_at = _aware((clock or (lambda: datetime.now(timezone.utc)))())
+        artifact = build_execution_eligibility(**eligibility_args,
+            controller=controller, now=checked_at)
     resolution = artifact.get("job_resolution") if isinstance(artifact, dict) else None
     if isinstance(resolution, dict):
         recorded = store("record_job_resolution", resolution)

@@ -209,6 +209,9 @@ def mixing_daily_accounting(executions, *, now, batch=None):
     reserved = completed = sessions = 0
     premix = None
     for rows in groups.values():
+        from modules.telemetry.rootline_irrigation_execution_store import _verified_not_dispatched
+        if any(_verified_not_dispatched(item, rows) for item in rows):
+            continue
         claims = [row for row in rows if row.get("action") == "claim_auxiliary_before_on"]
         row = claims[0] if claims else rows[-1]
         at = _time(row.get("claimed_at"))
@@ -283,16 +286,17 @@ def auxiliary_notification_projection(*, fertilizer_included=False, batch=None,
         "unchanged_auxiliary_tasks_silent":True,"telegram_send_performed":False}
 
 
-def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
+def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
+                                _provider_preflight=False):
     now=_aware(now or datetime.now(timezone.utc)); flags=flags or {}
-    if not isinstance(task,dict) or not isinstance(safety,dict) or not isinstance(context,dict):
+    if (not isinstance(task,dict) or not isinstance(context,dict)
+            or (not _provider_preflight and not isinstance(safety,dict))):
         return _ineligible("auxiliary_context_incomplete")
     identity=str(task.get("auxiliary_device_id") or ""); contract=get_device_contract(identity)
     if not contract or contract["collection"]!="irrigation_auxiliary_devices":
         return _ineligible("auxiliary_device_not_registered")
     if flags.get(contract["authority_flag"]) is not True:
         return _ineligible("auxiliary_authority_disabled")
-    if not _safe(contract,safety,now): return _ineligible("auxiliary_safety_unproven")
     if context.get("prior_shutdown_unverified") is True or context.get("fertilizer_exception"):
         return _ineligible("fertilizer_exception_or_shutdown_unverified")
     device_type=contract["device_type"]
@@ -305,6 +309,9 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None):
     if reason: return _ineligible(reason)
     generation=str(context.get("plan_generation") or "")
     if not generation: return _ineligible("plan_generation_missing")
+    if _provider_preflight:
+        return {**_ineligible("provider_read_required"), "provider_read_required": True}
+    if not _safe(contract,safety,now): return _ineligible("auxiliary_safety_unproven")
     material={"contract_version":ELIGIBILITY_CONTRACT,"device_contract_sha256":
         contract["contract_sha256"],"auxiliary_device_id":identity,
         "device_type":device_type,"device_id":contract["device_id"],
@@ -426,7 +433,7 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
         runtime=int(value.get("maximum_duration_seconds") or 0)) is None
 
 
-def _injection_gate(context,now):
+def _injection_gate(context,now,*,require_output=True):
     zones=context.get("active_zone_ids") if isinstance(context.get("active_zone_ids"),list) else []
     pulse=int(context.get("completed_pulses") or 0)
     if (not str(context.get("job_id") or "").startswith("ROOTLINE-IRRIGATION-JOB-")
@@ -443,7 +450,7 @@ def _injection_gate(context,now):
     if (not start.get("evidence_id") or start.get("zone_execution_id")!=
             context.get("zone_execution_id") or start_at is None):
         return "clean_water_preflow_incomplete"
-    if (not output.get("evidence_id") or output.get("zone_execution_id")!=
+    if require_output and (not output.get("evidence_id") or output.get("zone_execution_id")!=
             context.get("zone_execution_id") or output.get("state")!="ON"
             or output_at is None or not timedelta(0)<=now-output_at<=timedelta(minutes=5)):
         return "active_zone_unverified"
@@ -452,8 +459,8 @@ def _injection_gate(context,now):
     if (context.get("zone_device_id") != binding["device_id"]
             or type(context.get("zone_channel")) is not int
             or context["zone_channel"] != binding["channel"]
-            or not irrigation_dependency_verified(output,
-                device_id=binding["device_id"], channel=binding["channel"], now=now)):
+            or (require_output and not irrigation_dependency_verified(output,
+                device_id=binding["device_id"], channel=binding["channel"], now=now))):
         return "active_irrigation_outputs_unverified"
     if now-start_at<timedelta(seconds=MIN_PREFLOW_SECONDS):
         return "clean_water_preflow_incomplete"
@@ -486,7 +493,8 @@ def _mixing_gate(context,now,*,runtime):
     if not 1 <= int(runtime or 0) <= MAX_MIX_SECONDS:
         return "planned_mixing_runtime_invalid"
     complete_at=_time(context.get("mixing_history_complete_through"))
-    if complete_at is None or not timedelta(0)<=now-complete_at<=timedelta(minutes=5):
+    if (complete_at is None or not timedelta(0)<=now-complete_at<=timedelta(minutes=5)
+            or complete_at.astimezone(SAST).date() != now.astimezone(SAST).date()):
         return "mixing_history_incomplete"
     if context.get("mixing_history_valid") is not True:
         return "mixing_history_incomplete"
@@ -497,6 +505,23 @@ def _mixing_gate(context,now,*,runtime):
     if context.get("power_suitable") is not True and context.get("mixing_urgent") is not True:
         return "low_power_mix_deferred"
     return None
+
+
+def injection_parent_read_due(context, *, now):
+    """Existing pulse prerequisites or the due final flush require fresh ON."""
+    if not isinstance(context, dict) or context.get("controller_sequence_completed") is True:
+        return False
+    if _injection_gate(context, now, require_output=False) is None:
+        return True
+    prior = context.get("prior_pulse_shutdown_evidence") or {}
+    stopped = _time(prior.get("observed_at"))
+    deadline = _time(context.get("irrigation_stop_deadline"))
+    return (context.get("completed_pulses") == 2
+        and bool(context.get("zone_execution_id"))
+        and prior.get("zone_execution_id") == context["zone_execution_id"]
+        and prior.get("shutdown_verified") is True and stopped is not None
+        and now-stopped >= timedelta(seconds=MIN_FLUSH_SECONDS)
+        and deadline is not None and now < deadline)
 
 
 def _safe(contract,safety,now):

@@ -81,6 +81,21 @@ def _read_bound_device(*, expected, token_store, source, http_request, now,
             or record.get("adapter_version") != ADAPTER_VERSION
             or record.get("region") not in REGION_HOSTS):
         raise OAuthFailure("ewelink_readback_token_unavailable")
+    from modules.telemetry.rootline_ewelink_request_budget import snapshot_group
+    request_source = dict(source)
+    if not request_source.get("DATABASE_URL"):
+        request_source["DATABASE_URL"] = getattr(token_store, "database_url", "")
+    with snapshot_group(expected_device=expected, environ=request_source, region=record["region"]) as group:
+        result = _read_snapshot(expected=expected, token_store=token_store,
+            source=request_source, http_request=http_request, now=now, record=record,
+            commissioned_baseline=commissioned_baseline,
+            registered_discovery_only=registered_discovery_only)
+        group["normalized_complete"] = True
+        return result
+
+
+def _read_snapshot(*, expected, token_store, source, http_request, now, record,
+                   commissioned_baseline, registered_discovery_only):
     request = http_request or _provider_request
     token_refreshed = False
     if record.get("access_expires_at") <= now:
@@ -99,7 +114,10 @@ def _read_bound_device(*, expected, token_store, source, http_request, now,
     status = request("GET", host + "/v2/device/thing/status?" +
         urllib.parse.urlencode({"type": 1, "id": expected}),
         mode="bearer", token=access, environ=request_source)
-    result = normalize_device_readback(device=device, status=status, retrieved_at=now,
+    # Production receipts use the clock AFTER all provider I/O.  An explicitly
+    # supplied synthetic requester retains its deterministic fixture clock.
+    retrieved_at = datetime.now(timezone.utc) if http_request is None else now
+    result = normalize_device_readback(device=device, status=status, retrieved_at=retrieved_at,
         commissioned_baseline=commissioned_baseline)
     if result["device_id"] != expected:
         raise OAuthFailure("ewelink_readback_device_mismatch")

@@ -239,10 +239,16 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
 def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False, clock=None):
     """Advance one exact Borehole execution with one ON and bounded OFF recovery."""
     from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
+    from modules.telemetry.rootline_ewelink_request_budget import (
+        bind_execution_transport, prepare_execution_capacity)
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
     active = store("load_active_borehole", None)
     if isinstance(active, dict):
+        transport = bind_execution_transport(transport, active)
+        if active.get("on_not_dispatched") is True:
+            from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
+            return _retire_unsent_execution(active, store, transport)
         claimed_at = _time(active.get("claimed_at"))
         if (active.get("state") in {"claimed","claimed_recovery_required"}
                 and claimed_at is not None and timedelta(0)<=now-claimed_at<=timedelta(seconds=30)):
@@ -272,6 +278,9 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         "primary_stop_deadline": (now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
         "native_fail_stop_deadline": (now + timedelta(seconds=native)).isoformat(),
         "on_attempts": 0, "off_attempts": 0}
+    if not prepare_execution_capacity(transport, execution):
+        return _borehole_result("provider_capacity_unavailable")
+    transport = bind_execution_transport(transport, execution)
     claim = store("claim_borehole_before_on", execution)
     if not isinstance(claim, dict) or claim.get("created") is not True:
         return _borehole_result("borehole_claim_conflict")
@@ -279,6 +288,9 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         transport.set_state(device_id="1002851416", channel=1, state="ON",
             idempotency_key=execution["execution_id"] + ":ON")})
     store("record_borehole_on_outcome", {**execution, "on_attempts": 1, "on_outcome": on})
+    if execution.get("provider_capacity_permit") and on.get("provider_command_attempted") is False:
+        from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
+        return _retire_unsent_execution(execution, store, transport)
     if on.get("accepted_unambiguous") is not True:
         return _contain_failed_borehole_start(
             {**execution, "reason": "ambiguous_on"}, store, transport)

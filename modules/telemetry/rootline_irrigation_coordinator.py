@@ -22,6 +22,9 @@ from modules.telemetry.rootline_irrigation_execution_store import (
 from modules.telemetry.rootline_device_registry import (
     commissioned_irrigation_contract, get_device_contract,
 )
+from modules.telemetry.rootline_ewelink_request_budget import (
+    bind_execution_transport, prepare_execution_capacity,
+)
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -44,7 +47,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
             autonomous_on_enabled=False, durable_execution_truth_loaded=False,
             current_segment_consumed=False, degraded=True)
     if active:
-        result = _recover_or_observe(active, store, transport, notify, outcome_reader, now)
+        result = _recover_or_observe(active, store, bind_execution_transport(transport, active),
+            notify, outcome_reader, now)
         return {**result, "active_execution_found": True} if active_only else result
     if active_only:
         # A safety tick must never turn a missing/disappearing execution into
@@ -117,6 +121,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "commissioning_id": commissioning_id,
         "state": "claimed", "on_attempts": 0, "off_attempts": 0,
     }
+    if not prepare_execution_capacity(transport, execution):
+        return _result("provider_capacity_unavailable", commands=0, messages=0)
+    transport = bind_execution_transport(transport, execution)
     try:
         claim = store("claim_before_on", execution)
     except RootlineExecutionStoreUnavailable:
@@ -126,6 +133,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     accepted = transport.set_state(device_id=execution["device_id"], channel=execution["channel"], state="ON",
                                    idempotency_key=execution["execution_id"] + ":ON")
     store("record_on_outcome", {**execution, "on_attempts": 1, "on_outcome": accepted})
+    if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
+        return _retire_unsent_execution(execution, store, transport)
     if accepted.get("accepted_unambiguous") is not True:
         # Never issue another ON. OFF recovery is safe even after ambiguous ON.
         store("contain_zone", {**execution, "state": "ambiguous",
@@ -181,7 +190,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         if ((selected and active.get("auxiliary_device_id") != selected)
                 or (expected_execution_id and active.get("execution_id") != expected_execution_id)):
             return _aux_result("auxiliary_recovery_identity_changed", state="Intervention")
-        return _recover_auxiliary(active, store, transport, now, stop_for_energy=stop_for_energy, clock=clock)
+        return _recover_auxiliary(active, store, bind_execution_transport(transport, active),
+            now, stop_for_energy=stop_for_energy, clock=clock)
     if expected_execution_id:
         return _aux_result("auxiliary_recovery_already_terminal")
     artifact = validate_auxiliary_eligibility(eligibility, now=now)
@@ -227,6 +237,9 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         return _aux_result("auxiliary_edge_revalidation_failed")
     execution.update(claimed_at=now.isoformat(), primary_stop_deadline=(
         now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat())
+    if not prepare_execution_capacity(transport, execution):
+        return _aux_result("provider_capacity_unavailable")
+    transport = bind_execution_transport(transport, execution)
     claim=store("claim_auxiliary_before_on",execution)
     if not isinstance(claim,dict) or claim.get("created") is not True:
         return _aux_result("auxiliary_claim_conflict")
@@ -241,9 +254,14 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
                 "provider_command_attempted": False}
         # A slow final provider read can consume programme/flush time or age
         # the original evidence. Revalidate at the actual command edge.
+        edge_now = _aware(clock())
+        if (not timedelta(0) <= edge_now-_timestamp(execution["claimed_at"]) <= timedelta(seconds=30)
+                or edge_now >= _timestamp(execution["primary_stop_deadline"])):
+            return {"accepted_unambiguous": False, "status": "auxiliary_start_window_expired",
+                "provider_command_attempted": False}
         if not revalidate_auxiliary_execution_edge(artifact,
                 current_context=current_context, current_safety=current_safety,
-                now=_aware(clock())):
+                now=edge_now):
             return {"accepted_unambiguous": False,
                 "status": "auxiliary_edge_revalidation_failed",
                 "provider_command_attempted": False}
@@ -252,6 +270,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
             idempotency_key=execution["execution_id"]+":ON")
     accepted=store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
     store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
+    if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
+        return _retire_unsent_execution(execution, store, transport)
     if accepted.get("accepted_unambiguous") is not True:
         recovery=_bounded_auxiliary_off(execution,store,transport)
         shutdown=_read_auxiliary_output(execution,transport)
@@ -307,6 +327,9 @@ def emergency_off_auxiliary_execution(*, store, transport,
             or active.get("channel") != expected.get("channel")):
         return _aux_result("auxiliary_emergency_off_binding_mismatch",
             state="Intervention", fertilizer_debt=True)
+    # Parent shutdown may arrive through a parent-bound transport. Attribute
+    # the injector's proof to its own unresolved reserve, never the parent's.
+    transport = bind_execution_transport(transport, active)
     recovery = _bounded_auxiliary_off(active, store, transport)
     shutdown = _read_auxiliary_output(active, transport)
     verified = (shutdown.get("authoritative") is True
@@ -326,6 +349,8 @@ def emergency_off_auxiliary_execution(*, store, transport,
 
 
 def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=None):
+    if active.get("on_not_dispatched") is True:
+        return _retire_unsent_execution(active, store, transport)
     deadline=_timestamp(active.get("primary_stop_deadline"))
     claimed_at=_timestamp(active.get("claimed_at"))
     if (active.get("state") in {"claimed","claimed_recovery_required"} and claimed_at is not None
@@ -339,8 +364,12 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
             "shutdown_verified":verified,"shutdown_evidence":shutdown})
         return _aux_result("auxiliary_restart_contained",commands=recovery["commands"],
             state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
-    if (active.get("device_type") == "fertilizer_injection_valve" and now < deadline
-            and not _injection_parent_still_on(active, store, transport, now, clock=clock)):
+    if active.get("device_type") == "fertilizer_injection_valve" and now < deadline:
+        parent_on = _injection_parent_still_on(active, store, transport, now, clock=clock)
+        now = _aware((clock or (lambda: datetime.now(timezone.utc)))())
+    else:
+        parent_on = True
+    if not parent_on and now < deadline:
         # A sibling mixer cannot hide a lost irrigation dependency. Stop only
         # this injector; its native deadline and the parent's OFF remain owned.
         return emergency_off_auxiliary_execution(store=store, transport=transport,
@@ -446,12 +475,18 @@ def _injection_parent_still_on(active, store, transport, now, *, clock=None):
                 or type(parent.get("channel")) is not int
                 or parent["channel"] != binding["channel"]):
             return False
-        output = transport.read_output_state(device_id=binding["device_id"],
+        own_deadline = _timestamp(active.get("primary_stop_deadline"))
+        claimed = _timestamp(active.get("claimed_at"))
+        read_deadline = min(deadline, own_deadline) if own_deadline else deadline
+        if active.get("state") == "claimed" and claimed:
+            read_deadline = min(read_deadline, claimed+timedelta(seconds=30))
+        bounded_transport = bind_execution_transport(transport, active, read_deadline=read_deadline)
+        output = bounded_transport.read_output_state(device_id=binding["device_id"],
             channel=binding["channel"])
         observed = _timestamp(output.get("retrieved_at"))
         checked_at = _aware(clock()) if clock else now
         from modules.telemetry.rootline_ifttt_transport import irrigation_dependency_verified
-        return (deadline > checked_at and observed is not None
+        return (read_deadline > checked_at and observed is not None
             and irrigation_dependency_verified(output, device_id=binding["device_id"],
                 channel=binding["channel"], now=checked_at))
     except Exception:
@@ -510,6 +545,8 @@ def _aux_result(status,*,commands=0,state=None,fertilizer_debt=False,
 
 
 def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
+    if active.get("on_not_dispatched") is True:
+        return _retire_unsent_execution(active, store, transport)
     if active.get("state") in {"claimed", "claimed_recovery_required"}:
         barrier=store("mark_stopping",{**active,"state":"stopping",
             "reason":"restart_after_pre_on_claim"})
@@ -702,6 +739,27 @@ def _stopping_barrier_hold(active,store,notify):
     return _result("canonical_stopping_barrier_unproven",commands=0,
         messages=delivery["confirmed"],notification=delivery,
         execution=active,writes_farm_data=False,degraded=True)
+
+
+def _retire_unsent_execution(execution, store, transport):
+    device = execution.get("device_id") or "1002851416"
+    channel = execution.get("channel") or 1
+    if execution.get("auxiliary_device_id") in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
+        commands = _bounded_auxiliary_off(execution, store, transport)["commands"]
+    elif device == "1002851416":
+        from modules.telemetry.rootline_borehole_commissioning import _stop_borehole
+        commands = _stop_borehole(execution, store, transport)
+    else:
+        commands = _bounded_off(execution, store, transport)["commands"]
+    def read():
+        return transport.read_output_state(device_id=device, channel=channel)
+    result = store("retire_not_dispatched_execution", {**execution, "read_final_off": read})
+    proven = (isinstance(result, dict) and result.get("success") is True
+        and (result.get("execution") or {}).get("not_dispatched_verified") is True)
+    return {"success": True, "status": "execution_not_dispatched" if proven else "no_send_off_proof_pending",
+        "hardware_commands": commands, "telegram_messages": 0, "writes_farm_data": bool(proven and result.get("created")),
+        "notify_owner": False, "owner_action_required": False, "execution": execution,
+        "provider_command_attempted": False, "automatic_on_retry": False}
 
 
 def _bounded_off(execution, store, transport):

@@ -512,6 +512,8 @@ class PostgresManagerCaseStore:
                 case_started = time.monotonic()
                 case_timings = {"dispatch_wait": _elapsed_ms(dispatch_started)}
                 specialist_failure = None
+                optional_deferred = None
+                from modules.telemetry.rootline_ewelink_request_budget import OptionalObservationDeferred
                 overview_case = purpose_overview is not None and purpose_decision_binding(case) is not None
                 refresh_eligible = (case.get("specialist") in {"HERDMASTER", "ROOTLINE", "BEACON"}
                     and not overview_case)
@@ -531,7 +533,10 @@ class PostgresManagerCaseStore:
                             if isinstance(exc, ManagerCaseError):
                                 raise
                             specialist_failure = exc
-                    if specialist_failure is None:
+                    if isinstance(specialist_failure, OptionalObservationDeferred):
+                        optional_deferred = specialist_failure
+                        specialist_failure = None
+                    if specialist_failure is None and optional_deferred is None:
                         # Store normalization, locking and persistence are not
                         # specialist-domain work and must remain cycle-fatal.
                         current_case = self._refresh_claim(case, refreshed,
@@ -543,6 +548,10 @@ class PostgresManagerCaseStore:
                         "status": "manager_cycle_deadline_deferred",
                         "delivery_confirmed": False, "telegram_sends": 0,
                         "next_reassessment_at": (now + CADENCE).isoformat()}
+                elif optional_deferred is not None:
+                    outcome = {"success": True, "status": "manager_optional_observation_deferred",
+                        "delivery_confirmed": False, "telegram_sends": 0,
+                        "next_reassessment_at": optional_deferred.next_read_at}
                 elif specialist_failure is not None:
                     outcome = {"success": False,
                         "status": "manager_specialist_processing_exception_contained",
@@ -1358,7 +1367,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                 from modules.telemetry.rootline_mixer_readiness_observer import (
                     collect_mixer_readiness,
                 )
-                rows = collect_mixer_readiness(now=datetime.now(timezone.utc))
+                rows = collect_mixer_readiness(now=datetime.now(timezone.utc),
+                    _observation_purpose="mixer_readiness_delivery")
                 return next((row for row in rows
                     if row.get("dedupe_key") == case.get("dedupe_key")), None)
             return collect_manager_candidate(now=datetime.now(timezone.utc),
@@ -1395,7 +1405,8 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                         from modules.telemetry.rootline_mixer_readiness_observer import (
                             collect_mixer_readiness,
                         )
-                        rows = collect_mixer_readiness(now=datetime.now(timezone.utc))
+                        rows = collect_mixer_readiness(now=datetime.now(timezone.utc),
+                            _observation_purpose="mixer_readiness_delivery")
                         return {(str(row.get("dedupe_key") or ""),
                                  str(row.get("specialist") or "").upper()): row
                                 for row in rows or ()}

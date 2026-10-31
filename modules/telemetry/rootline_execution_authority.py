@@ -21,7 +21,8 @@ STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 def build_execution_eligibility(*, plan, evidence, controller, now=None,
                                 job_event_reader=lambda _job_id: (),
-                                zone_containment_reader=lambda _zone_id: {}, enabled_zone_ids=None):
+                                zone_containment_reader=lambda _zone_id: {}, enabled_zone_ids=None,
+                                _provider_preflight=False):
     now = _aware(now or datetime.now(timezone.utc))
     if not isinstance(plan, dict) or not isinstance(evidence, dict):
         return _none("canonical_plan_unavailable")
@@ -112,9 +113,6 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     obligation = task.get("weekly_obligation") if isinstance(task.get("weekly_obligation"), dict) else {}
     if obligation.get("status") != "available":
         return _none("weekly_delivery_debt_not_dispatchable")
-    controller_status = _controller(controller, zone, now)
-    if not controller_status:
-        return _none("controller_safety_not_dispatchable")
     source_plan_generation = str(plan.get("evidence_generation") or "")
     if not source_plan_generation:
         return _none("plan_generation_unavailable")
@@ -162,6 +160,11 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
                   and segment["cumulative_verified_runtime_seconds"] > 0)
     if int(obligation.get("delivery_debt_days") or 0) <= 0 and not continuing:
         return _none("weekly_delivery_debt_not_dispatchable")
+    if _provider_preflight:
+        return {**_none("provider_read_required"), "provider_read_required": True}
+    controller_status = _controller(controller, zone, now)
+    if not controller_status:
+        return _none("controller_safety_not_dispatchable")
     consumption_key = "ROOTLINE-IRRIGATION-CONSUMPTION-" + _digest({
         "source_plan_generation": source_plan_generation,
         "operating_date": operating_date,

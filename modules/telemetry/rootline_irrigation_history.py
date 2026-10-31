@@ -24,7 +24,7 @@ PARENT_MIDNIGHT_CONTINUITY_MINUTES = 30
 PARENT_ACCOUNTING_ACTIONS = (
     "record_eligibility", "claim_before_on", "mark_active", "record_completed",
     "record_job_resolution", "contain_zone", "record_ambiguous_shutdown",
-    "record_claim_recovery",
+    "record_claim_recovery", "record_execution_not_dispatched", "record_on_outcome",
 )
 CONTRACT = "rootline_irrigation_outcome_v1"
 EPOCH_EVENT = "PLANNING_EPOCH_STARTED"
@@ -137,6 +137,11 @@ def _attach_water_credits(history):
 def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     """Project incomplete immutable jobs without treating a segment as a day close."""
     from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
+    from modules.telemetry.rootline_irrigation_execution_store import _verified_not_dispatched
+    retired = {row.get("execution_id") for row in rows or ()
+        if isinstance(row, dict) and _verified_not_dispatched(row, rows)}
+    rows = [row for row in rows or () if not isinstance(row, dict)
+        or row.get("execution_id") not in retired or row.get("action") == "record_eligibility"]
     _attach_latest_zone_executions(history, rows, canonical_ordered=canonical_ordered)
     completed_execution_ids = set()
     grouped = {}

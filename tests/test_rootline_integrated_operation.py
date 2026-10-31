@@ -165,7 +165,8 @@ def test_real_controller_pulses_advance_twice_without_flow_sensor_and_preserve_f
         context=_active_irrigation_context(active,store.rows,True,"BATCH-1")
         context["premix_verified"]=True
         context["fertilizer_history_complete_through"]=transport.now.isoformat()
-        context=_refresh_active_irrigation_readback({"active_irrigation_context":context},transport,transport.now)["active_irrigation_context"]
+        context=_refresh_active_irrigation_readback({"active_irrigation_context":context},transport,transport.now,
+            clock=lambda:transport.now)["active_irrigation_context"]
         artifact=build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},
             safety=transport.read_safety_configuration(device_id="100204d497",channel=1),context=context,
             flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},now=transport.now)
@@ -186,7 +187,8 @@ def test_real_controller_pulses_advance_twice_without_flow_sensor_and_preserve_f
     from modules.telemetry.rootline_irrigation_execution_store import _event_id
     assert not fertilizer_control_progress(context,now=transport.now)["completed"]
     transport.now+=timedelta(seconds=600)
-    context=_refresh_active_irrigation_readback({"active_irrigation_context":context},transport,transport.now)["active_irrigation_context"]
+    context=_refresh_active_irrigation_readback({"active_irrigation_context":context},transport,transport.now,
+        clock=lambda:transport.now)["active_irrigation_context"]
     progress=fertilizer_control_progress(context,now=transport.now)
     assert progress["completed"] and not progress["physical_flow_verified"]
     later={**progress,"flush_control_evidence":{**progress["flush_control_evidence"],"observed_at":"later"}}
