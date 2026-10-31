@@ -307,3 +307,60 @@ def test_exact_c_parent_starts_once_and_remains_active_with_other_outputs_off():
     assert run(store,transport,context=context)["status"] == "auxiliary_started"
     assert run(store,transport,context=context,now=NOW+timedelta(seconds=10))["status"] == "auxiliary_active"
     assert [r["state"] for r in transport.calls] == ["ON"]
+
+
+
+@pytest.mark.parametrize("age", [0,300])
+def test_injection_history_accepts_exact_existing_five_minute_boundary(age):
+    context=aux.injection_context(fertilizer_history_complete_through=(
+        NOW-timedelta(seconds=age)).isoformat())
+    assert _injection_gate(context,NOW) is None
+
+
+@pytest.mark.parametrize("cutoff", [None,"", "not-a-time", NOW.replace(tzinfo=None).isoformat(),
+    (NOW+timedelta(microseconds=1)).isoformat(),
+    (NOW-timedelta(seconds=300,microseconds=1)).isoformat()])
+def test_injection_refuses_missing_naive_future_or_stale_canonical_history(cutoff):
+    context=aux.injection_context(fertilizer_history_complete_through=cutoff)
+    assert _injection_gate(context,NOW) == "current_day_fertilizer_history_incomplete"
+    assert aux.injection_eligibility(**context)["eligible"] is False
+
+
+@pytest.mark.parametrize("crosses_midnight", [False,True])
+def test_final_edge_preserves_canonical_history_age_and_sast_day_on_replay(crosses_midnight):
+    start = datetime(2026,8,25,21,59,59,500000,tzinfo=timezone.utc) if crosses_midnight else NOW
+    current=[start]
+    cutoff=start if crosses_midnight else start-timedelta(seconds=300)
+    context=aux.injection_context(fertilizer_history_complete_through=cutoff.isoformat(),
+        zone_start_evidence={"evidence_id":"START-1","zone_execution_id":"ZONE-EXEC-1",
+            "observed_at":(start-timedelta(minutes=10)).isoformat()},
+        zone_output_evidence={**irrigation_output(start),"zone_execution_id":"ZONE-EXEC-1",
+            "observed_at":start.isoformat()},
+        irrigation_stop_deadline=(start+timedelta(seconds=1800)).isoformat())
+    from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
+    eligibility=build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},
+        context=context,safety=aux.safety(observed_at=start.isoformat()),
+        flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},now=start)
+    assert eligibility["eligible"] is True
+    original=aux.Store()
+    def store(action,payload):
+        value=original(action,payload)
+        return {**value,"primary_stop_deadline":context["irrigation_stop_deadline"]} if action == "load_active" else value
+    def after_read(number):
+        if number == 2: current[0]=start+timedelta(seconds=1)
+    transport=PhysicalTransport([irrigation_snapshot(start),irrigation_snapshot(start+timedelta(seconds=1))],
+        after_read=after_read)
+    transport.read_safety_configuration=lambda **_:aux.safety(observed_at=start.isoformat())
+    def execute():
+        return advance_auxiliary_execution(eligibility=eligibility,store=store,transport=transport,
+            revalidate=lambda _:context,now=start,clock=lambda:current[0])
+    result=execute()
+    assert len(original.consumed) == 1 and transport.left_reads == 2
+    assert [(r["device_id"],r["channel"],r["state"]) for r in transport.calls] == [("100204d497",1,"OFF")]
+    outcome=next(row["on_outcome"] for action,row in original.rows if action == "record_auxiliary_on_outcome")
+    assert outcome["provider_command_attempted"] is False
+    assert outcome["status"] == "auxiliary_edge_revalidation_failed"
+    assert result["automatic_on_retry"] is False
+    execute()
+    assert len(original.consumed) == 1 and all(r["state"] == "OFF" for r in transport.calls)
+    assert context["fertilizer_history_complete_through"] == cutoff.isoformat()

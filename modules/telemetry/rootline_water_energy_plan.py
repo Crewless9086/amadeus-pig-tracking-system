@@ -896,7 +896,10 @@ def _read_managed_device_evidence(database_url, now):
         executions=auxiliary, now=_as_za(now))
     context = _active_irrigation_context(active, auxiliary, fertilizer_needed,
         batch.get("batch_generation"))
+    history_complete_through = _as_za(now).isoformat()
     if context:
+        # Retain the canonical read epoch; later device reads cannot renew it.
+        context["fertilizer_history_complete_through"] = history_complete_through
         from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
         mix = mixing_daily_accounting(auxiliary, now=_as_za(now), batch=batch)
         context["premix_verified"] = (batch.get("state") == "batch_reported_prepared"
@@ -905,7 +908,7 @@ def _read_managed_device_evidence(database_url, now):
             and batch.get("state") == "batch_reported_prepared")
     return {"status": "Available", "fertilizer_batch_observations": batch_observations,
         "fertilizer_executions": auxiliary,
-        "fertilizer_history_complete_through": _as_za(now).isoformat(),
+        "fertilizer_history_complete_through": history_complete_through,
         "active_irrigation_context": context,
         "borehole_interlocks": _project_borehole_interlocks(interlock_observations, now)}
 
@@ -1017,7 +1020,7 @@ def _project_borehole_interlocks(rows, now):
         "observed_at":max(at for at,_ in facts.values()).isoformat()}
 
 
-def read_current_borehole_faults(database_url, *, now):
+def read_current_borehole_faults(database_url, *, now, clock=None):
     """One bounded safety read, independent of reports and planning history."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     with connect_bounded_rootline_postgres(database_url=database_url) as connection:
@@ -1032,7 +1035,10 @@ def read_current_borehole_faults(database_url, *, now):
     for row in rows:
         outcome=_json_object(row[0]) or {}; fact=outcome.get("borehole_interlocks") or {}
         observations.append({**fact,"provider_message_id":fact.get("provider_message_id") or outcome.get("provider_message_id")})
-    facts=_project_borehole_interlocks(observations,now) or {}
+    # Preserve each fact's observation time while assessing it after the read.
+    # A newly recorded negative fault must not be discarded against a start clock.
+    checked_at = clock() if clock is not None else now
+    facts=_project_borehole_interlocks(observations,checked_at) or {}
     return not (any(facts.get(key) is False for key in ("dry_run_safe","low_water_clear","supply_pressure_safe"))
         or facts.get("manual_isolation_active") is True or facts.get("full_tank_cutoff_fault") is True)
 

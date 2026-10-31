@@ -457,6 +457,10 @@ def _injection_gate(context,now):
         return "active_irrigation_outputs_unverified"
     if now-start_at<timedelta(seconds=MIN_PREFLOW_SECONDS):
         return "clean_water_preflow_incomplete"
+    complete_at = _time(context.get("fertilizer_history_complete_through"), require_aware=True)
+    if (complete_at is None or not timedelta(0) <= now-complete_at <= timedelta(minutes=5)
+            or complete_at.astimezone(SAST).date() != now.astimezone(SAST).date()):
+        return "current_day_fertilizer_history_incomplete"
     if context.get("premix_verified") is not True: return "current_batch_premix_unproven"
     if pulse not in (0,1): return "two_pulse_limit_reached"
     prior=context.get("prior_pulse_shutdown_evidence") if isinstance(
@@ -516,8 +520,12 @@ def _ineligible(status):
     return {"eligible":False,"status":status,"command_authority":False,"hardware_control":False}
 
 
-def _time(value):
-    try:return _aware(datetime.fromisoformat(str(value).replace("Z","+00:00")))
+def _time(value, *, require_aware=False):
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z","+00:00"))
+        if require_aware and parsed.utcoffset() is None:
+            return None
+        return _aware(parsed)
     except (TypeError,ValueError):return None
 
 

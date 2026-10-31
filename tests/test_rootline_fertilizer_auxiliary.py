@@ -53,6 +53,7 @@ def safety(device="injection",**changes):
 def injection_context(**changes):
     value={"plan_generation":"PLAN-1","batch_generation":"BATCH-1",
         "fertilizer_needed":True,"premix_verified":True,
+        "fertilizer_history_complete_through": NOW.isoformat(),
         "job_id":"ROOTLINE-IRRIGATION-JOB-"+"A"*24,"job_sha256":"a"*64,
         "segment_identity":"ROOTLINE-JOB-SEGMENT-"+"B"*24,
         "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EXEC-1",

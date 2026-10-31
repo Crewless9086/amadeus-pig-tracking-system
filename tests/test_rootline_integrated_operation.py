@@ -164,6 +164,7 @@ def test_real_controller_pulses_advance_twice_without_flow_sensor_and_preserve_f
         transport.now=NOW+timedelta(seconds=seconds)
         context=_active_irrigation_context(active,store.rows,True,"BATCH-1")
         context["premix_verified"]=True
+        context["fertilizer_history_complete_through"]=transport.now.isoformat()
         context=_refresh_active_irrigation_readback({"active_irrigation_context":context},transport,transport.now)["active_irrigation_context"]
         artifact=build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},
             safety=transport.read_safety_configuration(device_id="100204d497",channel=1),context=context,
