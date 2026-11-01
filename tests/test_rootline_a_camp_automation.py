@@ -498,3 +498,93 @@ def test_a_eligibility_rechecks_current_segment_limit_on_a_stored_parent():
         result = build_execution_eligibility(plan=plan, evidence=evidence,
             controller=readback, now=NOW, enabled_zone_ids={"A12345"})
     assert result["eligible"] is False and result["status"] == "current_a_segment_limit_exceeded"
+
+
+def a_brief_result(*, language="en", a_recommendation=None, a_receipt_zone=None):
+    """Actual specialist projection; no A recommendation is supplied by default."""
+    from modules.oom_sakkie import farm_manager_runtime
+    from tests.test_oom_sakkie_farm_brief_concise import REASON
+    raw = {"success": True, "result_id": "SYNTHETIC-A-BRIEF", "generated_at": NOW.isoformat(),
+        "recommendations": [{"subject": zone, "status": "Recommend", "reason": REASON}
+                            for zone in ("B12345", "C12345")],
+        "irrigation_lifecycle": {zone: {"contract_version": "rootline_zone_lifecycle.v1",
+            "zone_id": zone, "state": "Completed", "next_action_owner": "ROOTLINE",
+            "completion_evidence": {"zone_id": zone, "shutdown_verified": True,
+                "objective_satisfied": True,
+                "shutdown_evidence": {"authoritative": True, "state": "OFF"}}}
+            for zone in ("B12345", "C12345")}}
+    if a_recommendation is not None:
+        raw["recommendations"].append({"subject": "A12345", **a_recommendation})
+    if a_receipt_zone is not None:
+        raw["irrigation_lifecycle"]["A12345"] = deepcopy(raw["irrigation_lifecycle"]["B12345"])
+        raw["irrigation_lifecycle"]["A12345"]["zone_id"] = "A12345"
+        raw["irrigation_lifecycle"]["A12345"]["completion_evidence"]["zone_id"] = a_receipt_zone
+    return farm_manager_runtime._project_rootline_snapshot({"raw": raw}, NOW, language)
+
+
+def render_a_brief(result, language):
+    from modules.oom_sakkie.farm_manager_loop import build_family_brief
+    from modules.oom_sakkie.owner_response_composer import compose_manager_brief
+    return compose_manager_brief(build_family_brief([result], now=NOW), language=language)
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_a_default_brief_status_stays_visible_without_inheriting_bc_recommendation(language):
+    result = a_brief_result(language=language)
+    facts = result.work_items[0].metadata["brief_facts"]
+    assert facts["zones"][2] == {"zone": "A12345", "status": "Not running",
+        "reason": "", "recommendation": ""}
+    original = deepcopy(facts)
+    answer = render_a_brief(result, language)
+    assert ("B &amp; C camps:</b> Controller OFF verified" if language == "en" else
+            "B &amp; C kampe:</b> Beheerder AF geverifieer") in answer
+    assert ("A camp:</b> Not running" if language == "en" else "A kamp:</b> Loop nie") in answer
+    assert ("For B and C camps only." if language == "en" else "Slegs vir B en C kampe.") in answer
+    assert "Next:" not in answer and "bronwoorde" not in answer
+    assert "A camp:</b> Needs watering" not in answer and "A kamp:</b> Moet natgemaak word" not in answer
+    assert result.work_items[0].metadata["brief_facts"] == original
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_a_brief_foreign_off_receipt_never_joins_verified_bc_group(language):
+    result = a_brief_result(language=language, a_receipt_zone="B12345")
+    answer = render_a_brief(result, language)
+    assert result.work_items[0].metadata["brief_facts"]["zones"][2]["status"] == "Not running"
+    assert ("A camp:</b> Not running" if language == "en" else "A kamp:</b> Loop nie") in answer
+    assert "B &amp; C &amp; A" not in answer
+    assert ("For B and C camps only." if language == "en" else "Slegs vir B en C kampe.") in answer
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+@pytest.mark.parametrize("recommendation", ["Hold", "Recommend"])
+def test_a_unknown_nonempty_reason_keeps_existing_source_fallback(language, recommendation):
+    from modules.oom_sakkie.owner_response_composer import _irrigation_brief
+    result = a_brief_result(language=language,
+        a_recommendation={"status": recommendation, "reason": "A own water-supply evidence is unresolved."})
+    facts = result.work_items[0].metadata["brief_facts"]
+    assert facts["zones"][2]["reason"] == "A own water-supply evidence is unresolved."
+    assert _irrigation_brief(facts, language == "af") == ""
+    answer = render_a_brief(result, language)
+    assert "Recommendation:" not in answer and "Aanbeveling:" not in answer
+    assert ("Next:" if language == "en" else "bronwoorde") in answer
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_a_old_support_reason_does_not_upgrade_its_current_hold(language):
+    from tests.test_oom_sakkie_farm_brief_concise import REASON
+    result = a_brief_result(language=language, a_recommendation={"status": "Hold", "reason": REASON})
+    answer = render_a_brief(result, language)
+    assert "Recommendation:" not in answer and "Aanbeveling:" not in answer
+    assert result.work_items[0].metadata["brief_facts"]["zones"][2]["status"] == "Not running"
+
+
+@pytest.mark.parametrize("language", ["en", "af"])
+def test_a_joins_compact_advice_only_with_its_own_matching_recommendation(language):
+    from tests.test_oom_sakkie_farm_brief_concise import REASON
+    result = a_brief_result(language=language,
+        a_recommendation={"status": "Recommend", "reason": REASON}, a_receipt_zone="A12345")
+    answer = render_a_brief(result, language)
+    assert ("B &amp; C &amp; A camps:</b> Controller OFF verified" if language == "en" else
+            "B &amp; C &amp; A kampe:</b> Beheerder AF geverifieer") in answer
+    assert ("For B and C and A camps only." if language == "en" else "Slegs vir B en C en A kampe.") in answer
+    assert "watering completed" not in answer and "start irrigation" not in answer

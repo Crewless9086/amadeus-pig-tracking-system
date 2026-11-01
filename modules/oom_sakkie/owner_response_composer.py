@@ -246,22 +246,31 @@ def _irrigation_brief(facts, af):
             if isinstance(row, Mapping)] not in (["B12345", "C12345"], list(IRRIGATION_ZONE_IDS)) \
             or any(row.get("status") not in statuses for row in zones):
         return ""
-    groups = [zones] if len({row["status"] for row in zones}) == 1 else [[row] for row in zones]
+    groups = [zones] if len({row["status"] for row in zones}) == 1 else (
+        [zones[:2], *[[row] for row in zones[2:]]]
+        if zones[0]["status"] == zones[1]["status"] else [[row] for row in zones])
     lines = []
     for group in groups:
         label = " & ".join(row["zone"][0] for row in group) + (" kampe" if af and len(group) > 1 else
                 " kamp" if af else " camps" if len(group) > 1 else " camp")
         status = statuses[group[0]["status"]] if af else group[0]["status"]
         lines.append(f"• <b>{_safe(label)}:</b> {_safe(status)}.")
-    reasons = list(dict.fromkeys(str(row.get("reason") or "") for row in zones))
+    # A default status row carries no recommendation. Keep its status visible
+    # without extending another camp's advice to it.
+    advice = [row for row in zones if row.get("reason") or row.get("recommendation")]
+    reasons = list(dict.fromkeys(str(row.get("reason") or "") for row in advice))
     # This is one exact output of the existing deterministic need classifier,
     # not prose inference. Other reasons keep the safe existing projection.
     weekly = "Weekly irrigation demand, water and dry observed weather support one bounded gravity-fed segment."
     recommended = all(str(row.get("recommendation") or "").casefold() in {
-        "recommend", "run", "proceed", "eligible"} for row in zones)
+        "recommend", "run", "proceed", "eligible"} for row in advice)
     if reasons == [weekly] and recommended:
-        lines.append("  " + ("Aanbeveling: een beperkte swaartekragbeurt; weekbehoefte, beskikbare water en droë weer ondersteun dit."
-                     if af else "Recommendation: one limited gravity-fed run, supported by weekly need, available water and dry weather."))
+        scope = (" en " if af else " and ").join(row["zone"][0] for row in advice)
+        camps = "kampe" if af and len(advice) > 1 else "kamp" if af else "camps" if len(advice) > 1 else "camp"
+        lines.append("  " + ("Aanbeveling: een beperkte swaartekragbeurt; weekbehoefte, beskikbare water en droë weer ondersteun dit. "
+                     f"Slegs vir {scope} {camps}." if af else
+                     "Recommendation: one limited gravity-fed run, supported by weekly need, available water and dry weather. "
+                     f"For {scope} {camps} only."))
     elif any(reasons):
         # Unknown/other recommendation facts must not disappear behind an OFF
         # status. Use the existing bounded source-word fallback for the item.
