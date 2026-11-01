@@ -992,6 +992,13 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
 - Private store: `modules/telemetry/rootline_ewelink_oauth_store.py`
 - Routes: `modules/telemetry/telemetry_routes.py`
 - Migration: `supabase/migrations/202608060001_create_rootline_ewelink_oauth_vault.sql`
+- Shared demand/availability: `modules/telemetry/rootline_ewelink_request_budget.py`
+  on the existing review-event rail; global transactional send fence, scoped
+  attempt accounting, app-wide holds, active proof reserves and optional
+  readiness admission. No new store, scheduler or positive evidence cache.
+- Qualification: `tests/test_rootline_ewelink_request_budget.py`,
+  `tests/test_rootline_ewelink_request_budget_postgres.py`,
+  `tests/test_rootline_ewelink_request_budget_workload.py`.
 - Tests: `tests/test_rootline_ewelink_oauth.py`
 - Governing boundary: `docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`
 - Authority is limited to owner-authenticated authorization start, a

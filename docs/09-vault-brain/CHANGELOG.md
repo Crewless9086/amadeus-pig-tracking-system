@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-10-31 - Shared eWeLink request admission
+
+Status: LOCAL_NOT_RELEASED.
+
+- Reuse existing eligibility before optional reads and the canonical event rail
+  for counted attempts, shared backoff, paced dispatch and active proof capacity.
+- Preserve fresh full-device proof, actual command deadlines, bounded OFF,
+  native fail-stop and exact unsent/ambiguous execution distinctions.
+- Bound optional manager readiness without reusing positive evidence or
+  stranding its fresh refresh; provider balance and live recovery remain Unknown.
+
 ## 2026-10-31 - Safely aborted borehole startup retirement
 
 Status: LOCAL_NOT_RELEASED.

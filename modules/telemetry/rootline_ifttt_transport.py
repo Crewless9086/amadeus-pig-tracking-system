@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import time
 from datetime import datetime, timezone, timedelta
 import os
 from urllib import parse as urllib_parse, request as urllib_request
@@ -256,7 +257,35 @@ class RootlineIFTTTTransport:
 
     def read_output_state(self, *, device_id, channel):
         snapshot = self._snapshot(device_id, channel)
-        return output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
+        output = output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
+        from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
+        duty = current_duty()
+        if duty.get("execution_id") and output.get("authoritative") is True and output.get("state") == "OFF":
+            try:
+                RequestBudget(self._request_environment()).release_after_off(
+                    duty["execution_id"], device_id=device_id, channel=channel,
+                    evidence={**output, "response_digest": output.get("evidence_id")})
+            except Exception:
+                # Cleanup failure never suppresses genuine shutdown evidence;
+                # its unused reserve remains conservatively charged on restart.
+                pass
+        return output
+
+    def _request_environment(self):
+        source = dict(self.environ)
+        if not source.get("DATABASE_URL"):
+            source["DATABASE_URL"] = getattr(self.token_store, "database_url", "")
+        return source
+
+    def prepare_execution_capacity(self, execution):
+        from modules.telemetry.rootline_ewelink_request_budget import RequestBudget
+        device_id = execution.get("device_id") or "1002851416"
+        channel = execution.get("channel") or 1
+        contract = self._binding(device_id, channel)
+        record = self.token_store.latest()
+        return RequestBudget(self._request_environment()).reserve_for_on(
+            execution_id=execution["execution_id"], device_id=device_id, channel=channel,
+            device_type=contract["device_type"], region=(record or {}).get("region"))
 
     def set_state(self, *, device_id, channel, state, idempotency_key):
         contract = self._binding(device_id, channel)
@@ -280,6 +309,25 @@ class RootlineIFTTTTransport:
                            "value3": str(channel)}).encode()
         req = urllib_request.Request(url, data=body,
             headers={"Content-Type": "application/json"}, method="POST")
+        if state == "ON":
+            from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
+            duty = current_duty()
+            try:
+                if (idempotency_key != str(duty.get("execution_id") or "") + ":ON"
+                        or not duty.get("claimed_at") or not duty.get("primary_stop_deadline")):
+                    raise ValueError("execution_binding_missing")
+                edge_deadline = RequestBudget(self._request_environment()).begin_on(
+                    execution_id=duty["execution_id"], permit=duty.get("provider_capacity_permit"),
+                    device_id=device_id, channel=channel, claimed_at=duty["claimed_at"],
+                    primary_stop_deadline=duty["primary_stop_deadline"])
+            except Exception:
+                return {"accepted_unambiguous": False,
+                    "status": "provider_capacity_not_available", "provider_command_attempted": False}
+        # No database work, provider probe or pacing remains beyond this check.
+        # A slow accounting acknowledgement cannot create a late ON command.
+        if state == "ON" and time.monotonic() >= edge_deadline:
+            return {"accepted_unambiguous": False, "status": "provider_command_deadline_reached",
+                "provider_command_attempted": False}
         try:
             with self.http_open(req, timeout=15) as response:
                 code = int(getattr(response, "status", response.getcode()))

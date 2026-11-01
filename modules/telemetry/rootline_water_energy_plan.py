@@ -857,7 +857,10 @@ def _read_managed_device_evidence(database_url, now):
                                'record_auxiliary_control_pulse_stopped', 'contain_auxiliary_device',
                                'mark_auxiliary_active', 'mark_active',
                                'record_completed', 'record_ambiguous_shutdown',
-                               'record_claim_recovery', 'contain_zone'))
+                               'record_claim_recovery', 'contain_zone',
+                               'record_fertilizer_sequence_completed',
+                               'record_execution_not_dispatched','record_auxiliary_on_outcome',
+                               'record_on_outcome'))
                     order by created_at,review_event_id""")
                 executions = [_json_object(row[0]) for row in cursor.fetchall()]
                 cursor.execute("""select review_json->'rootline_operational_intake'->'outcome'
@@ -870,6 +873,10 @@ def _read_managed_device_evidence(database_url, now):
     except Exception as exc:
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
     executions = [row for row in executions if isinstance(row, dict)]
+    from modules.telemetry.rootline_irrigation_execution_store import _verified_not_dispatched
+    not_dispatched = {row.get("execution_id") for row in executions
+        if _verified_not_dispatched(row, executions)}
+    executions = [row for row in executions if row.get("execution_id") not in not_dispatched]
     outcomes = [row for row in outcomes if isinstance(row, dict)]
     auxiliary = [row for row in executions if row.get("auxiliary_device_id") in {
         "FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}]
@@ -898,6 +905,12 @@ def _read_managed_device_evidence(database_url, now):
         batch.get("batch_generation"))
     history_complete_through = _as_za(now).isoformat()
     if context:
+        context["controller_sequence_completed"] = any(
+            row.get("action") == "record_fertilizer_sequence_completed"
+            and row.get("completed") is True
+            and all(row.get(key) == context.get(key) for key in (
+                "zone_execution_id", "job_id", "job_sha256", "segment_identity"))
+            for row in executions)
         # Retain the canonical read epoch; later device reads cannot renew it.
         context["fertilizer_history_complete_through"] = history_complete_through
         from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting

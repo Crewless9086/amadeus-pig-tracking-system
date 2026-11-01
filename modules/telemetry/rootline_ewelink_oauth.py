@@ -16,6 +16,7 @@ import secrets
 import string
 import urllib.parse
 import urllib.request
+import urllib.error
 from datetime import datetime, timedelta, timezone
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -42,6 +43,10 @@ REQUIRED_ENV = (
 
 class OAuthFailure(RuntimeError):
     """Sanitized failure whose message is safe for an HTTP response."""
+
+    def __init__(self, message, *, provider_failure=None):
+        super().__init__(message)
+        self.provider_failure = provider_failure
 
 
 def oauth_readiness(environ=None):
@@ -143,7 +148,19 @@ def complete_authorization(*, query, state_store, token_store, environ=None,
         raise OAuthFailure("oauth_nonce_binding_mismatch")
     if consumed.get("redirect_uri_digest") != _digest(str(source["EWELINK_OAUTH_REDIRECT_URI"])):
         raise OAuthFailure("oauth_redirect_binding_mismatch")
+    from modules.telemetry.rootline_ewelink_request_budget import snapshot_group
+    request_source = dict(source)
+    if not request_source.get("DATABASE_URL"):
+        request_source["DATABASE_URL"] = getattr(token_store, "database_url", "")
+    with snapshot_group(expected_device=str(source["EWELINK_EXPECTED_DEVICE_ID"]),
+            environ=request_source, region=region) as group:
+        result = _exchange_authorization(code=code, region=region, source=request_source,
+            token_store=token_store, http_request=http_request, now=now)
+        group["normalized_complete"] = True
+        return result
 
+
+def _exchange_authorization(*, code, region, source, token_store, http_request, now):
     request = http_request or _provider_request
     token_body = {"code": code, "redirectUrl": str(source["EWELINK_OAUTH_REDIRECT_URI"]),
                   "grantType": "authorization_code"}
@@ -492,20 +509,42 @@ def _provider_request(method, url, *, body=None, mode, token=None, environ):
         headers["Authorization"] = "Bearer " + token
     else:
         raise OAuthFailure("ewelink_provider_auth_mode_rejected")
-    try:
+    from modules.telemetry.rootline_ewelink_request_budget import (
+        RequestBudget, RequestBudgetUnavailable, OptionalObservationDeferred, classify_failure,
+    )
+    def send(timeout):
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         opener = urllib.request.build_opener(_RejectRedirects())
-        with opener.open(request, timeout=min(15, CODE_MAX_AGE_SECONDS)) as response:
-            if response.geturl() != url:
-                raise OAuthFailure("ewelink_provider_redirect_rejected")
-            packet = json.loads(response.read().decode("utf-8"))
-    except OAuthFailure:
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                if response.geturl() != url:
+                    raise OAuthFailure("ewelink_provider_redirect_rejected")
+                packet = json.loads(response.read(1048577).decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            failure = classify_failure(http_status=exc.code,
+                retry_after=exc.headers.get("Retry-After") if exc.headers else None)
+            raise OAuthFailure("ewelink_provider_" + failure["category"],
+                provider_failure=failure) from None
+        except OAuthFailure:
+            raise
+        except Exception:
+            raise OAuthFailure("ewelink_provider_request_failed",
+                provider_failure=classify_failure()) from None
+        if (not isinstance(packet, dict) or type(packet.get("error")) is not int
+                or packet["error"] != 0 or not isinstance(packet.get("data"), dict)):
+            failure = classify_failure(provider_code=packet.get("error")
+                if isinstance(packet, dict) else None)
+            raise OAuthFailure("ewelink_provider_" + failure["category"],
+                provider_failure=failure)
+        return packet["data"]
+    region = next(key for key, host in REGION_HOSTS.items()
+        if urllib.parse.urlparse(host).netloc == parsed.netloc)
+    try:
+        return RequestBudget(environ).dispatch(region=region, endpoint=parsed.path, send=send)
+    except OptionalObservationDeferred:
         raise
-    except Exception:
-        raise OAuthFailure("ewelink_provider_request_failed") from None
-    if not isinstance(packet, dict) or packet.get("error") != 0 or not isinstance(packet.get("data"), dict):
-        raise OAuthFailure("ewelink_provider_response_rejected")
-    return packet["data"]
+    except RequestBudgetUnavailable as exc:
+        raise OAuthFailure(str(exc)) from None
 
 
 def _enforce_provider_operation(method, parsed, body, mode, environ):

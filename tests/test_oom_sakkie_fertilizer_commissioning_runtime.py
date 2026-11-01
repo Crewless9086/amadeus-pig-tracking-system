@@ -346,14 +346,16 @@ def test_default_transport_reads_the_exact_registered_fertilizer_controller(monk
     assert injection["controller_safety_generation"] == "FERTILIZER-BASELINE"
     assert injection["physical_commissioning_generation"] is None
     assert injection["commissioned"] is False
+    from tests.test_rootline_fertilizer_auxiliary import injection_context
+    from tests.test_rootline_ifttt_transport import irrigation_output
+    context = injection_context(fertilizer_history_complete_through=NOW.isoformat(),
+        irrigation_stop_deadline=(NOW+timedelta(minutes=30)).isoformat())
+    context["zone_start_evidence"]["observed_at"] = (NOW-timedelta(minutes=10)).isoformat()
+    context["zone_output_evidence"] = {**irrigation_output(NOW),
+        "zone_execution_id":context["zone_execution_id"], "observed_at":NOW.isoformat()}
     denied = build_auxiliary_eligibility(
         task={"auxiliary_device_id": "FERTILIZER-INJECTION-CH1"}, safety=injection,
-        context={"plan_generation": "PLAN", "batch_generation": "BATCH",
-            "active_zone_ids": ["B12345"], "zone_execution_id": "ZONE",
-            "zone_start_evidence": {}, "zone_output_evidence": {},
-            "irrigation_stop_deadline": (NOW + timedelta(minutes=30)).isoformat(),
-            "completed_pulses": 0, "mixer_active": False,
-            "prior_shutdown_unverified": False},
+        context=context,
         flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED": True}, now=NOW)
     assert denied["status"] == "auxiliary_safety_unproven"
 

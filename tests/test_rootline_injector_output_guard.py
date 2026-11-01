@@ -251,7 +251,8 @@ def test_final_provider_read_preserves_full_programme_and_flush_time(completed_p
     else:
         outcome = next(row["on_outcome"] for action,row in original.rows if action == "record_auxiliary_on_outcome")
         assert outcome["provider_command_attempted"] is False
-        assert outcome["status"] == "auxiliary_edge_revalidation_failed"
+        assert outcome["status"] == ("auxiliary_irrigation_dependency_unproven" if delay > 30
+            else "auxiliary_edge_revalidation_failed")
         assert all((r["device_id"],r["channel"]) == ("100204d497",1) for r in transport.calls)
         run(store,transport,context=context,clock=lambda:current[0])
         assert all(r["state"] == "OFF" for r in transport.calls)
@@ -364,3 +365,46 @@ def test_final_edge_preserves_canonical_history_age_and_sast_day_on_replay(cross
     execute()
     assert len(original.consumed) == 1 and all(r["state"] == "OFF" for r in transport.calls)
     assert context["fertilizer_history_complete_through"] == cutoff.isoformat()
+
+
+def test_active_parent_read_crossing_own_120_second_deadline_stops_now():
+    current = [NOW]
+    store = aux.Store()
+    def after_read(number):
+        if number == 3:
+            current[0] = NOW+timedelta(seconds=121)
+    transport = PhysicalTransport([irrigation_snapshot(NOW)], after_read=after_read)
+    assert run(store, transport, clock=lambda:current[0])["status"] == "auxiliary_started"
+    current[0] = NOW+timedelta(seconds=119)
+    result = run(store, transport, now=current[0], clock=lambda:current[0])
+    assert result["status"] != "auxiliary_active"
+    assert [row["state"] for row in transport.calls] == ["ON", "OFF"]
+
+
+@pytest.mark.parametrize("injection_enabled", [True, False])
+def test_due_final_flush_reads_once_and_completed_sequence_stops_optional_reading(injection_enabled):
+    from modules.telemetry.rootline_auxiliary_management import injection_parent_read_due
+    context = aux.injection_context(completed_pulses=2,
+        prior_pulse_shutdown_evidence={"zone_execution_id":"ZONE-EXEC-1", "shutdown_verified":True,
+            "observed_at":(NOW-timedelta(seconds=599)).isoformat()})
+    assert not injection_parent_read_due(context, now=NOW)
+    assert injection_parent_read_due(context, now=NOW+timedelta(seconds=1))
+    assert not injection_parent_read_due({**context,"controller_sequence_completed":True},
+        now=NOW+timedelta(seconds=1))
+    reads=[]
+    class Reader:
+        def read_output_state(self, **kwargs):
+            reads.append(kwargs)
+            return irrigation_output(NOW+timedelta(seconds=1))
+    if not injection_enabled:
+        disabled = _refresh_active_irrigation_readback(
+            {"active_irrigation_context":aux.injection_context()}, Reader(), NOW,
+            only_when_due=True, injection_enabled=False, clock=lambda:NOW)
+        assert not reads and disabled["active_irrigation_context"]["zone_output_evidence"] == {}
+    before = _refresh_active_irrigation_readback({"active_irrigation_context":context}, Reader(), NOW,
+        only_when_due=True, injection_enabled=injection_enabled, clock=lambda:NOW)
+    assert not reads and before["active_irrigation_context"]["zone_output_evidence"] == {}
+    due = _refresh_active_irrigation_readback({"active_irrigation_context":context}, Reader(),
+        NOW+timedelta(seconds=1), only_when_due=True, injection_enabled=injection_enabled,
+        clock=lambda:NOW+timedelta(seconds=1))
+    assert len(reads) == 1 and due["active_irrigation_context"]["zone_output_evidence"]["state"] == "ON"

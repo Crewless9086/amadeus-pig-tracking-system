@@ -22,6 +22,9 @@ from modules.telemetry.rootline_irrigation_execution_store import (
 from modules.telemetry.rootline_device_registry import (
     commissioned_irrigation_contract, get_device_contract,
 )
+from modules.telemetry.rootline_ewelink_request_budget import (
+    bind_execution_transport, prepare_execution_capacity,
+)
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -34,7 +37,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  decision_reader, commissioning_reader, store, transport,
                                  notify, outcome_reader=lambda _identity: None,
                                  eligibility_revalidator=lambda _decision: None, now=None,
-                                 clock=None, active_only=False):
+                                 clock=None, active_only=False, active_weather_revalidator=None):
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
     try:
@@ -44,7 +47,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
             autonomous_on_enabled=False, durable_execution_truth_loaded=False,
             current_segment_consumed=False, degraded=True)
     if active:
-        result = _recover_or_observe(active, store, transport, notify, outcome_reader, now)
+        result = _recover_or_observe(active, store, bind_execution_transport(transport, active),
+            notify, outcome_reader, now, clock=clock,
+            active_weather_revalidator=active_weather_revalidator)
         return {**result, "active_execution_found": True} if active_only else result
     if active_only:
         # A safety tick must never turn a missing/disappearing execution into
@@ -117,6 +122,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "commissioning_id": commissioning_id,
         "state": "claimed", "on_attempts": 0, "off_attempts": 0,
     }
+    if not prepare_execution_capacity(transport, execution):
+        return _result("provider_capacity_unavailable", commands=0, messages=0)
+    transport = bind_execution_transport(transport, execution)
     try:
         claim = store("claim_before_on", execution)
     except RootlineExecutionStoreUnavailable:
@@ -126,6 +134,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     accepted = transport.set_state(device_id=execution["device_id"], channel=execution["channel"], state="ON",
                                    idempotency_key=execution["execution_id"] + ":ON")
     store("record_on_outcome", {**execution, "on_attempts": 1, "on_outcome": accepted})
+    if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
+        return _retire_unsent_execution(execution, store, transport)
     if accepted.get("accepted_unambiguous") is not True:
         # Never issue another ON. OFF recovery is safe even after ambiguous ON.
         store("contain_zone", {**execution, "state": "ambiguous",
@@ -181,7 +191,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         if ((selected and active.get("auxiliary_device_id") != selected)
                 or (expected_execution_id and active.get("execution_id") != expected_execution_id)):
             return _aux_result("auxiliary_recovery_identity_changed", state="Intervention")
-        return _recover_auxiliary(active, store, transport, now, stop_for_energy=stop_for_energy, clock=clock)
+        return _recover_auxiliary(active, store, bind_execution_transport(transport, active),
+            now, stop_for_energy=stop_for_energy, clock=clock)
     if expected_execution_id:
         return _aux_result("auxiliary_recovery_already_terminal")
     artifact = validate_auxiliary_eligibility(eligibility, now=now)
@@ -227,6 +238,9 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         return _aux_result("auxiliary_edge_revalidation_failed")
     execution.update(claimed_at=now.isoformat(), primary_stop_deadline=(
         now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat())
+    if not prepare_execution_capacity(transport, execution):
+        return _aux_result("provider_capacity_unavailable")
+    transport = bind_execution_transport(transport, execution)
     claim=store("claim_auxiliary_before_on",execution)
     if not isinstance(claim,dict) or claim.get("created") is not True:
         return _aux_result("auxiliary_claim_conflict")
@@ -241,9 +255,14 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
                 "provider_command_attempted": False}
         # A slow final provider read can consume programme/flush time or age
         # the original evidence. Revalidate at the actual command edge.
+        edge_now = _aware(clock())
+        if (not timedelta(0) <= edge_now-_timestamp(execution["claimed_at"]) <= timedelta(seconds=30)
+                or edge_now >= _timestamp(execution["primary_stop_deadline"])):
+            return {"accepted_unambiguous": False, "status": "auxiliary_start_window_expired",
+                "provider_command_attempted": False}
         if not revalidate_auxiliary_execution_edge(artifact,
                 current_context=current_context, current_safety=current_safety,
-                now=_aware(clock())):
+                now=edge_now):
             return {"accepted_unambiguous": False,
                 "status": "auxiliary_edge_revalidation_failed",
                 "provider_command_attempted": False}
@@ -252,6 +271,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
             idempotency_key=execution["execution_id"]+":ON")
     accepted=store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
     store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
+    if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
+        return _retire_unsent_execution(execution, store, transport)
     if accepted.get("accepted_unambiguous") is not True:
         recovery=_bounded_auxiliary_off(execution,store,transport)
         shutdown=_read_auxiliary_output(execution,transport)
@@ -307,6 +328,9 @@ def emergency_off_auxiliary_execution(*, store, transport,
             or active.get("channel") != expected.get("channel")):
         return _aux_result("auxiliary_emergency_off_binding_mismatch",
             state="Intervention", fertilizer_debt=True)
+    # Parent shutdown may arrive through a parent-bound transport. Attribute
+    # the injector's proof to its own unresolved reserve, never the parent's.
+    transport = bind_execution_transport(transport, active)
     recovery = _bounded_auxiliary_off(active, store, transport)
     shutdown = _read_auxiliary_output(active, transport)
     verified = (shutdown.get("authoritative") is True
@@ -326,6 +350,8 @@ def emergency_off_auxiliary_execution(*, store, transport,
 
 
 def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=None):
+    if active.get("on_not_dispatched") is True:
+        return _retire_unsent_execution(active, store, transport)
     deadline=_timestamp(active.get("primary_stop_deadline"))
     claimed_at=_timestamp(active.get("claimed_at"))
     if (active.get("state") in {"claimed","claimed_recovery_required"} and claimed_at is not None
@@ -339,8 +365,12 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
             "shutdown_verified":verified,"shutdown_evidence":shutdown})
         return _aux_result("auxiliary_restart_contained",commands=recovery["commands"],
             state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
-    if (active.get("device_type") == "fertilizer_injection_valve" and now < deadline
-            and not _injection_parent_still_on(active, store, transport, now, clock=clock)):
+    if active.get("device_type") == "fertilizer_injection_valve" and now < deadline:
+        parent_on = _injection_parent_still_on(active, store, transport, now, clock=clock)
+        now = _aware((clock or (lambda: datetime.now(timezone.utc)))())
+    else:
+        parent_on = True
+    if not parent_on and now < deadline:
         # A sibling mixer cannot hide a lost irrigation dependency. Stop only
         # this injector; its native deadline and the parent's OFF remain owned.
         return emergency_off_auxiliary_execution(store=store, transport=transport,
@@ -446,12 +476,18 @@ def _injection_parent_still_on(active, store, transport, now, *, clock=None):
                 or type(parent.get("channel")) is not int
                 or parent["channel"] != binding["channel"]):
             return False
-        output = transport.read_output_state(device_id=binding["device_id"],
+        own_deadline = _timestamp(active.get("primary_stop_deadline"))
+        claimed = _timestamp(active.get("claimed_at"))
+        read_deadline = min(deadline, own_deadline) if own_deadline else deadline
+        if active.get("state") == "claimed" and claimed:
+            read_deadline = min(read_deadline, claimed+timedelta(seconds=30))
+        bounded_transport = bind_execution_transport(transport, active, read_deadline=read_deadline)
+        output = bounded_transport.read_output_state(device_id=binding["device_id"],
             channel=binding["channel"])
         observed = _timestamp(output.get("retrieved_at"))
         checked_at = _aware(clock()) if clock else now
         from modules.telemetry.rootline_ifttt_transport import irrigation_dependency_verified
-        return (deadline > checked_at and observed is not None
+        return (read_deadline > checked_at and observed is not None
             and irrigation_dependency_verified(output, device_id=binding["device_id"],
                 channel=binding["channel"], now=checked_at))
     except Exception:
@@ -509,10 +545,17 @@ def _aux_result(status,*,commands=0,state=None,fertilizer_debt=False,
         "channels_3_4_authority":False,"automatic_on_retry":False,**extra}
 
 
-def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
-    if active.get("state") in {"claimed", "claimed_recovery_required"}:
+def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *,
+                        clock=None, active_weather_revalidator=None):
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    if active.get("on_not_dispatched") is True:
+        return _retire_unsent_execution(active, store, transport)
+    if (active.get("state") in {"claimed", "claimed_recovery_required"}
+            or (active.get("state") == "stopping" and active.get("reason") == "restart_after_pre_on_claim")):
         barrier=store("mark_stopping",{**active,"state":"stopping",
             "reason":"restart_after_pre_on_claim"})
+        if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
+            return _result("active_execution_already_terminal", commands=0, messages=0)
         if not isinstance(barrier,dict) or barrier.get("success") is not True:
             return _stopping_barrier_hold(active,store,notify)
         store("contain_zone", {**active, "state": "ambiguous",
@@ -541,6 +584,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
     if primary_deadline is None or native_deadline is None or primary_deadline > native_deadline:
         barrier=store("mark_stopping",{**active,"state":"stopping",
             "reason":"fail_stop_deadline_missing"})
+        if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
+            return _result("active_execution_already_terminal", commands=0, messages=0)
         if not isinstance(barrier,dict) or barrier.get("success") is not True:
             return _stopping_barrier_hold(active,store,notify)
         auxiliary_stop = _stop_bound_injection(active,store,transport)
@@ -555,16 +600,57 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         return _result("active_segment_contained", commands=recovery["commands"]+
                        auxiliary_stop["hardware_commands"],
                        messages=delivery["confirmed"], notification=delivery)
-    if now < primary_deadline:
-        return _result("active_segment_owned", commands=0, messages=0, execution=active)
-    barrier=store("mark_stopping",{**active,"state":"stopping",
-        "reason":"primary_deadline_reached"})
+    # A persisted stop is sticky, including before the original deadline.
+    # Due/recovery paths never wait for optional weather IO.
+    weather = active.get("weather_stop_evidence")
+    if now < primary_deadline and active.get("state") != "stopping":
+        if active_weather_revalidator is None:
+            return _result("active_segment_owned", commands=0, messages=0, execution=active)
+        read_started = _aware(clock())
+        try:
+            decision = active_weather_revalidator(active)
+        except Exception:
+            decision = None
+        now = _aware(clock())
+        valid = (isinstance(decision, dict)
+            and decision.get("contract_version") == "rootline_active_weather.v1"
+            and decision.get("evidence_sha256") == _digest({key:value for key,value in decision.items()
+                if key != "evidence_sha256"}))
+        if valid and decision.get("stop_required") is False:
+            if now < primary_deadline:
+                return _result("active_segment_owned", commands=0, messages=0, execution=active)
+        elif now < primary_deadline or read_started < primary_deadline:
+            if valid and decision.get("stop_required") is True:
+                weather = decision
+            else:
+                weather = {"contract_version": "rootline_active_weather.v1", "stop_required": True,
+                    "reason": "active_weather_unavailable", "assessed_at": now.isoformat(),
+                    "read_started_at": read_started.isoformat()}
+                weather["evidence_sha256"] = _digest(weather)
+    stop_reason = (active.get("reason") if active.get("state") == "stopping" else
+        weather.get("reason") if isinstance(weather, dict) else "primary_deadline_reached")
+    stopping = {**active, "state": "stopping", "reason": stop_reason}
+    if isinstance(weather, dict):
+        stopping.update(weather_stop_evidence=weather,
+            stop_requested_at=active.get("stop_requested_at") or now.isoformat())
+    barrier = store("mark_stopping", stopping)
+    if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
+        return _result("active_execution_already_terminal", commands=0, messages=0)
     if not isinstance(barrier,dict) or barrier.get("success") is not True:
         return _stopping_barrier_hold(active,store,notify)
+    # The locked store may return a stop committed by another worker first.
+    committed = barrier.get("execution")
+    if isinstance(committed, dict):
+        stopping = committed
+    weather = stopping.get("weather_stop_evidence")
+    stop_reason = stopping.get("reason")
+    if isinstance(weather, dict):
+        active = stopping
+    elif isinstance(barrier.get("active_execution"), dict):
+        active = barrier["active_execution"]
     auxiliary_stop = _stop_bound_injection(active,store,transport)
     blocked = _hold_parent_flow_if_injector_off_unverified(
-        active,auxiliary_stop,store,transport,notify,now,
-        "primary_deadline_reached")
+        active,auxiliary_stop,store,transport,notify,now,stop_reason)
     if blocked:
         return blocked
     recovery = _bounded_off(active, store, transport)
@@ -578,18 +664,32 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
                        messages=delivery["confirmed"], notification=delivery)
     shutdown_at = _timestamp(shutdown.get("retrieved_at"))
     completion_now = max(now, shutdown_at) if shutdown_at is not None else now
-    objective = _canonical_outcome(
-        outcome_reader(active["execution_id"]), active, shutdown, completion_now)
-    if not objective:
-        objective = _provider_bounded_outcome(active, shutdown, completion_now)
-    completed = {**active, "state": "Completed", "shutdown_verified": True,
-                 "objective_satisfied": objective.get("objective_satisfied") is True,
-                 "objective_evidence": objective,
-                 "shutdown_evidence": shutdown, "completed_at": completion_now.isoformat()}
+    if isinstance(weather, dict):
+        # Never advance the independent clock using a provider timestamp.
+        completion_now = _aware(clock())
+        completed = _weather_stopped_execution(active, shutdown, completion_now)
+        if not completed:
+            store("contain_zone", {**active, "shutdown_verified": False,
+                "reason": "weather_stop_shutdown_evidence_unproven"})
+            delivery = _notify(notify, store, "Intervention", {**active,
+                "reason": "weather_stop_shutdown_evidence_unproven", "shutdown_verified": False})
+            return _result("shutdown_unverified", commands=recovery["commands"]+
+                auxiliary_stop["hardware_commands"], messages=delivery["confirmed"],
+                notification=delivery)
+        objective = completed["objective_evidence"]
+    else:
+        objective = _canonical_outcome(
+            outcome_reader(active["execution_id"]), active, shutdown, completion_now)
+        if not objective:
+            objective = _provider_bounded_outcome(active, shutdown, completion_now)
+        completed = {**active, "state": "Completed", "shutdown_verified": True,
+                     "objective_satisfied": objective.get("objective_satisfied") is True,
+                     "objective_evidence": objective,
+                     "shutdown_evidence": shutdown, "completed_at": completion_now.isoformat()}
     # Preserve the historical execution record shape for pre-job actions.  Job
     # lifecycle fields are authoritative only when the claimed action carried
     # the governed, persisted job identity and duration contract.
-    if active.get("job_id"):
+    if active.get("job_id") and not isinstance(weather, dict):
         completed["verified_runtime_seconds"] = int(
             (objective.get("verified_runtime_minutes") or 0) * 60)
         # Shutdown readback proves this segment OFF.  A later fresh controller
@@ -603,20 +703,74 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
                 active["governed_executable_duration_seconds"]))
     recorded = store("record_completed", completed)
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
-        delivery = _notify(notify, store, "Intervention", {**completed,
-            "reason": "canonical_completion_persistence_unproven"})
-        return _result("completion_persistence_unproven", commands=recovery["commands"],
-                       messages=delivery["confirmed"], execution=completed,
-                       notification=delivery, writes_farm_data=False)
-    lifecycle = "Completed" if completed["objective_satisfied"] else "Intervention"
+        from modules.telemetry.rootline_irrigation_job_contract import validate_weather_stopped_execution
+        from modules.telemetry.rootline_irrigation_execution_store import _same_parent
+        canonical = (recorded or {}).get("canonical_execution") if isinstance(recorded, dict) else None
+        converged = (isinstance(weather, dict) and isinstance(canonical, dict)
+            and recorded.get("status") == "canonical_weather_stop_already_committed"
+            and canonical.get("action") == "record_completed"
+            and validate_weather_stopped_execution(canonical)
+            and _same_parent(stopping, canonical)
+            and all(canonical.get(key) == stopping.get(key)
+                for key in ("weather_stop_evidence", "stop_requested_at", "reason")))
+        if converged:
+            completed = canonical
+        else:
+            delivery = _notify(notify, store, "Intervention", {**completed,
+                "reason": "canonical_completion_persistence_unproven"})
+            return _result("completion_persistence_unproven", commands=recovery["commands"],
+                           messages=delivery["confirmed"], execution=completed,
+                           notification=delivery, writes_farm_data=False)
+    lifecycle = ("Stopped" if isinstance(weather, dict) else
+        "Completed" if completed["objective_satisfied"] else "Intervention")
     if lifecycle == "Intervention":
         completed["reason"] = "shutdown_verified_outcome_unconfirmed"
     delivery = _notify(notify, store, lifecycle, completed)
-    return _result("segment_completed" if completed["objective_satisfied"]
+    return _result("segment_stopped_for_weather" if isinstance(weather, dict) else
+                   "segment_completed" if completed["objective_satisfied"]
                    else "segment_stopped_outcome_unconfirmed",
                    commands=recovery["commands"]+auxiliary_stop["hardware_commands"],
                    messages=delivery["confirmed"], execution=completed,
                    notification=delivery, writes_farm_data=True)
+
+
+def _weather_stopped_execution(active, shutdown, now):
+    """Record safe OFF and an observed interval, never unmeasured delivery."""
+    from modules.telemetry.rootline_irrigation_job_contract import (
+        WEATHER_STOP_CONTRACT, validate_weather_stopped_execution, weather_stop_digest,
+        _stop_time,
+    )
+    start = active.get("start_evidence") or {}
+    start = start if isinstance(start, dict) else {}
+    started = _stop_time(start.get("retrieved_at") or start.get("observed_at"))
+    stopped = _stop_time(shutdown.get("retrieved_at") or shutdown.get("observed_at"))
+    claimed = _stop_time(active.get("claimed_at"))
+    requested = _stop_time(active.get("stop_requested_at"))
+    valid_start = (start.get("authoritative") is True and start.get("state") == "ON"
+        and bool(start.get("evidence_id")) and None not in (claimed, started, requested)
+        and all(key not in start or start[key] == active.get(key)
+            for key in ("execution_id", "zone_id", "device_id", "channel"))
+        and claimed <= started <= requested)
+    prior = int(active.get("cumulative_verified_runtime_seconds") or 0)
+    total = int(active.get("governed_executable_duration_seconds") or 0)
+    completed = {**active, "state": "Stopped", "terminal_contract": WEATHER_STOP_CONTRACT,
+        "shutdown_verified": True, "shutdown_evidence": shutdown,
+        "completed_at": now.isoformat(), "objective_satisfied": False, "job_completed": False,
+        "verified_runtime_seconds": 0, "cumulative_verified_runtime_seconds": prior,
+        "remaining_seconds": max(0, total-prior) if active.get("job_id") else None,
+        "rearm_readback_off": False,
+        "objective_evidence": {"objective_satisfied": False, "verified_runtime_minutes": None,
+            "physical_flow_confirmation": "Unavailable", "delivered_volume": "Unavailable"},
+        "partial_observation": {
+            "start_observed_at": started.isoformat() if valid_start else None,
+            "off_observed_at": stopped.isoformat() if stopped else None,
+            "observed_interval_seconds": (stopped-started).total_seconds()
+                if valid_start and stopped is not None else None,
+            "continuous_runtime_verified": False, "physical_delivery": "Unknown"},
+        "next_action_owner": "ROOTLINE", "next_trigger": "normal_automatic_reassessment",
+        "fertilizer_flush_completion": "Unproven"}
+    completed["terminal_sha256"] = weather_stop_digest(completed)
+    return completed if validate_weather_stopped_execution(completed) else {}
 
 
 def _stop_bound_injection(parent,store,transport):
@@ -702,6 +856,27 @@ def _stopping_barrier_hold(active,store,notify):
     return _result("canonical_stopping_barrier_unproven",commands=0,
         messages=delivery["confirmed"],notification=delivery,
         execution=active,writes_farm_data=False,degraded=True)
+
+
+def _retire_unsent_execution(execution, store, transport):
+    device = execution.get("device_id") or "1002851416"
+    channel = execution.get("channel") or 1
+    if execution.get("auxiliary_device_id") in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
+        commands = _bounded_auxiliary_off(execution, store, transport)["commands"]
+    elif device == "1002851416":
+        from modules.telemetry.rootline_borehole_commissioning import _stop_borehole
+        commands = _stop_borehole(execution, store, transport)
+    else:
+        commands = _bounded_off(execution, store, transport)["commands"]
+    def read():
+        return transport.read_output_state(device_id=device, channel=channel)
+    result = store("retire_not_dispatched_execution", {**execution, "read_final_off": read})
+    proven = (isinstance(result, dict) and result.get("success") is True
+        and (result.get("execution") or {}).get("not_dispatched_verified") is True)
+    return {"success": True, "status": "execution_not_dispatched" if proven else "no_send_off_proof_pending",
+        "hardware_commands": commands, "telegram_messages": 0, "writes_farm_data": bool(proven and result.get("created")),
+        "notify_owner": False, "owner_action_required": False, "execution": execution,
+        "provider_command_attempted": False, "automatic_on_retry": False}
 
 
 def _bounded_off(execution, store, transport):

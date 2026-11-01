@@ -443,8 +443,10 @@ def test_managed_borehole_uses_real_transport_safety_and_command_contract(db,con
             'value2':'1002851416','value3':'1'}
         target['output_state']='ON'
         return Response()
-    transport=RootlineIFTTTTransport(token_store=object(),
-        environ={'ROOTLINE_BOREHOLE_ENABLED':'true','ROOTLINE_IFTTT_MAKER_KEY':'synthetic-only'},
+    from types import SimpleNamespace
+    transport=RootlineIFTTTTransport(token_store=SimpleNamespace(latest=lambda:{'region':'eu'}),
+        environ={'ROOTLINE_BOREHOLE_ENABLED':'true','ROOTLINE_IFTTT_MAKER_KEY':'synthetic-only',
+            'EWELINK_CLIENT_ID':'synthetic-managed-borehole','DATABASE_URL':db},
         http_open=no_network_open,readback=lambda **_:deepcopy(snapshot))
     if configuration!='wrong_device':
         safety=transport.read_safety_configuration(device_id='1002851416',channel=1)

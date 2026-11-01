@@ -23,7 +23,7 @@ CONTRACT_VERSION = "rootline_mixer_readiness_observer.v1"
 
 
 def collect_mixer_readiness(*, now: datetime, token_store=None, readback=None,
-                            execution_store=None, environ=None):
+                            execution_store=None, environ=None, _observation_purpose="mixer_readiness"):
     """Return one stable ROOTLINE manager candidate from current provider truth."""
     from modules.telemetry.rootline_ewelink_oauth_store import PostgresOAuthTokenStore
     from modules.telemetry.rootline_ewelink_readback import read_registered_device
@@ -36,12 +36,22 @@ def collect_mixer_readiness(*, now: datetime, token_store=None, readback=None,
     if not _contract_is_exact(contract):
         raise ValueError("rootline_mixer_registry_binding_invalid")
     reader = readback or read_registered_device
-    provider = reader(
-        DEVICE_ID,
-        token_store=token_store or PostgresOAuthTokenStore(),
-        environ=environ,
-        now=observed_at,
-    )
+    from modules.telemetry.rootline_ewelink_request_budget import (
+        optional_observation, OptionalObservationDeferred)
+    try:
+        with optional_observation(_observation_purpose):
+            provider = reader(
+                DEVICE_ID,
+                token_store=token_store or PostgresOAuthTokenStore(),
+                environ=environ,
+                now=observed_at,
+            )
+    except OptionalObservationDeferred:
+        if _observation_purpose != "mixer_readiness":
+            raise
+        # The shared ledger records the suppression and next eligible time.
+        # No new equipment fact or owner exception exists for an omitted read.
+        return []
     ledger = execution_store or rootline_irrigation_execution_store
     active = ledger("load_active_auxiliary", DEVICE_IDENTITY)
     channel = _channel(provider)

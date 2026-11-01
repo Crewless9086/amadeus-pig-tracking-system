@@ -49,6 +49,51 @@ independent protected profiles until their own commissioning and activation
 proof exists. A terminal may repair, test, deploy and observe these rails but
 must never substitute for the deployed ROOTLINE actor or physical outcome.
 
+## Shared eWeLink demand and availability
+
+Existing provider-independent eligibility runs before optional device reads.
+Every required proof still uses the fresh authenticated ownership, inventory and
+status GETs; no positive evidence cache may satisfy command, active-injector,
+abort, final-flush or shutdown obligations. Reassess original evidence at the
+post-read clock, and check claim/primary deadlines again at the actual ON edge.
+
+All participating read/OAuth callers share the existing append-only review-event
+rail. Conservatively charge possible attempts before dispatch, including failed
+and ambiguous requests, with a local 40,000-attempt rolling 31-day cap per app and
+region. Apply a separate global one-second completed-request pace and 250-attempt
+rolling five-minute ceiling. Holds are app-wide across token/region changes.
+A transaction-held sender fence must remain compatible with transaction pooling;
+it cannot guarantee fencing of unrelated clients or traffic outside this rail.
+
+JSON provider error 412 permits one due full probe per hour. Transient failures
+back off 1/5/15/60 minutes, with bounded Retry-After. Genuine token expiry may
+rotate within that same probe; failure itself cannot trigger refresh. Only a
+complete bound normalized snapshot restores availability. Locally counted usage
+starts at its recorded coverage epoch; prior/provider usage, entitlement,
+remaining balance and external-client coverage remain Unknown. Unknown balance
+alone creates neither a permanent owner gate nor a 31-day start embargo.
+
+Reserve active proof capacity before canonical execution claim. Other callers
+cannot spend it; attempted/unresolved reserves require fresh exact OFF before
+release. Before request admission, discard only expired never-attempted reserves.
+A missed OFF cleanup may release accounting capacity from the exact original
+canonical claim, permit and originally fresh terminal OFF proof, with bounded
+chronology, identity and contradiction checks. This never refreshes present
+device truth or alters physical/business completion; unresolved and ambiguous
+duties remain reserved, and later separate executions retain their own reserve.
+Exhausted attempted duties may replenish one four-attempt proof group
+hourly within the same limits, preserving the obligation and never reviving ON.
+A proven unsent claim may retire only from its exact canonical claim/outcome and
+fresh locked OFF proof; preserve history, and never refund an uncertain ON.
+
+Optional mixer readiness collection and its separate fresh manager refresh each
+admit at most one full observation per 30 minutes across participating workers.
+Normal suppression records zero sends and its next eligibility; the existing
+manager cadence waits without manufacturing an owner exception. It reuses no
+positive snapshot. Mandatory execution/safety reads retain their own admission.
+IFTTT OFF and native fail-stop never wait for quota, a probe or budget persistence;
+unverifiable shutdown stays Unknown and unavailable for reuse.
+
 ## Business Outcome
 
 ROOTLINE is the farm's eventual water, irrigation, weather, power, and

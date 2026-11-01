@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from unittest import mock
+import pytest
 
 from modules.telemetry.rootline_execution_runtime import (
     _bc_authority_policy_proven, _current, _persist_stale_parent_resolutions,
@@ -9,6 +10,15 @@ from modules.telemetry.rootline_execution_runtime import (
 from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
 
 NOW=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def current_dry_active_weather(monkeypatch):
+    # Ongoing-run regressions now explicitly provide canonical local weather.
+    # Missing/unavailable active evidence has separate fail-closed coverage.
+    from tests.test_rootline_active_weather_stop import dry_weather_reader
+    monkeypatch.setattr("modules.telemetry.rootline_execution_runtime.read_active_irrigation_weather",
+        dry_weather_reader)
 
 
 def test_stale_parent_resolution_is_digest_bound_and_zero_control():
@@ -214,6 +224,7 @@ def test_eligible_artifact_without_canonical_database_fails_closed_before_on():
                     return_value=plan()):
         result=run_rootline_execution_cycle(notify=lambda *_:None,
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
+            clock=lambda:NOW,
             token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:controller(),owner_user_id="42",chat_id="42",
             observation_store=observation_store)
@@ -262,7 +273,7 @@ def test_run_to_technical_block_notifies_once_and_replay_is_silent():
         notices.append((state,payload)); return {"provider_delivery_confirmed":True,
             "provider_message_id":"BLOCK-1"}
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
-        args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,
+        args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
             store=store,token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",
             next_reassessment_at="2026-08-08T20:15:00+02:00",observation_store=observation_store)
@@ -286,7 +297,7 @@ def test_blocked_notification_failure_is_durable_and_never_retried():
             return response
         loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
         with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
-            args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,
+            args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
                 store=store,token_store=object(),transport=transport,evidence_loader=loader,
                 readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
             first=run_rootline_execution_cycle(**args); replay=run_rootline_execution_cycle(**args)
@@ -308,7 +319,7 @@ def test_blocked_notification_outcome_store_failure_is_unproven_and_not_retried(
         calls.append(1); return {"provider_delivery_confirmed":True,"provider_message_id":"BLOCK-1"}
     loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
-        args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,
+        args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
             store=store,token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
         first=run_rootline_execution_cycle(**args); replay=run_rootline_execution_cycle(**args)
@@ -320,13 +331,13 @@ def test_expired_artifact_at_real_preclaim_time_creates_no_on():
     store=Store(); transport=Transport()
     later=NOW+timedelta(minutes=16)
     value=run(store,transport,clock=lambda:later)
-    assert value["status"]=="execution_eligibility_changed"
+    assert value["status"]=="controller_safety_not_dispatchable"
     assert transport.calls==[]
 
 
 def test_real_advancing_clock_accepts_fresh_revalidation_before_claim():
     store=Store(); transport=Transport()
-    instants=iter((NOW+timedelta(seconds=1),NOW+timedelta(seconds=2)))
+    instants=iter(NOW+timedelta(seconds=second) for second in range(1,20))
     value=run(store,transport,clock=lambda:next(instants))
     assert value["status"]=="segment_started"
     assert [call["state"] for call in transport.calls]==["ON"]
@@ -335,7 +346,7 @@ def test_real_advancing_clock_accepts_fresh_revalidation_before_claim():
 def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_governed_identity():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
-        expected=_current(loader,lambda **_kwargs:controller("PREVIEW-RECEIPT"),object(),{},"db",NOW,store)["artifact"]
+        expected=_current(loader,lambda **_kwargs:controller("PREVIEW-RECEIPT"),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
           evidence_loader=loader,readback=lambda **_kwargs:controller("CURRENT-RECEIPT"),clock=lambda:NOW,
@@ -354,7 +365,7 @@ def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_govern
 def test_protected_segment_rejects_changed_stable_job_identity_with_zero_control():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
-        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
+        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         expected={**expected,"job_sha256":"wrong"}
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
@@ -415,7 +426,7 @@ def test_protected_runner_contains_unavailable_canonical_history_before_provider
 def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
-        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
+        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
           evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
@@ -428,7 +439,7 @@ def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation()
 def test_protected_restart_requires_full_claim_binding_and_never_reissues_on():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
-        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
+        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         first=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
           evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
@@ -444,3 +455,32 @@ def test_protected_restart_requires_full_claim_binding_and_never_reissues_on():
     assert first["status"]=="segment_started" and replay["status"]=="active_segment_owned"
     assert mismatch["status"]=="active_execution_conflicts_with_protected_claim"
     assert [call["state"] for call in transport.calls]==["ON"]
+
+
+def test_weather_ages_past_thirty_minutes_during_provider_read():
+    sampled = evidence()
+    sampled["weather"]["observed_at"] = (NOW-timedelta(minutes=29, seconds=59)).isoformat()
+    current = [NOW]
+    def read(**kwargs):
+        current[0] += timedelta(seconds=2)
+        return {**controller(), "trusted_receipt_at": current[0].isoformat()}
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        result = _current(lambda **_: (sampled,"2026-08-08",NOW), read, object(), {}, "db", NOW,
+            Store(), clock=lambda:current[0])
+    assert result["artifact"]["eligible"] is False
+    assert result["artifact"]["status"] == "observed_weather_not_fresh_and_dry"
+    assert sampled["weather"]["observed_at"] == (NOW-timedelta(minutes=29, seconds=59)).isoformat()
+
+
+def test_no_dispatchable_work_never_requests_optional_controller_evidence():
+    for task in ({}, {"zone_decision":"Hold"}, {"weekly_obligation":{"status":"available","delivery_debt_days":0}}):
+        planned = plan()
+        if not task:
+            planned["candidate_tasks"] = []
+        else:
+            planned["candidate_tasks"][0].update(task)
+        with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=planned):
+            result = _current(lambda **_: (evidence(),"2026-08-08",NOW),
+                lambda **_: (_ for _ in ()).throw(AssertionError("unnecessary provider read")),
+                object(), {}, "db", NOW, Store(), clock=lambda:NOW)
+        assert result["artifact"]["eligible"] is False

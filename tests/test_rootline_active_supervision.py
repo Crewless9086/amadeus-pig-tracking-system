@@ -92,8 +92,10 @@ class Transport:
 
 
 def supervisor(store, transport):
+    from tests.test_rootline_active_weather_stop import dry_weather_reader
     return partial(supervise_rootline_active_execution, store=store,
-        transport=transport, token_store=object())
+        transport=transport, token_store=object(), clock=lambda: NOW,
+        active_weather_reader=dry_weather_reader)
 
 
 def run_supervisor(store, transport, **kwargs):

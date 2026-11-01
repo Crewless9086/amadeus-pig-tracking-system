@@ -48,7 +48,9 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
                            allow_historical=not revalidating and not execution)
     failed = (action in {"contain_zone", "record_ambiguous_shutdown"}
               or execution_state in {"failed", "ambiguous", "contained"})
-    terminal = action == "record_completed" or execution_state == "completed"
+    from modules.telemetry.rootline_irrigation_job_contract import validate_weather_stopped_execution
+    weather_stopped = action == "record_completed" and validate_weather_stopped_execution(dict(execution))
+    terminal = action == "record_completed" or execution_state in {"completed", "stopped"}
     closed = (terminal or action == "record_job_resolution"
               or _claim_recovery_closed(execution, zone_id=zone_id, evidence_cutoff=evidence_cutoff))
     started = not closed and (action == "mark_active"
@@ -70,6 +72,11 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
         state, reason, next_action = "Held", (
             "An unresolved contained or stale parent must be reconciled; "
             "prior shutdown or completion does not resolve its remaining objective."), parent_next_action
+    elif weather_stopped:
+        state, reason, next_action = "Held", _reason(execution), (
+            "Controller OFF is verified; the watering objective remains incomplete. "
+            "ROOTLINE will reassess current weather and need on normal automatic cycles, "
+            "using only an unused original segment or the next permitted normal plan.")
     elif blocked:
         state, reason, next_action = "Held", _reason(recommendation), "ROOTLINE must reassess on the declared evidence or due-time trigger."
     elif revalidating and terminal:

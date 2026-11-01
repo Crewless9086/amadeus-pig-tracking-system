@@ -171,3 +171,12 @@ def test_readiness_selects_mixer_under_independent_injector_operation(mixer_acti
     assert calls == [("load_active_auxiliary", "FERTILIZER-MIXER-CH2")]
     assert row["unknowns"] == (["no_conflicting_active_execution"] if mixer_active else [])
     assert row["equipment_evidence"]["provider_readiness_proven"] is (not mixer_active)
+
+
+def test_shared_optional_suppression_creates_no_equipment_or_owner_exception():
+    from modules.telemetry.rootline_ewelink_request_budget import OptionalObservationDeferred
+    from modules.telemetry.rootline_mixer_readiness_observer import collect_mixer_readiness
+    def suppressed(*a, **kw):
+        raise OptionalObservationDeferred("2026-10-31T18:15:00Z")
+    assert collect_mixer_readiness(now=datetime(2026,10,31,18,tzinfo=timezone.utc),
+        token_store=object(), readback=suppressed, execution_store=lambda *a: None) == []
