@@ -136,7 +136,9 @@ def _attach_water_credits(history):
 
 def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     """Project incomplete immutable jobs without treating a segment as a day close."""
-    from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
+    from modules.telemetry.rootline_irrigation_job_contract import (
+        project_next_segment, validate_weather_stopped_execution,
+    )
     from modules.telemetry.rootline_irrigation_execution_store import _verified_not_dispatched
     retired = {row.get("execution_id") for row in rows or ()
         if isinstance(row, dict) and _verified_not_dispatched(row, rows)}
@@ -155,6 +157,7 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     by_zone = {}
     stale_by_zone = {zone: [] for zone in ZONES}
     contained_by_zone = {zone: [] for zone in ZONES}
+    deferred_by_zone = {zone: [] for zone in ZONES}
     cutoff = _timestamp(history.get("snapshot_cutoff"))
     current_date = cutoff.astimezone(SAST).date().isoformat() if cutoff else None
     for events in grouped.values():
@@ -162,8 +165,7 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
             if row.get("action") == "record_eligibility" and row.get("job_sha256")), None)
         if not authority:
             continue
-        if any(_valid_terminal_defer(row) for row in events):
-            continue
+        terminal_defer = next((row for row in events if _valid_terminal_defer(row)), None)
         job = {"contract_version": "rootline_irrigation_job.v1",
             "job_id": authority.get("job_id"), "job_sha256": authority.get("job_sha256"),
             "zone_id": authority.get("zone_id"), "operating_date": authority.get("operating_date"),
@@ -173,6 +175,24 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
             "maximum_segment_seconds": 3599,
             "expected_segment_count": authority.get("expected_segment_count"),
             "plan_identity": authority.get("plan_generation")}
+        if terminal_defer is not None:
+            if terminal_defer.get("reason") == "weather_stop_original_segments_exhausted":
+                zone = str(job.get("zone_id") or "")
+                candidate = {"job": job, "projection": {
+                    "status": "job_deferred", "command_authority": False,
+                    "current_segment": terminal_defer.get("current_segment"),
+                    "cumulative_verified_runtime_seconds": terminal_defer.get("cumulative_verified_runtime_seconds"),
+                    "remaining_seconds": terminal_defer.get("remaining_seconds")},
+                    "remaining_seconds": terminal_defer.get("remaining_seconds"),
+                    "resolution": terminal_defer, "next_action_owner": "ROOTLINE",
+                    "next_trigger": "next_permitted_normal_irrigation_plan"}
+                if zone in ZONES:
+                    deferred_by_zone[zone].append(candidate)
+                    # Today's consumed budget blocks a fresh same-day parent.
+                    # Tomorrow it is evidence, not an unresolved-parent latch.
+                    if job.get("operating_date") == current_date:
+                        by_zone[zone] = candidate
+            continue
         try:
             projection = project_next_segment(job, events, rearm_readback_off=True)
         except Exception:
@@ -188,8 +208,13 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
             if row.get("action") == "record_completed"
             and row.get("state") == "Completed"
             and row.get("shutdown_verified") is True]
+        stopped_segments = [row for row in events
+            if row.get("action") == "record_completed" and row.get("state") == "Stopped"
+            and validate_weather_stopped_execution(row)]
+        terminal_ids = {row.get("execution_id") for row in stopped_segments}
         contained = [row for row in events if row.get("action") in {
-            "contain_zone", "record_ambiguous_shutdown"}]
+            "contain_zone", "record_ambiguous_shutdown"}
+            and row.get("execution_id") not in terminal_ids]
         if contained:
             zone = str(job.get("zone_id") or "")
             contained_ids = {str(row.get("execution_id") or "") for row in contained}
@@ -214,17 +239,22 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
                     "remaining_seconds": prior.get("remaining_seconds"),
                     "resolution_reason": "segment_contained_without_verified_shutdown_or_runtime"})
             continue
-        # A never-started eligibility is not a continuing parent. Continuity
-        # begins only after a canonical segment completed and proved shutdown.
-        if not completed_segments:
+        # Safe stopped slots consume authority without contributing full credit.
+        # A never-started eligibility still cannot create a continuing parent.
+        if not completed_segments and not stopped_segments:
             continue
         zone = str(job.get("zone_id") or "")
         candidate = {"job": job, "projection": projection,
             "completed_segment_count": len(completed_segments),
+            "stopped_segment_count": len(stopped_segments),
+            "consumed_segment_count": len(completed_segments) + len(stopped_segments),
             "remaining_seconds": projection.get("remaining_seconds")}
+        if stopped_segments:
+            candidate.update(stopped_executions=stopped_segments, next_action_owner="ROOTLINE",
+                next_trigger="normal_automatic_reassessment")
         if zone in ZONES:
             continuation = _cross_midnight_continuation(
-                job, completed_segments, cutoff, current_date)
+                job, completed_segments if not stopped_segments else [], cutoff, current_date)
             if current_date and job.get("operating_date") != current_date and not continuation:
                 stale_by_zone[zone].append(candidate)
                 continue
@@ -245,6 +275,9 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     for zone, values in contained_by_zone.items():
         if values:
             history["zones"][zone]["contained_parent_jobs"] = values
+    for zone, values in deferred_by_zone.items():
+        if values:
+            history["zones"][zone]["deferred_parent_jobs"] = values
     _attribute_parent_operating_dates(history, rows, completed_execution_ids=completed_execution_ids)
 
 

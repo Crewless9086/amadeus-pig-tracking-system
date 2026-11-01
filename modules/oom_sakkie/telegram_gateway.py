@@ -1157,6 +1157,18 @@ def _rootline_irrigation_completion_summary(zone, execution):
     return "\n".join(lines)
 
 
+def _rootline_irrigation_stopped_summary(zone, execution):
+    observed = _controller_reading(execution, "shutdown_evidence", "OFF")
+    reason = ("rain arrived" if execution.get("reason") == "active_weather_rain_hold"
+        else "current weather evidence could not safely support continued watering")
+    lines = ["<b>IRRIGATION STOPPED</b>", "", f"{zone}: stopped because {reason}."]
+    if observed:
+        lines.append(f"Controller OFF verified at {observed}.")
+    lines.append("The watering objective remains incomplete. Actual watering duration and delivered volume are unverified.")
+    lines.append("ROOTLINE will reassess weather and need automatically, using only the next permitted irrigation opportunity. No owner action is required.")
+    return "\n".join(lines)
+
+
 def _canonical_rootline_plan_receipt(current):
     """Bind scheduled work to the already-current Water & Energy Plan rail."""
     value = current if isinstance(current, dict) else {}
@@ -1314,6 +1326,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             zone = str(execution.get("zone_id") or "irrigation")
             answer = ({"Started": _rootline_irrigation_start_summary(zone, execution),
                        "Completed": _rootline_irrigation_completion_summary(zone, execution),
+                       "Stopped": _rootline_irrigation_stopped_summary(zone, execution),
                        "Blocked": (f"<b>IRRIGATION WAITING</b>\n\n{zone} is ready for water but cannot start: "
                                    f"{execution.get('blocker')}. No owner action is currently required. "
                                    f"ROOTLINE will reassess at {execution.get('next_reassessment_at') or 'the next automatic check'}."),

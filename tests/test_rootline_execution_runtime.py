@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from unittest import mock
+import pytest
 
 from modules.telemetry.rootline_execution_runtime import (
     _bc_authority_policy_proven, _current, _persist_stale_parent_resolutions,
@@ -9,6 +10,15 @@ from modules.telemetry.rootline_execution_runtime import (
 from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
 
 NOW=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def current_dry_active_weather(monkeypatch):
+    # Ongoing-run regressions now explicitly provide canonical local weather.
+    # Missing/unavailable active evidence has separate fail-closed coverage.
+    from tests.test_rootline_active_weather_stop import dry_weather_reader
+    monkeypatch.setattr("modules.telemetry.rootline_execution_runtime.read_active_irrigation_weather",
+        dry_weather_reader)
 
 
 def test_stale_parent_resolution_is_digest_bound_and_zero_control():

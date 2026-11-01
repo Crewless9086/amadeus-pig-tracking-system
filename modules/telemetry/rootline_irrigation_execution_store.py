@@ -58,6 +58,8 @@ def rootline_irrigation_execution_store(action, payload):
         return _bounded_claim(action, _claim_eskom_command, body)
     if action == "record_eskom_completed":
         return _complete_eskom_command(body)
+    if action == "mark_stopping":
+        return _mark_parent_stopping(body)
     if action == "record_completed":
         return _record_parent_terminal_atomic(action, body)
     if action == "record_job_resolution" and body.get("resolution") == "Cancelled":
@@ -107,6 +109,91 @@ class _AtomicTerminalWriteFailed(RuntimeError):
     pass
 
 
+_PARENT_IMMUTABLE = ("execution_id", "zone_id", "device_id", "channel", "job_id",
+    "job_sha256", "segment_number", "segment_identity", "claimed_at",
+    "primary_stop_deadline", "native_fail_stop_deadline", "planned_runtime_seconds",
+    "on_attempts", "start_evidence", "cumulative_verified_runtime_seconds",
+    "eligibility_id", "eligibility_sha256", "consumption_key", "operating_date",
+    "expected_segment_count", "requested_total_duration_seconds", "requested_total_duration_minutes",
+    "governed_executable_duration_seconds", "segment_requested_seconds", "commissioning_id",
+    "controller_safety_generation")
+
+
+def _same_parent(left, right):
+    return all(left.get(key) == right.get(key) for key in _PARENT_IMMUTABLE)
+
+
+def _mark_parent_stopping(body):
+    """First locked stop wins; stale ticks cannot change its reason or deadlines."""
+    from modules.oom_sakkie.bounded_postgres_read import (
+        connect_bounded_rootline_postgres, is_database_unavailable,
+    )
+    try:
+        with connect_bounded_rootline_postgres(
+                database_url=os.environ.get("DATABASE_URL"), read_only=False) as connection:
+            connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            connection.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            rows = [row[0] for row in connection.execute("""select review_json->'rootline_execution'
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s and review_json->'rootline_execution'->>'execution_id'=%s
+                order by created_at,review_event_id""", (EVENT_SOURCE, body.get("execution_id"))).fetchall()]
+            if any(_terminal_closes_active(row) for row in rows):
+                return {"success": True, "created": False, "status": "parent_already_terminal"}
+            active = next((row for row in reversed(rows) if row.get("action") == "mark_active"), None)
+            if (active is None and body.get("reason") == "restart_after_pre_on_claim"
+                    and body.get("weather_stop_evidence") is None):
+                active = next((row for row in reversed(rows) if row.get("action") == "claim_before_on"), None)
+            if active is None or not _same_parent(active, body):
+                return {"success": False, "created": False, "status": "canonical_active_parent_changed"}
+            prior = next((row for row in rows if row.get("action") == "mark_stopping"), None)
+            if prior is not None:
+                if not _same_parent(active, prior):
+                    return {"success": False, "created": False, "status": "canonical_stopping_parent_changed"}
+                return {"success": True, "created": False, "execution": prior, "active_execution": active}
+            result = _write_terminal_review(connection, "mark_stopping", body)
+            return {**result, "execution": result["resolution"], "active_execution": active}
+    except _AtomicTerminalWriteFailed as exc:
+        return {"success": False, "created": False, "status": str(exc)}
+    except Exception as exc:
+        if is_database_unavailable(exc):
+            raise RootlineExecutionStoreUnavailable("mark_stopping") from exc
+        raise
+
+
+def _weather_terminal_resolution(body, events):
+    """Close only the original exhausted segment budget, preserving unmet need."""
+    from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
+    if not body.get("job_id") or not any(row.get("state") == "Stopped" for row in events):
+        return None
+    from modules.telemetry.rootline_irrigation_history import PARENT_ACCOUNTING_ACTIONS
+    events = [row for row in events if row.get("action") in PARENT_ACCOUNTING_ACTIONS]
+    authority = next((row for row in events if row.get("action") == "record_eligibility"
+        and row.get("job_sha256") == body.get("job_sha256")), {})
+    job = {"contract_version": "rootline_irrigation_job.v1", "job_id": body.get("job_id"),
+        "job_sha256": body.get("job_sha256"), "zone_id": body.get("zone_id"),
+        "operating_date": body.get("operating_date"),
+        "requested_total_seconds": body.get("requested_total_duration_seconds"),
+        "requested_total_minutes": body.get("requested_total_duration_minutes"),
+        "governed_executable_seconds": body.get("governed_executable_duration_seconds"),
+        "maximum_segment_seconds": 3599, "expected_segment_count": body.get("expected_segment_count"),
+        "plan_identity": authority.get("plan_generation")}
+    projection = project_next_segment(job, events, rearm_readback_off=True)
+    if projection.get("status") != "job_deferred":
+        return None
+    material = {"contract_version": "rootline_irrigation_job_resolution.v1",
+        "resolution": "Deferred", "terminal": True, "job_id": job["job_id"],
+        "job_sha256": job["job_sha256"], "zone_id": job["zone_id"],
+        "operating_date": job["operating_date"],
+        "current_segment": projection["current_segment"],
+        "expected_segment_count": job["expected_segment_count"],
+        "cumulative_verified_runtime_seconds": projection["cumulative_verified_runtime_seconds"],
+        "remaining_seconds": projection["remaining_seconds"], "reason": projection["reason"]}
+    digest = _event_digest(material)
+    return {**material, "resolution_sha256": digest,
+        "execution_id": "ROOTLINE-JOB-RESOLUTION-" + digest[:24].upper(),
+        "next_action_owner": "ROOTLINE", "next_trigger": "next_permitted_normal_irrigation_plan"}
+
+
 def _record_parent_terminal_atomic(action, body):
     """Serialize cancellation with BOTH completion rails, not just its audit row."""
     from modules.oom_sakkie.bounded_postgres_read import (
@@ -126,8 +213,7 @@ def _record_parent_terminal_atomic(action, body):
                     from public.sam_live_stock_conversation_review_events
                     where event_source=%s
                       and (review_json->'rootline_execution'->>'job_id'=%s
-                           or (review_json->'rootline_execution'->>'action'='record_completed'
-                               and review_json->'rootline_execution'->>'execution_id'=%s))
+                           or review_json->'rootline_execution'->>'execution_id'=%s)
                     order by created_at,review_event_id""",
                     (EVENT_SOURCE, body.get("job_id"), body.get("execution_id")))
                 rows = cursor.fetchall()
@@ -157,20 +243,51 @@ def _record_parent_terminal_atomic(action, body):
             # was cancelled, but must not repair/create any missing history then.
             existing = _read_terminal_review(connection, action, body)
             if existing is not None:
-                if (existing != _stored_event_body(action, body, _event_id(action, body))
-                        or not _append_history(action, body, connection=connection, append=False)):
-                    raise _AtomicTerminalWriteFailed("canonical_history_completion_unproven")
-                return {"success": True, "created": False, "history_event_created": False}
+                exact = (existing == _stored_event_body(action, body, _event_id(action, body))
+                    and _append_history(action, body, connection=connection, append=False))
+                if exact:
+                    return {"success": True, "created": False, "history_event_created": False}
+                from modules.telemetry.rootline_irrigation_job_contract import validate_weather_stopped_execution
+                barrier = next((row for row in events if row.get("action") == "mark_stopping"
+                    and row.get("execution_id") == body.get("execution_id")), None)
+                if (validate_weather_stopped_execution(body) and validate_weather_stopped_execution(existing)
+                        and barrier is not None and _same_parent(body, existing)
+                        and _same_parent(barrier, existing)
+                        and all(body.get(key) == existing.get(key) == barrier.get(key)
+                            for key in ("weather_stop_evidence", "stop_requested_at", "reason"))
+                        and _append_history(action, existing, connection=connection, append=False)):
+                    # The competing payload is refused. Return the immutable first
+                    # proof, read under both locks, for truthful coordinator recovery.
+                    return {"success": False, "created": False, "history_event_created": False,
+                        "status": "canonical_weather_stop_already_committed", "canonical_execution": existing}
+                raise _AtomicTerminalWriteFailed("canonical_history_completion_unproven")
             if any(row.get("action") == "record_completed"
                    and row.get("execution_id") == body.get("execution_id") for row in events):
                 raise ValueError("canonical_completion_history_conflict")
             if any(row.get("action") == "record_job_resolution"
                    and row.get("resolution") == "Cancelled" for row in events):
                 raise ValueError("cancelled_parent_completion_refused")
+            barrier = next((row for row in events if row.get("action") == "mark_stopping"
+                and row.get("execution_id") == body.get("execution_id")), None)
+            weather_stop = body.get("state") == "Stopped" or body.get("weather_stop_evidence") is not None
+            if weather_stop:
+                from modules.telemetry.rootline_irrigation_job_contract import validate_weather_stopped_execution
+                if (not validate_weather_stopped_execution(body) or barrier is None
+                        or not _same_parent(barrier, body)
+                        or barrier.get("weather_stop_evidence") != body.get("weather_stop_evidence")
+                        or barrier.get("stop_requested_at") != body.get("stop_requested_at")
+                        or barrier.get("reason") != body.get("reason")):
+                    raise ValueError("canonical_weather_stop_preimage_changed")
+            elif barrier is not None and barrier.get("weather_stop_evidence") is not None:
+                raise ValueError("canonical_weather_stop_cannot_complete")
+            terminal_body = _stored_event_body(action, body, _event_id(action, body))
+            resolution = _weather_terminal_resolution(terminal_body, [*events, terminal_body])
             if not _append_history(action, body, connection=connection):
                 raise _AtomicTerminalWriteFailed("canonical_history_completion_unproven")
             result = _write_terminal_review(connection, action, body)
-            return {**result, "history_event_created": True}
+            if resolution is not None:
+                _write_terminal_review(connection, "record_job_resolution", resolution)
+            return {**result, "history_event_created": True, "parent_resolution": resolution}
     except _AtomicTerminalWriteFailed as exc:
         # This is outside the connection context: both rails have rolled back.
         return {"success": False, "created": False, "status": str(exc),
@@ -270,6 +387,8 @@ def _event_id(action, body):
     execution = str(body.get("execution_id") or "")
     if action in {"claim_before_on", "claim_auxiliary_before_on", "claim_borehole_before_on", "claim_eskom_before_command"}:
         material = f"{execution}:CLAIM"
+    elif action == "record_completed" and body.get("state") == "Stopped":
+        material = f"{execution}:WEATHER-STOPPED"
     elif action == "claim_notification":
         material = f"{execution}:NOTIFY:{body.get('notification_state')}"
     elif action == "record_fertilizer_sequence_completed":
@@ -492,6 +611,9 @@ def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
             or (action == "contain_auxiliary_device"
                 and item.get("shutdown_verified") is True))
     if action == "record_completed":
+        if item.get("state") == "Stopped" or item.get("weather_stop_evidence") is not None:
+            from modules.telemetry.rootline_irrigation_job_contract import validate_weather_stopped_execution
+            return validate_weather_stopped_execution(item)
         return True
     if action in {"contain_zone", "record_ambiguous_shutdown", "record_claim_recovery"}:
         return item.get("shutdown_verified") is True
@@ -950,14 +1072,19 @@ def _claim_irrigation_output(body):
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "execution_replay"}
             if body.get("job_id"):
-                cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+                cursor.execute("""select review_json->'rootline_execution'->>'resolution'
+                    from public.sam_live_stock_conversation_review_events
                     where event_source=%s
                       and review_json->'rootline_execution'->>'job_id'=%s
                       and review_json->'rootline_execution'->>'action'='record_job_resolution'
-                      and review_json->'rootline_execution'->>'resolution'='Cancelled'
+                      and (review_json->'rootline_execution'->>'resolution'='Cancelled'
+                          or (review_json->'rootline_execution'->>'resolution'='Deferred'
+                              and review_json->'rootline_execution'->>'terminal'='true'))
                     limit 1""", (EVENT_SOURCE, str(body["job_id"])))
-                if cursor.fetchone():
-                    return {"success": True, "created": False, "status": "parent_job_cancelled"}
+                resolution = cursor.fetchone()
+                if resolution:
+                    return {"success": True, "created": False,
+                        "status": "parent_job_cancelled" if resolution[0] == "Cancelled" else "parent_job_deferred"}
             cursor.execute("""select 1
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
@@ -1737,6 +1864,13 @@ def _append_history(action, body, *, connection=None, append=True):
         "shutdown_observed_at": body.get("completed_at"),
         "provenance": "rootline_execution_coordinator",
         "classification": event_type.lower()}
+    if body.get("state") == "Stopped":
+        details.update(terminal_contract=body.get("terminal_contract"),
+            terminal_sha256=body.get("terminal_sha256"), reason=body.get("reason"),
+            remaining_seconds=body.get("remaining_seconds"),
+            weather_stop_evidence=body.get("weather_stop_evidence"),
+            partial_observation=body.get("partial_observation"),
+            next_action_owner="ROOTLINE", next_trigger=body.get("next_trigger"))
     event_id = "ROOTLINE-HISTORY-" + hashlib.sha256(
         f"{body.get('execution_id')}:{event_type}".encode()).hexdigest()[:24].upper()
     event = build_typed_history_event(event_id=event_id,event_at=event_at,event_type=event_type,
@@ -1766,7 +1900,7 @@ def _append_history(action, body, *, connection=None, append=True):
                     return False
                 existing_details = (existing[5] if isinstance(existing[5], dict)
                                     else json.loads(existing[5]))
-                return (existing[0].isoformat() == event["event_at"]
+                return (existing[0] == _time(event["event_at"])
                         and existing[1] == event["event_type"]
                         and existing[2] == event["zone_id"]
                         and _numeric_equal(existing[3], event["planned_minutes"])

@@ -37,7 +37,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  decision_reader, commissioning_reader, store, transport,
                                  notify, outcome_reader=lambda _identity: None,
                                  eligibility_revalidator=lambda _decision: None, now=None,
-                                 clock=None, active_only=False):
+                                 clock=None, active_only=False, active_weather_revalidator=None):
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
     try:
@@ -48,7 +48,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
             current_segment_consumed=False, degraded=True)
     if active:
         result = _recover_or_observe(active, store, bind_execution_transport(transport, active),
-            notify, outcome_reader, now)
+            notify, outcome_reader, now, clock=clock,
+            active_weather_revalidator=active_weather_revalidator)
         return {**result, "active_execution_found": True} if active_only else result
     if active_only:
         # A safety tick must never turn a missing/disappearing execution into
@@ -544,12 +545,17 @@ def _aux_result(status,*,commands=0,state=None,fertilizer_debt=False,
         "channels_3_4_authority":False,"automatic_on_retry":False,**extra}
 
 
-def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
+def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *,
+                        clock=None, active_weather_revalidator=None):
+    clock = clock or (lambda: datetime.now(timezone.utc))
     if active.get("on_not_dispatched") is True:
         return _retire_unsent_execution(active, store, transport)
-    if active.get("state") in {"claimed", "claimed_recovery_required"}:
+    if (active.get("state") in {"claimed", "claimed_recovery_required"}
+            or (active.get("state") == "stopping" and active.get("reason") == "restart_after_pre_on_claim")):
         barrier=store("mark_stopping",{**active,"state":"stopping",
             "reason":"restart_after_pre_on_claim"})
+        if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
+            return _result("active_execution_already_terminal", commands=0, messages=0)
         if not isinstance(barrier,dict) or barrier.get("success") is not True:
             return _stopping_barrier_hold(active,store,notify)
         store("contain_zone", {**active, "state": "ambiguous",
@@ -578,6 +584,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
     if primary_deadline is None or native_deadline is None or primary_deadline > native_deadline:
         barrier=store("mark_stopping",{**active,"state":"stopping",
             "reason":"fail_stop_deadline_missing"})
+        if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
+            return _result("active_execution_already_terminal", commands=0, messages=0)
         if not isinstance(barrier,dict) or barrier.get("success") is not True:
             return _stopping_barrier_hold(active,store,notify)
         auxiliary_stop = _stop_bound_injection(active,store,transport)
@@ -592,16 +600,57 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         return _result("active_segment_contained", commands=recovery["commands"]+
                        auxiliary_stop["hardware_commands"],
                        messages=delivery["confirmed"], notification=delivery)
-    if now < primary_deadline:
-        return _result("active_segment_owned", commands=0, messages=0, execution=active)
-    barrier=store("mark_stopping",{**active,"state":"stopping",
-        "reason":"primary_deadline_reached"})
+    # A persisted stop is sticky, including before the original deadline.
+    # Due/recovery paths never wait for optional weather IO.
+    weather = active.get("weather_stop_evidence")
+    if now < primary_deadline and active.get("state") != "stopping":
+        if active_weather_revalidator is None:
+            return _result("active_segment_owned", commands=0, messages=0, execution=active)
+        read_started = _aware(clock())
+        try:
+            decision = active_weather_revalidator(active)
+        except Exception:
+            decision = None
+        now = _aware(clock())
+        valid = (isinstance(decision, dict)
+            and decision.get("contract_version") == "rootline_active_weather.v1"
+            and decision.get("evidence_sha256") == _digest({key:value for key,value in decision.items()
+                if key != "evidence_sha256"}))
+        if valid and decision.get("stop_required") is False:
+            if now < primary_deadline:
+                return _result("active_segment_owned", commands=0, messages=0, execution=active)
+        elif now < primary_deadline or read_started < primary_deadline:
+            if valid and decision.get("stop_required") is True:
+                weather = decision
+            else:
+                weather = {"contract_version": "rootline_active_weather.v1", "stop_required": True,
+                    "reason": "active_weather_unavailable", "assessed_at": now.isoformat(),
+                    "read_started_at": read_started.isoformat()}
+                weather["evidence_sha256"] = _digest(weather)
+    stop_reason = (active.get("reason") if active.get("state") == "stopping" else
+        weather.get("reason") if isinstance(weather, dict) else "primary_deadline_reached")
+    stopping = {**active, "state": "stopping", "reason": stop_reason}
+    if isinstance(weather, dict):
+        stopping.update(weather_stop_evidence=weather,
+            stop_requested_at=active.get("stop_requested_at") or now.isoformat())
+    barrier = store("mark_stopping", stopping)
+    if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
+        return _result("active_execution_already_terminal", commands=0, messages=0)
     if not isinstance(barrier,dict) or barrier.get("success") is not True:
         return _stopping_barrier_hold(active,store,notify)
+    # The locked store may return a stop committed by another worker first.
+    committed = barrier.get("execution")
+    if isinstance(committed, dict):
+        stopping = committed
+    weather = stopping.get("weather_stop_evidence")
+    stop_reason = stopping.get("reason")
+    if isinstance(weather, dict):
+        active = stopping
+    elif isinstance(barrier.get("active_execution"), dict):
+        active = barrier["active_execution"]
     auxiliary_stop = _stop_bound_injection(active,store,transport)
     blocked = _hold_parent_flow_if_injector_off_unverified(
-        active,auxiliary_stop,store,transport,notify,now,
-        "primary_deadline_reached")
+        active,auxiliary_stop,store,transport,notify,now,stop_reason)
     if blocked:
         return blocked
     recovery = _bounded_off(active, store, transport)
@@ -615,18 +664,32 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
                        messages=delivery["confirmed"], notification=delivery)
     shutdown_at = _timestamp(shutdown.get("retrieved_at"))
     completion_now = max(now, shutdown_at) if shutdown_at is not None else now
-    objective = _canonical_outcome(
-        outcome_reader(active["execution_id"]), active, shutdown, completion_now)
-    if not objective:
-        objective = _provider_bounded_outcome(active, shutdown, completion_now)
-    completed = {**active, "state": "Completed", "shutdown_verified": True,
-                 "objective_satisfied": objective.get("objective_satisfied") is True,
-                 "objective_evidence": objective,
-                 "shutdown_evidence": shutdown, "completed_at": completion_now.isoformat()}
+    if isinstance(weather, dict):
+        # Never advance the independent clock using a provider timestamp.
+        completion_now = _aware(clock())
+        completed = _weather_stopped_execution(active, shutdown, completion_now)
+        if not completed:
+            store("contain_zone", {**active, "shutdown_verified": False,
+                "reason": "weather_stop_shutdown_evidence_unproven"})
+            delivery = _notify(notify, store, "Intervention", {**active,
+                "reason": "weather_stop_shutdown_evidence_unproven", "shutdown_verified": False})
+            return _result("shutdown_unverified", commands=recovery["commands"]+
+                auxiliary_stop["hardware_commands"], messages=delivery["confirmed"],
+                notification=delivery)
+        objective = completed["objective_evidence"]
+    else:
+        objective = _canonical_outcome(
+            outcome_reader(active["execution_id"]), active, shutdown, completion_now)
+        if not objective:
+            objective = _provider_bounded_outcome(active, shutdown, completion_now)
+        completed = {**active, "state": "Completed", "shutdown_verified": True,
+                     "objective_satisfied": objective.get("objective_satisfied") is True,
+                     "objective_evidence": objective,
+                     "shutdown_evidence": shutdown, "completed_at": completion_now.isoformat()}
     # Preserve the historical execution record shape for pre-job actions.  Job
     # lifecycle fields are authoritative only when the claimed action carried
     # the governed, persisted job identity and duration contract.
-    if active.get("job_id"):
+    if active.get("job_id") and not isinstance(weather, dict):
         completed["verified_runtime_seconds"] = int(
             (objective.get("verified_runtime_minutes") or 0) * 60)
         # Shutdown readback proves this segment OFF.  A later fresh controller
@@ -640,20 +703,74 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
                 active["governed_executable_duration_seconds"]))
     recorded = store("record_completed", completed)
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
-        delivery = _notify(notify, store, "Intervention", {**completed,
-            "reason": "canonical_completion_persistence_unproven"})
-        return _result("completion_persistence_unproven", commands=recovery["commands"],
-                       messages=delivery["confirmed"], execution=completed,
-                       notification=delivery, writes_farm_data=False)
-    lifecycle = "Completed" if completed["objective_satisfied"] else "Intervention"
+        from modules.telemetry.rootline_irrigation_job_contract import validate_weather_stopped_execution
+        from modules.telemetry.rootline_irrigation_execution_store import _same_parent
+        canonical = (recorded or {}).get("canonical_execution") if isinstance(recorded, dict) else None
+        converged = (isinstance(weather, dict) and isinstance(canonical, dict)
+            and recorded.get("status") == "canonical_weather_stop_already_committed"
+            and canonical.get("action") == "record_completed"
+            and validate_weather_stopped_execution(canonical)
+            and _same_parent(stopping, canonical)
+            and all(canonical.get(key) == stopping.get(key)
+                for key in ("weather_stop_evidence", "stop_requested_at", "reason")))
+        if converged:
+            completed = canonical
+        else:
+            delivery = _notify(notify, store, "Intervention", {**completed,
+                "reason": "canonical_completion_persistence_unproven"})
+            return _result("completion_persistence_unproven", commands=recovery["commands"],
+                           messages=delivery["confirmed"], execution=completed,
+                           notification=delivery, writes_farm_data=False)
+    lifecycle = ("Stopped" if isinstance(weather, dict) else
+        "Completed" if completed["objective_satisfied"] else "Intervention")
     if lifecycle == "Intervention":
         completed["reason"] = "shutdown_verified_outcome_unconfirmed"
     delivery = _notify(notify, store, lifecycle, completed)
-    return _result("segment_completed" if completed["objective_satisfied"]
+    return _result("segment_stopped_for_weather" if isinstance(weather, dict) else
+                   "segment_completed" if completed["objective_satisfied"]
                    else "segment_stopped_outcome_unconfirmed",
                    commands=recovery["commands"]+auxiliary_stop["hardware_commands"],
                    messages=delivery["confirmed"], execution=completed,
                    notification=delivery, writes_farm_data=True)
+
+
+def _weather_stopped_execution(active, shutdown, now):
+    """Record safe OFF and an observed interval, never unmeasured delivery."""
+    from modules.telemetry.rootline_irrigation_job_contract import (
+        WEATHER_STOP_CONTRACT, validate_weather_stopped_execution, weather_stop_digest,
+        _stop_time,
+    )
+    start = active.get("start_evidence") or {}
+    start = start if isinstance(start, dict) else {}
+    started = _stop_time(start.get("retrieved_at") or start.get("observed_at"))
+    stopped = _stop_time(shutdown.get("retrieved_at") or shutdown.get("observed_at"))
+    claimed = _stop_time(active.get("claimed_at"))
+    requested = _stop_time(active.get("stop_requested_at"))
+    valid_start = (start.get("authoritative") is True and start.get("state") == "ON"
+        and bool(start.get("evidence_id")) and None not in (claimed, started, requested)
+        and all(key not in start or start[key] == active.get(key)
+            for key in ("execution_id", "zone_id", "device_id", "channel"))
+        and claimed <= started <= requested)
+    prior = int(active.get("cumulative_verified_runtime_seconds") or 0)
+    total = int(active.get("governed_executable_duration_seconds") or 0)
+    completed = {**active, "state": "Stopped", "terminal_contract": WEATHER_STOP_CONTRACT,
+        "shutdown_verified": True, "shutdown_evidence": shutdown,
+        "completed_at": now.isoformat(), "objective_satisfied": False, "job_completed": False,
+        "verified_runtime_seconds": 0, "cumulative_verified_runtime_seconds": prior,
+        "remaining_seconds": max(0, total-prior) if active.get("job_id") else None,
+        "rearm_readback_off": False,
+        "objective_evidence": {"objective_satisfied": False, "verified_runtime_minutes": None,
+            "physical_flow_confirmation": "Unavailable", "delivered_volume": "Unavailable"},
+        "partial_observation": {
+            "start_observed_at": started.isoformat() if valid_start else None,
+            "off_observed_at": stopped.isoformat() if stopped else None,
+            "observed_interval_seconds": (stopped-started).total_seconds()
+                if valid_start and stopped is not None else None,
+            "continuous_runtime_verified": False, "physical_delivery": "Unknown"},
+        "next_action_owner": "ROOTLINE", "next_trigger": "normal_automatic_reassessment",
+        "fertilizer_flush_completion": "Unproven"}
+    completed["terminal_sha256"] = weather_stop_digest(completed)
+    return completed if validate_weather_stopped_execution(completed) else {}
 
 
 def _stop_bound_injection(parent,store,transport):
