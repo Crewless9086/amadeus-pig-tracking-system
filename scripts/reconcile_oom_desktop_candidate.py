@@ -23,11 +23,11 @@ BASE = '2fb1da4f5823a2a1d8a56a152f57eb2e9dee2cf1'
 # independent authenticated owner approval of the exact manifest and scope.
 # Root supplied the real PR; exact authenticated manifest approval is still required.
 CANDIDATE_PR = 1416
-HEAD = '1ff7787085aa6ba1de96a719bd6424110ae22f2c'
-TREE = '505ced02d9dc17b0f8814bb195449f23c47a5788'
+HEAD = '934370a3e320ca314fc0bd6e326feb7f4ecd771b'
+TREE = '5c5949ee8c00a381816ac6b7624a336e5341cb35'
 # Complete candidate identity alone grants no release or farm-write authority.
 # Synthetic qualification pins live only in tests; no later runtime delta is allowed.
-APPROVED_RUNTIME_HEAD = '1ff7787085aa6ba1de96a719bd6424110ae22f2c'
+APPROVED_RUNTIME_HEAD = '934370a3e320ca314fc0bd6e326feb7f4ecd771b'
 QUALIFICATION_TEST_PATHS = []
 BRANCH = 'codex/rootline-a-camp-automation-20261101'
 PREDECESSOR_PR = 1415
