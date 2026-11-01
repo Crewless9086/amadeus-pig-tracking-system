@@ -40,8 +40,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse 8c1f126477fe2394e9eb661040f9b0ddf824f869^{tree})" = f2651db8133eab77cbce1dd1466e63949797af9a
-          test "$(git merge-base 81cfab7bf12b87f4216aa1b42ece2e9c99d91b98 8c1f126477fe2394e9eb661040f9b0ddf824f869)" = 81cfab7bf12b87f4216aa1b42ece2e9c99d91b98
+          test "$(git rev-parse c9c7e76d2e75b6b415961e9c3a1b6356bb2f06f5^{tree})" = 61fb138f19b45d84e3845e877bf3011416ccf254
+          test "$(git merge-base 81cfab7bf12b87f4216aa1b42ece2e9c99d91b98 c9c7e76d2e75b6b415961e9c3a1b6356bb2f06f5)" = 81cfab7bf12b87f4216aa1b42ece2e9c99d91b98
       - name: Preserve ordinary registration qualification
         run: python -m unittest tests.test_oom_desktop_candidate_reconciliation tests.test_oom_desktop_registration_sql -v
       - name: Preserve pre-send metadata correction qualification
@@ -51,15 +51,15 @@ jobs:
       - name: Load exact reviewed integrated-operation application for qualification
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 8c1f126477fe2394e9eb661040f9b0ddf824f869
+          ref: c9c7e76d2e75b6b415961e9c3a1b6356bb2f06f5
           persist-credentials: false
           fetch-depth: 0
       - name: Verify reviewed integrated-operation application checkout
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 8c1f126477fe2394e9eb661040f9b0ddf824f869
-          test "$(git rev-parse HEAD^{tree})" = f2651db8133eab77cbce1dd1466e63949797af9a
+          test "$(git rev-parse HEAD)" = c9c7e76d2e75b6b415961e9c3a1b6356bb2f06f5
+          test "$(git rev-parse HEAD^{tree})" = 61fb138f19b45d84e3845e877bf3011416ccf254
       - name: Prepare isolated canonical ROOTLINE fixture prerequisites
         env:
           PGPASSWORD: postgres
@@ -113,6 +113,8 @@ jobs:
           tests/test_rootline_timing_concurrency_postgres.py
           tests/test_rootline_injector_output_guard.py
           tests/test_rootline_adaptive_irrigation.py
+          tests/test_rootline_active_weather_stop.py
+          tests/test_rootline_active_weather_stop_postgres.py
 
 
   historical_pending:

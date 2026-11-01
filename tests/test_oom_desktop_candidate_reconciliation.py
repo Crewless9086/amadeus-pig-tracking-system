@@ -60,7 +60,7 @@ SYNTHETIC_PINS = {"BRANCH": "codex/synthetic-manager-progress", "CANDIDATE_PR": 
     "PATHS": ["modules/oom_sakkie/synthetic_herdmaster_successor.py", "tests/test_synthetic_herdmaster_successor.py"]}
 
 
-FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1415, 'HEAD': '8c1f126477fe2394e9eb661040f9b0ddf824f869', 'TREE': 'f2651db8133eab77cbce1dd1466e63949797af9a', 'APPROVED_RUNTIME_HEAD': '8c1f126477fe2394e9eb661040f9b0ddf824f869', 'BASE': '81cfab7bf12b87f4216aa1b42ece2e9c99d91b98', 'BRANCH': 'codex/rootline-ewelink-demand-budget-20261031', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/telemetry/rootline_auxiliary_management.py', 'modules/telemetry/rootline_borehole_commissioning.py', 'modules/telemetry/rootline_ewelink_oauth.py', 'modules/telemetry/rootline_ewelink_readback.py', 'modules/telemetry/rootline_ewelink_request_budget.py', 'modules/telemetry/rootline_execution_authority.py', 'modules/telemetry/rootline_execution_runtime.py', 'modules/telemetry/rootline_ifttt_transport.py', 'modules/telemetry/rootline_irrigation_coordinator.py', 'modules/telemetry/rootline_irrigation_execution_store.py', 'modules/telemetry/rootline_irrigation_history.py', 'modules/telemetry/rootline_mixer_readiness_observer.py', 'modules/telemetry/rootline_water_energy_plan.py', 'tests/test_oom_sakkie_fertilizer_commissioning_runtime.py', 'tests/test_rootline_ewelink_oauth.py', 'tests/test_rootline_ewelink_request_budget.py', 'tests/test_rootline_ewelink_request_budget_postgres.py', 'tests/test_rootline_ewelink_request_budget_workload.py', 'tests/test_rootline_execution_runtime.py', 'tests/test_rootline_ifttt_transport.py', 'tests/test_rootline_injector_output_guard.py', 'tests/test_rootline_integrated_operation.py', 'tests/test_rootline_managed_devices_runtime.py', 'tests/test_rootline_managed_startup_handover_postgres.py', 'tests/test_rootline_mixer_readiness_observer.py', 'tests/test_rootline_water_credit.py'], 'QUALIFICATION_TEST_PATHS': []}
+FINAL_CANDIDATE_PINS = {'CANDIDATE_PR': 1415, 'HEAD': 'c9c7e76d2e75b6b415961e9c3a1b6356bb2f06f5', 'TREE': '61fb138f19b45d84e3845e877bf3011416ccf254', 'APPROVED_RUNTIME_HEAD': 'c9c7e76d2e75b6b415961e9c3a1b6356bb2f06f5', 'BASE': '81cfab7bf12b87f4216aa1b42ece2e9c99d91b98', 'BRANCH': 'codex/rootline-ewelink-demand-budget-20261031', 'PATHS': ['.github/workflows/oom-sakkie-audit-rails.yml', 'docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md', 'docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md', 'docs/09-vault-brain/CHANGELOG.md', 'modules/oom_sakkie/general_manager_worker.py', 'modules/oom_sakkie/telegram_gateway.py', 'modules/telemetry/rootline_auxiliary_management.py', 'modules/telemetry/rootline_borehole_commissioning.py', 'modules/telemetry/rootline_ewelink_oauth.py', 'modules/telemetry/rootline_ewelink_readback.py', 'modules/telemetry/rootline_ewelink_request_budget.py', 'modules/telemetry/rootline_execution_authority.py', 'modules/telemetry/rootline_execution_runtime.py', 'modules/telemetry/rootline_ifttt_transport.py', 'modules/telemetry/rootline_irrigation_coordinator.py', 'modules/telemetry/rootline_irrigation_execution_store.py', 'modules/telemetry/rootline_irrigation_history.py', 'modules/telemetry/rootline_irrigation_job_contract.py', 'modules/telemetry/rootline_irrigation_lifecycle.py', 'modules/telemetry/rootline_mixer_readiness_observer.py', 'modules/telemetry/rootline_water_energy_plan.py', 'tests/test_oom_sakkie_fertilizer_commissioning_runtime.py', 'tests/test_rootline_active_supervision.py', 'tests/test_rootline_active_weather_stop.py', 'tests/test_rootline_active_weather_stop_postgres.py', 'tests/test_rootline_ewelink_oauth.py', 'tests/test_rootline_ewelink_request_budget.py', 'tests/test_rootline_ewelink_request_budget_postgres.py', 'tests/test_rootline_ewelink_request_budget_workload.py', 'tests/test_rootline_execution_runtime.py', 'tests/test_rootline_ifttt_transport.py', 'tests/test_rootline_injector_output_guard.py', 'tests/test_rootline_integrated_operation.py', 'tests/test_rootline_managed_devices_runtime.py', 'tests/test_rootline_managed_startup_handover_postgres.py', 'tests/test_rootline_mixer_readiness_observer.py', 'tests/test_rootline_water_credit.py'], 'QUALIFICATION_TEST_PATHS': []}
 
 ROOTLINE_ADDED_EFFECTS = {'application_revision_rollback:web:81cfab7bf12b87f4216aa1b42ece2e9c99d91b98'}
 ROOTLINE_REMOVED_EFFECTS = {'application_revision_rollback:web:a70ab01c273335fa5ec945cd93c0e16c4af92070'}
@@ -405,9 +405,10 @@ class CandidatePinTests(unittest.TestCase):
                        'rootline_irrigation_lifecycle','rootline_owner_status'):
             self.assertIn('tests/test_'+suite+'.py',current)
         current_suites=re.findall(r'          (tests/[^\s]+\.py)',current.split('      - name: Qualify exact integrated operation',1)[1])
-        self.assertEqual(len(current_suites),40)
+        self.assertEqual(len(current_suites),42)
         for suite in ('rootline_ewelink_request_budget','rootline_ewelink_request_budget_postgres',
-                      'rootline_ewelink_request_budget_workload'):
+                      'rootline_ewelink_request_budget_workload',
+                      'rootline_active_weather_stop','rootline_active_weather_stop_postgres'):
             self.assertIn('tests/test_'+suite+'.py',current_suites)
         self.assertNotIn('tests.test_rootline_pending_registration',current)
         self.assertIn('ref: 1a38895ac8882fceb1eb7c291bc07dd9ec95eabf',historical)
@@ -2079,7 +2080,24 @@ class RootlineReleaseScopeProposalTests(unittest.TestCase):
                    'tests/test_rootline_ewelink_request_budget_postgres.py',
                    'tests/test_rootline_ewelink_request_budget_workload.py',
                    'modules/oom_sakkie/general_manager_worker.py')
-        self.assertEqual(len(a.PATHS),31)
+        self.assertEqual(len(a.PATHS),37)
+        for path in additions:
+            with self.subTest(path=path):
+                self.assertIn(path,a.PATHS)
+                m=deepcopy(self.m);m['candidate']['changed_files'].remove(path)
+                m['contract']['allowed_files'].remove(path);self.refused(m)
+
+    def test_prior_demand_candidate_and_incomplete_rain_scope_are_refused(self):
+        for key,value in (('head_sha','8c1f126477fe2394e9eb661040f9b0ddf824f869'),
+                          ('tree_sha','f2651db8133eab77cbce1dd1466e63949797af9a')):
+            with self.subTest(key=key):
+                m=deepcopy(self.m);m['candidate'][key]=value;self.refused(m)
+        additions=('modules/oom_sakkie/telegram_gateway.py',
+                   'modules/telemetry/rootline_irrigation_job_contract.py',
+                   'modules/telemetry/rootline_irrigation_lifecycle.py',
+                   'tests/test_rootline_active_supervision.py',
+                   'tests/test_rootline_active_weather_stop.py',
+                   'tests/test_rootline_active_weather_stop_postgres.py')
         for path in additions:
             with self.subTest(path=path):
                 self.assertIn(path,a.PATHS)
