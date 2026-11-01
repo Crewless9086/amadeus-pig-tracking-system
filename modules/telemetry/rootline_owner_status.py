@@ -1,6 +1,8 @@
 """Truthful owner projection over ROOTLINE's existing canonical rails."""
 from __future__ import annotations
 
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+
 from datetime import datetime, timezone
 import json
 import os
@@ -11,7 +13,7 @@ from modules.telemetry.rootline_water_balance import read_latest_zone_water_bala
 from modules.telemetry.rootline_water_energy_plan import _read_latest_tank_observation
 from modules.telemetry.rootline_irrigation_lifecycle import project_zone_lifecycle
 
-ZONE_NAMES = {"B12345": "B Camp", "C12345": "C Camp"}
+ZONE_NAMES = {zone: zone[0] + " Camp" for zone in IRRIGATION_ZONE_IDS}
 
 
 def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
@@ -32,7 +34,7 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
     recommendations = {item.get("subject"): item for item in
                        specialist.get("recommendations", []) if isinstance(item, dict)}
     zones = []
-    for zone_id in ("B12345", "C12345"):
+    for zone_id in IRRIGATION_ZONE_IDS:
         recommendation = recommendations.get(zone_id, {})
         zone_history = (history.get("zones") or {}).get(zone_id, {})
         balance = ((evidence.get("water_balance") or {}).get("zones") or {}).get(zone_id, {})
@@ -160,7 +162,7 @@ def _specialist_projection(evidence, operating_date, now):
     typed = {str(row.get("zone_id")): row for row in typed
              if isinstance(row, dict) and row.get("zone_id") in ZONE_NAMES} if isinstance(typed, list) else {}
     recommendations = []
-    for zone in ("B12345", "C12345"):
+    for zone in IRRIGATION_ZONE_IDS:
         row = typed.get(zone, {})
         state = str(row.get("decision") or row.get("status") or "")
         state = state if state in {"Run", "Hold", "Needs Data", "Not Due"} else "Needs Data"

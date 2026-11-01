@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+
 from datetime import datetime, time, timezone
 import html
 from typing import Any, Callable, Mapping
@@ -17,7 +19,7 @@ from modules.telemetry.rootline_irrigation_lifecycle import (
 SAST = ZoneInfo("Africa/Johannesburg")
 DAILY_PLAN_TIME = time(7, 0)
 CONTRACT_VERSION = "oom_sakkie_rootline_daily_presentation.v1"
-ZONES = ("B12345", "C12345")
+ZONES = IRRIGATION_ZONE_IDS
 
 
 def owner_zone_decision(result: Mapping[str, Any], recommendation: Mapping[str, Any],
@@ -155,8 +157,8 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     lines = ["<b>ROOTLINE — VANDAG SE WATERPLAN</b>" if af else
              "<b>ROOTLINE — TODAY’S WATER PLAN</b>", ""]
     reasons = []
-    for zone, label in (("B12345", "B Kamp" if af else "B Camp"),
-                        ("C12345", "C Kamp" if af else "C Camp")):
+    for zone in IRRIGATION_ZONE_IDS:
+        label = zone[0] + (" Kamp" if af else " Camp")
         row = recommendations.get(zone, {})
         decision = owner_zone_decision(result, row, zone=zone, language=language)
         window = _human_window(row.get("preferred_window"))
@@ -187,8 +189,8 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
         for row in result.get("recommendations") or () if isinstance(row, Mapping)}
     decisions = []
     reasons = []
-    for zone, label in (("B12345", "B Kamp" if af else "B Camp"),
-                        ("C12345", "C Kamp" if af else "C Camp")):
+    for zone in IRRIGATION_ZONE_IDS:
+        label = zone[0] + (" Kamp" if af else " Camp")
         row = recommendations.get(zone, {})
         decisions.append(f"{label}: {owner_zone_decision(result, row, zone=zone, language=language)}")
         reason = str(row.get("reason") or "").strip()

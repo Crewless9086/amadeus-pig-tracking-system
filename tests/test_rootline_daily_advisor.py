@@ -182,7 +182,9 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
 
     def test_register_contains_only_known_zones_and_owner_baseline(self):
         result = self.build()
-        self.assertEqual([zone["zone_id"] for zone in result["zones"]], ["B12345", "C12345"])
+        self.assertEqual([zone["zone_id"] for zone in result["zones"]], ["A12345", "B12345", "C12345"])
+        self.assertEqual(result["operating_knowledge"]["zones"]["A12345"]["crop_use"], "Unknown")
+        self.assertNotIn("A12345", result["physical_identity_evidence"])
         register = result["operating_knowledge"]
         self.assertEqual(register["zones"]["B12345"]["crop_use"], "lucerne")
         self.assertEqual(register["zones"]["C12345"]["crop_use"], "vegetables")

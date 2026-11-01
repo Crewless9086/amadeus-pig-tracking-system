@@ -5,6 +5,8 @@ history and execution evidence.  It creates no action, authority or queue.
 """
 from __future__ import annotations
 
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -125,7 +127,7 @@ def _claim_recovery_closed(execution, *, zone_id, evidence_cutoff):
     # cutoff checks. Late OFF and unavailable deadlines remain visible exceptions.
     if (execution.get("action") != "record_claim_recovery"
             or execution.get("shutdown_verified") is not True
-            or zone_id not in {"B12345", "C12345"}
+            or zone_id not in set(IRRIGATION_ZONE_IDS)
             or execution.get("zone_id") != zone_id
             or not str(execution.get("execution_id") or "").strip()
             or controller_readback_time(execution, "shutdown_evidence", "OFF") is None):
@@ -163,7 +165,7 @@ def project_execution_shutdown_exceptions(rows, *, evidence_cutoff=None, canonic
     if len(identities) != 1:
         return []
     zone, identity = next(iter(identities))
-    if zone not in {"B12345", "C12345"} or not identity:
+    if zone not in set(IRRIGATION_ZONE_IDS) or not identity:
         return []
     terminal_actions = {"record_completed", "record_claim_recovery", "record_ambiguous_shutdown"}
     failed_actions = {"contain_zone", "record_ambiguous_shutdown"}

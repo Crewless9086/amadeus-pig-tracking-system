@@ -11,7 +11,7 @@ from modules.telemetry.rootline_ewelink_commissioned_baseline import (
     commissioned_controller_baseline, commissioned_registered_device_baseline,
 )
 from modules.telemetry.rootline_device_registry import (
-    commissioned_irrigation_contract, commissioned_irrigation_contracts, rootline_device_registry,
+    commissioned_irrigation_contract, commissioned_irrigation_contracts, rootline_device_registry, IRRIGATION_ZONE_IDS,
 )
 from modules.telemetry.rootline_ewelink_oauth_store import PostgresOAuthTokenStore
 from modules.telemetry.rootline_ewelink_readback import read_current_device
@@ -509,6 +509,41 @@ def supervise_rootline_active_execution(*, notify, environ=None, now=None,
         "active_supervision_write_attempted": effects["active_supervision_write_attempted"]}
 
 
+def _canonical_irrigation_scope(function):
+    """Keep per-cycle canonical A proof isolated across concurrent workers."""
+    from functools import wraps
+    @wraps(function)
+    def scoped(*args, **kwargs):
+        from modules.telemetry.rootline_device_registry import _canonical_irrigation_binding
+        token = _canonical_irrigation_binding.set(None)
+        try:
+            # New-start reads happen in _current, after active shutdown duties.
+            return function(*args, **kwargs)
+        finally:
+            _canonical_irrigation_binding.reset(token)
+    return scoped
+
+
+def _refresh_a_irrigation_binding(source, database_url, now):
+    from modules.telemetry.rootline_device_registry import _canonical_irrigation_binding
+    from modules.telemetry.rootline_ewelink_commissioned_baseline import load_canonical_a_irrigation_binding
+    _canonical_irrigation_binding.set(None)
+    if str(source.get("ROOTLINE_A_ENABLED") or "").lower() != "true":
+        return
+    database_url = str(database_url or source.get("DATABASE_URL") or "").strip()
+    if not database_url:
+        return
+    try:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        binding = load_canonical_a_irrigation_binding(connect_factory=lambda:
+            connect_bounded_rootline_postgres(database_url=database_url, read_only=True), now=now)
+        _canonical_irrigation_binding.set(binding)
+    except Exception:
+        # An unavailable A proof never suppresses the independent B/C path.
+        return
+
+
+@_canonical_irrigation_scope
 def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url=None,
                                  store=rootline_irrigation_execution_store,
                                  token_store=None, transport=None,
@@ -521,7 +556,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     source = environ if environ is not None else os.environ
     clock = clock or (lambda: datetime.now(timezone.utc))
     now = _aware(now or clock())
-    if str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() != "true":
+    if not any(str(source.get(flag) or "").lower() == "true"
+            for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED")):
         return _safe("autonomous_bc_disabled")
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
@@ -587,7 +623,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     commissioning = {"commissioning_id": commissioning_id, "zone_id": zone,
         "channel": artifact["channel"], "firmware": initial["controller"]["firmware"],
         "native_inching_seconds": selected["native_auto_off_seconds"],
-        "accepted_controller_baseline": baseline}
+        **({"evidence": baseline["evidence"]} if zone == "A12345" else
+           {"accepted_controller_baseline": baseline})}
     def revalidate(_decision):
         current_now = _aware(clock())
         return _current(evidence_loader, readback, token_store, source,
@@ -611,6 +648,7 @@ def _same_delegated_execution(expected, current):
         and all(expected.get(key) == current.get(key) for key in keys))
 
 
+@_canonical_irrigation_scope
 def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
         now=None, database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None, outcome_reader=lambda _identity: None,
@@ -695,7 +733,8 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     selected=next(row for row in current["controller"]["channels"] if row["channel"]==artifact["channel"])
     commissioning={"commissioning_id":commissioning_id,"zone_id":zone,"channel":artifact["channel"],
       "firmware":current["controller"]["firmware"],"native_inching_seconds":selected["native_auto_off_seconds"],
-      "accepted_controller_baseline":baseline}
+      **({"evidence": baseline["evidence"]} if zone == "A12345" else
+         {"accepted_controller_baseline":baseline})}
     transport=transport or RootlineIFTTTTransport(token_store=token_store,environ=source,readback=readback)
     def revalidate(_decision):
         return _current(evidence_loader,readback,token_store,source,database_url,
@@ -709,6 +748,7 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
 
 def _current(evidence_loader, readback, token_store, source, database_url, now,
              store=rootline_irrigation_execution_store, *, require_enabled=False, clock=None):
+    _refresh_a_irrigation_binding(source, database_url, now)
     try:
         from modules.telemetry.rootline_bounded_read_group import (
             RootlineReadGroupDeadlineExceeded,
@@ -787,6 +827,9 @@ def _persist_stale_parent_resolutions(plan, store):
 
 def _commissioned_output(zone):
     output = commissioned_irrigation_contract(zone)
+    if zone == "A12345":
+        return output, {"configuration_generation": output["commissioning_generation"],
+            "evidence": output["commissioning_evidence"]}, output["commissioning_id"]
     baseline = commissioned_registered_device_baseline(output["device_id"])
     identities = ((baseline or {}).get("irrigation_commissioning_ids") or {})
     commissioning_id = identities.get(zone)
@@ -808,10 +851,12 @@ def _canonical_standing_authority_proven(database_url, artifact):
         def connect():
             return psycopg.connect(database_url, connect_timeout=10,
                 options="-c default_transaction_read_only=on")
-        keys = (
-            "ifttt_ewelink:ewelink_owner_account:100204e9bc:1",
-            "ifttt_ewelink:ewelink_owner_account:100204e9bc:2",
-        )
+        selected_zone = str((artifact or {}).get("zone_id") or "")
+        commissioned_irrigation_contract(selected_zone)
+        keys = (("ifttt_ewelink:ewelink_owner_account:100204e9bc:4",)
+            if selected_zone == "A12345" else (
+                "ifttt_ewelink:ewelink_owner_account:100204e9bc:1",
+                "ifttt_ewelink:ewelink_owner_account:100204e9bc:2"))
         records = [load_device_record(key, connect_factory=connect)["device_record"]
                    for key in keys]
         if any(record.get("standing_authority") is not True or
@@ -820,7 +865,7 @@ def _canonical_standing_authority_proven(database_url, artifact):
             return False
         selected_zone = str((artifact or {}).get("zone_id") or "")
         selected_channel = (artifact or {}).get("channel")
-        expected = {"B12345": 1, "C12345": 2}
+        expected = {"A12345": 4, "B12345": 1, "C12345": 2}
         selected = next((record for record in records
             if record.get("channel") == expected.get(selected_zone)), None)
         if (selected is None or selected_channel != expected.get(selected_zone)
@@ -852,6 +897,8 @@ def _canonical_standing_authority_proven(database_url, artifact):
                 or str(row[2]) != str(envelope.get("policy_sha256") or "")):
             return False
         policy = row[1] if isinstance(row[1], dict) else {}
+        if selected_zone == "A12345":
+            return _a_authority_policy_proven(policy, artifact, keys)
         return _bc_authority_policy_proven(policy, artifact, keys)
     except Exception:
         return False
@@ -889,6 +936,26 @@ def _bc_authority_policy_proven(policy, artifact, keys):
             and policy.get("automatic_on_retry") is False)
 
 
+def _a_authority_policy_proven(policy, artifact, keys):
+    """A's own envelope cannot be inferred from the historical B/C v2 policy."""
+    if (policy.get("contract_version") != "rootline_a_standing_authority.v1"
+            or set(policy.get("device_keys") or ()) != set(keys)
+            or set(keys) != {"ifttt_ewelink:ewelink_owner_account:100204e9bc:4"}
+            or policy.get("zone_ids") != ["A12345"]
+            or policy.get("allowed_channels") != [4]
+            or artifact.get("zone_id") != "A12345" or artifact.get("channel") != 4
+            or policy.get("water_supply") != "gravity_fed_downhill"
+            or policy.get("own_operating_policy_required") is not True):
+        return False
+    # Reuse unchanged common safety requirements without treating B/C authority
+    # as permission for A. Exact A scope/version was checked above.
+    common = dict(policy, contract_version="rootline_bc_standing_authority.v2",
+        device_keys=["ifttt_ewelink:ewelink_owner_account:100204e9bc:1",
+                     "ifttt_ewelink:ewelink_owner_account:100204e9bc:2"],
+        zone_ids=["B12345", "C12345"], allowed_channels=[1, 2])
+    return _bc_authority_policy_proven(common, artifact, common["device_keys"])
+
+
 def _safe(status):
     return {"success": True, "status": status, "hardware_commands": 0,
             "telegram_messages": 0, "writes_farm_data": False,
@@ -917,9 +984,7 @@ def _planning_observation(initial, owner, chat, next_due):
     history = evidence.get("irrigation_history") or {}
     histories = history.get("zones") or {}
     zones = []
-    zone_ids = sorted(identity for identity, row in rootline_device_registry().items()
-        if row.get("collection")=="irrigation_zones"
-        and row.get("commissioned") is True)
+    zone_ids = IRRIGATION_ZONE_IDS
     for zone in zone_ids:
         task = tasks.get(zone, {})
         raw = str(task.get("zone_decision") or "Needs Data")

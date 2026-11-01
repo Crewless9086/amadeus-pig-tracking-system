@@ -502,7 +502,7 @@ a new camp's job. Reassess immediately or on the next minute tick; do not wait
 for a report. A segment ending on either side of midnight retains the same
 bounded 30-minute continuation opportunity, without creating irrigation credit
 or bypassing fresh need, weather, containment or authority checks. Uncommissioned
-or disabled zones remain ineligible; A/E remain inactive until their stated gates.
+or disabled zones remain ineligible; A requires its own stated gates and E remains held.
 
 ## Future SmartLife, SONOFF, And IFTTT Setup
 
@@ -519,8 +519,35 @@ Creating an IFTTT function does not prove a physical device mapping and does not
 
 A camp is irrigation controller channel 4 and E camp channel 3. Their paired
 events are `irrigation_1_ch4_on/off` and `irrigation_1_ch3_on/off` respectively.
-Both remain plumbing-not-ready, uncommissioned and inactive until the owner
-confirms completed pipework and the exact commissioning/activation gate passes.
+The owner's 2026-10-31 readiness statement resolves A's pipework prerequisite;
+it does not prove commissioning or activation. A/B/C are drip irrigation and
+may be assessed throughout all 24 hours against current need and weather.
+A's exact CH4 physical identity, offline/native fail-stop, restoration OFF,
+manual isolation, commissioning generation, canonical authority and separate
+`ROOTLINE_A_ENABLED` flag remain independent prerequisites. E remains
+plumbing-not-ready, uncommissioned and inactive.
+
+A uses its own explicit operating-policy successor. Its useful minimum,
+maximum segment and requested total runtime, need-based or weekly target,
+and supported supply class must come from attributable owner/canonical
+knowledge. The B/C two-hour/four-day target and fertilizer programme do not
+transfer to A. A stricter current A total or segment limit holds incompatible
+new work from an existing parent without rewriting its history. A remaining
+segment that still fits the current limits may continue after fresh validation. Missing crop or flow calibration prevents dependent agronomic
+or volume claims; it need not block a separately proven controller objective.
+The implemented supply profile admits proven gravity-fed A only; unknown or
+unsupported supply remains a dependent hold.
+
+A shares the existing mutually exclusive irrigation coordinator and history.
+Segments remain bounded by the native 3,599-second backup with independent
+primary OFF; a shorter own target requires exact fresh ON/OFF and its original
+primary deadline before controller completion. Rain or unproven active weather
+stops A using the same sticky stop barrier and PARTIAL accounting as B/C.
+Unmet need remains recorded; no stopped or controller-only interval invents
+water volume. A need-based history epoch begins at its actual canonical
+commissioning cutoff, never a fabricated week-start absence. The existing
+measured-water-credit schema and B/C history stay unchanged. These source
+rules do not create a device record, policy, authority or live enablement.
 
 The future setup runbook must record, without storing secrets:
 

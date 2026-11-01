@@ -967,7 +967,13 @@ def _canonical_commissioning(packet, commissioning_id, now):
         return None
     if validated.get("commissioning_id") != commissioning_id:
         return None
-    return {**validated, "native_inching_seconds": validated["native_fail_stop_minutes"] * 60}
+    seconds = packet.get("native_inching_seconds")
+    if str(evidence.get("zone_id") or "") == "A12345":
+        if type(seconds) is not int or seconds != 3599:
+            return None
+    else:
+        seconds = validated["native_fail_stop_minutes"] * 60
+    return {**validated, "native_inching_seconds": seconds}
 
 
 def _canonical_outcome(packet, execution, shutdown, now):
@@ -1006,12 +1012,21 @@ def _provider_bounded_outcome(execution, shutdown, now):
     primary = _timestamp(execution.get("primary_stop_deadline"))
     native = _timestamp(execution.get("native_fail_stop_deadline"))
     runtime_seconds = int(execution.get("planned_runtime_seconds") or 0)
+    # A's explicit target may end before its fixed 3,599-second backup. Its
+    # own primary deadline plus fresh exact ON/OFF proves only that controller
+    # duration; the historical B/C completion rule remains unchanged.
+    a_short_bound = (execution.get("zone_id") == "A12345"
+        and execution.get("device_id") == "100204e9bc" and execution.get("channel") == 4
+        and claimed is not None and primary is not None and native is not None
+        and primary <= native == claimed + timedelta(seconds=3599)
+        and start.get("device_id") == shutdown.get("device_id") == "100204e9bc"
+        and start.get("channel") == shutdown.get("channel") == 4)
     if (execution.get("state") != "Active" or execution.get("on_attempts") != 1
             or start.get("authoritative") is not True or start.get("state") != "ON"
             or shutdown.get("authoritative") is not True or shutdown.get("state") != "OFF"
             or not start.get("evidence_id") or not shutdown.get("evidence_id")
             or None in {claimed, started, stopped, primary, native}
-            or not 0 < runtime_seconds <= 3599 or primary != native
+            or not 0 < runtime_seconds <= 3599 or (primary != native and not a_short_bound)
             or primary != claimed + timedelta(seconds=runtime_seconds)
             or not claimed <= started < primary <= stopped <= now):
         return {}
@@ -1052,7 +1067,15 @@ def _safe_configuration(value, zone):
 
 
 def _output_binding(execution):
-    output = commissioned_irrigation_contract(execution.get("zone_id"))
+    if execution.get("zone_id") == "A12345":
+        # Durable stop/recovery duties survive revocation or an unavailable
+        # commissioning read. This static binding is never used for new ON.
+        output = get_device_contract("A12345")
+        if (execution.get("device_id") != output["device_id"]
+                or not str(execution.get("commissioning_id") or "").startswith("ROOTLINE-COMMISSION-")):
+            raise ValueError("rootline_execution_channel_binding_invalid")
+    else:
+        output = commissioned_irrigation_contract(execution.get("zone_id"))
     if int(execution.get("channel") or 0) != output["channel"]:
         raise ValueError("rootline_execution_channel_binding_invalid")
     return output

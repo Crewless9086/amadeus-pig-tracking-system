@@ -98,7 +98,7 @@ IFTTT activation, physical hardware control, or autonomous irrigation.
 ## Planning, Execution And Device Contract
 
 The owner-only Daily Advisor may combine the focused Water And Energy Rules
-with current canonical evidence to explain B12345 and C12345 eligibility,
+with current canonical evidence to explain A12345, B12345 and C12345 eligibility,
 weather freshness, advice, evidence gaps and unresolved owner decisions.
 
 Unknown seasonal boundaries, operating windows, runtime limits, crop-need
@@ -112,7 +112,12 @@ device-class outcome, learn and notify only material change. B/C irrigation,
 fertiliser mixing, fertiliser injection and borehole pumping are separate
 device classes; no commissioning or authority transfers between them.
 
-- B/C segments are sequential, independently claimed, bounded by the native
+- A requires its own canonical CH4 commissioning, standing authority, operating
+  policy and `ROOTLINE_A_ENABLED` flag. Owner-confirmed plumbing readiness and
+  all-day need/weather intent do not supply a runtime target, crop assumptions,
+  water calibration or B/C fertilizer authority. E remains held. A reuses the
+  same planner, claim lock, rain reassessment, bounded OFF recovery and history.
+- A/B/C segments are sequential, independently claimed, bounded by the native
   fail-stop and same-zone/day guard, and require verified shutdown before any
   fresh second-segment decision.
 - Fertiliser mixing and injection require separate typed commissioning and
