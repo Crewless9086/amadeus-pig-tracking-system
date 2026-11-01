@@ -7,6 +7,7 @@ identity. Auxiliary authority remains independently disabled by default.
 from __future__ import annotations
 
 from copy import deepcopy
+from hashlib import sha256
 import json
 import time
 from datetime import datetime, timezone, timedelta
@@ -38,7 +39,7 @@ def output_evidence_from_snapshot(snapshot, *, device_id, channel):
         "channel": rows[0].get("channel") if matched else None,
         "evidence_id": snapshot.get("response_digest"),
         "retrieved_at": snapshot.get("retrieved_at")}
-    if device_id == DEVICE_ID and type(channel) is int and channel in (1, 2):
+    if device_id == DEVICE_ID and type(channel) is int and channel in (1, 2, 4):
         result["irrigation_output_evidence"] = {
             "device_id": snapshot.get("device_id"),
             "current_outputs_authoritative": snapshot.get("current_outputs_authoritative"),
@@ -293,7 +294,9 @@ class RootlineIFTTTTransport:
         output = output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
         from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
         duty = current_duty()
-        if duty.get("execution_id") and output.get("authoritative") is True and output.get("state") == "OFF":
+        from modules.telemetry.rootline_irrigation_execution_store import is_a_commissioning_duty
+        if (duty.get("execution_id") and not is_a_commissioning_duty(duty)
+                and output.get("authoritative") is True and output.get("state") == "OFF"):
             try:
                 RequestBudget(self._request_environment()).release_after_off(
                     duty["execution_id"], device_id=device_id, channel=channel,
@@ -340,9 +343,16 @@ class RootlineIFTTTTransport:
                          and self.auxiliary_on_authorizer(device_id=device_id,
                              channel=channel, idempotency_key=str(idempotency_key)))):
             return {"accepted_unambiguous": False, "status": "auxiliary_authority_disabled"}
+        return self._send_bound_state(contract=contract, device_id=device_id,
+            channel=channel, state=state, idempotency_key=idempotency_key)
+
+    def _send_bound_state(self, *, contract, device_id, channel, state,
+                          idempotency_key, before_send=None, known_no_send=None,
+                          network_attempt=None):
         event = contract.get("on_event" if state == "ON" else "off_event" if state == "OFF" else "")
         secret = str(self.environ.get("ROOTLINE_IFTTT_MAKER_KEY") or "").strip()
         if not event or not secret or not str(idempotency_key or "").strip():
+            if known_no_send is not None: known_no_send("transport_not_configured")
             return {"accepted_unambiguous": False, "status": "transport_not_configured"}
         url = "https://maker.ifttt.com/trigger/{}/with/key/{}".format(
             event, urllib_parse.quote(secret, safe=""))
@@ -362,13 +372,27 @@ class RootlineIFTTTTransport:
                     device_id=device_id, channel=channel, claimed_at=duty["claimed_at"],
                     primary_stop_deadline=duty["primary_stop_deadline"])
             except Exception:
+                if known_no_send is not None: known_no_send("provider_capacity_not_available")
                 return {"accepted_unambiguous": False,
                     "status": "provider_capacity_not_available", "provider_command_attempted": False}
+        if before_send is not None:
+            try:
+                final_deadline = before_send()
+                if state == "ON":
+                    edge_deadline = min(edge_deadline, final_deadline)
+            except Exception:
+                if known_no_send is not None: known_no_send("a_commissioning_sender_refused")
+                return {"accepted_unambiguous": False, "status": "a_commissioning_sender_refused",
+                    "provider_command_attempted": False}
         # No database work, provider probe or pacing remains beyond this check.
         # A slow accounting acknowledgement cannot create a late ON command.
         if state == "ON" and time.monotonic() >= edge_deadline:
+            if known_no_send is not None: known_no_send("provider_command_deadline_reached")
             return {"accepted_unambiguous": False, "status": "provider_command_deadline_reached",
                 "provider_command_attempted": False}
+        # Set the private A marker before entering the provider call. Any
+        # exception or missing acknowledgement after this point is outstanding.
+        if network_attempt is not None: network_attempt()
         try:
             with self.http_open(req, timeout=15) as response:
                 code = int(getattr(response, "status", response.getcode()))
@@ -378,6 +402,88 @@ class RootlineIFTTTTransport:
         return {"accepted_unambiguous": 200 <= code < 300,
                 "status": "accepted" if 200 <= code < 300 else "rejected",
                 "event": event, "provider_status": code}
+
+    def read_a_commissioning_configuration(self):
+        """Observe exact CH4 configuration without asserting commissioning."""
+        snapshot = self._snapshot(DEVICE_ID, 4)
+        record = self.token_store.latest() or {}
+        account = record.get("provider_account_digest")
+        if not _a_digest(account):
+            raise ValueError("a_commissioning_account_binding_missing")
+        material = _a_configuration_material(snapshot)
+        return {"contract_version": "rootline_a_configuration_observation.v1",
+            "zone_id": "A12345", "device_id": DEVICE_ID, "channel": 4,
+            "provider_account_binding": "ewelink_owner_account",
+            "provider_account_digest": account, "commissioned": False,
+            "ordinary_eligibility": False,
+            "ifttt_automation_configuration": "Unknown",
+            "configuration": material, "configuration_sha256": _a_json_digest(material),
+            "snapshot": deepcopy(snapshot), "response_digest": snapshot.get("response_digest"),
+            "observed_at": snapshot.get("retrieved_at")}
+
+    def set_a_commissioning_state(self, *, operation_claim, state, idempotency_key):
+        from modules.telemetry.rootline_irrigation_execution_store import (
+            _A_COMMISSIONING_SENDER, _ACommissioningSender, authorize_a_commissioning_sender)
+        from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+        context = _A_COMMISSIONING_SENDER.get()
+        # Refuse before even reading a provider or consuming capacity when the
+        # caller has no store-owned, live sender transaction.
+        if (not isinstance(context, _ACommissioningSender) or context.used
+                or context.claim != operation_claim or context.state != state
+                or context.key != idempotency_key or state not in {"ON", "OFF"}):
+            return {"accepted_unambiguous": False, "status": "a_commissioning_locked_sender_required",
+                "provider_command_attempted": False}
+        contract = self._binding(DEVICE_ID, 4)
+        if (contract.get("identity") != "A12345" or contract.get("channel") != 4
+                or contract.get("on_event") != "irrigation_1_ch4_on"
+                or contract.get("off_event") != "irrigation_1_ch4_off"):
+            context.note_known_no_send("a_commissioning_binding_changed")
+            return {"accepted_unambiguous": False, "status": "a_commissioning_binding_changed",
+                "provider_command_attempted": False}
+        # Explicit scope is necessary: the generic execution wrapper does not
+        # bind new transport methods. OFF deliberately has no provider read.
+        with execution_duty(operation_claim):
+            try:
+                configuration = self.read_a_commissioning_configuration() if state == "ON" else None
+            except Exception:
+                context.note_known_no_send("a_commissioning_configuration_read_failed")
+                return {"accepted_unambiguous": False,
+                    "status": "a_commissioning_configuration_read_failed", "provider_command_attempted": False}
+            return self._send_bound_state(contract=contract, device_id=DEVICE_ID,
+                channel=4, state=state, idempotency_key=idempotency_key,
+                before_send=lambda: authorize_a_commissioning_sender(
+                    operation_claim, state, idempotency_key, configuration),
+                known_no_send=context.note_known_no_send,
+                network_attempt=context.note_network_attempt)
+
+    def read_a_commissioning_output(self, *, operation_claim):
+        """One canonical A observation; current OFF never discharges its duty."""
+        from modules.telemetry.rootline_irrigation_execution_store import (
+            _A_COMMISSIONING_OBSERVER, _ACommissioningObserver)
+        context = _A_COMMISSIONING_OBSERVER.get()
+        if (not isinstance(context, _ACommissioningObserver)
+                or context.claim != operation_claim or context.read_performed):
+            raise ValueError("a_commissioning_locked_observer_required")
+        context.read_performed = True
+        snapshot = self._snapshot(DEVICE_ID, 4)
+        return output_evidence_from_snapshot(snapshot, device_id=DEVICE_ID, channel=4)
+
+    def release_a_commissioning_capacity(self, *, operation_claim, evidence):
+        """Discharge only the store-validated safe branch, with ledger readback."""
+        from modules.telemetry.rootline_irrigation_execution_store import (
+            _A_COMMISSIONING_OBSERVER, _ACommissioningObserver)
+        from modules.telemetry.rootline_ewelink_request_budget import RequestBudget
+        context = _A_COMMISSIONING_OBSERVER.get()
+        if (not isinstance(context, _ACommissioningObserver) or not context.safe_to_release
+                or context.claim != operation_claim or context.final_evidence != evidence):
+            raise ValueError("a_commissioning_safe_retirement_required")
+        budget = RequestBudget(self._request_environment())
+        budget.release_after_off(operation_claim["execution_id"], device_id=DEVICE_ID, channel=4,
+            evidence={**evidence, "response_digest": evidence.get("evidence_id")})
+        with budget._locked() as connection:
+            if operation_claim["execution_id"] in budget._load(connection)["reserves"]:
+                raise ValueError("a_commissioning_reserve_release_unproven")
+        return True
 
     def _snapshot(self, device_id, channel):
         contract = self._binding(device_id, channel)
@@ -435,5 +541,135 @@ def active_auxiliary_output_owned(active, contract, observed_at):
             and deadline <= claimed + timedelta(seconds=active["maximum_duration_seconds"])
             and start.get("authoritative") is True and start.get("state") == "ON"
             and bool(start.get("evidence_id") or start.get("response_digest")))
+    except (ValueError, TypeError, KeyError, OverflowError):
+        return False
+
+
+
+def _a_digest(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def _a_json_digest(value):
+    return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _a_configuration_material(snapshot):
+    keys = ("device_id", "firmware", "device_model", "device_uiid", "configuration_generation",
+        "commissioned_baseline_id", "commissioned_baseline_sha256", "timers_enabled",
+        "scenes_enabled", "interlock_enabled", "interlock_evidence_source",
+        "scenes_evidence_source", "control_path_evidence_source")
+    rows = snapshot.get("channels") or []
+    return {**{key: snapshot.get(key) for key in keys}, "channels": sorted([
+        {key: row.get(key) for key in ("channel", "native_auto_off_enabled",
+            "native_auto_off_seconds", "power_restoration_state")}
+        for row in rows if isinstance(row, dict)], key=lambda row: row.get("channel") or 0)}
+
+
+def validate_a_commissioning_configuration(value, *, grant, now, after=None):
+    """Require actual normalized provider fields plus separately bound IFTTT evidence."""
+    from modules.telemetry.rootline_ewelink_commissioned_baseline import commissioned_controller_baseline
+    def need(ok):
+        if not ok:
+            raise ValueError("a_commissioning_configuration_unproven")
+    need(isinstance(value, dict) and isinstance(grant, dict))
+    snapshot = value.get("snapshot")
+    need(isinstance(snapshot, dict))
+    material = _a_configuration_material(snapshot)
+    baseline = commissioned_controller_baseline()
+    need(value.get("contract_version") == "rootline_a_configuration_observation.v1"
+        and value.get("device_id") == DEVICE_ID and value.get("zone_id") == "A12345"
+        and type(value.get("channel")) is int and value["channel"] == 4
+        and value.get("commissioned") is False and value.get("ordinary_eligibility") is False
+        and value.get("ifttt_automation_configuration") == "Unknown"
+        and value.get("provider_account_binding") == "ewelink_owner_account"
+        and _a_digest(value.get("provider_account_digest"))
+        and value["provider_account_digest"] == grant.get("provider_account_digest")
+        and value.get("configuration") == material
+        and value.get("configuration_sha256") == _a_json_digest(material)
+        and value["configuration_sha256"] == grant.get("configuration_sha256"))
+    need(snapshot.get("device_id") == DEVICE_ID and snapshot.get("device_uiid") == 9
+        and snapshot.get("firmware") == grant.get("firmware") == baseline["firmware"]
+        and snapshot.get("configuration_generation") == grant.get("configuration_generation")
+            == baseline["configuration_generation"]
+        and baseline.get("revoked") is False and snapshot.get("commissioned_baseline_fresh") is True
+        and snapshot.get("commissioned_baseline_id") == baseline["baseline_id"]
+        and snapshot.get("commissioned_baseline_sha256") == grant.get("configuration_baseline_sha256")
+            == baseline["baseline_sha256"]
+        and snapshot.get("current_outputs_authoritative") is True
+        and snapshot.get("actuation_safety_complete") is True
+        and snapshot.get("actuation_configuration_safe") is True
+        and snapshot.get("observation_fresh") is True and snapshot.get("online") is True
+        and snapshot.get("provider_control_calls") == 0
+        and type(snapshot.get("provider_control_calls")) is int
+        and snapshot.get("timers_enabled") is False and snapshot.get("scenes_enabled") is False
+        and snapshot.get("interlock_enabled") is False
+        and snapshot.get("scene_evidence_conflict") is False
+        and snapshot.get("safety_readback_missing") == []
+        and snapshot.get("control_path_evidence_source") in {
+            "provider_readback", "commissioned_configuration_baseline", "mixed_provider_and_commissioned_baseline"})
+    rows = snapshot.get("channels")
+    need(isinstance(rows, list) and len(rows) == 4
+        and all(isinstance(row, dict) and type(row.get("channel")) is int for row in rows)
+        and {row["channel"] for row in rows} == {1, 2, 3, 4}
+        and all(row.get("output_state") == "OFF" and row.get("native_auto_off_enabled") is True
+            and type(row.get("native_auto_off_seconds")) is int
+            and 0 < row["native_auto_off_seconds"] <= 3600
+            and row.get("power_restoration_state") == "OFF" for row in rows)
+        and next(row for row in rows if row["channel"] == 4)["native_auto_off_seconds"] == 3599)
+    # IFTTT automation configuration is not part of the relay GET contract.
+    # Never synthesize its absence from current OFF. The root-bound canonical
+    # grant must preserve the actual accepted, same-generation configuration evidence.
+    paths = grant.get("ifttt_control_path_evidence")
+    need(isinstance(paths, dict) and paths.get("channels") == [1, 2, 3, 4]
+        and paths.get("device_id") == DEVICE_ID
+        and paths.get("configuration_generation") == baseline["configuration_generation"]
+        and paths.get("conflicting_automations") == []
+        and isinstance(paths.get("reference"), str) and bool(paths["reference"].strip())
+        and _a_digest(paths.get("artifact_sha256"))
+        and paths.get("source") in {"owner_authenticated_configuration", "canonical_configuration_evidence"})
+    observed = datetime.fromisoformat(str(snapshot.get("retrieved_at")).replace("Z", "+00:00"))
+    need(isinstance(now, datetime) and now.tzinfo is not None and observed.tzinfo is not None
+        and timedelta(0) <= now - observed <= timedelta(seconds=30)
+        and (after is None or observed >= after)
+        and value.get("observed_at") == snapshot.get("retrieved_at")
+        and _a_digest(snapshot.get("response_digest"))
+        and value.get("response_digest") == snapshot["response_digest"])
+    return True
+
+
+def a_commissioning_final_off_verified(value, *, now, after):
+    """Fresh exact CH4 OFF plus all sibling OFF, independent of expired grants."""
+    return _a_commissioning_output_verified(value, target_state="OFF", now=now, after=after)
+
+
+def a_commissioning_start_verified(value, *, now, after):
+    """Fresh own CH4 ON with all three siblings OFF; HTTP acceptance is absent."""
+    return _a_commissioning_output_verified(value, target_state="ON", now=now, after=after)
+
+
+def _a_commissioning_output_verified(value, *, target_state, now, after):
+    try:
+        if (not isinstance(value, dict) or value.get("authoritative") is not True
+                or value.get("device_id") != DEVICE_ID or type(value.get("channel")) is not int
+                or value["channel"] != 4 or value.get("state") != target_state):
+            return False
+        proof = value.get("irrigation_output_evidence")
+        if (not isinstance(proof, dict) or proof.get("device_id") != DEVICE_ID
+                or proof.get("current_outputs_authoritative") is not True
+                or not _a_digest(proof.get("response_digest"))
+                or proof["response_digest"] != value.get("evidence_id")
+                or proof.get("retrieved_at") != value.get("retrieved_at")
+                or type(proof.get("provider_control_calls")) is not int
+                or proof["provider_control_calls"] != 0):
+            return False
+        observed = datetime.fromisoformat(str(proof.get("retrieved_at")).replace("Z", "+00:00"))
+        rows = proof.get("channels")
+        return (observed.tzinfo is not None and after <= observed <= now
+            and now - observed <= timedelta(seconds=30)
+            and isinstance(rows, list) and len(rows) == 4
+            and all(isinstance(row, dict) and type(row.get("channel")) is int
+                and row.get("output_state") == (target_state if row["channel"] == 4 else "OFF") for row in rows)
+            and {row["channel"] for row in rows} == {1, 2, 3, 4})
     except (ValueError, TypeError, KeyError, OverflowError):
         return False

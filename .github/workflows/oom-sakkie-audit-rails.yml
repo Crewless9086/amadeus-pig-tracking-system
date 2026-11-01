@@ -13,7 +13,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -44,6 +44,20 @@ jobs:
 
       - name: Prove allowlist, schema readback, replay and rollback
         run: python -m pytest tests/test_render_production_migration_rail.py tests/test_render_rootline_a_migration_rail.py tests/test_render_production_migration_workflow.py -q
+
+
+      - name: Create isolated A commissioning fixture
+        run: |
+          python - <<'PY'
+          import psycopg
+          with psycopg.connect("postgresql://postgres:postgres@localhost:5432/postgres", autocommit=True) as db:
+              db.execute("create database rootline_a_commissioning_test")
+          PY
+
+      - name: Prove A first-use claim, sender and recovery races
+        env:
+          ROOTLINE_A_COMMISSIONING_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rootline_a_commissioning_test
+        run: python -m pytest tests/test_rootline_a_commissioning_admission.py tests/test_rootline_a_commissioning_postgres.py tests/test_rootline_a_camp_automation.py tests/test_rootline_ifttt_transport.py -q
 
   audit-rails:
     name: Unit tests with disposable Postgres audit rails

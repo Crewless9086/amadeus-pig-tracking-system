@@ -40,7 +40,8 @@
   single physical outlet without hiding native timer or competing-schedule
   gaps. `rootline_borehole_commissioning.py` resolves installed protection
   evidence and bounds each supply window by the validated native cap.
-  A/E channel mappings remain explicitly plumbing-not-ready and inactive.
+  A requires its own canonical configuration, standing policy and enablement;
+  E remains plumbing-not-ready and inactive.
 - `rootline_ewelink_commissioned_baseline.py`, `rootline_ewelink_readback.py`
   and `rootline_ifttt_transport.py` resolve genuine per-channel configuration
   references from the existing canonical device spine. CH1 cannot borrow CH2's
@@ -52,6 +53,17 @@
   and pumps. `tests/test_rootline_commissioning_bridges.py` exercises the actual
   normalizer, canonical loader, transport and eligibility chain; device-spine
   PostgreSQL qualification covers persistence and invalidation without a timer.
+- A first-use commissioning reuses `rootline_irrigation_execution_store.py`,
+  `rootline_ifttt_transport.py`, the existing review journal and shared irrigation
+  exclusion. One ON and three OFF attempts are durably consumed before sending.
+  Typed observations retain the first genuine CH4 ON with all siblings OFF;
+  accepted or ambiguous commands followed only by current OFF stay unresolved.
+  Only a canonical never-sent/source-proven no-send branch or delivered-ON then
+  fresh four-OFF can retire and discharge its exact request reserve. Native proof
+  and water credit remain separate. Source proof is in
+  `tests/test_rootline_a_commissioning_admission.py` and
+  `tests/test_rootline_a_commissioning_postgres.py`; the existing migration CI job
+  qualifies this dedicated fixture separately from its migration database.
 - Qualification: `tests/test_rootline_integrated_operation.py`,
   `tests/test_rootline_eskom_runtime.py`,
   `tests/test_rootline_managed_evidence_history_postgres.py` and adjacent
@@ -995,7 +1007,10 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
 - Shared demand/availability: `modules/telemetry/rootline_ewelink_request_budget.py`
   on the existing review-event rail; global transactional send fence, scoped
   attempt accounting, app-wide holds, active proof reserves and optional
-  readiness admission. No new store, scheduler or positive evidence cache.
+  readiness admission. Accounting acquisition reuses the native ROOTLINE
+  five-second connection bound, capped by the remaining snapshot/duty deadline;
+  transaction-local SQL/lock limits, late cleanup and independent OFF remain.
+  No new store, scheduler or positive evidence cache.
 - Qualification: `tests/test_rootline_ewelink_request_budget.py`,
   `tests/test_rootline_ewelink_request_budget_postgres.py`,
   `tests/test_rootline_ewelink_request_budget_workload.py`.
@@ -1340,8 +1355,17 @@ Current built Supabase-backed surface:
   `app_private.production_migration_receipts`. It never performs application
   business writes.
   The A irrigation-history extension joins this same closed allowlist. Its exact
-  typed function, service-only ACL, append-only guard, existing indexes and new
-  A/B/C index are checked before/after execution and during replay. Catalog scope
+  typed function, complete insert-column/default and seven-constraint contract,
+  service-only effective authority, append-only guard, existing indexes and new
+  A/B/C index are checked before/after execution and during replay. Untrusted
+  direct, indirect and NOINHERIT paths fail closed. Finite authenticator/storage
+  broker profiles require exact attributes, membership options and grantors;
+  guard service EXECUTE and named API table residual grants are source-compatible
+  finite variants, not arbitrary discovered authority. PUBLIC, column ACLs, DML,
+  grant options and extra constraints fail closed. PostgreSQL 17 qualification in
+  the existing migration CI job covers its MAINTAIN residual; unknown variants
+  require explicit compatibility review without production permission changes.
+  Catalog scope
   follows the migration identity, preserving older immutable checkpoints. Tests
   are in `tests/test_render_rootline_a_migration_rail.py`; schema application is
   separate from A device commissioning, policy, standing authority and activation.

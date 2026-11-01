@@ -922,6 +922,72 @@ def _verify_green_device_predecessor(connection) -> dict:
     return readback
 
 
+def _rootline_trusted_transport(connection, *, function_oid, owner: str) -> dict:
+    """Finite hosted broker profiles; no name-only privilege exemption.
+
+    PostgreSQL 16+ exposes separate INHERIT/SET edge flags. An untested older
+    broker variant fails closed; the no-broker minimal schema remains supported.
+    The genuine owner/superuser administration boundary is reported separately.
+    """
+    roles = connection.execute(
+        """select rolname,oid,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,
+                  rolreplication,rolbypassrls
+             from pg_catalog.pg_roles
+            where rolname in ('authenticator','supabase_storage_admin') order by rolname"""
+    ).fetchall()
+    if not roles:
+        return {}
+    version = connection.execute("select current_setting('server_version_num')::int").fetchone()[0]
+    if version < 160000:
+        raise RuntimeError("migration_rootline_authenticator_server_version_unqualified")
+    by_name = {row[0]: row for row in roles}
+    if "authenticator" not in by_name:
+        raise RuntimeError("migration_rootline_storage_authenticator_missing")
+    expected_attributes = {
+        "authenticator": (True, False, False, False, False, False, False),
+        "supabase_storage_admin": (True, False, False, False, True, False, False),
+    }
+    expected_members = {
+        "authenticator": ("anon", "authenticated", "service_role"),
+        "supabase_storage_admin": ("authenticator",),
+    }
+    profiles = {}
+    for name, role in by_name.items():
+        prefix = "authenticator" if name == "authenticator" else "storage"
+        if role[2:] != expected_attributes[name]:
+            raise RuntimeError(f"migration_rootline_{prefix}_attributes_mismatch")
+        members = connection.execute(
+            """select authority.rolname,m.admin_option,m.inherit_option,m.set_option,
+                      grantor.rolname,grantor.rolsuper
+                 from pg_catalog.pg_auth_members m
+                 join pg_catalog.pg_roles authority on authority.oid=m.roleid
+                 join pg_catalog.pg_roles grantor on grantor.oid=m.grantor
+                where m.member=%s order by authority.rolname,grantor.rolname""", (role[1],),
+        ).fetchall()
+        if members != [(member, False, False, True, "supabase_admin", True)
+                       for member in expected_members[name]]:
+            raise RuntimeError(f"migration_rootline_{prefix}_memberships_mismatch")
+        authority = connection.execute(
+            """select pg_catalog.has_function_privilege(%s,%s,'EXECUTE'),
+                      pg_catalog.pg_has_role(%s,'service_role','MEMBER'),
+                      pg_catalog.pg_has_role(%s,'service_role','USAGE'),
+                      pg_catalog.pg_has_role(%s,'service_role','SET'),
+                      pg_catalog.pg_has_role(%s,%s,'MEMBER'),
+                      pg_catalog.pg_has_role(%s,%s,'USAGE'),
+                      pg_catalog.pg_has_role(%s,%s,'SET')""",
+            (role[1], function_oid, role[1], role[1], role[1],
+             role[1], owner, role[1], owner, role[1], owner),
+        ).fetchone()
+        if authority != (False, True, False, True, False, False, False):
+            raise RuntimeError(f"migration_rootline_{prefix}_effective_authority_mismatch")
+        profiles[name] = {"profile": ("noinherit_postgrest_transport_v2" if name == "authenticator"
+                else "noinherit_storage_transport_v1"),
+            "direct_memberships": [list(row) for row in members],
+            "inherited_execute": False, "service_usage": False,
+            "function_owner_member_usage_set": [False, False, False]}
+    return profiles
+
+
 def _rootline_function_readback(connection, name: str, item: AllowedMigration) -> dict:
     """Bind the complete function and its service-only boundary, not SQL phrases."""
     sql = _load_sql(item)
@@ -963,18 +1029,42 @@ def _rootline_function_readback(connection, name: str, item: AllowedMigration) -
                 volatility, parallel, config, strict, kind) != expected):
         raise RuntimeError(f"migration_rootline_function_definition_mismatch:{name}")
     acl = connection.execute(
-        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable
+        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable,
+                  pg_catalog.pg_get_userbyid(x.grantor)
              from pg_catalog.pg_proc p
              cross join lateral pg_catalog.aclexplode(
                coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) x
              left join pg_catalog.pg_roles r on r.oid=x.grantee
-            where p.oid=%s and x.grantee<>p.proowner order by 1,2,3""", (oid,),
+            where p.oid=%s and x.grantee<>p.proowner order by 1,2,3,4""", (oid,),
     ).fetchall()
-    if acl != ([("service_role", "EXECUTE", False)] if typed else []):
+    service_acl = [("service_role", "EXECUTE", False, owner)]
+    if acl != service_acl and (typed or acl != []):
         raise RuntimeError(f"migration_rootline_function_acl_mismatch:{name}")
+    # Historical SQL leaves an optional service grant on the trigger function.
+    # Both functions still need the same effective and recursive role checks.
+    transports = _rootline_trusted_transport(connection, function_oid=oid, owner=owner)
+    reachable = connection.execute(
+        """select r.rolname,
+                  pg_catalog.has_function_privilege(r.oid,%s,'EXECUTE'),
+                  pg_catalog.pg_has_role(r.oid,%s,'MEMBER'),
+                  pg_catalog.pg_has_role(r.oid,'service_role','MEMBER')
+             from pg_catalog.pg_roles r
+            where ((not r.rolsuper and r.rolname<>%s) or r.rolname in ('anon','authenticated'))
+              and (pg_catalog.pg_has_role(r.oid,%s,'MEMBER')
+                or (r.rolname<>'service_role' and not (r.rolname=any(%s))
+                    and (pg_catalog.has_function_privilege(r.oid,%s,'EXECUTE')
+                         or pg_catalog.pg_has_role(r.oid,'service_role','MEMBER'))))
+            order by r.rolname""",
+        (oid, owner, owner, owner, sorted(transports), oid),
+    ).fetchall()
+    if reachable:
+        raise RuntimeError(f"migration_rootline_function_effective_authority_mismatch:{name}:{reachable}")
     return {"body_sha256": hashlib.sha256(normalized.encode()).hexdigest(),
             "definition_sha256": hashlib.sha256(str(definition).encode()).hexdigest(),
-            "acl": [list(row) for row in acl]}
+            "acl": [list(row) for row in acl], "untrusted_execution_or_membership": [],
+            "trusted_transports": transports,
+            "administrative_boundary": "genuine function owner and superusers; exposed API roles never exempt"}
+
 
 
 def _rootline_history_index(connection, name: str, *, zones=None) -> dict:
@@ -1033,56 +1123,105 @@ def _rootline_history_boundary(connection) -> dict:
     ).fetchone()
     if not table or table[:2] != ("r", "p") or table[2] != table[3] or table[4]:
         raise RuntimeError("migration_rootline_history_relation_mismatch")
+    # Validate the full insert contract before the first A checkpoint can
+    # adopt it. Required omitted columns/defaults and extra CHECKs can reject
+    # every A append even when all nine explicitly supplied columns are valid.
     columns = connection.execute(
         """select a.attname,pg_catalog.format_type(a.atttypid,a.atttypmod),
-                  a.attnotnull,a.attidentity,a.attgenerated
+                  a.attnotnull,a.attidentity,a.attgenerated,
+                  pg_catalog.pg_get_expr(d.adbin,d.adrelid)
              from pg_catalog.pg_attribute a
+             left join pg_catalog.pg_attrdef d
+               on d.adrelid=a.attrelid and d.adnum=a.attnum
             where a.attrelid='public.irrigation_events'::regclass
-              and a.attnum>0 and not a.attisdropped and a.attname=any(%s)
-            order by a.attname""",
-        (["irrigation_event_id", "source_id", "event_at", "event_type", "actor",
-          "zone_id", "planned_minutes", "actual_minutes", "details"],),
+              and a.attnum>0 and not a.attisdropped
+            order by a.attname"""
     ).fetchall()
     expected_columns = sorted([
-        ("irrigation_event_id", "text", True, "", ""),
-        ("source_id", "text", False, "", ""),
-        ("event_at", "timestamp with time zone", True, "", ""),
-        ("event_type", "text", True, "", ""),
-        ("actor", "text", False, "", ""), ("zone_id", "text", False, "", ""),
-        ("planned_minutes", "numeric(8,2)", False, "", ""),
-        ("actual_minutes", "numeric(8,2)", False, "", ""),
-        ("details", "jsonb", True, "", ""),
+        ("irrigation_event_id", "text", True, "", "", None),
+        ("source_id", "text", False, "", "", None),
+        ("event_at", "timestamp with time zone", True, "", "", None),
+        ("event_type", "text", True, "", "", None),
+        ("actor", "text", False, "", "", None),
+        ("daily_plan_id", "text", False, "", "", None),
+        ("plan_item_id", "text", False, "", "", None),
+        ("zone_id", "text", False, "", "", None),
+        ("planned_minutes", "numeric(8,2)", False, "", "", None),
+        ("actual_minutes", "numeric(8,2)", False, "", "", None),
+        ("reason", "text", False, "", "", None),
+        ("weather_snapshot", "jsonb", True, "", "", "'{}'::jsonb"),
+        ("power_snapshot", "jsonb", True, "", "", "'{}'::jsonb"),
+        ("details", "jsonb", True, "", "", "'{}'::jsonb"),
+        ("source_sheet_row", "integer", False, "", "", None),
+        ("import_batch_id", "text", False, "", "", None),
+        ("created_at", "timestamp with time zone", True, "", "", "now()"),
     ])
-    primary = connection.execute(
-        """select pg_catalog.pg_get_constraintdef(oid),convalidated,
-                  condeferrable,condeferred
-             from pg_catalog.pg_constraint
-            where conrelid='public.irrigation_events'::regclass and contype='p'"""
-    ).fetchall()
-    if columns != expected_columns or primary != [
-            ("PRIMARY KEY (irrigation_event_id)", True, False, False)]:
+    if columns != expected_columns:
         raise RuntimeError("migration_rootline_history_columns_or_identity_mismatch")
-    # A caller must use the typed function. Do not adopt a pre-existing direct
-    # writer (including a column grant) into the new catalog checkpoint.
-    writes = connection.execute(
-        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type
-             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+    constraints = connection.execute(
+        """select c.contype,
+                  array(select a.attname from unnest(c.conkey) with ordinality k(n,ord)
+                    join pg_catalog.pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.n
+                    order by k.ord),
+                  case when c.contype='c' then pg_catalog.pg_get_constraintdef(c.oid) end,
+                  fn.nspname,ft.relname,
+                  array(select a.attname from unnest(c.confkey) with ordinality k(n,ord)
+                    join pg_catalog.pg_attribute a on a.attrelid=c.confrelid and a.attnum=k.n
+                    order by k.ord),
+                  case when c.contype='f' then c.confmatchtype end,
+                  case when c.contype='f' then c.confupdtype end,
+                  case when c.contype='f' then c.confdeltype end,
+                  c.confdelsetcols is null,c.convalidated,c.condeferrable,c.condeferred,
+                  c.connoinherit,c.conislocal,c.coninhcount
+             from pg_catalog.pg_constraint c
+             left join pg_catalog.pg_class ft on ft.oid=c.confrelid
+             left join pg_catalog.pg_namespace fn on fn.oid=ft.relnamespace
+            where c.conrelid='public.irrigation_events'::regclass
+            order by c.contype,c.conname"""
+    ).fetchall()
+    expected_constraints = [
+        ("c", [name], f"CHECK ((({name} IS NULL) OR ({name} >= (0)::numeric)))",
+         None, None, [], None, None, None, True, True, False, False, False, True, 0)
+        for name in ("actual_minutes", "planned_minutes")
+    ] + [
+        ("f", [column], None, "public", target, [column], "s", "a", "n",
+         True, True, False, False, True, True, 0)
+        for column, target in (("daily_plan_id", "irrigation_daily_plans"),
+            ("plan_item_id", "irrigation_plan_items"), ("source_id", "telemetry_sources"),
+            ("zone_id", "irrigation_zones"))
+    ] + [("p", ["irrigation_event_id"], None, None, None, [], None, None, None,
+          True, True, False, False, True, True, 0)]
+    # Names may differ; exact column/target/action and validation semantics may
+    # not. Include ALL kinds so extra UNIQUE/EXCLUDE/FK cannot become a checkpoint.
+    key = lambda row: (row[0], tuple(row[1]))
+    if sorted(constraints, key=key) != sorted(expected_constraints, key=key):
+        raise RuntimeError("migration_rootline_history_constraint_inventory_mismatch")
+    version = connection.execute("select current_setting('server_version_num')::int").fetchone()[0]
+    residuals = connection.execute(
+        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable,
+                  pg_catalog.pg_get_userbyid(x.grantor)
+             from pg_catalog.pg_class c
              cross join lateral pg_catalog.aclexplode(
                coalesce(c.relacl,pg_catalog.acldefault('r',c.relowner))) x
              left join pg_catalog.pg_roles r on r.oid=x.grantee
-            where n.nspname='public' and c.relname='irrigation_events'
-              and x.grantee<>c.relowner and x.privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER')
-           union all
-           select coalesce(r.rolname,'PUBLIC'),x.privilege_type
-             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
-             join pg_catalog.pg_attribute a on a.attrelid=c.oid
-             cross join lateral pg_catalog.aclexplode(a.attacl) x
-             left join pg_catalog.pg_roles r on r.oid=x.grantee
-            where n.nspname='public' and c.relname='irrigation_events'
-              and x.grantee<>c.relowner and x.privilege_type in ('INSERT','UPDATE')"""
+            where c.oid='public.irrigation_events'::regclass
+              and x.grantee<>c.relowner order by 1,2,3,4"""
     ).fetchall()
-    if writes:
+    permitted = {"SELECT", "REFERENCES", "TRIGGER"} | ({"MAINTAIN"} if version >= 170000 else set())
+    if any(role not in {"anon", "authenticated", "service_role"}
+            or privilege not in permitted or grantable or grantor != table[2]
+            for role, privilege, grantable, grantor in residuals):
         raise RuntimeError("migration_rootline_history_direct_write_acl")
+    column_acl = connection.execute(
+        """select a.attname from pg_catalog.pg_attribute a
+             cross join lateral pg_catalog.aclexplode(a.attacl) x
+            where a.attrelid='public.irrigation_events'::regclass and a.attnum>0"""
+    ).fetchall()
+    if column_acl:
+        raise RuntimeError("migration_rootline_history_column_acl")
+    # Residual TRIGGER/REFERENCES/PG17 MAINTAIN are a source-compatible finite
+    # profile, not a claim that all DDL authority is harmless. Exact append-only
+    # trigger and function semantics remain required below and on replay.
     guard = _rootline_function_readback(
         connection, "irrigation_events_block_update_delete", ROOTLINE_HISTORY_PREDECESSOR)
     triggers = connection.execute(
@@ -1102,7 +1241,10 @@ def _rootline_history_boundary(connection) -> dict:
         "execution_phase": _rootline_history_index(connection, "irrigation_events_rootline_execution_phase_uq"),
         "bc_cutoff": _rootline_history_index(connection, "irrigation_events_rootline_zone_cutoff_idx", zones=("B12345", "C12345")),
     }
-    return {"append_only_guard": guard, "preserved_indexes": indexes}
+    return {"append_only_guard": guard, "preserved_indexes": indexes,
+            "history_constraint_count": len(constraints),
+            "table_residual_acl": [list(row) for row in residuals],
+            "column_acl_count": 0}
 
 
 def _verify_rootline_a_history(connection, item: AllowedMigration, *, target: bool) -> dict:

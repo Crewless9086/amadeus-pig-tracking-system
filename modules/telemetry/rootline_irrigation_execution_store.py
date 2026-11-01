@@ -5,6 +5,12 @@ import hashlib
 import json
 import os
 from contextlib import nullcontext
+from contextvars import ContextVar
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import re
+import socket
+import time
 
 EVENT_SOURCE = "rootline_irrigation_execution"
 
@@ -18,6 +24,8 @@ class RootlineExecutionStoreUnavailable(RuntimeError):
 
 
 def rootline_irrigation_execution_store(action, payload):
+    if action in _A_COMMISSIONING_ACTIONS:
+        return _a_commissioning_store(action, payload)
     if action == "record_execution_not_dispatched":
         return {"success": False, "created": False, "status": "use_locked_no_send_retirement"}
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
@@ -1066,6 +1074,8 @@ def _claim_irrigation_output(body):
                                            read_only=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            if _a_commissioning_unresolved(connection):
+                return {"success": True, "created": False, "status": "a_commissioning_unresolved"}
             retired_no_send = _not_dispatched_ids(cursor)
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
                 where review_event_id=%s""", (event_id,))
@@ -1938,3 +1948,580 @@ def _verified_runtime(body):
     except (TypeError, ValueError):
         return None
     return runtime if 0 <= runtime <= maximum else None
+
+
+# First-use A commissioning is an operator operation, never a watering job.
+# The existing review table and irrigation lock own its durable sender fence.
+_A_COMMISSIONING_SOURCE = "oom_sakkie_rootline_operational_intake"
+_A_COMMISSIONING_VERSION = "rootline_a_commissioning_state.v1"
+_A_COMMISSIONING_ACTIONS = frozenset({"load_a_commissioning_operation",
+    "claim_a_commissioning_before_on", "dispatch_a_commissioning_on_edge",
+    "claim_a_commissioning_off_attempt", "finish_a_commissioning",
+    "revoke_a_commissioning", "observe_a_commissioning"})
+_A_COMMISSIONING_SENDER = ContextVar("rootline_a_commissioning_sender", default=None)
+_A_COMMISSIONING_OBSERVER = ContextVar("rootline_a_commissioning_observer", default=None)
+_A_NO_SEND_REASONS = frozenset({"transport_not_configured", "provider_capacity_not_available",
+    "a_commissioning_sender_refused", "provider_command_deadline_reached",
+    "a_commissioning_binding_changed", "a_commissioning_configuration_read_failed"})
+_A_COMMISSIONING_SOURCE_PATHS = (
+    "modules/telemetry/rootline_ifttt_transport.py",
+    "modules/telemetry/rootline_irrigation_execution_store.py",
+    "modules/telemetry/rootline_ewelink_request_budget.py",
+    "modules/telemetry/rootline_ewelink_readback.py",
+    "modules/telemetry/rootline_device_registry.py",
+    "modules/telemetry/rootline_ewelink_commissioned_baseline.py",
+)
+
+
+def _a_need(condition, reason):
+    if not condition:
+        raise ValueError("a_commissioning_" + reason)
+
+
+def _a_time(value):
+    parsed = _time(value)
+    _a_need(parsed is not None and parsed.tzinfo is not None
+        and parsed.utcoffset() is not None, "aware_time_required")
+    return parsed.astimezone(timezone.utc)
+
+
+def _a_hex(value, length=64):
+    return isinstance(value, str) and re.fullmatch("[a-f0-9]{%d}" % length, value) is not None
+
+
+def _a_operation(value):
+    _a_need(_a_hex(value, 32), "operation_identity_invalid")
+    return value
+
+
+def _a_id(operation, phase):
+    return "ROOTLINE-OP-" + _a_operation(operation) + "-" + phase
+
+
+def _a_rows(connection, operation):
+    with connection.cursor() as cursor:
+        cursor.execute("""select review_json->'rootline_operational_intake'
+            from public.sam_live_stock_conversation_review_events
+            where event_source=%s
+              and review_json->'rootline_operational_intake'->>'operation_id'=%s
+            order by created_at,review_event_id""", (_A_COMMISSIONING_SOURCE, operation))
+        rows = [row[0] for row in cursor.fetchall()]
+    _a_need(all(isinstance(row, dict) for row in rows), "canonical_rows_invalid")
+    return rows
+
+
+def _a_phase(rows, operation, phase):
+    matching = [row for row in rows if row.get("event_id") == _a_id(operation, phase)]
+    _a_need(len(matching) <= 1, "duplicate_canonical_phase")
+    return matching[0] if matching else None
+
+
+def is_a_commissioning_duty(value):
+    """Exact operator-claim family, never an ordinary execution or bypass flag."""
+    operation = value.get("operation_id")
+    return (_a_hex(operation, 32) and value.get("version") == _A_COMMISSIONING_VERSION
+        and value.get("purpose") == "operator_commissioning" and value.get("phase") == "A-CLAIM"
+        and value.get("execution_id") == _a_id(operation, "A-EXECUTION")
+        and value.get("device_id") == "100204e9bc" and value.get("channel") == 4
+        and value.get("zone_id") == "A12345")
+
+
+def _a_observation_valid(row, claim, *, target_state):
+    from modules.telemetry.rootline_ifttt_transport import (
+        a_commissioning_final_off_verified, a_commissioning_start_verified)
+    validate = a_commissioning_start_verified if target_state == "ON" else a_commissioning_final_off_verified
+    return (_a_time(claim["claimed_at"]) <= _a_time(row.get("database_read_started_at"))
+        <= _a_time(row.get("database_read_completed_at")) <= _a_time(row.get("recorded_at"))
+        and _a_time(row.get("read_started_at")) <= _a_time(row.get("read_completed_at"))
+        and validate(row.get("observation"), now=_a_time(row.get("read_completed_at")),
+            after=_a_time(row.get("read_started_at"))))
+
+
+def _a_projection(rows, operation):
+    claim = _a_phase(rows, operation, "A-CLAIM")
+    if claim is None:
+        _a_need(not any(row.get("version") == _A_COMMISSIONING_VERSION for row in rows),
+            "orphan_canonical_phase")
+        return {"operation_id": operation, "operation_claim": None,
+            "on_spent": False, "off_attempts": 0, "retired": False, "unresolved": False,
+            "startup_state": "unclaimed", "delivered_start": None, "known_no_send": None}
+    _a_need(is_a_commissioning_duty(claim)
+        and type(claim.get("channel")) is int, "canonical_claim_invalid")
+    digest = _event_digest(claim)
+    phases = [row for row in rows if row.get("version") == _A_COMMISSIONING_VERSION
+        and row.get("event_id") != claim["event_id"]]
+    allowed = {"A-ON", "A-OFF-1", "A-OFF-2", "A-OFF-3", "A-REVOKED", "A-RETIRED",
+        "A-NO-SEND", "A-STARTED"}
+    _a_need(all(row.get("phase") in allowed
+        and row.get("event_id") == _a_id(operation, row["phase"])
+        and row.get("claim_sha256") == digest for row in phases), "canonical_phase_changed")
+    on = _a_phase(rows, operation, "A-ON")
+    stopped = _a_phase(rows, operation, "A-REVOKED")
+    no_send = _a_phase(rows, operation, "A-NO-SEND")
+    start = _a_phase(rows, operation, "A-STARTED")
+    if no_send is not None:
+        attempt = _a_phase(rows, operation, "ATTEMPT") or {}
+        grant = (attempt.get("details") or {}).get("a_commissioning_grant") or {}
+        expected_source = ((grant.get("runtime") or {}).get("source_pins") or {}).get(
+            "modules/telemetry/rootline_ifttt_transport.py")
+        _a_need(on is not None and start is None
+            and no_send.get("on_slot_sha256") == _event_digest(on)
+            and no_send.get("reason") in _A_NO_SEND_REASONS
+            and no_send.get("provider_command_attempted") is False
+            and no_send.get("provenance") == "installed_a_sender_pre_command_refusal.v1"
+            and _a_hex(expected_source) and no_send.get("transport_source_sha256") == expected_source
+            and _a_time(on["recorded_at"]) <= _a_time(no_send["recorded_at"]),
+            "no_send_provenance_invalid")
+    if start is not None:
+        _a_need(on is not None and no_send is None
+            and start.get("on_slot_sha256") == _event_digest(on)
+            and _a_time(on["recorded_at"]) <= _a_time(start.get("database_read_started_at"))
+            and _a_observation_valid(start, claim, target_state="ON")
+            and start.get("within_startup_window") is (
+                _a_time(start["database_read_completed_at"]) <= _a_time(claim["startup_verification_deadline"])),
+            "delivered_start_invalid")
+    startup = "delivered_start" if start else "source_proven_no_send" if no_send else "outstanding" if on else "never_sent"
+    retired = _a_phase(rows, operation, "A-RETIRED")
+    if retired is not None:
+        _a_need(stopped is not None and startup != "outstanding"
+            and retired.get("safe_branch") == startup
+            and retired.get("shutdown_verified") is True
+            and retired.get("reserve_release_verified") is True
+            and retired.get("watering_credit_created") is False
+            and _a_time(stopped["recorded_at"]) <= _a_time(retired.get("database_read_started_at"))
+            and retired.get("final_off_evidence") == retired.get("observation")
+            and _a_observation_valid(retired, claim, target_state="OFF"), "retirement_invalid")
+        if start:
+            _a_need(retired.get("delivered_start_sha256") == _event_digest(start)
+                and _a_time(start["recorded_at"]) <= _a_time(retired["database_read_started_at"])
+                and _a_time(start["read_completed_at"]) <= _a_time(retired["read_started_at"]),
+                "retirement_precedes_delivered_start")
+        elif no_send:
+            _a_need(retired.get("known_no_send_sha256") == _event_digest(no_send)
+                and _a_time(no_send["recorded_at"]) <= _a_time(retired["database_read_started_at"]),
+                "retirement_precedes_no_send")
+    return {"operation_id": operation, "operation_claim": claim, "on_spent": on is not None,
+        "off_attempts": sum(_a_phase(rows, operation, "A-OFF-" + str(n)) is not None for n in (1, 2, 3)),
+        "revoked": stopped is not None, "retired": retired is not None, "unresolved": retired is None,
+        "startup_state": startup, "delivered_start": start, "known_no_send": no_send,
+        "watering_credit_created": False, "native_auto_off_proven": False}
+
+
+def _a_commissioning_unresolved(connection):
+    # No age, expiry, helper completion or ordinary history can release this fence.
+    with connection.cursor() as cursor:
+        cursor.execute("""select review_json->'rootline_operational_intake'
+            from public.sam_live_stock_conversation_review_events
+            where event_source=%s and
+                (review_json->'rootline_operational_intake'->>'version'=%s
+                 or review_json->'rootline_operational_intake'->>'phase' like 'A-%%')
+            order by created_at,review_event_id""", (_A_COMMISSIONING_SOURCE, _A_COMMISSIONING_VERSION))
+        rows = [row[0] for row in cursor.fetchall()]
+    try:
+        _a_need(all(isinstance(row, dict) and _a_hex(row.get("operation_id"), 32)
+            for row in rows), "fence_rows_invalid")
+        for operation in {row["operation_id"] for row in rows}:
+            if _a_projection([row for row in rows if row["operation_id"] == operation], operation)["unresolved"]:
+                return True
+    except (ValueError, TypeError, KeyError):
+        return True
+    return False
+
+
+def _a_normal_irrigation_unresolved(connection):
+    with connection.cursor() as cursor:
+        cursor.execute("""select review_json->'rootline_execution'
+            from public.sam_live_stock_conversation_review_events where event_source=%s
+            order by created_at,review_event_id""", (EVENT_SOURCE,))
+        rows = [row[0] for row in cursor.fetchall()]
+    if any(not isinstance(row, dict) or not isinstance(row.get("action"), str) for row in rows):
+        return True
+    terminal = {row.get("execution_id") for row in rows
+        if _terminal_closes_active(row) or _verified_not_dispatched(row, rows)}
+    return any(row.get("action") in {"claim_before_on", "mark_active", "mark_stopping"}
+        and row.get("execution_id") not in terminal for row in rows)
+
+
+def _a_write(connection, operation, phase, material):
+    from modules.sales.sam_live_stock_launch_control import (
+        build_sam_live_stock_review_event, record_sam_live_stock_review_event)
+    now = connection.execute("select clock_timestamp()").fetchone()[0]
+    body = {**material, "event_id": _a_id(operation, phase),
+        "mission_id": "RMQ-20260813-04", "operation_id": operation,
+        "mode": "A_CH4", "version": _A_COMMISSIONING_VERSION,
+        "purpose": "operator_commissioning", "phase": phase,
+        "recorded_at": now.isoformat(), "watering_credit_created": False}
+    event = build_sam_live_stock_review_event({"conversation_id": body["mission_id"]}, {}, {},
+        {"score": 0, "safe_to_send": False, "recommended_action": "rootline_operational_intake"},
+        event_source=_A_COMMISSIONING_SOURCE)
+    event.update(review_event_id=body["event_id"], chatwoot_conversation_id=body["mission_id"],
+        review_json={"rootline_operational_intake": body}, decision_json={}, facts_json={},
+        customer_message_excerpt="", sam_reply_excerpt="")
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: nullcontext(connection), created_at=now)
+    _a_need(status < 400 and result.get("success") is True
+        and result.get("created") is True, "phase_write_unproven")
+    _a_need(_a_phase(_a_rows(connection, operation), operation, phase) == body,
+        "phase_readback_mismatch")
+    return body
+
+
+def _a_grant(rows, operation, grant_digest, now):
+    attempt = _a_phase(rows, operation, "ATTEMPT")
+    command = _a_phase(rows, operation, "COMMAND")
+    _a_need(isinstance(attempt, dict) and isinstance(command, dict), "root_journal_required")
+    grant = (attempt.get("details") or {}).get("a_commissioning_grant")
+    _a_need(isinstance(grant, dict) and _a_hex(grant_digest)
+        and _event_digest(grant) == grant_digest, "canonical_grant_changed")
+    exact = {"contract_version": "rootline_a_operator_grant.v1", "mission_id": "RMQ-20260813-04",
+        "operation_id": operation, "zone_id": "A12345", "device_id": "100204e9bc", "channel": 4,
+        "provider_account_binding": "ewelink_owner_account", "on_event": "irrigation_1_ch4_on",
+        "off_event": "irrigation_1_ch4_off", "native_fail_stop_seconds": 3599,
+        "max_on_attempts": 1, "max_off_attempts": 3, "ordinary_a_enabled": False,
+        "standing_authority": False, "automatic_on_retry": False}
+    _a_need(all(type(grant.get(key)) is type(value) and grant[key] == value
+        for key, value in exact.items()), "grant_scope_invalid")
+    owner = grant.get("owner_instruction")
+    _a_need(isinstance(owner, dict) and owner.get("source") == "owner_codex_chat"
+        and isinstance(owner.get("reference"), str) and bool(owner["reference"].strip())
+        and _a_hex(owner.get("artifact_sha256")) and _a_hex(grant.get("root_review_sha256")),
+        "owner_review_required")
+    start, expiry, recovery = (_a_time(grant.get(key))
+        for key in ("not_before", "on_expires_at", "recovery_deadline"))
+    _a_need(start <= now < expiry <= recovery and recovery > start
+        and recovery - start <= timedelta(hours=2)
+        and _a_time(grant.get("owner_instruction_received_at")) <= start,
+        "grant_window_closed")
+    _a_need(type(grant.get("maximum_runtime_seconds")) is int
+        and 1 <= grant["maximum_runtime_seconds"] <= 3599, "runtime_limit_invalid")
+    _a_need(grant.get("observation_mode") in {"control_pulse", "native_timeout"}
+        and type(grant.get("startup_verification_seconds")) is int
+        and 1 <= grant["startup_verification_seconds"] <= 30
+        and type(grant.get("observation_read_margin_seconds")) is int
+        and 1 <= grant["observation_read_margin_seconds"] <= 60
+        and expiry < _a_time(grant.get("observation_deadline")) < recovery,
+        "observation_window_invalid")
+    if grant["observation_mode"] == "native_timeout":
+        _a_need(grant["maximum_runtime_seconds"] == 3599, "native_setting_changed")
+    _a_need(type(grant.get("configuration_generation")) is int
+        and grant["configuration_generation"] >= 1
+        and _a_hex(grant.get("configuration_baseline_sha256"))
+        and _a_hex(grant.get("configuration_sha256"))
+        and _a_hex(grant.get("provider_account_digest"))
+        and isinstance(grant.get("firmware"), str) and bool(grant["firmware"]),
+        "configuration_binding_invalid")
+    runtime = grant.get("runtime") or {}
+    _a_need(_a_hex(runtime.get("revision"), 40)
+        and runtime["revision"] == os.environ.get("RENDER_GIT_COMMIT")
+        and runtime.get("service_id") == os.environ.get("RENDER_SERVICE_ID")
+        and bool(runtime.get("service_id"))
+        and runtime.get("hostname") == socket.gethostname()
+        and str(os.environ.get("ROOTLINE_A_ENABLED") or "").lower() != "true",
+        "loaded_runtime_changed")
+    pins = runtime.get("source_pins")
+    _a_need(isinstance(pins, dict) and set(pins) == set(_A_COMMISSIONING_SOURCE_PATHS),
+        "source_pins_required")
+    root = Path(__file__).resolve().parents[2]
+    _a_need(all(_a_hex(pin) and hashlib.sha256((root / name).read_bytes()).hexdigest() == pin
+        for name, pin in pins.items()), "installed_source_changed")
+    for row, phase in ((attempt, "ATTEMPT"), (command, "COMMAND")):
+        _a_need(row.get("version") == "rootline_owner_operator_commissioning.v1"
+            and row.get("mode") == "A_CH4" and row.get("mission_id") == grant["mission_id"]
+            and row.get("source") == "owner_codex_operator"
+            and row.get("state") == "operator_commissioning_" + phase.lower()
+            and row.get("owner_instruction") == owner
+            and row.get("owner_instruction_received_at") == grant["owner_instruction_received_at"]
+            and row.get("source_revision") == runtime["revision"]
+            and row.get("deployed_revision") == runtime["revision"]
+            and row.get("root_review_sha256") == grant["root_review_sha256"]
+            and start <= _a_time(row.get("recorded_at")) <= now, "root_journal_binding_changed")
+    _a_need((command.get("details") or {}).get("a_commissioning_grant_sha256") == grant_digest,
+        "command_grant_changed")
+    _a_need(not any(_a_phase(rows, operation, phase) is not None
+        for phase in ("REVOKED", "RECOVERY", "CONTAINED", "COMPLETED", "A-REVOKED",
+                      "A-OFF-1", "A-OFF-2", "A-OFF-3", "A-RETIRED")), "on_grant_stopped")
+    return grant, command
+
+
+def _a_claim_matches(state, supplied):
+    _a_need(isinstance(supplied, dict) and state["operation_claim"] == supplied,
+        "canonical_claim_changed")
+    _a_need(not state["retired"], "operation_retired")
+    return state["operation_claim"]
+
+
+def _a_on_permitted(connection, rows, claim, configuration):
+    from modules.telemetry.rootline_ifttt_transport import validate_a_commissioning_configuration
+    now = connection.execute("select clock_timestamp()").fetchone()[0]
+    grant, _ = _a_grant(rows, claim["operation_id"], claim["grant_sha256"], now)
+    _a_need(timedelta(0) <= now - _a_time(claim["claimed_at"]) <= timedelta(seconds=30)
+        and now < _a_time(claim["primary_stop_deadline"]), "on_edge_expired")
+    validate_a_commissioning_configuration(configuration, grant=grant, now=now,
+        after=_a_time(claim["claimed_at"]))
+    _a_need(not _a_normal_irrigation_unresolved(connection), "normal_irrigation_unresolved")
+    return grant
+
+
+def authorize_a_commissioning_sender(operation_claim, state, idempotency_key, configuration=None):
+    """Private locked capability; a dict, boolean or replayed claim cannot send."""
+    context = _A_COMMISSIONING_SENDER.get()
+    _a_need(isinstance(context, _ACommissioningSender) and not context.used
+        and context.state == state and context.claim == operation_claim
+        and idempotency_key == context.key, "locked_sender_required")
+    connection, claim = context.connection, context.claim
+    operation = claim["operation_id"]
+    rows = _a_rows(connection, operation)
+    projection = _a_projection(rows, operation)
+    _a_claim_matches(projection, claim)
+    _a_need(_a_phase(rows, operation, context.phase) == context.slot, "consumed_slot_changed")
+    if state == "ON":
+        grant = _a_on_permitted(connection, rows, claim, configuration)
+        deadline = min(_a_time(grant["on_expires_at"]),
+            _a_time(claim["claimed_at"]) + timedelta(seconds=30),
+            _a_time(claim["primary_stop_deadline"]))
+        remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+        _a_need(remaining > 0, "on_edge_expired")
+        edge_deadline = time.monotonic() + remaining
+    else:
+        _a_need(state == "OFF" and context.phase in {"A-OFF-1", "A-OFF-2", "A-OFF-3"},
+            "owned_off_slot_required")
+        # Exact owned OFF survives expiry, revocation and unavailable A proof.
+        edge_deadline = None
+    context.used = True
+    return edge_deadline
+
+
+class _ACommissioningSender:
+    def __init__(self, connection, claim, state, phase, slot):
+        self.connection, self.claim, self.state = connection, claim, state
+        self.phase, self.slot, self.used = phase, slot, False
+        self.network_attempted, self.known_no_send = False, None
+        suffix = ":ON" if state == "ON" else ":OFF:" + phase.rsplit("-", 1)[1]
+        self.key = claim["execution_id"] + suffix
+
+
+    def note_known_no_send(self, reason):
+        _a_need(not self.network_attempted and reason in _A_NO_SEND_REASONS, "no_send_marker_invalid")
+        if self.state == "ON": self.known_no_send = reason
+
+    def note_network_attempt(self):
+        _a_need(self.known_no_send is None, "no_send_marker_conflict")
+        self.network_attempted = True
+
+
+class _ACommissioningObserver:
+    def __init__(self, claim):
+        self.claim, self.read_performed = claim, False
+        self.safe_to_release, self.final_evidence = False, None
+
+
+def _a_read_observation(connection, claim, transport, context):
+    from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+    database_start = connection.execute("select clock_timestamp()").fetchone()[0]
+    _a_need(database_start <= _a_time(claim["recovery_deadline"]), "observation_window_closed")
+    app_start = datetime.now(timezone.utc)
+    with execution_duty(claim, deadline=claim["recovery_deadline"]):
+        value = transport.read_a_commissioning_output(operation_claim=claim)
+    app_end = datetime.now(timezone.utc)
+    database_end = connection.execute("select clock_timestamp()").fetchone()[0]
+    _a_need(database_end <= _a_time(claim["recovery_deadline"]), "observation_window_closed")
+    _a_need(context.read_performed, "typed_observation_unproven")
+    return {"observation": value, "read_started_at": app_start.isoformat(),
+        "read_completed_at": app_end.isoformat(), "database_read_started_at": database_start.isoformat(),
+        "database_read_completed_at": database_end.isoformat()}
+
+
+def _a_commissioning_store(action, payload):
+    from modules.oom_sakkie.bounded_postgres_read import (
+        connect_bounded_rootline_postgres, is_database_unavailable)
+    from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+    body = dict(payload or {})
+    operation = body.get("operation_id") or (body.get("operation_claim") or {}).get("operation_id")
+    observer = None
+    try:
+        operation = _a_operation(operation)
+        def connect():
+            return connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                read_only=action == "load_a_commissioning_operation")
+        with connect() as connection:
+            if action != "load_a_commissioning_operation":
+                connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            rows = _a_rows(connection, operation)
+            state = _a_projection(rows, operation)
+            if action == "load_a_commissioning_operation":
+                return {"success": True, **state}
+            if action == "claim_a_commissioning_before_on":
+                _a_need(set(body) == {"operation_id", "grant_sha256", "configuration",
+                    "provider_capacity_permit"}, "claim_shape_invalid")
+                _a_need(state["operation_claim"] is None, "operation_already_claimed")
+                now = connection.execute("select clock_timestamp()").fetchone()[0]
+                grant, command = _a_grant(rows, operation, body["grant_sha256"], now)
+                from modules.telemetry.rootline_ifttt_transport import validate_a_commissioning_configuration
+                validate_a_commissioning_configuration(body["configuration"], grant=grant, now=now)
+                _a_need((command.get("details") or {}).get("configuration_snapshot_sha256")
+                    == _event_digest(body["configuration"]), "command_snapshot_changed")
+                _a_need(not _a_commissioning_unresolved(connection)
+                    and not _a_normal_irrigation_unresolved(connection), "controller_unresolved")
+                _a_need(isinstance(body["provider_capacity_permit"], str)
+                    and bool(body["provider_capacity_permit"]), "provider_capacity_required")
+                on_admission = min(now + timedelta(seconds=30), _a_time(grant["on_expires_at"]))
+                startup = on_admission + timedelta(seconds=grant["startup_verification_seconds"])
+                observation = _a_time(grant["observation_deadline"])
+                if grant["observation_mode"] == "native_timeout":
+                    # IFTTT admission is not physical ON. This is a planned
+                    # ceiling only; the helper must prove timely actual ON and
+                    # derive its native interval from that first own receipt.
+                    _a_need(observation >= startup + timedelta(seconds=3599),
+                        "native_observation_window_too_short")
+                    primary = min(observation, startup + timedelta(
+                        seconds=3599 + grant["observation_read_margin_seconds"]))
+                else:
+                    primary = now + timedelta(seconds=grant["maximum_runtime_seconds"])
+                    _a_need(primary <= observation, "pulse_observation_window_too_short")
+                _a_need(primary < _a_time(grant["recovery_deadline"]), "recovery_window_too_short")
+                claim = _a_write(connection, operation, "A-CLAIM", {
+                    "execution_id": _a_id(operation, "A-EXECUTION"), "zone_id": "A12345",
+                    "device_id": "100204e9bc", "channel": 4,
+                    "grant_sha256": body["grant_sha256"],
+                    "provider_capacity_permit": body["provider_capacity_permit"],
+                    "claimed_at": now.isoformat(),
+                    "primary_stop_deadline": primary.isoformat(),
+                    "on_admission_deadline": on_admission.isoformat(),
+                    "startup_verification_deadline": min(startup, primary).isoformat(),
+                    "commissioning_observation_deadline": primary.isoformat(),
+                    "recovery_deadline": grant["recovery_deadline"],
+                    "observation_mode": grant["observation_mode"],
+                    "observation_read_margin_seconds": grant["observation_read_margin_seconds"],
+                    "native_fail_stop_seconds": 3599,
+                    "configuration": body["configuration"]})
+                return {"success": True, "created": True, "operation_claim": claim,
+                    "history_event_created": False}
+            claim = _a_claim_matches(state, body.get("operation_claim"))
+            if action == "revoke_a_commissioning":
+                _a_need(not state.get("revoked"), "already_revoked")
+                row = _a_write(connection, operation, "A-REVOKED", {"claim_sha256": _event_digest(claim)})
+                return {"success": True, "created": True, "revocation": row}
+            transport = body.get("transport")
+            from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
+            _a_need(type(transport) is RootlineIFTTTTransport, "installed_transport_required")
+            if action in {"observe_a_commissioning", "finish_a_commissioning"}:
+                _a_need(set(body) == {"operation_claim", "transport"}, "observation_shape_invalid")
+                finishing = action == "finish_a_commissioning"
+                if finishing and state["startup_state"] == "outstanding":
+                    return {"success": False, "created": False,
+                        "status": "a_commissioning_startup_outstanding", "startup_state": "outstanding",
+                        "provider_read_performed": False, "unresolved": True, "reserve_released": False}
+                if finishing and not state["revoked"]:
+                    # The same lock fences both not-yet-consumed and delayed
+                    # local senders. A committed retirement can never race ON.
+                    _a_write(connection, operation, "A-REVOKED", {"claim_sha256": _event_digest(claim)})
+                context = observer = _ACommissioningObserver(claim)
+                token = _A_COMMISSIONING_OBSERVER.set(context)
+                try:
+                    material = _a_read_observation(connection, claim, transport, context)
+                    current = _a_projection(_a_rows(connection, operation), operation)
+                    _a_claim_matches(current, claim)
+                    if not finishing:
+                        from modules.telemetry.rootline_ifttt_transport import a_commissioning_start_verified
+                        if (current["on_spent"] and current["known_no_send"] is None
+                                and current["delivered_start"] is None
+                                and a_commissioning_start_verified(material["observation"],
+                                    now=_a_time(material["read_completed_at"]),
+                                    after=_a_time(material["read_started_at"]))):
+                            _a_write(connection, operation, "A-STARTED", {
+                                **material, "claim_sha256": _event_digest(claim),
+                                "on_slot_sha256": _event_digest(_a_phase(rows, operation, "A-ON")),
+                                "within_startup_window": _a_time(material["database_read_completed_at"])
+                                    <= _a_time(claim["startup_verification_deadline"])})
+                            current = _a_projection(_a_rows(connection, operation), operation)
+                        return {"success": True, "created": current["delivered_start"] != state["delivered_start"],
+                            "observation": material["observation"], "delivered_start": current["delivered_start"],
+                            "startup_state": current["startup_state"], "provider_read_performed": True,
+                            "unresolved": True, "reserve_released": False, "history_event_created": False}
+                    from modules.telemetry.rootline_ifttt_transport import a_commissioning_final_off_verified
+                    _a_need(current["startup_state"] != "outstanding"
+                        and a_commissioning_final_off_verified(material["observation"],
+                            now=_a_time(material["read_completed_at"]),
+                            after=_a_time(material["read_started_at"])), "final_off_unproven")
+                    start, no_send = current["delivered_start"], current["known_no_send"]
+                    if start:
+                        _a_need(_a_time(start["recorded_at"]) <= _a_time(material["database_read_started_at"])
+                            and _a_time(start["read_completed_at"]) <= _a_time(material["read_started_at"]),
+                            "final_off_precedes_start")
+                    context.safe_to_release, context.final_evidence = True, material["observation"]
+                    try:
+                        with execution_duty(claim, deadline=claim["recovery_deadline"]):
+                            released = transport.release_a_commissioning_capacity(
+                                operation_claim=claim, evidence=material["observation"])
+                        _a_need(released is True, "reserve_release_unproven")
+                    except Exception:
+                        return {"success": False, "created": False,
+                            "status": "a_commissioning_reserve_release_unresolved", "provider_read_performed": True,
+                            "observation": material["observation"], "unresolved": True, "reserve_released": False}
+                    row = _a_write(connection, operation, "A-RETIRED", {
+                        **material, "claim_sha256": _event_digest(claim), "shutdown_verified": True,
+                        "final_off_evidence": material["observation"], "safe_branch": current["startup_state"],
+                        "delivered_start_sha256": _event_digest(start) if start else None,
+                        "known_no_send_sha256": _event_digest(no_send) if no_send else None,
+                        "reserve_release_verified": True, "on_spent": current["on_spent"],
+                        "off_attempts": current["off_attempts"], "native_auto_off_proven": False})
+                    _a_need(_a_projection(_a_rows(connection, operation), operation)["retired"], "retirement_readback_failed")
+                    return {"success": True, "created": True, "retirement": row,
+                        "provider_read_performed": True, "reserve_released": True, "history_event_created": False}
+                finally:
+                    _A_COMMISSIONING_OBSERVER.reset(token)
+            if action == "dispatch_a_commissioning_on_edge":
+                _a_need(not state["on_spent"], "on_already_consumed")
+                # Grant is checked before consumption and once more at the final
+                # sender edge. The fresh provider snapshot is taken in txn 2.
+                now = connection.execute("select clock_timestamp()").fetchone()[0]
+                _a_grant(rows, operation, claim["grant_sha256"], now)
+                _a_need(timedelta(0) <= now - _a_time(claim["claimed_at"]) <= timedelta(seconds=30),
+                    "on_edge_expired")
+                phase, desired = "A-ON", "ON"
+            else:
+                _a_need(action == "claim_a_commissioning_off_attempt", "action_invalid")
+                attempt = body.get("attempt")
+                _a_need(type(attempt) is int and 1 <= attempt <= 3
+                    and attempt == state["off_attempts"] + 1, "off_slot_exhausted_or_replayed")
+                phase, desired = "A-OFF-" + str(attempt), "OFF"
+            slot = _a_write(connection, operation, phase, {"claim_sha256": _event_digest(claim)})
+        # The consumed slot is committed BEFORE the sender transaction. A crash
+        # or rollback after network I/O cannot make it reusable.
+        with connect() as connection:
+            connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            rows = _a_rows(connection, operation)
+            current = _a_projection(rows, operation)
+            _a_claim_matches(current, claim)
+            _a_need(_a_phase(rows, operation, phase) == slot, "consumed_slot_changed")
+            context = _ACommissioningSender(connection, claim, desired, phase, slot)
+            token = _A_COMMISSIONING_SENDER.set(context)
+            try:
+                with execution_duty(claim):
+                    result = transport.set_a_commissioning_state(operation_claim=claim,
+                        state=desired, idempotency_key=context.key)
+            finally:
+                _A_COMMISSIONING_SENDER.reset(token)
+            if desired == "ON" and context.known_no_send is not None and not context.network_attempted:
+                _a_write(connection, operation, "A-NO-SEND", {
+                    "claim_sha256": _event_digest(claim), "on_slot_sha256": _event_digest(slot),
+                    "reason": context.known_no_send, "provider_command_attempted": False,
+                    "provenance": "installed_a_sender_pre_command_refusal.v1",
+                    "transport_source_sha256": hashlib.sha256((Path(__file__).resolve().parents[2]
+                        / "modules/telemetry/rootline_ifttt_transport.py").read_bytes()).hexdigest()})
+            settled = _a_projection(_a_rows(connection, operation), operation)
+            return {"success": True, "created": True, "slot": slot,
+                "sender_authorized": context.used, "outcome": result,
+                "startup_state": settled["startup_state"], "known_no_send": settled["known_no_send"],
+                "history_event_created": False}
+    except (ValueError, TypeError, KeyError) as exc:
+        return {"success": False, "created": False, "status": str(exc),
+            "accepted_unambiguous": False,
+            "provider_read_performed": bool(observer and observer.read_performed)}
+    except Exception as exc:
+        if is_database_unavailable(exc):
+            raise RootlineExecutionStoreUnavailable(action) from exc
+        # A spent phase stays spent even if the transport or post-send read fails.
+        return {"success": False, "created": False, "status": "a_commissioning_outcome_unknown",
+            "accepted_unambiguous": False,
+            "provider_read_performed": bool(observer and observer.read_performed)}

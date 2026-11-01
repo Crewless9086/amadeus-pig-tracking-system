@@ -247,9 +247,13 @@ class RequestBudget:
     def _connect(self):
         if self.connect_factory is not None:
             return self.connect_factory()
-        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        from modules.oom_sakkie.bounded_postgres_read import (
+            ROOTLINE_CONNECT_DEADLINE_SECONDS, connect_bounded_rootline_postgres)
+        # Acquisition includes the transaction-local settings required by the
+        # pooler. Reuse ROOTLINE's bound without extending a shorter read duty.
         return connect_bounded_rootline_postgres(database_url=self.database_url,
-            read_only=False, connect_deadline_seconds=min(1, request_timeout()))
+            read_only=False, connect_deadline_seconds=min(
+                ROOTLINE_CONNECT_DEADLINE_SECONDS, request_timeout()))
 
     @contextmanager
     def _locked(self):
