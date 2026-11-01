@@ -1339,6 +1339,12 @@ Current built Supabase-backed surface:
   transactionally and records immutable applied/failed receipts in
   `app_private.production_migration_receipts`. It never performs application
   business writes.
+  The A irrigation-history extension joins this same closed allowlist. Its exact
+  typed function, service-only ACL, append-only guard, existing indexes and new
+  A/B/C index are checked before/after execution and during replay. Catalog scope
+  follows the migration identity, preserving older immutable checkpoints. Tests
+  are in `tests/test_render_rootline_a_migration_rail.py`; schema application is
+  separate from A device commissioning, policy, standing authority and activation.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 
