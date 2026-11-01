@@ -6,6 +6,8 @@ specialist facts; it cannot invent evidence or acquire specialist authority.
 
 from __future__ import annotations
 
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+
 from dataclasses import dataclass
 from datetime import date
 import html
@@ -49,7 +51,7 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
     policy = result.get("battery_policy") if isinstance(result.get("battery_policy"), Mapping) else {}
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     decisions = []
-    labels = {"B12345": "B Kamp" if af else "B Camp", "C12345": "C Kamp" if af else "C Camp",
+    labels = {"A12345": "A Kamp" if af else "A Camp", "B12345": "B Kamp" if af else "B Camp", "C12345": "C Kamp" if af else "C Camp",
               "borehole": "Boorgat" if af else "Borehole",
               "fertilizer_injection": "Kunsmisinspuiting" if af else "Fertilizer injection",
               "fertilizer_mixing": "Kunsmismenging" if af else "Fertilizer mixing"}
@@ -61,7 +63,7 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
             continue
         raw_decision = str(item.get("status") or item.get("recommendation") or "Needs Data")
         decision = (owner_zone_decision(result, item, zone=subject, language=language)
-                    if subject in {"B12345", "C12345"}
+                    if subject in set(IRRIGATION_ZONE_IDS)
                     else _local_decision(raw_decision, af))
         reason = str(item.get("reason") or "").strip()
         if subject == "C12345":
@@ -240,11 +242,11 @@ def _irrigation_brief(facts, af):
         "Controller OFF verified": "Beheerder AF geverifieer", "Needs Data": "Data nodig",
     }
     zones = facts.get("zones")
-    if not isinstance(zones, list) or len(zones) != 2 or [row.get("zone") for row in zones
-            if isinstance(row, Mapping)] != ["B12345", "C12345"] \
+    if not isinstance(zones, list) or not zones or [row.get("zone") for row in zones
+            if isinstance(row, Mapping)] not in (["B12345", "C12345"], list(IRRIGATION_ZONE_IDS)) \
             or any(row.get("status") not in statuses for row in zones):
         return ""
-    groups = [zones] if zones[0]["status"] == zones[1]["status"] else [[row] for row in zones]
+    groups = [zones] if len({row["status"] for row in zones}) == 1 else [[row] for row in zones]
     lines = []
     for group in groups:
         label = " & ".join(row["zone"][0] for row in group) + (" kampe" if af and len(group) > 1 else

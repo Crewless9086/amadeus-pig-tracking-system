@@ -1,4 +1,6 @@
 """Stable owner-visible ROOTLINE decision material shared by daily/change rails."""
+
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
 import hashlib
 import json
 import re
@@ -16,10 +18,10 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
         if not isinstance(row, Mapping):
             continue
         subject = str(row.get("subject") or "")
-        # The standalone owner plan renders only the two irrigation zones.
+        # The standalone owner plan renders only supported irrigation zones.
         # Hidden borehole, power and fertilizer recommendation churn must not
         # manufacture a visibly identical Telegram plan every reassessment.
-        if subject not in {"B12345", "C12345"}:
+        if subject not in set(IRRIGATION_ZONE_IDS):
             continue
         lifecycle = lifecycles.get(subject)
         lifecycle = lifecycle if isinstance(lifecycle, Mapping) else {}
@@ -46,7 +48,7 @@ def rootline_exception_material(result):
     lifecycles = result.get("irrigation_lifecycle") if isinstance(result, Mapping) else None
     if not isinstance(lifecycles, Mapping):
         return []
-    return [item for zone in ("B12345", "C12345")
+    return [item for zone in IRRIGATION_ZONE_IDS
             for item in validated_shutdown_exceptions(
                 validate_zone_lifecycle(lifecycles.get(zone), zone_id=zone), zone_id=zone)
             if item.get("controller_off_verified") is not True]

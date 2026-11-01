@@ -426,7 +426,10 @@ def test_execution_cycle_persists_full_lifecycle_without_a_command_or_notificati
         observation_store=record)
     assert len(records)==1 and result["hardware_commands"]==0
     assert result["status"]=="contained_parent_unresolved"
-    assert all(row["lifecycle"]["state"]=="Failed" for row in records[0]["zones"])
+    assert all(row["lifecycle"]["state"]=="Failed" for row in records[0]["zones"]
+               if row["zone_id"] in {"B12345", "C12345"})
+    a = next(row for row in records[0]["zones"] if row["zone_id"] == "A12345")
+    assert not a["lifecycle"]["execution_exceptions"] and a["lifecycle"]["state"] != "Completed"
     assert {item["execution_id"] for row in records[0]["zones"]
         for item in row["lifecycle"]["execution_exceptions"]}=={"B-OLD","C-OLD"}
 
@@ -511,6 +514,9 @@ def test_unresolved_parent_truth_survives_final_observation_and_owner_status(
     observation = observations[0]
     for item in observation["zones"]:
         lifecycle = item["lifecycle"]
+        if item["zone_id"] == "A12345":
+            assert not lifecycle["execution_exceptions"] and lifecycle["state"] != "Completed"
+            continue
         assert lifecycle["state"] == "Held"
         assert "reconcile" in lifecycle["next_action"].lower()
         assert "before another run" in lifecycle["next_action"].lower()
@@ -535,6 +541,10 @@ def test_unresolved_parent_truth_survives_final_observation_and_owner_status(
     assert code == 200 and status["safety"]["can_control"] is False
     assert status["source"]["writes_to_supabase"] is False
     for item in status["zones"]:
+        if item["zone_id"] == "A12345":
+            assert item["lifecycle"]["state"] != "Completed"
+            assert not item["lifecycle"]["execution_exceptions"]
+            continue
         assert item["lifecycle"] == next(row["lifecycle"] for row in observation["zones"]
                                         if row["zone_id"] == item["zone_id"])
         assert item["water_credit"]["delivered_volume_litres"] == "Unknown"
@@ -619,7 +629,8 @@ def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composi
     typed = [{**row, "event_at": datetime.fromisoformat(row["event_at"])} for row in typed]
     history = read(rows, typed)
     assert all(zone["events"][-1]["qualifies_as_completed_watering"] is True
-               for zone in history["zones"].values())
+               for zone_id, zone in history["zones"].items() if zone_id in {"B12345", "C12345"})
+    assert not history["zones"]["A12345"]["events"]
     initial = _planning_initial(history)
     initial["artifact"].update(status=blocker)
     for task in initial["plan"]["candidate_tasks"]:
@@ -629,6 +640,10 @@ def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composi
     specialist = project_water_energy_plan({**initial["plan"], "success": True,
         "recent_irrigation_history": history}, now=NOW)
     for item in observation["zones"]:
+        if item["zone_id"] == "A12345":
+            assert item["lifecycle"]["state"] != "Completed"
+            assert "completion_evidence" not in item["lifecycle"]
+            continue
         assert item["decision"] == "Not Due" and item["zone_decision"] == "Completed"
         assert item["lifecycle"]["state"] == "Completed"
         assert item["lifecycle"]["completion_evidence"]["objective_satisfied"] is True
@@ -644,6 +659,10 @@ def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composi
     status, code = owner.get_rootline_owner_status(NOW.date().isoformat(), "synthetic-unused", now=NOW)
     assert code == 200
     for item in status["zones"]:
+        if item["zone_id"] == "A12345":
+            assert item["lifecycle"]["state"] != "Completed"
+            assert "completion_evidence" not in item["lifecycle"]
+            continue
         assert item["decision"] == "Not Due"
         assert item["lifecycle"]["state"] == "Completed"
         assert item["lifecycle"]["completion_evidence"]["objective_satisfied"] is True

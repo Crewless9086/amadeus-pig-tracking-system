@@ -261,3 +261,57 @@ def canonical_borehole_control_paths(snapshot, *, connect_factory):
         result["actuation_configuration_safe"] = (result["actuation_safety_complete"]
             and result.get("timers_enabled") is False and target.get("output_state") == "OFF")
     return result
+
+
+def load_canonical_a_irrigation_binding(*, connect_factory, now=None):
+    """Resolve A's own proof from the existing canonical device/evidence spine.
+
+    The historical B/C baseline is unchanged. The new channel proof is sealed
+    under its own canonical evidence reference and cannot commission a sibling.
+    """
+    from modules.telemetry.rootline_device_spine import (
+        CanonicalAuthorityResolver, _resolved_evidence, _valid_evidence, load_device_record)
+    from modules.telemetry.rootline_irrigation_execution_contract import validate_commissioning
+    key = "ifttt_ewelink:ewelink_owner_account:100204e9bc:4"
+    loaded = load_device_record(key, connect_factory=connect_factory)
+    record = (loaded or {}).get("device_record") or {}
+    if (record.get("provider") != "ifttt_ewelink"
+            or record.get("provider_account_binding") != "ewelink_owner_account"
+            or record.get("device_id") != "100204e9bc"
+            or type(record.get("channel")) is not int or record["channel"] != 4
+            or record.get("device_type") != "gravity_irrigation_valve"
+            or record.get("physical_effect") != "A12345 irrigation water flow"
+            or record.get("safe_state") != "OFF"
+            or record.get("commissioning_stage") != "standing_active"
+            or record.get("standing_authority") is not True
+            or type(record.get("maximum_runtime_seconds")) is not int
+            or record["maximum_runtime_seconds"] != 3599
+            or type(record.get("native_fail_stop_seconds")) is not int
+            or record["native_fail_stop_seconds"] != 3599):
+        return None
+    profile = (record.get("authority_envelope") or {}).get("irrigation_commissioning")
+    if not isinstance(profile, dict) or set(profile) != {"contract_version", "evidence", "reference"}:
+        return None
+    if profile["contract_version"] != "rootline_a_irrigation_commissioning.v1":
+        return None
+    raw = profile.get("evidence")
+    proof = validate_commissioning("A12345", raw, now=now)
+    reference = profile.get("reference")
+    material = {"contract_version": profile["contract_version"], "evidence": raw}
+    digest = sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    resolver = CanonicalAuthorityResolver(connect_factory)
+    if (not _valid_evidence(reference) or reference.get("sha256") != digest
+            or reference.get("observed_at") != raw.get("observed_at")
+            or not _resolved_evidence(reference, resolver.evidence(reference))):
+        return None
+    historical = record.get("historical_commissioning_evidence") or {}
+    if (historical.get("commissioning_id") != proof["commissioning_id"]
+            or historical.get("commissioning_sha256") != proof["commissioning_sha256"]
+            or historical.get("configuration_generation") != proof["configuration_generation"]):
+        return None
+    return {"commissioned": True, "plumbing_ready": True,
+        "energy_relevance": "minor_control_only", "commissioning_id": proof["commissioning_id"],
+        "commissioning_generation": proof["configuration_generation"],
+        "commissioning_evidence": deepcopy(raw), "canonical_registry_generation": loaded["registry_generation"],
+        "canonical_registry_sha256": loaded["evidence_digest"],
+        "canonical_configuration_sha256": digest}

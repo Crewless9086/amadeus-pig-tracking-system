@@ -1,4 +1,4 @@
-"""Canonical planner-to-coordinator authority for commissioned B/C only.
+"""Canonical planner-to-coordinator authority for independently commissioned A/B/C.
 
 This internal artifact is distinct from ROOTLINE's read-only family result.
 It grants one bounded execution only after canonical planning, water/weather,
@@ -133,12 +133,16 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     if requested_minutes <= 0 or expected_segments <= 0:
         return _none("governed_total_duration_unavailable")
     requested_total_seconds = requested_minutes * 60
+    maximum_minutes = task.get("max_execution_minutes", 60)
+    if type(maximum_minutes) is not int or not 1 <= maximum_minutes <= 60:
+        return _none("governed_segment_limit_unavailable")
+    maximum_seconds = min(MAX_SECONDS, maximum_minutes * 60)
     parent = task.get("incomplete_parent_job") if isinstance(task.get("incomplete_parent_job"), dict) else {}
     parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else None
     job = (dict(parent_job) if parent_job else build_irrigation_job(
         zone_id=zone, operating_date=operating_date,
         requested_total_seconds=requested_total_seconds,
-        maximum_segment_seconds=MAX_SECONDS, plan_identity=plan_generation,
+        maximum_segment_seconds=maximum_seconds, plan_identity=plan_generation,
         requested_total_minutes=requested_minutes,
         expected_segment_count=expected_segments))
     if (job.get("zone_id") != zone
@@ -154,6 +158,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         return _none("canonical_job_history_invalid")
     if segment.get("status") != "segment_ready":
         return _none(segment.get("status") or "canonical_job_not_dispatchable")
+    if zone == "A12345" and segment["segment_requested_seconds"] > maximum_seconds:
+        return _none("current_a_segment_limit_exceeded")
     # A verified partial parent owns its remaining obligation. Requiring a new
     # whole-day debt here can strand segment two after segment one's history.
     continuing = (parent_job is not None and segment["segment_number"] > 1
@@ -186,6 +192,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "plan_evidence_digest": _digest({"plan_generation": plan_generation,
             "irrigation_plan": irrigation_plan_material, "weather": weather, "tanks": tanks}),
         "zone_id": zone, "channel": zones[zone]["channel"],
+        **({"irrigation_commissioning_sha256": zones[zone]["contract_sha256"]}
+           if zone == "A12345" else {}),
         "maximum_duration_seconds": segment["segment_requested_seconds"],
         "job_id": job["job_id"], "job_sha256": job["job_sha256"],
         "requested_total_duration_seconds": job["requested_total_seconds"],
@@ -277,6 +285,8 @@ def validate_execution_eligibility(value, *, now=None):
             or value.get("zone_id") not in zones
             or value.get("channel") != zones[value["zone_id"]]["channel"]
             or value.get("command_mapping") != _command_mapping(zones[value["zone_id"]])
+            or (value.get("zone_id") == "A12345" and value.get("irrigation_commissioning_sha256")
+                != zones["A12345"].get("contract_sha256"))
             or not str(value.get("source_plan_generation") or "")
             or not _valid_operating_date(value.get("operating_date"))
             or not str(value.get("consumption_key") or "").startswith(
@@ -306,7 +316,7 @@ def equivalent_fresh_eligibility(original, fresh, *, now=None):
             "maximum_duration_seconds", "command_mapping", "job_id",
             "requested_total_duration_seconds", "expected_segment_count",
             "current_segment", "segment_identity",
-            "controller_safety_generation")
+            "controller_safety_generation", "irrigation_commissioning_sha256")
     return (all(original.get(key) == fresh.get(key) for key in keys)
             and _governed_debt(original.get("weekly_debt")) ==
                 _governed_debt(fresh.get("weekly_debt")))
@@ -340,9 +350,9 @@ def _controller(value, zone, now):
     if sorted(row.get("channel") for row in rows if isinstance(row, dict)) != [1, 2, 3, 4]:
         return None
     selected = next((row for row in rows if row.get("channel") == contract["channel"]), None)
-    relevant_channels = {item["channel"] for item in _zone_contracts().values()
-                         if item["device_id"] == contract["device_id"]}
-    relevant = [row for row in rows if row.get("channel") in relevant_channels]
+    # Every sibling output must be OFF, including held/uncommissioned E.
+    # Commissioning only the selected zone must never hide another open valve.
+    relevant = rows
     if (not selected or any(row.get("output_state") != "OFF" for row in relevant)
             or selected.get("native_auto_off_enabled") is not True
             or int(selected.get("native_auto_off_seconds") or 0) not in range(1, MAX_SECONDS + 1)

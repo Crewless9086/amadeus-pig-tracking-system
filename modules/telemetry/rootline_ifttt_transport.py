@@ -131,7 +131,14 @@ class RootlineIFTTTTransport:
             channel_commissioning = bool(snapshot.get("commissioned_baseline_id"))
             commissioning_generation = (snapshot.get("commissioned_baseline_id")
                 if channel_commissioning else None)
+        if contract["identity"] == "A12345":
+            canonical = self._a_irrigation_commissioning(snapshot)
+            channel_commissioning = canonical is not None
+            commissioning_generation = (canonical["canonical_registry_sha256"]
+                if canonical else None)
         authoritative = snapshot.get("actuation_configuration_safe") is True
+        if contract["identity"] == "A12345":
+            authoritative = authoritative and channel_commissioning
         if contract["collection"] == "irrigation_auxiliary_devices":
             authoritative = self._auxiliary_commissioning_boundary_safe(
                 snapshot, contract, row)
@@ -163,6 +170,32 @@ class RootlineIFTTTTransport:
                 or item.get("channel") == channel
                 or item.get("channel") not in device_channel_assignments(device_id)),
         }
+
+    def _a_irrigation_commissioning(self, snapshot):
+        from modules.telemetry.rootline_ewelink_commissioned_baseline import load_canonical_a_irrigation_binding
+        from modules.telemetry.rootline_device_registry import get_device_contract
+        connect = self.commissioning_connect_factory
+        if connect is None:
+            from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+            database_url = str(self.environ.get("DATABASE_URL") or "").strip()
+            if not database_url:
+                return None
+            connect = lambda: connect_bounded_rootline_postgres(database_url=database_url, read_only=True)
+        try:
+            binding = load_canonical_a_irrigation_binding(connect_factory=connect)
+            contract = get_device_contract("A12345")
+            row = self._channel(snapshot, 4)
+            if (not binding or binding["canonical_registry_sha256"] != contract.get("canonical_registry_sha256")
+                    or snapshot.get("device_id") != "100204e9bc"
+                    or snapshot.get("firmware") != binding["commissioning_evidence"]["firmware"]
+                    or snapshot.get("commissioned_baseline_fresh") is not True
+                    or row.get("native_auto_off_enabled") is not True
+                    or row.get("native_auto_off_seconds") != 3599
+                    or row.get("power_restoration_state") != "OFF"):
+                return None
+            return binding
+        except Exception:
+            return None
 
     def _injector_commissioning(self, snapshot):
         from modules.telemetry.rootline_ewelink_commissioned_baseline import (
@@ -292,7 +325,15 @@ class RootlineIFTTTTransport:
         state = str(state or "").upper()
         if (contract["collection"] == "irrigation_zones"
                 and contract.get("commissioned") is not True):
-            return {"accepted_unambiguous": False, "status": "irrigation_output_not_commissioned"}
+            from modules.telemetry.rootline_ewelink_request_budget import current_duty
+            duty = current_duty()
+            safe_a_off = (state == "OFF" and contract["identity"] == "A12345"
+                and duty.get("zone_id") == "A12345" and duty.get("device_id") == device_id
+                and duty.get("channel") == channel
+                and str(duty.get("commissioning_id") or "").startswith("ROOTLINE-COMMISSION-")
+                and str(idempotency_key).startswith(str(duty.get("execution_id") or "") + ":OFF:"))
+            if not safe_a_off:
+                return {"accepted_unambiguous": False, "status": "irrigation_output_not_commissioned"}
         if (state == "ON" and contract["collection"] == "irrigation_auxiliary_devices"
                 and str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"
                 and not (callable(self.auxiliary_on_authorizer)

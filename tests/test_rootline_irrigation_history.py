@@ -46,7 +46,9 @@ def completed(zone="B12345", execution="EXEC-B", at=None, **changes):
 def test_epoch_makes_snapshot_absence_authoritative_per_zone():
     result = project_canonical_irrigation_history(
         [epoch("B12345"), epoch("C12345")], snapshot_cutoff=NOW)
-    for zone in result["zones"].values():
+    assert result["zones"]["A12345"]["coverage_status"] == "Unavailable"
+    for identity in ("B12345", "C12345"):
+        zone = result["zones"][identity]
         assert zone["coverage_status"] == "complete"
         assert zone["complete_through"] == NOW.isoformat()
         assert zone["verified_completed_day_count"] == 0

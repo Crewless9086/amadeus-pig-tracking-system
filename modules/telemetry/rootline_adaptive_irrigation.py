@@ -1,4 +1,4 @@
-"""Pure adaptive B/C irrigation decisions and outcome learning.
+"""Pure adaptive A/B/C irrigation decisions and outcome learning.
 
 This module is a decision component of the canonical ROOTLINE plan builder. It
 does not persist, notify, schedule, create commands, or call provider hardware.
@@ -14,9 +14,9 @@ from zoneinfo import ZoneInfo
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
-from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS, rootline_device_registry
 
-ZONES = commissioned_irrigation_contracts()
+ZONES = {zone: rootline_device_registry()[zone] for zone in IRRIGATION_ZONE_IDS}
 DECISIONS = {
     "Run now", "Run later", "Hold", "Needs Data", "Completed",
     "Reassess after segment one", "recovery required",
@@ -31,7 +31,7 @@ AUTHORITY = {
 
 
 def build_adaptive_irrigation_decisions(evidence, *, now=None):
-    """Rank independent B/C needs using only supplied, provenance-ready facts."""
+    """Rank independent A/B/C needs using only supplied, provenance-ready facts."""
     evidence = deepcopy(evidence if isinstance(evidence, dict) else {})
     now = _za(now or datetime.now(timezone.utc))
     policy = _policy(evidence.get("policy"))
@@ -43,6 +43,8 @@ def build_adaptive_irrigation_decisions(evidence, *, now=None):
              if isinstance(item, dict) and str(item.get("zone_id")) in ZONES}
     results = []
     for zone_id in ZONES:
+        if zone_id == "A12345" and zone_id not in zones:
+            continue
         results.append(_zone_decision(zone_id, zones.get(zone_id, {}), policy,
                                       weather, forecast, water, power, now))
     _rank(results)
@@ -223,9 +225,12 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
             "outcome_id": correction.get("outcome_id"), "source": correction.get("source"),
             "objective_satisfied": correction.get("objective_satisfied"),
         })
-    obligation = project_weekly_delivery_obligation(
-        zone, now=now, target_days_per_week=policy["target_days_per_week"],
-        additional_outcomes=correction_outcomes)
+    zone_policy = _dict(zone.get("operating_policy")) if zone_id == "A12345" else {}
+    target = zone_policy.get("target_days_per_week") if zone_id == "A12345" else policy["target_days_per_week"]
+    obligation = (project_weekly_delivery_obligation(
+        zone, now=now, target_days_per_week=target, additional_outcomes=correction_outcomes)
+        if type(target) is int and 1 <= target <= 7 else
+        _need_based_obligation(zone, target, need, now))
     water_balance=_dict(zone.get("water_balance"))
     sufficient_latest = _latest_completion(completions, require_objective_satisfied=True)
     completed_today = (sufficient_latest is not None
@@ -312,6 +317,32 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
             and obligation["status"] != "conflicting"):
         decision = "Hold"
         reason = "Fresh local evidence records rain; reassess need after observed rain rather than relying on forecast."
+    runtime = 120
+    max_segment = 60
+    if zone_id == "A12345":
+        runtime = zone_policy.get("requested_total_duration_minutes")
+        max_segment = zone_policy.get("maximum_continuous_runtime_minutes")
+        minimum = zone_policy.get("minimum_useful_runtime_minutes")
+        missing = (type(runtime) is not int or type(max_segment) is not int
+            or type(minimum) is not int or not 1 <= minimum <= max_segment
+            or not 1 <= max_segment <= 60 or not minimum <= runtime <= min(120, 2 * max_segment)
+            or not str(zone_policy.get("evidence_source") or "").strip()
+            or zone_policy.get("water_supply") != "gravity_fed_downhill"
+            or target not in ("need_based", 1, 2, 3, 4, 5, 6, 7))
+        if missing:
+            gaps.append("a_operating_policy_unavailable")
+            if decision != "recovery required":
+                decision, reason = "Needs Data", "A Camp needs its own supported runtime, need policy and water-supply evidence."
+        elif target == "need_based" and need.lower() not in {"urgent", "dry", "needed", "visible_need"} and not parent_job:
+            if decision not in {"recovery required", "Completed", "Hold"}:
+                decision, reason = "Needs Data", "A Camp needs current attributable irrigation-need evidence."
+        if parent_job and not missing and decision in {"Run now", "Run later"}:
+            original_total = _number(parent_job.get("requested_total_seconds"))
+            next_seconds = _number(parent_projection.get("segment_requested_seconds"))
+            if (original_total is None or next_seconds is None
+                    or original_total > runtime * 60
+                    or next_seconds > min(3599, max_segment * 60)):
+                decision, reason = "Hold", "The current A policy no longer supports this parent's original target or next segment; preserve it for governed reassessment."
     window = _window(decision, policy, power, now)
     urgent = need.lower() == "urgent"
     gravity_fed = policy.get("gravity_fed_bc", True)
@@ -323,12 +354,12 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "confidence": confidence,
         "reason": reason,
         "preferred_window": window,
-        "max_segment_minutes": 60,
-        "proposed_segment_minutes": 60 if decision in {"Run now", "Run later"} else None,
+        "max_segment_minutes": max_segment,
+        "proposed_segment_minutes": min(max_segment, runtime) if decision in {"Run now", "Run later"} else None,
         "requested_total_duration_minutes": (parent_job.get("requested_total_minutes")
-            if parent_job else (120 if decision in {"Run now", "Run later"} else None)),
+            if parent_job else (runtime if decision in {"Run now", "Run later"} else None)),
         "expected_segment_count": (parent_job.get("expected_segment_count")
-            if parent_job else (2 if decision in {"Run now", "Run later"} else None)),
+            if parent_job else ((runtime + max_segment - 1) // max_segment if decision in {"Run now", "Run later"} else None)),
         "incomplete_parent_job": parent or None,
         "stale_incomplete_parent_jobs": [dict(item) for item in
             zone.get("stale_incomplete_parent_jobs", []) if isinstance(item, dict)],
@@ -356,6 +387,20 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
             "dependency":"measured_volume_or_supported_calibration_required"},
         **AUTHORITY,
     }
+
+
+def _need_based_obligation(zone, target, need, now):
+    coverage = _timestamp(zone.get("completion_ledger_complete_through"))
+    fresh = coverage is not None and 0 <= (now - coverage).total_seconds() <= 900
+    known = target == "need_based"
+    due = need.lower() in {"urgent", "dry", "needed", "visible_need"}
+    return {"status": "available" if known and fresh else "Unavailable",
+        "mode": "need_based" if known else "Unknown", "target_days_per_week": None,
+        "coverage_scope": "current_commissioning_epoch",
+        "ledger_complete_through": coverage.isoformat() if coverage else None,
+        "delivery_debt_days": 1 if known and fresh and due else 0,
+        "remaining_weekly_obligation_days": 0, "verified_outcome_ids": [],
+        "delivered_volume": "Unavailable", "on_receipts_counted": 0}
 
 
 def _classify(score, need, policy, weather, water, power, now):
@@ -411,7 +456,7 @@ def _current_need(zone, correction, now):
         source = zone.get("visible_need_source")
     timestamp = _timestamp(observed)
     if (value is None or timestamp is None or not str(source or "").strip()
-            or (now - timestamp.astimezone(ZA_TZ)).total_seconds() > 24 * 3600):
+            or not 0 <= (now - timestamp.astimezone(ZA_TZ)).total_seconds() <= 24 * 3600):
         return "Unknown"
     return str(value)
 

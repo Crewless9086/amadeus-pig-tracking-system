@@ -326,7 +326,7 @@ class WaterEnergyPlanTests(unittest.TestCase):
         sql, params = next(call.args for call in cursor.execute.call_args_list
                            if "from public.irrigation_events" in call.args[0])
         self.assertIn("public.irrigation_events", sql)
-        self.assertEqual(params, ("PLANNING_EPOCH_STARTED",))
+        self.assertEqual(params, (["B12345", "C12345", "A12345"], "PLANNING_EPOCH_STARTED"))
         self.assertTrue(connection.read_only)
         self.assertEqual(result["zones"]["B12345"]["coverage_status"], "Unavailable")
 
@@ -383,7 +383,8 @@ class WaterEnergyPlanTests(unittest.TestCase):
         adaptive=current["irrigation"]["adaptive_management"]
         self.assertTrue(adaptive["enabled"])
         self.assertEqual([row["zone_id"] for row in adaptive["zones"]],
-                         ["B12345", "C12345"])
+                         ["B12345", "C12345", "A12345"])
+        self.assertEqual(adaptive["zones"][-1], {"zone_id": "A12345"})
         self.assertEqual(adaptive["max_execution_minutes"], 60)
         self.assertFalse(adaptive["simultaneous_zones_allowed"])
 
@@ -464,8 +465,13 @@ class AllHoursDripEligibilityTests(unittest.TestCase):
                         tasks = [row for row in plan["candidate_tasks"]
                                  if row["task_id"].startswith("irrigation_")]
                         self.assertEqual({row["task_id"] for row in tasks},
-                            {"irrigation_B12345","irrigation_C12345"})
+                            {"irrigation_A12345","irrigation_B12345","irrigation_C12345"})
+                        a = next(row for row in tasks if row["task_id"] == "irrigation_A12345")
+                        self.assertEqual(a["zone_decision"], "Needs Data")
+                        self.assertIsNone(a["requested_total_duration_minutes"])
                         for row in tasks:
+                            if row["task_id"] == "irrigation_A12345":
+                                continue
                             self.assertEqual(row["preferred_window"],"now_after_fresh_execution_revalidation")
                             self.assertFalse(row["simultaneous_with_other_zone"])
                             self.assertFalse(row["command_created"])

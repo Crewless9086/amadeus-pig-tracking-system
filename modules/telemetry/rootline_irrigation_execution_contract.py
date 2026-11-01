@@ -1,4 +1,4 @@
-"""Pure ROOTLINE contract for commissioned B/C irrigation executions.
+"""Pure ROOTLINE contract for commissioned A/B/C irrigation executions.
 
 This module validates evidence and produces immutable lifecycle packets.  It
 does not persist, notify, schedule, or call SONOFF/eWeLink/IFTTT hardware.
@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 MAX_NATIVE_INCHING_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
 ZONE_BINDINGS = {
+    "A12345": {"channel": 4, "name": "A Camp"},
     "B12345": {"channel": 1, "name": "B Camp"},
     "C12345": {"channel": 2, "name": "C Camp"},
 }
