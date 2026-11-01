@@ -2109,13 +2109,21 @@ def _a_projection(rows, operation):
 
 def _a_commissioning_unresolved(connection):
     # No age, expiry, helper completion or ordinary history can release this fence.
+    # Retain each A operation's original ATTEMPT grant as well as its A phases:
+    # the unchanged reducer needs that source provenance to verify no-send.
+    # Keep malformed A anchors too, even when their operation identity is absent.
     with connection.cursor() as cursor:
-        cursor.execute("""select review_json->'rootline_operational_intake'
-            from public.sam_live_stock_conversation_review_events
-            where event_source=%s and
+        cursor.execute("""with journal as (
+            select review_json->'rootline_operational_intake' as body,
+                created_at,review_event_id,
                 (review_json->'rootline_operational_intake'->>'version'=%s
-                 or review_json->'rootline_operational_intake'->>'phase' like 'A-%%')
-            order by created_at,review_event_id""", (_A_COMMISSIONING_SOURCE, _A_COMMISSIONING_VERSION))
+                 or review_json->'rootline_operational_intake'->>'phase' like 'A-%%') as a_state
+            from public.sam_live_stock_conversation_review_events
+            where event_source=%s)
+            select body from journal where a_state
+                or body->>'operation_id' in (
+                    select body->>'operation_id' from journal where a_state)
+            order by created_at,review_event_id""", (_A_COMMISSIONING_VERSION, _A_COMMISSIONING_SOURCE))
         rows = [row[0] for row in cursor.fetchall()]
     try:
         _a_need(all(isinstance(row, dict) and _a_hex(row.get("operation_id"), 32)

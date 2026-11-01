@@ -306,7 +306,8 @@ def test_delivered_start_requires_exact_own_fresh_and_separately_ordered_evidenc
         with pytest.raises(ValueError): store._a_projection(rows, operation)
 
 
-@pytest.mark.parametrize("attack", [None,"wrong_slot","wrong_source","unknown_reason","network_attempted","wrong_provenance","pre_slot"])
+@pytest.mark.parametrize("attack", [None,"wrong_slot","wrong_source","unknown_reason","network_attempted",
+    "wrong_provenance","pre_slot","missing_attempt","missing_grant","missing_source_pin","changed_source_pin","duplicate_attempt"])
 def test_no_send_receipt_is_bound_to_installed_source_consumed_slot_and_reason(attack):
     operation, claimed, on, _ = _delivered_start_projection()
     expected_source = "a"*64
@@ -323,7 +324,14 @@ def test_no_send_receipt_is_bound_to_installed_source_consumed_slot_and_reason(a
     elif attack == "network_attempted": no_send["provider_command_attempted"]=True
     elif attack == "wrong_provenance": no_send["provenance"]="caller_boolean"
     elif attack == "pre_slot": no_send["recorded_at"]=(datetime.fromisoformat(on["recorded_at"])-timedelta(seconds=1)).isoformat()
+    rows = [attempt,claimed,on,no_send]
+    if attack == "missing_attempt": rows.remove(attempt)
+    elif attack == "missing_grant": attempt["details"].pop("a_commissioning_grant")
+    elif attack == "missing_source_pin": attempt["details"]["a_commissioning_grant"]["runtime"]["source_pins"].clear()
+    elif attack == "changed_source_pin":
+        attempt["details"]["a_commissioning_grant"]["runtime"]["source_pins"]["modules/telemetry/rootline_ifttt_transport.py"] = "f"*64
+    elif attack == "duplicate_attempt": rows.append(deepcopy(attempt))
     if attack is None:
-        assert store._a_projection([attempt,claimed,on,no_send],operation)["startup_state"]=="source_proven_no_send"
+        assert store._a_projection(rows,operation)["startup_state"]=="source_proven_no_send"
     else:
-        with pytest.raises(ValueError): store._a_projection([attempt,claimed,on,no_send],operation)
+        with pytest.raises(ValueError): store._a_projection(rows,operation)

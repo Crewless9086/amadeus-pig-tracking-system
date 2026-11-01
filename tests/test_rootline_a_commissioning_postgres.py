@@ -69,12 +69,12 @@ def rail(database, runtime, monkeypatch):
     assert all(db.closed for db in connections)
 
 
-def record_journal(row):
+def record_journal(row, *, envelope_id=None):
     from modules.sales.sam_live_stock_launch_control import build_sam_live_stock_review_event, record_sam_live_stock_review_event
     event = build_sam_live_stock_review_event({"conversation_id": row["mission_id"]}, {}, {},
         {"score": 0, "safe_to_send": False, "recommended_action": "rootline_operational_intake"},
         event_source=store._A_COMMISSIONING_SOURCE)
-    event.update(review_event_id=row["event_id"], chatwoot_conversation_id=row["mission_id"],
+    event.update(review_event_id=envelope_id or row["event_id"], chatwoot_conversation_id=row["mission_id"],
         review_json={"rootline_operational_intake": row}, decision_json={}, facts_json={},
         customer_message_excerpt="", sam_reply_excerpt="")
     result, status = record_sam_live_stock_review_event(event,
@@ -350,7 +350,8 @@ def test_sender_rollback_after_http_does_not_restore_on_slot(rail, monkeypatch):
     assert not edge(claimed, instance)["success"] and len(calls) == 1
 
 
-def test_budget_refusal_consumes_on_without_retry_or_send(rail, monkeypatch):
+@pytest.mark.parametrize("follow_on", ["ordinary", "fresh_a"])
+def test_budget_refusal_consumes_on_without_retry_or_send(rail, monkeypatch, follow_on):
     instance, calls, body, value = prepare(); claimed = claim(body)
     def refused(*args, **kwargs): raise budget.RequestBudgetUnavailable("synthetic refusal")
     monkeypatch.setattr(budget.RequestBudget, "begin_on", refused)
@@ -361,6 +362,18 @@ def test_budget_refusal_consumes_on_without_retry_or_send(rail, monkeypatch):
     assert not edge(claimed, instance)["success"]
     ended = finish(claimed, instance)
     assert ended["created"] and ended["retirement"]["safe_branch"] == "source_proven_no_send"
+    assert not reserve_present(claimed, instance)
+    with rail() as db:
+        assert not store._a_commissioning_unresolved(db)
+    if follow_on == "ordinary":
+        following = store.rootline_irrigation_execution_store("claim_before_on", normal_claim())
+        assert following.get("created") is True, following
+    else:
+        _, fresh_calls, fresh_body, fresh_value = prepare()
+        assert fresh_value["operation_id"] != value["operation_id"]
+        fresh_claim = claim(fresh_body)
+        assert fresh_claim["operation_id"] == fresh_value["operation_id"] and not fresh_calls
+    assert not calls and not edge(claimed, instance)["success"]
 
 
 def test_source_or_snapshot_change_at_final_edge_prevents_on(rail, monkeypatch):
@@ -509,3 +522,49 @@ def test_sibling_on_or_stale_snapshot_cannot_become_delivered_start(rail):
     fixed_time[0] = None
     assert observe(claimed, instance)["delivered_start"]
     outputs.clear(); assert finish(claimed, instance)["created"]
+
+
+@pytest.mark.parametrize("attack", ["missing_attempt", "missing_grant", "missing_source_pin",
+    "changed_source_pin", "changed_no_send_slot", "malformed_retirement", "unfinished", "ambiguous"])
+def test_global_no_send_fence_preserves_corrupt_and_unfinished_operation_exclusion(rail, monkeypatch, attack):
+    instance, calls, body, value = prepare(); claimed = claim(body)
+    def refused(*args, **kwargs):
+        raise budget.RequestBudgetUnavailable("synthetic pre-command refusal")
+    monkeypatch.setattr(budget.RequestBudget, "begin_on", refused)
+    assert edge(claimed, instance)["outcome"]["provider_command_attempted"] is False
+    assert finish(claimed, instance)["retirement"]["safe_branch"] == "source_proven_no_send"
+    with rail() as db:
+        rows = deepcopy(store._a_rows(db, value["operation_id"]))
+    # Preserve the original immutable journal. Inject adversarial copies only into
+    # another synthetic namespace, with unique outer audit identities. The actual
+    # SQL reader and reducer must fail closed on their canonical body provenance.
+    monkeypatch.setattr(store, "_A_COMMISSIONING_SOURCE", store._A_COMMISSIONING_SOURCE + "-attack")
+    for row in rows:
+        identity = row["event_id"]
+        if attack == "missing_attempt" and identity.endswith("-ATTEMPT"):
+            continue
+        if attack in {"unfinished", "ambiguous"} and identity.endswith("-A-RETIRED"):
+            continue
+        if attack == "ambiguous" and identity.endswith("-A-NO-SEND"):
+            continue
+        if identity.endswith("-ATTEMPT"):
+            details = row["details"]
+            if attack == "missing_grant": details.pop("a_commissioning_grant")
+            elif attack in {"missing_source_pin", "changed_source_pin"}:
+                pins = details["a_commissioning_grant"]["runtime"]["source_pins"]
+                if attack == "missing_source_pin": pins.pop("modules/telemetry/rootline_ifttt_transport.py")
+                else: pins["modules/telemetry/rootline_ifttt_transport.py"] = "f" * 64
+        if attack == "changed_no_send_slot" and identity.endswith("-A-NO-SEND"):
+            row["on_slot_sha256"] = "f" * 64
+        if attack == "malformed_retirement" and identity.endswith("-A-RETIRED"):
+            row["reserve_release_verified"] = False
+        record_journal(row, envelope_id="synthetic-corrupt-projection-" + uuid.uuid4().hex)
+    with rail() as db:
+        assert store._a_commissioning_unresolved(db)
+    ordinary = store.rootline_irrigation_execution_store("claim_before_on", normal_claim())
+    assert ordinary["status"] == "a_commissioning_unresolved"
+    _, fresh_calls, fresh_body, fresh_value = prepare()
+    fresh = store.rootline_irrigation_execution_store("claim_a_commissioning_before_on", fresh_body)
+    assert fresh["status"] == "a_commissioning_controller_unresolved", fresh
+    assert state(fresh_value["operation_id"])["operation_claim"] is None
+    assert not calls and not fresh_calls
