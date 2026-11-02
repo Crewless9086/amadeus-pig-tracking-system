@@ -384,25 +384,20 @@ def borehole_start_artifact(now, registry_generation=2):
             'full_tank_not_blocking':True},energy={'eligible':True},requested_seconds=60,now=now)
 
 
-def test_managed_borehole_persists_exact_eligibility_and_claims_after_delayed_reads(db,monkeypatch):
-    from functools import partial
+def test_managed_borehole_persists_exact_eligibility_and_claims_after_delayed_reads(db):
     from modules.telemetry import rootline_managed_devices_runtime as managed
     from tests import test_rootline_borehole_commissioning as bh
     scheduler_time=datetime.now(timezone.utc)-timedelta(seconds=31)
     artifact=borehole_start_artifact(scheduler_time); events=[]; safety_finished=[]
     class DelayedTransport(bh.BoreholeTransport):
         def read_safety_configuration(self,**kwargs):
-            # Virtual provider latency: no sleeps and no change to the store's real clock.
+            # The scheduler timestamp predates these reads; retain the real claim clock.
+            safety = super().read_safety_configuration(**kwargs)
             safety_finished.append(datetime.now(timezone.utc))
-            return super().read_safety_configuration(**kwargs)
-    def claim_clock():
-        assert safety_finished, 'claim clock must be read after native safety'
-        return safety_finished[-1]
+            return safety
     def actual_store(action,body):
         events.append(action)
         return store.rootline_irrigation_execution_store(action,body)
-    monkeypatch.setattr(managed,'advance_borehole_execution',partial(
-        bh.advance_borehole_execution,clock=claim_clock))
     transport=DelayedTransport()
     result=managed.run_rootline_managed_device_cycle(evidence=None,transport=transport,
         evidence_factory=lambda:{'borehole_execution':artifact},store=actual_store,
@@ -414,10 +409,11 @@ def test_managed_borehole_persists_exact_eligibility_and_claims_after_delayed_re
     claimed=next(row for row in saved if row['action']=='claim_borehole_before_on')
     assert all(canonical[key]==value for key,value in artifact.items())
     assert all(claimed[key]==value for key,value in artifact.items())
-    assert datetime.fromisoformat(claimed['claimed_at'])==safety_finished[0]
-    assert datetime.fromisoformat(claimed['claimed_at'])-scheduler_time>=timedelta(seconds=31)
-    assert datetime.fromisoformat(claimed['primary_stop_deadline'])==safety_finished[0]+timedelta(seconds=60)
-    assert datetime.fromisoformat(claimed['native_fail_stop_deadline'])==safety_finished[0]+timedelta(seconds=1800)
+    claimed_at=datetime.fromisoformat(claimed['claimed_at'])
+    assert claimed_at>=safety_finished[0]
+    assert claimed_at-scheduler_time>=timedelta(seconds=31)
+    assert datetime.fromisoformat(claimed['primary_stop_deadline'])==claimed_at+timedelta(seconds=60)
+    assert datetime.fromisoformat(claimed['native_fail_stop_deadline'])==claimed_at+timedelta(seconds=1800)
     assert claimed['assessed_at']==scheduler_time.isoformat()
     assert events.index('record_borehole_eligibility')<events.index('claim_borehole_before_on')
     assert sum(row['action']=='claim_borehole_dispatch' for row in saved)==1
