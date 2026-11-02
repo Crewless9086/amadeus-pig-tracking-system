@@ -251,6 +251,25 @@ def test_store_failure_blocks_all_reporting_and_new_starts(reports):
     assert starts == messages == [] and value["hardware_commands"] == 0
 
 
+def test_unknown_irrigation_state_does_not_block_independent_borehole_or_hide_its_outcome(reports):
+    calls, schedules = [], ScheduleStore()
+    def managed(**kwargs):
+        calls.append(kwargs)
+        return {"success": True, "status": "borehole_started", "managed_device": "BOREHOLE-1-MINI-R4-CH1",
+            "hardware_commands": 1, "writes_farm_data": True, "blocks_bc": False}
+    value, status, starts, messages = gateway(ExecutionStore(fail="load_active"), Transport(),
+        schedules=schedules, source_env={**ENV, "ROOTLINE_BOREHOLE_ENABLED": "true"},
+        managed_device_cycle=managed,
+        specialist_loader=lambda: pytest.fail("unknown irrigation state still holds its reports"))
+    assert status == 202 and starts == messages == []
+    assert len(calls) == 1 and calls[0]["allow_borehole_starts"] is True
+    assert calls[0]["allow_new_starts"] is False
+    assert value["managed_device_status"] == "borehole_started" and value["hardware_commands"] == 1
+    outcome = next(row for key, row in schedules.rows.items() if key.endswith(":outcome"))
+    assert outcome["managed_device_status"] == "borehole_started"
+    assert outcome["managed_device_outcomes"][0]["status"] == "borehole_started"
+
+
 def test_missing_active_cannot_fall_through_to_eligible_decision():
     calls = []
     value = advance_irrigation_execution(decision_id="fresh-eligible", commissioning_id="fresh",

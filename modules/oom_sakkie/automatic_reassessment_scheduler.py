@@ -99,6 +99,8 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                "material_digest": str(result.get("material_digest") or ""),
                "execution_status": str(result.get("execution_status") or ""),
                "active_supervision_status": str(result.get("active_supervision_status") or ""),
+               "managed_device_status": str(result.get("managed_device_status") or "")[:100],
+               "managed_device_outcomes": _managed_outcomes(result.get("managed_device_result")),
                "supervision_next_due_at": str(result.get("supervision_next_due_at") or ""),
                "report_work_due": bool(reports_due),
                "active_supervision_write_attempted": result.get("active_supervision_write_attempted") is True,
@@ -123,6 +125,22 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
             "terminal_outcome": "claimed", "outcome_recorded": False}
     return {**result, "schedule_identity": identity, "invocation_receipt": digest,
             "terminal_outcome": terminal, "next_due_at": next_due.isoformat()}
+
+
+def _managed_outcomes(value):
+    """Keep finite refusal reasons on the existing schedule outcome, no payloads."""
+    pending = [value]
+    rows = []
+    while pending and len(rows) < 8:
+        item = pending.pop(0)
+        if not isinstance(item, Mapping):
+            continue
+        rows.append({key: str(item.get(key) or "")[:100]
+            for key in ("managed_device", "status", "error_type")})
+        children = item.get("outcomes")
+        if isinstance(children, (list, tuple)):
+            pending.extend(children[:8])
+    return rows
 
 
 def _bucket(value: datetime) -> datetime:

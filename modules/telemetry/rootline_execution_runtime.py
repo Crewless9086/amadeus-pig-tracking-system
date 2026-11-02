@@ -28,7 +28,8 @@ from modules.telemetry.rootline_water_energy_plan import (
 def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
-        evidence_loader=read_current_water_energy_evidence, allow_new_starts=True, clock=None):
+        evidence_loader=read_current_water_energy_evidence, allow_new_starts=True,
+        allow_borehole_starts=None, clock=None):
     """Supervise owned devices and advance independently eligible managed tasks.
 
     This composes existing planners, canonical device records and coordinators.
@@ -154,14 +155,22 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                         return packet
                     provider = transport.read_output_state(device_id="1002851416", channel=1)
                     decision_at = current_decision_time(selected)
+                    # Ten hours is the independent fallback. Keep the existing
+                    # planned supply window for a new start; an owner's already
+                    # running output keeps its current native deadline instead.
+                    requested = min(14400, int(baseline["maximum_routine_runtime_seconds"]))
+                    if provider.get("state") == "ON":
+                        from modules.telemetry.rootline_borehole_commissioning import _borehole_provider_configuration
+                        proof = _borehole_provider_configuration(provider, now=decision_at)
+                        if proof:
+                            requested = proof["native_auto_off_seconds"]
                     packet["borehole_execution"] = build_borehole_runtime_eligibility(
                         need={"eligible": True, "task_id": "borehole",
                             "reason": borehole_task.get("reason")}, baseline=baseline,
                         authority={"inside_standing_authority": True}, provider=provider,
                         interlocks=interlocks,
                         energy={"eligible": managed_energy_decision(evidence.get("power"), now=decision_at)["borehole_eligible"]},
-                        requested_seconds=min(14400,
-                            int(baseline["maximum_routine_runtime_seconds"])), now=decision_at)
+                        requested_seconds=requested, now=decision_at)
                 else:
                     packet["borehole_readiness"] = "canonical_commissioning_required"
             except Exception:
@@ -175,6 +184,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     result = run_rootline_managed_device_cycle(evidence={}, transport=transport,
         environ=source, store=store, connect_factory=connect_factory, now=now,
         evidence_factory=build_evidence, allow_new_starts=allow_new_starts,
+        allow_borehole_starts=allow_borehole_starts,
         energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock)
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
         return result
@@ -575,8 +585,9 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                 str(database_url or source.get("DATABASE_URL") or "").strip(), clock))
     if not owner_user_id or owner_user_id != chat_id:
         return _safe("canonical_observation_binding_invalid")
+    authority_checker = authority_checker or _canonical_standing_authority_proven
     initial = _current(evidence_loader, readback, token_store, source, database_url, now, store,
-        require_enabled=True, clock=clock)
+        require_enabled=True, clock=clock, authority_checker=authority_checker)
     observation = _planning_observation(initial, owner_user_id, chat_id,
                                         next_reassessment_at)
     if observation_store is None:
@@ -628,7 +639,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     def revalidate(_decision):
         current_now = _aware(clock())
         return _current(evidence_loader, readback, token_store, source,
-                        database_url, current_now, store, require_enabled=True, clock=clock)["artifact"]
+                        database_url, current_now, store, require_enabled=True, clock=clock,
+                        authority_checker=authority_checker)["artifact"]
     return advance_irrigation_execution(decision_id=decision["decision_id"],
         commissioning_id=commissioning_id, decision_reader=lambda _identity: decision,
         commissioning_reader=lambda _identity: commissioning, store=store,
@@ -747,7 +759,8 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
 
 
 def _current(evidence_loader, readback, token_store, source, database_url, now,
-             store=rootline_irrigation_execution_store, *, require_enabled=False, clock=None):
+             store=rootline_irrigation_execution_store, *, require_enabled=False, clock=None,
+             authority_checker=None, reconcile_stale=True):
     _refresh_a_irrigation_binding(source, database_url, now)
     try:
         from modules.telemetry.rootline_bounded_read_group import (
@@ -764,6 +777,19 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
     if ((isinstance(history, dict) and history.get("status") == "Unavailable")
             or (isinstance(evidence, dict) and evidence.get("database_read_failures"))):
         raise RootlineExecutionStoreUnavailable("load_canonical_irrigation_history")
+    if require_enabled and reconcile_stale:
+        reconciled = _reconcile_contained_bc_parents(history=history, source=source,
+            database_url=database_url, readback=readback, token_store=token_store,
+            store=store, now=now, clock=clock,
+            authority_checker=authority_checker or _canonical_standing_authority_proven)
+        if reconciled:
+            # The old packet remains evidence. Reload canonical history and
+            # current planning inputs before any fresh execution decision.
+            current = _current(evidence_loader, readback, token_store, source,
+                database_url, _aware((clock or (lambda: datetime.now(timezone.utc)))()),
+                store, require_enabled=True, clock=clock,
+                authority_checker=authority_checker, reconcile_stale=False)
+            return {**current, "parent_reconciliations": reconciled}
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
     _persist_stale_parent_resolutions(plan, store)
     eligibility_args = dict(plan=plan, evidence=evidence,
@@ -788,6 +814,51 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
     return {"evidence": evidence, "plan": plan, "controller": controller,
             "operating_date": str(operating_date), "generated_at": generated_at,
             "artifact": artifact}
+
+
+def _reconcile_contained_bc_parents(*, history, source, database_url, readback,
+        token_store, store, now, clock=None, authority_checker=None):
+    """Retire interrupted claims using the existing locked OFF-only rail."""
+    if (str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() != "true"
+            or not isinstance(history, dict) or history.get("status") != "Available"):
+        return []
+    candidates = []
+    for zone in ("B12345", "C12345"):
+        for parent in ((history.get("zones") or {}).get(zone) or {}).get("contained_parent_jobs") or []:
+            job = parent.get("job") if isinstance(parent, dict) else {}
+            if isinstance(job, dict) and job.get("zone_id") == zone:
+                candidates.append(parent)
+    if not candidates:
+        return []
+    authority_checker = authority_checker or _canonical_standing_authority_proven
+    approved = [parent for parent in candidates if authority_checker(
+        str(database_url or source.get("DATABASE_URL") or ""), {
+            "zone_id": parent["job"]["zone_id"],
+            "channel": 1 if parent["job"]["zone_id"] == "B12345" else 2,
+            "maximum_duration_seconds": 3599})]
+    if not approved:
+        return []
+    from modules.telemetry.rootline_parent_job_resolution import record_contained_parent_cancellation
+    try:
+        controller = readback(token_store=token_store, environ=source, now=now)
+    except Exception:
+        return []
+    reconciled = []
+    for parent in approved:
+        job = parent["job"]
+        try:
+            result = record_contained_parent_cancellation(parent=parent, controller=controller,
+                authorization={"mission_id": "RMQ-20260813-04",
+                    "decision": "cancel_unverified_remainder", "job_id": job["job_id"],
+                    "job_sha256": job["job_sha256"],
+                    "owner_principal": "ROOTLINE:owner-authorized-bc-reconciliation-20261102"},
+                store=store, now=_aware((clock or (lambda: datetime.now(timezone.utc)))()))
+        except (ValueError, RuntimeError):
+            # Changed canonical parent or incomplete OFF stays contained. The
+            # unrelated zone retains its own decision and next normal retry.
+            continue
+        reconciled.append(result["resolution"])
+    return reconciled
 
 
 def _persist_stale_parent_resolutions(plan, store):

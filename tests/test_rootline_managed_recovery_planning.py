@@ -243,7 +243,7 @@ def test_active_not_due_skips_planning_without_extra_active_reads(kind):
     else: store.borehole = active(kind, due=False)
     transport, loader = OffOnlyTransport(), Evidence(fail=True)
     result = invoke(store, transport, loader)
-    assert result["status"] == ("auxiliary_active" if kind == "mixer" else "borehole_active")
+    assert result["status"] == ("auxiliary_active" if kind == "mixer" else "borehole_completed")
     assert transport.commands == loader.calls == []
     assert store.loads == ({"load_active_auxiliaries": 1, "load_active_auxiliary": 1, "load_active_borehole": 1} if kind == "mixer" else {
         "load_active_auxiliaries": 1, "load_active_borehole": 2})

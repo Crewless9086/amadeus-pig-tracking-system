@@ -413,6 +413,7 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
         "firmware": firmware,
         "channels": channel_rows,
         "timers_enabled": any(not _timer_disabled(item) for item in timers) if timers is not None else None,
+        "timers_only_turn_off": single and _timers_only_turn_off(timers),
         "scenes_enabled": (bool(scenes) if provider_scenes_supported
             else False if baseline_control_paths else None),
         "interlock_enabled": (bool(interlock) if provider_interlock_supported
@@ -463,6 +464,21 @@ def _outlet_records(value, field, allowed, outlets=(0, 1, 2, 3)):
 
 def _native_seconds(milliseconds):
     return milliseconds // 1000 if milliseconds % 1000 == 0 else milliseconds / 1000
+
+
+def _timers_only_turn_off(timers):
+    """Recognize the observed MINI R4 repeat-OFF schema, never unknown actions."""
+    if not isinstance(timers, list):
+        return False
+    enabled = [timer for timer in timers if not _timer_disabled(timer)]
+    return bool(enabled) and all(
+        isinstance(timer, dict)
+        and set(timer) <= {"type", "at", "atLocal", "mId", "coolkit_timer_type", "enabled", "do"}
+        and timer.get("type") == timer.get("coolkit_timer_type") == "repeat"
+        and isinstance(timer.get("at"), str) and bool(timer["at"].strip())
+        and type(timer.get("enabled")) is int and timer["enabled"] == 1
+        and timer.get("do") == {"switches": [{"outlet": 0, "switch": "off"}]}
+        for timer in enabled)
 
 
 def _timer_disabled(value):

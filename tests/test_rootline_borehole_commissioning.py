@@ -126,7 +126,7 @@ class BoreholeTransport:
             "device_id":"1002851416","channel":1,"evidence_id":"a"*64,
             "retrieved_at":datetime.now(timezone.utc).isoformat()}
     def read_safety_configuration(self,**_kwargs):
-        return {"native_inching_enabled":True,"native_inching_seconds":1800}
+        return {"authoritative":True,"native_inching_enabled":True,"native_inching_seconds":1800}
 
 
 def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():
@@ -147,26 +147,28 @@ def test_one_on_then_bounded_off_and_restart_recovery_use_same_execution():
     assert completed["execution"]["operational_proof"]=="provider_app_on_to_off"
 
 
-def test_ambiguous_or_unverified_start_is_off_contained_never_completed():
+def test_current_readback_resolves_ambiguous_start_and_missing_read_keeps_deadline():
     baseline={**canonical(maximum_routine_runtime_seconds=14400),"registry_generation":2}
     artifact=build_borehole_runtime_eligibility(need={"eligible":True},baseline=baseline,
       authority={"inside_standing_authority":True},provider={"authoritative":True,"state":"OFF"},
       interlocks={"dry_run_safe":True,"low_water_clear":True,"supply_pressure_safe":True,
         "full_tank_not_blocking":True},energy={"eligible":True},requested_seconds=60,now=NOW)
-    for transport in (BoreholeTransport(on_accepted=False),
-                      BoreholeTransport(on_readback="Unknown")):
+    for transport, expected in ((BoreholeTransport(on_accepted=False), "borehole_started"),
+                      (BoreholeTransport(on_readback="Unknown"), "borehole_start_observation_pending")):
         store=BoreholeStore()
         result=advance_borehole_execution(eligibility=artifact,store=store,
           transport=transport,now=NOW,clock=lambda:NOW)
-        assert result["success"] is False
-        assert result["status"]=="borehole_start_failure_contained"
-        assert [row["state"] for row in transport.commands]==["ON","OFF"]
+        assert result["status"] == expected
+        assert [row["state"] for row in transport.commands]==["ON"]
         assert not any(action=="record_borehole_completed" for action,_ in store.events)
         replay=advance_borehole_execution(eligibility=artifact,store=store,
-          transport=transport,now=NOW.replace(minute=2))
-        assert replay["success"] is False
-        assert replay["status"]=="borehole_start_failure_contained"
-        assert not any(action=="record_borehole_completed" for action,_ in store.events)
+          transport=transport,now=NOW.replace(minute=2),clock=lambda:NOW.replace(minute=2))
+        assert [row["state"] for row in transport.commands] == ["ON", "OFF"]
+        if expected == "borehole_start_observation_pending":
+            assert replay["success"] is False
+            assert not any(action=="record_borehole_completed" for action,_ in store.events)
+        else:
+            assert replay["status"] == "borehole_completed"
 
 def test_existing_runtime_is_disabled_then_advances_with_injected_transport(monkeypatch):
     common=dict(need={"eligible":True},provider={"authoritative":True,"state":"OFF"},

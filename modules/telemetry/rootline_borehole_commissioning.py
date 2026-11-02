@@ -14,6 +14,7 @@ VERSION = "rootline_borehole_commissioning_readiness.v2"
 IDENTITY = "BOREHOLE-1-MINI-R4-CH1"
 READBACK_MAX_AGE = timedelta(minutes=5)
 COMMISSIONING_TEST_MAX_SECONDS = 4 * 60 * 60
+BOREHOLE_FALLBACK_MAX_SECONDS = 10 * 60 * 60
 DEVICE_KEY = "ewelink:ewelink_owner_account:1002851416:1"
 
 
@@ -88,7 +89,7 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
     native=packets["commissioned_baseline"].get("native_fail_stop_seconds",maximum)
     seconds_ok = (type(requested_seconds) is int and requested_seconds > 0
                   and type(maximum) is int and type(native) is int
-                  and requested_seconds <= min(maximum,native,14400))
+                  and requested_seconds <= min(maximum,native,BOREHOLE_FALLBACK_MAX_SECONDS))
     protection = borehole_protection_assessment(packets["commissioned_baseline"],
         packets["interlocks"], now=now)
     gates = {"canonical_need": packets["need"].get("eligible") is True,
@@ -208,6 +209,9 @@ def load_registered_borehole_baseline(*, connect_factory):
         "baseline_sha256": loaded["evidence_digest"],
         "maximum_routine_runtime_seconds": min(record["maximum_runtime_seconds"],record["native_fail_stop_seconds"],14400),
         "native_fail_stop_seconds": record["native_fail_stop_seconds"],
+        # The historical commissioning identity stays intact. Only a fresh exact
+        # MINI R4 proof may use the owner's later ten-hour fallback setting.
+        "fallback_maximum_runtime_seconds": BOREHOLE_FALLBACK_MAX_SECONDS,
         "authority_envelope": dict(record.get("authority_envelope") or {}),
         "installed_protection_profile":installed}
 
@@ -215,25 +219,85 @@ def load_registered_borehole_baseline(*, connect_factory):
 def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
                                       interlocks, energy, requested_seconds, now=None):
     """Build one immutable canonical eligibility identity; never claim or command."""
-    plan = prepare_borehole_execution_plan(need=need, commissioned_baseline=baseline,
+    now = _aware(now or datetime.now(timezone.utc))
+    configuration = _borehole_provider_configuration(provider, now=now)
+    if configuration and configuration["native_auto_off_seconds"] not in {
+            baseline.get("native_fail_stop_seconds"), BOREHOLE_FALLBACK_MAX_SECONDS}:
+        configuration = None
+    effective = dict(baseline)
+    if configuration:
+        native = configuration["native_auto_off_seconds"]
+        effective["native_fail_stop_seconds"] = native
+        if native == BOREHOLE_FALLBACK_MAX_SECONDS:
+            effective["maximum_routine_runtime_seconds"] = native
+        else:
+            effective["maximum_routine_runtime_seconds"] = min(
+                int(baseline.get("maximum_routine_runtime_seconds") or 0), native)
+    plan = prepare_borehole_execution_plan(need=need, commissioned_baseline=effective,
         authority=authority, provider=provider, interlocks=interlocks, energy=energy,
         concurrency={"borehole_claim_available": True},
         requested_seconds=requested_seconds, execution_id="PENDING", now=now)
     blockers = [item for item in plan["blockers"]
         if item != "canonical_validator_and_coordinator_integration_absent"]
-    material = {"contract_version": "rootline_borehole_runtime_eligibility.v2",
+    gates = dict(plan["gates"])
+    if isinstance(provider, dict) and "borehole_configuration" in provider and not configuration:
+        gates["provider_off"] = False
+        blockers.append("provider_configuration_unproven")
+    if configuration:
+        # An already-ON output is adopted without a command. It is never
+        # relabelled OFF merely to pass the ordinary startup predicate.
+        gates.pop("provider_off")
+        gates["provider_state_safe"] = True
+        blockers = [item for item in blockers if item != "provider_off"]
+    material = {"contract_version": "rootline_borehole_runtime_eligibility.v3" if configuration
+            else "rootline_borehole_runtime_eligibility.v2",
         "device_key": DEVICE_KEY, "baseline_sha256": baseline.get("baseline_sha256"),
         "registry_generation": baseline.get("registry_generation"),
         "need_sha256": _digest(dict(need or {})), "evidence_sha256": plan["evidence_sha256"],
-        "requested_seconds": requested_seconds, "native_fail_stop_seconds":baseline.get("native_fail_stop_seconds"),
+        "requested_seconds": requested_seconds, "native_fail_stop_seconds":effective.get("native_fail_stop_seconds"),
         "assessed_at": plan["prepared_at"],
-        "gates": plan["gates"], "blockers": blockers}
+        "gates": gates, "blockers": blockers}
+    if configuration:
+        material.update(provider_evidence=dict(provider),
+            operation="adopt_observed_on" if provider["state"] == "ON" else "command_off_to_on",
+            commissioned_native_fail_stop_seconds=baseline.get("native_fail_stop_seconds"))
     digest = _digest(material)
     execution_id = "ROOTLINE-BOREHOLE-" + digest[:24].upper()
     return {**material, "eligibility_sha256": digest, "execution_id": execution_id,
         "consumption_key": "borehole:" + digest,
-        "eligible": not blockers and all(plan["gates"].values()),
+        "eligible": not blockers and all(gates.values()),
         "command_authority": False, "hardware_commands": 0}
+
+
+def _borehole_provider_configuration(provider, *, now):
+    """One exact current output/configuration proof, shared only before a claim."""
+    if not isinstance(provider, dict):
+        return None
+    proof = provider.get("borehole_configuration")
+    if not isinstance(proof, dict):
+        return None
+    observed = _time(provider.get("retrieved_at"))
+    digest = provider.get("evidence_id")
+    if (provider.get("authoritative") is not True or provider.get("state") not in {"ON", "OFF"}
+            or provider.get("device_id") != "1002851416" or type(provider.get("channel")) is not int
+            or provider["channel"] != 1 or observed is None or not timedelta(0) <= now-observed <= READBACK_MAX_AGE
+            or not isinstance(digest, str) or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)
+            or proof.get("device_id") != provider["device_id"] or proof.get("channel") != 1
+            or proof.get("device_model") != "MINIR4" or proof.get("device_uiid") != 138
+            or proof.get("response_digest") != digest or proof.get("retrieved_at") != provider.get("retrieved_at")
+            or proof.get("output_state") != provider["state"] or proof.get("online") is not True
+            or proof.get("observation_fresh") is not True or proof.get("provider_control_calls") != 0
+            or proof.get("native_auto_off_enabled") is not True
+            or type(proof.get("native_auto_off_seconds")) is not int
+            or not 1 <= proof["native_auto_off_seconds"] <= BOREHOLE_FALLBACK_MAX_SECONDS
+            or proof.get("power_restoration_state") != "OFF"
+            or not (proof.get("timers_enabled") is False
+                or proof.get("timers_only_turn_off") is True)
+            or any(proof.get(key) is not False for key in
+                ("scenes_enabled", "interlock_enabled"))):
+        return None
+    return proof
 
 
 def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False, clock=None):
@@ -255,21 +319,57 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             return _borehole_result("borehole_claim_in_progress",execution=active)
         start = active.get("provider_start_evidence") or {}
         if start.get("authoritative") is not True or start.get("state") != "ON":
-            return _contain_failed_borehole_start(
-                {**active, "reason": "restart_without_verified_start"}, store, transport)
+            deadline = _time(active.get("primary_stop_deadline"))
+            if deadline is None or now >= deadline or stop_for_energy:
+                return _contain_failed_borehole_start(
+                    {**active, "reason": "startup_deadline_or_safety_stop"}, store, transport)
+            # An interrupted observation is not an OFF decision. The original
+            # claim and native deadline remain consumed; only observe, never ON
+            # again. A later exact ON can complete startup under that same claim.
+            observed = _read_borehole(transport)
+            now = _aware(clock())
+            if now >= deadline:
+                return _contain_failed_borehole_start(
+                    {**active, "reason": "startup_deadline_reached"}, store, transport)
+            if observed.get("authoritative") is True and observed.get("state") == "ON":
+                recovered = {**active, "state": "Active", "on_attempts": 1,
+                    "provider_start_evidence": observed}
+                marked = store("mark_borehole_active", recovered)
+                if isinstance(marked, dict) and marked.get("success") is True:
+                    return _borehole_result("borehole_start_observed", execution=recovered)
+            elif observed.get("authoritative") is True and observed.get("state") == "OFF":
+                return _contain_failed_borehole_start(
+                    {**active, "reason": "startup_observed_off"}, store, transport)
+            return _borehole_result("borehole_start_observation_pending", success=False,
+                effects_unknown=True, execution=active)
         deadline = _time(active.get("primary_stop_deadline"))
         if active.get("state") == "Active" and deadline is not None and now < deadline and not stop_for_energy:
-            return _borehole_result("borehole_active", execution=active)
+            observed = _read_borehole(transport)
+            now = _aware(clock())
+            if observed.get("authoritative") is True and observed.get("state") == "OFF":
+                return _finish_borehole(active, store, transport, now, clock=clock,
+                    observed_off=observed)
+            if now >= deadline:
+                return _finish_borehole(active, store, transport, now, clock=clock)
+            return _borehole_result("borehole_active", execution=active,
+                supervision_evidence_pending=observed.get("authoritative") is not True
+                    or observed.get("state") != "ON")
         return _finish_borehole({**active, "energy_stop":stop_for_energy}, store, transport, now, clock=clock)
     if not _valid_borehole_eligibility(eligibility):
         return _borehole_result("borehole_eligibility_invalid", success=False)
     native=eligibility.get("native_fail_stop_seconds",14400)
+    if eligibility.get("contract_version") == "rootline_borehole_runtime_eligibility.v3":
+        proof = _borehole_provider_configuration(eligibility.get("provider_evidence"), now=_aware(clock()))
+        if not proof or proof["native_auto_off_seconds"] != native:
+            return _borehole_result("borehole_native_readback_unproven", success=False)
     if eligibility.get("contract_version")=="rootline_borehole_runtime_eligibility.v2":
         try:
             safety=transport.read_safety_configuration(device_id="1002851416",channel=1)
         except Exception:
             return _borehole_result("borehole_native_readback_unproven",success=False)
-        if safety.get("native_inching_enabled") is not True or safety.get("native_inching_seconds")!=native:
+        if (safety.get("authoritative") is not True
+                or safety.get("native_inching_enabled") is not True
+                or safety.get("native_inching_seconds")!=native):
             return _borehole_result("borehole_native_readback_changed",success=False)
     # Planning and the native-safety read precede the durable startup window.
     # Keep assessed_at/evidence unchanged; only claim and stop clocks start here.
@@ -278,6 +378,18 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         "primary_stop_deadline": (now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
         "native_fail_stop_deadline": (now + timedelta(seconds=native)).isoformat(),
         "on_attempts": 0, "off_attempts": 0}
+    if eligibility.get("operation") == "adopt_observed_on":
+        # No ON edge, invented original start time, or claim of delivered water.
+        # The native stop was already armed by the external start; observation
+        # supplies only a conservative latest stop bound for our supervision.
+        execution.update(state="Active", execution_origin="observed_external_on",
+            original_start_at=None, provider_start_evidence=eligibility["provider_evidence"])
+        adopted = store("adopt_borehole_observed_on", execution)
+        if not isinstance(adopted, dict) or adopted.get("success") is not True:
+            return _borehole_result("borehole_observed_on_adoption_unproven", success=False)
+        return _borehole_result("borehole_observed_on_adopted" if adopted.get("created") is True
+            else "borehole_observed_on_already_owned", execution=execution,
+            writes_farm_data=adopted.get("created") is True)
     if not prepare_execution_capacity(transport, execution):
         return _borehole_result("provider_capacity_unavailable")
     transport = bind_execution_transport(transport, execution)
@@ -291,13 +403,14 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     if execution.get("provider_capacity_permit") and on.get("provider_command_attempted") is False:
         from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
         return _retire_unsent_execution(execution, store, transport)
-    if on.get("accepted_unambiguous") is not True:
-        return _contain_failed_borehole_start(
-            {**execution, "reason": "ambiguous_on"}, store, transport)
     started = _read_borehole(transport)
     if started.get("authoritative") is not True or started.get("state") != "ON":
-        return _contain_failed_borehole_start(
-            {**execution, "reason": "start_unverified"}, store, transport)
+        if (started.get("authoritative") is True and started.get("state") == "OFF"
+                or _aware(clock()) >= _time(execution["primary_stop_deadline"])):
+            return _contain_failed_borehole_start(
+                {**execution, "reason": "startup_observed_off_or_deadline"}, store, transport)
+        return _borehole_result("borehole_start_observation_pending", commands=1,
+            success=False, effects_unknown=True, execution=execution)
     active = {**execution, "state": "Active", "on_attempts": 1,
         "provider_start_evidence": started}
     marked=store("mark_borehole_active", active)
@@ -307,9 +420,9 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     return _borehole_result("borehole_started", commands=1, execution=active)
 
 
-def _finish_borehole(active, store, transport, now, *, clock=None):
-    commands = _stop_borehole(active, store, transport)
-    final = _read_borehole(transport)
+def _finish_borehole(active, store, transport, now, *, clock=None, observed_off=None):
+    commands = 0 if observed_off is not None else _stop_borehole(active, store, transport)
+    final = observed_off if observed_off is not None else _read_borehole(transport)
     if final.get("authoritative") is not True or final.get("state") != "OFF":
         store("contain_borehole", {**active, "shutdown_verified": False,
             "provider_final_off_evidence": final})
