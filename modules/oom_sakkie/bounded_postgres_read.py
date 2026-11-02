@@ -59,6 +59,11 @@ def connect_bounded_postgres(*, database_url=None, connect=None, read_only=False
     if connect is None:
         import psycopg
         connect = psycopg.connect
+    from modules.telemetry.rootline_cycle_budget import work_deadline, remaining_seconds
+    cycle_deadline = work_deadline()
+    if cycle_deadline is not None:
+        connect_deadline_seconds = remaining_seconds(
+            connect_deadline_seconds or ROOTLINE_CONNECT_DEADLINE_SECONDS)
     read_only_option = "-c default_transaction_read_only=on " if read_only else ""
     connect_kwargs = {
         "connect_timeout": CONNECT_TIMEOUT_SECONDS,
@@ -69,8 +74,10 @@ def connect_bounded_postgres(*, database_url=None, connect=None, read_only=False
     if not enforce_transaction_local:
         if connect_deadline_seconds is None:
             return connect(url, **connect_kwargs)
-        return _connect_with_wall_clock_deadline(
+        connection = _connect_with_wall_clock_deadline(
             connect, url, connect_kwargs, float(connect_deadline_seconds))
+        return (_CycleBudgetConnection(connection, cycle_deadline)
+            if cycle_deadline is not None else connection)
 
     def acquire_and_configure(target_url, **target_kwargs):
         connection = connect(target_url, **target_kwargs)
@@ -93,8 +100,10 @@ def connect_bounded_postgres(*, database_url=None, connect=None, read_only=False
 
     deadline = (ROOTLINE_CONNECT_DEADLINE_SECONDS if connect_deadline_seconds is None
                 else float(connect_deadline_seconds))
-    return _connect_with_wall_clock_deadline(
+    connection = _connect_with_wall_clock_deadline(
         acquire_and_configure, url, connect_kwargs, deadline)
+    return (_CycleBudgetConnection(connection, cycle_deadline)
+        if cycle_deadline is not None else connection)
 
 
 def is_database_unavailable(exc):
@@ -178,3 +187,53 @@ def _thread_bounded_connect(connect, url, kwargs, deadline_seconds):
     if success:
         return value
     raise value
+
+
+class _CycleBudgetConnection:
+    """Borrow a synchronous connection under one request's remaining budget.
+
+    No mutation is moved to a worker. The native connection context retains
+    commit/rollback ownership; expiry inside it rolls back the current work.
+    """
+    def __init__(self, connection, deadline):
+        self.connection, self.deadline = connection, deadline
+
+    def __enter__(self):
+        self.connection.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self.connection.__exit__(*args)
+
+    def cursor(self, *args, **kwargs):
+        return _CycleBudgetCursor(self.connection.cursor(*args, **kwargs), self.deadline)
+
+    def execute(self, statement, params=None, **kwargs):
+        cursor = self.cursor()
+        return cursor.execute(statement, params, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+
+class _CycleBudgetCursor(ReadBudgetCursor):
+    def __enter__(self):
+        self.cursor.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self.cursor.__exit__(*args)
+
+    def execute(self, statement, params=None, **kwargs):
+        from modules.telemetry.rootline_cycle_budget import RootlineCycleDeadlineExceeded
+        remaining = self.deadline-time.monotonic()
+        if remaining <= 0:
+            raise RootlineCycleDeadlineExceeded("rootline_cycle_database_deadline")
+        milliseconds = max(1, min(STATEMENT_TIMEOUT_MS, int(remaining*1000)))
+        # SET LOCAL does not establish a snapshot. A caller may still choose
+        # REPEATABLE READ before its first data query on this transaction.
+        self.cursor.execute(f"set local statement_timeout='{milliseconds}ms'")
+        if time.monotonic() >= self.deadline:
+            raise RootlineCycleDeadlineExceeded("rootline_cycle_database_deadline")
+        self.cursor.execute(statement, params, **kwargs)
+        return self

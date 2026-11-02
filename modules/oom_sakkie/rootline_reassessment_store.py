@@ -18,7 +18,9 @@ def rootline_reassessment_state_store(action, identity, payload):
     event["review_json"] = {"rootline_reassessment": {**event_payload, "identity": identity, "event_id": event_id}}
     event["decision_json"] = {}; event["facts_json"] = {}
     event["customer_message_excerpt"] = ""; event["sam_reply_excerpt"] = ""
-    result, status = record_sam_live_stock_review_event(event)
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_rootline_postgres(read_only=False))
     return {**result, "success": status < 400 and result.get("success") is True,
             "created": result.get("created", status < 300)}
 

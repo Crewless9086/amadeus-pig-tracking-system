@@ -394,6 +394,11 @@ class RootlineIFTTTTransport:
                     "provider_command_attempted": False}
         # No database work, provider probe or pacing remains beyond this check.
         # A slow accounting acknowledgement cannot create a late ON command.
+        if state == "ON":
+            from modules.telemetry.rootline_cycle_budget import on_deadline
+            cycle_deadline = on_deadline()
+            if cycle_deadline is not None:
+                edge_deadline = min(edge_deadline, cycle_deadline)
         if state == "ON" and time.monotonic() >= edge_deadline:
             if known_no_send is not None: known_no_send("provider_command_deadline_reached")
             return {"accepted_unambiguous": False, "status": "provider_command_deadline_reached",
