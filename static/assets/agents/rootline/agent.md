@@ -7,7 +7,7 @@ Status: `GENERATED / NON_DOCTRINE`
 - UI role label: `Water`
 - Canonical role: water, irrigation, infrastructure, weather, and power telemetry lane.
 - Canonical doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`
-- Canonical doctrine SHA-256: `f2735a07317c738241cd27860c56b0f99455e932b8e8765af3405de93d91d455`
+- Canonical doctrine SHA-256: `1a113d665667fada41412845e9293bc2d87bf347dfcb11e2e2386a3621d1dff5`
 - Asset metadata: `static/assets/agents/rootline/agent.json`
 - Asset metadata SHA-256: `6c118accdcfb0fe6bbaea8ef80cf89990d63bfd68c9ae07417b987a6a37a318d`
 - Central asset registry: `static/assets/agents/agent_registry.json`

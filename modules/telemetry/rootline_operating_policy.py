@@ -20,6 +20,7 @@ from services.database_service import DATABASE_URL_ENV
 POLICY_ID = "ROOTLINE-OPERATING-KNOWLEDGE"
 UNKNOWN = "Unknown"
 ZONES = {"B12345": "lucerne", "C12345": "vegetables"}
+A_POLICY_VERSION = "rootline_operating_policy_abc.v2"
 LIFECYCLE = ("proposed", "owner_reviewed", "active_for_advice")
 AUTHORITY = {
     "writes_farm_data": False,
@@ -144,6 +145,7 @@ def policy_review_contract():
 def normalize_policy_snapshot(payload):
     source = payload if isinstance(payload, dict) else {}
     allowed = {
+        "contract_version",
         "seasonal_boundaries",
         "zones",
         "forecast_rain",
@@ -157,13 +159,20 @@ def normalize_policy_snapshot(payload):
     if unexpected:
         raise PolicyValidationError("unexpected_policy_fields")
 
+    successor = source.get("contract_version") == A_POLICY_VERSION
+    if "contract_version" in source and not successor:
+        raise PolicyValidationError("unsupported_policy_contract_version")
+    expected_zones = {**ZONES, "A12345": UNKNOWN} if successor else ZONES
     zones = source.get("zones")
-    if not isinstance(zones, dict) or set(zones) != set(ZONES):
+    if not isinstance(zones, dict) or set(zones) != set(expected_zones):
         raise PolicyValidationError("exact_zone_policy_identity_required")
 
     normalized_zones = {}
-    for zone_id, crop in ZONES.items():
+    for zone_id, crop in expected_zones.items():
         zone = zones.get(zone_id)
+        if zone_id == "A12345":
+            normalized_zones[zone_id] = _a_zone_policy(zone)
+            continue
         if not isinstance(zone, dict) or set(zone) != {
             "daylight_window",
             "minimum_useful_runtime_minutes",
@@ -186,15 +195,49 @@ def normalize_policy_snapshot(payload):
         }
 
     return {
+        **({"contract_version": A_POLICY_VERSION} if successor else {}),
         "seasonal_boundaries": _season(source.get("seasonal_boundaries")),
         "zones": normalized_zones,
         "forecast_rain": _forecast(source.get("forecast_rain")),
         "live_rain_hold": _live_rain_hold(source.get("live_rain_hold", UNKNOWN)),
         "temperature_limits": _temperature(source.get("temperature_limits")),
-        "crop_need_bands": _crop_bands(source.get("crop_need_bands")),
+        "crop_need_bands": _crop_bands(source.get("crop_need_bands"), expected_zones),
         "controller_power_loss": _power_loss(source.get("controller_power_loss")),
         "residual_drainage": _drainage(source.get("residual_drainage")),
     }
+
+
+def _a_zone_policy(zone):
+    """A has explicit advice inputs; B/C defaults never transfer to it."""
+    required = {"daylight_window", "minimum_useful_runtime_minutes",
+        "maximum_continuous_runtime_minutes", "requested_total_duration_minutes",
+        "target_days_per_week", "water_supply", "evidence_source"}
+    if not isinstance(zone, dict) or set(zone) != required:
+        raise PolicyValidationError("exact_a_zone_policy_fields_required")
+    if zone["daylight_window"] != "any_time":
+        raise PolicyValidationError("a_owner_24_hour_window_required")
+    minimum = _unknown_or_int(zone["minimum_useful_runtime_minutes"], 1, 60, "invalid_minimum_runtime")
+    maximum = _unknown_or_int(zone["maximum_continuous_runtime_minutes"], 1, 60, "invalid_maximum_runtime")
+    total = _unknown_or_int(zone["requested_total_duration_minutes"], 1, 120, "invalid_a_runtime_target")
+    target = zone["target_days_per_week"]
+    if target != "need_based":
+        target = _unknown_or_int(target, 1, 7, "invalid_a_weekly_target")
+    if minimum != UNKNOWN and maximum != UNKNOWN and minimum > maximum:
+        raise PolicyConflictError("minimum_runtime_exceeds_maximum")
+    if total != UNKNOWN and minimum != UNKNOWN and total < minimum:
+        raise PolicyConflictError("a_target_below_minimum_runtime")
+    if total != UNKNOWN and maximum != UNKNOWN and total > 2 * maximum:
+        raise PolicyConflictError("a_target_exceeds_two_bounded_segments")
+    if zone["water_supply"] not in {UNKNOWN, "gravity_fed_downhill"}:
+        raise PolicyValidationError("a_water_supply_not_supported")
+    source = str(zone["evidence_source"] or "").strip()
+    if not source or len(source) > 500:
+        raise PolicyValidationError("a_policy_evidence_source_required")
+    return {"crop_use": UNKNOWN, "daylight_window": "any_time",
+        "minimum_useful_runtime_minutes": minimum,
+        "maximum_continuous_runtime_minutes": maximum,
+        "requested_total_duration_minutes": total, "target_days_per_week": target,
+        "water_supply": zone["water_supply"], "evidence_source": source}
 
 
 def prepare_policy_proposal(payload, actor, *, now=None):
@@ -796,13 +839,14 @@ def _temperature(value):
     return {"minimum_c": low, "maximum_c": high}
 
 
-def _crop_bands(value):
+def _crop_bands(value, zones=None):
+    zones = ZONES if zones is None else zones
     if value == UNKNOWN:
         return UNKNOWN
-    if not isinstance(value, dict) or set(value) != set(ZONES):
+    if not isinstance(value, dict) or set(value) != set(zones):
         raise PolicyValidationError("exact_crop_need_identity_required")
     result = {}
-    for zone_id, crop in ZONES.items():
+    for zone_id, crop in zones.items():
         item = value[zone_id]
         if item == UNKNOWN:
             result[zone_id] = UNKNOWN

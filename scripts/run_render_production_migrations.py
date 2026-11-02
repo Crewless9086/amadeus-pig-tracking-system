@@ -75,6 +75,11 @@ ALLOWLIST = (
         filename="202608260001_allow_herdmaster_litter_actions_protected_claims.sql",
         sha256="1470c98984b982597433e9ac5d9fe9b3db81f14bc335441a40d9ac69965ea6c2",
     ),
+    AllowedMigration(
+        migration_id="20261101150806_extend_rootline_a_irrigation_history",
+        filename="20261101150806_extend_rootline_a_irrigation_history.sql",
+        sha256="8feb9409fb36ad64b88ff84a1ace4b88f1d3ccc9b89f26cca2cd99cc367f2a79",
+    ),
 )
 
 
@@ -114,6 +119,10 @@ FARROWING_PREDECESSOR_ACTION_KINDS = tuple(
     if value != "herdmaster_record_farrowing_litter"
 )
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    "20261101150806_extend_rootline_a_irrigation_history": (
+        "Extend existing typed append-only irrigation history to independently "
+        "governed A; no water credit or activation."
+    ),
     "202608260001_allow_herdmaster_litter_actions_protected_claims": (
         "Admit exact-preview HERDMASTER litter treatment and piglet-loss claims "
         "through the canonical protected action spine."
@@ -174,6 +183,7 @@ CATALOG_RELATIONS = (
     "public.pig_welfare_case_fact_links",
     "public.pig_welfare_case_current",
     "public.litter_supersessions",
+    "public.irrigation_events",
 )
 CATALOG_FUNCTIONS = (
     "app_private.claim_document_print_job",
@@ -188,6 +198,20 @@ CATALOG_FUNCTIONS = (
     "public.pig_welfare_case_validate_death_closure",
     "public.pig_welfare_case_block_mutation",
     "public.validate_litter_supersession",
+    "public.rootline_append_typed_irrigation_event",
+    "public.irrigation_events_block_update_delete",
+)
+
+ROOTLINE_A_MIGRATION_ID = "20261101150806_extend_rootline_a_irrigation_history"
+ROOTLINE_HISTORY_PREDECESSOR = AllowedMigration(
+    migration_id="202608050001_harden_irrigation_events_history",
+    filename="202608050001_harden_irrigation_events_history.sql",
+    sha256="77e581326d60daef48647dcd3364d7907593a4754985cff465330c2df05a5656",
+)
+ROOTLINE_CATALOG_RELATIONS = ("public.irrigation_events",)
+ROOTLINE_CATALOG_FUNCTIONS = (
+    "public.rootline_append_typed_irrigation_event",
+    "public.irrigation_events_block_update_delete",
 )
 
 GREEN_DEVICE_FENCE_MIGRATION_ID = (
@@ -360,6 +384,18 @@ def _allowlist_payload(items=None) -> list[dict[str, str]]:
     ]
 
 
+def _rootline_catalog_scope(items=None) -> tuple[list[str], list[str]]:
+    """New objects enter catalog custody only with their exact migration identity."""
+    selected = ALLOWLIST if items is None else items
+    has_a = any(item.migration_id == ROOTLINE_A_MIGRATION_ID for item in selected)
+    return (
+        [name for name in CATALOG_RELATIONS
+         if has_a or name not in ROOTLINE_CATALOG_RELATIONS],
+        [name for name in CATALOG_FUNCTIONS
+         if has_a or name not in ROOTLINE_CATALOG_FUNCTIONS],
+    )
+
+
 def _json_sha256(value) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -414,8 +450,9 @@ def _verify_private_schema(connection, *, required: bool) -> dict | None:
 def _catalog_manifest(connection, *, relations=None, functions=None) -> dict:
     """Return deterministic catalog state for this rail's bounded object set."""
 
-    relations = list(relations if relations is not None else CATALOG_RELATIONS)
-    functions = list(functions if functions is not None else CATALOG_FUNCTIONS)
+    current_relations, current_functions = _rootline_catalog_scope()
+    relations = list(relations if relations is not None else current_relations)
+    functions = list(functions if functions is not None else current_functions)
 
     def rows(sql: str, params=()):
         return [list(row) for row in connection.execute(sql, params).fetchall()]
@@ -883,6 +920,349 @@ def _verify_green_device_predecessor(connection) -> dict:
     if target_only is not None:
         raise RuntimeError("migration_green_predecessor_has_target_function")
     return readback
+
+
+def _rootline_trusted_transport(connection, *, function_oid, owner: str) -> dict:
+    """Finite hosted broker profiles; no name-only privilege exemption.
+
+    PostgreSQL 16+ exposes separate INHERIT/SET edge flags. An untested older
+    broker variant fails closed; the no-broker minimal schema remains supported.
+    The genuine owner/superuser administration boundary is reported separately.
+    """
+    roles = connection.execute(
+        """select rolname,oid,rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,
+                  rolreplication,rolbypassrls
+             from pg_catalog.pg_roles
+            where rolname in ('authenticator','supabase_storage_admin') order by rolname"""
+    ).fetchall()
+    if not roles:
+        return {}
+    version = connection.execute("select current_setting('server_version_num')::int").fetchone()[0]
+    if version < 160000:
+        raise RuntimeError("migration_rootline_authenticator_server_version_unqualified")
+    by_name = {row[0]: row for row in roles}
+    if "authenticator" not in by_name:
+        raise RuntimeError("migration_rootline_storage_authenticator_missing")
+    expected_attributes = {
+        "authenticator": (True, False, False, False, False, False, False),
+        "supabase_storage_admin": (True, False, False, False, True, False, False),
+    }
+    expected_members = {
+        "authenticator": ("anon", "authenticated", "service_role"),
+        "supabase_storage_admin": ("authenticator",),
+    }
+    profiles = {}
+    for name, role in by_name.items():
+        prefix = "authenticator" if name == "authenticator" else "storage"
+        if role[2:] != expected_attributes[name]:
+            raise RuntimeError(f"migration_rootline_{prefix}_attributes_mismatch")
+        members = connection.execute(
+            """select authority.rolname,m.admin_option,m.inherit_option,m.set_option,
+                      grantor.rolname,grantor.rolsuper
+                 from pg_catalog.pg_auth_members m
+                 join pg_catalog.pg_roles authority on authority.oid=m.roleid
+                 join pg_catalog.pg_roles grantor on grantor.oid=m.grantor
+                where m.member=%s order by authority.rolname,grantor.rolname""", (role[1],),
+        ).fetchall()
+        if members != [(member, False, False, True, "supabase_admin", True)
+                       for member in expected_members[name]]:
+            raise RuntimeError(f"migration_rootline_{prefix}_memberships_mismatch")
+        authority = connection.execute(
+            """select pg_catalog.has_function_privilege(%s,%s,'EXECUTE'),
+                      pg_catalog.pg_has_role(%s,'service_role','MEMBER'),
+                      pg_catalog.pg_has_role(%s,'service_role','USAGE'),
+                      pg_catalog.pg_has_role(%s,'service_role','SET'),
+                      pg_catalog.pg_has_role(%s,%s,'MEMBER'),
+                      pg_catalog.pg_has_role(%s,%s,'USAGE'),
+                      pg_catalog.pg_has_role(%s,%s,'SET')""",
+            (role[1], function_oid, role[1], role[1], role[1],
+             role[1], owner, role[1], owner, role[1], owner),
+        ).fetchone()
+        if authority != (False, True, False, True, False, False, False):
+            raise RuntimeError(f"migration_rootline_{prefix}_effective_authority_mismatch")
+        profiles[name] = {"profile": ("noinherit_postgrest_transport_v2" if name == "authenticator"
+                else "noinherit_storage_transport_v1"),
+            "direct_memberships": [list(row) for row in members],
+            "inherited_execute": False, "service_usage": False,
+            "function_owner_member_usage_set": [False, False, False]}
+    return profiles
+
+
+def _rootline_function_readback(connection, name: str, item: AllowedMigration) -> dict:
+    """Bind the complete function and its service-only boundary, not SQL phrases."""
+    sql = _load_sql(item)
+    bodies = re.findall(
+        rf"create\s+or\s+replace\s+function\s+public\.{re.escape(name)}\s*\(.*?\)"
+        r"\s*returns\s+.*?\s+language\s+plpgsql.*?\s+as\s+\$\$(.*?)\$\$;",
+        sql, flags=re.IGNORECASE | re.DOTALL,
+    )
+    if len(bodies) != 1:
+        raise RuntimeError(f"migration_rootline_function_source_mismatch:{name}")
+    rows = connection.execute(
+        """select p.prosrc,pg_catalog.pg_get_functiondef(p.oid),
+                  pg_catalog.pg_get_function_identity_arguments(p.oid),l.lanname,
+                  pg_catalog.format_type(p.prorettype,null),p.proretset,p.prosecdef,
+                  p.proleakproof,p.provolatile,p.proparallel,p.proconfig,
+                  pg_catalog.pg_get_userbyid(p.proowner),current_user,p.oid,
+                  p.proisstrict,p.prokind
+             from pg_catalog.pg_proc p
+             join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+             join pg_catalog.pg_language l on l.oid=p.prolang
+            where n.nspname='public' and p.proname=%s""", (name,),
+    ).fetchall()
+    if len(rows) != 1:
+        raise RuntimeError(f"migration_rootline_function_missing_or_ambiguous:{name}")
+    (body, definition, arguments, language, result, returns_set, definer,
+     leakproof, volatility, parallel, config, owner, current_role, oid,
+     strict, kind) = rows[0]
+    typed = name == "rootline_append_typed_irrigation_event"
+    expected_args = (
+        "p_event_id text, p_event_at timestamp with time zone, p_event_type text, "
+        "p_zone_id text, p_planned_minutes numeric, p_actual_minutes numeric, p_details jsonb"
+    ) if typed else ""
+    expected = (expected_args, "plpgsql", "boolean" if typed else "trigger",
+                False, typed, False, "v", "u",
+                ["search_path=public, pg_temp"] if typed else None, False, "f")
+    normalized = str(body).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if (normalized != bodies[0].strip() or owner != current_role
+            or (arguments, language, result, returns_set, definer, leakproof,
+                volatility, parallel, config, strict, kind) != expected):
+        raise RuntimeError(f"migration_rootline_function_definition_mismatch:{name}")
+    acl = connection.execute(
+        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable,
+                  pg_catalog.pg_get_userbyid(x.grantor)
+             from pg_catalog.pg_proc p
+             cross join lateral pg_catalog.aclexplode(
+               coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) x
+             left join pg_catalog.pg_roles r on r.oid=x.grantee
+            where p.oid=%s and x.grantee<>p.proowner order by 1,2,3,4""", (oid,),
+    ).fetchall()
+    service_acl = [("service_role", "EXECUTE", False, owner)]
+    if acl != service_acl and (typed or acl != []):
+        raise RuntimeError(f"migration_rootline_function_acl_mismatch:{name}")
+    # Historical SQL leaves an optional service grant on the trigger function.
+    # Both functions still need the same effective and recursive role checks.
+    transports = _rootline_trusted_transport(connection, function_oid=oid, owner=owner)
+    reachable = connection.execute(
+        """select r.rolname,
+                  pg_catalog.has_function_privilege(r.oid,%s,'EXECUTE'),
+                  pg_catalog.pg_has_role(r.oid,%s,'MEMBER'),
+                  pg_catalog.pg_has_role(r.oid,'service_role','MEMBER')
+             from pg_catalog.pg_roles r
+            where ((not r.rolsuper and r.rolname<>%s) or r.rolname in ('anon','authenticated'))
+              and (pg_catalog.pg_has_role(r.oid,%s,'MEMBER')
+                or (r.rolname<>'service_role' and not (r.rolname=any(%s))
+                    and (pg_catalog.has_function_privilege(r.oid,%s,'EXECUTE')
+                         or pg_catalog.pg_has_role(r.oid,'service_role','MEMBER'))))
+            order by r.rolname""",
+        (oid, owner, owner, owner, sorted(transports), oid),
+    ).fetchall()
+    if reachable:
+        raise RuntimeError(f"migration_rootline_function_effective_authority_mismatch:{name}:{reachable}")
+    return {"body_sha256": hashlib.sha256(normalized.encode()).hexdigest(),
+            "definition_sha256": hashlib.sha256(str(definition).encode()).hexdigest(),
+            "acl": [list(row) for row in acl], "untrusted_execution_or_membership": [],
+            "trusted_transports": transports,
+            "administrative_boundary": "genuine function owner and superusers; exposed API roles never exempt"}
+
+
+
+def _rootline_history_index(connection, name: str, *, zones=None) -> dict:
+    rows = connection.execute(
+        """select n.nspname,c.relname,am.amname,x.indisunique,x.indisprimary,
+                  x.indisvalid,x.indisready,x.indnkeyatts,x.indnatts,
+                  x.indoption::smallint[],
+                  array(select pg_catalog.pg_get_indexdef(i.oid,k,false)
+                    from generate_series(1,x.indnatts) k),
+                  pg_catalog.pg_get_expr(x.indpred,x.indrelid,false),
+                  pg_catalog.pg_get_indexdef(i.oid),i.relowner=c.relowner,
+                  x.indnullsnotdistinct,x.indisexclusion,x.indimmediate,x.indislive,
+                  i.reloptions
+             from pg_catalog.pg_index x
+             join pg_catalog.pg_class i on i.oid=x.indexrelid
+             join pg_catalog.pg_namespace ni on ni.oid=i.relnamespace
+             join pg_catalog.pg_class c on c.oid=x.indrelid
+             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+             join pg_catalog.pg_am am on am.oid=i.relam
+            where ni.nspname='public' and i.relname=%s""", (name,),
+    ).fetchall()
+    if len(rows) != 1:
+        raise RuntimeError(f"migration_rootline_index_missing:{name}")
+    (schema, table, method, unique, primary, valid, ready, keys, columns,
+     options, expressions, predicate, definition, same_owner, nulls_not_distinct,
+     exclusion, immediate, live, reloptions) = rows[0]
+    compact = lambda value: re.sub(r"\s+", "", str(value))
+    if zones is not None:
+        expected_expressions = ["zone_id", "event_at", "irrigation_event_id"]
+        members = ", ".join("'" + zone + "'::text" for zone in zones)
+        expected_predicate = f"(zone_id = ANY (ARRAY[{members}]))"
+        expected_options = [0, 3, 0]  # DESC uses NULLS FIRST; all others ASC/LAST.
+    else:
+        expected_expressions = ["((details ->> 'execution_id'::text))", "event_type",
+                                "COALESCE((details ->> 'attempt'::text), ''::text)"]
+        expected_predicate = "((details ->> 'contract_version'::text) = 'rootline_irrigation_outcome_v1'::text)"
+        expected_options = [0, 0, 0]
+    if ((schema, table, method, unique, primary, valid, ready, keys, columns, same_owner)
+            != ("public", "irrigation_events", "btree", zones is None, False,
+                True, True, 3, 3, True)
+            or options != expected_options
+            or (nulls_not_distinct, exclusion, immediate, live, reloptions)
+               != (False, False, True, True, None)
+            or [compact(value) for value in expressions] != [compact(value) for value in expected_expressions]
+            or compact(predicate) != compact(expected_predicate)):
+        raise RuntimeError(f"migration_rootline_index_definition_mismatch:{name}")
+    return {"definition_sha256": hashlib.sha256(str(definition).encode()).hexdigest()}
+
+
+def _rootline_history_boundary(connection) -> dict:
+    table = connection.execute(
+        """select c.relkind,c.relpersistence,pg_catalog.pg_get_userbyid(c.relowner),
+                  current_user,c.relhasrules
+             from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+            where n.nspname='public' and c.relname='irrigation_events'"""
+    ).fetchone()
+    if not table or table[:2] != ("r", "p") or table[2] != table[3] or table[4]:
+        raise RuntimeError("migration_rootline_history_relation_mismatch")
+    # Validate the full insert contract before the first A checkpoint can
+    # adopt it. Required omitted columns/defaults and extra CHECKs can reject
+    # every A append even when all nine explicitly supplied columns are valid.
+    columns = connection.execute(
+        """select a.attname,pg_catalog.format_type(a.atttypid,a.atttypmod),
+                  a.attnotnull,a.attidentity,a.attgenerated,
+                  pg_catalog.pg_get_expr(d.adbin,d.adrelid)
+             from pg_catalog.pg_attribute a
+             left join pg_catalog.pg_attrdef d
+               on d.adrelid=a.attrelid and d.adnum=a.attnum
+            where a.attrelid='public.irrigation_events'::regclass
+              and a.attnum>0 and not a.attisdropped
+            order by a.attname"""
+    ).fetchall()
+    expected_columns = sorted([
+        ("irrigation_event_id", "text", True, "", "", None),
+        ("source_id", "text", False, "", "", None),
+        ("event_at", "timestamp with time zone", True, "", "", None),
+        ("event_type", "text", True, "", "", None),
+        ("actor", "text", False, "", "", None),
+        ("daily_plan_id", "text", False, "", "", None),
+        ("plan_item_id", "text", False, "", "", None),
+        ("zone_id", "text", False, "", "", None),
+        ("planned_minutes", "numeric(8,2)", False, "", "", None),
+        ("actual_minutes", "numeric(8,2)", False, "", "", None),
+        ("reason", "text", False, "", "", None),
+        ("weather_snapshot", "jsonb", True, "", "", "'{}'::jsonb"),
+        ("power_snapshot", "jsonb", True, "", "", "'{}'::jsonb"),
+        ("details", "jsonb", True, "", "", "'{}'::jsonb"),
+        ("source_sheet_row", "integer", False, "", "", None),
+        ("import_batch_id", "text", False, "", "", None),
+        ("created_at", "timestamp with time zone", True, "", "", "now()"),
+    ])
+    if columns != expected_columns:
+        raise RuntimeError("migration_rootline_history_columns_or_identity_mismatch")
+    constraints = connection.execute(
+        """select c.contype,
+                  array(select a.attname from unnest(c.conkey) with ordinality k(n,ord)
+                    join pg_catalog.pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.n
+                    order by k.ord),
+                  case when c.contype='c' then pg_catalog.pg_get_constraintdef(c.oid) end,
+                  fn.nspname,ft.relname,
+                  array(select a.attname from unnest(c.confkey) with ordinality k(n,ord)
+                    join pg_catalog.pg_attribute a on a.attrelid=c.confrelid and a.attnum=k.n
+                    order by k.ord),
+                  case when c.contype='f' then c.confmatchtype end,
+                  case when c.contype='f' then c.confupdtype end,
+                  case when c.contype='f' then c.confdeltype end,
+                  c.confdelsetcols is null,c.convalidated,c.condeferrable,c.condeferred,
+                  c.connoinherit,c.conislocal,c.coninhcount
+             from pg_catalog.pg_constraint c
+             left join pg_catalog.pg_class ft on ft.oid=c.confrelid
+             left join pg_catalog.pg_namespace fn on fn.oid=ft.relnamespace
+            where c.conrelid='public.irrigation_events'::regclass
+            order by c.contype,c.conname"""
+    ).fetchall()
+    expected_constraints = [
+        ("c", [name], f"CHECK ((({name} IS NULL) OR ({name} >= (0)::numeric)))",
+         None, None, [], None, None, None, True, True, False, False, False, True, 0)
+        for name in ("actual_minutes", "planned_minutes")
+    ] + [
+        ("f", [column], None, "public", target, [column], "s", "a", "n",
+         True, True, False, False, True, True, 0)
+        for column, target in (("daily_plan_id", "irrigation_daily_plans"),
+            ("plan_item_id", "irrigation_plan_items"), ("source_id", "telemetry_sources"),
+            ("zone_id", "irrigation_zones"))
+    ] + [("p", ["irrigation_event_id"], None, None, None, [], None, None, None,
+          True, True, False, False, True, True, 0)]
+    # Names may differ; exact column/target/action and validation semantics may
+    # not. Include ALL kinds so extra UNIQUE/EXCLUDE/FK cannot become a checkpoint.
+    key = lambda row: (row[0], tuple(row[1]))
+    if sorted(constraints, key=key) != sorted(expected_constraints, key=key):
+        raise RuntimeError("migration_rootline_history_constraint_inventory_mismatch")
+    version = connection.execute("select current_setting('server_version_num')::int").fetchone()[0]
+    residuals = connection.execute(
+        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable,
+                  pg_catalog.pg_get_userbyid(x.grantor)
+             from pg_catalog.pg_class c
+             cross join lateral pg_catalog.aclexplode(
+               coalesce(c.relacl,pg_catalog.acldefault('r',c.relowner))) x
+             left join pg_catalog.pg_roles r on r.oid=x.grantee
+            where c.oid='public.irrigation_events'::regclass
+              and x.grantee<>c.relowner order by 1,2,3,4"""
+    ).fetchall()
+    permitted = {"SELECT", "REFERENCES", "TRIGGER"} | ({"MAINTAIN"} if version >= 170000 else set())
+    if any(role not in {"anon", "authenticated", "service_role"}
+            or privilege not in permitted or grantable or grantor != table[2]
+            for role, privilege, grantable, grantor in residuals):
+        raise RuntimeError("migration_rootline_history_direct_write_acl")
+    column_acl = connection.execute(
+        """select a.attname from pg_catalog.pg_attribute a
+             cross join lateral pg_catalog.aclexplode(a.attacl) x
+            where a.attrelid='public.irrigation_events'::regclass and a.attnum>0"""
+    ).fetchall()
+    if column_acl:
+        raise RuntimeError("migration_rootline_history_column_acl")
+    # Residual TRIGGER/REFERENCES/PG17 MAINTAIN are a source-compatible finite
+    # profile, not a claim that all DDL authority is harmless. Exact append-only
+    # trigger and function semantics remain required below and on replay.
+    guard = _rootline_function_readback(
+        connection, "irrigation_events_block_update_delete", ROOTLINE_HISTORY_PREDECESSOR)
+    triggers = connection.execute(
+        """select t.tgname,t.tgenabled,t.tgtype,fn.nspname,p.proname,
+                  pg_catalog.pg_get_function_identity_arguments(p.oid),t.tgnargs,
+                  t.tgqual is null,t.tgconstraint=0,t.tgdeferrable,t.tginitdeferred
+             from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid=t.tgrelid
+             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+             join pg_catalog.pg_proc p on p.oid=t.tgfoid
+             join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
+            where n.nspname='public' and c.relname='irrigation_events' and not t.tgisinternal"""
+    ).fetchall()
+    if triggers != [("trg_irrigation_events_no_update_delete", "O", 27, "public",
+                     "irrigation_events_block_update_delete", "", 0, True, True, False, False)]:
+        raise RuntimeError("migration_rootline_history_guard_mismatch")
+    indexes = {
+        "execution_phase": _rootline_history_index(connection, "irrigation_events_rootline_execution_phase_uq"),
+        "bc_cutoff": _rootline_history_index(connection, "irrigation_events_rootline_zone_cutoff_idx", zones=("B12345", "C12345")),
+    }
+    return {"append_only_guard": guard, "preserved_indexes": indexes,
+            "history_constraint_count": len(constraints),
+            "table_residual_acl": [list(row) for row in residuals],
+            "column_acl_count": 0}
+
+
+def _verify_rootline_a_history(connection, item: AllowedMigration, *, target: bool) -> dict:
+    boundary = _rootline_history_boundary(connection)
+    function = _rootline_function_readback(connection, "rootline_append_typed_irrigation_event",
+                                          item if target else ROOTLINE_HISTORY_PREDECESSOR)
+    if target:
+        index = _rootline_history_index(connection, "irrigation_events_rootline_abc_zone_cutoff_idx",
+                                       zones=("A12345", "B12345", "C12345"))
+        description = _verify_migration_log(connection, item.migration_id, required=True)
+        return {**boundary, "typed_append_function": function, "abc_cutoff_index": index,
+                "migration_log_description_sha256": hashlib.sha256(description.encode()).hexdigest()}
+    if connection.execute(
+        "select pg_catalog.to_regclass('public.irrigation_events_rootline_abc_zone_cutoff_idx')"
+    ).fetchone()[0] is not None:
+        raise RuntimeError("migration_rootline_a_unreceipted_index")
+    _verify_migration_log(connection, item.migration_id, required=False)
+    return {**boundary, "typed_append_function": function}
 
 
 def _mating_id_nullable(connection) -> bool:
@@ -1616,18 +1996,24 @@ def _verify_catalog_checkpoint(connection) -> dict:
         })
     if "202608250002_adopt_green_lost_pre_attempt_claim" not in checkpoint_ids:
         unavailable_functions.add("app_private.claim_document_print_job")
+    if ROOTLINE_A_MIGRATION_ID not in checkpoint_ids:
+        unavailable_functions.update(ROOTLINE_CATALOG_FUNCTIONS)
+    expected_relations = [
+        name for name in CATALOG_RELATIONS
+        if ROOTLINE_A_MIGRATION_ID in checkpoint_ids or name not in ROOTLINE_CATALOG_RELATIONS
+    ]
     expected_functions = [
         name for name in CATALOG_FUNCTIONS if name not in unavailable_functions
     ]
     expected_scope = {
-        "relations": list(CATALOG_RELATIONS),
+        "relations": expected_relations,
         "functions": expected_functions,
         "schemas": ["app_private"],
     }
     if latest[4].get("scope") != expected_scope:
         raise RuntimeError("migration_catalog_checkpoint_scope_mismatch")
     manifest, digest = _catalog_snapshot(
-        connection, relations=CATALOG_RELATIONS, functions=expected_functions
+        connection, relations=expected_relations, functions=expected_functions
     )
     if digest != latest[3] or manifest != latest[4]:
         raise RuntimeError(
@@ -1716,6 +2102,9 @@ def _verify_migration_precondition(
     *,
     already_applied: bool,
 ) -> str:
+    if item.migration_id == ROOTLINE_A_MIGRATION_ID:
+        _verify_rootline_a_history(connection, item, target=already_applied)
+        return "target" if already_applied else "predecessor"
     if item.migration_id == GREEN_LOST_LEDGER_MIGRATION_ID:
         target_error = None
         try:
@@ -1845,6 +2234,8 @@ def _verify_migration_precondition(
 
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
+    if item.migration_id == ROOTLINE_A_MIGRATION_ID:
+        return _verify_rootline_a_history(connection, item, target=True)
     if item.migration_id == GREEN_LOST_LEDGER_MIGRATION_ID:
         functions = _verify_green_device_functions(
             connection, item.filename, GREEN_CLAIM_FUNCTION

@@ -574,3 +574,136 @@ def test_optional_suppression_keeps_its_type_through_real_http_adapter(monkeypat
     with pytest.raises(budget.OptionalObservationDeferred):
         _provider_request("GET","https://eu-apia.coolkit.cc/v2/family",mode="bearer",token="synthetic",
             environ={**ENV,"EWELINK_EXPECTED_DEVICE_ID":"100204e9bc"})
+
+
+class _AcquisitionConnection:
+    """Synthetic driver boundary; native worker/transaction setup still runs."""
+    def __init__(self, *, setup_delay=0, setup_error=False):
+        self.setup_delay = setup_delay
+        self.setup_error = setup_error
+        self.statements = []
+        self.closed = threading.Event()
+        self.rolled_back = False
+
+    def cursor(self): return self
+    def __enter__(self): return self
+    def __exit__(self, *args): return False
+
+    def execute(self, statement, *_args):
+        self.statements.append(statement)
+        time.sleep(self.setup_delay)
+        if self.setup_error:
+            raise RuntimeError("synthetic_setup_failure")
+        assert statement in ("set local statement_timeout='3000ms'",
+                             "set local lock_timeout='1000ms'")
+        return self
+
+    def rollback(self): self.rolled_back = True
+    def close(self): self.closed.set()
+
+
+def test_budget_acquisition_allows_native_setup_over_one_second(monkeypatch):
+    import psycopg
+    from modules.oom_sakkie import bounded_postgres_read as bounded
+    connection = _AcquisitionConnection(setup_delay=.15)
+    calls, deadlines = [], []
+    def connect(*args, **kwargs):
+        calls.append((args, kwargs))
+        time.sleep(.85)
+        return connection
+    native = bounded._connect_with_wall_clock_deadline
+    def capture(*args):
+        deadlines.append(args[3])
+        return native(*args)
+    monkeypatch.setattr(psycopg, "connect", connect)
+    monkeypatch.setattr(bounded, "_connect_with_wall_clock_deadline", capture)
+    client = budget.RequestBudget({**ENV, "DATABASE_URL": "postgresql://synthetic"})
+    started = time.monotonic()
+    acquired = client._connect()
+    assert acquired is connection and time.monotonic()-started >= 1.1
+    assert deadlines == [bounded.ROOTLINE_CONNECT_DEADLINE_SECONDS] == [5]
+    assert len(calls) == 1
+    assert calls[0][1] == {"connect_timeout": 3,
+        "options": "-c statement_timeout=3000 -c lock_timeout=1000"}
+    assert connection.statements == ["set local statement_timeout='3000ms'",
+                                     "set local lock_timeout='1000ms'"]
+    acquired.close()
+
+
+@pytest.mark.parametrize("delay_phase", ["driver", "transaction_setup"])
+def test_budget_short_group_refuses_and_closes_late_acquisition(monkeypatch, delay_phase):
+    import psycopg
+    from modules.oom_sakkie import bounded_postgres_read as bounded
+    connection = _AcquisitionConnection(setup_delay=.08 if delay_phase == "transaction_setup" else 0)
+    calls = []
+    def connect(*_args, **_kwargs):
+        calls.append(True)
+        if delay_phase == "driver": time.sleep(.15)
+        return connection
+    monkeypatch.setattr(psycopg, "connect", connect)
+    with budget.snapshot_group(expected_device="100204e9bc", environ=ENV, region="eu") as group:
+        group["deadline"] = time.monotonic()+.03
+        started = time.monotonic()
+        with pytest.raises(bounded.RootlineConnectionDeadlineExceeded):
+            budget.RequestBudget({**ENV, "DATABASE_URL": "postgresql://synthetic"})._connect()
+        assert time.monotonic()-started < .12
+        assert connection.closed.wait(.8)
+    assert calls == [True]
+
+
+def test_budget_expired_group_opens_no_database(monkeypatch):
+    import psycopg
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: pytest.fail("expired group cannot connect"))
+    with budget.snapshot_group(expected_device="100204e9bc", environ=ENV, region="eu") as group:
+        group["deadline"] = time.monotonic()-1
+        with pytest.raises(budget.RequestBudgetUnavailable, match="deadline"):
+            budget.RequestBudget({**ENV, "DATABASE_URL": "postgresql://synthetic"})._connect()
+
+
+def test_budget_native_connect_keeps_earlier_nested_duty(monkeypatch):
+    import psycopg
+    from modules.oom_sakkie import bounded_postgres_read as bounded
+    connection = _AcquisitionConnection()
+    def connect(*_args, **_kwargs):
+        time.sleep(.15)
+        return connection
+    monkeypatch.setattr(psycopg, "connect", connect)
+    earlier = datetime.now(timezone.utc)+timedelta(seconds=.04)
+    with budget.execution_duty({"execution_id": "SYNTHETIC"}, deadline=earlier):
+        with budget.execution_duty({"execution_id": "SYNTHETIC"}, deadline=earlier+timedelta(seconds=30)):
+            with budget.snapshot_group(expected_device="100204e9bc", environ=ENV, region="eu"):
+                with pytest.raises(bounded.RootlineConnectionDeadlineExceeded):
+                    budget.RequestBudget({**ENV, "DATABASE_URL": "postgresql://synthetic"})._connect()
+    assert connection.closed.wait(.8)
+
+
+def test_budget_setup_failure_rolls_back_without_accounting_retry(monkeypatch):
+    import psycopg
+    connection = _AcquisitionConnection(setup_error=True)
+    calls = []
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: calls.append(True) or connection)
+    client = budget.RequestBudget({**ENV, "DATABASE_URL": "postgresql://synthetic"})
+    monkeypatch.setattr(client, "_append", lambda *a, **kw: pytest.fail("no accounting after setup failure"))
+    with pytest.raises(budget.RequestBudgetUnavailable, match="accounting_unavailable"):
+        client.dispatch(region="eu", endpoint="/v2/family",
+                        send=lambda _: pytest.fail("no provider after setup failure"))
+    assert connection.rolled_back and connection.closed.wait(.8) and calls == [True]
+
+
+def test_budget_acquisition_failure_precedes_coordinator_claim(monkeypatch):
+    import psycopg
+    from tests.test_rootline_irrigation_coordinator import Store, Transport, run
+    connection = _AcquisitionConnection(setup_error=True)
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: connection)
+    client = budget.RequestBudget({**ENV, "DATABASE_URL": "postgresql://synthetic"})
+    class CapacityTransport(Transport):
+        def prepare_execution_capacity(self, execution):
+            return client.reserve_for_on(execution_id=execution["execution_id"],
+                device_id=execution["device_id"], channel=execution["channel"],
+                device_type="irrigation_zone_valve", region="eu")
+    store, transport, notices = Store(), CapacityTransport(), []
+    result = run(store, transport, notices)
+    assert result["status"] == "provider_capacity_unavailable"
+    assert result["hardware_commands"] == 0 and store.rows == []
+    assert transport.calls == [] and notices == []
+    assert connection.rolled_back and connection.closed.wait(.8)

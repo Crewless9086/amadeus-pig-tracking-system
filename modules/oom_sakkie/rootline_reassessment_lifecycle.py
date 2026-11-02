@@ -1,6 +1,8 @@
 """Owner-scoped, delivery-aware read-only ROOTLINE reassessment contract."""
 
 from __future__ import annotations
+
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
 import hashlib, json
 import re
 from typing import Any, Callable, Mapping
@@ -185,7 +187,7 @@ def _typed_zone_projection(result):
     rows = []
     recommendations = result.get("recommendations") if isinstance(result, Mapping) else None
     for item in recommendations if isinstance(recommendations, list) else []:
-        if not isinstance(item, Mapping) or item.get("subject") not in {"B12345", "C12345"}:
+        if not isinstance(item, Mapping) or item.get("subject") not in set(IRRIGATION_ZONE_IDS):
             continue
         decision = {"Recommend": "Run", "Do Not Run": "Not Due", "Hold": "Hold",
                     "Needs Data": "Needs Data"}.get(str(item.get("status") or ""), "Needs Data")

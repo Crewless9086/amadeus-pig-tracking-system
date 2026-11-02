@@ -1,13 +1,15 @@
 """Non-actuating append-only resolution for an explicitly contained parent job."""
 from __future__ import annotations
 
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 
 CONTRACT_VERSION = "rootline_parent_job_terminal_resolution.v1"
 REQUEST_VERSION = "rootline_parent_job_terminal_resolution_request.v1"
-ZONES = frozenset({"B12345", "C12345"})
+ZONES = frozenset(IRRIGATION_ZONE_IDS)
 SEMANTIC_KEYS = ("contract_version", "resolution", "terminal", "mission_id",
     "job_id", "job_sha256", "zone_id", "current_segment", "expected_segment_count",
     "cumulative_verified_runtime_seconds", "cancelled_unverified_remaining_seconds",

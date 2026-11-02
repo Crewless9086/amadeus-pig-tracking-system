@@ -23,7 +23,16 @@ Each device class graduates independently through typed registry identity,
 exact provider/account/device/channel binding, safe OFF and restoration state,
 native fail-stop, dependency/interlock proof, supervised physical
 commissioning, canonical authority and separately reviewed activation. A B/C
-valve proof cannot commission fertiliser or borehole equipment.
+valve proof cannot commission A, fertiliser or borehole equipment.
+
+A CH4 uses the existing device/evidence/authority spine with its own proof and
+separate enablement. The compatible A/B/C operating-policy successor retains
+legacy B/C policies and supplies explicit A runtime, need and supply inputs;
+missing A inputs block only dependent A actions. A shares the existing global
+irrigation claim lock, current rain-stop, parent history and safe OFF recovery.
+A revoked or unavailable new-start authority must not abandon an already
+recorded exact-channel shutdown duty. E CH3 remains inadmissible. Neither this
+source capability nor a migrated history writer establishes live activation.
 
 Every execution must bind the current plan generation, commissioning and
 authority identity/version, exact device/channel, evidence cutoff, maximum
@@ -333,7 +342,7 @@ validated native limit bounds every window and must not be extended.
 
 ## Integrated supervision and evidence ownership
 
-The authenticated minute claim supervises active B/C, mixer, injector and
+The authenticated minute claim supervises active A/B/C, mixer, injector and
 borehole duties before optional planning and reports. The same minute control
 claim may admit eligible work independently of report cadence. After verified
 OFF and fresh reassessment, a continuing irrigation parent has priority over

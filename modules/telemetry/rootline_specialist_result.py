@@ -7,6 +7,8 @@ family-manager result while keeping every physical outcome explicitly unknown.
 
 from __future__ import annotations
 
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -37,6 +39,7 @@ RESULT_AUTHORITY = {
 
 RECOMMENDATION_IDS = (
     "borehole",
+    "A12345",
     "B12345",
     "C12345",
     "fertilizer_injection",
@@ -136,7 +139,7 @@ def _irrigation_lifecycle(recommendations, irrigation_history):
         recommendation=indexed.get(zone), history=histories.get(zone),
         execution=(histories.get(zone) or {}).get("latest_execution"),
         evidence_cutoff=(irrigation_history or {}).get("snapshot_cutoff"))
-        for zone in ("B12345", "C12345")}
+        for zone in IRRIGATION_ZONE_IDS}
 
 
 def _lifecycle_exceptions(lifecycle):
@@ -418,6 +421,7 @@ def _recommendations(
     result = []
     for identity, task_id in (
         ("borehole", "borehole"),
+        ("A12345", "irrigation_A12345"),
         ("B12345", "irrigation_B12345"),
         ("C12345", "irrigation_C12345"),
         ("fertilizer_injection", "fertilizer_injection_ch1"),
@@ -448,7 +452,7 @@ def _recommendations(
                 )
             else:
                 status, reason = _borehole_after_forecast_delay(plan, evidence)
-        if identity in {"B12345", "C12345"}:
+        if identity in set(IRRIGATION_ZONE_IDS):
             zone = next(
                 (
                     item for item in evidence.get("irrigation", {}).get("zones", [])
@@ -692,6 +696,7 @@ def _owner_brief(result):
 def _support_for(identity, plan):
     mapping = {
         "borehole": ["current_power", "current_local_weather", "forecast", "water_observations", "water_policy"],
+        "A12345": ["rootline_daily_advisor", "current_local_weather", "zone_operating_policy"],
         "B12345": ["rootline_daily_advisor", "current_local_weather", "battery_policy"],
         "C12345": ["rootline_daily_advisor", "current_local_weather", "battery_policy"],
         "fertilizer_injection": ["irrigation_interlocks", "fertilizer_policy"],
@@ -708,7 +713,7 @@ def _genuine_needs(identity, status, plan, evidence):
         return ["current_owner_water_observation"] if (
             plan.get("tank_evidence", {}).get("status") in {UNAVAILABLE, "stale"}
         ) else []
-    if identity in {"B12345", "C12345"}:
+    if identity in set(IRRIGATION_ZONE_IDS):
         return ["supported_daily_advisor_zone_evidence"]
     if identity.startswith("fertilizer"):
         return ["protected_relay_identity_and_physical_interlocks"]
@@ -756,6 +761,7 @@ def _recommendations_from_tasks(tasks):
     result = []
     for identity, task_id in (
         ("borehole", "borehole"),
+        ("A12345", "irrigation_A12345"),
         ("B12345", "irrigation_B12345"),
         ("C12345", "irrigation_C12345"),
         ("fertilizer_injection", "fertilizer_injection_ch1"),

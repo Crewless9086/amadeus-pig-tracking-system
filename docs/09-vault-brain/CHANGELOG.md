@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-11-01 - Independently governed A-camp irrigation capability
+
+Reconciled owner-confirmed A pipework readiness and A/B/C all-day drip intent.
+A reuses the canonical device/authority/policy/planner/coordinator/history and
+owner projections with its own CH4 commissioning and enablement. Legacy B/C
+policy, history and fertilizer scope are preserved; E remains held. Missing A
+runtime, need or supply facts remain Unknown. Rain-stop, partial accounting,
+exact OFF recovery and explicit shorter controller objectives remain bounded.
+A-history migration adds no water credit, authority, activation or live outcome.
+
+
 ## 2026-10-31 - Shared eWeLink request admission
 
 Status: LOCAL_NOT_RELEASED.

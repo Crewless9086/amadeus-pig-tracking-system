@@ -386,7 +386,7 @@ def read_current_water_energy_evidence(
         get_weather_forecast,
     )
     from modules.telemetry.rootline_daily_advisor import get_rootline_daily_advisor
-    from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
+    from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
 
     now = _as_za(now or datetime.now(timezone.utc))
     selected = str(operating_date or now.date().isoformat())[:10]
@@ -464,7 +464,7 @@ def read_current_water_energy_evidence(
                 "enabled": True,
                 "contract_version": "rootline_adaptive_irrigation_v1",
                 "zones": [{"zone_id": identity} for identity in
-                    commissioned_irrigation_contracts()],
+                    IRRIGATION_ZONE_IDS],
                 "target_days_per_week": 4,
                 "max_execution_minutes": 60,
                 "simultaneous_zones_allowed": False,
@@ -1166,7 +1166,7 @@ def _read_latest_owner_zone_need(database_url, now):
                      where event_source='oom_sakkie_rootline_operational_intake'
                        and review_json->'rootline_operational_intake'->>'state'='completed'
                        and review_json->'rootline_operational_intake'->'outcome'->>'visible_irrigation_need_zone'
-                           in ('B12345','C12345')
+                           in ('A12345','B12345','C12345')
                        and (review_json->'rootline_operational_intake'->'outcome'->>'writes_farm_data')::boolean is true
                      order by created_at desc,review_event_id desc limit 1
                 """)
@@ -1182,7 +1182,7 @@ def _read_latest_owner_zone_need(database_url, now):
         provider_id = str(outcome.get("provider_message_id") or "").strip()
         zone = str(outcome.get("visible_irrigation_need_zone") or "")
         current = _as_za(now or datetime.now(timezone.utc))
-        if (zone not in {"B12345", "C12345"} or not provider_id or observed is None
+        if (zone not in {"A12345", "B12345", "C12345"} or not provider_id or observed is None
                 or observed > current or current - observed > timedelta(hours=24)):
             return {"status": UNAVAILABLE}
         return {"status": "Available", "zone_id": zone,
@@ -1330,6 +1330,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "visible_need_source", "completion_events",
             "completed_days_last_7_days", "latest_segment", "owner_correction",
             "water_balance", "stale_incomplete_parent_jobs", "contained_parent_jobs",
+            "operating_policy",
         }
         history_zones = _dict(irrigation_history.get("zones"))
         evidence_zones = {
@@ -1369,6 +1370,11 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             } for event in canonical.get("events", [])
                 if event.get("qualifies_as_completed_watering") is True]
             zone["completion_ledger_complete_through"] = canonical.get("complete_through")
+            if (zone.get("zone_id") == "A12345"
+                    and _dict(zone.get("operating_policy")).get("target_days_per_week") == "need_based"):
+                # A's first need-based run needs complete current commissioning
+                # history, not invented absence or weekly debt before that epoch.
+                zone["completion_ledger_complete_through"] = canonical.get("epoch_complete_through")
             canonical_zones.append(zone)
         payload = {
             "zones": canonical_zones,
@@ -1426,7 +1432,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                     decision.get("stale_incomplete_parent_jobs")),
                 "contained_parent_jobs": deepcopy(decision.get("contained_parent_jobs")),
                 "standing_water_policy": deepcopy(decision.get("standing_water_policy")),
-                "max_execution_minutes": 60,
+                "max_execution_minutes": decision["max_segment_minutes"],
                 "fresh_decision_before_second_segment": True,
                 "simultaneous_with_other_zone": False,
                 "advisory_plan_supported": decision["decision"] in {"Run now", "Run later"},

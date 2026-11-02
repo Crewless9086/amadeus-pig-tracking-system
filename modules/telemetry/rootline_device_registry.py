@@ -9,8 +9,15 @@ from __future__ import annotations
 from copy import deepcopy
 from hashlib import sha256
 import json
+from contextvars import ContextVar
+
+_canonical_irrigation_binding = ContextVar("rootline_canonical_irrigation_binding", default=None)
 
 CONTRACT_VERSION = "rootline_device_contract.v1"
+
+# Supported identities are distinct from independently commissioned outputs.
+# This set permits advice/history for A without granting it an ON path.
+IRRIGATION_ZONE_IDS = ("B12345", "C12345", "A12345")
 
 _DEVICES = {
     "A12345": {
@@ -19,7 +26,9 @@ _DEVICES = {
         "device_id":"100204e9bc", "device_name":"IRRIGATION (1) - Left", "channel":4,
         "on_event":"irrigation_1_ch4_on", "off_event":"irrigation_1_ch4_off", "native_fail_stop_seconds":3599,
         "authority_flag":"ROOTLINE_A_ENABLED", "commissioned":False,
-        "plumbing_ready":False, "readiness":"await_owner_confirmed_pipework_and_commissioning",
+        "plumbing_ready":True, "irrigation_type":"drip",
+        "readiness":"owner_ready_await_exact_commissioning",
+        "readiness_source":"owner_20261031_01a1910a-18f8-7c82-ab9b-33adaaff3620",
     },
     "E12345": {
         "collection":"irrigation_zones", "device_type":"irrigation_zone_valve",
@@ -107,6 +116,9 @@ _DEVICES = {
 
 def rootline_device_registry():
     rows = {identity: _contract(identity, value) for identity, value in _DEVICES.items()}
+    binding = _canonical_irrigation_binding.get()
+    if binding:
+        rows["A12345"] = _contract("A12345", {**_DEVICES["A12345"], **binding})
     validate_device_registry(rows)
     return deepcopy(rows)
 

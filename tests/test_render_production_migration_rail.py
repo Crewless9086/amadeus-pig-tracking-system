@@ -13,10 +13,10 @@ from unittest.mock import patch
 import scripts.run_render_production_migrations as migration_rail
 
 from scripts.run_render_production_migrations import (
-    ALLOWLIST,
+    ALLOWLIST as CURRENT_ALLOWLIST,
     BASELINE_ELIGIBLE_IDS,
-    CATALOG_RELATIONS,
-    EXPECTED_MIGRATION_LOG_DESCRIPTIONS,
+    CATALOG_RELATIONS as CURRENT_CATALOG_RELATIONS,
+    EXPECTED_MIGRATION_LOG_DESCRIPTIONS as CURRENT_MIGRATION_LOG_DESCRIPTIONS,
     EXPECTED_LITTER_SUPERSESSION_REASONS,
     EXPECTED_PROTECTED_ACTION_KINDS,
     PREDECESSOR_PROTECTED_ACTION_KINDS,
@@ -42,6 +42,16 @@ ENV = {
 
 
 DATABASE_URL = os.getenv("RENDER_MIGRATION_TEST_DATABASE_URL", "").strip()
+
+# Preserve all historical eight-migration ceremonies and adversaries unchanged.
+# The complete successor is exercised separately in test_render_rootline_a_migration_rail.
+ALLOWLIST = CURRENT_ALLOWLIST[:8]
+CATALOG_RELATIONS = tuple(name for name in CURRENT_CATALOG_RELATIONS
+                          if name not in migration_rail.ROOTLINE_CATALOG_RELATIONS)
+EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    key: value for key, value in CURRENT_MIGRATION_LOG_DESCRIPTIONS.items()
+    if key in {item.migration_id for item in ALLOWLIST}
+}
 
 
 def _install_litter_function(db, filename):
@@ -224,6 +234,9 @@ def _compact_authorization_env(authorization):
 
 
 class RenderProductionMigrationRailTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch.object(migration_rail, "ALLOWLIST", ALLOWLIST))
+
     @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL not configured")
     def test_green_device_fence_applies_replays_and_catalog_drift_fails_closed(self):
         import psycopg

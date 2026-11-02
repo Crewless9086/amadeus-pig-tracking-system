@@ -14,9 +14,9 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 SAST = ZoneInfo("Africa/Johannesburg")
-from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
+from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS, rootline_device_registry
 
-ZONES = commissioned_irrigation_contracts()
+ZONES = {zone: rootline_device_registry()[zone] for zone in IRRIGATION_ZONE_IDS}
 PARENT_MIDNIGHT_CONTINUITY_MINUTES = 30
 # Both the reader and locked cancellation rebuild account from these facts.
 # Notification/OFF-attempt audit snapshots may copy a lifecycle state but are
@@ -55,8 +55,8 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                 cursor.execute("""select irrigation_event_id,event_at,event_type,zone_id,
                     planned_minutes,actual_minutes,details,source_id,actor,created_at
                     from public.irrigation_events
-                    where zone_id in ('B12345','C12345') or event_type=%s
-                    order by event_at,irrigation_event_id""", (EPOCH_EVENT,))
+                    where zone_id = any(%s) or event_type=%s
+                    order by event_at,irrigation_event_id""", (list(ZONES), EPOCH_EVENT))
                 rows = cursor.fetchall()
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
@@ -111,6 +111,8 @@ def project_canonical_irrigation_history(rows, *, snapshot_cutoff):
             "planning_epoch_start": epoch.isoformat() if epoch else None,
             "complete_from": epoch.isoformat() if epoch else None,
             "complete_through": cutoff.isoformat() if complete else None,
+            "epoch_complete_through": (cutoff.isoformat() if epoch is not None
+                and epoch <= cutoff and not conflicts else None),
             "coverage_status": "complete" if complete else "Unavailable",
             "verified_completed_days": completed_days,
             "verified_completed_day_count": len(completed_days),
