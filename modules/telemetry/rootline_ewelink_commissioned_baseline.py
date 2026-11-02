@@ -224,7 +224,7 @@ def canonical_borehole_control_paths(snapshot, *, connect_factory):
     expected = {"version": "rootline_borehole_controller_configuration.v1",
         "device_key": key, "firmware": snapshot.get("firmware"),
         "device_model": "MINIR4", "device_uiid": 138,
-        "native_fail_stop_seconds": target.get("native_auto_off_seconds"),
+        "native_fail_stop_seconds": record.get("native_fail_stop_seconds"),
         "power_restoration_state": "OFF", "scenes_enabled": False,
         "interlock_enabled": False}
     reference = profile.get("reference")
@@ -232,7 +232,10 @@ def canonical_borehole_control_paths(snapshot, *, connect_factory):
     if (material != expected or not expected["firmware"]
             or target.get("native_auto_off_enabled") is not True
             or type(target.get("native_auto_off_seconds")) is not int
-            or not 1 <= target["native_auto_off_seconds"] <= 14400
+            or type(expected["native_fail_stop_seconds"]) is not int
+            or not 1 <= expected["native_fail_stop_seconds"] <= 14400
+            or target["native_auto_off_seconds"] not in {
+                expected["native_fail_stop_seconds"], 36000}
             or target.get("power_restoration_state") != "OFF"
             or not _valid_evidence(reference) or reference.get("sha256") != digest
             or not _resolved_evidence(reference,
@@ -259,7 +262,9 @@ def canonical_borehole_control_paths(snapshot, *, connect_factory):
             canonical_configuration_sha256=digest,
             canonical_configuration_registry_generation=loaded["registry_generation"])
         result["actuation_configuration_safe"] = (result["actuation_safety_complete"]
-            and result.get("timers_enabled") is False and target.get("output_state") == "OFF")
+            and (result.get("timers_enabled") is False
+                or result.get("timers_only_turn_off") is True)
+            and target.get("output_state") == "OFF")
     return result
 
 

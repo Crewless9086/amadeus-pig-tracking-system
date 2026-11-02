@@ -62,6 +62,9 @@ def rootline_irrigation_execution_store(action, payload):
         return _bounded_claim(action, _claim_single_auxiliary, body)
     if action == "claim_borehole_before_on":
         return _bounded_claim(action, _claim_borehole_material_load, body)
+    if action == "adopt_borehole_observed_on":
+        return _bounded_claim(action,
+            lambda value: _claim_borehole_material_load(value, adopt=True), body)
     if action == "claim_eskom_before_command":
         return _bounded_claim(action, _claim_eskom_command, body)
     if action == "record_eskom_completed":
@@ -245,6 +248,7 @@ def _record_parent_terminal_atomic(action, body):
                 if body != rebuilt:
                     raise ValueError("contained_parent_cancellation_preimage_changed")
                 result = _write_terminal_review(connection, action, rebuilt)
+                _recover_cancelled_parent_outputs(connection, events, controller, rebuilt)
                 return {**result, "history_event_created": False}
 
             # A duplicate callback may still be acknowledged after the remainder
@@ -346,6 +350,32 @@ def _locked_contained_parent(connection, body, rows, now):
     if len(matches) != 1:
         raise ValueError("exact_contained_parent_not_current")
     return matches[0]
+
+
+def _recover_cancelled_parent_outputs(connection, events, controller, resolution):
+    """Release only the exact contained output using the cancellation's OFF proof.
+
+    The original claim, consumption key and unknown runtime remain unchanged.
+    This append and cancellation commit together under both existing locks.
+    """
+    from modules.telemetry.rootline_ifttt_transport import output_evidence_from_snapshot
+    from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
+    contained = {row.get("execution_id"): (index, row)
+        for index, row in enumerate(events)
+        if row.get("action") in {"contain_zone", "record_ambiguous_shutdown"}
+        and all(row.get(key) == resolution.get(key) for key in ("job_id", "job_sha256", "zone_id"))}
+    for index, previous in contained.values():
+        if any(_verified_terminal_containment_resolution(previous, row) for row in events[index+1:]):
+            continue
+        binding = commissioned_irrigation_contract(previous["zone_id"])
+        output = output_evidence_from_snapshot(controller,
+            device_id=binding["device_id"], channel=binding["channel"])
+        recovered = {key: value for key, value in previous.items() if key not in {"action", "event_id"}}
+        recovered.update(state="contained_off_reconciled", shutdown_verified=True,
+            shutdown_evidence=output, original_runtime_unverified=True,
+            parent_resolution_id=resolution["execution_id"],
+            reason="interrupted_parent_reconciled_from_current_off")
+        _write_terminal_review(connection, "record_claim_recovery", recovered)
 
 
 def _read_terminal_review(connection, action, body):
@@ -1374,7 +1404,7 @@ def _claim_single_auxiliary(body):
                 "status":"claimed" if cursor.rowcount==1 else "execution_replay"}
 
 
-def _claim_borehole_material_load(body):
+def _claim_borehole_material_load(body, *, adopt=False):
     """Reserve the existing ROOTLINE material-load rail; this issues no command."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     execution_id=str(body.get("execution_id") or "")
@@ -1383,13 +1413,16 @@ def _claim_borehole_material_load(body):
     if (not execution_id or len(digest)!=64 or key != "borehole:"+digest
             or body.get("device_key") != "ewelink:ewelink_owner_account:1002851416:1"):
         return {"success":False,"created":False,"status":"borehole_claim_incomplete"}
-    event_id=_event_id("claim_borehole_before_on",body)
+    action = "mark_borehole_active" if adopt else "claim_borehole_before_on"
+    event_id=_event_id(action,body)
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
                                            read_only=False) as connection:
       with connection.cursor() as cursor:
         # The common output lock serializes admission, not operating duration.
         # Only a prior borehole claim conflicts; other devices own their outputs.
         cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
+        if adopt:
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
         cursor.execute("""select review_json->'rootline_execution'
           from public.sam_live_stock_conversation_review_events
           where event_source=%s and review_json->'rootline_execution'->>'action'='record_borehole_eligibility'
@@ -1401,12 +1434,40 @@ def _claim_borehole_material_load(body):
         canonical=row[0] if row and isinstance(row[0],dict) else None
         immutable=("execution_id","eligibility_sha256","consumption_key","device_key",
           "baseline_sha256","registry_generation","need_sha256","evidence_sha256",
-          "requested_seconds","assessed_at","gates","blockers")
+          "requested_seconds","assessed_at","gates","blockers","contract_version",
+          "native_fail_stop_seconds","provider_evidence","operation",
+          "commissioned_native_fail_stop_seconds")
         if (not _valid_borehole_eligibility(canonical)
+                or not _valid_borehole_eligibility(body)
                 or any(body.get(field)!=canonical.get(field) for field in immutable)):
             return {"success":True,"created":False,"status":"canonical_borehole_eligibility_unproven"}
+        if body.get("contract_version") == "rootline_borehole_runtime_eligibility.v3":
+            from modules.telemetry.rootline_borehole_commissioning import _borehole_provider_configuration
+            cursor.execute("select clock_timestamp()")
+            now = cursor.fetchone()[0]
+            claimed = _time(body.get("claimed_at"))
+            deadline = _time(body.get("primary_stop_deadline"))
+            native_deadline = _time(body.get("native_fail_stop_deadline"))
+            if (not _borehole_provider_configuration(body.get("provider_evidence"), now=now)
+                    or claimed is None or not timedelta(0) <= now-claimed <= timedelta(seconds=30)
+                    or deadline != claimed+timedelta(seconds=body["requested_seconds"])
+                    or native_deadline != claimed+timedelta(seconds=body["native_fail_stop_seconds"])
+                    or deadline <= now
+                    or body.get("operation") != ("adopt_observed_on" if adopt else "command_off_to_on")):
+                return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
+        elif adopt:
+            return {"success":False,"created":False,"status":"borehole_adoption_contract_required"}
+        if adopt and (body.get("state") != "Active" or body.get("on_attempts") != 0
+                or body.get("execution_origin") != "observed_external_on"
+                or body.get("original_start_at") is not None
+                or body.get("provider_start_evidence") != body.get("provider_evidence")):
+            return {"success":False,"created":False,"status":"borehole_adoption_invalid"}
         if _active_borehole(_borehole_state_rows(cursor)) is not None:
             return {"success":True,"created":False,"status":"material_load_active"}
+        if adopt:
+            # This is observed external activity, not a manufactured ON claim or
+            # dispatch. The existing legacy-active OFF rail owns its deadline.
+            return _insert_managed_event(cursor, action, body)
         cursor.execute("""insert into public.sam_live_stock_conversation_review_events
           (review_event_id,chatwoot_conversation_id,source_agent,event_source,recommended_action,review_json)
           values (%s,%s,'rootline_backend',%s,'claim_borehole_before_on',%s::jsonb)
@@ -1424,18 +1485,37 @@ def _valid_borehole_eligibility(value):
       "baseline_sha256","registry_generation","need_sha256","evidence_sha256",
       "requested_seconds","assessed_at","gates","blockers")}
     version=material["contract_version"]
-    if version=="rootline_borehole_runtime_eligibility.v2":
+    if version in {"rootline_borehole_runtime_eligibility.v2", "rootline_borehole_runtime_eligibility.v3"}:
         native=value.get("native_fail_stop_seconds")
+        cap = 36000 if version.endswith(".v3") else 14400
         if (type(native) is not int or type(value.get("requested_seconds")) is not int
-                or not 0<value["requested_seconds"]<=native<=14400):
+                or not 0<value["requested_seconds"]<=native<=cap):
             return False
         material["native_fail_stop_seconds"]=native
+    if version == "rootline_borehole_runtime_eligibility.v3":
+        from modules.telemetry.rootline_borehole_commissioning import _borehole_provider_configuration
+        assessed = _time(value.get("assessed_at"))
+        if assessed is None:
+            return False
+        proof = _borehole_provider_configuration(value.get("provider_evidence"), now=assessed)
+        commissioned = value.get("commissioned_native_fail_stop_seconds")
+        if (not proof or proof["native_auto_off_seconds"] != native
+                or type(commissioned) is not int or not 0 < commissioned <= 14400
+                or native not in {commissioned, 36000}
+                or value.get("operation") != ("adopt_observed_on" if proof["output_state"] == "ON"
+                    else "command_off_to_on")):
+            return False
+        material.update({key: value.get(key) for key in
+            ("provider_evidence", "operation", "commissioned_native_fail_stop_seconds")})
     digest=hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),
       default=str).encode()).hexdigest()
     required_gates={"canonical_need","commissioned_baseline","standing_authority",
       "provider_off","dry_run","low_water","supply_pressure","full_tank",
       "energy","concurrency","bounded_runtime"}
-    return (version in {"rootline_borehole_runtime_eligibility.v1","rootline_borehole_runtime_eligibility.v2"}
+    if version == "rootline_borehole_runtime_eligibility.v3":
+        required_gates = required_gates - {"provider_off"} | {"provider_state_safe"}
+    return (version in {"rootline_borehole_runtime_eligibility.v1","rootline_borehole_runtime_eligibility.v2",
+            "rootline_borehole_runtime_eligibility.v3"}
       and material["device_key"]=="ewelink:ewelink_owner_account:1002851416:1"
       and value.get("eligibility_sha256")==digest
       and value.get("execution_id")=="ROOTLINE-BOREHOLE-"+digest[:24].upper()

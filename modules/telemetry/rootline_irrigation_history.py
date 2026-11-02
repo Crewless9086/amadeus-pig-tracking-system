@@ -205,6 +205,15 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
                 and row.get("segment_number") == job.get("expected_segment_count"))
             continue
         if projection.get("status") == "job_cancelled":
+            cancelled = next(row for row in events
+                if row.get("action") == "record_job_resolution" and row.get("resolution") == "Cancelled")
+            zone = str(job.get("zone_id") or "")
+            if zone in ZONES:
+                deferred_by_zone[zone].append({"job": job, "projection": projection,
+                    "remaining_seconds": cancelled.get("cancelled_unverified_remaining_seconds"),
+                    "resolution": cancelled, "next_action_owner": "ROOTLINE",
+                    "next_trigger": "next_permitted_normal_irrigation_plan",
+                    "runtime_unverified": True})
             continue
         completed_segments = [row for row in events
             if row.get("action") == "record_completed"

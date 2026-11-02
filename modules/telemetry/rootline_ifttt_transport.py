@@ -48,6 +48,13 @@ def output_evidence_from_snapshot(snapshot, *, device_id, channel):
             "retrieved_at": snapshot.get("retrieved_at"),
             "channels": deepcopy(channels),
         }
+    if device_id == "1002851416" and channel == 1 and matched and len(channels) == 1:
+        result["borehole_configuration"] = {
+            **{key: snapshot.get(key) for key in ("device_id", "device_model", "device_uiid",
+                "online", "observation_fresh", "provider_control_calls", "response_digest",
+                "retrieved_at", "timers_enabled", "timers_only_turn_off",
+                "scenes_enabled", "interlock_enabled")},
+            **deepcopy(rows[0])}
     return result
 
 
@@ -226,14 +233,15 @@ class RootlineIFTTTTransport:
         if contract["identity"] == "BOREHOLE-1-MINI-R4-CH1":
             return (set(assignments) == {1} and set(rows) == {1}
                 and snapshot.get("current_outputs_authoritative") is True
-                and snapshot.get("timers_enabled") is False
+                and (snapshot.get("timers_enabled") is False
+                    or snapshot.get("timers_only_turn_off") is True)
                 and snapshot.get("scenes_enabled") is False
                 and snapshot.get("interlock_enabled") is False
                 and target.get("output_state") == "OFF"
                 and target.get("power_restoration_state") == "OFF"
                 and target.get("native_auto_off_enabled") is True
                 and type(target.get("native_auto_off_seconds")) is int
-                and 1 <= target["native_auto_off_seconds"] <= 14400)
+                and 1 <= target["native_auto_off_seconds"] <= 36000)
         if (snapshot.get("actuation_safety_complete") is not True
                 or snapshot.get("current_outputs_authoritative") is not True
                 or snapshot.get("timers_enabled") is not False

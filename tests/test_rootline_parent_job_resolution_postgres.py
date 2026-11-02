@@ -21,9 +21,9 @@ resolution = importlib.import_module("modules.telemetry.rootline_parent_job_reso
 from modules.telemetry.rootline_irrigation_job_contract import build_irrigation_job, project_next_segment
 
 
-def subject(zone="B12345"):
+def subject(zone="B12345", *, operating_date=None):
     now = datetime.now(timezone.utc)
-    job = build_irrigation_job(zone_id=zone, operating_date=now.date().isoformat(),
+    job = build_irrigation_job(zone_id=zone, operating_date=operating_date or now.date().isoformat(),
         requested_total_seconds=7200, maximum_segment_seconds=3599,
         plan_identity="SYNTHETIC-" + uuid.uuid4().hex, requested_total_minutes=120,
         expected_segment_count=2)
@@ -220,6 +220,147 @@ def cancel(value):
 
 def complete(case):
     return store.rootline_irrigation_execution_store("record_completed", case.completion)
+
+
+@pytest.mark.parametrize("age_days", [0, 2])
+def test_automatic_c_recovery_clears_exact_hold_and_keeps_unverified_need(database, age_days):
+    from modules.telemetry.rootline_execution_runtime import _reconcile_contained_bc_parents
+    from modules.telemetry.rootline_irrigation_history import _attach_parent_jobs, project_canonical_irrigation_history
+    prior_date = (datetime.now(timezone.utc)-timedelta(days=age_days)).astimezone(timezone(timedelta(hours=2))).date().isoformat()
+    case = subject("C12345", operating_date=prior_date)
+    original_rows = [row for row in case.rows if row["action"] != "record_claim_recovery"]
+    database.seed(original_rows)
+    assert store.rootline_irrigation_execution_store("load_zone_containment", "C12345")["contained"] is True
+    history = project_canonical_irrigation_history([], snapshot_cutoff=case.now)
+    _attach_parent_jobs(history, original_rows, canonical_ordered=True)
+    reads = []
+    def read(**kwargs): reads.append(True); return case.controller
+    result = _reconcile_contained_bc_parents(history=history,
+        source={"ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"}, database_url=database.url,
+        readback=read, token_store=None, store=store.rootline_irrigation_execution_store,
+        now=case.now, clock=lambda: datetime.now(timezone.utc), authority_checker=lambda *_: True)
+    assert len(result) == 1 and reads == [True]
+    resolved = store.rootline_irrigation_execution_store("load_zone_containment", "C12345")
+    assert resolved["contained"] is False
+    assert resolved["resolution_evidence"]["original_runtime_unverified"] is True
+    assert store.rootline_irrigation_execution_store("load_active", None) is None
+    audit, typed = database.read()
+    assert typed == [] and len(audit) == len(original_rows)+2
+    recorded = [row[2]["rootline_execution"] for row in audit]
+    assert sum(row["action"] == "claim_before_on" for row in recorded) == 1
+    assert not any(row["action"] in {"record_completed", "claim_on_dispatch"} for row in recorded)
+    after = project_canonical_irrigation_history([], snapshot_cutoff=datetime.now(timezone.utc))
+    _attach_parent_jobs(after, recorded, canonical_ordered=True)
+    assert not after["zones"]["C12345"].get("contained_parent_jobs")
+    remainder = after["zones"]["C12345"]["deferred_parent_jobs"][0]
+    assert remainder["remaining_seconds"] == 7198 and remainder["runtime_unverified"] is True
+    assert remainder["next_action_owner"] == "ROOTLINE"
+    assert remainder["next_trigger"] == "next_permitted_normal_irrigation_plan"
+    before = database.read()
+    assert _reconcile_contained_bc_parents(history=after,
+        source={"ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"}, database_url=database.url,
+        readback=lambda **_: pytest.fail("no stale parent remains"), token_store=None,
+        store=store.rootline_irrigation_execution_store, now=case.now) == []
+    assert database.read() == before
+
+
+def test_normal_cycles_recover_today_c_then_allow_distinct_fresh_work(database, monkeypatch):
+    from modules.telemetry import rootline_execution_runtime as runtime
+    from modules.telemetry.rootline_irrigation_history import _attach_parent_jobs, project_canonical_irrigation_history
+    from modules.telemetry.rootline_ifttt_transport import output_evidence_from_snapshot
+    from tests.test_rootline_execution_runtime import controller as configured_controller
+    case = subject("C12345")
+    rows = []
+    for original in case.rows:
+        if original["action"] == "record_claim_recovery": continue
+        rows.append({**original, "channel": 2, "device_id": "100204e9bc",
+            "consumption_key": "ORIGINAL-C-CONSUMED", "planned_runtime_seconds": 3599,
+            "primary_stop_deadline": (case.now-timedelta(seconds=1)).isoformat(),
+            "native_fail_stop_deadline": (case.now+timedelta(seconds=60)).isoformat()})
+    database.seed(rows)
+    assert store.rootline_irrigation_execution_store("load_active", None)
+    commands = []
+    controller = {**configured_controller(), **case.controller,
+        "trusted_receipt_at": case.now.isoformat(),
+        "channels": [{**row, "native_auto_off_enabled": True,
+            "native_auto_off_seconds": 3599, "power_restoration_state": "OFF"}
+            for row in case.controller["channels"]]}
+    class Transport:
+        def set_state(self, **kwargs):
+            commands.append(kwargs)
+            controller["channels"][1]["output_state"] = kwargs["state"]
+            return {"accepted_unambiguous": True}
+        def read_output_state(self, **kwargs):
+            return output_evidence_from_snapshot(controller, **kwargs)
+        def read_safety_configuration(self, **kwargs):
+            return {"authoritative": True, "zone_id": "C12345", "channel": 2,
+                "native_inching_enabled": True, "native_inching_seconds": 3599,
+                "power_restoration_state": "OFF", "schedules_enabled": False,
+                "interlock_enabled": False, "scenes_enabled": False}
+    def evidence(**kwargs):
+        audit, _ = database.read()
+        history = project_canonical_irrigation_history([], snapshot_cutoff=datetime.now(timezone.utc))
+        _attach_parent_jobs(history, [row[2]["rootline_execution"] for row in audit], canonical_ordered=True)
+        return {"irrigation_history": history,
+            "weather": {"observed_at": case.now.isoformat(), "rain_rate_mm_h": 0, "rain_today_mm": 0},
+            "irrigation": {"source": "rootline_daily_advisor",
+                "advisor_generated_at": case.now.isoformat(),
+                "advisor_operating_date": case.job["operating_date"],
+                "zones": [{"zone_id": "C12345", "live_rain_release_proven": True}]},
+            "tanks": {"observed_at": case.now.isoformat(), "reservoir_state": "FULL", "reservoir_fraction": 1}}, case.job["operating_date"], datetime.now(timezone.utc)
+    monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *a, **k: {
+        "evidence_generation": "SYNTHETIC-FRESH", "operating_date": case.job["operating_date"], "candidate_tasks": []})
+    monkeypatch.setattr(runtime, "_planning_observation", lambda *a: {"identity": "SYNTHETIC-OBSERVATION"})
+    options = dict(notify=lambda *a: {"success": True}, environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"},
+        database_url=database.url, store=store.rootline_irrigation_execution_store,
+        token_store=object(), transport=Transport(), evidence_loader=evidence,
+        readback=lambda **k: controller, owner_user_id="42", chat_id="42",
+        observation_store=lambda *a: {"success": True}, authority_checker=lambda *a: True)
+    first = runtime.run_rootline_execution_cycle(**options)
+    assert first["status"] == "interrupted_start_contained"
+    assert store.rootline_irrigation_execution_store("load_active", None) is None
+    second = runtime.run_rootline_execution_cycle(**options)
+    assert second["status"] == "planner_hold_or_no_dispatchable_zone"
+    assert store.rootline_irrigation_execution_store("load_zone_containment", "C12345")["contained"] is False
+    audit, typed = database.read()
+    current = [row[2]["rootline_execution"] for row in audit]
+    assert sum(row["action"] == "claim_before_on" for row in current) == 1
+    assert next(row for row in current if row["action"] == "claim_before_on")["consumption_key"] == "ORIGINAL-C-CONSUMED"
+    assert not any(row["action"] == "record_completed" for row in current)
+    monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *a, **k: {
+        "evidence_generation": "SYNTHETIC-FRESH", "operating_date": case.job["operating_date"],
+        "candidate_tasks": [{"task_id": "irrigation_C12345", "zone_decision": "Run now",
+            "recommendation": "Recommend", "planned_duration_minutes": 60,
+            "requested_total_duration_minutes": 120, "expected_segment_count": 2, "rank": 1,
+            "weekly_obligation": {"status": "available", "delivery_debt_days": 2,
+                "remaining_weekly_obligation_days": 4}}]})
+    third = runtime.run_rootline_execution_cycle(**options)
+    assert third["status"] == "segment_started"
+    audit, typed = database.read()
+    claims = [row[2]["rootline_execution"] for row in audit
+        if row[2]["rootline_execution"]["action"] == "claim_before_on"]
+    assert len(claims) == 2
+    assert all(row[3] not in {"COMPLETED", "PARTIAL"} for row in typed)
+    assert claims[0]["consumption_key"] == "ORIGINAL-C-CONSUMED"
+    assert claims[1]["consumption_key"] != claims[0]["consumption_key"]
+    assert claims[1]["job_id"] != case.job["job_id"]
+    assert [row["state"] for row in commands] == ["OFF", "ON"]
+
+
+def test_cancellation_recovery_write_failure_rolls_back_both_records(database, monkeypatch):
+    case = subject("C12345")
+    database.seed([row for row in case.rows if row["action"] != "record_claim_recovery"])
+    before = database.read()
+    write = store._write_terminal_review
+    def fail_recovery(connection, action, body):
+        if action == "record_claim_recovery":
+            raise store._AtomicTerminalWriteFailed("synthetic_recovery_write_failed")
+        return write(connection, action, body)
+    monkeypatch.setattr(store, "_write_terminal_review", fail_recovery)
+    assert cancel(packet(case))["success"] is False
+    assert database.read() == before
+    assert store.rootline_irrigation_execution_store("load_active", None)
+    assert store.rootline_irrigation_execution_store("load_zone_containment", "C12345")["contained"] is True
 
 
 @pytest.mark.parametrize("zone", ["B12345", "C12345"])

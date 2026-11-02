@@ -26,6 +26,37 @@ ROOTLINE should protect reliable farm water while minimizing avoidable prepaid-g
 
 ROOTLINE must observe, reason, plan, verify outcomes, learn from forecast and operating performance, and escalate only genuine exceptions. It must never claim control over an unconnected or independently operated device.
 
+## Existing borehole and B/C operation
+
+The owner's 2 November operating correction governs these three established
+devices. Their commissioned identities and successful history remain valid.
+New-device work does not restart their commissioning.
+
+- Application/provider ON and OFF establish switch operation. Litres, water
+  volume, flow measurement, tank-fill proof, physical attendance and repeated
+  owner approval are not operating or acceptance prerequisites for these devices.
+  Preserve existing records without inventing measured delivery.
+- Borehole 1's owner-selected native inching is ten hours (36,000 seconds),
+  replacing the earlier one-hour setting and four-hour ceiling for this device
+  only. Ten hours is the fallback maximum, not the required duration of every
+  run. Current energy decisions may choose shorter supply windows.
+- A missing read alone must not cancel an already governed bounded run or
+  freeze unrelated equipment. Keep its existing stop deadline, retry observation
+  through the normal scheduler and report unavailable state honestly. Explicit
+  owner OFF/isolation instructions and actual adverse evidence still apply.
+- Reconcile interrupted B/C records automatically using fresh exact OFF state
+  and the existing locked recovery path. Preserve consumed segments and unknown
+  runtime; do not replay a spent segment or fabricate completed irrigation.
+- Preserve and supervise an owner-started borehole ON without an unnecessary
+  OFF/ON cycle. A missing ROOTLINE start receipt alone is not a stop instruction.
+- B/C remain sequential. Borehole supply is independent of B/C, fertilizer,
+  optional plan delivery and new-device commissioning. Authentication, exact
+  device/channel identity, bounded stopping and duplicate-command control remain.
+
+This section supersedes contrary volume, attendance, per-run confirmation and
+borehole-duration requirements below only for these established devices. It
+changes no fertilizer, Eskom, A-camp or uncommissioned-device authority.
+
 ## Physical Water System
 
 The confirmed high-level water path is:

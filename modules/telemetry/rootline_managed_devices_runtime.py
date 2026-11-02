@@ -35,7 +35,7 @@ class ManagedDevicePlanningUnavailable(Exception):
 def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         store=rootline_irrigation_execution_store, canonical_loader=None,
         connect_factory=None, now=None, evidence_factory=None, allow_new_starts=True,
-        energy_reader=None, borehole_safety_reader=None, clock=None):
+        allow_borehole_starts=None, energy_reader=None, borehole_safety_reader=None, clock=None):
     """Supervise every owned device, then admit independent eligible work.
 
     The shared transaction locks serialize command edges. They do not reserve
@@ -45,6 +45,8 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     clock = clock or (lambda: datetime.now(timezone.utc))
     now = _aware(now or clock())
     source = environ if environ is not None else os.environ
+    if allow_borehole_starts is None:
+        allow_borehole_starts = allow_new_starts
     canonical_loader = canonical_loader or _canonical_loader(connect_factory)
     outcomes = []
     auxiliary_inventory_proven = borehole_inventory_proven = True
@@ -100,27 +102,44 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         observed_transport = _AttemptedTransport(transport)
         now = _aware(clock())
         try:
+            continuing = _before_deadline(active_borehole, now)
+            stop_for_energy = stop_for_protection = False
+            evidence_pending = False
             try:
-                continuing = _before_deadline(active_borehole, now)
-                stop_for_energy = continuing and energy_reader is not None and energy_reader().get("borehole_eligible") is not True
-                stop_for_protection = continuing and borehole_safety_reader is not None and borehole_safety_reader() is not True
+                energy = energy_reader() if continuing and energy_reader is not None else {}
+                stop_for_energy = (energy.get("fresh") is True
+                    and energy.get("borehole_eligible") is False)
+                evidence_pending = continuing and energy_reader is not None and energy.get("fresh") is not True
             except Exception:
-                stop_for_energy = True; stop_for_protection = True
+                evidence_pending = True
+            try:
+                protection = (borehole_safety_reader()
+                    if continuing and borehole_safety_reader is not None else True)
+                stop_for_protection = protection is False
+                evidence_pending = evidence_pending or protection is None
+            except Exception:
+                evidence_pending = True
             result = advance_borehole_execution(eligibility={}, store=store,
                 transport=observed_transport, now=now, stop_for_energy=stop_for_energy or stop_for_protection, clock=clock)
+            if evidence_pending:
+                result = {**result, "supervision_evidence_pending": True}
         except Exception as exc:
             result = {**_safe("borehole_supervision_unproven", blocks_bc=False),
                 "success": False, "effects_unknown": True, "error_type": type(exc).__name__,
                 "hardware_commands": observed_transport.commands}
         outcomes.append({**result, "managed_device": "BOREHOLE-1-MINI-R4-CH1",
             "managed_device_recovery": True, "blocks_bc": False})
-    if not allow_new_starts:
+    if not allow_new_starts and not allow_borehole_starts:
         return _combined(outcomes, "no_active_managed_device")
     pending = {identity for identity, flag in (
         ("FERTILIZER-MIXER-CH2", "ROOTLINE_FERTILIZER_MIXING_ENABLED"),
         ("FERTILIZER-INJECTION-CH1", "ROOTLINE_FERTILIZER_INJECTION_ENABLED"),
         ("BOREHOLE-1-MINI-R4-CH1", "ROOTLINE_BOREHOLE_ENABLED")) if _enabled(source, flag)}
     pending -= active_ids
+    if not allow_new_starts:
+        pending -= set(DEVICE_KEYS)
+    if not allow_borehole_starts:
+        pending.discard("BOREHOLE-1-MINI-R4-CH1")
     if active_borehole or not borehole_inventory_proven:
         pending.discard("BOREHOLE-1-MINI-R4-CH1")
     if not auxiliary_inventory_proven:
@@ -139,12 +158,13 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             environ=source, store=store, canonical_loader=canonical_loader,
             connect_factory=connect_factory, now=_aware(clock()), clock=clock,
             allow_new_starts=allow_new_starts, energy_reader=energy_reader,
+            allow_borehole_starts=allow_borehole_starts,
             borehole_safety_reader=borehole_safety_reader)
         return _combined(outcomes + [current], "no_eligible_managed_device_task")
     now = _aware(clock())
     packet = evidence if isinstance(evidence, dict) else {}
     progress = packet.get("fertilizer_control_progress") or {}
-    if progress.get("completed") is True:
+    if allow_new_starts and progress.get("completed") is True:
         saved = store("record_fertilizer_sequence_completed", progress)
         if not isinstance(saved, dict) or saved.get("success") is not True:
             outcomes.append({**_safe("fertilizer_sequence_persistence_unproven", blocks_bc=False),
@@ -160,7 +180,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     considered = set(active_ids)
     for task in ordered:
         identity = str(task.get("auxiliary_device_id") or "")
-        if (not auxiliary_inventory_proven or task.get("decision") != "Run now"
+        if (not allow_new_starts or not auxiliary_inventory_proven or task.get("decision") != "Run now"
                 or identity not in DEVICE_KEYS or identity in considered):
             continue
         considered.add(identity)
@@ -186,7 +206,8 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             "blocks_bc": identity == "FERTILIZER-INJECTION-CH1" and result.get("status") == "auxiliary_started"})
 
     borehole = packet.get("borehole_execution") or {}
-    if (borehole_inventory_proven and not active_borehole and isinstance(borehole, dict) and borehole.get("eligible") is True
+    if (allow_borehole_starts and borehole_inventory_proven and not active_borehole
+            and isinstance(borehole, dict) and borehole.get("eligible") is True
             and _enabled(source, "ROOTLINE_BOREHOLE_ENABLED")):
         try:
             recorded = store("record_borehole_eligibility", borehole)
@@ -197,7 +218,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
                 "success": False})
         else:
             result = advance_borehole_execution(eligibility=borehole, store=store,
-                transport=transport, now=now)
+                transport=transport, now=now, clock=clock)
             outcomes.append({**result, "managed_device": "BOREHOLE-1-MINI-R4-CH1", "blocks_bc": False})
     return _combined(outcomes, "no_eligible_managed_device_task")
 

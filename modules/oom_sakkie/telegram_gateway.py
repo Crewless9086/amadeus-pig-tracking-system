@@ -1600,6 +1600,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     managed = run_rootline_managed_device_reassessment
                 try:
                     managed_result = dict(managed(environ=source, now=scheduler_now,
+                        allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
                         allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
                             "no_active_irrigation", "active_segment_owned", "segment_completed",
                             "segment_stopped_outcome_unconfirmed"}) or {})
@@ -1678,6 +1679,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "write_state": "unknown", "report_effects_unknown": True}
             result["active_supervision_status"] = str(supervision.get("active_supervision_status") or "")
             result["execution_status"] = str(supervision.get("execution_status") or supervision.get("status") or "")
+            result["managed_device_status"] = str(supervision.get("managed_device_status") or "")
+            result["managed_device_result"] = supervision.get("managed_device_result") or {}
+            result["effects_unknown"] = (result.get("effects_unknown") is True
+                or supervision.get("effects_unknown") is True)
             if "irrigation_admission_status" in supervision:
                 result["irrigation_admission_status"] = supervision["irrigation_admission_status"]
             for field in ("hardware_commands", "telegram_sends", "telegram_edits"):
