@@ -30,7 +30,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
         evidence_loader=read_current_water_energy_evidence, allow_new_starts=True,
-        allow_borehole_starts=None, clock=None):
+        allow_borehole_starts=None, clock=None, after_safety=None):
     """Supervise owned devices and advance independently eligible managed tasks.
 
     This composes existing planners, canonical device records and coordinators.
@@ -85,6 +85,9 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             decision_at = current_decision_time(selected)
             plan = build_water_energy_plan(evidence, selected, now=decision_at)
         except Exception as exc:
+            from modules.telemetry.rootline_cycle_budget import RootlineCycleDeadlineExceeded
+            if isinstance(exc, RootlineCycleDeadlineExceeded):
+                raise
             raise ManagedDevicePlanningUnavailable(
                 {**_safe("managed_device_evidence_unavailable"), "blocks_bc": False}) from exc
         packet = {"irrigation_auxiliary_tasks": plan.get("irrigation_auxiliary_tasks") or [],
@@ -186,12 +189,15 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         environ=source, store=store, connect_factory=connect_factory, now=now,
         evidence_factory=build_evidence, allow_new_starts=allow_new_starts,
         allow_borehole_starts=allow_borehole_starts,
-        energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock)
+        energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock,
+        after_safety=after_safety)
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
         return result
     from modules.telemetry.rootline_device_spine import load_device_record
     from modules.telemetry.rootline_eskom_runtime import run_eskom_cycle
     try:
+        from modules.telemetry.rootline_cycle_budget import remaining_seconds
+        remaining_seconds()
         current_energy()
         canonical = load_device_record("ifttt_smartlife:smartlife_owner_account:"
             +str(source.get("ROOTLINE_ESKOM_DEVICE_ID") or "")+":1", connect_factory=connect_factory)

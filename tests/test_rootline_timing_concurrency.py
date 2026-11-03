@@ -129,7 +129,8 @@ def test_managed_reader_derives_sast_operating_date(local):
         selected=kwargs.get("operating_date") or kwargs["now"].astimezone(ZoneInfo("Africa/Johannesburg")).date().isoformat()
         seen.append(selected)
         return {},selected,kwargs["now"]
-    runtime.run_rootline_managed_device_reassessment(environ={},now=at,clock=lambda:at,
+    runtime.run_rootline_managed_device_reassessment(
+        environ={"ROOTLINE_FERTILIZER_MIXING_ENABLED": "true"},now=at,clock=lambda:at,
         database_url="",store=RecoveryStore(),token_store=object(),transport=OffOnlyTransport(),evidence_loader=loader)
     assert seen==["2026-08-26"]
 

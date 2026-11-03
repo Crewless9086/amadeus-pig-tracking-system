@@ -100,9 +100,10 @@ class Path:
         return value
 
     def managed(self, **kwargs):
-        assert budget.work_deadline() is None
+        assert budget.work_deadline() == 140
         assert budget.on_deadline() == 140
-        self.clock.spend("independent borehole and managed supervision", self.managed_seconds)
+        with budget.mandatory_safety():
+            self.clock.spend("independent borehole and managed supervision", self.managed_seconds)
         return {"success": True, "status": "borehole_active", "hardware_commands": 0}
 
     def gateway(self, *, reports_due=False, supervisor=None, report_loader=None,
