@@ -121,7 +121,7 @@ class ComposedPath(Path):
             token_store=object(), transport=self.transport, clock=self.clock.now,
             active_weather_reader=dry_weather_reader)
 
-    def gateway(self, *, tick=None):
+    def gateway(self, *, tick=None, environ=None):
         tick = tick or NOW
         if not self.schedules.rows:
             self.schedules.rows["prior:outcome"] = {"specialist": "ROOTLINE", "status": "completed",
@@ -131,7 +131,7 @@ class ComposedPath(Path):
         source = {**ENV, "ROOTLINE_BOREHOLE_ENABLED": "true",
             "ROOTLINE_FERTILIZER_MIXING_ENABLED": "true",
             "ROOTLINE_FERTILIZER_INJECTION_ENABLED": "true", "ROOTLINE_A_ENABLED": "false",
-            "ROOTLINE_ESKOM_ENABLED": "false"}
+            "ROOTLINE_ESKOM_ENABLED": "false", **(environ or {})}
         return handle_rootline_reassessment_trigger(request, HEADERS, source,
             state_store=self.state, schedule_store=self.schedules, scheduler_now=tick,
             family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"},
@@ -271,3 +271,90 @@ def test_missing_borehole_observation_does_not_cancel_run_or_hold_bc(monkeypatch
     assert path.borehole == original
     assert [row["state"] for row in path.transport.calls] == ["ON"]
     assert not any(action == "record_borehole_completed" for action, _ in path.backing.rows)
+
+
+class FinalFlushPath(ComposedPath):
+    def __init__(self, monkeypatch, *, read_state="fresh"):
+        super().__init__(monkeypatch, optional_seconds=5)
+        from modules.telemetry import rootline_device_spine
+        from tests.test_rootline_active_supervision import active
+        from tests.test_rootline_fertilizer_auxiliary import injection_context
+        from tests.test_rootline_ifttt_transport import irrigation_output
+        self.borehole = None
+        self.final_reads, self.evidence_reads, self.completions = [], [], []
+        self.context = injection_context(completed_pulses=2,
+            fertilizer_history_complete_through=NOW.isoformat(),
+            zone_start_evidence={"evidence_id": "SYNTHETIC-START",
+                "zone_execution_id": "ZONE-EXEC-1",
+                "observed_at": (NOW - timedelta(seconds=2000)).isoformat()},
+            zone_output_evidence={**irrigation_output(NOW),
+                "zone_execution_id": "ZONE-EXEC-1", "observed_at": NOW.isoformat()},
+            irrigation_stop_deadline=(NOW + timedelta(seconds=1200)).isoformat(),
+            prior_pulse_shutdown_evidence={"zone_execution_id": "ZONE-EXEC-1",
+                "shutdown_verified": True,
+                "observed_at": (NOW - timedelta(seconds=600)).isoformat()})
+        self.backing.active = {**active(due=False), "execution_id": "ZONE-EXEC-1",
+            "claimed_at": (NOW - timedelta(seconds=2000)).isoformat(),
+            "primary_stop_deadline": self.context["irrigation_stop_deadline"],
+            "native_fail_stop_deadline": self.context["irrigation_stop_deadline"],
+            "start_evidence": self.context["zone_start_evidence"]}
+        def read(**kwargs):
+            self.final_reads.append(kwargs)
+            if read_state == "missing":
+                raise RuntimeError("synthetic final flush observation unavailable")
+            at = self.clock.now() - timedelta(minutes=5 if read_state == "stale" else 0)
+            return irrigation_output(at)
+        self.transport.read_output_state = read
+        self.transport.set_state = lambda **_: pytest.fail("Finalization must send no device command")
+        monkeypatch.setattr(rootline_device_spine, "load_device_record", lambda *a, **k: None)
+
+    def optional_loader(self, **kwargs):
+        assert budget.work_deadline() == self.current_deadline
+        self.evidence_reads.append(kwargs)
+        self.clock.spend("optional finalization evidence", self.optional_seconds)
+        return {"active_irrigation_context": deepcopy(self.context)}, NOW.date().isoformat(), self.clock.now()
+
+    def store(self, action, item):
+        if action == "record_fertilizer_sequence_completed":
+            self.completions.append(deepcopy(item))
+            return {"success": True, "created": True}
+        return super().store(action, item)
+
+
+@pytest.mark.parametrize("read_state", ["fresh", "stale", "missing"])
+def test_real_gateway_finalizes_existing_flush_with_new_starts_disabled(monkeypatch, read_state):
+    path = FinalFlushPath(monkeypatch, read_state=read_state)
+    flags = {"ROOTLINE_FERTILIZER_MIXING_ENABLED": "false",
+        "ROOTLINE_FERTILIZER_INJECTION_ENABLED": "false",
+        "ROOTLINE_BOREHOLE_ENABLED": "false", "ROOTLINE_ESKOM_ENABLED": "true"}
+    value, status = path.gateway(environ=flags)
+    assert status == 200 and value["active_supervision_status"] == "active_segment_owned"
+    assert len(path.evidence_reads) == len(path.final_reads) == 1
+    assert path.controls == [] and path.transport.calls == []
+    assert value["hardware_commands"] == 0
+    assert len(path.completions) == (1 if read_state == "fresh" else 0)
+    if path.completions:
+        completed = path.completions[0]
+        assert completed["zone_execution_id"] == path.backing.active["execution_id"]
+        assert completed["completed"] is True and completed["pulse_count"] == 2
+        assert completed["physical_flow_verified"] is False
+        assert value["managed_device_status"] == "fertilizer_controller_sequence_completed"
+    replay, _ = path.gateway(environ=flags)
+    assert replay["status"] == "scheduled_reassessment_replayed_noop"
+    assert len(path.evidence_reads) == len(path.final_reads) == 1
+    assert len(path.completions) == (1 if read_state == "fresh" else 0)
+
+
+def test_disabled_start_finalization_work_remains_after_bc_and_budgeted(monkeypatch):
+    path = ComposedPath(monkeypatch)
+    path.borehole = None
+    flags = {"ROOTLINE_FERTILIZER_MIXING_ENABLED": "false",
+        "ROOTLINE_FERTILIZER_INJECTION_ENABLED": "false",
+        "ROOTLINE_BOREHOLE_ENABLED": "false", "ROOTLINE_ESKOM_ENABLED": "true"}
+    value, status = path.gateway(environ=flags)
+    assert status == 202 and value["execution_status"] == "segment_started"
+    assert [row["state"] for row in path.transport.calls] == ["ON"]
+    names = [name for name, _ in path.clock.events]
+    assert names.index("provider ON") < names.index("optional managed evidence")
+    assert value["managed_device_result"]["status"] == "managed_device_cycle_deadline_deferred"
+    assert path.current_deadline == 140 and budget.on_deadline() is None

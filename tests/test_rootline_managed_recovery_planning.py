@@ -356,8 +356,9 @@ def test_idle_enabled_and_reenabled_calls_use_fresh_planning_once_each(monkeypat
     for value in ("true", "false", " TRUE "):
         result = invoke(store, transport, loader, environ={flag: value})
         assert result["status"] == "no_eligible_managed_device_task"
-    assert observed == [1, 2] and len(loader.calls) == 2 and transport.commands == []
-    assert store.loads == {"load_active_auxiliaries": 5, "load_active_borehole": 5}
+    # Disabled starts still permit evidence for an existing final flush.
+    assert observed == [1, 2, 3] and len(loader.calls) == 3 and transport.commands == []
+    assert store.loads == {"load_active_auxiliaries": 6, "load_active_borehole": 6}
 
 
 def test_dictionary_cycle_api_remains_valid_without_a_factory():

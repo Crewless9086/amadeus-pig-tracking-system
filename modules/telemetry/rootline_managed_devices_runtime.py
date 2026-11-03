@@ -73,9 +73,13 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     if not allow_borehole_starts or active_borehole or not borehole_inventory_proven:
         pending.discard("BOREHOLE-1-MINI-R4-CH1")
 
+    # An idle managed pass may still owe finalization of an existing two-pulse
+    # fertilizer sequence, even when every new device start is disabled. Keep
+    # that predecessor path after B/C admission and within the optional budget.
+    needs_evidence = bool(pending) or (allow_new_starts and not outcomes)
     planning_failure = None
     try:
-        if pending:
+        if needs_evidence:
             remaining_seconds()
             if evidence_factory is not None:
                 evidence = evidence_factory()
@@ -87,7 +91,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             "success": False, "next_action_owner": "ROOTLINE",
             "next_trigger": "next_authenticated_minute"}
     finally:
-        if after_safety is not None or (evidence_factory is not None and pending):
+        if after_safety is not None or (evidence_factory is not None and needs_evidence):
             # B/C admission and optional planning can overlap another minute's
             # claims or cross a stop deadline. Re-read ownership and supervise
             # changed/new/due duties, without recursively running the planner.
@@ -103,8 +107,6 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         return _combined(outcomes + [planning_failure], "managed_device_evidence_unavailable")
     if not allow_new_starts and not allow_borehole_starts:
         return _combined(outcomes, "no_active_managed_device")
-    if not pending:
-        return _combined(outcomes, "no_eligible_managed_device_task")
     try:
         remaining_seconds()
     except RootlineCycleDeadlineExceeded:
@@ -122,6 +124,8 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         elif saved.get("created") is True:
             outcomes.append({**_safe("fertilizer_controller_sequence_completed", blocks_bc=False),
                 "writes_farm_data": True, "fertilizer_control_progress": progress})
+    if not pending:
+        return _combined(outcomes, "no_eligible_managed_device_task")
     tasks = packet.get("irrigation_auxiliary_tasks") or []
     contexts = packet.get("auxiliary_contexts") or {}
     safeties = packet.get("auxiliary_safety") or {}
