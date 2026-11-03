@@ -409,6 +409,7 @@ jobs:
         run: >-
           python -B -m pytest -q -p no:cacheprovider
           tests/test_rootline_borehole_bc_restoration.py
+          tests/test_rootline_bc_cycle_efficiency.py
           tests/test_rootline_borehole_commissioning.py
           tests/test_rootline_commissioning_bridges.py
           tests/test_rootline_active_supervision.py

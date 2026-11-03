@@ -1206,6 +1206,14 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 or scheduled_principal.role is not FamilyRole.OWNER):
             return _gateway_result(False, "rootline_reassessment_owner_binding_denied", policy, 403)
         from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
+        from modules.telemetry.rootline_cycle_budget import (
+            CYCLE_WORK_SECONDS, REPORT_MINIMUM_SECONDS, cycle_budget, mandatory_safety,
+            remaining_seconds, RootlineCycleDeadlineExceeded,
+        )
+        import time
+        # Bound this actual request from entry, including elapsed safety work.
+        # The existing shutdown obligations themselves retain their own bounds.
+        cycle_deadline = time.monotonic()+CYCLE_WORK_SECONDS
         from concurrent.futures import ThreadPoolExecutor, wait
         from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
         production_persistence = schedule_store is None or state_store is None
@@ -1254,7 +1262,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if plan_context["error"] is not None:
                 raise plan_context["error"]
             try:
+                remaining_seconds()
                 current = scheduled_loader()
+                remaining_seconds()
                 generator = daily_plan_generator
                 if generator is None:
                     receipt = _canonical_rootline_plan_receipt(current)
@@ -1274,9 +1284,13 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             except Exception as exc:
                 plan_context["error"] = exc
                 raise
+        def deliver_report(*args, **kwargs):
+            remaining_seconds()
+            return (family_delivery or deliver_family_result)(*args, **kwargs)
         def recover_pending_protected_delivery():
             """Delivery-only recovery; never enters ROOTLINE execution."""
-            deliver = family_delivery or deliver_family_result
+            remaining_seconds()
+            deliver = deliver_report
             try:
                 from modules.oom_sakkie.rootline_protected_mixer import reassess_due_mixer_presence
                 from modules.oom_sakkie.protected_delivery_lifecycle import recover_protected_card
@@ -1346,8 +1360,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                          or delivery.get("provider_delivery_confirmed") is True),
                 "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
                 "provider_message_id": str(delivery.get("telegram_message_id") or "")}
+        report_progress = {"telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0}
         def invoke_reports(supervision):
-            deliver = family_delivery or deliver_family_result
+            remaining_seconds()
+            deliver = deliver_report
             if production_persistence:
                 try:
                     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
@@ -1377,6 +1393,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "telegram_sends": 0, "hardware_commands": 0,
                         "writes_farm_data": None, "write_state": "unknown",
                         "automatic_irrigation_authority": False}
+            report_progress["writes_farm_data"] = plan_projection.get("created") is True
+            remaining_seconds()
             plan_loader = ((lambda: projected_current)
                 if projected_current is not None else scheduled_loader)
             try:
@@ -1410,6 +1428,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "error_type": type(exc).__name__, "telegram_sends": 0,
                     "printer_calls": 0, "hardware_commands": 0,
                     "writes_farm_data": False, "recovery_required": True}
+            remaining_seconds()
             presence_recovery = recover_pending_protected_delivery()
             if presence_recovery.get("status") not in {"no_reassessable_mixer_presence",
                     "protected_delivery_terminal_noop",
@@ -1425,20 +1444,22 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 manager_owner = str(manual_payload.get("owner_user_id") or "")
                 authority = issue_gateway_owner_authority(manager_owner,
                     str(manual_payload.get("chat_id") or ""))
+                from contextvars import copy_context
+                remaining_seconds()
                 executor = ThreadPoolExecutor(max_workers=4,
                     thread_name_prefix="oom-daily-manager")
                 try:
                     futures = {
-                        "herd": executor.submit(_load_herdmaster, authority,
+                        "herd": executor.submit(copy_context().run, _load_herdmaster, authority,
                             manager_owner, manager_now,
                             str(manual_payload.get("language") or "en")),
-                        "litters": executor.submit(get_breeding_attention_source_snapshot,
-                            deadline_seconds=20),
-                        "sales": executor.submit(list_sales_transactions),
+                        "litters": executor.submit(copy_context().run, get_breeding_attention_source_snapshot,
+                            deadline_seconds=remaining_seconds(20)),
+                        "sales": executor.submit(copy_context().run, list_sales_transactions),
                     }
                     from modules.oom_sakkie.bounded_postgres_read import OWNER_REQUEST_DEADLINE_SECONDS
                     done, pending = wait(tuple(futures.values()),
-                                         timeout=OWNER_REQUEST_DEADLINE_SECONDS)
+                                         timeout=remaining_seconds(OWNER_REQUEST_DEADLINE_SECONDS))
                     if futures["herd"] not in done:
                         raise TimeoutError("daily_manager_specialist_deadline")
                     specialists = [futures["herd"].result(),
@@ -1461,6 +1482,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         future.cancel()
                 finally:
                     executor.shutdown(wait=False, cancel_futures=True)
+                remaining_seconds()
                 daily = run_daily_farm_manager(owner_user_id=manager_owner,
                     chat_id=str(manual_payload.get("chat_id") or ""),
                     specialist_results=specialists, litter_rows=litter_rows,
@@ -1479,6 +1501,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     else "daily_farm_manager_unavailable"),
                          "telegram_sends": 0, "telegram_edits": 0,
                          "hardware_commands": 0, "writes_farm_data": False}
+            report_progress["telegram_sends"] += int(daily.get("telegram_sends") or 0)
+            report_progress["telegram_edits"] += int(daily.get("telegram_edits") or 0)
+            if daily.get("writes_farm_data") is True:
+                report_progress["writes_farm_data"] = True
             if daily.get("status") in {"daily_farm_manager_deadline_exceeded",
                                       "daily_farm_manager_database_unavailable"}:
                 database_unavailable = daily.get("status") == "daily_farm_manager_database_unavailable"
@@ -1496,6 +1522,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                                ("The scheduled assessment exceeded its bounded evidence deadline. "
                                 "No further ROOTLINE assessment was started; the durable schedule "
                                 "remains recoverable."))}
+            remaining_seconds()
             if not str(source.get("DATABASE_URL") or "").strip():
                 mixer_recovery = {"status": "no_active_fertilizer_commissioning",
                     "hardware_commands": 0, "telegram_sends": 0}
@@ -1521,13 +1548,16 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 except Exception:
                     mixer_recovery = {"status": "fertilizer_recovery_unproven",
                         "hardware_commands": 0, "telegram_sends": 0}
+            report_progress["hardware_commands"] += int(mixer_recovery.get("hardware_commands") or 0)
+            report_progress["telegram_sends"] += int(mixer_recovery.get("telegram_sends") or 0)
+            remaining_seconds()
             mixer_status = str(mixer_recovery.get("status") or "")
             mixer_owns_controller = mixer_status not in {
                 "no_active_fertilizer_commissioning", "auxiliary_completed"}
             plan_result, plan_http_status = handle_rootline_reassessment_trigger(
                 manual_payload, headers=headers, environ=source,
                 specialist_loader=plan_loader, state_store=state_store,
-                family_delivery=family_delivery)
+                family_delivery=deliver_report)
             plan_reassessment_status = str(plan_result.get("status") or "")
             plan_delivery_confirmed = plan_http_status == 200
             plan_delivery_status = ("delivered_current_irrigation_plan"
@@ -1580,8 +1610,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if supervisor is None:
                 from modules.telemetry.rootline_execution_runtime import supervise_rootline_active_execution
                 supervisor = supervise_rootline_active_execution
-            supervision = dict(supervisor(notify=notify, environ=source, now=scheduler_now,
-                owner_user_id=scheduled_owner, chat_id=scheduled_chat) or {})
+            with mandatory_safety():
+                supervision = dict(supervisor(notify=notify, environ=source, now=scheduler_now,
+                    owner_user_id=scheduled_owner, chat_id=scheduled_chat) or {})
             supervision["active_supervision_status"] = str(supervision.get("status") or "unknown")
             irrigation_safe = (supervision.get("success") is True
                 and supervision.get("active_execution_found") in (True, False))
@@ -1599,11 +1630,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
                     managed = run_rootline_managed_device_reassessment
                 try:
-                    managed_result = dict(managed(environ=source, now=scheduler_now,
-                        allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
-                        allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
-                            "no_active_irrigation", "active_segment_owned", "segment_completed",
-                            "segment_stopped_outcome_unconfirmed"}) or {})
+                    with mandatory_safety():
+                        managed_result = dict(managed(environ=source, now=scheduler_now,
+                            allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
+                            allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
+                                "no_active_irrigation", "active_segment_owned", "segment_completed",
+                                "segment_stopped_outcome_unconfirmed"}) or {})
                     if not managed_result:
                         raise ValueError("managed_supervision_result_missing")
                 except Exception as exc:
@@ -1650,6 +1682,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     supervision[field] = int(supervision.get(field) or 0) + int(value or 0)
                 if control.get("writes_farm_data") is True:
                     supervision["writes_farm_data"] = True
+                elif "writes_farm_data" in control and control["writes_farm_data"] is None:
+                    supervision["writes_farm_data"] = None
                 if control.get("effects_unknown") is True:
                     supervision["effects_unknown"] = True
                 if control.get("success") is not True:
@@ -1672,9 +1706,17 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if supervision.get("success") is not True:
                 return supervision
             try:
+                remaining_seconds(minimum=REPORT_MINIMUM_SECONDS)
+            except RootlineCycleDeadlineExceeded:
+                return {**supervision, "success": False,
+                    "status": "scheduled_rootline_reporting_deadline_deferred",
+                    "report_effects_unknown": False, "report_work_due": True,
+                    "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
+            try:
                 result = dict(invoke_reports(supervision) or {})
             except Exception as exc:
-                result = {"success": False, "status": "scheduled_rootline_reporting_unproven",
+                result = {**report_progress, "success": False,
+                    "status": "scheduled_rootline_reporting_unproven",
                     "error_type": type(exc).__name__, "writes_farm_data": None,
                     "write_state": "unknown", "report_effects_unknown": True}
             result["active_supervision_status"] = str(supervision.get("active_supervision_status") or "")
@@ -1689,12 +1731,21 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 result[field] = int(result.get(field) or 0) + int(supervision.get(field) or 0)
             if supervision.get("writes_farm_data") is True:
                 result["writes_farm_data"] = True
+            elif "writes_farm_data" in supervision and supervision["writes_farm_data"] is None:
+                result["writes_farm_data"] = None
             result["active_supervision_write_attempted"] = supervision.get("active_supervision_write_attempted") is True
             return result
 
-        scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
-            now=scheduler_now, invoke_not_due=invoke_safety_only, recover_delivery=(recover_delivery_after_plan
-                if production_persistence else None))
+        def bounded_schedule_store(action, identity, value):
+            if action == "record_outcome":
+                # Always try to retain the precise partial result and next owner.
+                with mandatory_safety():
+                    return schedule_store(action, identity, value)
+            return schedule_store(action, identity, value)
+        with cycle_budget(cycle_deadline):
+            scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=bounded_schedule_store,
+                now=scheduler_now, invoke_not_due=invoke_safety_only, recover_delivery=(recover_delivery_after_plan
+                    if production_persistence else None))
         return scheduled, 200 if scheduled.get("success") else 202
     owner = str((payload or {}).get("owner_user_id") or "").strip()
     chat = str((payload or {}).get("chat_id") or "").strip()

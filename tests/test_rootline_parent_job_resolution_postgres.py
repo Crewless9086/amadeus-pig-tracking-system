@@ -93,7 +93,7 @@ def test_locked_projection_reuses_canonical_parent_and_rejects_later_active(zone
 
 
 @pytest.mark.parametrize("zone", ["B12345", "C12345"])
-@pytest.mark.parametrize("audit_action", ["claim_notification", "record_notification_delivery", "claim_off_attempt"])
+@pytest.mark.parametrize("audit_action", ["claim_notification", "record_notification_delivery", "claim_off_attempt", "record_on_outcome"])
 @pytest.mark.parametrize("copied_state", ["claimed", "Active", "Completed"])
 def test_locked_accounting_ignores_copied_state_on_audit_rows(zone, audit_action, copied_state):
     case = subject(zone)
@@ -158,6 +158,7 @@ def database(monkeypatch, record_property):
     with psycopg.connect(admin_url, autocommit=True, connect_timeout=3) as admin:
         check(admin)
         admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    record_property("owned_fixture_database_name", name)
     try:
         migrations = Path(__file__).resolve().parents[1] / "supabase/migrations"
         with psycopg.connect(url, connect_timeout=3) as connection:
@@ -626,3 +627,152 @@ def test_legacy_history_first_orphan_blocks_cancellation_without_mutation(databa
     with pytest.raises(ValueError, match="completion_history_unreconciled"):
         cancel(packet(case))
     assert database.read() == before
+
+
+def test_interrupted_claim_with_actual_on_audit_shape_recovers_without_runtime_credit(database):
+    from modules.telemetry.rootline_irrigation_history import _attach_parent_jobs, project_canonical_irrigation_history
+    from modules.telemetry.rootline_execution_runtime import _reconcile_contained_bc_parents
+    case = subject("C12345")
+    on = {**case.rows[1], "action": "record_on_outcome", "on_attempts": 1,
+        "on_outcome": {"accepted_unambiguous": True, "status": "accepted"}}
+    stopping = {**case.rows[1], "action": "mark_stopping", "state": "stopping"}
+    notification = {**case.rows[1], "action": "record_notification_delivery", "state": "claimed"}
+    rows = [*case.rows[:2], on, stopping, *case.rows[2:], notification]
+    database.seed(rows)
+    history = project_canonical_irrigation_history([], snapshot_cutoff=case.now)
+    _attach_parent_jobs(history, rows, canonical_ordered=True)
+    parent = history["zones"]["C12345"]["contained_parent_jobs"][0]
+    assert parent["projection"]["current_segment"] == 1
+    assert parent["projection"]["cumulative_verified_runtime_seconds"] == 0
+    assert parent["remaining_seconds"] == 7198
+    result = _reconcile_contained_bc_parents(history=history,
+        source={"ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"}, database_url=database.url,
+        readback=lambda **k: case.controller, token_store=None,
+        store=store.rootline_irrigation_execution_store, now=case.now,
+        clock=lambda: datetime.now(timezone.utc), authority_checker=lambda *_: True)
+    assert len(result) == 1
+    audit, typed = database.read()
+    assert typed == [] and len(audit) == len(rows)+1
+    saved = [row[2]["rootline_execution"] for row in audit]
+    assert sum(row["action"] == "claim_before_on" for row in saved) == 1
+    assert next(row for row in saved if row["action"] == "record_on_outcome") == on
+    after = project_canonical_irrigation_history([], snapshot_cutoff=datetime.now(timezone.utc))
+    _attach_parent_jobs(after, saved, canonical_ordered=True)
+    remainder = after["zones"]["C12345"]["deferred_parent_jobs"][0]
+    assert remainder["runtime_unverified"] is True and remainder["remaining_seconds"] == 7198
+    assert not after["zones"]["C12345"].get("contained_parent_jobs")
+    before = database.read()
+    assert _reconcile_contained_bc_parents(history=after,
+        source={"ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"}, database_url=database.url,
+        readback=lambda **k: pytest.fail("resolved history must not be replayed"),
+        token_store=None, store=store.rootline_irrigation_execution_store, now=case.now) == []
+    assert database.read() == before
+
+
+def test_real_cycle_database_expiry_rolls_back_and_query_timeout_is_bounded(database, monkeypatch):
+    import psycopg
+    from modules.telemetry import rootline_cycle_budget as budget
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with psycopg.connect(database.url) as connection:
+        connection.execute("create table public.synthetic_cycle_writes (value int)")
+    deadline = time.monotonic()+5
+    with monkeypatch.context() as patch:
+        with pytest.raises(budget.RootlineCycleDeadlineExceeded), budget.cycle_budget(deadline):
+            with connect_bounded_rootline_postgres(database_url=database.url, read_only=False) as connection:
+                connection.execute("insert into public.synthetic_cycle_writes values (1)")
+                patch.setattr(time, "monotonic", lambda: deadline+1)
+                connection.execute("insert into public.synthetic_cycle_writes values (2)")
+    with psycopg.connect(database.url) as connection:
+        assert connection.execute("select count(*) from public.synthetic_cycle_writes").fetchone() == (0,)
+    started = time.monotonic()
+    with pytest.raises(psycopg.errors.QueryCanceled), budget.cycle_budget(started+.2):
+        with connect_bounded_rootline_postgres(database_url=database.url, read_only=True) as connection:
+            connection.execute("select pg_sleep(1)")
+    assert time.monotonic()-started < 1
+    assert budget.work_deadline() is budget.on_deadline() is None
+
+
+def test_real_authority_transaction_keeps_exact_policy_and_observes_revocation(database, monkeypatch):
+    import psycopg
+    from psycopg.types.json import Jsonb
+    from modules.telemetry import rootline_execution_runtime as runtime
+    from modules.oom_sakkie import bounded_postgres_read as bounded
+    from tests.test_rootline_commissioning_bridges import record_for, digest
+    keys = ["ifttt_ewelink:ewelink_owner_account:100204e9bc:"+str(n) for n in (1, 2)]
+    policy = {"contract_version": "rootline_bc_standing_authority.v2", "device_keys": keys,
+        "zone_ids": ["B12345", "C12345"], "allowed_channels": [1, 2],
+        "provider": "ifttt_ewelink", "provider_account_binding": "ewelink_owner_account",
+        "device_id": "100204e9bc", "maximum_runtime_seconds": 3599,
+        "simultaneous_outputs_allowed": False, "mutual_exclusion_required": True,
+        "missing_or_stale_reservoir_observation_is_hold": False,
+        "fresh_adverse_reservoir_evidence_is_hold": True, "unproven_reservoir_water_credit_litres": 0,
+        "fresh_weather_and_rain_hold_required": True, "current_plan_identity_required": True,
+        "application_timeout_required": True, "provider_on_off_readback_required": True,
+        "explicit_exclusions": ["fertilizer_injection", "fertilizer_mixing", "borehole_pump"],
+        "emergency_off_owner": "synthetic owner", "emergency_off_procedure": "synthetic OFF/readback",
+        "provider_fail_stop_proven": True, "physical_fail_safe_proven": True,
+        "power_restoration_off_proven": True, "automatic_on_retry": False}
+    with psycopg.connect(database.url) as connection:
+        # Match the pgcrypto prerequisite of canonical water-balance migration.
+        # This extension belongs only to this fixture's freshly owned database.
+        connection.execute("create extension if not exists pgcrypto")
+        connection.execute((Path(__file__).resolve().parents[1] / "supabase/migrations/202608170001_add_rootline_device_registry.sql").read_text())
+        connection.execute("""insert into app_private.rootline_standing_authorities
+            (standing_authority_id,version,issuer,policy_sha256,active,revoked,policy_payload)
+            values ('synthetic:authority','1','owner_policy',%s,true,false,%s)""", (digest(policy), Jsonb(policy)))
+        for key, zone in zip(keys, ("B12345", "C12345")):
+            row = record_for(key, "gravity_irrigation_valve", 3599)
+            row["physical_effect"] = zone+" irrigation water flow"
+            row["historical_commissioning_evidence"] = {}
+            row["authority_envelope"]["policy_sha256"] = digest(policy)
+            ref = row["commissioning_evidence"]["supervised"]
+            connection.execute("""insert into app_private.rootline_device_commissioning_evidence
+                (evidence_id,source,observed_at,evidence_sha256,evidence_payload)
+                values (%s,%s,%s,%s,'{}') on conflict do nothing""",
+                (ref["evidence_id"], ref["source"], ref["observed_at"], ref["sha256"]))
+            connection.execute("""insert into app_private.rootline_device_registry
+                (device_key,contract_version,device_record,commissioning_stage,standing_authority_id,
+                 standing_authority_version,evidence_digest,registry_generation)
+                values (%s,'rootline_device_spine.v1',%s,'standing_active','synthetic:authority','1',%s,1)""",
+                (key, Jsonb(row), digest(row)))
+    sessions = []
+    original = bounded.connect_bounded_rootline_postgres
+    def counted(**kwargs):
+        assert kwargs["read_only"] is True
+        sessions.append(True)
+        return original(**kwargs)
+    monkeypatch.setattr(bounded, "connect_bounded_rootline_postgres", counted)
+    artifact = {"zone_id": "C12345", "channel": 2, "maximum_duration_seconds": 3599}
+    from modules.telemetry.rootline_device_spine import load_device_record
+    assert load_device_record(keys[0], connect_factory=lambda: original(
+        database_url=database.url, read_only=True))["device_record"]["standing_authority"] is True
+    assert runtime._canonical_standing_authority_proven(database.url, artifact) is True
+    assert len(sessions) == 1
+    with psycopg.connect(database.url) as connection:
+        connection.execute("""insert into app_private.rootline_authority_events
+            (event_id,standing_authority_id,version,event_type,reason)
+            values ('synthetic:revocation','synthetic:authority','1','revoked','synthetic test')""")
+    assert runtime._canonical_standing_authority_proven(database.url, artifact) is False
+    assert len(sessions) == 2
+
+
+@pytest.mark.parametrize("transaction_sql", [
+    "set transaction isolation level repeatable read, read only",
+    "set transaction isolation level repeatable read read only"])
+@pytest.mark.parametrize("rootline_connector", [False, True])
+def test_cycle_budget_preserves_first_query_transaction_isolation(database, transaction_sql, rootline_connector):
+    from modules.telemetry.rootline_cycle_budget import cycle_budget
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read, connect_bounded_rootline_postgres
+    connect = connect_bounded_rootline_postgres if rootline_connector else connect_bounded_read
+    with cycle_budget(time.monotonic()+5), connect(database_url=database.url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(transaction_sql)
+            cursor.execute("show transaction_isolation")
+            assert cursor.fetchone() == ("repeatable read",)
+            cursor.execute("show transaction_read_only")
+            assert cursor.fetchone() == ("on",)
+            cursor.execute("show statement_timeout")
+            timeout = cursor.fetchone()[0]
+            milliseconds = float(timeout[:-2]) if timeout.endswith("ms") else float(timeout[:-1])*1000
+            assert 0 < milliseconds <= 3000
+        connection.rollback()

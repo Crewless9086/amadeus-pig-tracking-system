@@ -151,7 +151,11 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
     grouped = {}
     for raw in rows or ():
         row = raw if isinstance(raw, dict) else {}
-        if row.get("action") not in PARENT_ACCOUNTING_ACTIONS:
+        if (row.get("action") not in PARENT_ACCOUNTING_ACTIONS
+                or row.get("action") == "record_on_outcome"):
+            # ON outcome is needed above to prove a genuinely unsent claim.
+            # Its copied `claimed` state is audit evidence, not another claim
+            # after the real execution was contained and safely recovered.
             continue
         job_id = str(row.get("job_id") or "")
         if job_id:

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import math
 import os
+from contextvars import ContextVar
 
 from modules.telemetry.rootline_execution_authority import build_execution_eligibility
 from modules.telemetry.rootline_ewelink_commissioned_baseline import (
@@ -553,7 +554,96 @@ def _refresh_a_irrigation_binding(source, database_url, now):
         return
 
 
+_admission_effects = ContextVar("rootline_irrigation_admission_effects", default=None)
+
+
+class _ObservedAdmissionTransport:
+    def __init__(self, transport, effects):
+        self.transport, self.effects = transport, effects
+
+    def set_state(self, **kwargs):
+        self.effects["provider_command_attempts"] += 1
+        result = self.transport.set_state(**kwargs)
+        if isinstance(result, dict) and result.get("provider_command_attempted") is False:
+            self.effects["provider_command_attempts"] -= 1
+        return result
+
+    def __getattr__(self, name):
+        return getattr(self.transport, name)
+
+
+def _bounded_irrigation_admission(function):
+    """Keep new-start preparation within the actual caller's request budget."""
+    from functools import wraps
+    @wraps(function)
+    def bounded(*args, **kwargs):
+        from modules.telemetry.rootline_cycle_budget import (
+            cycle_budget, remaining_seconds, RootlineCycleDeadlineExceeded,
+        )
+        original_store = kwargs.get("store", rootline_irrigation_execution_store)
+        effects = {"canonical_write_attempted": False, "execution_claim_attempted": False,
+            "provider_command_attempts": 0, "canonical_write_uncertain": False}
+        def guarded_store(action, payload):
+            remaining_seconds()
+            if not action.startswith("load_"):
+                effects["canonical_write_attempted"] = True
+            if action == "claim_before_on":
+                effects["execution_claim_attempted"] = True
+            try:
+                value = original_store(action, payload)
+            except BaseException:
+                if not action.startswith("load_"):
+                    effects["canonical_write_uncertain"] = True
+                raise
+            if (not action.startswith(("load_", "claim_"))
+                    and (not isinstance(value, dict) or value.get("success") is not True)):
+                effects["canonical_write_uncertain"] = True
+            return value
+        with cycle_budget():
+            token = _admission_effects.set(effects)
+            try:
+                result = function(*args, **{**kwargs, "store": guarded_store})
+            except (RootlineCycleDeadlineExceeded, RootlineExecutionStoreUnavailable) as exc:
+                expired = isinstance(exc, RootlineCycleDeadlineExceeded)
+                if not expired:
+                    try:
+                        remaining_seconds()
+                    except RootlineCycleDeadlineExceeded:
+                        expired = True
+                result = {**_safe("execution_cycle_deadline_deferred" if expired
+                    else "execution_store_degraded_hold"), "success": False,
+                    "writes_farm_data": None if effects["canonical_write_attempted"] else False,
+                    "canonical_write_state": "unknown" if effects["canonical_write_attempted"] else "none",
+                    "current_segment_consumed": None if effects["execution_claim_attempted"] else False,
+                    "hardware_commands": effects["provider_command_attempts"],
+                    "effects_unknown": effects["provider_command_attempts"] > 0,
+                    "provider_effects_unknown": effects["provider_command_attempts"] > 0,
+                    "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
+            except Exception as exc:
+                if not effects["provider_command_attempts"]:
+                    raise
+                # A provider/readback adapter can raise after ON was attempted.
+                # Preserve that attempt through the caller's generic fallback;
+                # no successful start, shutdown or repeat ON can be inferred.
+                result = {**_safe("execution_cycle_effects_unproven"), "success": False,
+                    "error_type": type(exc).__name__, "writes_farm_data": None,
+                    "canonical_write_state": "unknown", "current_segment_consumed": None,
+                    "hardware_commands": effects["provider_command_attempts"],
+                    "effects_unknown": True, "provider_effects_unknown": True,
+                    "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
+            finally:
+                _admission_effects.reset(token)
+            if effects["canonical_write_uncertain"]:
+                result = {**result, "success": False, "writes_farm_data": None,
+                    "canonical_write_state": "unknown",
+                    "current_segment_consumed": None if effects["execution_claim_attempted"] else False,
+                    "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
+            return {**result, **effects}
+    return bounded
+
+
 @_canonical_irrigation_scope
+@_bounded_irrigation_admission
 def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url=None,
                                  store=rootline_irrigation_execution_store,
                                  token_store=None, transport=None,
@@ -572,17 +662,23 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
         token_store=token_store, environ=source, readback=readback)
+    effects = _admission_effects.get()
+    if effects is not None:
+        transport = _ObservedAdmissionTransport(transport, effects)
+    from modules.telemetry.rootline_cycle_budget import mandatory_safety
     try:
-        active = store("load_active", None)
+        with mandatory_safety():
+            active = store("load_active", None)
     except RootlineExecutionStoreUnavailable:
         return _execution_store_hold()
     if active:
-        return advance_irrigation_execution(decision_id="", commissioning_id="",
-            decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
-            store=store, transport=transport, notify=notify,
-            outcome_reader=outcome_reader, now=now, clock=clock, active_only=True,
-            active_weather_revalidator=_active_weather_revalidator(active_weather_reader,
-                str(database_url or source.get("DATABASE_URL") or "").strip(), clock))
+        with mandatory_safety():
+            return advance_irrigation_execution(decision_id="", commissioning_id="",
+                decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
+                store=store, transport=transport, notify=notify,
+                outcome_reader=outcome_reader, now=now, clock=clock, active_only=True,
+                active_weather_revalidator=_active_weather_revalidator(active_weather_reader,
+                    str(database_url or source.get("DATABASE_URL") or "").strip(), clock))
     if not owner_user_id or owner_user_id != chat_id:
         return _safe("canonical_observation_binding_invalid")
     authority_checker = authority_checker or _canonical_standing_authority_proven
@@ -638,9 +734,16 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
            {"accepted_controller_baseline": baseline})}
     def revalidate(_decision):
         current_now = _aware(clock())
-        return _current(evidence_loader, readback, token_store, source,
-                        database_url, current_now, store, require_enabled=True, clock=clock,
-                        authority_checker=authority_checker)["artifact"]
+        current = _current(evidence_loader, readback, token_store, source,
+            database_url, current_now, store, require_enabled=True, clock=clock,
+            authority_checker=authority_checker, reconcile_stale=False,
+            persist_resolutions=False)["artifact"]
+        # Recheck current revocation after all fresh evidence/safety reads.
+        # This invocation opens its own bounded transaction; no positive cache.
+        if current.get("eligible") is True and not authority_checker(canonical_database_url, current):
+            return {**current, "eligible": False, "command_authority": False,
+                "hardware_control": False, "status": "canonical_standing_authority_unproven"}
+        return current
     return advance_irrigation_execution(decision_id=decision["decision_id"],
         commissioning_id=commissioning_id, decision_reader=lambda _identity: decision,
         commissioning_reader=lambda _identity: commissioning, store=store,
@@ -760,7 +863,7 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
 
 def _current(evidence_loader, readback, token_store, source, database_url, now,
              store=rootline_irrigation_execution_store, *, require_enabled=False, clock=None,
-             authority_checker=None, reconcile_stale=True):
+             authority_checker=None, reconcile_stale=True, persist_resolutions=True):
     _refresh_a_irrigation_binding(source, database_url, now)
     try:
         from modules.telemetry.rootline_bounded_read_group import (
@@ -791,7 +894,8 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
                 authority_checker=authority_checker, reconcile_stale=False)
             return {**current, "parent_reconciliations": reconciled}
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
-    _persist_stale_parent_resolutions(plan, store)
+    if persist_resolutions:
+        _persist_stale_parent_resolutions(plan, store)
     eligibility_args = dict(plan=plan, evidence=evidence,
         job_event_reader=lambda job_id: store("load_job_events", job_id),
         zone_containment_reader=lambda zone_id: store("load_zone_containment", zone_id),
@@ -807,7 +911,7 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         artifact = build_execution_eligibility(**eligibility_args,
             controller=controller, now=checked_at)
     resolution = artifact.get("job_resolution") if isinstance(artifact, dict) else None
-    if isinstance(resolution, dict):
+    if persist_resolutions and isinstance(resolution, dict):
         recorded = store("record_job_resolution", resolution)
         if not isinstance(recorded, dict) or recorded.get("success") is not True:
             raise RootlineExecutionStoreUnavailable("record_job_resolution")
@@ -917,11 +1021,22 @@ def _canonical_standing_authority_proven(database_url, artifact):
     if not str(database_url or "").strip():
         return False
     try:
-        import psycopg
+        from contextlib import nullcontext
         from modules.telemetry.rootline_device_spine import load_device_record
-        def connect():
-            return psycopg.connect(database_url, connect_timeout=10,
-                options="-c default_transaction_read_only=on")
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        from modules.telemetry.rootline_cycle_budget import cycle_budget
+        import time
+        with cycle_budget(time.monotonic()+12), connect_bounded_rootline_postgres(
+                database_url=database_url, read_only=True) as connection:
+            def connect():
+                return nullcontext(connection)
+            return _standing_authority_in_transaction(artifact, connect, load_device_record)
+    except Exception:
+        return False
+
+
+def _standing_authority_in_transaction(artifact, connect, load_device_record):
+    try:
         selected_zone = str((artifact or {}).get("zone_id") or "")
         commissioned_irrigation_contract(selected_zone)
         keys = (("ifttt_ewelink:ewelink_owner_account:100204e9bc:4",)

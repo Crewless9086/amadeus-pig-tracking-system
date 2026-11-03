@@ -147,7 +147,8 @@ def snapshot_group(*, expected_device, environ, region):
     old = _group.get()
     if old is not None:
         raise RequestBudgetUnavailable("ewelink_nested_snapshot_rejected")
-    deadline = time.monotonic() + GROUP_SECONDS
+    from modules.telemetry.rootline_cycle_budget import remaining_seconds
+    deadline = time.monotonic() + remaining_seconds(GROUP_SECONDS)
     duty = _duty.get() or {}
     bound = _time(duty.get("read_deadline"))
     if bound is not None:

@@ -131,9 +131,26 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         return _degraded_hold(consumption_unknown=True)
     if claim.get("created") is not True:
         return _result("execution_claim_conflict", commands=0, messages=0)
-    accepted = transport.set_state(device_id=execution["device_id"], channel=execution["channel"], state="ON",
-                                   idempotency_key=execution["execution_id"] + ":ON")
-    store("record_on_outcome", {**execution, "on_attempts": 1, "on_outcome": accepted})
+    from modules.telemetry.rootline_cycle_budget import (
+        mandatory_safety, remaining_seconds, RootlineCycleDeadlineExceeded,
+    )
+    try:
+        remaining_seconds()
+        accepted = transport.set_state(device_id=execution["device_id"], channel=execution["channel"], state="ON",
+                                       idempotency_key=execution["execution_id"] + ":ON")
+    except RootlineCycleDeadlineExceeded:
+        accepted = {"accepted_unambiguous": False, "provider_command_attempted": False,
+            "status": "execution_cycle_deadline_deferred"}
+    # A consumed claim owns durable reconciliation and bounded OFF, even when
+    # optional admission time was exhausted at its final sender edge.
+    with mandatory_safety():
+        return _finish_irrigation_start(execution, accepted, store, transport, notify)
+
+
+def _finish_irrigation_start(execution, accepted, store, transport, notify):
+    recorded = store("record_on_outcome", {**execution, "on_attempts": 1, "on_outcome": accepted})
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        raise RootlineExecutionStoreUnavailable("record_on_outcome")
     if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
         return _retire_unsent_execution(execution, store, transport)
     if accepted.get("accepted_unambiguous") is not True:
@@ -166,7 +183,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                        messages=delivery["confirmed"], notification=delivery)
     active_execution = {**execution, "state": "Active", "on_attempts": 1,
                         "start_evidence": started}
-    store("mark_active", active_execution)
+    marked = store("mark_active", active_execution)
+    if not isinstance(marked, dict) or marked.get("success") is not True:
+        raise RootlineExecutionStoreUnavailable("mark_active")
     delivery = _notify(notify, store, "Started", active_execution)
     return _result("segment_started", commands=1, messages=delivery["confirmed"],
                    execution=active_execution, notification=delivery,

@@ -18,7 +18,9 @@ def automatic_reassessment_store(action, identity, payload):
     event.update({"review_event_id": event_id, "chatwoot_conversation_id": identity,
                   "review_json": {"automatic_reassessment": {**body, "identity": identity, "event_id": event_id}},
                   "decision_json": {}, "facts_json": {}, "customer_message_excerpt": "", "sam_reply_excerpt": ""})
-    result, status = record_sam_live_stock_review_event(event)
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_rootline_postgres(read_only=False))
     return {**result, "success": status < 400 and result.get("success") is True,
             "created": result.get("created", status < 300)}
 
