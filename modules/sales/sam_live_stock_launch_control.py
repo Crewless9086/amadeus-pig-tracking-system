@@ -409,12 +409,16 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
         return {"success": False, "status": "sam_live_stock_owner_card_load_failed", "error": _clean(str(exc), 240), "card": {}, **AUTHORITY_FLAGS}, 500
 
 
-def record_sam_live_stock_review_event(event, database_url=None, *, connect_factory=None, created_at=None):
+def record_sam_live_stock_review_event(event, database_url=None, *, connect_factory=None, created_at=None,
+                                     durable_receipt=False):
     event = event if isinstance(event, dict) else {}
     params = _review_event_params(event)
     if created_at is not None and (not isinstance(created_at, datetime) or created_at.tzinfo is None):
         raise ValueError("review_event_created_at_requires_aware_datetime")
+    if type(durable_receipt) is not bool or (durable_receipt and created_at is not None):
+        raise ValueError("review_event_receipt_options_invalid")
     params["created_at"] = created_at
+    params["durable_receipt"] = durable_receipt
     if not params["review_event_id"]:
         params["review_event_id"] = _stable_id("SAM-LIVE-REVIEW", [params.get("chatwoot_conversation_id"), params.get("customer_message_excerpt")])
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
@@ -464,7 +468,8 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
                         writes_farm_data
                     )
                     values (
-                        coalesce(%(created_at)s::timestamptz,now()),
+                        case when %(durable_receipt)s then clock_timestamp()
+                             else coalesce(%(created_at)s::timestamptz,now()) end,
                         %(review_event_id)s,
                         %(chatwoot_conversation_id)s,
                         %(chatwoot_message_id)s,
@@ -497,18 +502,33 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
                         %(writes_farm_data)s
                     )
                     on conflict (review_event_id) do nothing
-                    """,
+                    """ + (" returning review_event_id,review_json,created_at" if durable_receipt else ""),
                     params,
                 )
                 created = cursor.rowcount == 1
-                cursor.execute(
-                    """
-                    select count(*) from public.sam_live_stock_conversation_review_events
-                    where chatwoot_conversation_id = %(chatwoot_conversation_id)s
-                    """,
-                    params,
-                )
-                conversation_event_count = int((cursor.fetchone() or [0])[0] or 0)
+                receipt = None
+                conversation_event_count = None
+                if durable_receipt:
+                    actual = cursor.fetchone() if created else None
+                    if actual is None:
+                        cursor.execute("select review_event_id,review_json,created_at from "
+                            "public.sam_live_stock_conversation_review_events where review_event_id=%s",
+                            (params["review_event_id"],))
+                        actual = cursor.fetchone()
+                    expected = json.loads(params["review_json"])
+                    if (not actual or actual[0] != params["review_event_id"] or actual[1] != expected
+                            or not isinstance(actual[2], datetime) or actual[2].tzinfo is None):
+                        raise ValueError("review_event_receipt_mismatch")
+                    receipt = {"review_event_id": actual[0], "review_json": actual[1], "created_at": actual[2]}
+                else:
+                    cursor.execute(
+                        """
+                        select count(*) from public.sam_live_stock_conversation_review_events
+                        where chatwoot_conversation_id = %(chatwoot_conversation_id)s
+                        """,
+                        params,
+                    )
+                    conversation_event_count = int((cursor.fetchone() or [0])[0] or 0)
         return {
             "success": True,
             "status": "sam_live_stock_review_event_recorded" if created else "sam_live_stock_review_event_already_recorded",
@@ -516,6 +536,7 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
             "created": created,
             "chatwoot_conversation_id": params["chatwoot_conversation_id"],
             "conversation_event_count": conversation_event_count,
+            **({"persisted_receipt": receipt} if durable_receipt else {}),
             **AUTHORITY_FLAGS,
         }, 201 if created else 200
     except Exception as exc:

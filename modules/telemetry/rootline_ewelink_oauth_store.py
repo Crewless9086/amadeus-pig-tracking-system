@@ -65,9 +65,12 @@ class PostgresOAuthTokenStore:
                      predecessor[1] + 1 if predecessor else 1))
                 return cursor.fetchone() is not None
 
+    def _connect(self, *, read_only=False):
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        return connect_bounded_rootline_postgres(database_url=self.database_url, read_only=read_only)
+
     def latest(self):
-        import psycopg
-        with psycopg.connect(self.database_url, connect_timeout=5) as connection:
+        with self._connect(read_only=True) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select token_binding_id,provider_account_digest,device_id,region,
                     access_token_ciphertext,refresh_token_ciphertext,access_expires_at,
@@ -82,6 +85,20 @@ class PostgresOAuthTokenStore:
                  "refresh_expires_at", "response_digest", "adapter_version", "created_at")
         return dict(zip(names, row))
 
+    def latest_identity(self, *, connection=None):
+        """Read immutable current-token metadata in the caller's bounded transaction."""
+        from contextlib import nullcontext
+        with (nullcontext(connection) if connection is not None else
+                self._connect(read_only=True)) as current:
+            with current.cursor() as cursor:
+                cursor.execute("""select token_binding_id,provider_account_digest,device_id,
+                    region,access_expires_at,adapter_version
+                    from app_private.rootline_ewelink_oauth_tokens
+                    order by generation desc,created_at desc,token_binding_id desc limit 1""")
+                row = cursor.fetchone()
+        return dict(zip(("token_binding_id", "provider_account_digest", "device_id",
+            "region", "access_expires_at", "adapter_version"), row)) if row else None
+
     def rotate_exact(self, predecessor_id, build_generation):
         """Serialize provider rotation and CAS the result to the exact predecessor.
 
@@ -94,7 +111,7 @@ class PostgresOAuthTokenStore:
 
         pending = None
         try:
-            with psycopg.connect(self.database_url, connect_timeout=5) as connection:
+            with self._connect() as connection:
                 with connection.cursor() as cursor:
                     cursor.execute("""select provider_account_digest
                         from app_private.rootline_ewelink_account_binding
@@ -131,7 +148,7 @@ class PostgresOAuthTokenStore:
     def _recover_generation(self, item):
         import json
         import psycopg
-        with psycopg.connect(self.database_url, connect_timeout=5) as connection:
+        with self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select token_binding_id from app_private.rootline_ewelink_oauth_tokens
                     where generation=%s and token_binding_id=%s""",

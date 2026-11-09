@@ -107,6 +107,11 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         return _combined(outcomes + [planning_failure], "managed_device_evidence_unavailable")
     if not allow_new_starts and not allow_borehole_starts:
         return _combined(outcomes, "no_active_managed_device")
+    if (not pending and not needs_evidence
+            and type(evidence) is dict and not evidence):
+        # Mandatory supervision is complete. This exact empty packet has no
+        # optional task or fertilizer-completion persistence left to budget.
+        return _combined(outcomes, "no_eligible_managed_device_task")
     try:
         remaining_seconds()
     except RootlineCycleDeadlineExceeded:

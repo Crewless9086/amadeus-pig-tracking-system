@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar, copy_context
+from copy import deepcopy
+from types import MappingProxyType
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from email.utils import parsedate_to_datetime
@@ -47,6 +49,8 @@ _group = ContextVar("rootline_ewelink_snapshot", default=None)
 _optional_observation = ContextVar("rootline_ewelink_optional_observation", default=None)
 OPTIONAL_OBSERVATION_SECONDS = {"mixer_readiness": 1800, "mixer_readiness_delivery": 1800}
 _request_workers = threading.BoundedSemaphore(2)
+_dispatch_audit = ContextVar("rootline_ewelink_dispatch_audit", default=None)
+_private_pair = ContextVar("rootline_ewelink_private_no_send_pair", default=None)
 _CLAIM_ACTIONS = {"claim_before_on", "claim_auxiliary_before_on", "claim_borehole_before_on"}
 _OUTCOME_ACTIONS = {"record_on_outcome", "record_auxiliary_on_outcome", "record_borehole_on_outcome"}
 _ACTIVE_ACTIONS = {"mark_active", "mark_auxiliary_active", "mark_borehole_active", "mark_stopping"}
@@ -142,13 +146,14 @@ def execution_duty(execution, *, deadline=None):
 
 
 @contextmanager
-def snapshot_group(*, expected_device, environ, region):
+def snapshot_group(*, expected_device, environ, region, deadline=None):
     """Only a complete fresh authenticated device snapshot may heal a hold."""
     old = _group.get()
     if old is not None:
         raise RequestBudgetUnavailable("ewelink_nested_snapshot_rejected")
     from modules.telemetry.rootline_cycle_budget import remaining_seconds
-    deadline = time.monotonic() + remaining_seconds(GROUP_SECONDS)
+    original = time.monotonic() + remaining_seconds(GROUP_SECONDS)
+    deadline = min(original, deadline) if deadline is not None else original
     duty = _duty.get() or {}
     bound = _time(duty.get("read_deadline"))
     if bound is not None:
@@ -252,16 +257,43 @@ class RequestBudget:
             ROOTLINE_CONNECT_DEADLINE_SECONDS, connect_bounded_rootline_postgres)
         # Acquisition includes the transaction-local settings required by the
         # pooler. Reuse ROOTLINE's bound without extending a shorter read duty.
+        pair = _private_pair.get()
+        private = pair is not None and pair.owner is self
         return connect_bounded_rootline_postgres(database_url=self.database_url,
-            read_only=False, connect_deadline_seconds=min(
-                ROOTLINE_CONNECT_DEADLINE_SECONDS, request_timeout()))
+            read_only=False, reuse_local_settings=private, read_committed=private,
+            native_begin_read_committed=private,
+            connect_deadline_seconds=min(ROOTLINE_CONNECT_DEADLINE_SECONDS, request_timeout()))
 
     @contextmanager
-    def _locked(self):
+    def _locked(self, *, read_committed=False):
         try:
             with self._connect() as connection:
-                locked = connection.execute("select pg_try_advisory_xact_lock(%s)",
-                    (GLOBAL_SEND_LOCK,)).fetchone()[0]
+                pair = _private_pair.get()
+                if read_committed:
+                    # Only post-pair canonical cleanup opts in. The ordinary
+                    # acquisition has applied SET LOCAL but no data snapshot.
+                    # An injected incompatible snapshot makes SET fail closed.
+                    if pair is not None:
+                        raise RequestBudgetUnavailable("ewelink_cleanup_pair_reuse_rejected")
+                    connection.execute("set transaction isolation level read committed")
+                    row = connection.execute("select pg_try_advisory_xact_lock(%s),"
+                        "current_setting('transaction_isolation')", (GLOBAL_SEND_LOCK,)).fetchone()
+                    if not row or row[1] != "read committed":
+                        raise RequestBudgetUnavailable("ewelink_cleanup_isolation_unproven")
+                    locked = row[0]
+                elif pair is not None and pair.owner is self:
+                    if pair.fence is not None:
+                        raise RequestBudgetUnavailable("ewelink_pair_nested_fence_rejected")
+                    row = connection.execute("select pg_try_advisory_xact_lock(%s),"
+                        "current_setting('transaction_isolation'),pg_backend_pid()",
+                        (GLOBAL_SEND_LOCK,)).fetchone()
+                    if not row or row[1] != "read committed":
+                        raise RequestBudgetUnavailable("ewelink_pair_isolation_unproven")
+                    locked = row[0]
+                    pair.fence, pair.backend = connection, row[2]
+                else:
+                    locked = connection.execute("select pg_try_advisory_xact_lock(%s)",
+                        (GLOBAL_SEND_LOCK,)).fetchone()[0]
                 if not locked:
                     raise RequestBudgetUnavailable("ewelink_dispatch_busy")
                 yield connection
@@ -274,6 +306,14 @@ class RequestBudget:
 
     @staticmethod
     def _now(connection):
+        pair = _private_pair.get()
+        if pair is not None and connection is pair.fence:
+            row = connection.execute("select clock_timestamp(),pg_backend_pid(),"
+                "exists(select 1 from pg_locks where pid=pg_backend_pid() and locktype='advisory' "
+                "and classid=0 and objid=%s and objsubid=1 and granted)", (GLOBAL_SEND_LOCK,)).fetchone()
+            if not row or row[1] != pair.backend or row[2] is not True:
+                raise RequestBudgetUnavailable("ewelink_pair_fence_unproven")
+            return row[0]
         return connection.execute("select clock_timestamp()").fetchone()[0]
 
     def _load(self, connection):
@@ -282,17 +322,47 @@ class RequestBudget:
             where chatwoot_conversation_id=%s and event_source=%s
             order by created_at desc,review_event_id desc limit 1""",
             (LEDGER_ID, EVENT_SOURCE)).fetchone()
-        if row:
-            state = row[0].get("state")
+        if row and row[0] is None:
+            raise RequestBudgetUnavailable("ewelink_request_ledger_invalid")
+        return self._ledger_state(row[0] if row else None, self._now(connection) if not row else None)
+
+    @staticmethod
+    def _ledger_state(payload, now):
+        if payload is not None:
+            state = payload.get("state") if isinstance(payload, dict) else None
             if not isinstance(state, dict) or state.get("version") != 1:
                 raise RequestBudgetUnavailable("ewelink_request_ledger_invalid")
             return state
-        now = self._now(connection)
         return {"version": 1, "coverage_start": now.isoformat(),
             "prior_provider_usage": "Unknown", "provider_remaining": "Unknown",
             "provider_entitlement": "Unknown", "external_clients_counted": False,
             "scopes": {}, "reserves": {}, "last_finished_at": None,
             "pending_attempt": None}
+
+    def _admission_preimage(self, connection, *, scope, region):
+        # Each endpoint takes a NEW READ COMMITTED snapshot. Reconciliation
+        # remains a separate fresh canonical query and appends zero attempt units.
+        row = connection.execute("""with stamp as materialized (select clock_timestamp() as at),
+            latest as (select review_json->'ewelink_request_budget' as body
+                from public.sam_live_stock_conversation_review_events
+                where chatwoot_conversation_id=%s and event_source=%s
+                order by created_at desc,review_event_id desc limit 1),
+            counts as (select
+                coalesce(sum(case when cast(%s as text) is null or
+                    (review_json->'ewelink_request_budget'->'detail'->>'scope'=%s and
+                     review_json->'ewelink_request_budget'->'detail'->>'region'=%s)
+                    then (review_json->'ewelink_request_budget'->>'attempt_units')::int else 0 end),0) as rolling,
+                coalesce(sum(case when created_at >= stamp.at-interval '5 minutes' then
+                    (review_json->'ewelink_request_budget'->>'attempt_units')::int else 0 end),0) as recent
+                from public.sam_live_stock_conversation_review_events cross join stamp
+                where chatwoot_conversation_id=%s and event_source=%s
+                    and created_at >= stamp.at-(%s * interval '1 day'))
+            select latest.body,stamp.at,counts.rolling,counts.recent,exists(select 1 from latest)
+            from stamp cross join counts left join latest on true""",
+            (LEDGER_ID, EVENT_SOURCE, scope, scope, region, LEDGER_ID, EVENT_SOURCE, ROLLING_DAYS)).fetchone()
+        if not row or len(row) != 5 or (row[4] and row[0] is None):
+            raise RequestBudgetUnavailable("ewelink_request_ledger_invalid")
+        return self._ledger_state(row[0], row[1]), row[1], (int(row[2]), int(row[3]))
 
     def _counts(self, connection, now, *, scope=None, region=None):
         row = connection.execute("""select
@@ -322,17 +392,91 @@ class RequestBudget:
             decision_json={}, customer_message_excerpt="", sam_reply_excerpt="")
         # The outer transaction owns only the advisory fence.  This independent
         # transaction durably counts a possible attempt before any network send.
-        with self._connect() as audit:
+        with self._audit_transaction(action) as audit:
+            pair = _private_pair.get()
+            private = pair is not None and pair.owner is self
             result, status = record_sam_live_stock_review_event(event,
                 database_url=self.database_url or "injected-local-connection",
-                connect_factory=lambda: nullcontext(audit), created_at=self._now(audit))
+                connect_factory=lambda: nullcontext(audit),
+                **({"durable_receipt": True} if private else {"created_at": self._now(audit)}))
             if status >= 400 or result.get("success") is not True:
                 raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable")
-            actual = audit.execute("""select review_json->'ewelink_request_budget'
-                from public.sam_live_stock_conversation_review_events where review_event_id=%s""",
-                (identity,)).fetchone()
-            if not actual or actual[0] != payload:
-                raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
+            if private:
+                receipt = result.get("persisted_receipt") or {}
+                if receipt.get("review_event_id") != identity or receipt.get("review_json") != event["review_json"]:
+                    raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
+            else:
+                actual = audit.execute("""select review_json->'ewelink_request_budget'
+                    from public.sam_live_stock_conversation_review_events where review_event_id=%s""",
+                    (identity,)).fetchone()
+                if not actual or actual[0] != payload:
+                    raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
+
+    @contextmanager
+    def _audit_transaction(self, action):
+        """One worker may reuse only its idle audit client, never its send fence."""
+        session = _dispatch_audit.get()
+        if (action not in {"request_attempt_reserved", "request_completed"}
+                or session is None or session["owner"] is not self
+                or session["thread"] != threading.get_ident()):
+            with self._connect() as connection:
+                yield connection
+            return
+        from psycopg.pq import TransactionStatus
+        from modules.oom_sakkie.bounded_postgres_read import STATEMENT_TIMEOUT_MS, LOCK_TIMEOUT_MS
+        from modules.telemetry.rootline_cycle_budget import remaining_seconds
+        connection = session["connection"]
+        fresh = connection is None
+        try:
+            if session["poisoned"]:
+                raise RequestBudgetUnavailable("ewelink_audit_client_unavailable")
+            if fresh:
+                connection = self._connect()
+                session["connection"] = connection
+            # Internal identity checks do not hand the raw client to a caller.
+            raw = getattr(connection, "_connection", None)
+            if raw is None:
+                raw = getattr(connection, "connection", connection)
+            fence = session.get("fence")
+            fence_raw = getattr(fence, "_connection", None)
+            if fence_raw is None:
+                fence_raw = getattr(fence, "connection", fence)
+            if (connection is fence or raw is fence_raw
+                    or connection.closed
+                    or raw.info.transaction_status not in
+                        ({TransactionStatus.IDLE, TransactionStatus.INTRANS} if fresh else
+                         {TransactionStatus.IDLE})):
+                raise RequestBudgetUnavailable("ewelink_audit_transaction_state_unproven")
+            # The first connection's transaction contains only bounded setup.
+            # A reused client MUST be idle before beginning this distinct append.
+            remaining = min(request_timeout(), remaining_seconds())
+            statement = max(1, min(STATEMENT_TIMEOUT_MS, int(remaining*1000)))
+            lock = max(1, min(LOCK_TIMEOUT_MS, statement))
+            pair = _private_pair.get()
+            configure = getattr(connection, "configure_transaction_timeouts", None)
+            if pair is not None and pair.owner is self and callable(configure):
+                configure(statement, lock, read_committed=True)
+            else:
+                connection.execute("select set_config('statement_timeout',%s,true),"
+                    "set_config('lock_timeout',%s,true)", (str(statement), str(lock)))
+            yield connection
+            request_timeout()
+            remaining_seconds()
+            connection.commit()
+            if connection.closed or raw.info.transaction_status != TransactionStatus.IDLE:
+                raise RequestBudgetUnavailable("ewelink_audit_commit_unproven")
+            # Unknown/late acknowledgement cannot admit a send or expose output.
+            request_timeout()
+            remaining_seconds()
+        except BaseException:
+            session["poisoned"] = True
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+            session["connection"] = None
+            raise
 
     def _scope(self, state, key):
         scopes = state["scopes"]
@@ -418,6 +562,13 @@ class RequestBudget:
         monotonic deadline and live database transaction immediately before send.
         This is a local participant fence, not externally fenced provider egress.
         """
+        pair = _private_pair.get()
+        if pair is not None:
+            # A mismatched facade must fail within the pair, never start a new
+            # worker or borrow another group's accounting/fence connection.
+            return pair.dispatch(self, region=region, endpoint=endpoint, send=send)
+        if (_group.get() or {}).get("_private_pair") is not None:
+            raise RequestBudgetUnavailable("ewelink_pair_capability_missing")
         if not _request_workers.acquire(blocking=False):
             raise RequestBudgetUnavailable("ewelink_request_workers_busy")
         result = queue.Queue(maxsize=1)
@@ -453,6 +604,37 @@ class RequestBudget:
         raise value
 
     def _dispatch(self, *, region, endpoint, send, deadline):
+        with self._worker_audit():
+            return self._dispatch_with_fence(region=region, endpoint=endpoint,
+                send=send, deadline=deadline)
+
+    @contextmanager
+    def _worker_audit(self):
+        # Created INSIDE one worker; never shared with siblings or later calls.
+        if _dispatch_audit.get() is not None:
+            raise RequestBudgetUnavailable("ewelink_nested_audit_worker_rejected")
+        session = {"owner": self, "thread": threading.get_ident(), "connection": None,
+            "poisoned": False, "fence": None}
+        token = _dispatch_audit.set(session)
+        try:
+            yield session
+        finally:
+            try:
+                connection = session["connection"]
+                if connection is not None:
+                    try:
+                        connection.close()
+                    finally:
+                        session["connection"] = None
+            finally:
+                _dispatch_audit.reset(token)
+
+    def _dispatch_with_fence(self, *, region, endpoint, send, deadline):
+        with self._locked() as connection:
+            return self._dispatch_fenced(connection, region=region, endpoint=endpoint,
+                send=send, deadline=deadline)
+
+    def _dispatch_fenced(self, connection, *, region, endpoint, send, deadline, pair=None):
         def remaining():
             value = min(request_timeout(), deadline-time.monotonic())
             if value <= 0:
@@ -463,118 +645,127 @@ class RequestBudget:
         group = _group.get()
         if group is not None and (group["scope"] != key or group["region"] != region):
             raise RequestBudgetUnavailable("ewelink_snapshot_scope_changed")
-        with self._locked() as connection:
+        _dispatch_audit.get()["fence"] = connection
+        if pair is not None:
+            state, now, counts = self._admission_preimage(connection, scope=key, region=region)
+        else:
             state = self._load(connection)
             now = self._now(connection)
-            self._reconcile_reserves(connection, state, now)
-            scope = self._scope(state, key)
-            purpose = group.get("optional_purpose") if group else None
-            if purpose:
-                observations = state.setdefault("optional_observations", {})
-                identity = key+":"+purpose
-                prior = observations.get(identity, {})
-                next_at = _time(prior.get("next_read_at"))
-                if prior.get("group_id") != group["id"] and next_at is not None and now < next_at:
-                    self._append(state, action="optional_observation_suppressed", detail={
-                        "scope": key, "purpose": purpose, "next_read_at": next_at.isoformat(),
-                        "provider_attempted": False})
-                    raise OptionalObservationDeferred(next_at.isoformat())
-                if prior.get("group_id") != group["id"]:
-                    observations[identity] = {"group_id": group["id"],
-                        "next_read_at": (now+timedelta(seconds=OPTIONAL_OBSERVATION_SECONDS[purpose])).isoformat()}
-            self._admit_availability(scope, group, now)
-            count, recent = self._counts(connection, now, scope=key, region=region)
-            duty = _duty.get() or {}
-            identity = str(duty.get("execution_id") or "")
-            reserve = state["reserves"].get(identity)
-            expected = group["expected_device"] if group else None
-            bound = (reserve is not None and reserve["scope"] == key
-                and reserve.get("region") == region and expected in reserve["read_devices"])
-            if reserve is not None and not bound:
-                raise RequestBudgetUnavailable("ewelink_active_duty_exhausted_or_mismatched")
-            reserved = sum(row["remaining"] for row in state["reserves"].values())
-            scoped_reserved = sum(row["remaining"] for row in state["reserves"].values()
-                if row["scope"] == key and row.get("region") == region)
-            if bound and reserve["remaining"] == 0:
-                # Do not strand an unresolved device after a prolonged outage.
-                # One refresh plus one whole snapshot may be replenished hourly,
-                # only within existing capacity. This cannot restore ON authority.
-                recovery_at = _time(reserve.get("recovery_due_at"))
-                if (reserve.get("phase") != "on_attempt"
-                        or (recovery_at is not None and now < recovery_at)
-                        or count+scoped_reserved+4 > LOCAL_ROLLING_LIMIT
-                        or recent+reserved+4 > FIVE_MINUTE_LIMIT):
-                    raise RequestBudgetUnavailable("ewelink_active_recovery_capacity_deferred")
-                reserve["remaining"] = 4
-                reserve["recovery_due_at"] = (now+timedelta(hours=1)).isoformat()
-                reserved += 4
-                scoped_reserved += 4
-            usable = bound and reserve["remaining"] > 0
-            if count >= LOCAL_ROLLING_LIMIT or (not usable and count + scoped_reserved >= LOCAL_ROLLING_LIMIT):
-                raise RequestBudgetUnavailable("ewelink_local_rolling_capacity_exhausted")
-            if recent >= FIVE_MINUTE_LIMIT or (not usable and recent+reserved >= FIVE_MINUTE_LIMIT):
-                raise RequestBudgetUnavailable("ewelink_local_five_minute_capacity_exhausted")
-            pending = state.get("pending_attempt")
-            if pending:
-                # A committed intent with no completion is ambiguous.  Preserve
-                # its charge and back off, never infer that the request failed.
-                lost_at = _time(pending.get("recorded_at"))
-                if lost_at is None or now < lost_at or now-lost_at < timedelta(seconds=GROUP_SECONDS):
-                    raise RequestBudgetUnavailable("ewelink_prior_attempt_unresolved")
-            finished = _time(state.get("last_finished_at"))
-            if finished is not None:
-                elapsed = (now-finished).total_seconds()
-                if elapsed < 0:
-                    raise RequestBudgetUnavailable("ewelink_dispatch_clock_reversed")
-                delay = max(0, MIN_DISPATCH_INTERVAL-elapsed)
-                if delay > MAX_PACE_WAIT_SECONDS or remaining() <= delay:
-                    raise RequestBudgetUnavailable("ewelink_dispatch_deadline_reached")
-                if delay:
-                    self.sleep(delay)
+            counts = None
+        self._reconcile_reserves(connection, state, now)
+        scope = self._scope(state, key)
+        purpose = group.get("optional_purpose") if group else None
+        if purpose:
+            observations = state.setdefault("optional_observations", {})
+            identity = key+":"+purpose
+            prior = observations.get(identity, {})
+            next_at = _time(prior.get("next_read_at"))
+            if prior.get("group_id") != group["id"] and next_at is not None and now < next_at:
+                self._append(state, action="optional_observation_suppressed", detail={
+                    "scope": key, "purpose": purpose, "next_read_at": next_at.isoformat(),
+                    "provider_attempted": False})
+                raise OptionalObservationDeferred(next_at.isoformat())
+            if prior.get("group_id") != group["id"]:
+                observations[identity] = {"group_id": group["id"],
+                    "next_read_at": (now+timedelta(seconds=OPTIONAL_OBSERVATION_SECONDS[purpose])).isoformat()}
+        self._admit_availability(scope, group, now)
+        count, recent = counts if counts is not None else self._counts(connection, now, scope=key, region=region)
+        duty = _duty.get() or {}
+        identity = str(duty.get("execution_id") or "")
+        reserve = state["reserves"].get(identity)
+        expected = group["expected_device"] if group else None
+        bound = (reserve is not None and reserve["scope"] == key
+            and reserve.get("region") == region and expected in reserve["read_devices"])
+        if reserve is not None and not bound:
+            raise RequestBudgetUnavailable("ewelink_active_duty_exhausted_or_mismatched")
+        reserved = sum(row["remaining"] for row in state["reserves"].values())
+        scoped_reserved = sum(row["remaining"] for row in state["reserves"].values()
+            if row["scope"] == key and row.get("region") == region)
+        if bound and reserve["remaining"] == 0:
+            # Do not strand an unresolved device after a prolonged outage.
+            # One refresh plus one whole snapshot may be replenished hourly,
+            # only within existing capacity. This cannot restore ON authority.
+            recovery_at = _time(reserve.get("recovery_due_at"))
+            if (reserve.get("phase") != "on_attempt"
+                    or (recovery_at is not None and now < recovery_at)
+                    or count+scoped_reserved+4 > LOCAL_ROLLING_LIMIT
+                    or recent+reserved+4 > FIVE_MINUTE_LIMIT):
+                raise RequestBudgetUnavailable("ewelink_active_recovery_capacity_deferred")
+            reserve["remaining"] = 4
+            reserve["recovery_due_at"] = (now+timedelta(hours=1)).isoformat()
+            reserved += 4
+            scoped_reserved += 4
+        usable = bound and reserve["remaining"] > 0
+        if count >= LOCAL_ROLLING_LIMIT or (not usable and count + scoped_reserved >= LOCAL_ROLLING_LIMIT):
+            raise RequestBudgetUnavailable("ewelink_local_rolling_capacity_exhausted")
+        if recent >= FIVE_MINUTE_LIMIT or (not usable and recent+reserved >= FIVE_MINUTE_LIMIT):
+            raise RequestBudgetUnavailable("ewelink_local_five_minute_capacity_exhausted")
+        pending = state.get("pending_attempt")
+        if pending:
+            # A committed intent with no completion is ambiguous.  Preserve
+            # its charge and back off, never infer that the request failed.
+            lost_at = _time(pending.get("recorded_at"))
+            if lost_at is None or now < lost_at or now-lost_at < timedelta(seconds=GROUP_SECONDS):
+                raise RequestBudgetUnavailable("ewelink_prior_attempt_unresolved")
+        finished = _time(state.get("last_finished_at"))
+        if finished is not None:
+            elapsed = (now-finished).total_seconds()
+            if elapsed < 0:
+                raise RequestBudgetUnavailable("ewelink_dispatch_clock_reversed")
+            delay = max(0, MIN_DISPATCH_INTERVAL-elapsed)
+            if delay > MAX_PACE_WAIT_SECONDS or remaining() <= delay:
+                raise RequestBudgetUnavailable("ewelink_dispatch_deadline_reached")
+            if delay:
+                self.sleep(delay)
+        remaining()
+        # Keep the transaction alive and prove its backend still owns the
+        # fence immediately before committing intent and again before send.
+        now = self._now(connection)
+        attempt = uuid.uuid4().hex
+        if usable:
+            reserve["remaining"] -= 1
+        state["pending_attempt"] = {"id": attempt, "recorded_at": now.isoformat()}
+        self._append(state, action="request_attempt_reserved", attempt_units=1,
+            detail={"attempt_id": attempt, "scope": key, "region": region, "endpoint": endpoint,
+                "execution_id": identity if usable else None,
+                "group_id": group["id"] if group else None})
+        self._now(connection)
+        remaining()
+        if group is not None:
+            group["budget"] = self
+        failure = None
+        try:
+            timeout = remaining()
+            if pair is not None:
+                timeout = pair.admit(endpoint, timeout)
+            result = send(timeout)
             remaining()
-            # Keep the transaction alive and prove its backend still owns the
-            # fence immediately before committing intent and again before send.
-            now = self._now(connection)
-            attempt = uuid.uuid4().hex
-            if usable:
-                reserve["remaining"] -= 1
-            state["pending_attempt"] = {"id": attempt, "recorded_at": now.isoformat()}
-            self._append(state, action="request_attempt_reserved", attempt_units=1,
-                detail={"attempt_id": attempt, "scope": key, "region": region, "endpoint": endpoint,
-                    "execution_id": identity if usable else None,
-                    "group_id": group["id"] if group else None})
-            self._now(connection)
-            remaining()
-            if group is not None:
-                group["budget"] = self
-            failure = None
-            try:
-                result = send(remaining())
-                remaining()
-            except Exception as exc:
-                failure = getattr(exc, "provider_failure", None) or classify_failure()
-                result = None
-                caught = exc
-            finished_at = self._now(connection)
-            state["pending_attempt"] = None
-            state["last_finished_at"] = finished_at.isoformat()
-            if failure is not None:
-                scope["failures"] += 1
-                scope["generation"] += 1
-                scope["category"] = failure["category"]
-                delay = (3600 if failure["category"] == "application_call_limit"
-                    else max(failure["retry_after_seconds"], TRANSIENT_BACKOFF[
-                        min(scope["failures"]-1, len(TRANSIENT_BACKOFF)-1)]))
-                scope["next_probe_at"] = (finished_at+timedelta(seconds=delay)).isoformat()
-                scope["probe_group"] = None
-                scope["probe_until"] = None
-            self._append(state, action="request_completed", detail={"attempt_id": attempt,
-                "scope": key, "failure": failure, "outcome": "failed" if failure else "http_succeeded"})
-            if failure is not None:
-                raise caught
-            if group is not None:
-                group["successful_endpoints"].append(endpoint)
-            return result
+            if pair is not None:
+                pair.check_active()
+        except Exception as exc:
+            failure = getattr(exc, "provider_failure", None) or classify_failure()
+            result = None
+            caught = exc
+        finished_at = self._now(connection)
+        state["pending_attempt"] = None
+        state["last_finished_at"] = finished_at.isoformat()
+        if failure is not None:
+            scope["failures"] += 1
+            scope["generation"] += 1
+            scope["category"] = failure["category"]
+            delay = (3600 if failure["category"] == "application_call_limit"
+                else max(failure["retry_after_seconds"], TRANSIENT_BACKOFF[
+                    min(scope["failures"]-1, len(TRANSIENT_BACKOFF)-1)]))
+            scope["next_probe_at"] = (finished_at+timedelta(seconds=delay)).isoformat()
+            scope["probe_group"] = None
+            scope["probe_until"] = None
+        self._append(state, action="request_completed", detail={"attempt_id": attempt,
+            "scope": key, "failure": failure, "outcome": "failed" if failure else "http_succeeded"})
+        if failure is not None:
+            raise caught
+        if group is not None:
+            group["successful_endpoints"].append(endpoint)
+        return result
 
     def fail_snapshot(self, group):
         with self._locked() as connection:
@@ -681,6 +872,24 @@ class RequestBudget:
                 raise RequestBudgetUnavailable("ewelink_final_on_deadline_reached")
             return edge_deadline
 
+    def release_after_canonical_terminal(self, execution_id):
+        """Revalidate one no-send duty after unlock on the existing terminal rail."""
+        with self._locked(read_committed=True) as connection:
+            state = self._load(connection)
+            reserve = state["reserves"].get(execution_id)
+            if reserve is None:
+                return True
+            now = self._now(connection)
+            rows = self._terminal_rows(connection, [execution_id])
+            proof = _terminal_off_release(execution_id, reserve, rows, now)
+            if proof is None:
+                return False
+            del state["reserves"][execution_id]
+            self._append(state, action="active_duty_accounting_reconciled", detail={
+                "expired_never_attempted": [],
+                "canonical_off_releases": [{"execution_id": execution_id, **proof}]})
+            return True
+
     def release_after_off(self, execution_id, *, device_id, channel, evidence):
         if (not isinstance(evidence, dict) or evidence.get("authoritative") is not True
                 or evidence.get("state") != "OFF" or evidence.get("device_id") != device_id
@@ -700,6 +909,157 @@ class RequestBudget:
             del state["reserves"][execution_id]
             self._append(state, action="active_duty_off_verified", detail={
                 "execution_id": execution_id, "response_digest": evidence["response_digest"]})
+
+
+class _NoSendPair:
+    """Single-use capability for one prepared, locked two-GET invocation.
+
+    The parent owns hardware locks; this worker owns a separate global-fence
+    transaction and one private audit frontend client. Abandonment serializes
+    admission, not the socket: an already-admitted read can drain after unlock.
+    """
+    _ENDPOINTS = ("/v2/device/thing", "/v2/device/thing/status")
+
+    def __init__(self, *, source, binding, token_identity, group):
+        if (_private_pair.get() is not None or _group.get() is not group
+                or group.get("_private_pair") is not None):
+            raise RequestBudgetUnavailable("ewelink_pair_context_rejected")
+        self.source = MappingProxyType(deepcopy(dict(source)))
+        self.binding = MappingProxyType(deepcopy(dict(binding)))
+        self.token_identity = tuple(token_identity)
+        self.group, self.duty = group, deepcopy(_duty.get())
+        self.group_identity = tuple(group.get(key) for key in
+            ("id", "scope", "region", "expected_device", "deadline"))
+        self.deadline = group["deadline"]
+        if (not self.token_identity or not self.binding.get("execution_id") or
+                not self.duty or self.duty.get("execution_id") != self.binding["execution_id"] or
+                group["expected_device"] != self.binding.get("device_id")):
+            raise RequestBudgetUnavailable("ewelink_pair_binding_rejected")
+        self.gate = threading.Lock()
+        self.started = self.abandoned = self.failed = False
+        self.phase = 0
+        self.inflight = False
+        self.owner = self.thread = self.fence = self.backend = None
+        group["_private_pair"] = self
+
+    def abandon(self, *, failed=True):
+        # The caller runs this before returning to its hardware-lock owner.
+        with self.gate:
+            self.abandoned = True
+            if failed:
+                self.failed = True
+
+    def _check_locked(self):
+        if (self.abandoned or self.failed or time.monotonic() >= self.deadline
+                or _private_pair.get() is not self or threading.get_ident() != self.thread
+                or _group.get() is not self.group or self.group.get("_private_pair") is not self
+                or _duty.get() != self.duty
+                or tuple(self.group.get(key) for key in
+                    ("id", "scope", "region", "expected_device", "deadline")) != self.group_identity):
+            self.failed = self.group["failed"] = True
+            raise RequestBudgetUnavailable("ewelink_pair_context_rejected")
+
+    def check_active(self):
+        with self.gate:
+            self._check_locked()
+
+    def admit(self, endpoint, timeout):
+        with self.gate:
+            self._check_locked()
+            if self.phase >= 2 or endpoint != self._ENDPOINTS[self.phase] or self.inflight:
+                self.failed = self.group["failed"] = True
+                raise RequestBudgetUnavailable("ewelink_pair_endpoint_rejected")
+            # This is the linearization point versus caller abandonment. No I/O
+            # occurs under the gate; an admitted socket may begin/finish later.
+            self.inflight = True
+            return min(timeout, self.deadline-time.monotonic())
+
+    def dispatch(self, facade, *, region, endpoint, send):
+        with self.gate:
+            self._check_locked()
+            expected = dict(self.source)
+            if self.phase == 1:
+                expected["EWELINK_EXPECTED_DEVICE_ID"] = self.binding["device_id"]
+            if (self.phase >= 2 or self.inflight or endpoint != self._ENDPOINTS[self.phase]
+                    or region != self.group["region"] or dict(facade.environ) != expected
+                    or facade.database_url != self.owner.database_url
+                    or facade.connect_factory is not self.owner.connect_factory):
+                self.failed = self.group["failed"] = True
+                raise RequestBudgetUnavailable("ewelink_pair_facade_rejected")
+        try:
+            value = self.owner._dispatch_fenced(self.fence, region=region,
+                endpoint=endpoint, send=send, deadline=self.deadline, pair=self)
+            with self.gate:
+                self._check_locked()
+                if not self.inflight:
+                    raise RequestBudgetUnavailable("ewelink_pair_admission_unproven")
+                self.inflight = False
+                self.phase += 1
+            return value
+        except BaseException:
+            self.group["failed"] = True  # HTTP/accounting failure already owns its hold.
+            self.abandon()
+            raise
+
+    def _work(self, read):
+        if _private_pair.get() is not None:
+            raise RequestBudgetUnavailable("ewelink_nested_pair_rejected")
+        self.thread = threading.get_ident()
+        self.owner = RequestBudget(self.source)
+        token = _private_pair.set(self)
+        try:
+            self.check_active()
+            with self.owner._worker_audit() as session, self.owner._locked() as connection:
+                session["fence"] = connection
+                value = read()
+                self.check_active()
+                if self.phase != 2:
+                    raise RequestBudgetUnavailable("ewelink_pair_incomplete")
+            # Output is published only after successful audit/fence cleanup.
+            self.check_active()
+            return value
+        finally:
+            _private_pair.reset(token)
+
+    def run(self, read):
+        with self.gate:
+            if self.started or self.abandoned or self.failed:
+                raise RequestBudgetUnavailable("ewelink_pair_consumed")
+            self.started = True
+        if not _request_workers.acquire(blocking=False):
+            self.abandon()
+            raise RequestBudgetUnavailable("ewelink_request_workers_busy")
+        result = queue.Queue(maxsize=1)
+        context = copy_context()
+        def work():
+            try:
+                outcome = (True, context.run(self._work, read))
+            except BaseException as exc:
+                outcome = (False, exc)
+            finally:
+                _request_workers.release()
+            result.put(outcome)
+        worker = threading.Thread(target=work, name="rootline-bounded-ewelink-read", daemon=True)
+        success = False
+        try:
+            try:
+                worker.start()
+            except BaseException:
+                _request_workers.release()
+                raise
+            try:
+                success, value = result.get(timeout=max(0, self.deadline-time.monotonic()))
+            except queue.Empty:
+                self.group["failed"] = True
+                raise RequestBudgetUnavailable("ewelink_read_deadline_reached") from None
+            if time.monotonic() >= self.deadline:
+                success = False
+                raise RequestBudgetUnavailable("ewelink_read_deadline_reached")
+            if not success:
+                raise value
+            return value
+        finally:
+            self.abandon(failed=not success)
 
 
 def _ordinary_terminal_identity(record, records, execution):
