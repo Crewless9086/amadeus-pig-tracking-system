@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import threading
 import time
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -136,6 +136,8 @@ class Subject:
             "/v2/device/thing/status": {"params": {"switches": deepcopy(params["switches"])}},
         }
         self.calls, self.lock_observations, self.hooks = [], [], {}
+        self.status_packets, self.status_reads = None, []
+        self.status_device_id = "1002851416"
         subject = self
         class Response:
             def __init__(self, url, packet): self.url, self.packet = url, packet
@@ -155,7 +157,18 @@ class Subject:
                 subject.lock_observations.append((path, free))
                 if path in subject.hooks:
                     subject.hooks[path]()
-                return Response(request.full_url, deepcopy(subject.packets[path]))
+                packet = subject.packets[path]
+                if path == "/v2/device/thing/status":
+                    query = parse_qs(urlparse(request.full_url).query)
+                    assert query.get("type") == ["1"] and len(query.get("id", [])) == 1
+                    target = query["id"][0]
+                    if subject.status_packets is None:
+                        assert target == subject.status_device_id, "unknown synthetic STATUS target"
+                    else:
+                        assert target in subject.status_packets, "unknown synthetic STATUS target"
+                        packet = subject.status_packets[target]
+                    subject.status_reads.append((target, deepcopy(packet)))
+                return Response(request.full_url, deepcopy(packet))
         monkeypatch.setattr(oauth.urllib.request, "build_opener", lambda *_: Opener())
         def no_commands(*_, **__): pytest.fail("No extra ON or exhausted OFF may be sent")
         self.transport = RootlineIFTTTTransport(token_store=self.tokens,
@@ -456,6 +469,7 @@ class FamilySubject(Subject):
             "injector": "FERTILIZER-INJECTION-CH1", "borehole": "BOREHOLE-1-MINI-R4-CH1"}[family]
         contract = get_device_contract(identity)
         self.family, self.contract = family, contract
+        self.status_device_id = contract["device_id"]
         self.claim_action = ("claim_before_on" if family == "irrigation" else
             "claim_borehole_before_on" if family == "borehole" else "claim_auxiliary_before_on")
         self.outcome_action = ("record_on_outcome" if family == "irrigation" else
@@ -786,6 +800,10 @@ def native_borehole_start(subject, monkeypatch, *, before_http=None, outcome="ac
         item = deepcopy(items[0]["itemData"])
         item.update(deviceid="1002851416", productModel="MINIR4", extra={"uiid": 138})
         items.append({"itemType": 1, "itemData": item})
+    # Independent raw STATUS for each device; metadata is never a live-output
+    # fallback. A native borehole command cannot change irrigation's packet.
+    subject.status_packets = {row["itemData"]["deviceid"]:
+        deepcopy(subject.packets["/v2/device/thing/status"]) for row in items}
     item["params"]["pulses"] = [{"outlet": 0, "pulse": "on", "width": 3599000}]
     snapshot = oauth.normalize_device_readback(device=item,
         status={"params": {}}, retrieved_at=datetime.now(timezone.utc))
@@ -824,7 +842,7 @@ def native_borehole_start(subject, monkeypatch, *, before_http=None, outcome="ac
         item = next(row["itemData"] for row in subject.packets["/v2/device/thing"]["thingList"]
             if row["itemData"]["deviceid"] == "1002851416")
         item["params"]["switches"][0]["switch"] = command.lower()
-        subject.packets["/v2/device/thing/status"]["params"]["switches"][0]["switch"] = command.lower()
+        subject.status_packets["1002851416"]["params"]["switches"][0]["switch"] = command.lower()
         if outcome == "ambiguous" and command == "ON":
             raise TimeoutError("synthetic HTTP acknowledgement loss")
         if outcome == "missing" and command == "OFF":
@@ -934,7 +952,7 @@ def test_actual_native_caller_owns_one_claim_http_and_original_recovery_budget(m
 def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_cannot_release_it(monkeypatch):
     subject = FamilySubject(monkeypatch, "irrigation")
     outcome_ready, release_outcome, appended = threading.Event(), threading.Event(), threading.Event()
-    results, errors = [], []
+    results, errors, concurrent_status = [], [], []
     def before_outcome(_body):
         outcome_ready.set()
         assert release_outcome.wait(10)
@@ -956,6 +974,7 @@ def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_canno
         def during_status():
             release_outcome.set()
             assert appended.wait(1), "native result must be durable during unrelated equipment read"
+            concurrent_status.append(deepcopy(subject.status_packets))
             time.sleep(1.4)
         subject.hooks["/v2/device/thing/status"] = during_status
         retired = subject.run()
@@ -964,6 +983,18 @@ def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_canno
         worker.join(15)
     assert not worker.is_alive() and not errors and results
     assert retired["status"] == "execution_not_dispatched", retired
+    assert subject.claim["device_id"] == "100204e9bc"
+    assert {target for target, _ in subject.status_reads} == {"100204e9bc", "1002851416"}
+    irrigation_status = [packet for target, packet in subject.status_reads if target == "100204e9bc"]
+    borehole_status = [packet for target, packet in subject.status_reads if target == "1002851416"]
+    assert irrigation_status and all(all(row["switch"] == "off" for row in packet["params"]["switches"])
+        for packet in irrigation_status)
+    assert borehole_status  # Includes the legitimate pre-ON OFF observation.
+    # Concurrent fixture state is distinct from a returned post-ON observation.
+    assert concurrent_status
+    for statuses in concurrent_status:
+        assert statuses["1002851416"]["params"]["switches"][0]["switch"] == "on"
+        assert all(row["switch"] == "off" for row in statuses["100204e9bc"]["params"]["switches"])
     original_rows = subject.rows()
     assert any(executions._verified_not_dispatched(r, original_rows) for r in original_rows)
     state = subject.ledger()

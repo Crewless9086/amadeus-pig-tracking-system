@@ -313,6 +313,7 @@ def test_equal_anchor_target_still_binds_one_locked_status_facade(monkeypatch):
     subject.client.reserve_for_on(execution_id=identity, device_id="100204e9bc",
         channel=1, device_type="irrigation_zone_valve", region="eu")
     subject.packets["/v2/device/thing"]["thingList"][0]["itemData"]["deviceid"] = "100204e9bc"
+    subject.status_device_id = "100204e9bc"
     binding = {"execution_id": identity, "device_id": "100204e9bc", "channel": 1}
     facades = []
     original = budget.RequestBudget.dispatch
