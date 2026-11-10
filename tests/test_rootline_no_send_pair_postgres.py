@@ -32,15 +32,14 @@ def test_same_prepared_context_cannot_be_used_twice(monkeypatch):
     assert rejected == [True]
 
 
-def test_private_pair_has_one_fence_four_acknowledged_audits_and_fresh_second_snapshot(monkeypatch):
+def test_metadata_then_locked_status_keep_six_acknowledged_audits_and_fresh_preimage(monkeypatch):
     import psycopg
     subject = Subject(monkeypatch)
     original_dispatch = budget.RequestBudget.dispatch
     original_preimage = budget.RequestBudget._admission_preimage
-    facades, snapshots, pair = [], [], []
+    facades, snapshots, observations = [], [], []
     def dispatch(client, **kwargs):
-        if budget._private_pair.get() is not None:
-            facades.append(client)
+        facades.append((client, budget._private_pair.get()))
         return original_dispatch(client, **kwargs)
     def preimage(client, connection, **kwargs):
         value = original_preimage(client, connection, **kwargs)
@@ -51,23 +50,24 @@ def test_private_pair_has_one_fence_four_acknowledged_audits_and_fresh_second_sn
         session = budget._dispatch_audit.get()
         audit = session["connection"]
         assert audit._connection.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
-        assert active.fence is session["fence"] and audit is not active.fence
-        assert active.fence._connection.info.transaction_status == psycopg.pq.TransactionStatus.INTRANS
-        pair.append((active, audit))
+        assert audit is not session["fence"]
+        assert session["fence"]._connection.info.transaction_status == psycopg.pq.TransactionStatus.INTRANS
+        observations.append((active, audit))
         attempts = [row for row in subject.audit() if row["action"] == "request_attempt_reserved"]
         completions = [row for row in subject.audit() if row["action"] == "request_completed"]
-        assert len(attempts) == len(completions)+1  # intent visible before each send
+        assert len(attempts) == len(completions)+1
     monkeypatch.setattr(budget.RequestBudget, "dispatch", dispatch)
     monkeypatch.setattr(budget.RequestBudget, "_admission_preimage", preimage)
-    subject.hooks["/v2/device/thing"] = subject.hooks["/v2/device/thing/status"] = sent
+    for path in ("/v2/family", "/v2/device/thing", "/v2/device/thing/status"):
+        subject.hooks[path] = sent
     assert subject.run()["status"] == "execution_not_dispatched"
-    assert len(facades) == 2 and facades[0] is not facades[1]
-    assert facades[0].environ["EWELINK_EXPECTED_DEVICE_ID"] == "100204e9bc"
-    assert facades[1].environ["EWELINK_EXPECTED_DEVICE_ID"] == "1002851416"
-    assert pair[0][0] is pair[1][0] and pair[0][1] is pair[1][1]
-    assert pair[0][1].closed and pair[0][0].fence.closed
-    assert len(snapshots) == 2 and snapshots[1][0][0] == snapshots[0][0][0]+1
-    assert snapshots[1][1] is None and snapshots[1][2] != snapshots[0][2]
+    assert len(facades) == 3 and len({id(row[0]) for row in facades}) == 3
+    assert [row[1] is not None for row in facades] == [False, False, True]
+    assert [row[0].environ["EWELINK_EXPECTED_DEVICE_ID"] for row in facades] == [
+        "100204e9bc", "100204e9bc", "1002851416"]
+    assert all(row[1].closed for row in observations)
+    assert observations[2][0].fence.closed
+    assert len(snapshots) == 1 and snapshots[0][1] is None and snapshots[0][2] is not None
     audit = subject.audit()
     assert len([r for r in audit if r["action"] == "request_attempt_reserved"]) == 3
     assert len([r for r in audit if r["action"] == "request_completed"]) == 3
@@ -75,24 +75,24 @@ def test_private_pair_has_one_fence_four_acknowledged_audits_and_fresh_second_sn
 
 
 @pytest.mark.parametrize("change", ["application", "region", "database", "unknown_environment",
-    "status_anchor", "list_target", "endpoint", "group_object", "group_id", "duty", "capability", "missing_capability", "thread"])
+    "status_anchor", "status_target", "endpoint", "group_object", "group_id", "duty", "capability", "missing_capability", "thread"])
 def test_private_facade_mismatch_never_falls_back_or_sends_second_request(monkeypatch, change):
     subject = Subject(monkeypatch)
     original = budget.RequestBudget.dispatch
     def tamper(client, **kwargs):
         pair = budget._private_pair.get()
-        target_phase = "/v2/device/thing" if change == "list_target" else "/v2/device/thing/status"
+        target_phase = "/v2/device/thing/status"
         if pair is None or kwargs["endpoint"] != target_phase:
             return original(client, **kwargs)
         token = None
         variable = None
-        if change in {"application", "database", "unknown_environment", "status_anchor", "list_target"}:
+        if change in {"application", "database", "unknown_environment", "status_anchor", "status_target"}:
             client.environ = dict(client.environ)
             key, value = {"application": ("EWELINK_CLIENT_ID", "other"),
                 "database": ("DATABASE_URL", "synthetic-wrong-connection"),
                 "unknown_environment": ("UNRECOGNIZED_CONTEXT", "changed"),
                 "status_anchor": ("EWELINK_EXPECTED_DEVICE_ID", "100204e9bc"),
-                "list_target": ("EWELINK_EXPECTED_DEVICE_ID", "1002851416")}[change]
+                "status_target": ("EWELINK_EXPECTED_DEVICE_ID", "different-target")}[change]
             client.environ[key] = value
         elif change == "region": kwargs["region"] = "us"
         elif change == "endpoint": kwargs["endpoint"] = "/v2/family"
@@ -111,8 +111,7 @@ def test_private_facade_mismatch_never_falls_back_or_sends_second_request(monkey
             if token is not None: variable.reset(token)
     monkeypatch.setattr(budget.RequestBudget, "dispatch", tamper)
     assert subject.run()["status"] == "no_send_off_proof_pending"
-    assert subject.calls == (["/v2/family"] if change == "list_target" else
-        ["/v2/family", "/v2/device/thing"])
+    assert subject.calls == ["/v2/family", "/v2/device/thing"]
     assert subject.claim["execution_id"] in subject.ledger()["reserves"]
     assert not any(row["action"] == "record_execution_not_dispatched" for row in subject.rows())
 
@@ -135,21 +134,21 @@ def test_real_provider_guards_remain_ahead_of_private_dispatch(monkeypatch, chan
     assert subject.calls == ["/v2/family", "/v2/device/thing"]
 
 
-def test_abandonment_during_first_http_prevents_status_and_keeps_charge(monkeypatch):
+def test_abandonment_during_status_http_prevents_proof_and_keeps_charge(monkeypatch):
     subject = Subject(monkeypatch)
     observed = []
     def cancel():
         pair = budget._private_pair.get()
         pair.abandon()
         observed.append(pair)
-    subject.hooks["/v2/device/thing"] = cancel
+    subject.hooks["/v2/device/thing/status"] = cancel
     assert subject.run()["status"] == "no_send_off_proof_pending"
-    assert subject.calls == ["/v2/family", "/v2/device/thing"]
+    assert subject.calls == ["/v2/family", "/v2/device/thing", "/v2/device/thing/status"]
     assert observed[0].abandoned and observed[0].fence.closed
     assert subject.claim["execution_id"] in subject.ledger()["reserves"]
 
 
-def test_late_first_http_abandons_before_unlock_then_drains_without_status(monkeypatch):
+def test_late_status_http_abandons_before_unlock_then_drains_without_proof(monkeypatch):
     subject = Subject(monkeypatch)
     entered, release, returned = threading.Event(), threading.Event(), threading.Event()
     values, pairs = [], []
@@ -157,7 +156,7 @@ def test_late_first_http_abandons_before_unlock_then_drains_without_status(monke
         pairs.append(budget._private_pair.get())
         entered.set()
         assert release.wait(12)
-    subject.hooks["/v2/device/thing"] = late
+    subject.hooks["/v2/device/thing/status"] = late
     def invoke():
         try: values.append(subject.run())
         finally: returned.set()
@@ -184,7 +183,7 @@ def test_late_first_http_abandons_before_unlock_then_drains_without_status(monke
         for worker in threading.enumerate():
             if worker.name == "rootline-bounded-ewelink-read": worker.join(3)
     assert not caller.is_alive() and pairs[0].fence.closed
-    assert subject.calls == ["/v2/family", "/v2/device/thing"]
+    assert subject.calls == ["/v2/family", "/v2/device/thing", "/v2/device/thing/status"]
     assert subject.claim["execution_id"] in subject.ledger()["reserves"]
     slots = [budget._request_workers.acquire(False) for _ in range(2)]
     try: assert slots == [True, True]
@@ -308,12 +307,13 @@ def test_binding_failure_after_first_read_records_existing_snapshot_hold(monkeyp
     assert any(row["action"] == "snapshot_validation_failed" for row in subject.audit())
 
 
-def test_equal_anchor_target_still_uses_two_distinct_facades_and_one_pair(monkeypatch):
+def test_equal_anchor_target_still_binds_one_locked_status_facade(monkeypatch):
     subject = Subject(monkeypatch)
     identity = "SYNTHETIC-EQUAL-ANCHOR"
     subject.client.reserve_for_on(execution_id=identity, device_id="100204e9bc",
         channel=1, device_type="irrigation_zone_valve", region="eu")
     subject.packets["/v2/device/thing"]["thingList"][0]["itemData"]["deviceid"] = "100204e9bc"
+    subject.status_device_id = "100204e9bc"
     binding = {"execution_id": identity, "device_id": "100204e9bc", "channel": 1}
     facades = []
     original = budget.RequestBudget.dispatch
@@ -331,7 +331,7 @@ def test_equal_anchor_target_still_uses_two_distinct_facades_and_one_pair(monkey
             value = prepared.read_locked(binding=binding, connection=connection,
                 deadline=datetime.now(timezone.utc)+timedelta(seconds=8))
     assert value["device_id"] == "100204e9bc"
-    assert len(facades) == 2 and facades[0] is not facades[1]
+    assert len(facades) == 1
     assert all(client.environ["EWELINK_EXPECTED_DEVICE_ID"] == "100204e9bc" for client in facades)
 
 
@@ -340,6 +340,9 @@ def test_private_audit_frontend_survives_synthetic_backend_turnover(monkeypatch,
     """Synthetic stable frontend; this is not qualification of an actual pooler."""
     import psycopg
     subject = Subject(monkeypatch)
+    # This explicit synthetic non-native frontend exercises the retained
+    # injected-acquisition fallback, not the native preopened-client capability.
+    monkeypatch.setattr(budget, "_PreparedNoSendClients", lambda *_: None)
     original = budget.RequestBudget._connect
     frontends, proxies, receipts, swaps = [], [], [], []
 
@@ -410,13 +413,13 @@ def test_private_audit_frontend_survives_synthetic_backend_turnover(monkeypatch,
     assert frontends[0].closed and all(native.closed for native in proxies[0].natives)
     if commit_fault == "none":
         assert result["status"] == "execution_not_dispatched"
-        assert len(receipts) == len({r["backend"] for r in receipts}) == len(swaps) == 4
+        assert len(receipts) == len({r["backend"] for r in receipts}) == len(swaps) == 2
         assert all(r["native_commit_returned"] and r["old_idle_acknowledged"] for r in receipts)
         assert all(r["default"] == "repeatable read" for r in receipts[1:])
         assert all(row["old"] != row["new"] and row["new_default"] == "repeatable read" for row in swaps)
     else:
         assert result["status"] == "no_send_off_proof_pending"
-        assert subject.calls == ["/v2/family"] and swaps == []
+        assert subject.calls == ["/v2/family", "/v2/device/thing"] and swaps == []
         assert len(receipts) == 1
         assert receipts[0]["native_commit_returned"] is (commit_fault != "failed")
         assert receipts[0]["old_idle_acknowledged"] is (commit_fault == "lost_ack")
@@ -424,37 +427,29 @@ def test_private_audit_frontend_survives_synthetic_backend_turnover(monkeypatch,
         assert not any(row["action"] == "record_execution_not_dispatched" for row in subject.rows())
 
 
-@pytest.mark.parametrize("commit_number", [1, 2, 3, 4])
+@pytest.mark.parametrize("commit_number", [1, 2, 3, 4, 5, 6])
 @pytest.mark.parametrize("ack_lost", [False, True])
-def test_each_private_audit_commit_failure_stops_before_next_endpoint_or_output(monkeypatch, commit_number, ack_lost):
+def test_each_audit_commit_failure_stops_before_next_endpoint_or_output(monkeypatch, commit_number, ack_lost):
     import psycopg
     subject = Subject(monkeypatch)
-    original = budget.RequestBudget._connect
-    clients = []
-    class FaultAudit:
-        def __init__(self, connection): self.connection, self.commits = connection, 0
-        def __getattr__(self, key): return getattr(self.connection, key)
-        def commit(self):
-            self.commits += 1
-            if self.commits == commit_number and not ack_lost:
-                self.connection.rollback()
-                raise psycopg.OperationalError("synthetic audit rollback before acknowledgement")
-            self.connection.commit()
-            if self.commits == commit_number:
-                raise psycopg.OperationalError("synthetic audit acknowledgement lost")
-    def factory(client):
-        connection = original(client)
+    original = bounded._CycleBudgetConnection.commit
+    commits, clients = [], []
+    def commit(connection):
         session = budget._dispatch_audit.get()
-        if budget._private_pair.get() is not None and session is not None and session["fence"] is not None:
-            connection = FaultAudit(connection)
-            clients.append(connection)
-        return connection
-    monkeypatch.setattr(budget.RequestBudget, "_connect", factory)
+        audit = session is not None and session.get("connection") is connection
+        if audit:
+            commits.append(connection)
+            if connection not in clients: clients.append(connection)
+            if len(commits) == commit_number and not ack_lost:
+                connection.rollback()
+                raise psycopg.OperationalError("synthetic audit rollback before acknowledgement")
+        original(connection)
+        if audit and len(commits) == commit_number and ack_lost:
+            raise psycopg.OperationalError("synthetic audit acknowledgement lost")
+    monkeypatch.setattr(bounded._CycleBudgetConnection, "commit", commit)
     assert subject.run()["status"] == "no_send_off_proof_pending"
-    expected = ["/v2/family"] + (["/v2/device/thing"] if commit_number >= 2 else [])
-    if commit_number == 4: expected.append("/v2/device/thing/status")
-    assert subject.calls == expected
-    assert len(clients) == 1 and clients[0].closed
+    assert subject.calls == ["/v2/family", "/v2/device/thing", "/v2/device/thing/status"][:commit_number//2]
+    assert len(commits) >= commit_number and all(client.closed for client in clients)
     assert subject.claim["execution_id"] in subject.ledger()["reserves"]
     assert not any(row["action"] == "record_execution_not_dispatched" for row in subject.rows())
 
@@ -484,10 +479,10 @@ def test_private_worker_lifetime_refuses_nested_or_unavailable_workers(monkeypat
             with pytest.raises(budget.RequestBudgetUnavailable, match="context_rejected"):
                 budget._NoSendPair(source=pair.source, binding=pair.binding,
                     token_identity=pair.token_identity, group=pair.group)
-        subject.hooks["/v2/device/thing"] = nested
+        subject.hooks["/v2/device/thing/status"] = nested
     value = subject.run()
     assert value["status"] == ("execution_not_dispatched" if fault == "nested" else "no_send_off_proof_pending")
-    assert len(subject.calls) == (3 if fault == "nested" else 1)
+    assert len(subject.calls) == (3 if fault == "nested" else 2)
     acquired = [budget._request_workers.acquire(False) for _ in range(2)]
     try: assert acquired == [True, True]
     finally:

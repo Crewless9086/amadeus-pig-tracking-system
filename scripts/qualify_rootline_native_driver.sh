@@ -39,11 +39,14 @@ import psycopg, psycopg_binary.pq, pytest
 out = Path(os.environ['ROOTLINE_PROBE_EVIDENCE'])
 files = ['tests/test_rootline_no_send_preparation_postgres.py',
          'tests/test_rootline_no_send_pair_postgres.py',
-         'tests/test_rootline_eligibility_read_scope_postgres.py']
+         'tests/test_rootline_eligibility_read_scope_postgres.py',
+         'tests/test_rootline_prepared_status.py',
+         'tests/test_rootline_no_send_scheduling.py']
 sources = files + ['tests/test_rootline_final_bc_snapshot.py',
   'tests/test_rootline_eligibility_read_scope.py',
   'tests/test_rootline_managed_optional_noop.py',
   'modules/telemetry/rootline_managed_devices_runtime.py',
+  'modules/telemetry/rootline_borehole_commissioning.py',
   'modules/telemetry/rootline_execution_runtime.py',
   'modules/oom_sakkie/bounded_postgres_read.py',
   'modules/sales/sam_live_stock_launch_control.py',

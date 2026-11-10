@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import threading
 import time
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -133,9 +133,11 @@ class Subject:
             "/v2/device/thing": {"thingList": [{"itemType": 1, "itemData": {
                 "deviceid": "1002851416", "apikey": "account", "productModel": "MINIR4",
                 "extra": {"uiid": 138}, "online": True, "params": params}}]},
-            "/v2/device/thing/status": {"params": {}},
+            "/v2/device/thing/status": {"params": {"switches": deepcopy(params["switches"])}},
         }
         self.calls, self.lock_observations, self.hooks = [], [], {}
+        self.status_packets, self.status_reads = None, []
+        self.status_device_id = "1002851416"
         subject = self
         class Response:
             def __init__(self, url, packet): self.url, self.packet = url, packet
@@ -155,7 +157,18 @@ class Subject:
                 subject.lock_observations.append((path, free))
                 if path in subject.hooks:
                     subject.hooks[path]()
-                return Response(request.full_url, deepcopy(subject.packets[path]))
+                packet = subject.packets[path]
+                if path == "/v2/device/thing/status":
+                    query = parse_qs(urlparse(request.full_url).query)
+                    assert query.get("type") == ["1"] and len(query.get("id", [])) == 1
+                    target = query["id"][0]
+                    if subject.status_packets is None:
+                        assert target == subject.status_device_id, "unknown synthetic STATUS target"
+                    else:
+                        assert target in subject.status_packets, "unknown synthetic STATUS target"
+                        packet = subject.status_packets[target]
+                    subject.status_reads.append((target, deepcopy(packet)))
+                return Response(request.full_url, deepcopy(packet))
         monkeypatch.setattr(oauth.urllib.request, "build_opener", lambda *_: Opener())
         def no_commands(*_, **__): pytest.fail("No extra ON or exhausted OFF may be sent")
         self.transport = RootlineIFTTTTransport(token_store=self.tokens,
@@ -181,19 +194,23 @@ class Subject:
                 "order by created_at,review_event_id", (budget.EVENT_SOURCE,)).fetchall()]
 
 
-def test_actual_prepared_retirement_keeps_output_reads_locked_and_replays_without_io(monkeypatch):
+def test_actual_prepared_retirement_keeps_fresh_status_locked_and_replays_without_io(monkeypatch):
     subject = Subject(monkeypatch)
     result = subject.run()
     assert result["status"] == "execution_not_dispatched", result
     assert result["hardware_commands"] == 0 and result["automatic_on_retry"] is False
     assert subject.lock_observations == [("/v2/family", (True, True)),
-        ("/v2/device/thing", (False, False)), ("/v2/device/thing/status", (False, False))]
+        ("/v2/device/thing", (True, True)), ("/v2/device/thing/status", (False, False))]
     rows = subject.rows()
     terminal = next(row for row in rows if row["action"] == "record_execution_not_dispatched")
     assert executions._verified_not_dispatched(terminal, rows)
     assert terminal["objective_satisfied"] is False
     assert set(terminal["shutdown_evidence"]) == {
-        "authoritative", "state", "device_id", "channel", "evidence_id", "retrieved_at"}
+        "authoritative", "state", "device_id", "channel", "evidence_id", "retrieved_at", "prepared_metadata"}
+    provenance = terminal["shutdown_evidence"]["prepared_metadata"]
+    assert provenance["online_from_fresh_status"] is False
+    assert provenance["configuration_from_fresh_status"] is False
+    assert provenance["metadata_received_at"] < terminal["shutdown_evidence"]["retrieved_at"]
     assert subject.claim["execution_id"] not in subject.ledger()["reserves"]
     attempts = [row for row in subject.audit() if row["action"] == "request_attempt_reserved"]
     assert len(attempts) == 3
@@ -232,7 +249,7 @@ def test_invalid_preliminary_preimage_makes_no_provider_or_token_read(monkeypatc
 
 
 @pytest.mark.parametrize("change", ["active", "outcome", "token"])
-def test_changed_preparation_preimage_or_token_abandons_family_charge_without_output_read(monkeypatch, change):
+def test_changed_preparation_preimage_or_token_abandons_metadata_charges_without_status(monkeypatch, change):
     subject = Subject(monkeypatch)
     def mutate():
         if change == "token":
@@ -245,9 +262,9 @@ def test_changed_preparation_preimage_or_token_abandons_family_charge_without_ou
     subject.hooks["/v2/family"] = mutate
     result = subject.run()
     assert result["status"] == "no_send_off_proof_pending", result
-    assert subject.calls == ["/v2/family"]
+    assert subject.calls == ["/v2/family", "/v2/device/thing"]
     audit = subject.audit()
-    assert sum(row["attempt_units"] for row in audit) == 1
+    assert sum(row["attempt_units"] for row in audit) == 2
     assert not any(row["action"] in {"snapshot_validation_failed", "complete_snapshot_restored_availability",
         "active_duty_off_verified"} for row in audit)
     assert not any(row["action"] == "record_execution_not_dispatched" for row in subject.rows())
@@ -436,7 +453,7 @@ def test_family_and_private_pair_use_separate_idle_audit_clients(monkeypatch):
         subject.hooks[path] = sent
     assert subject.run()["status"] == "execution_not_dispatched"
     assert len(clients) == 2
-    assert observations[0][0] != observations[1][0] == observations[2][0]
+    assert len({row[0] for row in observations}) == 3
     assert all(client.closed for client in clients)
     assert len([r for r in subject.audit() if r["action"] == "request_completed"]) == 3
 
@@ -452,6 +469,7 @@ class FamilySubject(Subject):
             "injector": "FERTILIZER-INJECTION-CH1", "borehole": "BOREHOLE-1-MINI-R4-CH1"}[family]
         contract = get_device_contract(identity)
         self.family, self.contract = family, contract
+        self.status_device_id = contract["device_id"]
         self.claim_action = ("claim_before_on" if family == "irrigation" else
             "claim_borehole_before_on" if family == "borehole" else "claim_auxiliary_before_on")
         self.outcome_action = ("record_on_outcome" if family == "irrigation" else
@@ -550,7 +568,7 @@ def test_token_expiring_inside_final_window_is_rejected_without_output_read(monk
     result = subject.run()
     assert result["status"] == "no_send_off_proof_pending"
     assert result["no_send_reason"] == "ewelink_prepared_token_expires_before_read"
-    assert subject.calls == ["/v2/family"]
+    assert subject.calls == ["/v2/family", "/v2/device/thing"]
 
 
 def test_two_expired_preparations_share_existing_refresh_cas(monkeypatch):
@@ -782,6 +800,10 @@ def native_borehole_start(subject, monkeypatch, *, before_http=None, outcome="ac
         item = deepcopy(items[0]["itemData"])
         item.update(deviceid="1002851416", productModel="MINIR4", extra={"uiid": 138})
         items.append({"itemType": 1, "itemData": item})
+    # Independent raw STATUS for each device; metadata is never a live-output
+    # fallback. A native borehole command cannot change irrigation's packet.
+    subject.status_packets = {row["itemData"]["deviceid"]:
+        deepcopy(subject.packets["/v2/device/thing/status"]) for row in items}
     item["params"]["pulses"] = [{"outlet": 0, "pulse": "on", "width": 3599000}]
     snapshot = oauth.normalize_device_readback(device=item,
         status={"params": {}}, retrieved_at=datetime.now(timezone.utc))
@@ -820,6 +842,7 @@ def native_borehole_start(subject, monkeypatch, *, before_http=None, outcome="ac
         item = next(row["itemData"] for row in subject.packets["/v2/device/thing"]["thingList"]
             if row["itemData"]["deviceid"] == "1002851416")
         item["params"]["switches"][0]["switch"] = command.lower()
+        subject.status_packets["1002851416"]["params"]["switches"][0]["switch"] = command.lower()
         if outcome == "ambiguous" and command == "ON":
             raise TimeoutError("synthetic HTTP acknowledgement loss")
         if outcome == "missing" and command == "OFF":
@@ -929,7 +952,7 @@ def test_actual_native_caller_owns_one_claim_http_and_original_recovery_budget(m
 def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_cannot_release_it(monkeypatch):
     subject = FamilySubject(monkeypatch, "irrigation")
     outcome_ready, release_outcome, appended = threading.Event(), threading.Event(), threading.Event()
-    results, errors = [], []
+    results, errors, concurrent_status = [], [], []
     def before_outcome(_body):
         outcome_ready.set()
         assert release_outcome.wait(10)
@@ -951,6 +974,7 @@ def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_canno
         def during_status():
             release_outcome.set()
             assert appended.wait(1), "native result must be durable during unrelated equipment read"
+            concurrent_status.append(deepcopy(subject.status_packets))
             time.sleep(1.4)
         subject.hooks["/v2/device/thing/status"] = during_status
         retired = subject.run()
@@ -959,6 +983,18 @@ def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_canno
         worker.join(15)
     assert not worker.is_alive() and not errors and results
     assert retired["status"] == "execution_not_dispatched", retired
+    assert subject.claim["device_id"] == "100204e9bc"
+    assert {target for target, _ in subject.status_reads} == {"100204e9bc", "1002851416"}
+    irrigation_status = [packet for target, packet in subject.status_reads if target == "100204e9bc"]
+    borehole_status = [packet for target, packet in subject.status_reads if target == "1002851416"]
+    assert irrigation_status and all(all(row["switch"] == "off" for row in packet["params"]["switches"])
+        for packet in irrigation_status)
+    assert borehole_status  # Includes the legitimate pre-ON OFF observation.
+    # Concurrent fixture state is distinct from a returned post-ON observation.
+    assert concurrent_status
+    for statuses in concurrent_status:
+        assert statuses["1002851416"]["params"]["switches"][0]["switch"] == "on"
+        assert all(row["switch"] == "off" for row in statuses["100204e9bc"]["params"]["switches"])
     original_rows = subject.rows()
     assert any(executions._verified_not_dispatched(r, original_rows) for r in original_rows)
     state = subject.ledger()
@@ -974,3 +1010,28 @@ def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_canno
     assert [state for state, _ in calls] == ["ON"]
     assert run()["status"] == "borehole_claim_in_progress"
     assert [state for state, _ in calls] == ["ON"]
+
+
+@pytest.mark.parametrize("field", ["source", "binding", "device", "baseline", "token", "group", "extended_deadline", "expired_metadata"])
+def test_prepared_metadata_seal_and_original_deadline_refuse_before_status(monkeypatch, field):
+    subject = Subject(monkeypatch)
+    original = readback._PreparedNoSendRead.read_locked
+    def mutate(prepared, **kwargs):
+        if field == "source": prepared.source["EWELINK_CLIENT_ID"] = "changed"
+        elif field == "binding": prepared.binding["channel"] = 2
+        elif field == "device": prepared._device["online"] = False
+        elif field == "baseline": prepared._baseline = {"changed": True}
+        elif field == "token": prepared._record["token_binding_id"] = "changed"
+        elif field == "group": prepared._group["id"] = "changed"
+        elif field == "extended_deadline": prepared._group["deadline"] += 30
+        else:
+            prepared._metadata_deadline = time.monotonic()-1
+            prepared._metadata_seal = prepared._seal()  # isolate the expiry check from seal tampering
+        return original(prepared, **kwargs)
+    monkeypatch.setattr(readback._PreparedNoSendRead, "read_locked", mutate)
+    result = subject.run()
+    assert result["status"] == "no_send_off_proof_pending"
+    assert subject.calls == ["/v2/family", "/v2/device/thing"]
+    assert not any(row["action"] == "record_execution_not_dispatched" for row in subject.rows())
+    assert subject.claim["execution_id"] in subject.ledger()["reserves"]
+    assert sum(row["attempt_units"] for row in subject.audit()) == 2

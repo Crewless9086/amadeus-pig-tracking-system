@@ -300,7 +300,8 @@ def _borehole_provider_configuration(provider, *, now):
     return proof
 
 
-def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False, clock=None):
+def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False, clock=None,
+                               defer_no_send_proof=None):
     """Advance one exact Borehole execution with one ON and bounded OFF recovery."""
     from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
     from modules.telemetry.rootline_ewelink_request_budget import (
@@ -312,7 +313,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         transport = bind_execution_transport(transport, active)
         if active.get("on_not_dispatched") is True:
             from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
-            return _retire_unsent_execution(active, store, transport)
+            return _retire_unsent_execution(active, store, transport, defer_proof=defer_no_send_proof)
         claimed_at = _time(active.get("claimed_at"))
         if (active.get("state") in {"claimed","claimed_recovery_required"}
                 and claimed_at is not None and timedelta(0)<=now-claimed_at<=timedelta(seconds=30)):

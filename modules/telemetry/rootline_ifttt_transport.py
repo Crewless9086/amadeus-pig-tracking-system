@@ -41,6 +41,13 @@ def output_evidence_from_snapshot(snapshot, *, device_id, channel):
         "channel": rows[0].get("channel") if matched else None,
         "evidence_id": snapshot.get("response_digest"),
         "retrieved_at": snapshot.get("retrieved_at")}
+    if snapshot.get("metadata_received_at") is not None:
+        # Only the invocation-local no-send reader supplies this provenance.
+        # Keep the older online/configuration clock in the durable OFF receipt.
+        result["prepared_metadata"] = {key: snapshot.get(key) for key in (
+            "metadata_received_at", "online_metadata_received_at",
+            "metadata_freshness_clock_source", "online_from_fresh_status",
+            "configuration_from_fresh_status")}
     if device_id == DEVICE_ID and type(channel) is int and channel in (1, 2, 4):
         result["irrigation_output_evidence"] = {
             "device_id": snapshot.get("device_id"),
@@ -752,7 +759,8 @@ class _PreparedNoSendOutput:
         full = output_evidence_from_snapshot(snapshot,
             device_id=binding["device_id"], channel=binding["channel"])
         self.output = {key: full.get(key) for key in
-            ("authoritative", "state", "device_id", "channel", "evidence_id", "retrieved_at")}
+            ("authoritative", "state", "device_id", "channel", "evidence_id", "retrieved_at",
+             "prepared_metadata")}
         return deepcopy(self.output)
 
     def after_commit(self, terminal):
