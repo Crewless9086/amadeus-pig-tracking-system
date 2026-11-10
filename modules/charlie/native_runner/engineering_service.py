@@ -17,7 +17,7 @@ import uuid
 
 from modules.charlie.cloud_engineering import CONTRACT, WORKER, TERMINAL, digest, validate_manifest
 from modules.charlie.native_runner.execution import (
-    ContextBroker, HermesIndependentReviewer, HermesStructuredPatchWorker,
+    BUILDER_CORRECTIONS, ContextBroker, HermesIndependentReviewer, HermesStructuredPatchWorker,
     NativeAuthorization, NativeExecutionError, NativeWorktree, PatchValidator, run_argv,
 )
 from modules.charlie.native_runner.intake_service import NoRedirect
@@ -304,7 +304,7 @@ class EngineeringRun:
                     "stage": "builder_semantic_validation" if evidence else "builder_completion",
                     "attempt": attempt,
                     "reason": reason, "response_evidence": evidence,
-                })
+                }, max_bytes=4096)
                 # Identity/audit checks must have passed and this precise call
                 # must be durably recorded. Never retry an adapter-raised error.
                 if evidence is None or reason not in RECOVERABLE_BUILDER_ERRORS:
@@ -312,7 +312,7 @@ class EngineeringRun:
                 self.check()
                 feedback = [{"source": "builder_semantic_validator", "reason": reason,
                              "attempt": attempt,
-                             "instruction": "Return fields consistent with exactly one response state."}]
+                             "instruction": BUILDER_CORRECTIONS[reason]}]
                 iterations.append({"attempt": attempt, "builder_response": evidence,
                                    "feedback": feedback})
                 continue
@@ -322,11 +322,6 @@ class EngineeringRun:
             validator = PatchValidator(self.worktree, self.manifest["allowed_files"])
             try:
                 validator.validate(authored["unified_diff"])
-                applied = run_argv(["git", "apply", "--whitespace=error-all", "-"],
-                                   cwd=self.worktree, input_text=authored["unified_diff"])
-                need(applied.returncode == 0, "native_patch_apply_failed")
-                need(run_argv(["git", "diff", "--check"], cwd=self.worktree).returncode == 0,
-                     "native_diff_check_failed")
             except NativeExecutionError as exc:
                 # Only a known pre-apply format/scope rejection can be revised.
                 # Ambiguous model/network/canonical failures never retry.
@@ -334,10 +329,20 @@ class EngineeringRun:
                                     "native_patch_paths_invalid", "native_patch_invalid",
                                     "native_patch_operation_forbidden", "native_patch_delete_forbidden"}:
                     raise
-                feedback = [{"source": "patch_validator", "reason": str(exc),
-                             "instruction": "Return a valid unified diff within the admitted files."}]
+                write_once(self.directory / ("builder-failure-" + str(attempt) + ".json"), {
+                    "stage": "patch_validation", "attempt": attempt, "reason": str(exc),
+                    "response_evidence": model.response_evidence,
+                }, max_bytes=4096)
+                self.check()
+                feedback = [{"source": "patch_validator", "reason": str(exc), "attempt": attempt,
+                             "instruction": BUILDER_CORRECTIONS[str(exc)]}]
                 iterations.append({"attempt": attempt, "builder": authored, "feedback": feedback})
                 continue
+            applied = run_argv(["git", "apply", "--whitespace=error-all", "-"],
+                               cwd=self.worktree, input_text=authored["unified_diff"])
+            need(applied.returncode == 0, "native_patch_apply_failed")
+            need(run_argv(["git", "diff", "--check"], cwd=self.worktree).returncode == 0,
+                 "native_diff_check_failed")
             changed = sorted(checked_git(["diff", "--name-only"], self.worktree).splitlines())
             need(set(changed).issubset(self.manifest["allowed_files"]), "candidate_scope")
             if self.grant["state"] == "baseline_verified":
