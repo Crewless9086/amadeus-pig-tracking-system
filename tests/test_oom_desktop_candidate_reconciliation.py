@@ -2111,12 +2111,7 @@ class RootlineReleaseScopeProposalTests(unittest.TestCase):
                           ('tree_sha','f2651db8133eab77cbce1dd1466e63949797af9a')):
             with self.subTest(key=key):
                 m=deepcopy(self.m);m['candidate'][key]=value;self.refused(m)
-        additions=('modules/oom_sakkie/telegram_gateway.py',
-                   'modules/telemetry/rootline_execution_runtime.py',
-                   'modules/telemetry/rootline_irrigation_execution_store.py',
-                   'tests/test_rootline_borehole_commissioning.py',
-                   'tests/test_rootline_managed_startup_handover_postgres.py',
-                   'tests/test_rootline_parent_job_resolution_postgres.py')
+        additions=('modules/oom_sakkie/telegram_gateway.py', 'modules/telemetry/rootline_execution_runtime.py', 'modules/telemetry/rootline_irrigation_history.py', 'tests/test_rootline_bc_cycle_efficiency.py', 'modules/oom_sakkie/bounded_postgres_read.py', 'tests/test_rootline_parent_job_resolution_postgres.py')
         for path in additions:
             with self.subTest(path=path):
                 self.assertIn(path,a.PREDECESSOR_PATHS)
