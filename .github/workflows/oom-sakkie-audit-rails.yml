@@ -410,6 +410,10 @@ jobs:
           python -B -m pytest -q -p no:cacheprovider
           tests/test_rootline_borehole_bc_restoration.py
           tests/test_rootline_bc_cycle_efficiency.py
+          tests/test_rootline_bc_starvation.py
+          tests/test_rootline_final_bc_snapshot.py
+          tests/test_rootline_eligibility_read_scope.py
+          tests/test_rootline_managed_optional_noop.py
           tests/test_rootline_borehole_commissioning.py
           tests/test_rootline_commissioning_bridges.py
           tests/test_rootline_active_supervision.py
@@ -515,3 +519,66 @@ jobs:
         env:
           IRRIGATION_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/irrigation_dialogue_test
         run: npx playwright test --config=tests/irrigation_dialogue_playwright.config.js
+
+      - name: Check out exact event head for ROOTLINE driver qualification
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Create isolated ROOTLINE no-send test database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          test -f tests/test_rootline_no_send_preparation_postgres.py
+          test -f tests/test_rootline_no_send_pair_postgres.py
+          createdb --host=127.0.0.1 --username=postgres rootline_no_send_test
+
+      - name: Set up Python for ROOTLINE production_tuple
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14.3"
+
+      - name: Qualify ROOTLINE production_tuple
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_no_send_test
+          ROOTLINE_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_no_send_test
+          PYTHON_DOTENV_DISABLED: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+          PSYCOPG_IMPL: binary
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTEST_ADDOPTS: ""
+          ROOTLINE_EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          ROOTLINE_PROBE: production_tuple
+          ROOTLINE_DRIVER: "3.3.7"
+          ROOTLINE_PYTHON: "3.14.3"
+          ROOTLINE_LIBPQ: "180006"
+        run: bash scripts/qualify_rootline_native_driver.sh
+
+      - name: Set up Python for ROOTLINE minimum_driver
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Qualify ROOTLINE minimum_driver
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_no_send_test
+          ROOTLINE_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_no_send_test
+          PYTHON_DOTENV_DISABLED: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+          PSYCOPG_IMPL: binary
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTEST_ADDOPTS: ""
+          ROOTLINE_EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          ROOTLINE_PROBE: minimum_driver
+          ROOTLINE_DRIVER: "3.2.0"
+          ROOTLINE_PYTHON: "3.12"
+          ROOTLINE_LIBPQ: ""
+        run: bash scripts/qualify_rootline_native_driver.sh
+
+      - name: Preserve ROOTLINE driver qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootline-native-begin-driver-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rootline-driver-evidence/
+          if-no-files-found: error

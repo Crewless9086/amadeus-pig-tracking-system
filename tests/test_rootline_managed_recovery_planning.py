@@ -38,8 +38,11 @@ def predecessor_ast():
     assert isinstance(factory.body[-1], ast.Return)
     body = deepcopy(factory.body[:-1])
     handler = body[0].handlers[0]
-    assert isinstance(handler.body[0], ast.Raise)
-    failure_result = handler.body[0].exc.args[0]
+    failure_raise = next(statement for statement in handler.body
+        if isinstance(statement, ast.Raise) and isinstance(statement.exc, ast.Call)
+        and isinstance(statement.exc.func, ast.Name)
+        and statement.exc.func.id == "ManagedDevicePlanningUnavailable")
+    failure_result = failure_raise.exc.args[0]
     handler.body = [ast.Return(value=failure_result)]
     handler.name = None
     invocation = next(n.value for n in node.body if isinstance(n,ast.Assign)
@@ -195,9 +198,11 @@ def test_healthy_predecessor_results_and_canonical_effects_match(
     old_store, new_store = Store(kind), Store(kind)
     old_transport, new_transport = TimedOffOnlyTransport(), TimedOffOnlyTransport()
     old_loader, new_loader = Evidence(), Evidence()
-    old = invoke(old_store, old_transport, old_loader, function=predecessor(), clock=lambda: clock[0])
+    flags = {FLAGS[0]: "true"} if kind is None else {}
+    old = invoke(old_store, old_transport, old_loader, function=predecessor(),
+        clock=lambda: clock[0], environ=flags)
     clock[0] = NOW
-    new = invoke(new_store, new_transport, new_loader, clock=lambda: clock[0])
+    new = invoke(new_store, new_transport, new_loader, clock=lambda: clock[0], environ=flags)
     assert new == old
     assert new_store.calls == (old_store.calls * 2 if kind is None else old_store.calls)
     assert new_store.writes == old_store.writes
@@ -323,8 +328,9 @@ def test_idle_original_planning_error_result_is_preserved(monkeypatch, stage):
     def fail(*_args, **_kwargs): raise RuntimeError("planning-boundary-error")
     if stage == "refresh": monkeypatch.setattr(runtime, "_refresh_active_irrigation_readback", fail)
     if stage == "build": monkeypatch.setattr(runtime, "build_water_energy_plan", fail)
-    old = invoke(Store(), OffOnlyTransport(), loader, function=predecessor())
-    new = invoke(Store(), OffOnlyTransport(), Evidence(fail=stage == "load"))
+    flags = {FLAGS[0]: "true"}
+    old = invoke(Store(), OffOnlyTransport(), loader, function=predecessor(), environ=flags)
+    new = invoke(Store(), OffOnlyTransport(), Evidence(fail=stage == "load"), environ=flags)
     assert new == old == {**runtime._safe("managed_device_evidence_unavailable"), "blocks_bc": False}
 
 
@@ -334,7 +340,7 @@ def test_legacy_unknown_mixer_duration_is_held_without_fabricated_budget():
                   "verified_runtime_minutes": "not-a-number"}]}, NOW.date().isoformat(), kwargs["now"]
     for fn in (predecessor(), runtime.run_rootline_managed_device_reassessment):
         transport=OffOnlyTransport()
-        result=invoke(Store(),transport,bad_packet,function=fn)
+        result=invoke(Store(),transport,bad_packet,function=fn,environ={FLAGS[0]: "true"})
         assert result["status"]=="no_eligible_managed_device_task" and transport.commands==[]
 
 
@@ -350,6 +356,7 @@ def test_idle_enabled_and_reenabled_calls_use_fresh_planning_once_each(monkeypat
     for value in ("true", "false", " TRUE "):
         result = invoke(store, transport, loader, environ={flag: value})
         assert result["status"] == "no_eligible_managed_device_task"
+    # Disabled starts still permit evidence for an existing final flush.
     assert observed == [1, 2, 3] and len(loader.calls) == 3 and transport.commands == []
     assert store.loads == {"load_active_auxiliaries": 6, "load_active_borehole": 6}
 

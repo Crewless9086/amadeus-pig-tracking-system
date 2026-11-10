@@ -6,6 +6,8 @@ identity. Auxiliary authority remains independently disabled by default.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from contextlib import contextmanager
 from copy import deepcopy
 from hashlib import sha256
 import json
@@ -106,6 +108,28 @@ def irrigation_dependency_verified(output, *, device_id, channel, now):
         return False
 
 
+@dataclass(frozen=True)
+class NativeBCFinalCheck:
+    """Invocation-local final proof; never stored as a new authority artifact."""
+    artifact: dict
+    safety: dict
+    snapshot: dict
+
+
+def validate_native_bc_snapshot(snapshot, *, device_id, channel):
+    """Strict shapes apply only to the optional native B/C final check."""
+    rows = snapshot.get("channels") if isinstance(snapshot, dict) else None
+    if (device_id != DEVICE_ID or type(channel) is not int or channel not in (1, 2)
+            or not isinstance(snapshot, dict) or snapshot.get("device_id") != device_id
+            or type(snapshot.get("provider_control_calls")) is not int
+            or snapshot["provider_control_calls"] != 0
+            or not isinstance(rows, list) or len(rows) != 4
+            or any(not isinstance(row, dict) or type(row.get("channel")) is not int
+                   for row in rows)
+            or {row["channel"] for row in rows} != {1, 2, 3, 4}):
+        raise ValueError("native_bc_final_snapshot_invalid")
+
+
 class RootlineIFTTTTransport:
     def __init__(self, *, token_store, environ=None, http_open=None,
                  readback=None, auxiliary_on_authorizer=None,
@@ -121,6 +145,16 @@ class RootlineIFTTTTransport:
     def read_safety_configuration(self, *, device_id, channel):
         contract = self._binding(device_id, channel)
         snapshot = self._snapshot(device_id, channel)
+        return self._safety_from_snapshot(contract, snapshot, device_id, channel)
+
+    def final_bc_check(self, artifact, snapshot, *, device_id, channel):
+        validate_native_bc_snapshot(snapshot, device_id=device_id, channel=channel)
+        self._validated_snapshot(snapshot, device_id, channel)
+        safety = self._safety_from_snapshot(
+            self._binding(device_id, channel), snapshot, device_id, channel)
+        return NativeBCFinalCheck(deepcopy(artifact), deepcopy(safety), deepcopy(snapshot))
+
+    def _safety_from_snapshot(self, contract, snapshot, device_id, channel):
         row = self._channel(snapshot, channel)
         supervised_channels = snapshot.get("commissioned_supervised_channels") or []
         channel_commissioning = (contract["identity"] in {
@@ -296,6 +330,21 @@ class RootlineIFTTTTransport:
                                     and str(self.environ.get(
                                         "ROOTLINE_IFTTT_MAKER_KEY") or "").strip()),
                 "device_id": device_id, "channel": channel}
+
+    @property
+    def prepare_no_send_off(self):
+        # Injected adapters retain ownership of their full readback contract.
+        return self._prepare_no_send_off if self.readback is None else None
+
+    @contextmanager
+    def _prepare_no_send_off(self, *, device_id, channel, binding):
+        self._binding(device_id, channel)
+        if binding.get("device_id") != device_id or binding.get("channel") != channel:
+            raise ValueError("no_send_target_changed")
+        from modules.telemetry.rootline_ewelink_readback import prepare_registered_no_send_read
+        with prepare_registered_no_send_read(binding=binding, token_store=self.token_store,
+                environ=self._request_environment()) as prepared:
+            yield _PreparedNoSendOutput(self, prepared, binding)
 
     def read_output_state(self, *, device_id, channel):
         snapshot = self._snapshot(device_id, channel)
@@ -506,6 +555,10 @@ class RootlineIFTTTTransport:
                                            environ=self.environ)
         else:
             value = self.readback(token_store=self.token_store, environ=self.environ)
+        return self._validated_snapshot(value, device_id, channel)
+
+    def _validated_snapshot(self, value, device_id, channel):
+        contract = self._binding(device_id, channel)
         rows = value.get("channels") if isinstance(value, dict) else None
         identities = [row.get("channel") for row in rows or () if isinstance(row, dict)]
         expected = ([1] if contract.get("identity") == "BOREHOLE-1-MINI-R4-CH1"
@@ -686,3 +739,33 @@ def _a_commissioning_output_verified(value, *, target_state, now, after):
             and {row["channel"] for row in rows} == {1, 2, 3, 4})
     except (ValueError, TypeError, KeyError, OverflowError):
         return False
+
+
+class _PreparedNoSendOutput:
+    """Retirement-only output; cannot supply commissioning or ON eligibility."""
+    def __init__(self, transport, prepared, binding):
+        self.transport, self.prepared = transport, prepared
+        self.binding, self.output = deepcopy(binding), None
+
+    def read_locked(self, *, binding, connection, deadline):
+        snapshot = self.prepared.read_locked(binding=binding, connection=connection, deadline=deadline)
+        full = output_evidence_from_snapshot(snapshot,
+            device_id=binding["device_id"], channel=binding["channel"])
+        self.output = {key: full.get(key) for key in
+            ("authoritative", "state", "device_id", "channel", "evidence_id", "retrieved_at")}
+        return deepcopy(self.output)
+
+    def after_commit(self, terminal):
+        if (not isinstance(terminal, dict) or terminal.get("not_dispatched_verified") is not True
+                or terminal.get("execution_id") != self.binding["execution_id"]
+                or terminal.get("shutdown_evidence") != self.output
+                or not self.output or self.output.get("state") != "OFF"):
+            return "retained_terminal_mismatch"
+        from modules.telemetry.rootline_ewelink_request_budget import RequestBudget
+        def cleanup():
+            # Outcome writers may commit a contradiction after hardware unlock.
+            # Use canonical terminal/preimage verification, not the copied OFF.
+            if not RequestBudget(self.transport._request_environment()).release_after_canonical_terminal(
+                    self.binding["execution_id"]):
+                raise RuntimeError("no_send_canonical_cleanup_unproven")
+        return self.prepared.after_commit(cleanup)

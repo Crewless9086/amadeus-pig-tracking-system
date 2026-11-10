@@ -1620,22 +1620,64 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 supervision.update(success=False,
                     execution_status=str(supervision.get("status") or "unknown"),
                     status="scheduled_rootline_active_supervision_unproven")
+            admission_checked = False
+            def admit_irrigation(managed_result):
+                nonlocal admission_checked
+                if admission_checked:
+                    return
+                admission_checked = True
+                if (irrigation_safe and managed_result.get("blocks_bc") is not True
+                        and any(str(source.get(flag) or "").lower() == "true"
+                                for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED"))
+                        and supervision.get("active_supervision_status") in {
+                            "no_active_irrigation", "segment_completed", "segment_stopped_outcome_unconfirmed"}):
+                    cycle = execution_cycle
+                    if cycle is None:
+                        from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
+                        cycle = run_rootline_execution_cycle
+                    try:
+                        control = dict(cycle(notify=notify, environ=source, now=scheduler_now,
+                            owner_user_id=scheduled_owner, chat_id=scheduled_chat,
+                            next_reassessment_at=str(payload.get("next_due_at") or payload.get("due_at") or ""),
+                            observation_store=state_store) or {})
+                        if not control:
+                            raise ValueError("irrigation_control_result_missing")
+                    except Exception as exc:
+                        control = {"success": False, "status": "irrigation_control_unproven",
+                            "error_type": type(exc).__name__, "effects_unknown": True}
+                    supervision["irrigation_admission_status"] = str(control.get("status") or "unknown")
+                    supervision["execution_status"] = (str(supervision.get("active_supervision_status"))
+                        if supervision.get("active_execution_found") is True and not control.get("hardware_commands")
+                        else supervision["irrigation_admission_status"])
+                    supervision["control_result"] = control
+                    for field in ("hardware_commands", "telegram_sends", "telegram_edits"):
+                        value = control.get(field) or (control.get("telegram_messages") if field == "telegram_sends" else 0)
+                        supervision[field] = int(supervision.get(field) or 0) + int(value or 0)
+                    if control.get("writes_farm_data") is True:
+                        supervision["writes_farm_data"] = True
+                    elif "writes_farm_data" in control and control["writes_farm_data"] is None:
+                        supervision["writes_farm_data"] = None
+                    if control.get("effects_unknown") is True:
+                        supervision["effects_unknown"] = True
+                    if control.get("success") is not True:
+                        supervision["success"] = False
             managed_enabled = any(str(source.get(flag) or "").lower() == "true" for flag in (
                 "ROOTLINE_FERTILIZER_MIXING_ENABLED",
                 "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED",
                 "ROOTLINE_ESKOM_ENABLED"))
+            managed_result = {}
             if production_persistence or managed_device_cycle is not None or managed_enabled:
                 managed = managed_device_cycle
                 if managed is None:
                     from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
                     managed = run_rootline_managed_device_reassessment
                 try:
-                    with mandatory_safety():
-                        managed_result = dict(managed(environ=source, now=scheduler_now,
-                            allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
-                            allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
-                                "no_active_irrigation", "active_segment_owned", "segment_completed",
-                                "segment_stopped_outcome_unconfirmed"}) or {})
+                    managed_result = dict(managed(environ=source, now=scheduler_now,
+                        after_safety=admit_irrigation,
+                        allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
+                        allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
+                            "no_active_irrigation", "active_segment_owned", "segment_completed",
+                            "segment_stopped_outcome_unconfirmed"}) or {})
                     if not managed_result:
                         raise ValueError("managed_supervision_result_missing")
                 except Exception as exc:
@@ -1652,42 +1694,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     supervision["effects_unknown"] = True
                 if managed_result.get("success") is not True:
                     supervision["success"] = False
-            managed_result = supervision.get("managed_device_result") or {}
-            if (irrigation_safe and managed_result.get("blocks_bc") is not True
-                    and any(str(source.get(flag) or "").lower() == "true"
-                            for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED"))
-                    and supervision.get("active_supervision_status") in {
-                        "no_active_irrigation", "segment_completed", "segment_stopped_outcome_unconfirmed"}):
-                cycle = execution_cycle
-                if cycle is None:
-                    from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
-                    cycle = run_rootline_execution_cycle
-                try:
-                    control = dict(cycle(notify=notify, environ=source, now=scheduler_now,
-                        owner_user_id=scheduled_owner, chat_id=scheduled_chat,
-                        next_reassessment_at=str(payload.get("next_due_at") or payload.get("due_at") or ""),
-                        observation_store=state_store) or {})
-                    if not control:
-                        raise ValueError("irrigation_control_result_missing")
-                except Exception as exc:
-                    control = {"success": False, "status": "irrigation_control_unproven",
-                        "error_type": type(exc).__name__, "effects_unknown": True}
-                supervision["irrigation_admission_status"] = str(control.get("status") or "unknown")
-                supervision["execution_status"] = (str(supervision.get("active_supervision_status"))
-                    if supervision.get("active_execution_found") is True and not control.get("hardware_commands")
-                    else supervision["irrigation_admission_status"])
-                supervision["control_result"] = control
-                for field in ("hardware_commands", "telegram_sends", "telegram_edits"):
-                    value = control.get(field) or (control.get("telegram_messages") if field == "telegram_sends" else 0)
-                    supervision[field] = int(supervision.get(field) or 0) + int(value or 0)
-                if control.get("writes_farm_data") is True:
-                    supervision["writes_farm_data"] = True
-                elif "writes_farm_data" in control and control["writes_farm_data"] is None:
-                    supervision["writes_farm_data"] = None
-                if control.get("effects_unknown") is True:
-                    supervision["effects_unknown"] = True
-                if control.get("success") is not True:
-                    supervision["success"] = False
+            if not admission_checked:
+                admit_irrigation(managed_result)
             if "execution_status" not in supervision and managed_result.get("managed_device_recovery") is True:
                 supervision["execution_status"] = str(managed_result.get("status") or "")
             return supervision

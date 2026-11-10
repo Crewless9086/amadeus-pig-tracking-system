@@ -26,6 +26,11 @@ from modules.telemetry.rootline_ewelink_request_budget import (
     bind_execution_transport, prepare_execution_capacity,
 )
 
+from modules.telemetry.rootline_ifttt_transport import (
+    NativeBCFinalCheck, validate_native_bc_snapshot,
+)
+
+
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
 EMERGENCY_OFF_AUXILIARY_DEVICE_ID = "FERTILIZER-MIXER-CH2"
@@ -37,7 +42,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  decision_reader, commissioning_reader, store, transport,
                                  notify, outcome_reader=lambda _identity: None,
                                  eligibility_revalidator=lambda _decision: None, now=None,
-                                 clock=None, active_only=False, active_weather_revalidator=None):
+                                 clock=None, active_only=False, active_weather_revalidator=None,
+                                 native_final_revalidator=None):
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
     try:
@@ -73,20 +79,38 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         output = commissioned_irrigation_contract(decision["zone_id"])
     except ValueError:
         return _result("irrigation_output_not_commissioned", commands=0, messages=0)
-    safety = transport.read_safety_configuration(
-        device_id=output["device_id"], channel=output["channel"])
-    if not _safe_configuration(safety, decision["zone_id"]):
-        return _result("provider_safety_readback_unavailable", commands=0, messages=0,
-                       autonomous_on_enabled=False)
-    # This read-only edge check is intentionally after provider safety and
-    # immediately before the durable claim. It prevents a fresh rain Hold or
-    # evidence-generation change from racing a previously eligible decision.
-    revalidated = eligibility_revalidator(decision)
-    preclaim_now = _aware(clock())
-    if (not equivalent_fresh_eligibility(
-            decision.get("execution_eligibility"), revalidated, now=preclaim_now)
-            or revalidated.get("zone_id") != decision.get("zone_id")):
-        return _result("execution_eligibility_changed", commands=0, messages=0)
+    if native_final_revalidator is not None:
+        # Once selected, failure of the final native check never falls back to
+        # an earlier proof or another provider read. No claim exists yet.
+        try:
+            final = native_final_revalidator(decision)
+            preclaim_now = _aware(clock())
+            if not _valid_native_final_check(final, decision, output, preclaim_now):
+                return _result("provider_safety_readback_unavailable", commands=0, messages=0,
+                               autonomous_on_enabled=False)
+            revalidated = final.artifact
+            if (not equivalent_fresh_eligibility(
+                    decision.get("execution_eligibility"), revalidated, now=preclaim_now)
+                    or revalidated.get("zone_id") != decision.get("zone_id")):
+                return _result("execution_eligibility_changed", commands=0, messages=0)
+        except Exception:
+            return _result("provider_safety_readback_unavailable", commands=0, messages=0,
+                           autonomous_on_enabled=False)
+    else:
+        safety = transport.read_safety_configuration(
+            device_id=output["device_id"], channel=output["channel"])
+        if not _safe_configuration(safety, decision["zone_id"]):
+            return _result("provider_safety_readback_unavailable", commands=0, messages=0,
+                           autonomous_on_enabled=False)
+        # This read-only edge check is intentionally after provider safety and
+        # immediately before the durable claim. It prevents a fresh rain Hold or
+        # evidence-generation change from racing a previously eligible decision.
+        revalidated = eligibility_revalidator(decision)
+        preclaim_now = _aware(clock())
+        if (not equivalent_fresh_eligibility(
+                decision.get("execution_eligibility"), revalidated, now=preclaim_now)
+                or revalidated.get("zone_id") != decision.get("zone_id")):
+            return _result("execution_eligibility_changed", commands=0, messages=0)
     execution = {
         "execution_id": decision["execution_id"], "eligibility_id": decision["eligibility_id"],
         "eligibility_sha256": decision["execution_eligibility"]["eligibility_sha256"],
@@ -889,13 +913,22 @@ def _retire_unsent_execution(execution, store, transport):
         commands = _bounded_off(execution, store, transport)["commands"]
     def read():
         return transport.read_output_state(device_id=device, channel=channel)
-    result = store("retire_not_dispatched_execution", {**execution, "read_final_off": read})
+    payload = {**execution, "read_final_off": read}
+    prepare = getattr(transport, "prepare_no_send_off", None)
+    if callable(prepare):
+        payload["prepare_final_off"] = lambda binding: prepare(
+            device_id=device, channel=channel, binding=binding)
+    result = store("retire_not_dispatched_execution", payload)
     proven = (isinstance(result, dict) and result.get("success") is True
         and (result.get("execution") or {}).get("not_dispatched_verified") is True)
     return {"success": True, "status": "execution_not_dispatched" if proven else "no_send_off_proof_pending",
-        "hardware_commands": commands, "telegram_messages": 0, "writes_farm_data": bool(proven and result.get("created")),
+        "hardware_commands": commands, "telegram_messages": 0,
+        "writes_farm_data": (None if isinstance(result, dict) and result.get("effects_unknown")
+            else bool(proven and result.get("created"))),
         "notify_owner": False, "owner_action_required": False, "execution": execution,
-        "provider_command_attempted": False, "automatic_on_retry": False}
+        "provider_command_attempted": False, "automatic_on_retry": False,
+        **({key: result[key] for key in ("no_send_stage", "no_send_reason", "error_type", "cleanup_status", "effects_unknown")
+            if key in result} if isinstance(result, dict) else {})}
 
 
 def _bounded_off(execution, store, transport):
@@ -1068,6 +1101,41 @@ def _provider_bounded_outcome(execution, shutdown, now):
     }
     packet["outcome_sha256"] = _digest(packet)
     return packet
+
+
+def _valid_native_final_check(final, decision, output, now):
+    if (type(final) is not NativeBCFinalCheck
+            or decision.get("zone_id") not in {"B12345", "C12345"}
+            or not isinstance(final.artifact, dict) or not isinstance(final.safety, dict)):
+        return False
+    snapshot, safety, artifact = final.snapshot, final.safety, final.artifact
+    validate_native_bc_snapshot(snapshot, device_id=output["device_id"], channel=output["channel"])
+    receipt = datetime.fromisoformat(str(snapshot.get("retrieved_at") or "").replace("Z", "+00:00"))
+    if (receipt.tzinfo is None or receipt.utcoffset() is None
+            or not timedelta(0) <= now - receipt <= timedelta(minutes=5)
+            or safety.get("observed_at") != snapshot.get("retrieved_at")):
+        return False
+    # Eligibility accepts a trusted receipt when supplied. It must refer to
+    # this same final observation, never a fresher timestamp pasted onto it.
+    if snapshot.get("trusted_receipt_at") is not None:
+        trusted = datetime.fromisoformat(str(snapshot["trusted_receipt_at"]).replace("Z", "+00:00"))
+        if trusted != receipt:
+            return False
+    outputs = {str(row["channel"]): row.get("output_state") for row in snapshot["channels"]}
+    return (artifact.get("zone_id") == decision["zone_id"]
+        and type(artifact.get("channel")) is int and artifact["channel"] == output["channel"]
+        and safety.get("device_id") == output["device_id"]
+        and type(safety.get("channel")) is int and safety["channel"] == output["channel"]
+        and bool(snapshot.get("response_digest"))
+        and safety.get("response_digest") == snapshot["response_digest"]
+        and artifact.get("controller_response_digest") == snapshot["response_digest"]
+        and bool(snapshot.get("commissioned_baseline_id"))
+        and safety.get("controller_safety_generation") == snapshot["commissioned_baseline_id"]
+        and artifact.get("controller_safety_generation") == snapshot["commissioned_baseline_id"]
+        and safety.get("relevant_outputs_off") is True
+        and outputs == {str(channel): "OFF" for channel in range(1, 5)}
+        and artifact.get("provider_output_state") == outputs
+        and _safe_configuration(safety, decision["zone_id"]))
 
 
 def _safe_configuration(value, zone):

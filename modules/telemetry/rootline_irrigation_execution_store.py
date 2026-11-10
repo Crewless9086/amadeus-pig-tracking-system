@@ -4,13 +4,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 import socket
 import time
+import threading
 
 EVENT_SOURCE = "rootline_irrigation_execution"
 
@@ -93,14 +94,18 @@ def rootline_irrigation_execution_store(action, payload):
     def connect_for_event():
         connection=connect_bounded_rootline_postgres(
             database_url=os.environ.get("DATABASE_URL"),read_only=False)
-        if action in {"mark_active","mark_stopping","record_completed","contain_zone",
-                "record_ambiguous_shutdown","record_claim_recovery"}:
-            # Serialize parent state transitions with an injection claim's final
-            # active-parent check. Lock order is identical everywhere.
-            connection.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
-            connection.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
-        if action in {"record_eskom_completed", "record_eskom_command_outcome"}:
-            connection.execute("select pg_advisory_xact_lock(%s)",(1874320914,))
+        try:
+            if action in {"mark_active","mark_stopping","record_completed","contain_zone",
+                    "record_ambiguous_shutdown","record_claim_recovery"}:
+                # Serialize parent state transitions with an injection claim's final
+                # active-parent check. Lock order is identical everywhere.
+                connection.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
+                connection.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            if action in {"record_eskom_completed", "record_eskom_command_outcome"}:
+                connection.execute("select pg_advisory_xact_lock(%s)",(1874320914,))
+        except BaseException:
+            connection.close()
+            raise
         return connection
     result, status = record_sam_live_stock_review_event(event,
         connect_factory=connect_for_event)
@@ -459,12 +464,146 @@ def _event_id(action, body):
     return "ROOTLINE-EXEC-" + hashlib.sha256(material.encode()).hexdigest()[:32].upper()
 
 
+
+# Private capability: only the exact canonical store behind the admission guard
+# may borrow a connection, and only during one eligibility-builder invocation.
+_CANONICAL_EXECUTION_STORE = rootline_irrigation_execution_store
+_eligibility_reader_owner = ContextVar("rootline_eligibility_reader_owner", default=None)
+_eligibility_read_scope = ContextVar("rootline_eligibility_read_scope", default=None)
+_eligibility_read_call = ContextVar("rootline_eligibility_read_call", default=None)
+_ELIGIBILITY_READ_ACTIONS = frozenset({"load_zone_containment", "load_job_events"})
+
+
+class _EligibilityReaderCapability:
+    def __init__(self, guarded_store):
+        self.guarded_store = guarded_store
+        self.thread = threading.get_ident()
+        self.active = True
+        self.context_token = _eligibility_reader_owner.set(self)
+
+
+def _release_eligibility_reader(capability):
+    if capability is not None:
+        capability.active = False
+        _eligibility_reader_owner.reset(capability.context_token)
+
+
+def _bind_eligibility_reader(original_store, guarded_store):
+    if original_store is _CANONICAL_EXECUTION_STORE:
+        return _EligibilityReaderCapability(guarded_store)
+    return None
+
+
+@contextmanager
+def _eligibility_reader_call(capability, guarded_store, action):
+    scope = _eligibility_read_scope.get()
+    admitted = (scope is not None and capability is scope.capability
+        and capability.active and capability.guarded_store is guarded_store
+        and capability.thread == threading.get_ident()
+        and action in _ELIGIBILITY_READ_ACTIONS)
+    token = _eligibility_read_call.set(scope if admitted else None)
+    try:
+        yield
+    finally:
+        _eligibility_read_call.reset(token)
+
+
+class _EligibilityReadScope:
+    def __init__(self, capability, deadline):
+        self.capability, self.deadline = capability, deadline
+        self.connection = None
+        self.context_token = None
+        self.valid = True
+
+    def invalidate(self):
+        self.valid = False
+        connection, self.connection = self.connection, None
+        if connection is not None:
+            try:
+                connection.rollback()
+            finally:
+                connection.close()
+
+    @contextmanager
+    def borrow(self):
+        from modules.telemetry.rootline_cycle_budget import cycle_budget, remaining_seconds
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        try:
+            if (not self.valid or not self.capability.active
+                    or self.capability.thread != threading.get_ident()
+                    or _eligibility_read_scope.get() is not self
+                    or _eligibility_read_call.get() is not self):
+                raise RootlineExecutionStoreUnavailable("eligibility_read_scope_identity")
+            # Token reset is context-specific, unlike ContextVar values copied
+            # by copy_context(). Probe ownership before borrowing, then replace
+            # the consumed token for the next read and unconditional exit.
+            try:
+                _eligibility_read_scope.reset(self.context_token)
+            except (ValueError, RuntimeError) as exc:
+                raise RootlineExecutionStoreUnavailable("eligibility_read_context") from exc
+            self.context_token = _eligibility_read_scope.set(self)
+            # cycle_budget and the existing connection wrapper retain the
+            # minimum entry/current deadline for acquisition and every SELECT.
+            with cycle_budget(deadline=self.deadline):
+                remaining_seconds()
+                if self.connection is None:
+                    self.connection = connect_bounded_rootline_postgres(
+                        database_url=os.environ.get("DATABASE_URL"),
+                        read_only=True, read_committed=True)
+                    with self.connection.cursor() as cursor:
+                        cursor.execute("select current_setting('transaction_isolation'),"
+                            "current_setting('transaction_read_only')", ())
+                        if cursor.fetchone() != ("read committed", "on"):
+                            raise RootlineExecutionStoreUnavailable("eligibility_read_settings")
+                yield self.connection
+                remaining_seconds()
+        except BaseException:
+            self.invalidate()
+            raise
+
+
+@contextmanager
+def _bounded_eligibility_reads(capability, guarded_store):
+    from modules.telemetry.rootline_cycle_budget import work_deadline
+    if (type(capability) is not _EligibilityReaderCapability or not capability.active
+            or capability.guarded_store is not guarded_store
+            or capability.thread != threading.get_ident() or work_deadline() is None):
+        raise RootlineExecutionStoreUnavailable("eligibility_read_capability")
+    if _eligibility_read_scope.get() is not None:
+        raise RootlineExecutionStoreUnavailable("eligibility_read_scope_nested")
+    if _eligibility_reader_owner.get() is not capability:
+        raise RootlineExecutionStoreUnavailable("eligibility_reader_owner")
+    try:
+        _eligibility_reader_owner.reset(capability.context_token)
+    except (ValueError, RuntimeError) as exc:
+        raise RootlineExecutionStoreUnavailable("eligibility_reader_context") from exc
+    capability.context_token = _eligibility_reader_owner.set(capability)
+    scope = _EligibilityReadScope(capability, work_deadline())
+    scope.context_token = _eligibility_read_scope.set(scope)
+    try:
+        yield
+    finally:
+        try:
+            scope.invalidate()
+        finally:
+            _eligibility_read_scope.reset(scope.context_token)
+
+
+def _load_connection(action):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    scope = _eligibility_read_scope.get()
+    if (scope is not None and action in _ELIGIBILITY_READ_ACTIONS
+            and _eligibility_read_call.get() is scope):
+        return scope.borrow()
+    return connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"))
+
+
 def _load(action, payload):
     from modules.oom_sakkie.bounded_postgres_read import (
         connect_bounded_rootline_postgres, is_database_unavailable,
     )
     try:
-      with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
+      with _load_connection(action) as connection:
         with connection.cursor() as cursor:
             if action == "load_eskom_events":
                 cursor.execute("""select review_json->'rootline_execution'
@@ -871,50 +1010,138 @@ def _verified_not_dispatched(item, rows):
         and started <= observed <= finished and finished-observed <= timedelta(seconds=60))
 
 
-def _retire_not_dispatched_execution(body):
-    """Retire a locally refused ON only after exact canonical no-send and fresh OFF.
+def _no_send_binding(claim, outcome):
+    device = claim.get("device_id") or ("1002851416" if claim.get("device_key") ==
+        "ewelink:ewelink_owner_account:1002851416:1" else None)
+    return {"execution_id": claim["execution_id"], "device_id": device,
+        "channel": claim.get("channel") or (1 if device == "1002851416" else None),
+        "claim_event_id": claim["event_id"], "claim_sha256": _event_digest(claim),
+        "outcome_event_id": outcome["event_id"], "outcome_sha256": _event_digest(outcome)}
 
-    This cannot reconcile an absent/ambiguous response or an historical failed
-    startup.  It preserves the claim/outcome and credits no runtime or delivery.
-    """
-    from datetime import timedelta
+
+def _no_send_pending(stage, reason, *, status="no_send_off_proof_pending", unknown=False):
+    return {"success": False, "created": False, "status": status,
+        "no_send_stage": stage, "no_send_reason": reason,
+        # This existing scheduler projection retains the precise sanitized code.
+        "error_type": "no_send_" + stage + "_" + reason,
+        **({"effects_unknown": True} if unknown else {})}
+
+
+def _no_send_exception(exc, stage):
+    from modules.telemetry.rootline_ewelink_readback import no_send_failure
+    safe = no_send_failure(exc, stage)
+    return _no_send_pending(safe.stage, safe.reason, unknown=stage == "terminal_commit")
+
+
+def _retire_not_dispatched_execution(body):
+    """Prepare identity only, then prove fresh OFF against the exact locked preimage."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_cycle_budget import cycle_budget, work_deadline, on_deadline
+    from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+    identity = str(body.get("execution_id") or "")
+    if not identity or not callable(body.get("read_final_off")):
+        return _no_send_pending("preimage", "reader_or_identity_missing")
+    prepare = body.get("prepare_final_off")
+    if not callable(prepare):
+        return _retire_no_send_locked(body)
+    # Mandatory OFF retains its own safety rail. Optional no-send preparation
+    # still inherits the original automatic cycle's deadline while it is masked.
+    parent = work_deadline() if work_deadline() is not None else on_deadline()
+    stage = "preliminary_preimage"
+    try:
+        with cycle_budget(deadline=parent) if parent is not None else nullcontext():
+            with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                    read_only=True) as connection, connection.cursor() as cursor:
+                rows = _managed_edge_rows(cursor, identity)
+            existing = next((row for row in rows if _verified_not_dispatched(row, rows)), None)
+            if existing:
+                return {"success": True, "created": False, "execution": existing,
+                    "status": "execution_not_dispatched"}
+            preimage = _no_send_preimage(rows, identity)
+            if not preimage:
+                return _no_send_pending("preimage", "unproven", status="no_send_preimage_unproven")
+            claim, outcome = preimage
+            binding = _no_send_binding(claim, outcome)
+            stage = "preparation"
+            with execution_duty(claim), prepare(binding) as prepared:
+                result = _retire_no_send_locked(body, prepared=prepared, expected=binding)
+                # The helper returns only AFTER its connection context has
+                # acknowledged commit. Unknown commits never reach housekeeping.
+                if result.get("success") is True and result.get("created") is True:
+                    result["cleanup_status"] = prepared.after_commit(result["execution"])
+                return result
+    except Exception as exc:
+        return _no_send_exception(exc, stage)
+
+
+def _retire_no_send_locked(body, *, prepared=None, expected=None):
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     from modules.telemetry.rootline_ewelink_request_budget import execution_duty
-    read = body.get("read_final_off")
-    identity = str(body.get("execution_id") or "")
-    if not identity or not callable(read):
-        return {"success": False, "created": False}
-    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-            read_only=False) as connection, connection.cursor() as cursor:
-        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
-        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
-        rows = _managed_edge_rows(cursor, identity)
-        existing = next((row for row in rows if _verified_not_dispatched(row, rows)), None)
-        if existing:
-            return {"success": True, "created": False, "execution": existing}
-        preimage = _no_send_preimage(rows, identity)
-        if not preimage:
-            return {"success": False, "created": False, "status": "no_send_preimage_unproven"}
-        claim, outcome = preimage
-        started = connection.execute("select clock_timestamp()").fetchone()[0]
-        try:
-            with execution_duty(claim, deadline=started+timedelta(seconds=8)):
-                evidence = read()
-        except Exception:
-            evidence = {}
-        finished = connection.execute("select clock_timestamp()").fetchone()[0]
-        retired = {**claim, "state": "NotDispatched", "terminal_contract": "rootline_proven_no_send.v1",
-            "not_dispatched_verified": True, "shutdown_verified": True,
-            "objective_satisfied": False, "claim_event_id": claim["event_id"],
-            "claim_sha256": _event_digest(claim), "outcome_event_id": outcome["event_id"],
-            "outcome_sha256": _event_digest(outcome), "shutdown_evidence": evidence,
-            "read_started_at": started.isoformat(), "retired_at": finished.isoformat()}
-        retired = _stored_event_body("record_execution_not_dispatched", retired,
-            _event_id("record_execution_not_dispatched", retired))
-        if not _verified_not_dispatched(retired, rows):
-            return {"success": False, "created": False, "status": "no_send_off_proof_pending"}
-        result = _insert_managed_event(cursor, "record_execution_not_dispatched", retired)
-        return {**result, "execution": retired, "status": "execution_not_dispatched"}
+    from modules.telemetry.rootline_cycle_budget import cycle_budget
+    identity = str(body["execution_id"])
+    stage = "hardware_lock"
+    try:
+        with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                read_only=False, reuse_local_settings=prepared is not None,
+                read_committed=True) as connection, connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            stage = "locked_preimage"
+            rows = _managed_edge_rows(cursor, identity)
+            existing = next((row for row in rows if _verified_not_dispatched(row, rows)), None)
+            if existing:
+                return {"success": True, "created": False, "execution": existing,
+                    "status": "execution_not_dispatched"}
+            preimage = _no_send_preimage(rows, identity)
+            if not preimage:
+                return _no_send_pending("preimage", "unproven", status="no_send_preimage_unproven")
+            claim, outcome = preimage
+            binding = _no_send_binding(claim, outcome)
+            if expected is not None and binding != expected:
+                return _no_send_pending("preimage", "changed_during_preparation")
+            started = connection.execute("select clock_timestamp()").fetchone()[0]
+            deadline = started+timedelta(seconds=8)
+            final_deadline = time.monotonic()+max(0,
+                (deadline-datetime.now(timezone.utc)).total_seconds())
+            # The same read bound governs final revalidation and admission of
+            # the deterministic terminal write. Commit acknowledgement may
+            # remain uncertain after an already-admitted in-flight write.
+            with cycle_budget(deadline=final_deadline):
+                stage = "final_read"
+                try:
+                    with execution_duty(claim, deadline=deadline):
+                        evidence = (prepared.read_locked(binding=binding, connection=connection,
+                            deadline=deadline) if prepared is not None else body["read_final_off"]())
+                except Exception as exc:
+                    return _no_send_exception(exc, stage)
+                stage = "final_preimage"
+                rows = _managed_edge_rows(cursor, identity)
+                current = _no_send_preimage(rows, identity)
+                if current is None or _no_send_binding(*current) != binding:
+                    return _no_send_pending("preimage", "changed_during_final_read")
+                finished = connection.execute("select clock_timestamp()").fetchone()[0]
+                retired = {**claim, "state": "NotDispatched", "terminal_contract": "rootline_proven_no_send.v1",
+                    "not_dispatched_verified": True, "shutdown_verified": True,
+                    "objective_satisfied": False, "claim_event_id": claim["event_id"],
+                    "claim_sha256": binding["claim_sha256"], "outcome_event_id": outcome["event_id"],
+                    "outcome_sha256": binding["outcome_sha256"], "shutdown_evidence": evidence,
+                    "read_started_at": started.isoformat(), "retired_at": finished.isoformat()}
+                retired = _stored_event_body("record_execution_not_dispatched", retired,
+                    _event_id("record_execution_not_dispatched", retired))
+                if not _verified_not_dispatched(retired, rows):
+                    return _no_send_pending("final_proof", "unproven")
+                stage = "terminal_insert"
+                result = _insert_managed_event(cursor, "record_execution_not_dispatched", retired)
+                if result.get("created") is not True:
+                    actual = _managed_edge_rows(cursor, identity)
+                    existing = next((row for row in actual if _verified_not_dispatched(row, actual)), None)
+                    if existing is None:
+                        return _no_send_pending("terminal_insert", "conflicting_identity")
+                    retired = existing
+                stage = "terminal_commit"
+                return {**result, "execution": retired, "status": "execution_not_dispatched"}
+    except Exception as exc:
+        return _no_send_exception(exc, stage)
 
 
 def _not_dispatched_ids(cursor):

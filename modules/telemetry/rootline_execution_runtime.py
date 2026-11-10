@@ -6,6 +6,7 @@ import hashlib
 import math
 import os
 from contextvars import ContextVar
+from contextlib import nullcontext
 
 from modules.telemetry.rootline_execution_authority import build_execution_eligibility
 from modules.telemetry.rootline_ewelink_commissioned_baseline import (
@@ -20,17 +21,26 @@ from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 from modules.telemetry.rootline_irrigation_coordinator import advance_irrigation_execution, _digest
 from modules.telemetry.rootline_irrigation_execution_store import (
     RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
+    _bind_eligibility_reader, _release_eligibility_reader,
+    _eligibility_reader_call, _bounded_eligibility_reads,
 )
 from modules.telemetry.rootline_water_energy_plan import (
     ZA_TZ, build_water_energy_plan, read_current_water_energy_evidence,
 )
 
 
+_NATIVE_EXECUTION_STORE = rootline_irrigation_execution_store
+_NATIVE_CONTROLLER_READBACK = read_current_device
+_NATIVE_BC_METHODS = {name: getattr(RootlineIFTTTTransport, name) for name in (
+    "read_safety_configuration", "final_bc_check", "_safety_from_snapshot",
+    "_validated_snapshot", "_binding", "_channel", "_snapshot")}
+
+
 def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
         evidence_loader=read_current_water_energy_evidence, allow_new_starts=True,
-        allow_borehole_starts=None, clock=None):
+        allow_borehole_starts=None, clock=None, after_safety=None):
     """Supervise owned devices and advance independently eligible managed tasks.
 
     This composes existing planners, canonical device records and coordinators.
@@ -85,6 +95,9 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             decision_at = current_decision_time(selected)
             plan = build_water_energy_plan(evidence, selected, now=decision_at)
         except Exception as exc:
+            from modules.telemetry.rootline_cycle_budget import RootlineCycleDeadlineExceeded
+            if isinstance(exc, RootlineCycleDeadlineExceeded):
+                raise
             raise ManagedDevicePlanningUnavailable(
                 {**_safe("managed_device_evidence_unavailable"), "blocks_bc": False}) from exc
         packet = {"irrigation_auxiliary_tasks": plan.get("irrigation_auxiliary_tasks") or [],
@@ -186,12 +199,15 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         environ=source, store=store, connect_factory=connect_factory, now=now,
         evidence_factory=build_evidence, allow_new_starts=allow_new_starts,
         allow_borehole_starts=allow_borehole_starts,
-        energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock)
+        energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock,
+        after_safety=after_safety)
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
         return result
     from modules.telemetry.rootline_device_spine import load_device_record
     from modules.telemetry.rootline_eskom_runtime import run_eskom_cycle
     try:
+        from modules.telemetry.rootline_cycle_budget import remaining_seconds
+        remaining_seconds()
         current_energy()
         canonical = load_device_record("ifttt_smartlife:smartlife_owner_account:"
             +str(source.get("ROOTLINE_ESKOM_DEVICE_ID") or "")+":1", connect_factory=connect_factory)
@@ -555,6 +571,7 @@ def _refresh_a_irrigation_binding(source, database_url, now):
 
 
 _admission_effects = ContextVar("rootline_irrigation_admission_effects", default=None)
+_admission_eligibility_reader = ContextVar("rootline_admission_eligibility_reader", default=None)
 
 
 class _ObservedAdmissionTransport:
@@ -590,7 +607,8 @@ def _bounded_irrigation_admission(function):
             if action == "claim_before_on":
                 effects["execution_claim_attempted"] = True
             try:
-                value = original_store(action, payload)
+                with _eligibility_reader_call(reader_capability, guarded_store, action):
+                    value = original_store(action, payload)
             except BaseException:
                 if not action.startswith("load_"):
                     effects["canonical_write_uncertain"] = True
@@ -600,6 +618,9 @@ def _bounded_irrigation_admission(function):
                 effects["canonical_write_uncertain"] = True
             return value
         with cycle_budget():
+            reader_capability = (_bind_eligibility_reader(original_store, guarded_store)
+                if original_store is _NATIVE_EXECUTION_STORE else None)
+            reader_token = _admission_eligibility_reader.set(reader_capability)
             token = _admission_effects.set(effects)
             try:
                 result = function(*args, **{**kwargs, "store": guarded_store})
@@ -632,7 +653,11 @@ def _bounded_irrigation_admission(function):
                     "effects_unknown": True, "provider_effects_unknown": True,
                     "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
             finally:
-                _admission_effects.reset(token)
+                try:
+                    _release_eligibility_reader(reader_capability)
+                finally:
+                    _admission_eligibility_reader.reset(reader_token)
+                    _admission_effects.reset(token)
             if effects["canonical_write_uncertain"]:
                 result = {**result, "success": False, "writes_farm_data": None,
                     "canonical_write_state": "unknown",
@@ -732,23 +757,58 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         "native_inching_seconds": selected["native_auto_off_seconds"],
         **({"evidence": baseline["evidence"]} if zone == "A12345" else
            {"accepted_controller_baseline": baseline})}
-    def revalidate(_decision):
+    native_transport = _native_bc_final_transport(transport, zone, readback, token_store, source)
+
+    def final_current():
         current_now = _aware(clock())
         current = _current(evidence_loader, readback, token_store, source,
             database_url, current_now, store, require_enabled=True, clock=clock,
             authority_checker=authority_checker, reconcile_stale=False,
-            persist_resolutions=False)["artifact"]
+            persist_resolutions=False)
+        return current
+
+    def revalidate(_decision):
+        current = final_current()["artifact"]
         # Recheck current revocation after all fresh evidence/safety reads.
         # This invocation opens its own bounded transaction; no positive cache.
         if current.get("eligible") is True and not authority_checker(canonical_database_url, current):
             return {**current, "eligible": False, "command_authority": False,
                 "hardware_control": False, "status": "canonical_standing_authority_unproven"}
         return current
+    def native_revalidate(_decision):
+        current = final_current()
+        final = native_transport.final_bc_check(current["artifact"], current["controller"],
+            device_id=output["device_id"], channel=output["channel"])
+        # Revocation is checked after both fresh eligibility and safety projection.
+        if final.artifact.get("eligible") is True and not authority_checker(
+                canonical_database_url, final.artifact):
+            raise ValueError("canonical_standing_authority_unproven")
+        return final
+
     return advance_irrigation_execution(decision_id=decision["decision_id"],
         commissioning_id=commissioning_id, decision_reader=lambda _identity: decision,
         commissioning_reader=lambda _identity: commissioning, store=store,
         transport=transport, notify=notify, outcome_reader=outcome_reader,
-        eligibility_revalidator=revalidate, now=_aware(clock()), clock=clock)
+        eligibility_revalidator=revalidate, now=_aware(clock()), clock=clock,
+        native_final_revalidator=native_revalidate if native_transport is not None else None)
+
+
+def _native_bc_final_transport(transport, zone, readback, token_store, source):
+    """Transparent observers may forward the native method; overrides may not."""
+    if zone not in {"B12345", "C12345"} or readback is not _NATIVE_CONTROLLER_READBACK:
+        return None
+    method = getattr(transport, "read_safety_configuration", None)
+    native = getattr(method, "__self__", None)
+    if (type(native) is not RootlineIFTTTTransport
+            or getattr(method, "__func__", None) is not _NATIVE_BC_METHODS["read_safety_configuration"]
+            or native.readback is not readback or native.token_store is not token_store
+            or native.environ is not source):
+        return None
+    for name in ("final_bc_check", "_safety_from_snapshot", "_validated_snapshot", "_binding", "_channel", "_snapshot"):
+        actual = getattr(native, name)
+        if getattr(actual, "__func__", actual) is not _NATIVE_BC_METHODS[name]:
+            return None
+    return native
 
 
 def _same_delegated_execution(expected, current):
@@ -900,7 +960,17 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         job_event_reader=lambda job_id: store("load_job_events", job_id),
         zone_containment_reader=lambda zone_id: store("load_zone_containment", zone_id),
         enabled_zone_ids=commissioned_irrigation_contracts(environ=source) if require_enabled else None)
-    artifact = build_execution_eligibility(**eligibility_args, controller=None,
+    reader_capability = _admission_eligibility_reader.get()
+    scoped_reads = (require_enabled and reader_capability is not None
+        and reader_capability.guarded_store is store
+        and str(source.get("ROOTLINE_A_ENABLED") or "").lower() != "true"
+        and bool(eligibility_args["enabled_zone_ids"])
+        and set(eligibility_args["enabled_zone_ids"]).issubset({"B12345", "C12345"}))
+    def build_current_eligibility(**kwargs):
+        with (_bounded_eligibility_reads(reader_capability, store)
+                if scoped_reads else nullcontext()):
+            return build_execution_eligibility(**eligibility_args, **kwargs)
+    artifact = build_current_eligibility(controller=None,
         now=now, _provider_preflight=True)
     controller = {}
     if artifact.get("provider_read_required") is True:
@@ -908,8 +978,7 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         # Evaluate original evidence at the independent post-I/O clock. Never
         # refresh a weather/history timestamp merely because a request finished.
         checked_at = _aware((clock or (lambda: datetime.now(timezone.utc)))())
-        artifact = build_execution_eligibility(**eligibility_args,
-            controller=controller, now=checked_at)
+        artifact = build_current_eligibility(controller=controller, now=checked_at)
     resolution = artifact.get("job_resolution") if isinstance(artifact, dict) else None
     if persist_resolutions and isinstance(resolution, dict):
         recorded = store("record_job_resolution", resolution)
