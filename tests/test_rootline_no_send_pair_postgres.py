@@ -750,6 +750,36 @@ def _native_begin_open():
         native_begin_read_committed=True)
 
 
+def _trace_query_count(wire, sql):
+    expected = '"' + sql + '"'
+    count = 0
+    for line in wire.splitlines():
+        fields = line.split("\t", 4)
+        if (len(fields) == 5 and fields[1] == "F" and fields[3] == "Query"
+                and fields[4].strip(" \t") == expected):
+            count += 1
+    return count
+
+
+@pytest.mark.parametrize("wire,expected", [
+    ('time\tF\t41\tQuery\t"BEGIN ISOLATION LEVEL READ COMMITTED"', 1),
+    ('time\tF\t41\tQuery\t "BEGIN ISOLATION LEVEL READ COMMITTED"', 1),
+    ('time\tF\t41\tQuery\t \t"BEGIN ISOLATION LEVEL READ COMMITTED"  ', 1),
+    ('time\tF\t41\tParse\t "BEGIN ISOLATION LEVEL READ COMMITTED"', 0),
+    ('time\tB\t41\tQuery\t "BEGIN ISOLATION LEVEL READ COMMITTED"', 0),
+    ('time\tF\t41\tQuery\t "BEGIN ISOLATION LEVEL SERIALIZABLE"', 0),
+    ('time\tF\t41\tQuery\t "BEGIN ISOLATION LEVEL READ COMMITTED;"', 0),
+    ('time\tF\t41\tQuery\t "BEGIN ISOLATION LEVEL READ COMMITTED" suffix', 0),
+    ('time\tF\t41\tQuery\t "BEGIN ISOLATION LEVEL READ COMMITTED"\textra', 0),
+    ('Query\t"BEGIN ISOLATION LEVEL READ COMMITTED"', 0),
+    ('time\tF\t41\tQuery\t BEGIN ISOLATION LEVEL READ COMMITTED', 0),
+    ('\n'.join('time\tF\t41\tQuery\t' + spacing +
+        '"BEGIN ISOLATION LEVEL READ COMMITTED"' for spacing in ('', ' ', '', ' ')), 4),
+])
+def test_native_begin_trace_query_fields(wire, expected):
+    assert _trace_query_count(wire, "BEGIN ISOLATION LEVEL READ COMMITTED") == expected
+
+
 @pytest.mark.parametrize("default", ["repeatable read", "serializable"])
 def test_begin_native_intent_is_verified_for_each_of_four_transactions(monkeypatch, tmp_path, default):
     import psycopg
@@ -793,7 +823,7 @@ def test_begin_native_intent_is_verified_for_each_of_four_transactions(monkeypat
     # still run; separate wire-relay qualification covers actual BEGIN bytes.
     if can_trace:
         wire = (tmp_path / "native-0.trace").read_text()
-        assert wire.count('Query	"BEGIN ISOLATION LEVEL READ COMMITTED"') == 4
+        assert _trace_query_count(wire, "BEGIN ISOLATION LEVEL READ COMMITTED") == 4
         assert "set transaction isolation level read committed" not in wire.lower()
         assert wire.count("set_config('statement_timeout'") == 4
     assert all(client.closed for client in clients)
