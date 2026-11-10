@@ -52,8 +52,13 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     if allow_borehole_starts is None:
         allow_borehole_starts = allow_new_starts
     canonical_loader = canonical_loader or _canonical_loader(connect_factory)
+    deferred_no_send = {}
+    def defer_no_send(execution):
+        deferred_no_send[execution["execution_id"]] = (deepcopy(execution), _aware(clock()))
     safety_args = dict(store=store, transport=transport, energy_reader=energy_reader,
-        borehole_safety_reader=borehole_safety_reader, clock=clock)
+        borehole_safety_reader=borehole_safety_reader, clock=clock,
+        defer_no_send_proof=defer_no_send if callable(after_safety) else None,
+        deferred_no_send=deferred_no_send)
     initial = _supervise_owned_devices(**safety_args)
     outcomes = list(initial["outcomes"])
     active_aux = initial["active_aux"]
@@ -61,8 +66,62 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     active_ids = {row.get("auxiliary_device_id") for row in active_aux}
     auxiliary_inventory_proven = initial["auxiliary_inventory_proven"]
     borehole_inventory_proven = initial["borehole_inventory_proven"]
+    due_this_cycle = list(initial["due_auxiliaries"])
+    def refresh_safety():
+        nonlocal active_borehole, auxiliary_inventory_proven, borehole_inventory_proven, initial
+        current = _supervise_owned_devices(**safety_args,
+            previous_borehole=initial["observed_borehole"],
+            previous_due_auxiliaries=due_this_cycle)
+        due_this_cycle.extend(row for row in current["due_auxiliaries"] if row not in due_this_cycle)
+        outcomes.extend(current["outcomes"])
+        active_ids.update(row.get("auxiliary_device_id") for row in current["active_aux"])
+        active_borehole = active_borehole or current["active_borehole"]
+        auxiliary_inventory_proven = auxiliary_inventory_proven and current["auxiliary_inventory_proven"]
+        borehole_inventory_proven = borehole_inventory_proven and current["borehole_inventory_proven"]
+        initial = current
+    optional_proof_started = False
     if after_safety is not None:
-        after_safety(_combined(outcomes, "no_active_managed_device"))
+        try:
+            after_safety(_combined(outcomes, "no_active_managed_device"))
+        finally:
+            # Callback failure must not bypass newly due or changed ownership.
+            refresh_safety()
+        # B/C may take time or overlap another canonical claim. Safety is fresh
+        # before optional retirement, and again after actual optional planning.
+        for execution_id in tuple(deferred_no_send):
+            attempt_started = False
+            try:
+                remaining_seconds()
+                optional_proof_started = attempt_started = True
+                current = store("load_active_borehole", None)
+                if (not isinstance(current, dict) or current.get("execution_id") != execution_id
+                        or current.get("on_not_dispatched") is not True
+                        or current.get("device_id") != "1002851416"
+                        or type(current.get("channel")) is not int or current["channel"] != 1):
+                    continue
+                from modules.telemetry.rootline_irrigation_coordinator import _prove_unsent_execution
+                from modules.telemetry.rootline_ewelink_request_budget import bind_execution_transport
+                result = _prove_unsent_execution(current, store,
+                    bind_execution_transport(transport, current))
+                previous = [row for row in outcomes if row.get("no_send_stage") == "deferred_proof"
+                    and (row.get("execution") or {}).get("execution_id") == execution_id]
+                outcomes[:] = [row for row in outcomes if row not in previous]
+                outcomes.append({**result, "hardware_commands": int(result.get("hardware_commands") or 0)
+                    + sum(int(row.get("hardware_commands") or 0) for row in previous),
+                    "managed_device": "BOREHOLE-1-MINI-R4-CH1",
+                    "managed_device_recovery": True, "blocks_bc": False})
+            except RootlineCycleDeadlineExceeded as exc:
+                # Exhausting optional budget before any proof work is an honest
+                # deferral, not failed mandatory safety or unknown B/C effects.
+                outcomes.append({**_safe("no_send_optional_proof_deferred", blocks_bc=False),
+                    "success": not attempt_started,
+                    **({"effects_unknown": False} if not attempt_started else {}),
+                    "no_send_stage": "optional_proof" if attempt_started else "optional_budget",
+                    "no_send_reason": "rootline_cycle_deadline_exceeded",
+                    "error_type": type(exc).__name__})
+            except Exception as exc:
+                outcomes.append({**_safe("no_send_optional_proof_deferred", blocks_bc=False),
+                    "success": False, "error_type": type(exc).__name__})
     pending = {identity for identity, flag in (
         ("FERTILIZER-MIXER-CH2", "ROOTLINE_FERTILIZER_MIXING_ENABLED"),
         ("FERTILIZER-INJECTION-CH1", "ROOTLINE_FERTILIZER_INJECTION_ENABLED"),
@@ -78,10 +137,12 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     # that predecessor path after B/C admission and within the optional budget.
     needs_evidence = bool(pending) or (allow_new_starts and not outcomes)
     planning_failure = None
+    planning_started = False
     try:
         if needs_evidence:
             remaining_seconds()
             if evidence_factory is not None:
+                planning_started = True
                 evidence = evidence_factory()
             remaining_seconds()
     except ManagedDevicePlanningUnavailable as exc:
@@ -91,18 +152,10 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             "success": False, "next_action_owner": "ROOTLINE",
             "next_trigger": "next_authenticated_minute"}
     finally:
-        if after_safety is not None or (evidence_factory is not None and needs_evidence):
-            # B/C admission and optional planning can overlap another minute's
-            # claims or cross a stop deadline. Re-read ownership and supervise
-            # changed/new/due duties, without recursively running the planner.
-            current = _supervise_owned_devices(**safety_args,
-                previous_borehole=initial["observed_borehole"],
-                previous_due_auxiliaries=initial["due_auxiliaries"])
-            outcomes.extend(current["outcomes"])
-            active_ids.update(row.get("auxiliary_device_id") for row in current["active_aux"])
-            active_borehole = active_borehole or current["active_borehole"]
-            auxiliary_inventory_proven = auxiliary_inventory_proven and current["auxiliary_inventory_proven"]
-            borehole_inventory_proven = borehole_inventory_proven and current["borehole_inventory_proven"]
+        if optional_proof_started or planning_started or (after_safety is None and evidence_factory is not None and needs_evidence):
+            # Optional proof or even a failed factory may cross a stop deadline.
+            # One final mandatory pass covers both phases, including failures.
+            refresh_safety()
     if planning_failure is not None:
         return _combined(outcomes + [planning_failure], "managed_device_evidence_unavailable")
     if not allow_new_starts and not allow_borehole_starts:
@@ -185,18 +238,21 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
 
 
 def _supervise_owned_devices(*, store, transport, energy_reader,
-        borehole_safety_reader, clock, previous_borehole=None, previous_due_auxiliaries=()):
+        borehole_safety_reader, clock, previous_borehole=None, previous_due_auxiliaries=(),
+        defer_no_send_proof=None, deferred_no_send=None):
     # Inventory, due OFF, and durable final proof remain mandatory even when
     # the shared optional-work deadline expired. ON keeps its original fence.
     with mandatory_safety():
         return _supervise_owned_devices_unbounded(store=store, transport=transport,
             energy_reader=energy_reader, borehole_safety_reader=borehole_safety_reader,
             clock=clock, previous_borehole=previous_borehole,
-            previous_due_auxiliaries=previous_due_auxiliaries)
+            previous_due_auxiliaries=previous_due_auxiliaries,
+            defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send)
 
 
 def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
-        borehole_safety_reader, clock, previous_borehole, previous_due_auxiliaries):
+        borehole_safety_reader, clock, previous_borehole, previous_due_auxiliaries,
+        defer_no_send_proof=None, deferred_no_send=None):
     outcomes = []
     auxiliary_inventory_proven = borehole_inventory_proven = True
     try:
@@ -284,12 +340,21 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                 and active_borehole == previous_borehole
                 and _before_deadline(active_borehole, _aware(clock()))
                 and not stop_for_energy and not stop_for_protection and not evidence_pending)
-            if already_observed:
+            deferred = (deferred_no_send or {}).get(active_borehole.get("execution_id"))
+            already_deferred = (callable(defer_no_send_proof)
+                and active_borehole.get("on_not_dispatched") is True
+                and isinstance(deferred, tuple) and len(deferred) == 2
+                and deferred[0] == active_borehole
+                and not stop_for_energy and not stop_for_protection and not evidence_pending
+                and not (_before_deadline(active_borehole, deferred[1])
+                    and not _before_deadline(active_borehole, _aware(clock()))))
+            if already_observed or already_deferred:
                 result = None
             else:
                 result = advance_borehole_execution(eligibility={}, store=store,
                     transport=observed_transport, now=now,
-                    stop_for_energy=stop_for_energy or stop_for_protection, clock=clock)
+                    stop_for_energy=stop_for_energy or stop_for_protection, clock=clock,
+                    **({"defer_no_send_proof": defer_no_send_proof} if callable(defer_no_send_proof) else {}))
                 if evidence_pending:
                     result = {**result, "supervision_evidence_pending": True}
                 if (result.get("status") == "borehole_active"

@@ -5,6 +5,7 @@ adapters. The coordinator never guesses readback and never retries ON.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
@@ -901,7 +902,7 @@ def _stopping_barrier_hold(active,store,notify):
         execution=active,writes_farm_data=False,degraded=True)
 
 
-def _retire_unsent_execution(execution, store, transport):
+def _retire_unsent_execution(execution, store, transport, *, defer_proof=None):
     device = execution.get("device_id") or "1002851416"
     channel = execution.get("channel") or 1
     if execution.get("auxiliary_device_id") in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
@@ -911,6 +912,23 @@ def _retire_unsent_execution(execution, store, transport):
         commands = _stop_borehole(execution, store, transport)
     else:
         commands = _bounded_off(execution, store, transport)["commands"]
+    if (callable(defer_proof) and device == "1002851416" and type(channel) is int
+            and channel == 1 and execution.get("on_not_dispatched") is True):
+        # Only optional retirement proof moves. Its bounded OFF duty above is
+        # complete, and this callback grants neither terminal nor ON authority.
+        defer_proof(deepcopy(execution))
+        return {"success": True, "status": "no_send_off_proof_pending",
+            "no_send_stage": "deferred_proof", "no_send_reason": "after_bc_admission",
+            "hardware_commands": commands, "telegram_messages": 0,
+            "writes_farm_data": False, "notify_owner": False, "owner_action_required": False,
+            "execution": execution, "provider_command_attempted": False, "automatic_on_retry": False}
+    return _prove_unsent_execution(execution, store, transport, commands=commands)
+
+
+def _prove_unsent_execution(execution, store, transport, *, commands=0):
+    """Optional proof only; the store revalidates the exact canonical preimage."""
+    device = execution.get("device_id") or "1002851416"
+    channel = execution.get("channel") or 1
     def read():
         return transport.read_output_state(device_id=device, channel=channel)
     payload = {**execution, "read_final_off": read}
