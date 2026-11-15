@@ -424,7 +424,8 @@ def test_borehole_direct_unrecorded_eligibility_is_still_refused_by_real_claim(d
     now=datetime.now(timezone.utc);artifact=borehole_start_artifact(now);transport=bh.BoreholeTransport()
     result=bh.advance_borehole_execution(eligibility=artifact,store=store.rootline_irrigation_execution_store,
         transport=transport,now=now)
-    assert result['status']=='borehole_claim_conflict'
+    assert result['status']=='canonical_borehole_eligibility_unproven'
+    assert result['hardware_commands']==0
     assert transport.commands==[] and rows(db,artifact)==[]
 
 
@@ -984,7 +985,12 @@ def test_actual_managed_abort_does_not_restart_same_cycle_or_reuse_old_eligibili
     assert recovered["status"] == "borehole_start_aborted" and not recovered["success"]
     assert recovered["writes_farm_data"] is True and recovered["hardware_commands"] == len(recovery_commands)
     assert [row["state"] for row in transport.commands] == recovery_commands
-    assert cycle(claim)["status"] == "borehole_claim_conflict"
+    before_replay = rows(db, claim)
+    replay = cycle(claim)
+    assert replay["status"] == "execution_replay" and replay["hardware_commands"] == 0
+    # Rechecking eligibility is observable; owned execution and stop history stay unchanged.
+    assert [row for row in rows(db, claim) if row["action"] != "record_borehole_eligibility"] == [
+        row for row in before_replay if row["action"] != "record_borehole_eligibility"]
     assert [row["state"] for row in transport.commands] == recovery_commands
     fresh = borehole_start_artifact(datetime.now(timezone.utc))
     assert cycle(fresh)["status"] == "borehole_started"

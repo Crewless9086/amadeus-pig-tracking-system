@@ -408,13 +408,23 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
                 or safety.get("native_inching_enabled") is not True
                 or safety.get("native_inching_seconds")!=native):
             return _borehole_result("borehole_native_readback_changed",success=False)
-    # Planning and the native-safety read precede the durable startup window.
-    # Keep assessed_at/evidence unchanged; only claim and stop clocks start here.
+    # Capacity admission is preparation, not a persisted hardware claim. Its
+    # own finite permit deadline remains unchanged and is checked at the sender.
+    execution = dict(eligibility)
+    if scheduled and not prepare_execution_capacity(transport, execution):
+        return _borehole_result("provider_capacity_unavailable")
+    # Start these clocks once, after preparation. Never retime an owned claim,
+    # the original eligibility or the genuine final provider observation.
     now = _aware(clock())
-    execution = {**eligibility, "state": "claimed", "claimed_at": now.isoformat(),
-        "primary_stop_deadline": (now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
-        "native_fail_stop_deadline": None if scheduled else (now + timedelta(seconds=native)).isoformat(),
-        "on_attempts": 0, "off_attempts": 0}
+    execution.update(state="claimed", claimed_at=now.isoformat(),
+        primary_stop_deadline=(now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
+        native_fail_stop_deadline=None if scheduled else (now + timedelta(seconds=native)).isoformat(),
+        on_attempts=0, off_attempts=0)
+    if scheduled:
+        # Keep canonical eligibility immutable; this is the genuine final OFF
+        # observation already obtained above, bound to this exact new claim.
+        execution["claim_provider_evidence"] = {**current,
+            "execution_id": execution["execution_id"]}
     if eligibility.get("operation") == "adopt_observed_on":
         # No ON edge, invented original start time, or claim of delivered water.
         # The native stop was already armed by the external start; observation
@@ -427,12 +437,17 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         return _borehole_result("borehole_observed_on_adopted" if adopted.get("created") is True
             else "borehole_observed_on_already_owned", execution=execution,
             writes_farm_data=adopted.get("created") is True)
-    if not prepare_execution_capacity(transport, execution):
+    if not scheduled and not prepare_execution_capacity(transport, execution):
         return _borehole_result("provider_capacity_unavailable")
     transport = bind_execution_transport(transport, execution)
     claim = store("claim_borehole_before_on", execution)
     if not isinstance(claim, dict) or claim.get("created") is not True:
-        return _borehole_result("borehole_claim_conflict")
+        reason = claim.get("status") if isinstance(claim, dict) else None
+        if reason not in {"borehole_claim_incomplete", "canonical_borehole_eligibility_unproven",
+                "borehole_current_observation_unproven", "material_load_active", "execution_replay"}:
+            reason = "borehole_claim_conflict"
+        return _borehole_result(reason,
+            success=isinstance(claim, dict) and claim.get("success") is True)
     on = store("dispatch_borehole_on_edge", {**execution, "dispatch":lambda:
         transport.set_state(device_id="1002851416", channel=1, state="ON",
             idempotency_key=execution["execution_id"] + ":ON")})

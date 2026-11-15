@@ -1707,7 +1707,19 @@ def _claim_borehole_material_load(body, *, adopt=False):
             cursor.execute("select clock_timestamp()")
             now=cursor.fetchone()[0]
             claimed=_time(body.get("claimed_at")); deadline=_time(body.get("primary_stop_deadline"))
-            if (adopt or not _scheduled_borehole_off(body.get("provider_evidence"),now=now)
+            proof = body.get("claim_provider_evidence", body.get("provider_evidence"))
+            if "claim_provider_evidence" in body:
+                from modules.telemetry.rootline_cycle_budget import CYCLE_WORK_SECONDS
+                assessed = _time(body.get("assessed_at"))
+                observed = _time(proof.get("retrieved_at") or proof.get("observed_at")) if isinstance(proof, dict) else None
+                # New observations cannot revive old planning authority or move
+                # either the original eligibility or the claim's startup clock.
+                if (not isinstance(proof, dict) or proof.get("execution_id") != execution_id
+                        or assessed is None or observed is None or claimed is None
+                        or not assessed <= observed <= claimed
+                        or not timedelta(0) <= now-assessed <= timedelta(seconds=CYCLE_WORK_SECONDS)):
+                    return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
+            if (adopt or not _scheduled_borehole_off(proof,now=now)
                     or claimed is None or not timedelta(0)<=now-claimed<=timedelta(seconds=30)
                     or deadline!=claimed+timedelta(seconds=body["requested_seconds"])
                     or body.get("native_fail_stop_deadline") is not None or deadline<=now):
