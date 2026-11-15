@@ -85,7 +85,7 @@ def isolated_database(monkeypatch):
 
 
 class Subject:
-    def __init__(self, monkeypatch, *, expired=False):
+    def __init__(self, monkeypatch, *, expired=False, legacy_borehole=False):
         self.source = {"DATABASE_URL": DATABASE_URL, "EWELINK_CLIENT_ID": "synthetic-ns-app",
             "EWELINK_CLIENT_SECRET": "c"*40, "EWELINK_OAUTH_STATE_SECRET": "s"*40,
             "EWELINK_EXPECTED_DEVICE_ID": "100204e9bc", "EWELINK_READBACK_ENABLED": "true"}
@@ -115,6 +115,10 @@ class Subject:
         self.client.begin_on(execution_id=identity, permit=permit, device_id="1002851416",
             channel=1, claimed_at=self.claim["claimed_at"],
             primary_stop_deadline=self.claim["primary_stop_deadline"])
+        if legacy_borehole:
+            self.claim.pop("device_id")
+            self.claim.pop("channel")
+            self.claim["contract_version"] = "rootline_borehole_runtime_eligibility.v3"
         self.outcome = {**self.claim, "on_outcome": {"provider_command_attempted": False,
             "accepted_unambiguous": False, "status": "provider_command_deadline_reached"}}
         with connect() as connection, connection.cursor() as cursor:
@@ -1035,3 +1039,35 @@ def test_prepared_metadata_seal_and_original_deadline_refuse_before_status(monke
     assert not any(row["action"] == "record_execution_not_dispatched" for row in subject.rows())
     assert subject.claim["execution_id"] in subject.ledger()["reserves"]
     assert sum(row["attempt_units"] for row in subject.audit()) == 2
+
+
+def test_normal_managed_cycle_retires_legacy_key_only_claim_with_fresh_off(monkeypatch):
+    from modules.telemetry.rootline_managed_devices_runtime import run_rootline_managed_device_cycle
+    subject = Subject(monkeypatch, legacy_borehole=True)
+    original = deepcopy(subject.claim)
+    callbacks = []
+    def after_safety(result):
+        assert not subject.calls
+        callbacks.append(result)
+    result = run_rootline_managed_device_cycle(evidence={}, transport=subject.transport,
+        store=executions.rootline_irrigation_execution_store, environ={},
+        allow_new_starts=False, allow_borehole_starts=False, after_safety=after_safety)
+    assert callbacks and result["hardware_commands"] == 0
+    assert result["status"] == "execution_not_dispatched", result
+    assert subject.calls == ["/v2/family", "/v2/device/thing", "/v2/device/thing/status"]
+    rows = subject.rows()
+    claim = next(row for row in rows if row["action"] == "claim_borehole_before_on")
+    assert "device_id" not in claim and "channel" not in claim
+    terminal = next(row for row in rows if row["action"] == "record_execution_not_dispatched")
+    assert executions._verified_not_dispatched(terminal, rows)
+    assert terminal["objective_satisfied"] is False
+    assert terminal["shutdown_evidence"]["authoritative"] is True
+    assert terminal["shutdown_evidence"]["state"] == "OFF"
+    assert subject.claim == original
+    assert subject.claim["execution_id"] not in subject.ledger()["reserves"]
+    calls = list(subject.calls)
+    run_rootline_managed_device_cycle(evidence={}, transport=subject.transport,
+        store=executions.rootline_irrigation_execution_store, environ={},
+        allow_new_starts=False, allow_borehole_starts=False, after_safety=lambda _: None)
+    assert subject.calls == calls
+    assert len([row for row in subject.rows() if row["action"] == "record_execution_not_dispatched"]) == 1

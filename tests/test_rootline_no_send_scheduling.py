@@ -16,6 +16,7 @@ class Scenario:
         self.events = []
         self.now = NOW
         self.active = {"execution_id": "UNSENT", "device_id": "1002851416", "channel": 1,
+            "device_key": "ewelink:ewelink_owner_account:1002851416:1",
             "on_not_dispatched": True, "state": "claimed_recovery_required",
             "claimed_at": (NOW-timedelta(minutes=5)).isoformat(),
             "primary_stop_deadline": (NOW+timedelta(minutes=2)).isoformat()}
@@ -224,3 +225,41 @@ def test_optional_deadline_after_canonical_work_started_remains_failure(monkeypa
     deferred = next(row for row in result["outcomes"] if row.get("no_send_stage") == "optional_proof")
     assert "effects_unknown" not in deferred
     assert s.events.count("OFF:UNSENT") == 2 and "PROOF:UNSENT" not in s.events
+
+
+def test_legacy_key_only_claim_reaches_optional_proof_without_mutation(monkeypatch):
+    s = Scenario(monkeypatch)
+    del s.active["device_id"]
+    del s.active["channel"]
+    original = deepcopy(s.active)
+    s.run()
+    assert s.events.count("PROOF:UNSENT") == 1
+    assert s.events.index("BC") < s.events.index("PROOF:UNSENT")
+    assert s.active == original
+
+
+@pytest.mark.parametrize("changes", [
+    {"device_key": "ewelink:ewelink_owner_account:1002851416:2"},
+    {"device_key": None}, {"device_id": None}, {"device_id": ""},
+    {"device_id": "OTHER"}, {"channel": True}, {"channel": False},
+    {"channel": None}, {"channel": 0}, {"channel": "1"},
+])
+def test_optional_proof_rejects_explicit_binding_conflict(monkeypatch, changes):
+    s = Scenario(monkeypatch)
+    original = deepcopy(s.active)
+    store = s.store
+    reads = 0
+    def conflicting_reload(action, payload):
+        nonlocal reads
+        value = store(action, payload)
+        if action == "load_active_borehole":
+            reads += 1
+            # Only the optional canonical reload conflicts; mandatory supervision
+            # retains the actual owned claim and its existing stop obligation.
+            if reads == 4:
+                return {**value, **changes}
+        return value
+    s.store = conflicting_reload
+    s.run()
+    assert reads >= 4 and "PROOF:UNSENT" not in s.events
+    assert s.active == original

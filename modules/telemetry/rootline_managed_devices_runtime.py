@@ -99,8 +99,10 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
                 current = store("load_active_borehole", None)
                 if (not isinstance(current, dict) or current.get("execution_id") != execution_id
                         or current.get("on_not_dispatched") is not True
-                        or current.get("device_id") != "1002851416"
-                        or type(current.get("channel")) is not int or current["channel"] != 1):
+                        or current.get("device_key") != "ewelink:ewelink_owner_account:1002851416:1"
+                        or ("device_id" in current and current["device_id"] != "1002851416")
+                        or ("channel" in current and (
+                            type(current["channel"]) is not int or current["channel"] != 1))):
                     continue
                 from modules.telemetry.rootline_irrigation_coordinator import _prove_unsent_execution
                 from modules.telemetry.rootline_ewelink_request_budget import bind_execution_transport

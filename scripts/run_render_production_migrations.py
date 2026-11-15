@@ -88,6 +88,44 @@ ALLOWLIST = (
 )
 
 
+# One recorded external migration changed an object already covered by prefix 8.
+# This is a closed transition, not an alternate baseline or a generic drift waiver.
+# The original checkpoint and historical migration execution remain immutable.
+@dataclass(frozen=True)
+class PurposeCatalogTransition:
+    checkpoint_id: str
+    checkpoint_source_commit: str
+    service_id: str
+    allowlist_sha256: str
+    old_catalog_sha256: str
+    current_catalog_sha256: str
+
+
+PURPOSE_CATALOG_TRANSITION = PurposeCatalogTransition(
+    checkpoint_id="9b1a7ddd-8408-4fef-ab6e-d7def6c3c5d3",
+    checkpoint_source_commit="88e3d53e365685abc97ffc70c33800259fb29672",
+    service_id="srv-d6sijjkhg0os73f7regg",
+    allowlist_sha256="474f552bbe4613a9db4bc7b383bbd18a3c3aef7611c7750aead8bb8d91e2e468",
+    old_catalog_sha256="39a895c03838629de5dbf860a9083a1d10c90d1391c1f5d533ec122115f4d882",
+    current_catalog_sha256="fb4f9a3afa1776f5332e1fe2b9196faa0d5ac47c9d73ee7b8bbb067f338ce2cf",
+)
+PURPOSE_MIGRATION = AllowedMigration(
+    migration_id="20261004232451_allow_herdmaster_purpose_protected_claims",
+    filename="20261004232451_allow_herdmaster_purpose_protected_claims.sql",
+    sha256="4178ab412b19ee991dc445ea24ccfcfc467dc76d8b56170f5b86afcb61752faf",
+)
+PURPOSE_TRANSITION_ID = "recorded_herdmaster_purpose_16_to_18_v1"
+PURPOSE_CONSTRAINT_IDENTITY = (
+    "app_private", "oom_protected_action_claims",
+    "oom_protected_action_claims_action_kind_check",
+)
+PURPOSE_OLD_CONSTRAINT_DEFINITION = "CHECK ((action_kind = ANY (ARRAY['mortality'::text, 'grouped_weights'::text, 'herdmaster_breeding_grouped'::text, 'herdmaster_record_farrowing_litter'::text, 'herdmaster_record_litter_first_treatment'::text, 'herdmaster_record_litter_piglet_deaths'::text, 'rootline_irrigation_segment'::text, 'sam_sale_payment'::text, 'beacon_private_album_finish'::text, 'beacon_media_review'::text, 'rootline_fertilizer_mixer_commissioning'::text, 'rootline_fertilizer_mixer_presence_refresh'::text, 'rootline_delegated_family'::text, 'beacon_campaign_review'::text, 'documents_green_print'::text, 'documents_green_physical_acceptance'::text])))"
+PURPOSE_CURRENT_CONSTRAINT_DEFINITION = "CHECK ((action_kind = ANY (ARRAY['beacon_campaign_review'::text, 'beacon_media_review'::text, 'beacon_private_album_finish'::text, 'documents_green_physical_acceptance'::text, 'documents_green_print'::text, 'grouped_weights'::text, 'herdmaster_breeding_grouped'::text, 'herdmaster_purpose_correction'::text, 'herdmaster_purpose_review'::text, 'herdmaster_record_farrowing_litter'::text, 'herdmaster_record_litter_first_treatment'::text, 'herdmaster_record_litter_piglet_deaths'::text, 'mortality'::text, 'rootline_delegated_family'::text, 'rootline_fertilizer_mixer_commissioning'::text, 'rootline_fertilizer_mixer_presence_refresh'::text, 'rootline_irrigation_segment'::text, 'sam_sale_payment'::text])))"
+PURPOSE_ACTION_KINDS = ('beacon_campaign_review', 'beacon_media_review', 'beacon_private_album_finish', 'documents_green_physical_acceptance', 'documents_green_print', 'grouped_weights', 'herdmaster_breeding_grouped', 'herdmaster_purpose_correction', 'herdmaster_purpose_review', 'herdmaster_record_farrowing_litter', 'herdmaster_record_litter_first_treatment', 'herdmaster_record_litter_piglet_deaths', 'mortality', 'rootline_delegated_family', 'rootline_fertilizer_mixer_commissioning', 'rootline_fertilizer_mixer_presence_refresh', 'rootline_irrigation_segment', 'sam_sale_payment')
+PURPOSE_LOCK_TIMEOUT_MS = 3000
+PURPOSE_STATEMENT_TIMEOUT_MS = 30000
+
+
 EXPECTED_LITTER_SUPERSESSION_REASONS = (
     "duplicate_creation_same_farrowing",
     "fact_correction",
@@ -124,6 +162,10 @@ FARROWING_PREDECESSOR_ACTION_KINDS = tuple(
     if value != "herdmaster_record_farrowing_litter"
 )
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    PURPOSE_MIGRATION.migration_id: (
+        "Admit exact-preview HERDMASTER purpose review and correction claims; "
+        "no farm facts or delegated permissions are changed."
+    ),
     "20261115090517_extend_rootline_e_irrigation_history": (
         "Extend existing typed append-only irrigation history to separately "
         "governed E; preserve history, no water credit or activation."
@@ -2026,13 +2068,140 @@ def _load_baseline(connection) -> dict | None:
     }
 
 
-def _verify_catalog_checkpoint(connection) -> dict:
+def _lock_purpose_claims(connection) -> None:
+    """Hold the named constraint against DDL while ordinary claim DML continues."""
+    # Keep any stricter connection setting; both bounds last only this transaction.
+    for name, maximum_ms in (
+        ("statement_timeout", PURPOSE_STATEMENT_TIMEOUT_MS),
+        ("lock_timeout", PURPOSE_LOCK_TIMEOUT_MS),
+    ):
+        timeout = connection.execute(
+            "select setting::bigint from pg_catalog.pg_settings where name=%s", (name,)
+        ).fetchone()[0]
+        bounded = min(timeout, maximum_ms) if timeout else maximum_ms
+        connection.execute(
+            "select pg_catalog.set_config(%s,%s,true)", (name, f"{bounded}ms")
+        )
+    connection.execute(
+        "lock table only app_private.oom_protected_action_claims "
+        "in share update exclusive mode"
+    )
+
+
+def _verify_purpose_downstream(connection) -> dict:
+    """Prove the recorded 18-kind state; never execute or re-record its migration."""
+    _lock_purpose_claims(connection)
+    _load_sql(PURPOSE_MIGRATION)
+    # FOR SHARE also excludes non-key description UPDATE, unlike KEY SHARE.
+    # The authenticated catalogue includes migration_log's primary key.
+    logs = connection.execute(
+        "select migration_id,description,applied_at "
+        "from only app_private.migration_log where migration_id=%s for share",
+        (PURPOSE_MIGRATION.migration_id,),
+    ).fetchall()
+    if (len(logs) != 1 or logs[0][0] != PURPOSE_MIGRATION.migration_id
+            or logs[0][1] != EXPECTED_MIGRATION_LOG_DESCRIPTIONS[PURPOSE_MIGRATION.migration_id]
+            or logs[0][2] is None):
+        raise RuntimeError("migration_purpose_log_missing_or_changed")
+    definition, kinds = _constraint_readback(connection, *PURPOSE_CONSTRAINT_IDENTITY)
+    if definition != PURPOSE_CURRENT_CONSTRAINT_DEFINITION or kinds != PURPOSE_ACTION_KINDS:
+        raise RuntimeError("migration_purpose_constraint_mismatch")
+    acl = _verify_protected_claim_acl(connection)
+    return {
+        "migration_id": PURPOSE_MIGRATION.migration_id,
+        "migration_sha256": PURPOSE_MIGRATION.sha256,
+        "migration_log_description_sha256": hashlib.sha256(logs[0][1].encode()).hexdigest(),
+        "migration_log_applied_at": logs[0][2].astimezone(timezone.utc).isoformat(),
+        "constraint_json_sha256": _json_sha256(definition),
+        "action_kinds": list(kinds),
+        "protected_claim_acl": acl,
+    }
+
+
+def _verify_purpose_prefix_custody(connection, *, service_id: str) -> dict:
+    """Use existing immutable baseline/anchored receipt modes, without adopting."""
+    baseline = _load_baseline(connection)
+    baseline_ids = set(baseline["migration_ids"] if baseline else ())
+    prefix = ALLOWLIST[:8]
+    if not baseline_ids.issubset({item.migration_id for item in prefix}):
+        raise RuntimeError("migration_purpose_baseline_outside_prefix")
+    custody = []
+    for item in prefix:
+        if item.migration_id in baseline_ids:
+            if connection.execute(
+                "select exists(select 1 from app_private.production_migration_receipts "
+                "where migration_id=%s and outcome='applied')", (item.migration_id,),
+            ).fetchone()[0]:
+                raise RuntimeError("migration_purpose_baseline_receipt_overlap")
+            custody.append({"migration_id": item.migration_id, "mode": "baseline"})
+            continue
+        receipt = _verify_receipt_row(
+            connection, item, None, service_id=service_id, outcome="applied",
+            create_anchor=False,
+        )
+        if receipt["identity_anchor_missing"]:
+            raise RuntimeError("migration_purpose_unanchored_receipt")
+        custody.append({
+            "migration_id": item.migration_id, "mode": "anchored_receipt",
+            "receipt_id": receipt["receipt_id"],
+            "identity_sha256": receipt["identity_sha256"],
+        })
+    return {"baseline": baseline, "items": custody}
+
+
+def _verify_purpose_catalog_transition(connection, latest, manifest, digest, *, service_id):
+    """Admit precisely one known old/new catalogue pair, retaining both originals."""
+    pins = PURPOSE_CATALOG_TRANSITION
+    if (service_id != pins.service_id or latest[0] != pins.checkpoint_id
+            or latest[5] != pins.checkpoint_source_commit or latest[6] != pins.service_id
+            or len(latest[1]) != 8 or latest[1] != _allowlist_payload(ALLOWLIST[:8])
+            or latest[2] != pins.allowlist_sha256 or latest[3] != pins.old_catalog_sha256
+            or digest != pins.current_catalog_sha256):
+        raise RuntimeError("migration_purpose_transition_identity_mismatch")
+    old = latest[4]
+    if (_json_sha256(old) != pins.old_catalog_sha256
+            or _json_sha256(manifest) != pins.current_catalog_sha256):
+        raise RuntimeError("migration_purpose_transition_catalog_digest_mismatch")
+    def named_row(catalog):
+        rows = catalog.get("constraints")
+        if not isinstance(rows, list):
+            raise RuntimeError("migration_purpose_transition_constraint_inventory")
+        matches = [(i, row) for i, row in enumerate(rows)
+                   if isinstance(row, list) and tuple(row[:3]) == PURPOSE_CONSTRAINT_IDENTITY]
+        if len(matches) != 1 or len(matches[0][1]) != 8:
+            raise RuntimeError("migration_purpose_transition_constraint_identity")
+        return matches[0]
+    old_index, old_row = named_row(old)
+    new_index, new_row = named_row(manifest)
+    if (old_index != new_index or old_row[:7] != new_row[:7]
+            or old_row[3:7] != ["c", False, False, True]
+            or old_row[7] != PURPOSE_OLD_CONSTRAINT_DEFINITION
+            or new_row[7] != PURPOSE_CURRENT_CONSTRAINT_DEFINITION):
+        raise RuntimeError("migration_purpose_transition_constraint_mismatch")
+    # Construct the one explicit expected successor; no normalization of either input.
+    expected = json.loads(json.dumps(old))
+    expected["constraints"][old_index][7] = PURPOSE_CURRENT_CONSTRAINT_DEFINITION
+    if expected != manifest or _json_sha256(expected) != digest:
+        raise RuntimeError("migration_purpose_transition_other_catalog_drift")
+    purpose = _verify_purpose_downstream(connection)
+    custody = _verify_purpose_prefix_custody(connection, service_id=service_id)
+    return {
+        "transition_id": PURPOSE_TRANSITION_ID,
+        "old_catalog_sha256": pins.old_catalog_sha256,
+        "current_catalog_sha256": pins.current_catalog_sha256,
+        "purpose": purpose, "prefix_custody": custody,
+        "original_checkpoint_preserved": True,
+    }
+
+
+def _verify_catalog_checkpoint(connection, *, service_id: str | None = None) -> dict:
+    _lock_purpose_claims(connection)
     rows = connection.execute(
         """select checkpoint_id::text,allowlist_json,allowlist_sha256,
                   catalog_sha256,catalog_json,source_commit,
-                  render_service_id,render_instance_id
+                  render_service_id,render_instance_id,created_at
              from app_private.production_migration_catalog_checkpoints
-            order by jsonb_array_length(allowlist_json) desc,created_at desc"""
+            order by jsonb_array_length(allowlist_json) desc,created_at desc,checkpoint_id desc"""
     ).fetchall()
     if not rows:
         raise RuntimeError("migration_catalog_checkpoint_required")
@@ -2053,6 +2222,8 @@ def _verify_catalog_checkpoint(connection) -> dict:
             raise RuntimeError("migration_catalog_checkpoint_identity_mismatch")
         validated.append(row)
     latest = validated[0]
+    if len(validated) > 1 and len(validated[1][1]) == len(latest[1]):
+        raise RuntimeError("migration_catalog_checkpoint_latest_ambiguous")
     # Scope is derived from the exact migration identities recorded in the
     # checkpoint, not from its distance from today's allowlist tail.  A later
     # migration may add no catalog functions (as with the HERDMASTER action-
@@ -2087,16 +2258,25 @@ def _verify_catalog_checkpoint(connection) -> dict:
     manifest, digest = _catalog_snapshot(
         connection, relations=expected_relations, functions=expected_functions
     )
+    transition = None
     if digest != latest[3] or manifest != latest[4]:
-        raise RuntimeError(
-            f"migration_catalog_drift:checkpoint={latest[3]}:current={digest}"
-        )
-    return {
+        try:
+            transition = _verify_purpose_catalog_transition(
+                connection, latest, manifest, digest, service_id=service_id
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"migration_catalog_drift:checkpoint={latest[3]}:current={digest}:{exc}"
+            ) from exc
+    result = {
         "checkpoint_id": latest[0],
         "allowlist": latest[1],
         "allowlist_sha256": latest[2],
         "catalog_sha256": latest[3],
     }
+    if transition:
+        result["recorded_purpose_transition"] = transition
+    return result
 
 
 def _ensure_catalog_checkpoint(
@@ -2105,10 +2285,17 @@ def _ensure_catalog_checkpoint(
     commit: str,
     service_id: str,
     instance_id: str,
+    prior_purpose_checkpoint: dict | None = None,
 ) -> dict:
     payload = _allowlist_payload()
     allowlist_sha256 = _json_sha256(payload)
     manifest, catalog_sha256 = _catalog_snapshot(connection)
+    if prior_purpose_checkpoint is not None:
+        # A's objects are outside prefix 8. Recheck that entire old scope after
+        # A's readback and immediately before sealing the distinct successor.
+        current_prior = _verify_catalog_checkpoint(connection, service_id=service_id)
+        if current_prior != prior_purpose_checkpoint:
+            raise RuntimeError("migration_purpose_transition_changed_before_checkpoint")
     existing = connection.execute(
         """select checkpoint_id::text,catalog_sha256,catalog_json
              from app_private.production_migration_catalog_checkpoints
@@ -2272,6 +2459,14 @@ def _verify_migration_precondition(
         if action_kinds == PREDECESSOR_PROTECTED_ACTION_KINDS:
             _verify_migration_log(connection, item.migration_id, required=True)
             return "target"
+        if action_kinds == PURPOSE_ACTION_KINDS and already_applied:
+            _verify_purpose_downstream(connection)
+            _verify_migration_log(connection, item.migration_id, required=True)
+            _verify_migration_log(
+                connection, "202608260001_allow_herdmaster_litter_actions_protected_claims",
+                required=True,
+            )
+            return "recorded_purpose_downstream"
         if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS and already_applied:
             # A later append-only migration legitimately supersedes this
             # migration's target.  Prove both ordered migration-log facts;
@@ -2293,6 +2488,10 @@ def _verify_migration_precondition(
                 raise RuntimeError("migration_precondition_litter_actions_predecessor_mismatch")
             _verify_migration_log(connection, item.migration_id, required=False)
             return "predecessor"
+        if action_kinds == PURPOSE_ACTION_KINDS and already_applied:
+            _verify_purpose_downstream(connection)
+            _verify_migration_log(connection, item.migration_id, required=True)
+            return "recorded_purpose_downstream"
         if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS:
             _verify_migration_log(connection, item.migration_id, required=True)
             return "target"
@@ -2375,12 +2574,15 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
             "oom_protected_action_claims",
             "oom_protected_action_claims_action_kind_check",
         )
+        if action_kinds == PURPOSE_ACTION_KINDS:
+            _verify_purpose_downstream(connection)
         if action_kinds not in (
             PREDECESSOR_PROTECTED_ACTION_KINDS,
             EXPECTED_PROTECTED_ACTION_KINDS,
+            PURPOSE_ACTION_KINDS,
         ):
             raise RuntimeError(f"migration_readback_action_constraint_mismatch:{action_kinds}")
-        if action_kinds == EXPECTED_PROTECTED_ACTION_KINDS:
+        if action_kinds in (EXPECTED_PROTECTED_ACTION_KINDS, PURPOSE_ACTION_KINDS):
             _verify_migration_log(
                 connection,
                 "202608260001_allow_herdmaster_litter_actions_protected_claims",
@@ -2404,7 +2606,9 @@ def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
         acl = _verify_protected_claim_acl(connection)
         constraint, action_kinds = _constraint_readback(connection, "app_private",
             "oom_protected_action_claims", "oom_protected_action_claims_action_kind_check")
-        if action_kinds != EXPECTED_PROTECTED_ACTION_KINDS:
+        if action_kinds == PURPOSE_ACTION_KINDS:
+            _verify_purpose_downstream(connection)
+        elif action_kinds != EXPECTED_PROTECTED_ACTION_KINDS:
             raise RuntimeError(f"migration_readback_litter_actions_constraint_mismatch:{action_kinds}")
         description = _verify_migration_log(connection, item.migration_id, required=True)
         return {"migration_log_present": True,
@@ -2471,7 +2675,9 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                             )):
                                 raise RuntimeError("migration_legacy_adoption_already_initialized")
                             receipt_guard = _verify_receipt_guard(connection)
-                            report["prior_catalog_checkpoint"] = _verify_catalog_checkpoint(connection)
+                            report["prior_catalog_checkpoint"] = _verify_catalog_checkpoint(
+                                connection, service_id=service_id
+                            )
                         else:
                             adoption = _requested_legacy_adoption(
                                 connection, runtime_env, commit=commit, service_id=service_id
@@ -2628,11 +2834,15 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                             }
                         )
 
+                    prior_checkpoint = report.get("prior_catalog_checkpoint", {})
                     report["catalog_checkpoint"] = _ensure_catalog_checkpoint(
                         connection,
                         commit=commit,
                         service_id=service_id,
                         instance_id=instance_id,
+                        prior_purpose_checkpoint=(
+                            prior_checkpoint if "recorded_purpose_transition" in prior_checkpoint else None
+                        ),
                     )
             except Exception as exc:
                 if active_item is not None and applying_new_item:
