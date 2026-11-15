@@ -132,7 +132,7 @@ _PARENT_IMMUTABLE = ("execution_id", "zone_id", "device_id", "channel", "job_id"
     "eligibility_id", "eligibility_sha256", "consumption_key", "operating_date",
     "expected_segment_count", "requested_total_duration_seconds", "requested_total_duration_minutes",
     "governed_executable_duration_seconds", "segment_requested_seconds", "commissioning_id",
-    "controller_safety_generation")
+    "controller_safety_generation", "stop_mode")
 
 
 def _same_parent(left, right):
@@ -185,13 +185,13 @@ def _weather_terminal_resolution(body, events):
     events = [row for row in events if row.get("action") in PARENT_ACCOUNTING_ACTIONS]
     authority = next((row for row in events if row.get("action") == "record_eligibility"
         and row.get("job_sha256") == body.get("job_sha256")), {})
-    job = {"contract_version": "rootline_irrigation_job.v1", "job_id": body.get("job_id"),
+    job = {"contract_version": ("rootline_irrigation_job.v2" if body.get("stop_mode") == "scheduled" else "rootline_irrigation_job.v1"), "job_id": body.get("job_id"),
         "job_sha256": body.get("job_sha256"), "zone_id": body.get("zone_id"),
         "operating_date": body.get("operating_date"),
         "requested_total_seconds": body.get("requested_total_duration_seconds"),
         "requested_total_minutes": body.get("requested_total_duration_minutes"),
         "governed_executable_seconds": body.get("governed_executable_duration_seconds"),
-        "maximum_segment_seconds": 3599, "expected_segment_count": body.get("expected_segment_count"),
+        "maximum_segment_seconds": (body.get("requested_total_duration_seconds") if body.get("stop_mode") == "scheduled" else 3599), "expected_segment_count": body.get("expected_segment_count"),
         "plan_identity": authority.get("plan_generation")}
     projection = project_next_segment(job, events, rearm_readback_off=True)
     if projection.get("status") != "job_deferred":
@@ -1366,7 +1366,7 @@ def _claim_irrigation_output(body):
                 eligibility_id=eligibility_id, eligibility_sha256=eligibility_sha256,
                 zone_id=zone_id, operating_date=operating_date,
                 job_id=str(body.get("job_id") or ""),
-                segment_number=int(body.get("segment_number") or 0))
+                segment_number=int(body.get("segment_number") or 0), claim_body=body)
             if blocked:
                 return {"success": True, "created": False, "status": blocked}
             cursor.execute(f"""select 1
@@ -1426,9 +1426,9 @@ def _claim_irrigation_output(body):
 
 def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
                             eligibility_sha256, zone_id, operating_date,
-                            job_id="", segment_number=0):
+                            job_id="", segment_number=0, claim_body=None):
     """Evaluate signed authority, completion and accepted-ON under caller's lock."""
-    cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+    cursor.execute("""select review_json->'rootline_execution' from public.sam_live_stock_conversation_review_events
         where event_source=%s
           and review_json->'rootline_execution'->>'action'='record_eligibility'
           and review_json->'rootline_execution'->>'execution_id'=%s
@@ -1440,8 +1440,14 @@ def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
           limit 1""",
         (EVENT_SOURCE, execution_id, eligibility_id, eligibility_sha256,
          operating_date, zone_id, segment_number))
-    if not cursor.fetchone():
+    eligibility_row = cursor.fetchone()
+    if not eligibility_row:
         return "canonical_eligibility_unproven"
+    canonical = eligibility_row[0] if isinstance(eligibility_row[0], dict) else {}
+    if (claim_body or {}).get("stop_mode") == "scheduled" or canonical.get("stop_mode") == "scheduled":
+        cursor.execute("select clock_timestamp()")
+        if not _scheduled_irrigation_claim_valid(claim_body or {}, canonical, cursor.fetchone()[0]):
+            return "canonical_scheduled_claim_unproven"
     if segment_number > 1:
         if not job_id:
             return "job_identity_incomplete"
@@ -1521,6 +1527,20 @@ def _claim_single_auxiliary(body):
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             retired_no_send = _not_dispatched_ids(cursor)
+            cursor.execute("""select review_json->'rootline_execution'
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s
+                  and review_json->'rootline_execution'->>'action'='record_auxiliary_eligibility'
+                  and review_json->'rootline_execution'->>'eligibility_id'=%s limit 1""",
+                (EVENT_SOURCE,body.get("eligibility_id")))
+            row=cursor.fetchone()
+            canonical=row[0] if row and isinstance(row[0],dict) else {}
+            if (body.get("stop_mode")=="scheduled" or canonical.get("stop_mode")=="scheduled"
+                    or canonical.get("contract_version")=="rootline_auxiliary_eligibility.v2"):
+                cursor.execute("select clock_timestamp()")
+                claim_now=cursor.fetchone()[0]
+                if not _scheduled_auxiliary_claim_valid(body,canonical,claim_now):
+                    return {"success":False,"created":False,"status":"canonical_auxiliary_claim_unproven"}
             if body.get("device_type") == "fertilizer_injection_valve":
                 job_id=str(body.get("job_id") or "");job_sha=str(body.get("job_sha256") or "")
                 segment=str(body.get("segment_identity") or "");zone=str(body.get("zone_id") or "")
@@ -1663,7 +1683,7 @@ def _claim_borehole_material_load(body, *, adopt=False):
           "baseline_sha256","registry_generation","need_sha256","evidence_sha256",
           "requested_seconds","assessed_at","gates","blockers","contract_version",
           "native_fail_stop_seconds","provider_evidence","operation",
-          "commissioned_native_fail_stop_seconds")
+          "commissioned_native_fail_stop_seconds","stop_mode","device_id","channel","auxiliary_device_id")
         if (not _valid_borehole_eligibility(canonical)
                 or not _valid_borehole_eligibility(body)
                 or any(body.get(field)!=canonical.get(field) for field in immutable)):
@@ -1681,6 +1701,16 @@ def _claim_borehole_material_load(body, *, adopt=False):
                     or native_deadline != claimed+timedelta(seconds=body["native_fail_stop_seconds"])
                     or deadline <= now
                     or body.get("operation") != ("adopt_observed_on" if adopt else "command_off_to_on")):
+                return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
+        elif body.get("contract_version")=="rootline_borehole_runtime_eligibility.v4":
+            from modules.telemetry.rootline_borehole_commissioning import _scheduled_borehole_off
+            cursor.execute("select clock_timestamp()")
+            now=cursor.fetchone()[0]
+            claimed=_time(body.get("claimed_at")); deadline=_time(body.get("primary_stop_deadline"))
+            if (adopt or not _scheduled_borehole_off(body.get("provider_evidence"),now=now)
+                    or claimed is None or not timedelta(0)<=now-claimed<=timedelta(seconds=30)
+                    or deadline!=claimed+timedelta(seconds=body["requested_seconds"])
+                    or body.get("native_fail_stop_deadline") is not None or deadline<=now):
                 return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
         elif adopt:
             return {"success":False,"created":False,"status":"borehole_adoption_contract_required"}
@@ -1734,6 +1764,18 @@ def _valid_borehole_eligibility(value):
             return False
         material.update({key: value.get(key) for key in
             ("provider_evidence", "operation", "commissioned_native_fail_stop_seconds")})
+    if version=="rootline_borehole_runtime_eligibility.v4":
+        from modules.telemetry.rootline_borehole_commissioning import _scheduled_borehole_off
+        assessed=_time(value.get("assessed_at"))
+        if (value.get("stop_mode")!="scheduled" or type(value.get("requested_seconds")) is not int
+                or not 0<value["requested_seconds"]<=36000 or value.get("native_fail_stop_seconds")!=0
+                or value.get("device_id")!="1002851416" or value.get("channel")!=1
+                or value.get("auxiliary_device_id")!="BOREHOLE-1-MINI-R4-CH1"
+                or value.get("operation")!="command_off_to_on" or assessed is None
+                or not _scheduled_borehole_off(value.get("provider_evidence"),now=assessed)):
+            return False
+        material.update({key:value.get(key) for key in ("stop_mode","native_fail_stop_seconds",
+            "device_id","channel","auxiliary_device_id","provider_evidence","operation")})
     digest=hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),
       default=str).encode()).hexdigest()
     required_gates={"canonical_need","commissioned_baseline","standing_authority",
@@ -1742,7 +1784,7 @@ def _valid_borehole_eligibility(value):
     if version == "rootline_borehole_runtime_eligibility.v3":
         required_gates = required_gates - {"provider_off"} | {"provider_state_safe"}
     return (version in {"rootline_borehole_runtime_eligibility.v1","rootline_borehole_runtime_eligibility.v2",
-            "rootline_borehole_runtime_eligibility.v3"}
+            "rootline_borehole_runtime_eligibility.v3","rootline_borehole_runtime_eligibility.v4"}
       and material["device_key"]=="ewelink:ewelink_owner_account:1002851416:1"
       and value.get("eligibility_sha256")==digest
       and value.get("execution_id")=="ROOTLINE-BOREHOLE-"+digest[:24].upper()
@@ -2181,6 +2223,8 @@ def _append_history(action, body, *, connection=None, append=True):
         "shutdown_observed_at": body.get("completed_at"),
         "provenance": "rootline_execution_coordinator",
         "classification": event_type.lower()}
+    if body.get("stop_mode") == "scheduled":
+        details["stop_mode"] = "scheduled"
     if body.get("state") == "Stopped":
         details.update(terminal_contract=body.get("terminal_contract"),
             terminal_sha256=body.get("terminal_sha256"), reason=body.get("reason"),
@@ -2840,3 +2884,45 @@ def _a_commissioning_store(action, payload):
         return {"success": False, "created": False, "status": "a_commissioning_outcome_unknown",
             "accepted_unambiguous": False,
             "provider_read_performed": bool(observer and observer.read_performed)}
+
+
+def _scheduled_irrigation_claim_valid(body, canonical, now):
+    from modules.telemetry.rootline_execution_authority import validate_execution_eligibility
+    from modules.telemetry.rootline_device_registry import get_device_contract
+    artifact = {key: value for key, value in canonical.items() if key not in {"action", "event_id"}}
+    if (body.get("stop_mode") != "scheduled" or artifact.get("stop_mode") != "scheduled"
+            or validate_execution_eligibility(artifact, now=now) is None):
+        return False
+    output = get_device_contract(body.get("zone_id"))
+    claimed = _time(body.get("claimed_at")); deadline = _time(body.get("primary_stop_deadline"))
+    return bool(output and body.get("device_id") == output["device_id"]
+        and body.get("channel") == output["channel"] and claimed is not None
+        and timedelta(0) <= now-claimed <= timedelta(seconds=30)
+        and body.get("planned_runtime_seconds") == artifact["maximum_duration_seconds"]
+        and deadline == claimed + timedelta(seconds=artifact["maximum_duration_seconds"])
+        and body.get("native_fail_stop_deadline") is None
+        and body.get("segment_number") == artifact.get("current_segment")
+        and all(body.get(key) == artifact.get(key) for key in (
+            "execution_id", "eligibility_id", "eligibility_sha256", "consumption_key", "zone_id", "channel",
+            "job_id", "job_sha256", "segment_identity", "operating_date", "expected_segment_count",
+            "requested_total_duration_seconds", "requested_total_duration_minutes",
+            "governed_executable_duration_seconds", "segment_requested_seconds")))
+
+
+def _scheduled_auxiliary_claim_valid(body, stored, now):
+    from modules.telemetry.rootline_auxiliary_management import validate_auxiliary_eligibility
+    from datetime import datetime,timedelta
+    artifact={k:v for k,v in stored.items() if k not in {"action","event_id"}}
+    if not validate_auxiliary_eligibility(artifact,now=now) or artifact.get("stop_mode")!="scheduled":
+        return False
+    immutable=("execution_id","eligibility_id","eligibility_sha256","consumption_key",
+        "auxiliary_device_id","device_type","device_id","channel","zone_id","job_id",
+        "job_sha256","segment_identity","zone_execution_id","pulse_number","phase_number",
+        "batch_generation","maximum_duration_seconds","stop_mode")
+    if any(body.get(k)!=artifact.get(k) for k in immutable): return False
+    try:
+        claimed=datetime.fromisoformat(body["claimed_at"])
+        deadline=datetime.fromisoformat(body["primary_stop_deadline"])
+        return (timedelta(0)<=now-claimed<=timedelta(seconds=30)
+            and deadline==claimed+timedelta(seconds=artifact["maximum_duration_seconds"]))
+    except (ValueError,TypeError,KeyError): return False

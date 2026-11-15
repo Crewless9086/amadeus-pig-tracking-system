@@ -43,7 +43,7 @@ jobs:
         run: python -m pip install -r requirements.txt pytest
 
       - name: Prove allowlist, schema readback, replay and rollback
-        run: python -m pytest tests/test_render_production_migration_rail.py tests/test_render_rootline_a_migration_rail.py tests/test_render_production_migration_workflow.py -q
+        run: python -m pytest tests/test_render_production_migration_rail.py tests/test_render_rootline_a_migration_rail.py tests/test_render_rootline_e_migration_rail.py tests/test_render_production_migration_workflow.py -q
 
 
       - name: Create isolated A commissioning fixture
@@ -61,7 +61,7 @@ jobs:
 
   audit-rails:
     name: Unit tests with disposable Postgres audit rails
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -408,6 +408,8 @@ jobs:
           PYTHON_DOTENV_DISABLED: "1"
         run: >-
           python -B -m pytest -q -p no:cacheprovider
+          tests/test_rootline_scheduled_control.py
+          tests/test_rootline_scheduled_planner.py
           tests/test_rootline_borehole_bc_restoration.py
           tests/test_rootline_bc_cycle_efficiency.py
           tests/test_rootline_bc_starvation.py

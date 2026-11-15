@@ -265,10 +265,20 @@ class RequestBudget:
             connect_deadline_seconds=min(ROOTLINE_CONNECT_DEADLINE_SECONDS, request_timeout()))
 
     @contextmanager
-    def _locked(self, *, read_committed=False):
+    def _locked(self, *, read_committed=False, prepared=None):
         try:
-            with self._connect() as connection:
-                pair = _private_pair.get()
+            pair = _private_pair.get()
+            if prepared is not None:
+                if pair is None or pair.owner is not self:
+                    raise RequestBudgetUnavailable("ewelink_prepared_fence_owner_unproven")
+                _PreparedNoSendClients._verify_idle(prepared)
+                from modules.telemetry.rootline_cycle_budget import remaining_seconds
+                from modules.oom_sakkie.bounded_postgres_read import STATEMENT_TIMEOUT_MS, LOCK_TIMEOUT_MS
+                remaining = min(request_timeout(), remaining_seconds())
+                statement = max(1, min(STATEMENT_TIMEOUT_MS, int(remaining * 1000)))
+                prepared.configure_transaction_timeouts(statement,
+                    min(LOCK_TIMEOUT_MS, statement), read_committed=True)
+            with prepared if prepared is not None else self._connect() as connection:
                 if read_committed:
                     # Only post-pair canonical cleanup opts in. The ordinary
                     # acquisition has applied SET LOCAL but no data snapshot.
@@ -911,6 +921,65 @@ class RequestBudget:
                 "execution_id": execution_id, "response_digest": evidence["response_digest"]})
 
 
+class _PreparedNoSendClients:
+    """Two invocation-private idle frontends; no fence or snapshot is prepared."""
+    def __init__(self, source, binding):
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        self.source, self.binding = deepcopy(dict(source)), deepcopy(dict(binding))
+        self._gate = threading.Lock()
+        self._clients = []
+        self._spent = False
+        try:
+            for _ in range(2):
+                request_timeout()
+                connection = connect_bounded_rootline_postgres(
+                    database_url=self.source.get("DATABASE_URL"), read_only=False,
+                    reuse_local_settings=True, read_committed=True,
+                    native_begin_read_committed=True,
+                    connect_deadline_seconds=min(5.0, request_timeout()))
+                self._clients.append(connection)
+                connection.rollback()
+                self._verify_idle(connection)
+            if self._clients[0]._connection is self._clients[1]._connection:
+                raise RequestBudgetUnavailable("ewelink_prepared_clients_not_distinct")
+            request_timeout()
+        except BaseException:
+            self.close()
+            raise
+
+    @staticmethod
+    def _verify_idle(connection):
+        from modules.oom_sakkie.bounded_postgres_read import (
+            _CycleBudgetConnection, _require_native_begin_state)
+        if (type(connection) is not _CycleBudgetConnection
+                or connection._connection is not connection._native_begin_connection
+                or connection._reuse_disabled):
+            raise RequestBudgetUnavailable("ewelink_prepared_client_identity_unproven")
+        _require_native_begin_state(connection._connection, idle=True)
+
+    def take(self, source, binding):
+        with self._gate:
+            if (self._spent or len(self._clients) != 2
+                    or dict(source) != self.source or dict(binding) != self.binding):
+                raise RequestBudgetUnavailable("ewelink_prepared_clients_unavailable")
+            for connection in self._clients:
+                self._verify_idle(connection)
+            clients, self._clients = self._clients, []
+            self._spent = True
+            return clients
+
+    def close(self):
+        with self._gate:
+            clients, self._clients = self._clients, []
+            self._spent = True
+        # Transferred clients belong exclusively to the worker, including late drain.
+        for connection in clients:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+
 class _NoSendPair:
     """Single-use capability for one prepared, locked two-GET invocation.
 
@@ -920,10 +989,11 @@ class _NoSendPair:
     """
     _ENDPOINTS = ("/v2/device/thing", "/v2/device/thing/status")
 
-    def __init__(self, *, source, binding, token_identity, group):
+    def __init__(self, *, source, binding, token_identity, group, prepared_clients=None):
         if (_private_pair.get() is not None or _group.get() is not group
                 or group.get("_private_pair") is not None):
             raise RequestBudgetUnavailable("ewelink_pair_context_rejected")
+        self.prepared_clients = prepared_clients
         self.source = MappingProxyType(deepcopy(dict(source)))
         self.binding = MappingProxyType(deepcopy(dict(binding)))
         self.token_identity = tuple(token_identity)
@@ -966,7 +1036,7 @@ class _NoSendPair:
     def admit(self, endpoint, timeout):
         with self.gate:
             self._check_locked()
-            if self.phase >= 2 or endpoint != self._ENDPOINTS[self.phase] or self.inflight:
+            if self.phase >= len(self._ENDPOINTS) or endpoint != self._ENDPOINTS[self.phase] or self.inflight:
                 self.failed = self.group["failed"] = True
                 raise RequestBudgetUnavailable("ewelink_pair_endpoint_rejected")
             # This is the linearization point versus caller abandonment. No I/O
@@ -978,9 +1048,9 @@ class _NoSendPair:
         with self.gate:
             self._check_locked()
             expected = dict(self.source)
-            if self.phase == 1:
+            if endpoint == "/v2/device/thing/status":
                 expected["EWELINK_EXPECTED_DEVICE_ID"] = self.binding["device_id"]
-            if (self.phase >= 2 or self.inflight or endpoint != self._ENDPOINTS[self.phase]
+            if (self.phase >= len(self._ENDPOINTS) or self.inflight or endpoint != self._ENDPOINTS[self.phase]
                     or region != self.group["region"] or dict(facade.environ) != expected
                     or facade.database_url != self.owner.database_url
                     or facade.connect_factory is not self.owner.connect_factory):
@@ -1009,12 +1079,27 @@ class _NoSendPair:
         token = _private_pair.set(self)
         try:
             self.check_active()
-            with self.owner._worker_audit() as session, self.owner._locked() as connection:
-                session["fence"] = connection
-                value = read()
-                self.check_active()
-                if self.phase != 2:
-                    raise RequestBudgetUnavailable("ewelink_pair_incomplete")
+            clients = (self.prepared_clients.take(self.source, self.binding)
+                       if self.prepared_clients is not None else None)
+            try:
+                with self.owner._worker_audit() as session:
+                    if clients is not None:
+                        session["connection"] = clients[1]
+                    with self.owner._locked(prepared=clients[0] if clients else None) as connection:
+                        session["fence"] = connection
+                        value = read()
+                        self.check_active()
+                        if self.phase != len(self._ENDPOINTS):
+                            raise RequestBudgetUnavailable("ewelink_pair_incomplete")
+            finally:
+                close_error = None
+                for connection in clients or []:
+                    try:
+                        connection.close()
+                    except Exception as exc:
+                        close_error = exc
+                if close_error is not None:
+                    raise close_error
             # Output is published only after successful audit/fence cleanup.
             self.check_active()
             return value
@@ -1199,3 +1284,8 @@ def _time(value):
         return result.astimezone(timezone.utc) if result.tzinfo is not None else None
     except (TypeError, ValueError):
         return None
+
+
+class _NoSendStatus(_NoSendPair):
+    """One fresh output GET after invocation-local metadata preparation."""
+    _ENDPOINTS = ("/v2/device/thing/status",)

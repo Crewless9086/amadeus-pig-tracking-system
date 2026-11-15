@@ -4,7 +4,9 @@ Effects are supplied by the canonical persistence, provider and Oom Sakkie
 adapters. The coordinator never guesses readback and never retries ON.
 """
 from __future__ import annotations
+from modules.telemetry.rootline_timed_control import scheduled_execution, timed_control_enabled, MAX_IRRIGATION_SECONDS
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
@@ -99,7 +101,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     else:
         safety = transport.read_safety_configuration(
             device_id=output["device_id"], channel=output["channel"])
-        if not _safe_configuration(safety, decision["zone_id"]):
+        if not _safe_configuration(safety, decision["zone_id"],
+                stop_mode=decision["execution_eligibility"].get("stop_mode"), now=_aware(clock())):
             return _result("provider_safety_readback_unavailable", commands=0, messages=0,
                            autonomous_on_enabled=False)
         # This read-only edge check is intentionally after provider safety and
@@ -141,8 +144,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "planned_runtime_seconds": decision["runtime_seconds"],
         "claimed_at": preclaim_now.isoformat(),
         "primary_stop_deadline": (preclaim_now + timedelta(seconds=decision["runtime_seconds"])).isoformat(),
-        "native_fail_stop_deadline": (preclaim_now + timedelta(
-            seconds=commissioning["native_inching_seconds"])).isoformat(),
+        **({"stop_mode": "scheduled"} if scheduled_execution(decision["execution_eligibility"]) else {}),
+        "native_fail_stop_deadline": (None if scheduled_execution(decision["execution_eligibility"]) else
+            (preclaim_now + timedelta(seconds=commissioning["native_inching_seconds"])).isoformat()),
         "commissioning_id": commissioning_id,
         "state": "claimed", "on_attempts": 0, "off_attempts": 0,
     }
@@ -267,6 +271,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         "segment_identity":artifact.get("segment_identity"),
         "zone_execution_id":artifact.get("zone_execution_id"),
         "pulse_number":artifact.get("pulse_number"),
+        **({"stop_mode":"scheduled","phase_number":artifact.get("phase_number"),
+            "eligibility_sha256":artifact["eligibility_sha256"]} if artifact.get("stop_mode")=="scheduled" else {}),
         "batch_generation":artifact.get("batch_generation"),
         "maximum_duration_seconds":artifact["maximum_duration_seconds"],
         "claimed_at":now.isoformat(),"primary_stop_deadline":(
@@ -624,7 +630,14 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
                        notification=delivery)
     primary_deadline = _timestamp(active.get("primary_stop_deadline"))
     native_deadline = _timestamp(active.get("native_fail_stop_deadline"))
-    if primary_deadline is None or native_deadline is None or primary_deadline > native_deadline:
+    scheduled = scheduled_execution(active)
+    claimed = _timestamp(active.get("claimed_at"))
+    planned = active.get("planned_runtime_seconds")
+    valid_timed_deadline = (claimed is not None and type(planned) is int
+        and 0 < planned <= MAX_IRRIGATION_SECONDS
+        and primary_deadline == claimed + timedelta(seconds=planned))
+    if (not valid_timed_deadline if scheduled else
+            primary_deadline is None or native_deadline is None or primary_deadline > native_deadline):
         barrier=store("mark_stopping",{**active,"state":"stopping",
             "reason":"fail_stop_deadline_missing"})
         if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
@@ -646,7 +659,28 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
     # A persisted stop is sticky, including before the original deadline.
     # Due/recovery paths never wait for optional weather IO.
     weather = active.get("weather_stop_evidence")
-    if now < primary_deadline and active.get("state") != "stopping":
+    observed_shutdown = None
+    if scheduled and now < primary_deadline and active.get("state") != "stopping":
+        read_started = _aware(clock())
+        try:
+            observed = transport.read_output_state(device_id=active["device_id"], channel=active["channel"])
+        except Exception:
+            observed = {}
+        now = _aware(clock())
+        observed_at = _timestamp(observed.get("retrieved_at"))
+        if (observed.get("authoritative") is True and observed.get("state") == "OFF"
+                and observed.get("device_id") == active["device_id"]
+                and observed.get("channel") == active["channel"] and observed.get("evidence_id")
+                and observed_at is not None and read_started <= observed_at <= now
+                and observed_at < primary_deadline):
+            observed_shutdown = observed
+            weather = {"contract_version": "rootline_active_control_stop.v1",
+                "stop_required": True, "reason": "external_off_observed",
+                "assessed_at": now.isoformat(), "read_started_at": read_started.isoformat(),
+                "provider_output_evidence": observed}
+            weather["evidence_sha256"] = _digest(weather)
+            active = {**active, "stop_requested_at": read_started.isoformat()}
+    if now < primary_deadline and active.get("state") != "stopping" and observed_shutdown is None:
         if active_weather_revalidator is None:
             return _result("active_segment_owned", commands=0, messages=0, execution=active)
         read_started = _aware(clock())
@@ -659,10 +693,17 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
             and decision.get("contract_version") == "rootline_active_weather.v1"
             and decision.get("evidence_sha256") == _digest({key:value for key,value in decision.items()
                 if key != "evidence_sha256"}))
+        # An unavailable observation does not cancel an already owned timed run.
+        # Its durable OFF deadline remains binding, including when this read crosses it.
+        if (active.get("stop_mode") == "scheduled" and not valid
+                and now < primary_deadline):
+            return _result("active_segment_owned", commands=0, messages=0,
+                execution=active, weather_observation="unavailable", reobserve=True)
         if valid and decision.get("stop_required") is False:
             if now < primary_deadline:
                 return _result("active_segment_owned", commands=0, messages=0, execution=active)
-        elif now < primary_deadline or read_started < primary_deadline:
+        elif (now < primary_deadline or read_started < primary_deadline) and not (
+                active.get("stop_mode") == "scheduled" and not valid):
             if valid and decision.get("stop_required") is True:
                 weather = decision
             else:
@@ -686,6 +727,9 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
     if isinstance(committed, dict):
         stopping = committed
     weather = stopping.get("weather_stop_evidence")
+    if (observed_shutdown is not None and (not isinstance(weather, dict)
+            or weather.get("provider_output_evidence") != observed_shutdown)):
+        observed_shutdown = None
     stop_reason = stopping.get("reason")
     if isinstance(weather, dict):
         active = stopping
@@ -696,8 +740,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
         active,auxiliary_stop,store,transport,notify,now,stop_reason)
     if blocked:
         return blocked
-    recovery = _bounded_off(active, store, transport)
-    shutdown = transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
+    recovery = {"commands": 0} if observed_shutdown is not None else _bounded_off(active, store, transport)
+    shutdown = observed_shutdown or transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
     if shutdown.get("state") != "OFF" or shutdown.get("authoritative") is not True:
         store("contain_zone", {**active, "state": "ambiguous", "shutdown_verified": False})
         delivery = _notify(notify, store, "Intervention", {**active,
@@ -706,7 +750,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
                        auxiliary_stop["hardware_commands"],
                        messages=delivery["confirmed"], notification=delivery)
     shutdown_at = _timestamp(shutdown.get("retrieved_at"))
-    completion_now = max(now, shutdown_at) if shutdown_at is not None else now
+    completion_now = (_aware(clock()) if scheduled else
+        max(now, shutdown_at) if shutdown_at is not None else now)
     if isinstance(weather, dict):
         # Never advance the independent clock using a provider timestamp.
         completion_now = _aware(clock())
@@ -769,12 +814,14 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
     if lifecycle == "Intervention":
         completed["reason"] = "shutdown_verified_outcome_unconfirmed"
     delivery = _notify(notify, store, lifecycle, completed)
-    return _result("segment_stopped_for_weather" if isinstance(weather, dict) else
+    return _result("segment_stopped_external_off" if isinstance(weather, dict) and weather.get("reason") == "external_off_observed" else
+                   "segment_stopped_for_weather" if isinstance(weather, dict) else
                    "segment_completed" if completed["objective_satisfied"]
                    else "segment_stopped_outcome_unconfirmed",
                    commands=recovery["commands"]+auxiliary_stop["hardware_commands"],
                    messages=delivery["confirmed"], execution=completed,
-                   notification=delivery, writes_farm_data=True)
+                   notification=delivery, writes_farm_data=True,
+                   auxiliary_shutdown_verified=auxiliary_stop.get("shutdown_verified"))
 
 
 def _weather_stopped_execution(active, shutdown, now):
@@ -796,7 +843,8 @@ def _weather_stopped_execution(active, shutdown, now):
         and claimed <= started <= requested)
     prior = int(active.get("cumulative_verified_runtime_seconds") or 0)
     total = int(active.get("governed_executable_duration_seconds") or 0)
-    completed = {**active, "state": "Stopped", "terminal_contract": WEATHER_STOP_CONTRACT,
+    completed = {**active, "state": "Stopped", "terminal_contract": (
+        "rootline_irrigation_weather_stop.v2" if scheduled_execution(active) else WEATHER_STOP_CONTRACT),
         "shutdown_verified": True, "shutdown_evidence": shutdown,
         "completed_at": now.isoformat(), "objective_satisfied": False, "job_completed": False,
         "verified_runtime_seconds": 0, "cumulative_verified_runtime_seconds": prior,
@@ -837,6 +885,10 @@ def _hold_parent_flow_if_injector_off_unverified(parent,auxiliary_stop,store,
         return None
     if (auxiliary_stop.get("shutdown_verified") is True
             and status=="auxiliary_emergency_off_verified"):
+        return None
+    if scheduled_execution(parent):
+        # The injector's existing unresolved-OFF record remains open. Never turn
+        # its read failure into an indefinite extension of the parent's duty.
         return None
     native_deadline=_timestamp(parent.get("native_fail_stop_deadline"))
     deadline_phase=("unknown" if native_deadline is None else
@@ -901,7 +953,7 @@ def _stopping_barrier_hold(active,store,notify):
         execution=active,writes_farm_data=False,degraded=True)
 
 
-def _retire_unsent_execution(execution, store, transport):
+def _retire_unsent_execution(execution, store, transport, *, defer_proof=None):
     device = execution.get("device_id") or "1002851416"
     channel = execution.get("channel") or 1
     if execution.get("auxiliary_device_id") in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
@@ -911,6 +963,23 @@ def _retire_unsent_execution(execution, store, transport):
         commands = _stop_borehole(execution, store, transport)
     else:
         commands = _bounded_off(execution, store, transport)["commands"]
+    if (callable(defer_proof) and device == "1002851416" and type(channel) is int
+            and channel == 1 and execution.get("on_not_dispatched") is True):
+        # Only optional retirement proof moves. Its bounded OFF duty above is
+        # complete, and this callback grants neither terminal nor ON authority.
+        defer_proof(deepcopy(execution))
+        return {"success": True, "status": "no_send_off_proof_pending",
+            "no_send_stage": "deferred_proof", "no_send_reason": "after_bc_admission",
+            "hardware_commands": commands, "telegram_messages": 0,
+            "writes_farm_data": False, "notify_owner": False, "owner_action_required": False,
+            "execution": execution, "provider_command_attempted": False, "automatic_on_retry": False}
+    return _prove_unsent_execution(execution, store, transport, commands=commands)
+
+
+def _prove_unsent_execution(execution, store, transport, *, commands=0):
+    """Optional proof only; the store revalidates the exact canonical preimage."""
+    device = execution.get("device_id") or "1002851416"
+    channel = execution.get("channel") or 1
     def read():
         return transport.read_output_state(device_id=device, channel=channel)
     payload = {**execution, "read_final_off": read}
@@ -972,18 +1041,19 @@ def _eligible(decision, decision_id, commissioning, now):
         return False
     assessed = _timestamp(decision.get("assessed_at"))
     artifact = validate_execution_eligibility(decision.get("execution_eligibility"), now=now)
+    scheduled = scheduled_execution(artifact)
     return (artifact is not None
             and decision.get("decision_id") == decision_id and supplied == _digest(canonical)
             and decision.get("decision") == "Run now"
             and decision.get("standing_authority") is True
-            and decision.get("runtime_minutes") in range(1, MAX_MINUTES + 1)
+            and decision.get("runtime_minutes") in range(1, 121 if scheduled else MAX_MINUTES + 1)
             and assessed is not None and timedelta(0) <= now - assessed <= timedelta(minutes=15)
             and commissioning.get("zone_id") == zone
             and commissioning.get("channel") == output["channel"]
-            and commissioning.get("commissioned") is True
+            and (commissioning.get("authorized") is True if scheduled else commissioning.get("commissioned") is True)
             and decision.get("commissioning_id") == commissioning.get("commissioning_id")
             and decision.get("commissioning_generation") == commissioning.get("configuration_generation")
-            and 0 < int(commissioning.get("native_inching_seconds") or 0) <= 3600
+            and (scheduled or 0 < int(commissioning.get("native_inching_seconds") or 0) <= 3600)
             and artifact.get("execution_id") == decision.get("execution_id")
             and artifact.get("eligibility_id") == decision.get("eligibility_id")
             and artifact.get("plan_generation") == decision.get("evidence_generation")
@@ -994,6 +1064,14 @@ def _eligible(decision, decision_id, commissioning, now):
 def _canonical_commissioning(packet, commissioning_id, now):
     if not isinstance(packet, dict) or packet.get("commissioning_id") != commissioning_id:
         return None
+    if scheduled_execution(packet):
+        output = get_device_contract(packet.get("zone_id"))
+        if (not timed_control_enabled() or not output or output.get("collection") != "irrigation_zones"
+                or packet.get("channel") != output["channel"]
+                or packet.get("mapping_sha256") != output["contract_sha256"]
+                or commissioning_id != "ROOTLINE-TIMED-MAPPING-" + output["contract_sha256"][:24].upper()):
+            return None
+        return {**packet, "authorized": True, "commissioned": False}
     baseline = packet.get("accepted_controller_baseline")
     if isinstance(baseline, dict):
         zone = str(packet.get("zone_id") or "")
@@ -1064,6 +1142,10 @@ def _provider_bounded_outcome(execution, shutdown, now):
     primary = _timestamp(execution.get("primary_stop_deadline"))
     native = _timestamp(execution.get("native_fail_stop_deadline"))
     runtime_seconds = int(execution.get("planned_runtime_seconds") or 0)
+    scheduled = scheduled_execution(execution)
+    if scheduled and any(start.get(key) != execution.get(key) or shutdown.get(key) != execution.get(key)
+            for key in ("device_id", "channel")):
+        return {}
     # A's explicit target may end before its fixed 3,599-second backup. Its
     # own primary deadline plus fresh exact ON/OFF proves only that controller
     # duration; the historical B/C completion rule remains unchanged.
@@ -1073,12 +1155,14 @@ def _provider_bounded_outcome(execution, shutdown, now):
         and primary <= native == claimed + timedelta(seconds=3599)
         and start.get("device_id") == shutdown.get("device_id") == "100204e9bc"
         and start.get("channel") == shutdown.get("channel") == 4)
-    if (execution.get("state") != "Active" or execution.get("on_attempts") != 1
+    if (execution.get("state") not in ({"Active", "stopping"} if scheduled else {"Active"}) or execution.get("on_attempts") != 1
             or start.get("authoritative") is not True or start.get("state") != "ON"
             or shutdown.get("authoritative") is not True or shutdown.get("state") != "OFF"
             or not start.get("evidence_id") or not shutdown.get("evidence_id")
-            or None in {claimed, started, stopped, primary, native}
-            or not 0 < runtime_seconds <= 3599 or (primary != native and not a_short_bound)
+            or None in {claimed, started, stopped, primary}
+            or (not scheduled and native is None)
+            or not 0 < runtime_seconds <= (MAX_IRRIGATION_SECONDS if scheduled else 3599)
+            or (not scheduled and primary != native and not a_short_bound)
             or primary != claimed + timedelta(seconds=runtime_seconds)
             or not claimed <= started < primary <= stopped <= now):
         return {}
@@ -1094,7 +1178,8 @@ def _provider_bounded_outcome(execution, shutdown, now):
         "shutdown_verified": True, "objective_satisfied": True,
         "start_evidence_id": start.get("evidence_id"),
         "shutdown_evidence_id": shutdown.get("evidence_id"),
-        "native_fail_stop_deadline": native.isoformat(),
+        "native_fail_stop_deadline": native.isoformat() if native is not None else None,
+        **({"stop_mode": "scheduled"} if scheduled else {}),
         "physical_flow_confirmation": "Unavailable",
         "delivered_volume": "Unavailable", "flow_rate": "Unavailable",
         "actor": "ROOTLINE_CANONICAL_OUTCOME", "provenance": "canonical_post_segment",
@@ -1138,11 +1223,19 @@ def _valid_native_final_check(final, decision, output, now):
         and _safe_configuration(safety, decision["zone_id"]))
 
 
-def _safe_configuration(value, zone):
+def _safe_configuration(value, zone, *, stop_mode=None, now=None):
     try:
         output = commissioned_irrigation_contract(zone)
     except ValueError:
         return False
+    if stop_mode == "scheduled":
+        observed = _timestamp(value.get("observed_at")) if isinstance(value, dict) else None
+        checked = _aware(now or datetime.now(timezone.utc))
+        return (isinstance(value, dict) and value.get("scheduled_authoritative") is True
+            and value.get("device_id") == output["device_id"] and value.get("channel") == output["channel"]
+            and value.get("zone_id") == zone and value.get("output_state") == "OFF"
+            and bool(value.get("response_digest")) and observed is not None
+            and timedelta(0) <= checked-observed <= timedelta(minutes=5))
     return (isinstance(value, dict) and value.get("authoritative") is True
             and value.get("zone_id") == zone and value.get("channel") == output["channel"]
             and value.get("native_inching_enabled") is True
@@ -1154,6 +1247,13 @@ def _safe_configuration(value, zone):
 
 
 def _output_binding(execution):
+    if scheduled_execution(execution):
+        output = get_device_contract(execution.get("zone_id"))
+        if (not output or output.get("collection") != "irrigation_zones"
+                or execution.get("device_id") != output["device_id"]
+                or execution.get("channel") != output["channel"]):
+            raise ValueError("rootline_execution_channel_binding_invalid")
+        return output
     if execution.get("zone_id") == "A12345":
         # Durable stop/recovery duties survive revocation or an unavailable
         # commissioning read. This static binding is never used for new ON.
@@ -1184,7 +1284,8 @@ def _release_configuration_containment(contained, decision, store, transport):
     except Exception:
         return False
     if (not isinstance(readiness, dict) or readiness.get("configured") is not True
-            or not _safe_configuration(safety, decision["zone_id"])
+            or not _safe_configuration(safety, decision["zone_id"],
+                stop_mode=(decision.get("execution_eligibility") or {}).get("stop_mode"))
             or safety.get("relevant_outputs_off") is not True):
         return False
     released = store("release_zone_containment", {

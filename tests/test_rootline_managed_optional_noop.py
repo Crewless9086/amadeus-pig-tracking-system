@@ -180,7 +180,7 @@ def test_evidence_needed_path_keeps_planning_failure_and_final_pass(monkeypatch)
     result = s.run()
     assert result["success"] is False and "managed_device_evidence_unavailable" in statuses(result)
     assert s.evidence_reads == 1
-    assert len([name for name, _ in s.events if name == "load_active_borehole"]) == 2
+    assert len([name for name, _ in s.events if name == "load_active_borehole"]) == 3
 
 
 def test_disabled_start_branch_and_supplied_completion_remain_unchanged(monkeypatch):

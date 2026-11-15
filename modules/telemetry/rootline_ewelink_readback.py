@@ -236,7 +236,8 @@ def _validate_prepared_record(record, source):
 class _PreparedNoSendRead:
     """One invocation, one credential/family context; never a cached output."""
     def __init__(self, *, binding, token_store, source, record, family, access,
-                 request, group, token_refreshed):
+                 request, group, token_refreshed, prepared_clients=None,
+                 device=None, metadata_received_at=None, baseline=None):
         self.binding = deepcopy(binding)
         self.token_store, self.source = token_store, source
         self._record, self._family, self._access = record, family, access
@@ -244,15 +245,32 @@ class _PreparedNoSendRead:
         self._refreshed, self._active, self._used = token_refreshed, True, False
         self._complete, self._finalized = False, False
         self._pair = None
+        self._prepared_clients = prepared_clients
+        self._device, self._metadata_received_at = deepcopy(device), metadata_received_at
+        self._baseline = deepcopy(baseline)
+        self._metadata_deadline = group["deadline"]
+        self._metadata_seal = self._seal()
         self.stage = "prepared"
+
+    def _seal(self):
+        return _digest(json.dumps({"device": self._device, "baseline": self._baseline,
+            "source": self.source, "record": self._record, "binding": self.binding,
+            "received_at": self._metadata_received_at, "deadline": self._metadata_deadline,
+            "group": {key: self._group[key] for key in
+                ("id", "scope", "region", "expected_device")}}, sort_keys=True, default=str))
 
     def read_locked(self, *, binding, connection, deadline):
         from modules.telemetry.rootline_cycle_budget import cycle_budget
-        from modules.telemetry.rootline_ewelink_request_budget import current_duty, request_timeout, _NoSendPair
+        from modules.telemetry.rootline_ewelink_request_budget import current_duty, request_timeout, _NoSendStatus
         if (not self._active or self._used or binding != self.binding
                 or current_duty().get("execution_id") != binding.get("execution_id")):
             raise NoSendReadUnavailable("context", "changed_or_consumed")
         self._used = True
+        if (self._seal() != self._metadata_seal or
+                time.monotonic() >= self._metadata_deadline or
+                self._group["deadline"] > self._metadata_deadline or
+                commissioned_registered_device_baseline(binding["device_id"]) != self._baseline):
+            raise NoSendReadUnavailable("context", "prepared_metadata_changed")
         self._group["deadline"] = min(self._group["deadline"], time.monotonic() +
             max(0, (deadline-datetime.now(timezone.utc)).total_seconds()))
         with cycle_budget(deadline=self._group["deadline"]):
@@ -272,8 +290,9 @@ class _PreparedNoSendRead:
                 # a late worker never consults a closed/reused prepared object.
                 record, access, family, source = self._record, self._access, self._family, self.source
                 original_request = self._request
-                pair = self._pair = _NoSendPair(source=source, binding=binding,
-                    token_identity=tuple(record.get(key) for key in _TOKEN_IDENTITY), group=self._group)
+                pair = self._pair = _NoSendStatus(source=source, binding=binding,
+                    token_identity=tuple(record.get(key) for key in _TOKEN_IDENTITY), group=self._group,
+                    prepared_clients=self._prepared_clients)
                 def request(method, url, **kwargs):
                     pair.check_active()
                     if kwargs.get("token") != access:
@@ -282,12 +301,20 @@ class _PreparedNoSendRead:
                     self.stage = ("device_status" if urllib.parse.urlparse(url).path ==
                         "/v2/device/thing/status" else "device_list")
                     return original_request(method, url, **kwargs)
-                result = pair.run(lambda: _read_device_status(expected=binding["device_id"],
-                    source=source, request=request, now=datetime.now(timezone.utc),
-                    record=record, access=access, family=family,
-                    commissioned_baseline=commissioned_registered_device_baseline(binding["device_id"]),
-                    registered_discovery_only=False, token_refreshed=self._refreshed,
-                    fresh_receipt=True))
+                device, baseline = deepcopy(self._device), deepcopy(self._baseline)
+                metadata_received_at = self._metadata_received_at
+                def fresh_status():
+                    request_source = dict(source)
+                    request_source["EWELINK_EXPECTED_DEVICE_ID"] = binding["device_id"]
+                    status = request("GET", REGION_HOSTS[record["region"]] +
+                        "/v2/device/thing/status?" + urllib.parse.urlencode(
+                            {"type": 1, "id": binding["device_id"]}),
+                        mode="bearer", token=access, environ=request_source)
+                    return _normalize_prepared_status(device=device, status=status,
+                        expected=binding["device_id"], baseline=baseline,
+                        metadata_received_at=metadata_received_at,
+                        token_refreshed=self._refreshed)
+                result = pair.run(fresh_status)
                 request_timeout()
                 self._complete = True
                 self.stage = "proof_received"
@@ -332,14 +359,16 @@ class _PreparedNoSendRead:
     def close(self):
         if self._pair is not None:
             self._pair.abandon(failed=not self._complete)
+        if self._prepared_clients is not None:
+            self._prepared_clients.close()
         self._active = False
-        self._record = self._family = self._access = None
+        self._record = self._family = self._access = self._device = self._baseline = None
 
 
 @contextmanager
 def prepare_registered_no_send_read(*, binding, token_store, environ=None,
                                     http_request=None):
-    """Prepare authentication/family only; device and status require the locked phase."""
+    """Prepare bounded account/configuration metadata; outputs require locked STATUS."""
     from modules.telemetry.rootline_cycle_budget import cycle_budget, on_deadline, work_deadline
     from modules.telemetry.rootline_ewelink_request_budget import GROUP_SECONDS, snapshot_group
     source = dict(environ if environ is not None else os.environ)
@@ -359,6 +388,7 @@ def prepare_registered_no_send_read(*, binding, token_store, environ=None,
     if parent is not None:
         deadline = min(deadline, parent)
     prepared = None
+    prepared_clients = None
     stage = "token_lookup"
     try:
         with cycle_budget(deadline=deadline):
@@ -368,6 +398,9 @@ def prepare_registered_no_send_read(*, binding, token_store, environ=None,
                     region=record["region"], deadline=deadline) as group:
                 # Keep normalized_complete false until the canonical commit is
                 # acknowledged. A partial/abandoned group never heals a hold.
+                from modules.telemetry.rootline_ewelink_request_budget import _PreparedNoSendClients
+                stage = "native_clients"
+                prepared_clients = _PreparedNoSendClients(source, binding)
                 request = http_request or _provider_request
                 refreshed = record["access_expires_at"] <= datetime.now(timezone.utc)
                 if refreshed:
@@ -379,12 +412,90 @@ def prepare_registered_no_send_read(*, binding, token_store, environ=None,
                 stage = "family"
                 family = request("GET", REGION_HOSTS[record["region"]]+"/v2/family",
                     mode="bearer", token=access, environ=source)
+                stage = "device_list"
+                things = request("GET", REGION_HOSTS[record["region"]]+"/v2/device/thing?num=0",
+                    mode="bearer", token=access, environ=source)
+                account, device = _bind_account_device(family, things, expected, source)
+                if not __import__("hmac").compare_digest(_digest(account), record["provider_account_digest"]):
+                    raise OAuthFailure("ewelink_account_binding_changed")
+                device = deepcopy(device)
+                # No output value from the earlier metadata GET can prove OFF.
+                for key in ("switch", "switches"):
+                    device.get("params", {}).pop(key, None)
+                # Earlier device timestamps are metadata evidence, never the
+                # observation clock for the later independent STATUS output.
+                device.pop("updatedAt", None)
+                device.pop("updateTime", None)
+                metadata_received_at = datetime.now(timezone.utc)
+                baseline = commissioned_registered_device_baseline(expected)
                 prepared = _PreparedNoSendRead(binding=binding, token_store=token_store,
                     source=source, record=deepcopy(record), family=deepcopy(family),
-                    access=access, request=request, group=group, token_refreshed=refreshed)
+                    access=access, request=request, group=group, token_refreshed=refreshed,
+                    prepared_clients=prepared_clients, device=device,
+                    metadata_received_at=metadata_received_at, baseline=baseline)
                 yield prepared
     except Exception as exc:
         raise no_send_failure(exc, stage) from None
     finally:
         if prepared is not None:
             prepared.close()
+        elif prepared_clients is not None:
+            prepared_clients.close()
+
+
+def _normalize_prepared_status(*, device, status, expected, baseline,
+                               metadata_received_at, token_refreshed):
+    """Only this fresh STATUS supplies outputs; earlier identity/config stay dated."""
+    if not isinstance(status, dict):
+        raise OAuthFailure("ewelink_device_status_incomplete")
+    for key in ("deviceid", "id"):
+        if key in status and status[key] != expected:
+            raise OAuthFailure("ewelink_readback_device_mismatch")
+    for key in ("apikey", "productModel", "extra", "online"):
+        if key in status and status[key] != device.get(key):
+            raise OAuthFailure("ewelink_prepared_metadata_conflict")
+    params = status.get("params")
+    if not isinstance(params, dict):
+        raise OAuthFailure("ewelink_device_status_incomplete")
+    switches = params.get("switches")
+    single = (expected == "1002851416" and device.get("productModel") == "MINIR4"
+              and (device.get("extra") or {}).get("uiid") == 138)
+    if switches is not None:
+        if (not isinstance(switches, list) or not switches or
+                any(not isinstance(row, dict) or type(row.get("outlet")) is not int
+                    or row.get("switch") not in {"on", "off"} for row in switches) or
+                len({row["outlet"] for row in switches}) != len(switches) or
+                {row["outlet"] for row in switches} not in
+                    (({0}, {0, 1, 2, 3}) if single else ({0, 1, 2, 3},))):
+            raise OAuthFailure("ewelink_device_status_incomplete")
+        if "switch" in params and (not single or params["switch"] !=
+                next(row["switch"] for row in switches if row["outlet"] == 0)):
+            raise OAuthFailure("ewelink_device_status_conflict")
+    elif not single or params.get("switch") not in {"on", "off"}:
+        raise OAuthFailure("ewelink_device_status_incomplete")
+    device = deepcopy(device)
+    for key in ("switch", "switches"):
+        device.get("params", {}).pop(key, None)
+    device.pop("updatedAt", None)
+    device.pop("updateTime", None)
+    result = normalize_device_readback(device=device, status=status,
+        retrieved_at=datetime.now(timezone.utc), commissioned_baseline=baseline)
+    if (result.get("observation_fresh") is not True or result.get("freshness_clock_source") not in
+            {"provider_observation_timestamp", "trusted_authenticated_receipt"}):
+        raise OAuthFailure("ewelink_no_send_status_not_fresh")
+    if result["device_id"] != expected or any(
+            row["output_state"] != "OFF" for row in result["channels"]):
+        raise OAuthFailure("ewelink_no_send_outputs_not_off")
+    result["metadata_received_at"] = metadata_received_at.isoformat()
+    result["online_metadata_received_at"] = metadata_received_at.isoformat()
+    result["online_from_fresh_status"] = False
+    result["configuration_from_fresh_status"] = False
+    result["metadata_freshness_clock_source"] = "bounded_prepared_authenticated_receipt"
+    result["provider_calls"] = 4 if token_refreshed else 3
+    result["provider_control_calls"] = 0
+    result["token_refreshed"] = token_refreshed
+    result["autonomous_control_enabled"] = False
+    result["registered_discovery_only"] = False
+    result["response_digest"] = sha256(json.dumps(result, sort_keys=True,
+        separators=(",", ":"), default=str).encode()).hexdigest()
+    return result

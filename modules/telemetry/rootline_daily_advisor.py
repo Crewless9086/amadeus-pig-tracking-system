@@ -50,6 +50,12 @@ OPERATING_KNOWLEDGE = {
             "water_supply": UNKNOWN, "pump_required": UNKNOWN, "priority": "equal",
             "physical_mapping_status": "owner_ready_await_exact_commissioning",
         },
+        "E12345": {
+            "zone_id": "E12345", "owner_name": "E - Kamp",
+            "crop_use": UNKNOWN, "irrigation_type": UNKNOWN,
+            "water_supply": UNKNOWN, "pump_required": UNKNOWN, "priority": "equal",
+            "physical_mapping_status": "owner_ready",
+        },
         "B12345": {
             "zone_id": "B12345",
             "owner_name": "B - Kamp",
@@ -632,7 +638,11 @@ def _advise_zone(
     return {
         "zone_id": knowledge["zone_id"],
         "zone_name": knowledge["owner_name"],
-        "operating_policy": deepcopy((active_policy or {}).get("zones", {}).get(knowledge["zone_id"], {})),
+        "operating_policy": {
+            **deepcopy((active_policy or {}).get("zones", {}).get(knowledge["zone_id"], {})),
+            **({"contract_version": "rootline_operating_policy_abce.v3", "stop_mode": "scheduled"}
+               if (active_policy or {}).get("contract_version") == "rootline_operating_policy_abce.v3" else {}),
+        },
         "crop_use": knowledge["crop_use"],
         "priority": "equal_owner_selection_on_conflict",
         "eligibility_today": eligibility,
@@ -747,7 +757,8 @@ def _active_policy_snapshot(active_policy):
     candidate = deepcopy(policy)
     zones = candidate.get("zones")
     if not isinstance(zones, dict) or set(zones) not in (
-            {"B12345", "C12345"}, set(OPERATING_KNOWLEDGE["zones"])):
+            {"B12345", "C12345"}, {"A12345", "B12345", "C12345"},
+            set(OPERATING_KNOWLEDGE["zones"])):
         return None
     for zone_id, zone in zones.items():
         if (

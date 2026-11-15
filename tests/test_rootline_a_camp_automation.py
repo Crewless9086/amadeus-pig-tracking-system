@@ -118,7 +118,9 @@ def test_a_readiness_does_not_transfer_commissioning_or_enable_e():
     assert a["plumbing_ready"] is True and a["commissioned"] is False
     assert a["authority_flag"] == "ROOTLINE_A_ENABLED" and a["channel"] == 4
     assert "A12345" not in registry.commissioned_irrigation_contracts(environ={"ROOTLINE_A_ENABLED": "true"})
-    assert registry.get_device_contract("E12345")["plumbing_ready"] is False
+    e = registry.get_device_contract("E12345")
+    assert e["plumbing_ready"] is True and e["commissioned"] is False
+    assert "E12345" not in registry.commissioned_irrigation_contracts(environ={"ROOTLINE_E_ENABLED": "true"})
 
 
 def test_a_canonical_proof_resolves_own_identity_without_modifying_bc_baseline():

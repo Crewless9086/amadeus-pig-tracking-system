@@ -1628,7 +1628,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 admission_checked = True
                 if (irrigation_safe and managed_result.get("blocks_bc") is not True
                         and any(str(source.get(flag) or "").lower() == "true"
-                                for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED"))
+                                for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED", "ROOTLINE_E_ENABLED"))
                         and supervision.get("active_supervision_status") in {
                             "no_active_irrigation", "segment_completed", "segment_stopped_outcome_unconfirmed"}):
                     cycle = execution_cycle

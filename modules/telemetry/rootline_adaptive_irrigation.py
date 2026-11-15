@@ -43,7 +43,7 @@ def build_adaptive_irrigation_decisions(evidence, *, now=None):
              if isinstance(item, dict) and str(item.get("zone_id")) in ZONES}
     results = []
     for zone_id in ZONES:
-        if zone_id == "A12345" and zone_id not in zones:
+        if zone_id in {"A12345", "E12345"} and zone_id not in zones:
             continue
         results.append(_zone_decision(zone_id, zones.get(zone_id, {}), policy,
                                       weather, forecast, water, power, now))
@@ -59,8 +59,9 @@ def build_adaptive_irrigation_decisions(evidence, *, now=None):
         "zones": results,
         "same_day_multiple_zones_allowed": True,
         "simultaneous_zones_allowed": False,
-        "max_execution_minutes": 60,
-        "segment_two_requires_fresh_decision": True,
+        "max_execution_minutes": max((row["max_segment_minutes"] for row in results
+            if type(row.get("max_segment_minutes")) is int), default=60),
+        "segment_two_requires_fresh_decision": any(row["fresh_decision_before_second_segment"] for row in results),
         "historical_two_hour_run_is_policy": False,
         "borehole_authority": False,
         "fertilizer_authority": False,
@@ -80,6 +81,8 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
     target = max(1, min(7, int(target_days_per_week or 4)))
     week_start = (now - timedelta(days=now.weekday())).replace(
         hour=0, minute=0, second=0, microsecond=0)
+    epoch_start = _timestamp(zone.get("planning_epoch_start"))
+    obligation_start = max(week_start, epoch_start.astimezone(ZA_TZ)) if epoch_start else week_start
     coverage = _timestamp(zone.get("completion_ledger_complete_through"))
     coverage_current = coverage is not None and coverage <= now and (now - coverage).total_seconds() <= 15 * 60
     verified_days = set()
@@ -102,13 +105,15 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
         if _verified_completion_time(row) is None:
             continue
         completed = _verified_completion_time(row).astimezone(ZA_TZ)
-        if week_start <= completed <= now:
+        if obligation_start <= completed <= now:
             verified_minutes += int(_number(row.get("verified_runtime_minutes")) or 0)
             outcomes.append(identity)
             if row.get("objective_satisfied") is True:
                 verified_days.add(completed.date().isoformat())
-    elapsed_days = now.weekday() + 1
-    expected_by_now = min(target, int((elapsed_days * target + 6) / 7))
+    elapsed_days = max(0, (now.date() - obligation_start.date()).days + 1) if obligation_start <= now else 0
+    available_days = max(0, 7 - obligation_start.weekday()) if obligation_start <= now else 0
+    epoch_target = min(target, (available_days * target + 6) // 7)
+    expected_by_now = min(epoch_target, (elapsed_days * target + 6) // 7)
     completed_days = len(verified_days)
     status = "conflicting" if conflict else "available" if coverage_current else "Unavailable"
     return {
@@ -120,7 +125,8 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
         "verified_runtime_minutes": verified_minutes,
         "expected_days_by_now": expected_by_now,
         "delivery_debt_days": max(0, expected_by_now - completed_days) if status == "available" else None,
-        "remaining_weekly_obligation_days": max(0, target - completed_days) if status == "available" else None,
+        "remaining_weekly_obligation_days": max(0, epoch_target - completed_days) if status == "available" else None,
+        "planning_epoch_start": epoch_start.isoformat() if epoch_start else None,
         "verified_outcome_ids": sorted(outcomes),
         "on_receipts_counted": 0,
         "delivered_volume": "Unavailable",
@@ -133,17 +139,20 @@ def build_run_outcome_evidence(outcome, *, now=None):
     zone_id = str(item.get("zone_id") or "")
     if zone_id not in ZONES:
         raise ValueError("unsupported_irrigation_zone")
+    timed = item.get("stop_mode") == "scheduled"
+    maximum = 120 if timed else 60
     planned = _number(item.get("planned_runtime_minutes"))
     actual = _number(item.get("verified_runtime_minutes"))
-    if planned is None or planned <= 0 or planned > 60:
+    if planned is None or planned <= 0 or planned > maximum:
         raise ValueError("planned_runtime_must_be_1_to_60_minutes")
-    if actual is None or actual < 0 or actual > 60:
+    if actual is None or actual < 0 or actual > maximum:
         raise ValueError("verified_runtime_must_be_0_to_60_minutes")
     packet = {
         "zone_id": zone_id,
         "planned_start": item.get("planned_start"),
         "actual_start": item.get("actual_start"),
         "actual_stop": item.get("actual_stop"),
+        **({"stop_mode": "scheduled"} if timed else {}),
         "planned_runtime_minutes": planned,
         "verified_runtime_minutes": actual,
         "shutdown_verified": item.get("shutdown_verified") is True,
@@ -225,8 +234,10 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
             "outcome_id": correction.get("outcome_id"), "source": correction.get("source"),
             "objective_satisfied": correction.get("objective_satisfied"),
         })
-    zone_policy = _dict(zone.get("operating_policy")) if zone_id == "A12345" else {}
-    target = zone_policy.get("target_days_per_week") if zone_id == "A12345" else policy["target_days_per_week"]
+    zone_policy = _dict(zone.get("operating_policy"))
+    timed = (zone_policy.get("contract_version") == "rootline_operating_policy_abce.v3"
+             and zone_policy.get("stop_mode") == "scheduled")
+    target = zone_policy.get("target_days_per_week") if zone_id in {"A12345", "E12345"} else policy["target_days_per_week"]
     obligation = (project_weekly_delivery_obligation(
         zone, now=now, target_days_per_week=target, additional_outcomes=correction_outcomes)
         if type(target) is int and 1 <= target <= 7 else
@@ -284,9 +295,12 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     elif parent_job and parent_projection.get("status") == "conflicting_incomplete_parent_jobs":
         decision, reason = "Needs Data", (
             "Conflicting durable parent jobs must be reconciled before this zone can execute.")
+    if timed and decision=="Run now":
+        reason="Current irrigation need and dry observed weather support the scheduled irrigation run."
     if water_balance.get("status")=="Available" and water_balance.get("ledger_current") is True:
         effect=water_balance.get("obligation_effect")
-        fraction=max(0.0,min(1.0,_number(water_balance.get("partial_obligation_credit")) or 0.0))
+        fraction=(0.0 if timed and effect == "Needs Data" else
+            max(0.0,min(1.0,_number(water_balance.get("partial_obligation_credit")) or 0.0)))
         score=max(0,int(score-round(fraction*40)))
         if effect=="satisfied" and decision!="recovery required":
             decision="Hold"
@@ -298,10 +312,12 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
             decision="Hold"
             reason=("Trace observed rain pauses this start for bounded infiltration reassessment; "
                     "it earns no water or schedule-obligation credit.")
-        elif effect=="Needs Data" and decision!="recovery required":
+        elif effect=="Needs Data" and decision!="recovery required" and not timed:
             decision="Needs Data"
             reason="Current observed-rain evidence is stale or conflicting; preserve schedule debt and reassess without manufacturing credit."
     confidence, gaps = _confidence(zone, weather, forecast, water, power, now)
+    if timed and water_balance.get("obligation_effect") == "Needs Data":
+        gaps.append("water_balance_stale_no_credit")
     if obligation["status"] == "Unavailable":
         gaps.append("verified_completion_ledger_coverage_unavailable")
     elif obligation["status"] == "conflicting":
@@ -313,26 +329,35 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     if decision in {"Run now", "Run later"} and standing_water["blocks_irrigation"]:
         decision = "Hold"
         reason = standing_water["reason"]
-    if (_observed_rain(weather, now) and decision != "recovery required"
+    if (_observed_rain(weather, now, timed=timed) and decision != "recovery required"
             and obligation["status"] != "conflicting"):
         decision = "Hold"
         reason = "Fresh local evidence records rain; reassess need after observed rain rather than relying on forecast."
     runtime = 120
-    max_segment = 60
-    if zone_id == "A12345":
+    max_segment = 120 if timed else 60
+    if timed and zone_id in {"B12345", "C12345"}:
+        maximum = zone_policy.get("maximum_continuous_runtime_minutes")
+        if type(maximum) is not int or maximum != 120:
+            gaps.append("continuous_runtime_policy_unavailable")
+            if decision != "recovery required":
+                decision, reason = "Needs Data", "The active policy must support the confirmed continuous two-hour run."
+    if zone_id in {"A12345", "E12345"}:
         runtime = zone_policy.get("requested_total_duration_minutes")
         max_segment = zone_policy.get("maximum_continuous_runtime_minutes")
         minimum = zone_policy.get("minimum_useful_runtime_minutes")
+        if timed and minimum == "Unknown":
+            minimum = 1  # Internal numeric lower bound, not an agronomic assertion.
         missing = (type(runtime) is not int or type(max_segment) is not int
             or type(minimum) is not int or not 1 <= minimum <= max_segment
-            or not 1 <= max_segment <= 60 or not minimum <= runtime <= min(120, 2 * max_segment)
+            or not 1 <= max_segment <= (120 if timed else 60)
+            or not minimum <= runtime <= min(120, max_segment if timed else 2 * max_segment)
             or not str(zone_policy.get("evidence_source") or "").strip()
-            or zone_policy.get("water_supply") != "gravity_fed_downhill"
+            or (not timed and zone_policy.get("water_supply") != "gravity_fed_downhill")
             or target not in ("need_based", 1, 2, 3, 4, 5, 6, 7))
         if missing:
-            gaps.append("a_operating_policy_unavailable")
+            gaps.append(f"{zone_id[0].lower()}_operating_policy_unavailable")
             if decision != "recovery required":
-                decision, reason = "Needs Data", "A Camp needs its own supported runtime, need policy and water-supply evidence."
+                decision, reason = "Needs Data", f"{zone_id[0]} Camp needs its own supported runtime and weekly policy."
         elif target == "need_based" and need.lower() not in {"urgent", "dry", "needed", "visible_need"} and not parent_job:
             if decision not in {"recovery required", "Completed", "Hold"}:
                 decision, reason = "Needs Data", "A Camp needs current attributable irrigation-need evidence."
@@ -341,8 +366,14 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
             next_seconds = _number(parent_projection.get("segment_requested_seconds"))
             if (original_total is None or next_seconds is None
                     or original_total > runtime * 60
-                    or next_seconds > min(3599, max_segment * 60)):
+                    or next_seconds > (max_segment * 60
+                        if timed and parent_job.get("contract_version") == "rootline_irrigation_job.v2"
+                        else min(3599, max_segment * 60))):
                 decision, reason = "Hold", "The current A policy no longer supports this parent's original target or next segment; preserve it for governed reassessment."
+    if parent_job and parent_job.get("contract_version") != "rootline_irrigation_job.v2":
+        # A new policy never upgrades an existing signed segmented job.
+        timed = False
+        max_segment = min(60, max_segment) if type(max_segment) is int else 60
     window = _window(decision, policy, power, now)
     urgent = need.lower() == "urgent"
     gravity_fed = policy.get("gravity_fed_bc", True)
@@ -365,7 +396,8 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
             zone.get("stale_incomplete_parent_jobs", []) if isinstance(item, dict)],
         "contained_parent_jobs": [dict(item) for item in
             zone.get("contained_parent_jobs", []) if isinstance(item, dict)],
-        "fresh_decision_before_second_segment": True,
+        "fresh_decision_before_second_segment": not timed,
+        "stop_mode": "scheduled" if timed else "native_fail_stop",
         "shutdown_verification_required": True,
         "simultaneous_with_other_zone": False,
         "grid_exposure_may_be_justified": urgent and not gravity_fed,
@@ -541,7 +573,11 @@ def _standing_water_policy(water, now):
                    "current canonical shortage or supply-fault evidence contradicts it.")}
 
 
-def _observed_rain(weather, now):
+def _observed_rain(weather, now, *, timed=False):
+    if timed:
+        # The versioned policy uses current rate, not accumulated daily rain.
+        return (_freshness(weather, now, 30) == "fresh"
+                and (_number(weather.get("rain_rate_mm_h")) or 0) > 0.2)
     return (_freshness(weather, now, 30) == "fresh"
             and ((_number(weather.get("rain_rate_mm_h")) or 0) > 0
                  or (_number(weather.get("rain_today_mm")) or 0) >= 2))
