@@ -102,7 +102,7 @@ def test_pulse_retry_token_is_bound_to_invocation_and_last_opportunity():
     assert sum(row["units"] for row in client.backend.events) == 12
 
 
-@pytest.mark.parametrize("cap,used", [("LOCAL_ROLLING_LIMIT",39999), ("LOCAL_ROLLING_LIMIT",40000),
+@pytest.mark.parametrize("cap,used", [("LOCAL_ROLLING_LIMIT",budget.LOCAL_ROLLING_LIMIT-1), ("LOCAL_ROLLING_LIMIT",budget.LOCAL_ROLLING_LIMIT),
     ("FIVE_MINUTE_LIMIT",249), ("FIVE_MINUTE_LIMIT",250)])
 def test_optional_whole_group_never_crosses_actual_request_limits(cap, used):
     client = MemoryBudget(); scope = budget.scope_digest(ENV,"eu")
@@ -178,7 +178,7 @@ class MinuteJourney:
                     "count":count,"recent":recent,"remaining":remaining,
                     **(kwargs.get("detail") or {})})
                 assert recent+remaining<=250
-                assert count+remaining<=40000
+                assert count+remaining<=budget.LOCAL_ROLLING_LIMIT
         self.client._append=traced_append
         monkeypatch.setattr(budget,"RequestBudget",lambda *_args,**_kwargs:self.client)
         safe=timed.timed_snapshot_safe
