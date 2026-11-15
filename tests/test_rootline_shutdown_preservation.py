@@ -514,7 +514,7 @@ def test_unresolved_parent_truth_survives_final_observation_and_owner_status(
     observation = observations[0]
     for item in observation["zones"]:
         lifecycle = item["lifecycle"]
-        if item["zone_id"] == "A12345":
+        if item["zone_id"] in {"A12345", "E12345"}:
             assert not lifecycle["execution_exceptions"] and lifecycle["state"] != "Completed"
             continue
         assert lifecycle["state"] == "Held"
@@ -541,7 +541,7 @@ def test_unresolved_parent_truth_survives_final_observation_and_owner_status(
     assert code == 200 and status["safety"]["can_control"] is False
     assert status["source"]["writes_to_supabase"] is False
     for item in status["zones"]:
-        if item["zone_id"] == "A12345":
+        if item["zone_id"] in {"A12345", "E12345"}:
             assert item["lifecycle"]["state"] != "Completed"
             assert not item["lifecycle"]["execution_exceptions"]
             continue
@@ -630,7 +630,7 @@ def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composi
     history = read(rows, typed)
     assert all(zone["events"][-1]["qualifies_as_completed_watering"] is True
                for zone_id, zone in history["zones"].items() if zone_id in {"B12345", "C12345"})
-    assert not history["zones"]["A12345"]["events"]
+    assert all(not history["zones"][zone]["events"] for zone in ("A12345", "E12345"))
     initial = _planning_initial(history)
     initial["artifact"].update(status=blocker)
     for task in initial["plan"]["candidate_tasks"]:
@@ -640,7 +640,7 @@ def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composi
     specialist = project_water_energy_plan({**initial["plan"], "success": True,
         "recent_irrigation_history": history}, now=NOW)
     for item in observation["zones"]:
-        if item["zone_id"] == "A12345":
+        if item["zone_id"] in {"A12345", "E12345"}:
             assert item["lifecycle"]["state"] != "Completed"
             assert "completion_evidence" not in item["lifecycle"]
             continue
@@ -659,7 +659,7 @@ def test_typed_fulfilled_objective_keeps_completion_through_actual_owner_composi
     status, code = owner.get_rootline_owner_status(NOW.date().isoformat(), "synthetic-unused", now=NOW)
     assert code == 200
     for item in status["zones"]:
-        if item["zone_id"] == "A12345":
+        if item["zone_id"] in {"A12345", "E12345"}:
             assert item["lifecycle"]["state"] != "Completed"
             assert "completion_evidence" not in item["lifecycle"]
             continue
@@ -704,7 +704,7 @@ def test_recovery_off_proof_must_be_attributable_before_closing_safety_state(sta
         execution=recovery, eligibility={"eligible": True}, evidence_cutoff=cutoff)
     assert value["state"] == expected
     assert value["next_action"] == ("ROOTLINE must continue through the existing claimed execution."
-        if state == "claimed" else "ROOTLINE must verify shutdown and the physical outcome.")
+        if state == "claimed" else "ROOTLINE must verify the scheduled shutdown and controller state.")
     assert value["next_action_owner"] == "ROOTLINE"
     assert value["execution_exceptions"] == project_execution_shutdown_exceptions([recovery], evidence_cutoff=cutoff)
     assert recovery == before and "completion_evidence" not in value

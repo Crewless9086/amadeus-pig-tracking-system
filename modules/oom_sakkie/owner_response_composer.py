@@ -246,9 +246,16 @@ def _irrigation_brief(facts, af):
             if isinstance(row, Mapping)] not in (["B12345", "C12345"], list(IRRIGATION_ZONE_IDS)) \
             or any(row.get("status") not in statuses for row in zones):
         return ""
-    groups = [zones] if len({row["status"] for row in zones}) == 1 else (
-        [zones[:2], *[[row] for row in zones[2:]]]
-        if zones[0]["status"] == zones[1]["status"] else [[row] for row in zones])
+    groups = []
+    all_same = len({row["status"] for row in zones}) == 1
+    for row in zones:
+        # In mixed briefs, keep default/unknown outcomes individually visible.
+        # An equal verified outcome can still compact across every adjacent camp.
+        if groups and groups[-1][0]["status"] == row["status"] and (
+                all_same or row["status"] not in {"Not running", "Needs Data"}):
+            groups[-1].append(row)
+        else:
+            groups.append([row])
     lines = []
     for group in groups:
         label = " & ".join(row["zone"][0] for row in group) + (" kampe" if af and len(group) > 1 else
