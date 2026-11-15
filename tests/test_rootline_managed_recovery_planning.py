@@ -52,7 +52,10 @@ def predecessor_ast():
     assert isinstance(call, ast.Return)
     call.value.keywords = [kw for kw in call.value.keywords if kw.arg != "evidence_factory"]
     next(kw for kw in call.value.keywords if kw.arg == "evidence").value = ast.Name(id="packet", ctx=ast.Load())
-    node.body = node.body[:index] + body + [call]
+    # The eager reference has no inventory phase: explicitly bind every
+    # preparation identity formerly implicit in its inlined factory.
+    pending = ast.parse("pending_devices = {'FERTILIZER-MIXER-CH2', 'FERTILIZER-INJECTION-CH1', 'BOREHOLE-1-MINI-R4-CH1'}").body
+    node.body = node.body[:index] + pending + body + [call]
     for statement in node.body:
         if isinstance(statement, ast.ImportFrom) and statement.module == "modules.telemetry.rootline_managed_devices_runtime":
             statement.names = [name for name in statement.names if name.name != "ManagedDevicePlanningUnavailable"]
@@ -72,7 +75,8 @@ def active(kind="mixer", *, due=True, claimed=False):
         "on_attempts":1,
         "start_evidence": {"authoritative": True, "state": "ON",
             "retrieved_at":(NOW-timedelta(minutes=5)).isoformat()},
-        "provider_start_evidence": {"authoritative": True, "state": "ON"}}
+        "provider_start_evidence": {"authoritative": True, "state": "ON",
+            "retrieved_at": (NOW-timedelta(minutes=5)).isoformat()}}
     if kind != "borehole":
         row.update({"auxiliary_device_id": "FERTILIZER-INJECTION-CH1" if kind == "injector" else "FERTILIZER-MIXER-CH2",
             "device_type": "fertilizer_injection_valve" if kind == "injector" else "fertilizer_mixer",

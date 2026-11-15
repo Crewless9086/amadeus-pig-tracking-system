@@ -137,6 +137,10 @@ def _managed_outcomes(value):
             continue
         rows.append({key: str(item.get(key) or "")[:100]
             for key in ("managed_device", "status", "error_type")})
+        eskom = item.get("eskom")
+        if isinstance(eskom, Mapping):
+            pending.insert(0, {"managed_device": "eskom",
+                "status": eskom.get("status"), "error_type": eskom.get("error_type")})
         children = item.get("outcomes")
         if isinstance(children, (list, tuple)):
             pending.extend(children[:8])

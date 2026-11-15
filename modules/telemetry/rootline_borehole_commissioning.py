@@ -371,7 +371,12 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
                 effects_unknown=True, execution=active)
         deadline = _time(active.get("primary_stop_deadline"))
         if active.get("state") == "Active" and deadline is not None and now < deadline and not stop_for_energy:
-            observed = _read_borehole(transport)
+            from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
+            try:
+                with routine_execution_observation({**active, "device_type": "borehole_pump_power"}):
+                    observed = _read_borehole(transport)
+            except Exception:
+                observed = {"authoritative": False, "state": "Unknown"}
             now = _aware(clock())
             if observed.get("authoritative") is True and observed.get("state") == "OFF":
                 return _finish_borehole(active, store, transport, now, clock=clock,

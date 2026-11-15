@@ -81,7 +81,7 @@ def test_third_pass_keeps_cumulative_due_dedup_after_factory_failure(monkeypatch
     s = Scenario(monkeypatch); s.pending_mixer = True
     s.aux = [{"execution_id": "DUE", "auxiliary_device_id": "FERTILIZER-INJECTION-CH1",
         "primary_stop_deadline": (NOW-timedelta(seconds=1)).isoformat()}]
-    def factory():
+    def factory(*, pending_devices):
         s.events.append("FACTORY")
         raise managed.ManagedDevicePlanningUnavailable({"success": False, "status": "synthetic_failure"})
     s.factory = factory

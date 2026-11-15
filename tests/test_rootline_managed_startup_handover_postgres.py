@@ -400,7 +400,7 @@ def test_managed_borehole_persists_exact_eligibility_and_claims_after_delayed_re
         return store.rootline_irrigation_execution_store(action,body)
     transport=DelayedTransport()
     result=managed.run_rootline_managed_device_cycle(evidence=None,transport=transport,
-        evidence_factory=lambda:{'borehole_execution':artifact},store=actual_store,
+        evidence_factory=lambda **_:{'borehole_execution':artifact},store=actual_store,
         environ={'ROOTLINE_BOREHOLE_ENABLED':'true'},now=scheduler_time)
     assert result['status']=='borehole_started',result
     assert [row['state'] for row in transport.commands]==['ON']
@@ -455,7 +455,7 @@ def test_managed_borehole_start_gates_do_not_record_or_command(db,gate):
     def actual_store(action,body):
         actions.append(action)
         return store.rootline_irrigation_execution_store(action,body)
-    def factory():
+    def factory(*, pending_devices):
         assert gate!='active_only','active-only must not invoke the planner'
         return {'borehole_execution':{**artifact,'eligible':gate!='ineligible'}}
     result=managed.run_rootline_managed_device_cycle(evidence=None,evidence_factory=factory,

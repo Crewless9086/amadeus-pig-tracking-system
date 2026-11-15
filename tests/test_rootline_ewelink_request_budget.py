@@ -89,7 +89,9 @@ def fail(code=412, http=None):
 
 
 def test_expired_never_attempted_claim_conflict_cannot_strand_fresh_read_capacity(monkeypatch):
-    monkeypatch.setattr(budget, "LOCAL_ROLLING_LIMIT", 124)
+    monkeypatch.setattr(budget, "LOCAL_ROLLING_LIMIT", 36
+        + budget.DUTY_CAPACITY["borehole_pump_power"]
+        + budget.DUTY_CAPACITY["fertilizer_injection_valve"])
     client = MemoryBudget()
     key = budget.scope_digest(ENV, "eu")
     client.backend.events.extend({"at":NOW-timedelta(hours=1), "units":1,
@@ -352,7 +354,8 @@ def test_pre_on_expiry_fences_late_sender_without_releasing_attempted_on():
 
 def test_admission_denied_before_claim_when_all_active_reserves_do_not_fit(monkeypatch):
     client = MemoryBudget()
-    monkeypatch.setattr(budget, "FIVE_MINUTE_LIMIT", 70)
+    monkeypatch.setattr(budget, "FIVE_MINUTE_LIMIT",
+        budget.DUTY_CAPACITY["fertilizer_injection_valve"]+6)
     client.reserve_for_on(execution_id="EXEC-A", device_id="100204d497", channel=1,
         device_type="fertilizer_injection_valve", region="eu")
     with pytest.raises(budget.RequestBudgetUnavailable, match="capacity_unavailable"):

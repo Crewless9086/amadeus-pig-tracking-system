@@ -29,7 +29,8 @@ class ComposedPath(Path):
         self.borehole = {"execution_id": "SYNTHETIC-OWNED-BOREHOLE",
             "device_id": "1002851416", "channel": 1, "state": "Active",
             "primary_stop_deadline": (NOW + timedelta(hours=2)).isoformat(),
-            "provider_start_evidence": {"authoritative": True, "state": "ON"}}
+            "provider_start_evidence": {"authoritative": True, "state": "ON",
+                "retrieved_at": (NOW - timedelta(minutes=30)).isoformat()}}
         self.borehole_state = "ON"
         self.borehole_reads = []
         self.off_slots = set()
