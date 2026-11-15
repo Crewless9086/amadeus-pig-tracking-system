@@ -260,6 +260,13 @@ ROOTLINE_HISTORY_PREDECESSOR = AllowedMigration(
     filename="202608050001_harden_irrigation_events_history.sql",
     sha256="77e581326d60daef48647dcd3364d7907593a4754985cff465330c2df05a5656",
 )
+# Read-only provenance for the already installed supersession trigger. This
+# historical migration is never appended to ALLOWLIST or executed by this rail.
+ROOTLINE_SUPERSESSION_GUARD_SOURCE = AllowedMigration(
+    migration_id="202607300001_create_litter_supersession_rail",
+    filename="202607300001_create_litter_supersession_rail.sql",
+    sha256="1c31d0299c86e0d1afd2638b3ec857bdc7a14c123e21cd666c12820236e579f1",
+)
 ROOTLINE_CATALOG_RELATIONS = ("public.irrigation_events",)
 ROOTLINE_CATALOG_FUNCTIONS = (
     "public.rootline_append_typed_irrigation_event",
@@ -1119,6 +1126,75 @@ def _rootline_function_readback(connection, name: str, item: AllowedMigration) -
 
 
 
+def _rootline_supersession_guard(connection) -> dict:
+    """Read-only proof of the finite installed supersession guard profile."""
+    sql = _load_sql(ROOTLINE_SUPERSESSION_GUARD_SOURCE)
+    bodies = re.findall(
+        r"create\s+or\s+replace\s+function\s+public\.reject_superseded_pig_fact\s*\(\s*\)"
+        r"\s*returns\s+trigger\s+language\s+plpgsql\s+as\s+\$\$(.*?)\$\$;",
+        sql, flags=re.IGNORECASE | re.DOTALL,
+    )
+    if len(bodies) != 1:
+        raise RuntimeError("migration_rootline_supersession_guard_source_mismatch")
+    rows = connection.execute(
+        """select p.prosrc,pg_catalog.pg_get_functiondef(p.oid),
+                  pg_catalog.pg_get_function_identity_arguments(p.oid),l.lanname,
+                  pg_catalog.format_type(p.prorettype,null),p.proretset,p.prosecdef,
+                  p.proleakproof,p.provolatile,p.proparallel,p.proconfig,
+                  pg_catalog.pg_get_userbyid(p.proowner),current_user,p.oid,
+                  p.proisstrict,p.prokind,p.pronargs,p.provariadic
+             from pg_catalog.pg_proc p
+             join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+             join pg_catalog.pg_language l on l.oid=p.prolang
+            where n.nspname='public' and p.proname='reject_superseded_pig_fact'"""
+    ).fetchall()
+    if len(rows) != 1:
+        raise RuntimeError("migration_rootline_supersession_guard_missing_or_ambiguous")
+    (body, definition, arguments, language, result, returns_set, definer,
+     leakproof, volatility, parallel, config, owner, current_role, oid,
+     strict, kind, argument_count, variadic) = rows[0]
+    normalized = str(body).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if (normalized != bodies[0].strip() or owner != current_role
+            or (arguments, language, result, returns_set, definer, leakproof,
+                volatility, parallel, config, strict, kind, argument_count, variadic)
+            != ("", "plpgsql", "trigger", False, False, False,
+                "v", "u", None, False, "f", 0, 0)):
+        raise RuntimeError("migration_rootline_supersession_guard_definition_mismatch")
+    acl = connection.execute(
+        """select coalesce(r.rolname,'PUBLIC'),x.privilege_type,x.is_grantable,
+                  pg_catalog.pg_get_userbyid(x.grantor)
+             from pg_catalog.pg_proc p
+             cross join lateral pg_catalog.aclexplode(
+               coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) x
+             left join pg_catalog.pg_roles r on r.oid=x.grantee
+            where p.oid=%s and x.grantee<>p.proowner order by 1,2,3,4""", (oid,),
+    ).fetchall()
+    # Historical SQL's default and the observed hosted API grants are distinct
+    # exact profiles. This invoker trigger is not a service-only callable RPC.
+    default_acl = [("PUBLIC", "EXECUTE", False, owner)]
+    hosted_acl = [(role, "EXECUTE", False, owner)
+                  for role in ("PUBLIC", "anon", "authenticated", "service_role")]
+    if acl not in (default_acl, hosted_acl):
+        raise RuntimeError("migration_rootline_supersession_guard_acl_mismatch")
+    dependency = connection.execute(
+        """select c.relkind,c.relpersistence,pg_catalog.pg_get_userbyid(c.relowner),
+                  c.relrowsecurity,c.relforcerowsecurity,
+                  pg_catalog.format_type(a.atttypid,a.atttypmod),a.attnotnull
+             from pg_catalog.pg_class c
+             join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+             join pg_catalog.pg_attribute a on a.attrelid=c.oid
+              and a.attname='pig_id' and a.attnum>0 and not a.attisdropped
+            where n.nspname='public' and c.relname='litter_cohort_dispositions'"""
+    ).fetchall()
+    if dependency != [("r", "p", owner, False, False, "text", True)]:
+        raise RuntimeError("migration_rootline_supersession_guard_dependency_mismatch")
+    return {"source_sha256": ROOTLINE_SUPERSESSION_GUARD_SOURCE.sha256,
+            "body_sha256": hashlib.sha256(normalized.encode()).hexdigest(),
+            "definition_sha256": hashlib.sha256(str(definition).encode()).hexdigest(),
+            "acl_profile": "hosted_api_grants" if acl == hosted_acl else "historical_default",
+            "acl": [list(row) for row in acl], "dependency": list(dependency[0])}
+
+
 def _rootline_history_index(connection, name: str, *, zones=None) -> dict:
     rows = connection.execute(
         """select n.nspname,c.relname,am.amname,x.indisunique,x.indisprimary,
@@ -1284,16 +1360,24 @@ def _rootline_history_boundary(connection) -> dict:
              join pg_catalog.pg_namespace n on n.oid=c.relnamespace
              join pg_catalog.pg_proc p on p.oid=t.tgfoid
              join pg_catalog.pg_namespace fn on fn.oid=p.pronamespace
-            where n.nspname='public' and c.relname='irrigation_events' and not t.tgisinternal"""
+            where n.nspname='public' and c.relname='irrigation_events' and not t.tgisinternal
+            order by t.tgname"""
     ).fetchall()
-    if triggers != [("trg_irrigation_events_no_update_delete", "O", 27, "public",
-                     "irrigation_events_block_update_delete", "", 0, True, True, False, False)]:
+    append_only = ("trg_irrigation_events_no_update_delete", "O", 27, "public",
+                   "irrigation_events_block_update_delete", "", 0, True, True, False, False)
+    supersession = ("reject_superseded_pig_fact", "O", 31, "public",
+                    "reject_superseded_pig_fact", "", 0, True, True, False, False)
+    if triggers not in ([append_only], sorted([append_only, supersession])):
         raise RuntimeError("migration_rootline_history_guard_mismatch")
+    # Validate the extra function every precondition/readback/replay, without
+    # changing historical checkpoint scopes or modifying either protection.
+    supersession_guard = _rootline_supersession_guard(connection) if supersession in triggers else None
     indexes = {
         "execution_phase": _rootline_history_index(connection, "irrigation_events_rootline_execution_phase_uq"),
         "bc_cutoff": _rootline_history_index(connection, "irrigation_events_rootline_zone_cutoff_idx", zones=("B12345", "C12345")),
     }
     return {"append_only_guard": guard, "preserved_indexes": indexes,
+            **({"supersession_guard": supersession_guard} if supersession_guard else {}),
             "history_constraint_count": len(constraints),
             "table_residual_acl": [list(row) for row in residuals],
             "column_acl_count": 0}

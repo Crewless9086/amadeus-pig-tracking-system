@@ -946,3 +946,103 @@ def test_purpose_changed_state_committed_during_lock_wait_is_revalidated(purpose
             with pytest.raises(RuntimeError, match="migration_catalog_drift"):
                 future.result(timeout=10)
     assert _purpose_state() == external_state
+
+
+def _install_history_supersession_guard(*, hosted=True):
+    import re
+    with _connect() as db:
+        db.execute("drop function if exists public.reject_superseded_pig_fact() cascade")
+        db.execute("drop function if exists public.reject_superseded_pig_fact(integer) cascade")
+        db.execute("drop table if exists public.litter_cohort_dispositions cascade")
+        # Only this guard's canonical text identity dependency is needed here;
+        # the production read-only preflight verifies the installed relation.
+        db.execute("create table public.litter_cohort_dispositions(pig_id text not null primary key)")
+        db.execute("insert into public.litter_cohort_dispositions values('SYNTHETIC-RETIRED-PIG')")
+        source = rail._load_sql(rail.ROOTLINE_SUPERSESSION_GUARD_SOURCE)
+        definition = re.search(r"create or replace function public\.reject_superseded_pig_fact\(\).*?\$\$;", source, re.S).group()
+        db.execute(definition)
+        if hosted:
+            db.execute("grant execute on function public.reject_superseded_pig_fact() to anon,authenticated,service_role")
+        db.execute("create trigger reject_superseded_pig_fact before insert or update or delete on public.irrigation_events for each row execute function public.reject_superseded_pig_fact()")
+
+
+def _history_guard_state():
+    with _connect() as db:
+        return db.execute("select pg_get_triggerdef(oid) from pg_trigger where tgrelid='public.irrigation_events'::regclass and not tgisinternal order by tgname").fetchall(), db.execute("select pg_get_functiondef(oid),proacl::text from pg_proc where oid='public.reject_superseded_pig_fact()'::regprocedure").fetchone()
+
+
+@pytest.mark.parametrize("hosted", [False, True])
+def test_history_supersession_profile_upgrade_replay_and_both_protections(predecessor, hosted):
+    import psycopg
+    _install_history_supersession_guard(hosted=hosted)
+    before = _state()
+    guards = _history_guard_state()
+    first = rail.run(DATABASE_URL, legacy.ENV)
+    assert first["migrations"][-1]["readback"]["supersession_guard"]["acl_profile"] == ("hosted_api_grants" if hosted else "historical_default")
+    assert _state()[1] == before[1] and _history_guard_state() == guards
+    with _connect() as db:
+        db.execute("set local role service_role")
+        statement = "select public.rootline_append_typed_irrigation_event(%s,now(),'PLANNED','A12345',10,null,%s::jsonb)"
+        details = {"contract_version":"rootline_irrigation_outcome_v1","event_sha256":"e"*64,"execution_id":"SYNTHETIC-HISTORY-GUARD"}
+        assert db.execute(statement,("SYNTHETIC-HISTORY-GUARD",json.dumps(details))).fetchone()[0]
+        assert not db.execute(statement,("SYNTHETIC-HISTORY-GUARD",json.dumps(details))).fetchone()[0]
+        with pytest.raises(psycopg.Error,match="superseded duplicate"):
+            with db.transaction():
+                db.execute(statement,("SYNTHETIC-BLOCKED",json.dumps({**details,"execution_id":"SYNTHETIC-RETIRED-PIG"})))
+    with _connect() as db:
+        for mutation in ("update public.irrigation_events set reason='changed'", "delete from public.irrigation_events"):
+            with pytest.raises(psycopg.Error,match="append-only"):
+                with db.transaction():db.execute(mutation)
+    after = _state()
+    assert rail.run(DATABASE_URL,legacy.ENV)["migrations"][-1]["outcome"] == "already_applied"
+    assert _state() == after and _history_guard_state() == guards
+
+
+def test_history_supersession_whole_a_precondition_is_read_only(predecessor):
+    _install_history_supersession_guard()
+    class SelectOnly:
+        def __init__(self, db):self.db=db
+        def execute(self, sql, args=None):
+            assert sql.lstrip().lower().startswith("select ")
+            return self.db.execute(sql,args)
+    with _connect() as db:
+        db.execute("set transaction read only")
+        result = rail._verify_rootline_a_history(SelectOnly(db),A_ITEM,target=False)
+        assert result["supersession_guard"]["acl_profile"] == "hosted_api_grants"
+        db.rollback()
+
+
+HISTORY_SUPERSESSION_ATTACKS = [
+    "alter table public.irrigation_events disable trigger reject_superseded_pig_fact",
+    "alter table public.irrigation_events enable always trigger reject_superseded_pig_fact",
+    "drop trigger reject_superseded_pig_fact on public.irrigation_events; create trigger reject_superseded_pig_fact before update or delete on public.irrigation_events for each row execute function public.reject_superseded_pig_fact()",
+    "drop trigger reject_superseded_pig_fact on public.irrigation_events; create trigger reject_superseded_pig_fact before insert or update or delete on public.irrigation_events for each row execute function public.reject_superseded_pig_fact('unexpected')",
+    "drop trigger reject_superseded_pig_fact on public.irrigation_events; create trigger reject_superseded_pig_fact before insert or update on public.irrigation_events for each row when (new.zone_id='B12345') execute function public.reject_superseded_pig_fact()",
+    "create or replace function public.reject_superseded_pig_fact() returns trigger language plpgsql as $$ begin return new; end; $$",
+    "alter function public.reject_superseded_pig_fact() security definer",
+    "alter function public.reject_superseded_pig_fact() stable",
+    "alter function public.reject_superseded_pig_fact() parallel safe",
+    "alter function public.reject_superseded_pig_fact() set search_path=public",
+    "alter function public.reject_superseded_pig_fact() strict",
+    "alter function public.reject_superseded_pig_fact() leakproof",
+    "create function public.reject_superseded_pig_fact(integer) returns integer language sql as 'select $1'",
+    "grant execute on function public.reject_superseded_pig_fact() to pg_read_all_data",
+    "grant execute on function public.reject_superseded_pig_fact() to service_role with grant option",
+    "revoke execute on function public.reject_superseded_pig_fact() from anon",
+    "alter table public.litter_cohort_dispositions enable row level security",
+    "alter table public.litter_cohort_dispositions drop constraint litter_cohort_dispositions_pkey; alter table public.litter_cohort_dispositions alter column pig_id drop not null",
+    "alter table public.litter_cohort_dispositions alter column pig_id type varchar(100)",
+    "create trigger unknown_guard before insert on public.irrigation_events for each row execute function public.reject_superseded_pig_fact()",
+    "drop trigger trg_irrigation_events_no_update_delete on public.irrigation_events",
+]
+
+
+@pytest.mark.parametrize("stage", ["predecessor", "replay"])
+@pytest.mark.parametrize("attack", HISTORY_SUPERSESSION_ATTACKS)
+def test_history_supersession_unknown_or_tampered_profile_is_atomic(predecessor, stage, attack):
+    _install_history_supersession_guard()
+    if stage == "replay":rail.run(DATABASE_URL,legacy.ENV)
+    with _connect() as db:db.execute(attack)
+    before = _state()
+    with pytest.raises(RuntimeError):rail.run(DATABASE_URL,legacy.ENV)
+    assert _state() == before

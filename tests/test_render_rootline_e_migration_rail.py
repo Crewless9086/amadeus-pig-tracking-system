@@ -172,3 +172,31 @@ def test_direct_purpose_eight_to_ten_is_atomic(purpose_predecessor, monkeypatch,
     replay = rail.run(legacy.DATABASE_URL, legacy.ENV)
     assert replay["migrations"][8]["readback"]["verified_e_successor_receipt_id"] == result["migrations"][9]["receipt_id"]
     assert a._purpose_state() == after
+
+
+@pytest.mark.parametrize("route", ["direct", "staged", "rollback"])
+def test_history_supersession_production_profile_survives_a_e_and_rollback(predecessor, monkeypatch, route):
+    a._install_history_supersession_guard()
+    before = a._state()
+    guards = a._history_guard_state()
+    if route == "staged":
+        with patch.object(rail,"ALLOWLIST",a.A_ALLOWLIST):
+            assert rail.run(legacy.DATABASE_URL,legacy.ENV)["migrations"][-1]["outcome"] == "applied"
+    if route == "rollback":
+        original = rail._verify_migration_readback
+        def fail_e(db,item):
+            value=original(db,item)
+            if item==E_ITEM:raise RuntimeError("synthetic late E failure")
+            return value
+        monkeypatch.setattr(rail,"_verify_migration_readback",fail_e)
+        with pytest.raises(RuntimeError,match="migration_failed_and_rolled_back:"+E_ITEM.migration_id):
+            rail.run(legacy.DATABASE_URL,legacy.ENV)
+        assert a._state()==before and a._history_guard_state()==guards
+        return
+    first=rail.run(legacy.DATABASE_URL,legacy.ENV)
+    assert first["migrations"][-1]["readback"]["supersession_guard"]["acl_profile"]=="hosted_api_grants"
+    after=a._state()
+    assert after[1]==before[1] and a._history_guard_state()==guards
+    replay=rail.run(legacy.DATABASE_URL,legacy.ENV)
+    assert replay["migrations"][8]["readback"]["verified_e_successor_receipt_id"]==first["migrations"][9]["receipt_id"]
+    assert a._state()==after and a._history_guard_state()==guards
