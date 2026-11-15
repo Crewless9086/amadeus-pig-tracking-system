@@ -553,6 +553,29 @@ def injection_parent_read_due(context, *, now):
         and deadline is not None and now < deadline)
 
 
+def injection_preparation_observation(context, *, now, admission_token):
+    """One invocation-bound optional attempt; final command proof stays fresh."""
+    from modules.telemetry.rootline_ewelink_request_budget import optional_observation, RequestBudgetUnavailable
+    if not injection_parent_read_due(context, now=now):
+        raise RequestBudgetUnavailable("injection_preparation_not_due")
+    pulse = _next_pulse_index(context, now)
+    final_flush = context.get("completed_pulses") == _pulse_limit(context)
+    deadline = _time(context.get("irrigation_stop_deadline"))
+    if not final_flush:
+        start = _time((context.get("zone_start_evidence") or {}).get("observed_at"))
+        if context.get("stop_mode") == "scheduled":
+            deadline = min(deadline, start+timedelta(seconds=(pulse//2+1)*3600))
+        required = (INJECTION_SECONDS+MIN_PULSE_SPACING_SECONDS+INJECTION_SECONDS+MIN_FLUSH_SECONDS
+            if pulse%2 == 0 else INJECTION_SECONDS+MIN_FLUSH_SECONDS)
+        deadline -= timedelta(seconds=required)
+    return optional_observation("final_flush" if final_flush else "pulse_preparation",
+        binding={"zone_execution_id": context.get("zone_execution_id"),
+            "provider_account_binding": "ewelink_owner_account",
+            "device_id": "100204d497", "channel": 1,
+            **({} if final_flush else {"phase_number": pulse//2+1, "pulse_number": pulse+1})},
+        last_read_at=deadline.isoformat(), admission_token=admission_token)
+
+
 def _next_pulse_index(context,now):
     if context.get("stop_mode")!="scheduled":
         return int(context.get("completed_pulses") or 0)

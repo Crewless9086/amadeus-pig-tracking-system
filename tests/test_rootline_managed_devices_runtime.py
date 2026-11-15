@@ -584,7 +584,7 @@ def test_borehole_eligibility_assesses_power_after_baseline_and_provider_reads(m
                 "evidence_id":"synthetic-off"}
             outputs.append(deepcopy(output));return output
     def cycle(**kwargs):
-        packets.append(kwargs["evidence_factory"]())
+        packets.append(kwargs["evidence_factory"](pending_devices=frozenset({"BOREHOLE-1-MINI-R4-CH1"})))
         return {"status":"prepared","hardware_commands":0}
     monkeypatch.setattr("modules.telemetry.rootline_borehole_commissioning.load_registered_borehole_baseline",load_baseline)
     monkeypatch.setattr(managed,"run_rootline_managed_device_cycle",cycle)

@@ -316,7 +316,7 @@ def test_real_manager_initial_claim_and_fresh_readiness_refresh_are_not_starved(
                 for endpoint in ("/v2/family", "/v2/device/thing", "/v2/device/thing/status"):
                     client.dispatch(region="eu", endpoint=endpoint, send=lambda _: {})
                 group["normalized_complete"] = True
-            reads.append(group["optional_purpose"])
+            reads.append(group["optional_purpose"]["purpose"])
             result = provider(device, now=kwargs["now"])
             result["channels"][1]["native_auto_off_enabled"] = False
             return result

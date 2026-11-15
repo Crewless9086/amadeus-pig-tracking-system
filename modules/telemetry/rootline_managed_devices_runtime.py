@@ -148,7 +148,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             remaining_seconds()
             if evidence_factory is not None:
                 planning_started = True
-                evidence = evidence_factory()
+                evidence = evidence_factory(pending_devices=frozenset(pending))
             remaining_seconds()
     except ManagedDevicePlanningUnavailable as exc:
         planning_failure = exc.result

@@ -294,7 +294,7 @@ def test_borehole_timed_cap_and_claim():
      for changed in [{"stop_mode":None},{"channel":2},{"primary_stop_deadline":(NOW+timedelta(seconds=1)).isoformat()},{"native_fail_stop_deadline":NOW.isoformat()}]:
       assert not es._claim_borehole_material_load({**body,**changed})["created"]
     clock[0]=NOW; t.state="OFF"
-    with patch.object(managed,"run_rootline_managed_device_cycle",lambda **kwargs:kwargs["evidence_factory"]()),patch.object(runtime,"build_water_energy_plan",lambda *args,**kwargs:{"candidate_tasks":[{"task_id":"borehole","recommendation":"Recommend"}]}),patch.object(b,"load_registered_borehole_baseline",lambda **kwargs:base),patch.object(energy,"managed_energy_decision",lambda *args,**kwargs:{"borehole_eligible":True,"mixing_eligible":True}):
+    with patch.object(managed,"run_rootline_managed_device_cycle",lambda **kwargs:kwargs["evidence_factory"](pending_devices=frozenset({"BOREHOLE-1-MINI-R4-CH1"}))),patch.object(runtime,"build_water_energy_plan",lambda *args,**kwargs:{"candidate_tasks":[{"task_id":"borehole","recommendation":"Recommend"}]}),patch.object(b,"load_registered_borehole_baseline",lambda **kwargs:base),patch.object(energy,"managed_energy_decision",lambda *args,**kwargs:{"borehole_eligible":True,"mixing_eligible":True}):
      packet=runtime.run_rootline_managed_device_reassessment(environ={"ROOTLINE_TIMED_CONTROL_ENABLED":"true","ROOTLINE_BOREHOLE_ENABLED":"true"},now=NOW,clock=lambda:NOW,transport=t,token_store=object(),evidence_loader=lambda **kwargs:({},NOW.astimezone(runtime.ZA_TZ).date().isoformat(),NOW))
      assert packet["borehole_execution"]["requested_seconds"]==14400
 

@@ -66,7 +66,7 @@ class Scenario:
                 "primary_stop_deadline": (NOW+timedelta(seconds=100)).isoformat()}]
         if self.after: self.after()
 
-    def evidence_factory(self):
+    def evidence_factory(self, *, pending_devices):
         self.evidence_reads += 1
         self.events.append(("evidence_factory", self.clock.elapsed))
         return {}
@@ -173,7 +173,7 @@ def test_new_due_duty_is_supervised_before_empty_tail_returns(monkeypatch):
 
 def test_evidence_needed_path_keeps_planning_failure_and_final_pass(monkeypatch):
     s = Scenario(monkeypatch); s.borehole = None; s.expire = False
-    def failed():
+    def failed(*, pending_devices):
         s.evidence_reads += 1
         raise managed.ManagedDevicePlanningUnavailable({"success": False, "status": "managed_device_evidence_unavailable"})
     s.evidence_factory = failed

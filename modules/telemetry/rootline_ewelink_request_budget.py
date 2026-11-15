@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from email.utils import parsedate_to_datetime
 import json
+import math
 import os
 import time
 import threading
@@ -32,14 +33,14 @@ GROUP_SECONDS = 60.0
 MAX_PACE_WAIT_SECONDS = 1.1
 TRANSIENT_BACKOFF = (60, 300, 900, 3600)
 # Whole three-GET snapshots: routine duty plus a finite initial recovery
-# allowance. Injector routine duty covers two overlapping minute workers, each
-# with the existing outer/inner supervision pass. Longer unresolved recovery
+# allowance. Injector routine duty covers an immediate second worker after ON
+# plus two minute workers with all three existing supervision passes. Longer unresolved recovery
 # uses the separately bounded hourly four-attempt replenishment below.
 DUTY_SNAPSHOTS = {
-    "irrigation_zone_valve": (1 + 2*(1+2) + 1 + 1, 6),
+    "irrigation_zone_valve": (1 + 4*(1+2) + 1 + 1 + 7, 6),
     "fertilizer_mixer": (1 + 1, 5),
-    "fertilizer_injection_valve": (1 + 1 + 2*2*2 + 1, 10),
-    "borehole_pump_power": (1 + 1, 5)}
+    "fertilizer_injection_valve": (1 + 1 + 1 + 3*2*2 + 1, 10),
+    "borehole_pump_power": (1 + 1 + 7, 5)}
 DUTY_REFRESH_ALLOWANCE = {"irrigation_zone_valve": 3, "fertilizer_mixer": 3,
     "fertilizer_injection_valve": 1, "borehole_pump_power": 3}
 DUTY_CAPACITY = {kind: 3*sum(bounds)+DUTY_REFRESH_ALLOWANCE[kind]
@@ -47,7 +48,9 @@ DUTY_CAPACITY = {kind: 3*sum(bounds)+DUTY_REFRESH_ALLOWANCE[kind]
 _duty = ContextVar("rootline_ewelink_duty", default=None)
 _group = ContextVar("rootline_ewelink_snapshot", default=None)
 _optional_observation = ContextVar("rootline_ewelink_optional_observation", default=None)
-OPTIONAL_OBSERVATION_SECONDS = {"mixer_readiness": 1800, "mixer_readiness_delivery": 1800}
+OPTIONAL_OBSERVATION_SECONDS = {"mixer_readiness": 1800, "mixer_readiness_delivery": 1800,
+    "irrigation_routine": 900, "borehole_routine": 1800,
+    "pulse_preparation": 300, "final_flush": 300}
 _request_workers = threading.BoundedSemaphore(2)
 _dispatch_audit = ContextVar("rootline_ewelink_dispatch_audit", default=None)
 _private_pair = ContextVar("rootline_ewelink_private_no_send_pair", default=None)
@@ -75,14 +78,37 @@ class OptionalObservationDeferred(RequestBudgetUnavailable):
 
 
 @contextmanager
-def optional_observation(purpose):
+def optional_observation(purpose, *, binding=None, first_read_at=None,
+                         interval_seconds=None, last_read_at=None, admission_token=None):
     if purpose not in OPTIONAL_OBSERVATION_SECONDS:
         raise ValueError("unregistered_optional_observation")
-    token = _optional_observation.set(purpose)
+    token = _optional_observation.set({"purpose": purpose,
+        "binding": dict(binding or {}), "first_read_at": first_read_at,
+        "interval_seconds": interval_seconds or OPTIONAL_OBSERVATION_SECONDS[purpose],
+        "last_read_at": last_read_at, "admission_token": admission_token})
     try:
         yield
     finally:
         _optional_observation.reset(token)
+
+
+@contextmanager
+def routine_execution_observation(execution):
+    """Durable due slots affect routine observation only, never a stop duty."""
+    borehole = execution.get("device_type") == "borehole_pump_power"
+    purpose = "borehole_routine" if borehole else "irrigation_routine"
+    interval = (max(1800, math.ceil(int(execution.get("planned_runtime_seconds") or
+        execution.get("requested_seconds") or execution.get("maximum_duration_seconds") or 0)/480)*60) if borehole else 900)
+    start = execution.get("provider_start_evidence" if borehole else "start_evidence") or {}
+    started = _time(start.get("retrieved_at") or start.get("observed_at"))
+    if started is None or not execution.get("execution_id"):
+        raise RequestBudgetUnavailable("ewelink_optional_execution_binding_unproven")
+    with optional_observation(purpose, binding={"execution_id": execution["execution_id"],
+            "provider_account_binding": "ewelink_owner_account",
+            "device_id": execution.get("device_id"), "channel": execution.get("channel")},
+            first_read_at=(started+timedelta(seconds=interval)).isoformat(),
+            interval_seconds=interval, last_read_at=execution.get("primary_stop_deadline")):
+        yield
 
 
 def classify_failure(*, provider_code=None, http_status=None, retry_after=None, now=None):
@@ -178,7 +204,11 @@ def snapshot_group(*, expected_device, environ, region, deadline=None):
         if group["budget"] is not None and group["normalized_complete"] and not group["failed"]:
             group["budget"].complete_snapshot(group)
     finally:
-        _group.reset(token)
+        try:
+            if group["budget"] is not None and group.get("optional_purpose"):
+                group["budget"].finish_optional_group(group)
+        finally:
+            _group.reset(token)
 
 
 def request_timeout():
@@ -664,20 +694,43 @@ class RequestBudget:
             counts = None
         self._reconcile_reserves(connection, state, now)
         scope = self._scope(state, key)
-        purpose = group.get("optional_purpose") if group else None
-        if purpose:
+        optional = group.get("optional_purpose") if group else None
+        purpose = optional["purpose"] if optional else None
+        if optional:
             observations = state.setdefault("optional_observations", {})
-            identity = key+":"+purpose
+            # Execution-bound keys expire only after their final eligible
+            # window and any already admitted snapshot have elapsed. The two
+            # account-wide manager keys remain, as do unknown legacy records.
+            for old_key, old in tuple(observations.items()):
+                expires = _time(old.get("expires_at"))
+                if expires is not None and now > expires:
+                    del observations[old_key]
+            binding = optional["binding"]
+            identity = key+":"+purpose+(":"+sha256(json.dumps(binding,
+                sort_keys=True, separators=(",", ":")).encode()).hexdigest() if binding else "")
             prior = observations.get(identity, {})
-            next_at = _time(prior.get("next_read_at"))
-            if prior.get("group_id") != group["id"] and next_at is not None and now < next_at:
+            next_at = _time(prior.get("next_read_at")) or _time(optional.get("first_read_at"))
+            last_at = _time(optional.get("last_read_at"))
+            same_attempt = (optional.get("admission_token") is not None
+                and prior.get("admission_token") == optional["admission_token"])
+            if ((last_at is not None and now > last_at and prior.get("group_id") != group["id"]) or
+                    (not same_attempt and prior.get("group_id") != group["id"]
+                        and next_at is not None and now < next_at)):
+                next_at = next_at or last_at
                 self._append(state, action="optional_observation_suppressed", detail={
                     "scope": key, "purpose": purpose, "next_read_at": next_at.isoformat(),
                     "provider_attempted": False})
                 raise OptionalObservationDeferred(next_at.isoformat())
-            if prior.get("group_id") != group["id"]:
+            if not same_attempt and prior.get("group_id") != group["id"]:
+                retry_at = now+timedelta(seconds=optional["interval_seconds"])
+                if last_at is not None and now < last_at:
+                    retry_at = min(retry_at, last_at)
                 observations[identity] = {"group_id": group["id"],
-                    "next_read_at": (now+timedelta(seconds=OPTIONAL_OBSERVATION_SECONDS[purpose])).isoformat()}
+                    "admission_token": optional.get("admission_token"),
+                    "next_read_at": retry_at.isoformat(),
+                    "expires_at": (last_at+timedelta(seconds=GROUP_SECONDS)).isoformat() if last_at else None}
+            elif same_attempt:
+                prior["group_id"] = group["id"]
         self._admit_availability(scope, group, now)
         count, recent = counts if counts is not None else self._counts(connection, now, scope=key, region=region)
         duty = _duty.get() or {}
@@ -696,7 +749,7 @@ class RequestBudget:
             # One refresh plus one whole snapshot may be replenished hourly,
             # only within existing capacity. This cannot restore ON authority.
             recovery_at = _time(reserve.get("recovery_due_at"))
-            if (reserve.get("phase") != "on_attempt"
+            if (optional or reserve.get("phase") != "on_attempt"
                     or (recovery_at is not None and now < recovery_at)
                     or count+scoped_reserved+4 > LOCAL_ROLLING_LIMIT
                     or recent+reserved+4 > FIVE_MINUTE_LIMIT):
@@ -706,6 +759,32 @@ class RequestBudget:
             reserved += 4
             scoped_reserved += 4
         usable = bound and reserve["remaining"] > 0
+        if optional and group.get("optional_attempts", 0) >= 4:
+            raise RequestBudgetUnavailable("ewelink_optional_snapshot_group_exhausted")
+        if bound:
+            # An admission only earmarks existing capacity. Per-send charging
+            # remains authoritative; no old or failed attempt is refunded.
+            groups = reserve.setdefault("optional_groups", {})
+            groups = reserve["optional_groups"] = {identifier: item for identifier, item in groups.items()
+                if (_time(item.get("until")) or now) > now}
+            admitted = groups.get(group["id"]) if group else None
+            held = sum(item["remaining"] for item in groups.values())
+            if optional and admitted is None:
+                if reserve["remaining"]-held < 8:
+                    raise RequestBudgetUnavailable("ewelink_optional_shutdown_tail_protected")
+                admitted = groups[group["id"]] = {"remaining": 4,
+                    "until": (now+timedelta(seconds=GROUP_SECONDS)).isoformat()}
+            elif admitted is not None:
+                if admitted["remaining"] <= 0:
+                    raise RequestBudgetUnavailable("ewelink_optional_snapshot_group_exhausted")
+            elif reserve["remaining"]-held <= 0:
+                raise RequestBudgetUnavailable("ewelink_active_snapshot_capacity_owned")
+        else:
+            admitted = None
+            if optional and group.get("optional_admitted") is not True:
+                if (count+scoped_reserved+4 > LOCAL_ROLLING_LIMIT
+                        or recent+reserved+4 > FIVE_MINUTE_LIMIT):
+                    raise RequestBudgetUnavailable("ewelink_optional_snapshot_capacity_unavailable")
         if count >= LOCAL_ROLLING_LIMIT or (not usable and count + scoped_reserved >= LOCAL_ROLLING_LIMIT):
             raise RequestBudgetUnavailable("ewelink_local_rolling_capacity_exhausted")
         if recent >= FIVE_MINUTE_LIMIT or (not usable and recent+reserved >= FIVE_MINUTE_LIMIT):
@@ -734,6 +813,8 @@ class RequestBudget:
         attempt = uuid.uuid4().hex
         if usable:
             reserve["remaining"] -= 1
+            if admitted is not None:
+                admitted["remaining"] -= 1
         state["pending_attempt"] = {"id": attempt, "recorded_at": now.isoformat()}
         self._append(state, action="request_attempt_reserved", attempt_units=1,
             detail={"attempt_id": attempt, "scope": key, "region": region, "endpoint": endpoint,
@@ -743,6 +824,9 @@ class RequestBudget:
         remaining()
         if group is not None:
             group["budget"] = self
+            if optional:
+                group["optional_admitted"] = True
+                group["optional_attempts"] = group.get("optional_attempts", 0)+1
         failure = None
         try:
             timeout = remaining()
@@ -812,6 +896,20 @@ class RequestBudget:
                 self._append(state, action="complete_snapshot_restored_availability",
                     detail={"scope": group["scope"], "group_id": group["id"],
                         "provider_remaining": "Unknown"})
+
+    def finish_optional_group(self, group):
+        """Release unused admission headroom, never charged request units."""
+        duty = _duty.get() or {}
+        identity = str(duty.get("execution_id") or "")
+        if not identity:
+            return
+        with self._locked() as connection:
+            state = self._load(connection)
+            reserve = state["reserves"].get(identity)
+            groups = reserve.get("optional_groups", {}) if reserve else {}
+            if groups.pop(group["id"], None) is not None:
+                self._append(state, action="optional_snapshot_finished", detail={
+                    "execution_id": identity, "group_id": group["id"], "attempt_units_refunded": 0})
 
     def reserve_for_on(self, *, execution_id, device_id, channel, device_type, region):
         key = scope_digest(self.environ, region)

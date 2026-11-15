@@ -206,6 +206,6 @@ def test_unidentified_auxiliary_holds_irrigation_but_keeps_known_borehole_off():
     result=run_rootline_managed_device_cycle(evidence={},store=store,transport=transport,
         allow_new_starts=True,now=at,clock=lambda:at,
         environ={"ROOTLINE_FERTILIZER_MIXING_ENABLED":"true","ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true"},
-        evidence_factory=lambda:pytest.fail("ambiguous auxiliary inventory cannot admit new auxiliary work"))
+        evidence_factory=lambda **_:pytest.fail("ambiguous auxiliary inventory cannot admit new auxiliary work"))
     assert result["success"] is False and result["blocks_bc"] is True
     assert [(row["device_id"],row["state"]) for row in transport.commands]==[("1002851416","OFF")]

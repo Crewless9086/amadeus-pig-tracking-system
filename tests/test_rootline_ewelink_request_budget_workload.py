@@ -230,7 +230,7 @@ def test_routine_reserves_cover_all_supported_overlap_and_initial_recovery():
         permit=client.reserve_for_on(execution_id=kind,device_id=device,channel=channel,
             device_type=device_type,region="eu")
         client.begin_on(execution_id=kind,permit=permit,device_id=device,channel=channel)
-    assert client.backend.max_reserved == 160
+    assert client.backend.max_reserved == sum(budget.DUTY_CAPACITY.values()) == 235
     # Every routine and allocated initial recovery snapshot consumes its own
     # reservation. Simultaneous optional pressure cannot borrow any of them.
     for kind,(device,channel,device_type) in DEVICES.items():
@@ -244,4 +244,4 @@ def test_routine_reserves_cover_all_supported_overlap_and_initial_recovery():
                 for _ in range(budget.DUTY_REFRESH_ALLOWANCE[device_type]):
                     client.dispatch(region="eu",endpoint="/v2/user/refresh",send=lambda _: {})
         assert client.backend.state["reserves"][kind]["remaining"]==0
-    assert client._counts(client.backend,client.backend.now)[0]==160
+    assert client._counts(client.backend,client.backend.now)[0]==sum(budget.DUTY_CAPACITY.values())

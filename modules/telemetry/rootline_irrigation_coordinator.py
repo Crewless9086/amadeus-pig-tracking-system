@@ -663,7 +663,9 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *
     if scheduled and now < primary_deadline and active.get("state") != "stopping":
         read_started = _aware(clock())
         try:
-            observed = transport.read_output_state(device_id=active["device_id"], channel=active["channel"])
+            from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
+            with routine_execution_observation(active):
+                observed = transport.read_output_state(device_id=active["device_id"], channel=active["channel"])
         except Exception:
             observed = {}
         now = _aware(clock())

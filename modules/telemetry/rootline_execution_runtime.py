@@ -87,14 +87,19 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             raise ManagedDevicePlanningUnavailable({
                 **_safe("managed_device_operating_date_changed"), "blocks_bc": False})
         return current
-    def build_evidence():
+    # This token belongs only to this invocation, never a worker-global cache.
+    # It admits preparation across fresh parent and auxiliary snapshots, not ON.
+    import uuid
+    preparation_token = uuid.uuid4().hex
+    def build_evidence(*, pending_devices):
         try:
             read_at = _aware(clock())
             evidence, selected, _planned_at = evidence_loader(
                 database_url=database_url, now=read_at)
             evidence = _refresh_active_irrigation_readback(
                 evidence, transport, read_at, clock=clock, only_when_due=True,
-                injection_enabled=str(source.get("ROOTLINE_FERTILIZER_INJECTION_ENABLED") or "").lower() == "true")
+                injection_enabled="FERTILIZER-INJECTION-CH1" in pending_devices,
+                preparation_token=preparation_token)
             decision_at = current_decision_time(selected)
             plan = build_water_energy_plan(evidence, selected, now=decision_at)
         except Exception as exc:
@@ -135,7 +140,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             "ROOTLINE_FERTILIZER_MIXING_ENABLED", "ROOTLINE_FERTILIZER_INJECTION_ENABLED")}
         for task in packet["irrigation_auxiliary_tasks"]:
             identity = str(task.get("auxiliary_device_id") or "")
-            if task.get("decision") != "Run now" or identity not in packet["auxiliary_contexts"]:
+            if (identity not in pending_devices or task.get("decision") != "Run now"
+                    or identity not in packet["auxiliary_contexts"]):
                 continue
             preflight = build_auxiliary_eligibility(task=task, safety=None,
                 context=packet["auxiliary_contexts"][identity], flags=flags,
@@ -144,14 +150,20 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                 continue
             contract = rootline_device_registry()[identity]
             try:
-                packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
-                    device_id=contract["device_id"], channel=contract["channel"])
+                from modules.telemetry.rootline_auxiliary_management import injection_preparation_observation
+                gate = (injection_preparation_observation(active_irrigation,
+                    now=current_decision_time(selected), admission_token=preparation_token)
+                    if identity == "FERTILIZER-INJECTION-CH1" else nullcontext())
+                with gate:
+                    packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
+                        device_id=contract["device_id"], channel=contract["channel"])
             except Exception:
                 continue
         borehole_task = next((row for row in plan.get("candidate_tasks") or []
             if row.get("task_id") == "borehole"), {})
         interlocks = evidence.get("borehole_interlocks") or {}
-        if (borehole_task.get("recommendation") == "Recommend"
+        if ("BOREHOLE-1-MINI-R4-CH1" in pending_devices
+                and borehole_task.get("recommendation") == "Recommend"
                 and str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true"):
             try:
                 baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
@@ -232,7 +244,8 @@ def _managed_power_suitable(power, now=None):
 
 
 def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
-                                       only_when_due=False, injection_enabled=True):
+                                       only_when_due=False, injection_enabled=True,
+                                       preparation_token=None):
     """Refresh only the exact canonical active B/C execution's ON evidence."""
     if not isinstance(evidence, dict):
         return evidence
@@ -244,10 +257,10 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
     updated["zone_output_evidence"] = {}
     refreshed["active_irrigation_context"] = updated
     if only_when_due:
-        from modules.telemetry.rootline_auxiliary_management import injection_parent_read_due
+        from modules.telemetry.rootline_auxiliary_management import injection_parent_read_due, _pulse_limit
         # Disabling new pulses does not discard the final flush already owed
         # by a completed two-pulse sequence on this exact active parent.
-        if ((not injection_enabled and context.get("completed_pulses") != 2)
+        if ((not injection_enabled and context.get("completed_pulses") != _pulse_limit(context))
                 or not injection_parent_read_due(context, now=now)):
             return refreshed
     device_id = str(context.get("zone_device_id") or "")
@@ -256,7 +269,10 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
         return refreshed
     try:
         from modules.telemetry.rootline_ewelink_request_budget import execution_duty
-        with execution_duty({"execution_id": context.get("zone_execution_id")},
+        from modules.telemetry.rootline_auxiliary_management import injection_preparation_observation
+        gate = (injection_preparation_observation(context, now=now,
+            admission_token=preparation_token) if only_when_due else nullcontext())
+        with gate, execution_duty({"execution_id": context.get("zone_execution_id")},
                 deadline=context.get("irrigation_stop_deadline")):
             current = transport.read_output_state(device_id=device_id, channel=channel)
     except Exception:
