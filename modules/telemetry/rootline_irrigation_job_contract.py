@@ -4,14 +4,20 @@ import hashlib, json
 from math import ceil
 from datetime import datetime, timedelta, timezone
 VERSION="rootline_irrigation_job.v1"
+from modules.telemetry.rootline_timed_control import TIMED_JOB_VERSION, MAX_IRRIGATION_SECONDS
 class IrrigationJobError(ValueError): pass
-def build_irrigation_job(*,zone_id,operating_date,requested_total_seconds,maximum_segment_seconds,plan_identity,requested_total_minutes=None,expected_segment_count=None):
+def build_irrigation_job(*,zone_id,operating_date,requested_total_seconds,maximum_segment_seconds,plan_identity,requested_total_minutes=None,expected_segment_count=None,stop_mode=None):
  total=_pos(requested_total_seconds,"requested_total_seconds_invalid"); maximum=_pos(maximum_segment_seconds,"maximum_segment_seconds_invalid")
- if maximum>3599: raise IrrigationJobError("segment_exceeds_native_fail_stop")
+ timed = stop_mode == "scheduled"
+ if timed:
+  if total > MAX_IRRIGATION_SECONDS: raise IrrigationJobError("planned_run_exceeds_irrigation_limit")
+  maximum = total
+  expected_segment_count = 1
+ elif maximum>3599: raise IrrigationJobError("segment_exceeds_native_fail_stop")
  expected=int(expected_segment_count or ceil(total/maximum))
  executable=min(total,expected*maximum)
  if expected!=ceil(executable/maximum): raise IrrigationJobError("expected_segment_count_invalid")
- material={"contract_version":VERSION,"zone_id":str(zone_id),"operating_date":str(operating_date),"requested_total_seconds":total,"requested_total_minutes":int(requested_total_minutes or ceil(total/60)),"governed_executable_seconds":executable,"maximum_segment_seconds":maximum,"expected_segment_count":expected,"plan_identity":str(plan_identity)}; digest=_digest(material)
+ material={"contract_version":TIMED_JOB_VERSION if timed else VERSION,"zone_id":str(zone_id),"operating_date":str(operating_date),"requested_total_seconds":total,"requested_total_minutes":int(requested_total_minutes or ceil(total/60)),"governed_executable_seconds":executable,"maximum_segment_seconds":maximum,"expected_segment_count":expected,"plan_identity":str(plan_identity)}; digest=_digest(material)
  return {**material,"job_id":"ROOTLINE-IRRIGATION-JOB-"+digest[:24].upper(),"job_sha256":digest,"current_segment":0,"cumulative_verified_runtime_seconds":0,"state":"planned"}
 def project_next_segment(job,events,rearm_readback_off=False):
  job=_validate(job); completed={}; stopped={}; active_by_segment={}
@@ -97,7 +103,8 @@ def apply_segment_completion(job,events,completion,rearm_readback_off=False):
 def _validate(v):
  if not isinstance(v,dict): raise IrrigationJobError("job_invalid")
  keys=("contract_version","zone_id","operating_date","requested_total_seconds","requested_total_minutes","governed_executable_seconds","maximum_segment_seconds","expected_segment_count","plan_identity"); material={k:v.get(k) for k in keys}; digest=_digest(material)
- if material["contract_version"]!=VERSION or v.get("job_sha256")!=digest or v.get("job_id")!="ROOTLINE-IRRIGATION-JOB-"+digest[:24].upper() or int(material["governed_executable_seconds"])!=min(int(material["requested_total_seconds"]),int(material["expected_segment_count"])*int(material["maximum_segment_seconds"])) or material["expected_segment_count"]!=ceil(int(material["governed_executable_seconds"])/int(material["maximum_segment_seconds"])): raise IrrigationJobError("job_digest_invalid")
+ if material["contract_version"] not in {VERSION, TIMED_JOB_VERSION} or v.get("job_sha256")!=digest or v.get("job_id")!="ROOTLINE-IRRIGATION-JOB-"+digest[:24].upper() or int(material["governed_executable_seconds"])!=min(int(material["requested_total_seconds"]),int(material["expected_segment_count"])*int(material["maximum_segment_seconds"])) or material["expected_segment_count"]!=ceil(int(material["governed_executable_seconds"])/int(material["maximum_segment_seconds"])): raise IrrigationJobError("job_digest_invalid")
+ if material["contract_version"] == TIMED_JOB_VERSION and (material["expected_segment_count"] != 1 or material["maximum_segment_seconds"] != material["requested_total_seconds"] or not 0 < material["requested_total_seconds"] <= MAX_IRRIGATION_SECONDS): raise IrrigationJobError("scheduled_job_invalid")
  return v
 def _pos(v,e):
  if isinstance(v,bool): raise IrrigationJobError(e)
@@ -135,7 +142,10 @@ _WEATHER_STOP_FIELDS = (
 
 
 def weather_stop_digest(row):
-    return _digest({key: row.get(key) for key in _WEATHER_STOP_FIELDS})
+    material = {key: row.get(key) for key in _WEATHER_STOP_FIELDS}
+    if row.get("terminal_contract") == "rootline_irrigation_weather_stop.v2":
+        material["stop_mode"] = row.get("stop_mode")
+    return _digest(material)
 
 
 def validate_weather_stopped_execution(row):
@@ -157,12 +167,16 @@ def validate_weather_stopped_execution(row):
         assessed = _stop_time(weather.get("assessed_at"))
         read_started = _stop_time(weather.get("read_started_at"))
         planned = row.get("planned_runtime_seconds")
-        if (None in (claimed, requested, primary, native, completed, stopped, assessed, read_started)
-                or type(planned) is not int or not 0 < planned <= 3599
-                or not primary <= native <= claimed+timedelta(seconds=3599)
+        scheduled = (row.get("stop_mode") == "scheduled"
+            and row.get("terminal_contract") == "rootline_irrigation_weather_stop.v2")
+        external_off = scheduled and weather.get("contract_version") == "rootline_active_control_stop.v1"
+        if (None in (claimed, requested, primary, completed, stopped, assessed, read_started)
+                or type(planned) is not int or not 0 < planned <= (MAX_IRRIGATION_SECONDS if scheduled else 3599)
+                or (not scheduled and (native is None or not primary <= native <= claimed+timedelta(seconds=3599)))
                 or primary != claimed+timedelta(seconds=planned)
                 or not claimed <= read_started < primary
-                or not read_started <= assessed <= requested <= stopped <= completed):
+                or not (read_started <= requested <= assessed <= completed and stopped <= completed if external_off
+                    else read_started <= assessed <= requested <= stopped <= completed)):
             return False
         if (shutdown.get("device_id") != row.get("device_id")
                 or type(shutdown.get("channel")) is not int or shutdown["channel"] != row.get("channel")
@@ -170,18 +184,28 @@ def validate_weather_stopped_execution(row):
                 or ("retrieved_at" in shutdown and "observed_at" in shutdown
                     and _stop_time(shutdown["retrieved_at"]) != _stop_time(shutdown["observed_at"]))):
             return False
-        if (row.get("terminal_contract") != WEATHER_STOP_CONTRACT
+        if external_off:
+            observed = weather.get("provider_output_evidence") or {}
+            observed_at = _stop_time(observed.get("retrieved_at"))
+            if (weather.get("reason") != "external_off_observed"
+                    or observed.get("authoritative") is not True or observed.get("state") != "OFF"
+                    or not observed.get("evidence_id")
+                    or any(observed.get(key) != row.get(key) for key in ("device_id", "channel"))
+                    or observed_at is None or not requested <= observed_at <= assessed
+                    or not observed_at < primary or not observed_at <= stopped):
+                return False
+        if (row.get("terminal_contract") != ("rootline_irrigation_weather_stop.v2" if scheduled else WEATHER_STOP_CONTRACT)
                 or row.get("state") != "Stopped" or row.get("shutdown_verified") is not True
                 or row.get("objective_satisfied") is not False or row.get("job_completed") is not False
                 or row.get("on_attempts") != 1 or row.get("verified_runtime_seconds") != 0
                 or (row.get("objective_evidence") or {}).get("verified_runtime_minutes") is not None
                 or shutdown.get("authoritative") is not True or shutdown.get("state") != "OFF"
                 or not shutdown.get("evidence_id")
-                or weather.get("contract_version") != "rootline_active_weather.v1"
+                or weather.get("contract_version") != ("rootline_active_control_stop.v1" if external_off else "rootline_active_weather.v1")
                 or weather.get("stop_required") is not True
-                or weather.get("reason") not in {
+                or weather.get("reason") not in ({"external_off_observed"} if external_off else {
                     "active_weather_rain_hold", "active_weather_stale", "active_weather_unavailable",
-                    "active_weather_policy_unavailable", "active_weather_unhealthy_or_conflicting"}
+                    "active_weather_policy_unavailable", "active_weather_unhealthy_or_conflicting"})
                 or row.get("reason") != weather.get("reason")
                 or weather.get("evidence_sha256") != _digest({key:value for key,value in weather.items()
                     if key != "evidence_sha256"})

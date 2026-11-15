@@ -48,6 +48,28 @@ def eskom_hysteresis_profile(record: Mapping) -> bool:
         and envelope.get("eskom_policy") == "owner_30_on_35_solar_recovery_off"
         and bool(str(envelope.get("switch_code") or "").strip()))
 
+def scheduled_device_profile(record: Mapping) -> bool:
+    """Identify owner-configured timed outputs; this alone grants no authority."""
+    if record.get("stop_mode") != "scheduled":
+        return False
+    from modules.telemetry.rootline_device_registry import find_device_contract
+    try:
+        binding = find_device_contract(record.get("device_id"), record.get("channel"))
+    except (TypeError, ValueError):
+        return False
+    profiles = {"irrigation_zone_valve": ("gravity_irrigation_valve", 7200),
+        "fertilizer_injection_valve": ("flow_dependent_injection_valve", 120),
+        "fertilizer_mixer": ("independent_mixer_valve", 1800),
+        "borehole_pump_power": ("pump", 36000)}
+    expected = profiles.get(binding.get("device_type"))
+    return bool(expected and record.get("provider") == binding["provider"]
+        and record.get("provider_account_binding") == binding["provider_account_binding"]
+        and type(record.get("channel")) is int
+        and record.get("device_type") == expected[0]
+        and type(record.get("maximum_runtime_seconds")) is int
+        and 0 < record["maximum_runtime_seconds"] <= expected[1])
+
+
 class Actuator(Protocol):
     def read_state(self, device: Mapping) -> Mapping: ...
     def set_on(self, device: Mapping, execution: Mapping) -> Mapping: ...
@@ -81,14 +103,15 @@ class CanonicalAuthorityResolver:
               a.active and not a.revoked and not exists(
                 select 1 from app_private.rootline_authority_events x
                 where x.standing_authority_id=a.standing_authority_id and x.version=a.version
-                and x.event_type in ('revoked','superseded'))
+                and x.event_type in ('revoked','superseded')),a.policy_payload
               from app_private.rootline_standing_authorities a
               where a.standing_authority_id=%s and a.version=%s and a.issuer=%s""",
               (str(reference.get("standing_authority_id") or ""),
                str(reference.get("version") or ""), str(reference.get("issuer") or "")))
             row = cur.fetchone()
         return None if not row else {"standing_authority_id":str(row[0]),
-            "version":str(row[1]),"policy_sha256":str(row[2]),"active":row[3] is True}
+            "version":str(row[1]),"policy_sha256":str(row[2]),"active":row[3] is True,
+            "policy_payload": row[4] if len(row) > 4 else None}
 
 def store_device_record(record: Mapping, *, connect_factory) -> dict:
     """Persist validated commissioning truth; this does not grant execution authority."""
@@ -177,6 +200,10 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
         raise ValueError("rootline_commissioning_stage_invalid")
     profile = DEVICE_PROFILES[record["device_type"]]
     eskom = eskom_hysteresis_profile(record)
+    scheduled = scheduled_device_profile(record)
+    owner_hysteresis = eskom and record.get("stop_mode") == "hysteresis"
+    if record.get("stop_mode") == "scheduled" and not scheduled:
+        raise ValueError("rootline_scheduled_binding_invalid")
     if str(record["safe_state"]) != ("UNCHANGED" if eskom else str(profile["safe_state"])):
         raise ValueError("rootline_device_safe_state_mismatch")
     if not isinstance(record["channel"], int) or record["channel"] < 0:
@@ -191,7 +218,7 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
         and record["native_fail_stop_seconds"] == 0)
     if eskom and (record["maximum_runtime_seconds"] != 0 or record["native_fail_stop_seconds"] != 0):
         raise ValueError("rootline_eskom_countdown_not_permitted")
-    if not eskom and not profile.get("read_only") and not unknown_pre_actuation_bounds and (
+    if not eskom and not scheduled and not profile.get("read_only") and not unknown_pre_actuation_bounds and (
             record["maximum_runtime_seconds"] <= 0
             or record["native_fail_stop_seconds"] <= 0
             or record["native_fail_stop_seconds"] > record["maximum_runtime_seconds"]):
@@ -204,13 +231,15 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
             else ("provider_discovered", "readback_proven", "bounded_actuation_ready",
                 "physical_identity_proven", "fail_stop_proven", "replay_proven",
                 "operational_dependencies_proven", "supervised"))
-        if eskom:
+        if scheduled or owner_hysteresis:
+            required = ("owner_configuration", "provider_readback")
+        if eskom and not owner_hysteresis:
             required = tuple(key for key in required if key != "fail_stop_proven") + (
                 "electrical_protection_proven", "manual_isolation_proven")
         historical = record.get("historical_commissioning_evidence")
         if (not isinstance(evidence, Mapping)
                 or any(not _valid_evidence(evidence.get(key)) for key in required)
-                or (record["device_type"] == "gravity_irrigation_valve" and
+                or (not scheduled and record["device_type"] == "gravity_irrigation_valve" and
                     not isinstance(historical, Mapping))):
             raise ValueError("rootline_standing_authority_evidence_missing")
         if not isinstance(resolver, CanonicalAuthorityResolver) or any(not _resolved_evidence(
@@ -234,11 +263,13 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
                 or str(resolved_authority.get("policy_sha256") or "") !=
                    str(authority.get("policy_sha256") or "")):
             raise ValueError("rootline_standing_authority_unresolved")
-        if eskom and (record.get("independent_physical_identity_proven") is not True
+        if owner_hysteresis and not _owner_hysteresis_policy_valid(record, resolved_authority):
+            raise ValueError("rootline_eskom_owner_policy_unproven")
+        if eskom and not owner_hysteresis and (record.get("independent_physical_identity_proven") is not True
                 or record.get("independent_electrical_protection_proven") is not True
                 or not str(record.get("manual_isolation") or "").strip()):
             raise ValueError("rootline_eskom_electrical_protection_unproven")
-        if not eskom and profile.get("strict") and (
+        if not eskom and not scheduled and profile.get("strict") and (
                 record.get("independent_physical_identity_proven") is not True
                 or record.get("independent_fail_stop_proven") is not True):
             raise ValueError("rootline_strict_device_proof_missing")
@@ -275,3 +306,23 @@ def manager_stage_projection(record: Mapping, *, connect_factory=None) -> dict:
         "exact_blocker": blocker, "next_safe_action": "none" if evidence_bound else
             str(record.get("next_safe_action") or "review_required"),
         "physical_proof_invented": False}
+
+
+def _owner_hysteresis_policy_valid(record, resolved):
+    policy = resolved.get("policy_payload") if isinstance(resolved, Mapping) else None
+    if not isinstance(policy, Mapping):
+        return False
+    digest = hashlib.sha256(json.dumps(dict(policy), sort_keys=True,
+        separators=(",", ":"), default=str).encode()).hexdigest()
+    key = f"{record['provider']}:{record['provider_account_binding']}:{record['device_id']}:{record['channel']}"
+    envelope = record.get("authority_envelope") or {}
+    return (digest == resolved.get("policy_sha256")
+        and policy.get("contract_version") == "rootline_eskom_standing_authority.v1"
+        and policy.get("stop_mode") == "hysteresis"
+        and policy.get("device_keys") == [key] and policy.get("allowed_channels") == [1]
+        and policy.get("provider") == record["provider"]
+        and policy.get("provider_account_binding") == record["provider_account_binding"]
+        and policy.get("device_id") == record["device_id"]
+        and policy.get("switch_code") == envelope.get("switch_code")
+        and policy.get("eskom_policy") == "owner_30_on_35_solar_recovery_off"
+        and policy.get("automatic_on_retry") is False)

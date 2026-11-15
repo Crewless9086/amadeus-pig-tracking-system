@@ -14,6 +14,8 @@ from modules.telemetry.rootline_irrigation_job_contract import (
 )
 from modules.telemetry.rootline_device_registry import commissioned_irrigation_contracts
 
+from modules.telemetry.rootline_timed_control import timed_control_enabled, scheduled_execution, TIMED_ELIGIBILITY_VERSION, TIMED_JOB_VERSION, MAX_IRRIGATION_SECONDS
+
 MAX_SECONDS = 3599
 CONTRACT_VERSION = "rootline_execution_eligibility.v5"
 STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
@@ -75,6 +77,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
                     "execution_id": "ROOTLINE-JOB-RESOLUTION-" + digest[:24].upper()}}
         return _none("planner_hold_or_no_dispatchable_zone")
     _, _, zone, task = min(candidates, key=lambda row: (row[0], row[1], row[2]))
+    selected_parent=(task.get("incomplete_parent_job") or {}).get("job") or {}
+    timed=timed_control_enabled() and selected_parent.get("contract_version")!="rootline_irrigation_job.v1"
     irrigation = evidence.get("irrigation") if isinstance(evidence.get("irrigation"), dict) else {}
     advisor_zones = irrigation.get("zones") if isinstance(irrigation.get("zones"), list) else []
     advisor_zone = next((row for row in advisor_zones
@@ -90,8 +94,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     weather = evidence.get("weather") if isinstance(evidence.get("weather"), dict) else {}
     weather_time = _timestamp(weather.get("observed_at"))
     if (weather_time is None or now - weather_time > timedelta(minutes=30)
-            or now < weather_time or _number(weather.get("rain_rate_mm_h")) > 0
-            or _number(weather.get("rain_today_mm")) >= 2):
+            or now < weather_time or _number(weather.get("rain_rate_mm_h")) > (0.2 if timed else 0)
+            or (not timed and _number(weather.get("rain_today_mm")) >= 2)):
         return _none("observed_weather_not_fresh_and_dry")
     tanks = evidence.get("tanks") if isinstance(evidence.get("tanks"), dict) else {}
     water_time = _timestamp(tanks.get("reservoir_observed_at") or tanks.get("observed_at"))
@@ -127,16 +131,18 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "expected_segment_count": task.get("expected_segment_count"),
         "weekly_obligation": governed_obligation, "reason": task.get("reason")}
     plan_generation = "ROOTLINE-IRRIGATION-PLAN-" + _digest(irrigation_plan_material)[:24].upper()
-    duration = min(60, int(task["planned_duration_minutes"]))
+    duration = int(task["planned_duration_minutes"])
     requested_minutes = int(task.get("requested_total_duration_minutes") or 0)
-    expected_segments = int(task.get("expected_segment_count") or 0)
+    expected_segments = 1 if timed else int(task.get("expected_segment_count") or 0)
     if requested_minutes <= 0 or expected_segments <= 0:
         return _none("governed_total_duration_unavailable")
     requested_total_seconds = requested_minutes * 60
     maximum_minutes = task.get("max_execution_minutes", 60)
-    if type(maximum_minutes) is not int or not 1 <= maximum_minutes <= 60:
+    if type(maximum_minutes) is not int or not 1 <= maximum_minutes <= (120 if timed else 60):
         return _none("governed_segment_limit_unavailable")
-    maximum_seconds = min(MAX_SECONDS, maximum_minutes * 60)
+    maximum_seconds = requested_total_seconds if timed else min(MAX_SECONDS, maximum_minutes * 60)
+    if timed and not 0 < requested_total_seconds <= MAX_IRRIGATION_SECONDS:
+        return _none("planned_runtime_outside_policy")
     parent = task.get("incomplete_parent_job") if isinstance(task.get("incomplete_parent_job"), dict) else {}
     parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else None
     job = (dict(parent_job) if parent_job else build_irrigation_job(
@@ -144,7 +150,12 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         requested_total_seconds=requested_total_seconds,
         maximum_segment_seconds=maximum_seconds, plan_identity=plan_generation,
         requested_total_minutes=requested_minutes,
-        expected_segment_count=expected_segments))
+        expected_segment_count=expected_segments, stop_mode="scheduled" if timed else None))
+    if parent_job:
+        if parent_job.get("contract_version") == TIMED_JOB_VERSION and not timed_control_enabled():
+            return _none("timed_control_disabled")
+        timed = parent_job.get("contract_version") == TIMED_JOB_VERSION
+        expected_segments = parent_job["expected_segment_count"]
     if (job.get("zone_id") != zone
             or int(job.get("requested_total_seconds") or 0) != requested_total_seconds
             or int(job.get("expected_segment_count") or 0) != expected_segments):
@@ -168,7 +179,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         return _none("weekly_delivery_debt_not_dispatchable")
     if _provider_preflight:
         return {**_none("provider_read_required"), "provider_read_required": True}
-    controller_status = _controller(controller, zone, now)
+    controller_status = _controller(controller, zone, now, stop_mode="scheduled" if timed else None)
     if not controller_status:
         return _none("controller_safety_not_dispatchable")
     consumption_key = "ROOTLINE-IRRIGATION-CONSUMPTION-" + _digest({
@@ -184,7 +195,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     notification = "ROOTLINE-IRRIGATION-NOTIFY-" + _digest({
         "plan": plan_generation, "zone": zone, "cutoff": cutoff.isoformat()})[:24].upper()
     material = {
-        "contract_version": CONTRACT_VERSION,
+        "contract_version": TIMED_ELIGIBILITY_VERSION if timed else CONTRACT_VERSION,
+        **({"stop_mode": "scheduled"} if timed else {}),
         "authority_source": STANDING_AUTHORITY,
         "source_plan_generation": source_plan_generation,
         "operating_date": operating_date,
@@ -263,7 +275,7 @@ def _candidate_exclusion(*, task, zone, zones, contained, durable_containment,
         duration = int(task.get("planned_duration_minutes") or 0)
     except (TypeError, ValueError):
         duration = 0
-    if duration not in range(1, 61):
+    if duration not in range(1, 121 if timed_control_enabled() else 61):
         return "planned_duration_not_bounded_segment"
     return ""
 
@@ -277,7 +289,8 @@ def validate_execution_eligibility(value, *, now=None):
         "execution_id", "command_authority", "hardware_control", "authority_scope"}}
     digest = _digest(material)
     zones = _zone_contracts()
-    if (value.get("contract_version") != CONTRACT_VERSION
+    if ((value.get("contract_version") == TIMED_ELIGIBILITY_VERSION) != scheduled_execution(value)
+            or value.get("contract_version") not in {CONTRACT_VERSION, TIMED_ELIGIBILITY_VERSION}
             or value.get("authority_source") != STANDING_AUTHORITY
             or value.get("eligibility_sha256") != digest
             or value.get("eligibility_id") != "ROOTLINE-ELIGIBILITY-" + digest[:24].upper()
@@ -299,8 +312,24 @@ def validate_execution_eligibility(value, *, now=None):
     decision_at = _timestamp(value.get("decision_at")); expires = _timestamp(value.get("expires_at"))
     if decision_at is None or expires is None or not (decision_at <= now <= expires):
         return None
-    if int(value.get("maximum_duration_seconds") or 0) not in range(1, MAX_SECONDS + 1):
+    if int(value.get("maximum_duration_seconds") or 0) not in range(1, (MAX_IRRIGATION_SECONDS if scheduled_execution(value) else MAX_SECONDS) + 1):
         return None
+    if scheduled_execution(value):
+        try:
+            job = build_irrigation_job(zone_id=value["zone_id"], operating_date=value["operating_date"],
+                requested_total_seconds=value["requested_total_duration_seconds"],
+                maximum_segment_seconds=value["maximum_duration_seconds"],
+                requested_total_minutes=value["requested_total_duration_minutes"],
+                plan_identity=value["plan_generation"], stop_mode="scheduled")
+            segment = project_next_segment(job, [])
+            if (value.get("job_id") != job["job_id"] or value.get("job_sha256") != job["job_sha256"]
+                    or value.get("expected_segment_count") != 1 or value.get("current_segment") != 1
+                    or value.get("segment_identity") != segment["segment_identity"]
+                    or value.get("maximum_duration_seconds") != job["requested_total_seconds"]
+                    or value.get("governed_executable_duration_seconds") != job["governed_executable_seconds"]):
+                return None
+        except (KeyError, TypeError, ValueError):
+            return None
     return value
 
 
@@ -335,8 +364,13 @@ def _valid_operating_date(value):
         return False
 
 
-def _controller(value, zone, now):
+def _controller(value, zone, now, *, stop_mode=None):
     contract = _zone_contracts().get(zone)
+    if stop_mode == "scheduled":
+        from modules.telemetry.rootline_timed_control import timed_snapshot_safe
+        if not contract or not timed_snapshot_safe(value, device_id=contract["device_id"], channel=contract["channel"], now=now):
+            return None
+        return {"generation": contract["contract_sha256"], "retrieved_at": _timestamp(value.get("trusted_receipt_at") or value.get("retrieved_at")), "outputs": {str(row["channel"]): row["output_state"] for row in value["channels"]}, "response_digest": value["response_digest"]}
     if (not contract or not isinstance(value, dict)
             or value.get("device_id") != contract["device_id"]
             or value.get("online") is not True or value.get("firmware") != "3.8.2"

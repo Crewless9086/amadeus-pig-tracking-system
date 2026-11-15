@@ -37,6 +37,8 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
     # planner decision, but never infer fulfillment from prose or a prior run.
     completion_decision = recommendation.get("zone_decision") == "Completed"
     blocker = str(recommendation.get("eligibility_blocker") or "").strip()
+    if blocker in {"execution_eligible","eligible_candidate"}:
+        blocker=""
     completion_non_dispatch = completion_decision and blocker in {
         "", "planner_hold_or_no_dispatchable_zone", "zone_decision_not_run_now"}
     decisions = {str(recommendation.get(key) or "").strip().casefold()
@@ -67,7 +69,7 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
             parent_next_action if unresolved_parent else
             "ROOTLINE must reconcile and retry only the safe failed manager step.")
     elif started:
-        state, reason, next_action = "Started", _reason(execution, recommendation), "ROOTLINE must verify shutdown and the physical outcome."
+        state, reason, next_action = "Started", _reason(execution, recommendation), "ROOTLINE must verify the scheduled shutdown and controller state."
     elif authorized:
         state, reason, next_action = "Authorized", _reason(execution, recommendation), "ROOTLINE must continue through the existing claimed execution."
     elif unresolved_parent:

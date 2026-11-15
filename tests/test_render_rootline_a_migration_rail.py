@@ -18,7 +18,15 @@ from tests import test_render_production_migration_rail as legacy
 
 
 DATABASE_URL = legacy.DATABASE_URL
-A_ITEM = rail.ALLOWLIST[-1]
+A_ITEM = next(item for item in rail.ALLOWLIST if item.migration_id == rail.ROOTLINE_A_MIGRATION_ID)
+A_ALLOWLIST = rail.ALLOWLIST[:rail.ALLOWLIST.index(A_ITEM) + 1]
+
+
+@pytest.fixture(autouse=True)
+def a_prefix_only():
+    # Qualify the historical A ceremony independently of later append-only entries.
+    with patch.object(rail, "ALLOWLIST", A_ALLOWLIST):
+        yield
 PREREQUISITES = (
     "202605210005_create_telemetry_power_tables.sql",
     "202605230001_create_irrigation_tables.sql",

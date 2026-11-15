@@ -80,6 +80,11 @@ ALLOWLIST = (
         filename="20261101150806_extend_rootline_a_irrigation_history.sql",
         sha256="8feb9409fb36ad64b88ff84a1ace4b88f1d3ccc9b89f26cca2cd99cc367f2a79",
     ),
+    AllowedMigration(
+        migration_id="20261115090517_extend_rootline_e_irrigation_history",
+        filename="20261115090517_extend_rootline_e_irrigation_history.sql",
+        sha256="69b73b82009a3a769d02920f75c9d43d04de8cb7d372551442f86abf0a4ff7dd",
+    ),
 )
 
 
@@ -119,6 +124,10 @@ FARROWING_PREDECESSOR_ACTION_KINDS = tuple(
     if value != "herdmaster_record_farrowing_litter"
 )
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
+    "20261115090517_extend_rootline_e_irrigation_history": (
+        "Extend existing typed append-only irrigation history to separately "
+        "governed E; preserve history, no water credit or activation."
+    ),
     "20261101150806_extend_rootline_a_irrigation_history": (
         "Extend existing typed append-only irrigation history to independently "
         "governed A; no water credit or activation."
@@ -203,6 +212,7 @@ CATALOG_FUNCTIONS = (
 )
 
 ROOTLINE_A_MIGRATION_ID = "20261101150806_extend_rootline_a_irrigation_history"
+ROOTLINE_E_MIGRATION_ID = "20261115090517_extend_rootline_e_irrigation_history"
 ROOTLINE_HISTORY_PREDECESSOR = AllowedMigration(
     migration_id="202608050001_harden_irrigation_events_history",
     filename="202608050001_harden_irrigation_events_history.sql",
@@ -1248,6 +1258,10 @@ def _rootline_history_boundary(connection) -> dict:
 
 
 def _verify_rootline_a_history(connection, item: AllowedMigration, *, target: bool) -> dict:
+    if target:
+        successor = _rootline_receipted_e_successor(connection, item)
+        if successor is not None:
+            return successor
     boundary = _rootline_history_boundary(connection)
     function = _rootline_function_readback(connection, "rootline_append_typed_irrigation_event",
                                           item if target else ROOTLINE_HISTORY_PREDECESSOR)
@@ -1263,6 +1277,64 @@ def _verify_rootline_a_history(connection, item: AllowedMigration, *, target: bo
         raise RuntimeError("migration_rootline_a_unreceipted_index")
     _verify_migration_log(connection, item.migration_id, required=False)
     return {**boundary, "typed_append_function": function}
+
+
+def _rootline_receipted_e_successor(connection, a_item: AllowedMigration) -> dict | None:
+    """A's immutable receipt survives E, only with an anchored exact successor."""
+    e_item = next((entry for entry in ALLOWLIST
+                   if entry.migration_id == ROOTLINE_E_MIGRATION_ID), None)
+    if e_item is None:
+        return None
+    if not connection.execute(
+        """select exists(select 1 from app_private.production_migration_receipts
+           where migration_id=%s and outcome='applied')""", (e_item.migration_id,)
+    ).fetchone()[0]:
+        return None
+    service = connection.execute(
+        """select render_service_id from app_private.production_migration_receipts
+           where migration_id=%s and outcome='applied'""", (a_item.migration_id,)
+    ).fetchone()
+    if service is None:
+        raise RuntimeError("migration_rootline_a_receipt_required_for_e_successor")
+    receipts = []
+    for entry in (a_item, e_item):
+        ordinal = next(index for index, value in enumerate(ALLOWLIST, 1)
+                       if value.migration_id == entry.migration_id)
+        receipt = _verify_receipt_row(connection, entry, ordinal,
+            service_id=service[0], outcome="applied", create_anchor=False)
+        if receipt["identity_anchor_missing"]:
+            raise RuntimeError("migration_rootline_successor_receipt_anchor_required")
+        receipts.append(receipt)
+    readback = _verify_rootline_e_history(connection, e_item, target=True)
+    return {**readback, "preserved_a_receipt_id": receipts[0]["receipt_id"],
+            "verified_e_successor_receipt_id": receipts[1]["receipt_id"]}
+
+
+def _verify_rootline_e_history(connection, item: AllowedMigration, *, target: bool) -> dict:
+    a_item = next(entry for entry in ALLOWLIST
+                  if entry.migration_id == ROOTLINE_A_MIGRATION_ID)
+    boundary = _rootline_history_boundary(connection)
+    function = _rootline_function_readback(connection,
+        "rootline_append_typed_irrigation_event", item if target else a_item)
+    abc_index = _rootline_history_index(connection,
+        "irrigation_events_rootline_abc_zone_cutoff_idx",
+        zones=("A12345", "B12345", "C12345"))
+    _verify_migration_log(connection, a_item.migration_id, required=True)
+    result = {**boundary, "typed_append_function": function,
+              "abc_cutoff_index": abc_index}
+    if target:
+        result["abce_cutoff_index"] = _rootline_history_index(connection,
+            "irrigation_events_rootline_abce_zone_cutoff_idx",
+            zones=("A12345", "B12345", "C12345", "E12345"))
+        description = _verify_migration_log(connection, item.migration_id, required=True)
+        result["migration_log_description_sha256"] = hashlib.sha256(description.encode()).hexdigest()
+    else:
+        if connection.execute(
+            "select pg_catalog.to_regclass('public.irrigation_events_rootline_abce_zone_cutoff_idx')"
+        ).fetchone()[0] is not None:
+            raise RuntimeError("migration_rootline_e_unreceipted_index")
+        _verify_migration_log(connection, item.migration_id, required=False)
+    return result
 
 
 def _mating_id_nullable(connection) -> bool:
@@ -2102,6 +2174,9 @@ def _verify_migration_precondition(
     *,
     already_applied: bool,
 ) -> str:
+    if item.migration_id == ROOTLINE_E_MIGRATION_ID:
+        _verify_rootline_e_history(connection, item, target=already_applied)
+        return "target" if already_applied else "predecessor"
     if item.migration_id == ROOTLINE_A_MIGRATION_ID:
         _verify_rootline_a_history(connection, item, target=already_applied)
         return "target" if already_applied else "predecessor"
@@ -2234,6 +2309,8 @@ def _verify_migration_precondition(
 
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
+    if item.migration_id == ROOTLINE_E_MIGRATION_ID:
+        return _verify_rootline_e_history(connection, item, target=True)
     if item.migration_id == ROOTLINE_A_MIGRATION_ID:
         return _verify_rootline_a_history(connection, item, target=True)
     if item.migration_id == GREEN_LOST_LEDGER_MIGRATION_ID:

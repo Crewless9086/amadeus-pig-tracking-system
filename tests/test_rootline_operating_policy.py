@@ -583,11 +583,11 @@ class RootlineOperatingPolicyRouteTests(unittest.TestCase):
         self.assertEqual(submitted["policy"]["zones"]["B12345"]["daylight_window"], "Unknown")
         self.assertTrue(actor.startswith("owner-admin:"))
 
-    def test_dashboard_shell_links_to_strict_owner_page_without_payload(self):
+    def test_dashboard_shell_links_to_irrigation_without_policy_payload(self):
         response = self.client.get("/")
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('/rootline/policy-review', html)
+        self.assertIn('href="/irrigation"', html)
         self.assertNotIn('id="policy_form"', html)
         self.assertNotIn("ROOTLINE-POLICY-", html)
         self.assertNotIn("owner-admin:", html)

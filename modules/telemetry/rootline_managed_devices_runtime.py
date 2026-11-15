@@ -21,6 +21,8 @@ from modules.telemetry.rootline_irrigation_execution_store import (
     RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
 )
 
+from modules.telemetry.rootline_timed_control import timed_control_call, timed_control_enabled, canonical_timed_authority
+
 DEVICE_KEYS = {
     "FERTILIZER-MIXER-CH2": "ifttt_ewelink:ewelink_owner_account:100204d497:2",
     "FERTILIZER-INJECTION-CH1": "ifttt_ewelink:ewelink_owner_account:100204d497:1",
@@ -35,6 +37,7 @@ class ManagedDevicePlanningUnavailable(Exception):
         self.result = result
 
 
+@timed_control_call
 def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         store=rootline_irrigation_execution_store, canonical_loader=None,
         connect_factory=None, now=None, evidence_factory=None, allow_new_starts=True,
@@ -207,12 +210,19 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
                 "ROOTLINE_FERTILIZER_INJECTION_ENABLED": _enabled(source, "ROOTLINE_FERTILIZER_INJECTION_ENABLED")}, now=now)
         if artifact.get("eligible") is not True:
             continue
+        if artifact.get("stop_mode")=="scheduled" and (not callable(connect_factory)
+                or not canonical_timed_authority(canonical,connect_factory=connect_factory,
+                    identity=identity,requested_seconds=artifact["maximum_duration_seconds"])):
+            continue
         recorded = store("record_auxiliary_eligibility", artifact)
         if not isinstance(recorded, dict) or recorded.get("success") is not True:
             outcomes.append(_safe("auxiliary_eligibility_persistence_unproven", blocks_bc=False))
             continue
         result = advance_auxiliary_execution(eligibility=artifact, store=store,
-            transport=transport, revalidate=lambda _artifact, value=context: value,
+            transport=transport, revalidate=lambda _artifact, value=context, selected=identity: (value
+                if _artifact.get("stop_mode")!="scheduled" or canonical_timed_authority(
+                    canonical_loader(DEVICE_KEYS[selected]),connect_factory=connect_factory,
+                    identity=selected,requested_seconds=_artifact["maximum_duration_seconds"]) else {}),
             now=now, auxiliary_device_id=identity, clock=clock)
         outcomes.append({**result, "managed_device": identity,
             "blocks_bc": identity == "FERTILIZER-INJECTION-CH1" and result.get("status") == "auxiliary_started"})

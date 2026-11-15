@@ -48,7 +48,7 @@ def output_evidence_from_snapshot(snapshot, *, device_id, channel):
             "metadata_received_at", "online_metadata_received_at",
             "metadata_freshness_clock_source", "online_from_fresh_status",
             "configuration_from_fresh_status")}
-    if device_id == DEVICE_ID and type(channel) is int and channel in (1, 2, 4):
+    if device_id == DEVICE_ID and type(channel) is int and channel in (1, 2, 3, 4):
         result["irrigation_output_evidence"] = {
             "device_id": snapshot.get("device_id"),
             "current_outputs_authoritative": snapshot.get("current_outputs_authoritative"),
@@ -162,6 +162,7 @@ class RootlineIFTTTTransport:
         return NativeBCFinalCheck(deepcopy(artifact), deepcopy(safety), deepcopy(snapshot))
 
     def _safety_from_snapshot(self, contract, snapshot, device_id, channel):
+        from modules.telemetry.rootline_timed_control import timed_control_enabled, timed_snapshot_safe
         row = self._channel(snapshot, channel)
         supervised_channels = snapshot.get("commissioned_supervised_channels") or []
         channel_commissioning = (contract["identity"] in {
@@ -193,6 +194,9 @@ class RootlineIFTTTTransport:
                 snapshot, contract, row)
         return {
             "authoritative": authoritative,
+            "scheduled_authoritative": (timed_control_enabled(self.environ)
+                and timed_snapshot_safe(snapshot, device_id=device_id, channel=channel)),
+            "scheduled_generation": contract.get("contract_sha256"),
             "device_id": snapshot.get("device_id"),
             "zone_id": contract["identity"] if contract["collection"] == "irrigation_zones" else None,
             "auxiliary_device_id": (contract["identity"]
@@ -390,8 +394,27 @@ class RootlineIFTTTTransport:
     def set_state(self, *, device_id, channel, state, idempotency_key):
         contract = self._binding(device_id, channel)
         state = str(state or "").upper()
+        from modules.telemetry.rootline_ewelink_request_budget import current_duty
+        from modules.telemetry.rootline_timed_control import timed_control_enabled
+        duty = current_duty()
+        scheduled = duty.get("stop_mode") == "scheduled"
+        if scheduled:
+            expected_identity = (duty.get("zone_id") if contract["collection"] == "irrigation_zones"
+                else duty.get("auxiliary_device_id"))
+            owned = (expected_identity == contract["identity"]
+                and duty.get("device_id") == device_id and duty.get("channel") == channel
+                and bool(duty.get("execution_id"))
+                and ((state == "ON" and bool(duty.get("claimed_at"))
+                    and bool(duty.get("primary_stop_deadline"))
+                    and idempotency_key == duty["execution_id"] + ":ON")
+                    or (state == "OFF" and str(idempotency_key).startswith(duty["execution_id"] + ":OFF:"))))
+            if not owned:
+                return {"accepted_unambiguous": False, "status": "scheduled_execution_binding_missing", "provider_command_attempted": False}
+            if state == "ON" and (not timed_control_enabled(self.environ)
+                    or str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"):
+                return {"accepted_unambiguous": False, "status": "scheduled_authority_disabled", "provider_command_attempted": False}
         if (contract["collection"] == "irrigation_zones"
-                and contract.get("commissioned") is not True):
+                and contract.get("commissioned") is not True and not scheduled):
             from modules.telemetry.rootline_ewelink_request_budget import current_duty
             duty = current_duty()
             safe_a_off = (state == "OFF" and contract["identity"] == "A12345"

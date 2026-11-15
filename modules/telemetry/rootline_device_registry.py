@@ -17,7 +17,7 @@ CONTRACT_VERSION = "rootline_device_contract.v1"
 
 # Supported identities are distinct from independently commissioned outputs.
 # This set permits advice/history for A without granting it an ON path.
-IRRIGATION_ZONE_IDS = ("B12345", "C12345", "A12345")
+IRRIGATION_ZONE_IDS = ("B12345", "C12345", "A12345", "E12345")
 
 _DEVICES = {
     "A12345": {
@@ -36,7 +36,8 @@ _DEVICES = {
         "device_id":"100204e9bc", "device_name":"IRRIGATION (1) - Left", "channel":3,
         "on_event":"irrigation_1_ch3_on", "off_event":"irrigation_1_ch3_off", "native_fail_stop_seconds":3599,
         "authority_flag":"ROOTLINE_E_ENABLED", "commissioned":False,
-        "plumbing_ready":False, "readiness":"await_owner_confirmed_pipework_and_commissioning",
+        "plumbing_ready":True, "irrigation_type":"Unknown",
+        "readiness":"owner_connected_ready", "readiness_source":"owner_20261115",
     },
     "B12345": {
         "collection": "irrigation_zones", "device_type": "irrigation_zone_valve",
@@ -150,6 +151,9 @@ def commissioned_irrigation_contract(identity, registry=None):
     rows = registry if isinstance(registry, dict) else rootline_device_registry()
     validate_device_registry(rows)
     row = rows.get(str(identity or ""))
+    from modules.telemetry.rootline_timed_control import timed_control_enabled
+    if timed_control_enabled() and isinstance(row, dict) and row.get("collection") == "irrigation_zones":
+        return deepcopy(row)
     if (not isinstance(row, dict)
             or row.get("collection") != "irrigation_zones"
             or row.get("device_type") != "irrigation_zone_valve"
@@ -164,8 +168,13 @@ def commissioned_irrigation_contract(identity, registry=None):
 def commissioned_irrigation_contracts(registry=None, *, environ=None):
     """Select commissioned zones, optionally restricted to enabled authority flags."""
     rows = registry if isinstance(registry, dict) else rootline_device_registry()
+    from modules.telemetry.rootline_timed_control import timed_control_enabled
     result = {}
     for identity, row in rows.items():
+        if timed_control_enabled(environ) and row.get("collection") == "irrigation_zones":
+            if environ is None or _true(environ.get(row.get("authority_flag"))):
+                result[identity] = deepcopy(row)
+            continue
         if (row.get("collection") != "irrigation_zones"
                 or row.get("device_type") != "irrigation_zone_valve"
                 or row.get("commissioned") is not True

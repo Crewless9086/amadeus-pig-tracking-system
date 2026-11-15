@@ -101,13 +101,7 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
         "notification": notification,
         "execution": runtime,
         "latest_execution_outcome": latest_outcome,
-        "fertilizer": {"classification": "irrigation_auxiliary_only",
-            "mixing_enabled": str(os.getenv("ROOTLINE_FERTILIZER_MIXING_ENABLED") or "").lower() == "true",
-            "injection_enabled": str(os.getenv("ROOTLINE_FERTILIZER_INJECTION_ENABLED") or "").lower() == "true",
-            "mixer_native_auto_off_seconds": 300,
-            "injection_native_auto_off_seconds": 120,
-            "mixing_commissioned": False, "injection_commissioned": False,
-            "reason": "Physical commissioning evidence is not present on the canonical auxiliary rail."},
+        "fertilizer": _fertilizer_status(database_url),
         "operator_summary": {"headline": specialist.get("overall_status") or "Needs Data",
                              "notes": [specialist.get("owner_brief", {}).get("why", ["Canonical status available."])[0]]},
         "safety": {"read_only": True, "can_control": False,
@@ -200,7 +194,7 @@ def _runtime_and_notification(database_url):
             cursor.execute("""select created_at,review_json->'rootline_execution'
                 from public.sam_live_stock_conversation_review_events
                 where event_source='rootline_irrigation_execution'
-                order by created_at desc limit 200""")
+                order by created_at desc,review_event_id desc limit 200""")
             events = [(created, value if isinstance(value, dict) else json.loads(value))
                       for created, value in cursor.fetchall()]
             runtime, latest_outcome, notification = _project_runtime(events)
@@ -249,6 +243,8 @@ def _decision(value):
 
 def _blocker(recommendation):
     technical = str(recommendation.get("eligibility_blocker") or "").strip()
+    if technical in {"execution_eligible","eligible_candidate","auxiliary_execution_eligible"}:
+        technical=""
     if technical:
         return technical
     if _decision(recommendation.get("status")) == "Run":
@@ -313,3 +309,80 @@ def _failure(status, exc=None):
     if exc is not None:
         result["error_type"] = exc.__class__.__name__
     return result
+
+
+def _fertilizer_status(database_url):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    try:
+        with connect_bounded_rootline_postgres(database_url=database_url,read_only=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select created_at,review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='rootline_irrigation_execution'
+                      and review_json->'rootline_execution'->>'auxiliary_device_id'
+                          in ('FERTILIZER-MIXER-CH2','FERTILIZER-INJECTION-CH1')
+                    order by created_at desc,review_event_id desc limit 200""")
+                return _fertilizer_projection(cursor.fetchall())
+    except Exception:
+        return _fertilizer_projection([],unavailable=True)
+
+
+def _fertilizer_projection(events,*,unavailable=False):
+    result={"classification":"irrigation_auxiliary_only"}
+    for label,identity,flag in [("mixing","FERTILIZER-MIXER-CH2","ROOTLINE_FERTILIZER_MIXING_ENABLED"),
+            ("injection","FERTILIZER-INJECTION-CH1","ROOTLINE_FERTILIZER_INJECTION_ENABLED")]:
+        enabled=str(os.getenv(flag) or "").lower()=="true"
+        result[label+"_enabled"]=enabled
+        rows=[(at,row) for at,row in events if isinstance(row,dict) and row.get("auxiliary_device_id")==identity]
+        relevant={"mark_auxiliary_active","claim_auxiliary_before_on","record_auxiliary_completed",
+            "record_auxiliary_exception","contain_auxiliary_device","record_auxiliary_eligibility",
+            "mark_auxiliary_stopping","record_auxiliary_control_pulse_stopped","record_execution_not_dispatched","reconcile_unstarted_auxiliary"}
+        latest=next(((at,row) for at,row in rows if row.get("action") in relevant),None)
+        # A newer proposal does not supersede an owned execution's current state.
+        from modules.telemetry.rootline_irrigation_execution_store import _terminal_closes_active
+        groups={}
+        for at,row in rows:
+            if row.get("execution_id"): groups.setdefault(row["execution_id"],[]).append((at,row))
+        for group in groups.values():
+            if (any(row.get("action") in {"mark_auxiliary_active","claim_auxiliary_before_on"} for _,row in group)
+                    and not any(_auxiliary_owner_terminal(row,[value for _,value in group]) for _,row in group)):
+                latest=next(((at,row) for at,row in group if row.get("action") in relevant
+                    and row.get("action")!="record_auxiliary_eligibility"),latest)
+                break
+        state="Unavailable" if unavailable else "Waiting for next plan" if enabled else "Disabled"
+        detail={"state":state,"provider_output_state":"Unknown"}
+        if latest:
+            at,row=latest; action=row.get("action")
+            closed=_auxiliary_owner_terminal(row,[value for _,value in rows
+                if value.get("execution_id")==row.get("execution_id")])
+            state=({"mark_auxiliary_active":"Running","claim_auxiliary_before_on":"Starting",
+                "record_auxiliary_eligibility":"Planned","mark_auxiliary_stopping":"Stopping"}.get(action)
+                or ("Stopped" if row.get("shutdown_verified") is True or closed else "Needs attention"))
+            proof=(row.get("shutdown_evidence") if row.get("shutdown_verified") is True or closed else row.get("start_evidence")) or {}
+            detail={"state":state,"execution_id":row.get("execution_id"),
+                "observed_at":at.isoformat() if hasattr(at,"isoformat") else str(at),
+                "planned_seconds":row.get("maximum_duration_seconds"),
+                "stop_at":row.get("primary_stop_deadline"),"stop_mode":row.get("stop_mode"),
+                "provider_output_state":proof.get("state") if proof.get("authoritative") is True else "Unknown",
+                "provider_observed_at":proof.get("retrieved_at") or proof.get("observed_at"),
+                "reason":row.get("reason"),"shutdown_verified":row.get("shutdown_verified")}
+        result[label]=detail
+    return result
+
+
+def _auxiliary_owner_terminal(row,group):
+    from modules.telemetry.rootline_irrigation_execution_store import (
+        _terminal_closes_active,_verified_not_dispatched,_event_digest,
+        _owner_reconciliation_reference,_sha256_text)
+    if _terminal_closes_active(row,auxiliary=True) or _verified_not_dispatched(row,group): return True
+    if (row.get("action")!="reconcile_unstarted_auxiliary"
+            or row.get("contract_version")!="rootline_unstarted_auxiliary_reconciliation.v1"
+            or row.get("resolution")!="never_dispatched_verified_off"
+            or row.get("reservation_preserved") is not True or row.get("on_authority") is not False
+            or not _owner_reconciliation_reference(row.get("owner_instruction"))
+            or not _sha256_text(row.get("root_review_sha256"))): return False
+    held=next((item for item in group if item.get("action")=="contain_auxiliary_device"
+        and item.get("event_id")==row.get("containment_event_id")),None)
+    return (held is not None and row.get("containment_sha256")==_event_digest(held)
+        and not any(item.get("action") in {"claim_auxiliary_dispatch","record_auxiliary_on_outcome",
+            "mark_auxiliary_active"} for item in group))

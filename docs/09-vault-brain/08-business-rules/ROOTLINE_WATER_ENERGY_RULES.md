@@ -1,5 +1,61 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed simplified operation — 15 November 2026
+
+This latest owner instruction supersedes contrary requirements below for
+mandatory native inching, artificial run segmentation, repeated commissioning,
+flow/volume proof, physical attendance and routine per-run confirmation. It
+applies to Camps A, B, C and E, borehole, fertiliser injector and mixer, and the
+ESKOM breaker. Existing device identities, actual manual isolation and the
+agreed weather, irrigation and solar operating rules remain meaningful facts.
+
+- Irrigation runs for its planned duration as one continuous run. Persist the
+  intended OFF time in the existing canonical execution and let the existing
+  durable scheduler perform and reconcile OFF after restart. Inching is optional
+  controller configuration, not a prerequisite or a reason to split the run.
+- Authoritative application/provider ON and OFF establish switch operation.
+  Do not require flow measurements, litres, human attendance or another owner
+  confirmation to establish that result. Do not claim measured water delivery.
+- Missing or stale observations are unavailable information, not evidence that
+  equipment failed. Preserve an owned run's planned stop, reobserve normally,
+  and do not freeze unrelated devices because of a historical read or attempt.
+  Current adverse weather and explicit manual OFF/isolation still take effect.
+- Keep the owner's existing eWeLink schedules working until the replacement is
+  ready and its handover is explicitly coordinated. Enabled controller timers
+  must not make every channel unusable. Distinguish externally scheduled/manual
+  runs from ROOTLINE-owned runs; do not duplicate starts or stop an unowned run
+  merely because ROOTLINE lacks a start receipt.
+- Correct device/channel identity, durable stop ownership, duplicate-command
+  control and honest unknown-state reporting are implementation responsibilities,
+  not recurring owner paperwork. Previously valid device setup is reused.
+- Fertiliser follows the agreed mixing, injection, irrigation and flush timing;
+  elapsed authoritative irrigation ON time supplies timing evidence without a
+  flow-measurement prerequisite. A native countdown is optional here as well.
+- Existing qualified same-day mixing remains reusable within the 30-minute
+  daily cap; continuous irrigation does not create a new premix prerequisite
+  for every hour. Preserve the established two bounded pulses per eligible
+  hour without stopping irrigation. Missing routine batch confirmation alone
+  does not block this time-based programme; an explicit current empty, unsafe
+  or not-ready batch report still holds injection. Never invent batch contents.
+- ESKOM uses its existing exact breaker binding and agreed solar/battery policy;
+  it is not an irrigation timer and must not receive a fabricated timed OFF.
+  Unavailable power telemetry retains its state until current evidence returns.
+- Report what is planned, when it will run, what is running, and what stopped.
+  Report a specific current failure honestly without substituting internal
+  checklists or old commissioning labels for the equipment's actual state.
+
+Enablement and current operation are established from live configuration and
+provider/canonical results, not from this document. A genuinely missing device
+mapping or unfinished physical connection must be identified precisely; it does
+not hold back already configured equipment. Preserve historical records without
+reinterpreting old segmented executions as new continuous runs.
+
+Current owner facts: A targets two hours on approximately four days weekly
+and shares B's gravity-fed supply. E is confirmed connected and ready on
+15 November, with its own owner-confirmed target of two hours on four days
+weekly, the same target as A. E crop and physical supply details remain unknown
+and do not establish measured water delivery.
+
 ## Authority And Evidence Precedence
 
 This file is the single durable policy source for ROOTLINE water, irrigation,

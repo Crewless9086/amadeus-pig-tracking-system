@@ -58,6 +58,8 @@ def run_eskom_cycle(*, power, configuration, canonical, store, now=None,
     record=(canonical or {}).get("device_record") or {}
     key="ifttt_smartlife:smartlife_owner_account:"+device+":1"
     envelope=record.get("authority_envelope") or {}
+    from modules.telemetry.rootline_timed_control import timed_control_enabled
+    owner_configured = timed_control_enabled(config) and record.get("stop_mode") == "hysteresis"
     configured = (bool(re.fullmatch(r"[A-Za-z0-9_-]{8,128}",device))
         and str(config.get("ROOTLINE_ESKOM_ENABLED") or "").lower()=="true"
         and bool(config.get("ROOTLINE_IFTTT_MAKER_KEY"))
@@ -71,8 +73,8 @@ def run_eskom_cycle(*, power, configuration, canonical, store, now=None,
         and record.get("safe_state")=="UNCHANGED"
         and type(record.get("maximum_runtime_seconds")) is int and record["maximum_runtime_seconds"]==0
         and type(record.get("native_fail_stop_seconds")) is int and record["native_fail_stop_seconds"]==0
-        and record.get("independent_physical_identity_proven") is True
-        and record.get("independent_electrical_protection_proven") is True
+        and (owner_configured or (record.get("independent_physical_identity_proven") is True
+            and record.get("independent_electrical_protection_proven") is True))
         and bool(str(record.get("manual_isolation") or "").strip())
         and envelope.get("eskom_policy")=="owner_30_on_35_solar_recovery_off"
         and envelope.get("switch_code")==config.get("ROOTLINE_ESKOM_SWITCH_CODE"))

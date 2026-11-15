@@ -21,6 +21,7 @@ POLICY_ID = "ROOTLINE-OPERATING-KNOWLEDGE"
 UNKNOWN = "Unknown"
 ZONES = {"B12345": "lucerne", "C12345": "vegetables"}
 A_POLICY_VERSION = "rootline_operating_policy_abc.v2"
+TIMED_POLICY_VERSION = "rootline_operating_policy_abce.v3"
 LIFECYCLE = ("proposed", "owner_reviewed", "active_for_advice")
 AUTHORITY = {
     "writes_farm_data": False,
@@ -159,10 +160,13 @@ def normalize_policy_snapshot(payload):
     if unexpected:
         raise PolicyValidationError("unexpected_policy_fields")
 
-    successor = source.get("contract_version") == A_POLICY_VERSION
+    timed = source.get("contract_version") == TIMED_POLICY_VERSION
+    successor = source.get("contract_version") in {A_POLICY_VERSION, TIMED_POLICY_VERSION}
     if "contract_version" in source and not successor:
         raise PolicyValidationError("unsupported_policy_contract_version")
     expected_zones = {**ZONES, "A12345": UNKNOWN} if successor else ZONES
+    if timed:
+        expected_zones = {**expected_zones, "E12345": UNKNOWN}
     zones = source.get("zones")
     if not isinstance(zones, dict) or set(zones) != set(expected_zones):
         raise PolicyValidationError("exact_zone_policy_identity_required")
@@ -170,8 +174,8 @@ def normalize_policy_snapshot(payload):
     normalized_zones = {}
     for zone_id, crop in expected_zones.items():
         zone = zones.get(zone_id)
-        if zone_id == "A12345":
-            normalized_zones[zone_id] = _a_zone_policy(zone)
+        if zone_id in {"A12345", "E12345"}:
+            normalized_zones[zone_id] = _a_zone_policy(zone, timed=timed)
             continue
         if not isinstance(zone, dict) or set(zone) != {
             "daylight_window",
@@ -180,22 +184,25 @@ def normalize_policy_snapshot(payload):
         }:
             raise PolicyValidationError("exact_zone_policy_fields_required")
         minimum = _unknown_or_int(
-            zone["minimum_useful_runtime_minutes"], 1, 1440, "invalid_minimum_runtime"
+            zone["minimum_useful_runtime_minutes"], 1, 120 if timed else 1440, "invalid_minimum_runtime"
         )
         maximum = _unknown_or_int(
-            zone["maximum_continuous_runtime_minutes"], 1, 1440, "invalid_maximum_runtime"
+            zone["maximum_continuous_runtime_minutes"], 1, 120 if timed else 1440, "invalid_maximum_runtime"
         )
         if minimum != UNKNOWN and maximum != UNKNOWN and minimum > maximum:
             raise PolicyConflictError("minimum_runtime_exceeds_maximum")
+        if timed and zone["daylight_window"] != "any_time":
+            raise PolicyValidationError("timed_owner_all_hours_window_required")
         normalized_zones[zone_id] = {
             "crop_use": crop,
-            "daylight_window": _window(zone["daylight_window"]),
+            "daylight_window": ("any_time" if timed and zone["daylight_window"] == "any_time"
+                else _window(zone["daylight_window"])),
             "minimum_useful_runtime_minutes": minimum,
             "maximum_continuous_runtime_minutes": maximum,
         }
 
     return {
-        **({"contract_version": A_POLICY_VERSION} if successor else {}),
+        **({"contract_version": source["contract_version"]} if successor else {}),
         "seasonal_boundaries": _season(source.get("seasonal_boundaries")),
         "zones": normalized_zones,
         "forecast_rain": _forecast(source.get("forecast_rain")),
@@ -207,7 +214,7 @@ def normalize_policy_snapshot(payload):
     }
 
 
-def _a_zone_policy(zone):
+def _a_zone_policy(zone, *, timed=False):
     """A has explicit advice inputs; B/C defaults never transfer to it."""
     required = {"daylight_window", "minimum_useful_runtime_minutes",
         "maximum_continuous_runtime_minutes", "requested_total_duration_minutes",
@@ -216,8 +223,8 @@ def _a_zone_policy(zone):
         raise PolicyValidationError("exact_a_zone_policy_fields_required")
     if zone["daylight_window"] != "any_time":
         raise PolicyValidationError("a_owner_24_hour_window_required")
-    minimum = _unknown_or_int(zone["minimum_useful_runtime_minutes"], 1, 60, "invalid_minimum_runtime")
-    maximum = _unknown_or_int(zone["maximum_continuous_runtime_minutes"], 1, 60, "invalid_maximum_runtime")
+    minimum = _unknown_or_int(zone["minimum_useful_runtime_minutes"], 1, 120 if timed else 60, "invalid_minimum_runtime")
+    maximum = _unknown_or_int(zone["maximum_continuous_runtime_minutes"], 1, 120 if timed else 60, "invalid_maximum_runtime")
     total = _unknown_or_int(zone["requested_total_duration_minutes"], 1, 120, "invalid_a_runtime_target")
     target = zone["target_days_per_week"]
     if target != "need_based":
@@ -226,8 +233,8 @@ def _a_zone_policy(zone):
         raise PolicyConflictError("minimum_runtime_exceeds_maximum")
     if total != UNKNOWN and minimum != UNKNOWN and total < minimum:
         raise PolicyConflictError("a_target_below_minimum_runtime")
-    if total != UNKNOWN and maximum != UNKNOWN and total > 2 * maximum:
-        raise PolicyConflictError("a_target_exceeds_two_bounded_segments")
+    if total != UNKNOWN and maximum != UNKNOWN and total > (maximum if timed else 2 * maximum):
+        raise PolicyConflictError("target_exceeds_continuous_limit" if timed else "a_target_exceeds_two_bounded_segments")
     if zone["water_supply"] not in {UNKNOWN, "gravity_fed_downhill"}:
         raise PolicyValidationError("a_water_supply_not_supported")
     source = str(zone["evidence_source"] or "").strip()

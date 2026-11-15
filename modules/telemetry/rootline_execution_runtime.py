@@ -1,5 +1,7 @@
 """Existing-scheduler composition for one canonical B/C execution artifact."""
 from __future__ import annotations
+from modules.telemetry.rootline_timed_control import (timed_control_enabled, timed_control_scope,
+    timed_control_call, scheduled_execution, canonical_timed_authority)
 
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -36,6 +38,7 @@ _NATIVE_BC_METHODS = {name: getattr(RootlineIFTTTTransport, name) for name in (
     "_validated_snapshot", "_binding", "_channel", "_snapshot")}
 
 
+@timed_control_call
 def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
@@ -280,6 +283,7 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
     return refreshed
 
 
+@timed_control_call
 def prepare_rootline_borehole_cycle(*, need, provider, interlocks, energy,
         requested_seconds, connect_factory, authority, now=None,
         store=rootline_irrigation_execution_store, environ=None, transport=None,
@@ -339,7 +343,7 @@ def read_active_irrigation_weather(*, database_url, now, deadline_seconds=5):
             "policy_snapshot": policy if policy_status < 400 else {}}
 
 
-def assess_active_irrigation_weather(packet, *, now, read_started_at=None):
+def assess_active_irrigation_weather(packet, *, now, read_started_at=None, stop_mode=None):
     """Reassess original observation times against current versioned policy.
 
     This can retain or stop an already-owned execution. It never grants ON,
@@ -406,7 +410,8 @@ def assess_active_irrigation_weather(packet, *, now, read_started_at=None):
     elif rain > threshold:
         reason = "active_weather_rain_hold"
     material = {"contract_version": "rootline_active_weather.v1",
-        "stop_required": reason != "active_weather_dry", "reason": reason,
+        "stop_required": (reason == "active_weather_rain_hold" if stop_mode == "scheduled"
+            else reason != "active_weather_dry"), "reason": reason,
         "assessed_at": now.isoformat(), "read_started_at": _aware(read_started_at or now).isoformat(),
         "observed_at": observed.isoformat() if observed else None,
         "snapshot_cutoff": cutoff.isoformat() if cutoff else None,
@@ -450,10 +455,12 @@ def _active_weather_revalidator(reader, database_url, clock):
                 database_url=database_url, now=started, deadline_seconds=seconds)
         except Exception:
             packet = {}
-        return assess_active_irrigation_weather(packet, now=_aware(clock()), read_started_at=started)
+        return assess_active_irrigation_weather(packet, now=_aware(clock()), read_started_at=started,
+            stop_mode=active.get("stop_mode"))
     return revalidate
 
 
+@timed_control_call
 def supervise_rootline_active_execution(*, notify, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None, outcome_reader=lambda _identity: None,
@@ -545,7 +552,8 @@ def _canonical_irrigation_scope(function):
         token = _canonical_irrigation_binding.set(None)
         try:
             # New-start reads happen in _current, after active shutdown duties.
-            return function(*args, **kwargs)
+            with timed_control_scope(kwargs.get("environ")):
+                return function(*args, **kwargs)
         finally:
             _canonical_irrigation_binding.reset(token)
     return scoped
@@ -681,9 +689,6 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     source = environ if environ is not None else os.environ
     clock = clock or (lambda: datetime.now(timezone.utc))
     now = _aware(now or clock())
-    if not any(str(source.get(flag) or "").lower() == "true"
-            for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED")):
-        return _safe("autonomous_bc_disabled")
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
         token_store=token_store, environ=source, readback=readback)
@@ -704,6 +709,9 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                 outcome_reader=outcome_reader, now=now, clock=clock, active_only=True,
                 active_weather_revalidator=_active_weather_revalidator(active_weather_reader,
                     str(database_url or source.get("DATABASE_URL") or "").strip(), clock))
+    if not any(str(source.get(flag) or "").lower() == "true"
+            for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED", "ROOTLINE_E_ENABLED")):
+        return _safe("autonomous_bc_disabled")
     if not owner_user_id or owner_user_id != chat_id:
         return _safe("canonical_observation_binding_invalid")
     authority_checker = authority_checker or _canonical_standing_authority_proven
@@ -739,7 +747,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     if not isinstance(stored, dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"), "success": False}
     zone = artifact["zone_id"]
-    output, baseline, commissioning_id = _commissioned_output(zone)
+    output, baseline, commissioning_id = _commissioned_output(zone, stop_mode=artifact.get("stop_mode"))
     decision = {"decision_id": "ROOTLINE-DECISION-" + artifact["eligibility_sha256"][:24].upper(),
         "decision": "Run now", "standing_authority": True, "zone_id": zone,
         "runtime_minutes": max(1, (artifact["maximum_duration_seconds"] + 59) // 60),
@@ -750,14 +758,17 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         "commissioning_generation": baseline["configuration_generation"],
         "execution_eligibility": artifact}
     decision["decision_sha256"] = _digest(decision)
-    selected = next(row for row in initial["controller"]["channels"]
-                    if row["channel"] == artifact["channel"])
-    commissioning = {"commissioning_id": commissioning_id, "zone_id": zone,
-        "channel": artifact["channel"], "firmware": initial["controller"]["firmware"],
-        "native_inching_seconds": selected["native_auto_off_seconds"],
-        **({"evidence": baseline["evidence"]} if zone == "A12345" else
-           {"accepted_controller_baseline": baseline})}
-    native_transport = _native_bc_final_transport(transport, zone, readback, token_store, source)
+    if scheduled_execution(artifact):
+        commissioning = _timed_mapping_packet(output, commissioning_id)
+    else:
+        selected = next(row for row in initial["controller"]["channels"]
+                        if row["channel"] == artifact["channel"])
+        commissioning = {"commissioning_id": commissioning_id, "zone_id": zone,
+            "channel": artifact["channel"], "firmware": initial["controller"]["firmware"],
+            "native_inching_seconds": selected.get("native_auto_off_seconds"),
+            **({"evidence": baseline.get("evidence", {})} if zone == "A12345" else
+               {"accepted_controller_baseline": baseline})}
+    native_transport = None if scheduled_execution(artifact) else _native_bc_final_transport(transport, zone, readback, token_store, source)
 
     def final_current():
         current_now = _aware(clock())
@@ -896,10 +907,10 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     if not isinstance(stored,dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"),"success":False}
     zone=artifact["zone_id"]
-    _output,baseline,commissioning_id=_commissioned_output(zone)
+    _output,baseline,commissioning_id=_commissioned_output(zone, stop_mode=artifact.get("stop_mode"))
     decision={"decision_id":"ROOTLINE-DECISION-"+artifact["eligibility_sha256"][:24].upper(),
       "decision":"Run now","standing_authority":True,"zone_id":zone,
-      "runtime_minutes":60,"runtime_seconds":artifact["maximum_duration_seconds"],
+      "runtime_minutes":max(1, (artifact["maximum_duration_seconds"] + 59) // 60),"runtime_seconds":artifact["maximum_duration_seconds"],
       "execution_id":artifact["execution_id"],"eligibility_id":artifact["eligibility_id"],
       "evidence_generation":artifact["plan_generation"],"assessed_at":artifact["decision_at"],
       "commissioning_id":commissioning_id,"commissioning_generation":baseline["configuration_generation"],
@@ -907,9 +918,11 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     decision["decision_sha256"]=_digest(decision)
     selected=next(row for row in current["controller"]["channels"] if row["channel"]==artifact["channel"])
     commissioning={"commissioning_id":commissioning_id,"zone_id":zone,"channel":artifact["channel"],
-      "firmware":current["controller"]["firmware"],"native_inching_seconds":selected["native_auto_off_seconds"],
-      **({"evidence": baseline["evidence"]} if zone == "A12345" else
+      "firmware":current["controller"]["firmware"],"native_inching_seconds":selected.get("native_auto_off_seconds"),
+      **({"evidence": baseline.get("evidence", {})} if zone == "A12345" else
          {"accepted_controller_baseline":baseline})}
+    if scheduled_execution(artifact):
+        commissioning = _timed_mapping_packet(_output, commissioning_id)
     transport=transport or RootlineIFTTTTransport(token_store=token_store,environ=source,readback=readback)
     def revalidate(_decision):
         return _current(evidence_loader,readback,token_store,source,database_url,
@@ -1069,8 +1082,15 @@ def _persist_stale_parent_resolutions(plan, store):
                 raise RootlineExecutionStoreUnavailable("record_stale_job_resolution")
 
 
-def _commissioned_output(zone):
-    output = commissioned_irrigation_contract(zone)
+def _commissioned_output(zone, *, stop_mode=None):
+    if stop_mode == "scheduled":
+        if not timed_control_enabled():
+            raise ValueError("timed_control_disabled")
+        output = commissioned_irrigation_contract(zone)
+        return output, {"configuration_generation": 1}, "ROOTLINE-TIMED-MAPPING-" + output["contract_sha256"][:24].upper()
+    # A legacy artifact retains its own commissioned baseline even after rollout.
+    with timed_control_scope({"ROOTLINE_TIMED_CONTROL_ENABLED": "false"}):
+        output = commissioned_irrigation_contract(zone)
     if zone == "A12345":
         return output, {"configuration_generation": output["commissioning_generation"],
             "evidence": output["commissioning_evidence"]}, output["commissioning_id"]
@@ -1108,6 +1128,14 @@ def _standing_authority_in_transaction(artifact, connect, load_device_record):
     try:
         selected_zone = str((artifact or {}).get("zone_id") or "")
         commissioned_irrigation_contract(selected_zone)
+        if scheduled_execution(artifact):
+            output = rootline_device_registry().get(selected_zone)
+            if not output or artifact.get("channel") != output["channel"]:
+                return False
+            key = f"ifttt_ewelink:ewelink_owner_account:{output['device_id']}:{output['channel']}"
+            return canonical_timed_authority(load_device_record(key, connect_factory=connect),
+                connect_factory=connect, identity=selected_zone,
+                requested_seconds=artifact.get("maximum_duration_seconds"))
         keys = (("ifttt_ewelink:ewelink_owner_account:100204e9bc:4",)
             if selected_zone == "A12345" else (
                 "ifttt_ewelink:ewelink_owner_account:100204e9bc:1",
@@ -1257,6 +1285,8 @@ def _planning_observation(initial, owner, chat, next_due):
                 blocker = "run_projection_eligibility_invariant_failed"
         else:
             blocker = str(per_zone.get(zone) or artifact.get("status") or "")
+        if blocker in {"execution_eligible","eligible_candidate"}:
+            blocker=""
         zones.append({"zone_id": zone, "decision": "Run" if decision == "Run now" else decision,
             "zone_decision": raw,
             "reason": str(task.get("reason") or artifact.get("status") or
@@ -1323,3 +1353,10 @@ def _technical_block_alert(initial, artifact, store, notify, next_due):
     return {"telegram_messages": int(confirmed), "blocked_notification_identity": identity,
             "blocked_notification_confirmed": confirmed,
             "blocked_notification_outcome": outcome}
+
+
+def _timed_mapping_packet(output, identity):
+    # This describes an owner-configured mapping, never physical commissioning.
+    return {"commissioning_id": identity, "zone_id": output["identity"],
+        "channel": output["channel"], "stop_mode": "scheduled",
+        "mapping_sha256": output["contract_sha256"], "configuration_generation": 1}

@@ -172,13 +172,13 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
         if not authority:
             continue
         terminal_defer = next((row for row in events if _valid_terminal_defer(row)), None)
-        job = {"contract_version": "rootline_irrigation_job.v1",
+        job = {"contract_version": ("rootline_irrigation_job.v2" if authority.get("stop_mode") == "scheduled" else "rootline_irrigation_job.v1"),
             "job_id": authority.get("job_id"), "job_sha256": authority.get("job_sha256"),
             "zone_id": authority.get("zone_id"), "operating_date": authority.get("operating_date"),
             "requested_total_seconds": authority.get("requested_total_duration_seconds"),
             "requested_total_minutes": authority.get("requested_total_duration_minutes"),
             "governed_executable_seconds": authority.get("governed_executable_duration_seconds"),
-            "maximum_segment_seconds": 3599,
+            "maximum_segment_seconds": (authority.get("requested_total_duration_seconds") if authority.get("stop_mode") == "scheduled" else 3599),
             "expected_segment_count": authority.get("expected_segment_count"),
             "plan_identity": authority.get("plan_generation")}
         if terminal_defer is not None:
@@ -420,7 +420,7 @@ def _qualifies(row, cutoff):
         return False, "completion_cutoff_invalid"
     runtime = _number(details.get("verified_runtime_minutes"))
     maximum = _number(details.get("maximum_runtime_minutes"))
-    if not (0 < (runtime or 0) <= (maximum or 0) <= 60):
+    if not (0 < (runtime or 0) <= (maximum or 0) <= (120 if details.get("stop_mode") == "scheduled" else 60)):
         return False, "runtime_or_fail_stop_invalid"
     if details.get("shutdown_verified") is not True:
         return False, "shutdown_unverified"

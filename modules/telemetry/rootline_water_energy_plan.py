@@ -23,6 +23,7 @@ from modules.telemetry.rootline_auxiliary_management import (
 )
 from modules.telemetry.rootline_water_balance import read_latest_zone_water_balances
 from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
+from modules.telemetry.rootline_timed_control import timed_control_enabled
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -466,9 +467,9 @@ def read_current_water_energy_evidence(
                 "zones": [{"zone_id": identity} for identity in
                     IRRIGATION_ZONE_IDS],
                 "target_days_per_week": 4,
-                "max_execution_minutes": 60,
+                "max_execution_minutes": 120 if timed_control_enabled() else 60,
                 "simultaneous_zones_allowed": False,
-                "segment_two_requires_fresh_decision": True,
+                "segment_two_requires_fresh_decision": not timed_control_enabled(),
             },
             "owner_candidate": {
                 "zone_id": "B12345",
@@ -915,10 +916,14 @@ def _read_managed_device_evidence(database_url, now):
         context["fertilizer_history_complete_through"] = history_complete_through
         from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
         mix = mixing_daily_accounting(auxiliary, now=_as_za(now), batch=batch)
-        context["premix_verified"] = (batch.get("state") == "batch_reported_prepared"
+        from modules.telemetry.rootline_timed_control import timed_control_enabled
+        batch_allowed=(batch.get("state")=="batch_reported_prepared" or
+            (timed_control_enabled() and batch.get("state")=="monday_batch_due"))
+        context["explicit_owner_time_programme"]=timed_control_enabled()
+        context["premix_verified"] = (batch_allowed
             and mix["premix_verified"])
         context["fertilizer_needed"] = (fertilizer_needed
-            and batch.get("state") == "batch_reported_prepared")
+            and batch_allowed)
     return {"status": "Available", "fertilizer_batch_observations": batch_observations,
         "fertilizer_executions": auxiliary,
         "fertilizer_history_complete_through": history_complete_through,
@@ -982,6 +987,8 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
             prior = {**pulse["shutdown_evidence"], "observed_at": stopped.isoformat(),
                 "zone_execution_id": execution_id, "shutdown_verified": True}
     return {"plan_generation": str(active.get("evidence_generation") or ""),
+        "stop_mode":active.get("stop_mode"),
+        "planned_runtime_seconds":active.get("planned_runtime_seconds"),
         "batch_generation": str(batch_generation or ""),
         "fertilizer_needed": fertilizer_needed is True,
         "job_id": active.get("job_id"), "job_sha256": active.get("job_sha256"),
@@ -992,7 +999,9 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
         "zone_start_evidence": {**start, "zone_execution_id": execution_id},
         "zone_output_evidence": {**start, "zone_execution_id": execution_id},
         "irrigation_stop_deadline": active.get("primary_stop_deadline"),
-        "completed_pulses": len(pulses), "prior_pulse_shutdown_evidence": prior,
+        "completed_pulses": len(pulses),
+        "completed_pulse_numbers":[int(row.get("pulse_number") or 0) for row in pulses],
+        "prior_pulse_shutdown_evidence": prior,
         "mixer_active": False, "prior_shutdown_unverified": any(
             row.get("action") == "contain_auxiliary_device"
             and row.get("shutdown_verified") is not True for row in auxiliary)}
@@ -1166,7 +1175,7 @@ def _read_latest_owner_zone_need(database_url, now):
                      where event_source='oom_sakkie_rootline_operational_intake'
                        and review_json->'rootline_operational_intake'->>'state'='completed'
                        and review_json->'rootline_operational_intake'->'outcome'->>'visible_irrigation_need_zone'
-                           in ('A12345','B12345','C12345')
+                           in ('A12345','B12345','C12345','E12345')
                        and (review_json->'rootline_operational_intake'->'outcome'->>'writes_farm_data')::boolean is true
                      order by created_at desc,review_event_id desc limit 1
                 """)
@@ -1182,7 +1191,7 @@ def _read_latest_owner_zone_need(database_url, now):
         provider_id = str(outcome.get("provider_message_id") or "").strip()
         zone = str(outcome.get("visible_irrigation_need_zone") or "")
         current = _as_za(now or datetime.now(timezone.utc))
-        if (zone not in {"A12345", "B12345", "C12345"} or not provider_id or observed is None
+        if (zone not in {"A12345", "B12345", "C12345", "E12345"} or not provider_id or observed is None
                 or observed > current or current - observed > timedelta(hours=24)):
             return {"status": UNAVAILABLE}
         return {"status": "Available", "zone_id": zone,
@@ -1370,11 +1379,14 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             } for event in canonical.get("events", [])
                 if event.get("qualifies_as_completed_watering") is True]
             zone["completion_ledger_complete_through"] = canonical.get("complete_through")
-            if (zone.get("zone_id") == "A12345"
-                    and _dict(zone.get("operating_policy")).get("target_days_per_week") == "need_based"):
+            from modules.telemetry.rootline_timed_control import timed_control_enabled
+            if (zone.get("zone_id") in {"A12345","E12345"} and (
+                    _dict(zone.get("operating_policy")).get("target_days_per_week") == "need_based"
+                    or timed_control_enabled())):
                 # A's first need-based run needs complete current commissioning
                 # history, not invented absence or weekly debt before that epoch.
                 zone["completion_ledger_complete_through"] = canonical.get("epoch_complete_through")
+                zone["planning_epoch_start"] = canonical.get("planning_epoch_start")
             canonical_zones.append(zone)
         payload = {
             "zones": canonical_zones,
