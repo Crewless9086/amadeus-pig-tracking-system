@@ -389,11 +389,11 @@ class RequestBudget:
                 order by created_at desc,review_event_id desc limit 1),
             counts as (select
                 coalesce(sum(case when cast(%s as text) is null or
-                    (review_json->'ewelink_request_budget'->'detail'->>'scope'=%s and
-                     review_json->'ewelink_request_budget'->'detail'->>'region'=%s)
-                    then (review_json->'ewelink_request_budget'->>'attempt_units')::int else 0 end),0) as rolling,
+                    (review_json #>> '{ewelink_request_budget,detail,scope}'=%s and
+                     review_json #>> '{ewelink_request_budget,detail,region}'=%s)
+                    then (review_json #>> '{ewelink_request_budget,attempt_units}')::int else 0 end),0) as rolling,
                 coalesce(sum(case when created_at >= stamp.at-interval '5 minutes' then
-                    (review_json->'ewelink_request_budget'->>'attempt_units')::int else 0 end),0) as recent
+                    (review_json #>> '{ewelink_request_budget,attempt_units}')::int else 0 end),0) as recent
                 from public.sam_live_stock_conversation_review_events cross join stamp
                 where chatwoot_conversation_id=%s and event_source=%s
                     and created_at >= stamp.at-(%s * interval '1 day'))
@@ -407,11 +407,11 @@ class RequestBudget:
     def _counts(self, connection, now, *, scope=None, region=None):
         row = connection.execute("""select
             coalesce(sum(case when cast(%s as text) is null or
-                (review_json->'ewelink_request_budget'->'detail'->>'scope'=%s and
-                 review_json->'ewelink_request_budget'->'detail'->>'region'=%s)
-                then (review_json->'ewelink_request_budget'->>'attempt_units')::int else 0 end),0),
+                (review_json #>> '{ewelink_request_budget,detail,scope}'=%s and
+                 review_json #>> '{ewelink_request_budget,detail,region}'=%s)
+                then (review_json #>> '{ewelink_request_budget,attempt_units}')::int else 0 end),0),
             coalesce(sum(case when created_at >= %s then
-                (review_json->'ewelink_request_budget'->>'attempt_units')::int else 0 end),0)
+                (review_json #>> '{ewelink_request_budget,attempt_units}')::int else 0 end),0)
             from public.sam_live_stock_conversation_review_events
             where chatwoot_conversation_id=%s and event_source=%s and created_at >= %s""",
             (scope, scope, region, now-timedelta(minutes=5), LEDGER_ID, EVENT_SOURCE,
