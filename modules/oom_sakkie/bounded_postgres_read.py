@@ -533,7 +533,7 @@ class _CycleBudgetCursor(ReadBudgetCursor):
             installed = ephemeral_timeout if owner._reuse_disabled else owner._installed_timeout
             if (installed is not None
                     and 0 < installed <= min(STATEMENT_TIMEOUT_MS, remaining_ms)):
-                return
+                return installed
             setting = min(STATEMENT_TIMEOUT_MS, max(1, remaining_ms//2))
             self._cursor.execute(f"set local statement_timeout='{setting}ms'")
             if owner._reuse_disabled:
@@ -585,8 +585,8 @@ class _CycleBudgetCursor(ReadBudgetCursor):
                     and owner._read_committed and owner._installed_lock_timeout is not None
                     and 0 < owner._installed_lock_timeout <= LOCK_TIMEOUT_MS):
                 try:
-                    self._guard(deadline)
-                    self._cursor.execute(statement, params, **kwargs)
+                    acknowledged = self._guard(deadline)
+                    self._execute_measured(statement, params, acknowledged, **kwargs)
                 except BaseException:
                     owner._invalidate()
                     raise
@@ -597,5 +597,17 @@ class _CycleBudgetCursor(ReadBudgetCursor):
         self._cursor.execute(f"set local statement_timeout='{milliseconds}ms'")
         if time.monotonic() >= deadline:
             raise RootlineCycleDeadlineExceeded("rootline_cycle_database_deadline")
-        self._cursor.execute(statement, params, **kwargs)
+        self._execute_measured(statement, params, milliseconds, **kwargs)
         return self
+
+    def _execute_measured(self, statement, params, acknowledged_timeout, **kwargs):
+        started = time.monotonic()
+        try:
+            return self._cursor.execute(statement, params, **kwargs)
+        except Exception as exc:
+            from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+            exc.failure_diagnostics = sanitize_failure({
+                **getattr(exc, "failure_diagnostics", {}),
+                "statement_timeout_ms": acknowledged_timeout,
+                "query_elapsed_ms": int(max(0, time.monotonic()-started)*1000)})
+            raise

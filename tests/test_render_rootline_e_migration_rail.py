@@ -9,7 +9,13 @@ from tests.test_render_rootline_a_migration_rail import predecessor, purpose_pre
 from tests import test_render_production_migration_rail as legacy
 
 E_ITEM = next(item for item in rail.ALLOWLIST if item.migration_id == rail.ROOTLINE_E_MIGRATION_ID)
-E_ALLOWLIST = rail.ALLOWLIST
+E_ALLOWLIST = rail.ALLOWLIST[:rail.ALLOWLIST.index(E_ITEM) + 1]
+
+
+@pytest.fixture(autouse=True)
+def historical_e_allowlist():
+    with patch.object(rail, "ALLOWLIST", E_ALLOWLIST):
+        yield
 
 
 def test_exact_e_append_preserves_a_prefix_and_digest():
