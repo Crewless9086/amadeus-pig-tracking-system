@@ -632,7 +632,9 @@ def test_ordinary_non_utc_fallback_preserves_actual_dst_gap_and_fold_cutoffs(
     import psycopg
     from psycopg.types.json import Jsonb
     client = budget.RequestBudget(environment())
-    with psycopg.connect(DATABASE_URL) as connection:
+    # This deliberately partial ledger state is local to the cutoff assertion;
+    # do not leave it for later modules that exercise real capacity admission.
+    with psycopg.connect(DATABASE_URL) as connection, connection.transaction(force_rollback=True):
         connection.execute("set local timezone='America/New_York'")
         connection.execute("insert into public.sam_live_stock_conversation_review_events "
             "(review_event_id,chatwoot_conversation_id,event_source,created_at,review_json) "
