@@ -351,15 +351,12 @@ def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
         "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",
         "state": "Eligible", "reason": "now_after_fresh_execution_revalidation",
         "next_action_owner": "ROOTLINE", "next_action": "claim exactly once"}}
-    silent = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
-        specialist_loader=lambda: first_packet, state_store=state)
-    assert silent["status"] == "rootline_reassessment_observed_silently"
-    assert silent["notify_owner"] is False
-    # An unchanged owner question authorizes the notification exercised below;
-    # eligibility alone remains silent under the existing notification policy.
-    first_packet["owner_brief"]["family_fact_needed"] = "Is the tank empty?"
+    # Deliver the first daily plan without manufacturing an owner question;
+    # later internal reason changes must still stay quiet.
     first = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
         specialist_loader=lambda: first_packet, state_store=state)
+    assert first["status"] == "rootline_reassessment_changed"
+    assert first["notify_owner"] is True
     record_reassessment_delivery(identity=first["notification_identity"], owner_user_id="42",
         chat_id="42", material_digest=first["material_digest"],
         delivery={"provider_delivery_confirmed": True, "provider_message_id": "7001"},
@@ -370,6 +367,7 @@ def test_internal_reason_churn_is_silent_but_verified_completion_is_material():
     quiet = reassess_rootline(owner_user_id="42", chat_id="42", trigger="declared_time",
         specialist_loader=lambda: churn, state_store=state)
     assert quiet["status"] == "rootline_reassessment_unchanged"
+    assert quiet["notify_owner"] is False
     completed = {**churn, "result_id": "R3", "generation": "G3",
         "irrigation_lifecycle": {"C12345": {
             "contract_version": "rootline_zone_lifecycle.v1", "zone_id": "C12345",

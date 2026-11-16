@@ -141,7 +141,11 @@ def sanitize_failure(value):
         if key in value:
             result[key] = value[key] if isinstance(value[key], str) and value[key] in _ERROR_TYPES else "UnknownError"
     for key, allowed in (("reason", _REASONS), ("store_action", _ACTIONS),
-            ("accounting_stage", {"locked", "append"}), ("recorder_status", _RECORDER_STATUSES)):
+            ("accounting_stage", {"locked", "append"}),
+            ("accounting_operation", {"connection_acquire", "fence_enter", "fence_setup", "fence_acquire", "fenced_body", "fence_close",
+                "clock_read", "fence_clock", "ledger_load", "admission_preimage", "counts_fallback",
+                "reserve_terminal_read", "audit_transaction", "audit_setup", "audit_record", "audit_readback", "audit_commit",
+                "review_event_insert", "review_event_count", "review_event_receipt_read", "review_event_transaction"}), ("recorder_status", _RECORDER_STATUSES)):
         if isinstance(value.get(key), str) and value[key] in allowed:
             result[key] = value[key]
     sqlstate = value.get("sqlstate")

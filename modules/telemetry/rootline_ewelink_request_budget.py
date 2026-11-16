@@ -66,6 +66,20 @@ _RECONCILE_ACTIONS = _CLAIM_ACTIONS | _OUTCOME_ACTIONS | _ACTIVE_ACTIONS | _OFF_
 MAX_RECONCILE_ROWS = 512
 
 
+@contextmanager
+def _accounting_operation(operation):
+    """Attach only an allowlisted location; preserve the original exception."""
+    try:
+        yield
+    except Exception as exc:
+        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+        details = sanitize_failure(getattr(exc, "failure_diagnostics", None))
+        if "accounting_operation" not in details:
+            details.update(sanitize_failure({"accounting_operation": operation}))
+        exc.failure_diagnostics = details
+        raise
+
+
 class RequestBudgetUnavailable(RuntimeError):
     """Sanitized local refusal; never an authentication failure."""
 
@@ -295,6 +309,7 @@ class RequestBudget:
         self.connect_factory = connect_factory
         self.sleep = sleeper
 
+    @_accounting_operation("connection_acquire")
     def _connect(self):
         if self.connect_factory is not None:
             return self.connect_factory()
@@ -311,6 +326,7 @@ class RequestBudget:
 
     @contextmanager
     def _locked(self, *, read_committed=False, prepared=None):
+        operation = "fence_setup"
         try:
             pair = _private_pair.get()
             if prepared is not None:
@@ -321,8 +337,10 @@ class RequestBudget:
                 from modules.oom_sakkie.bounded_postgres_read import STATEMENT_TIMEOUT_MS, LOCK_TIMEOUT_MS
                 remaining = min(request_timeout(), remaining_seconds())
                 statement = max(1, min(STATEMENT_TIMEOUT_MS, int(remaining * 1000)))
-                prepared.configure_transaction_timeouts(statement,
-                    min(LOCK_TIMEOUT_MS, statement), read_committed=True)
+                with _accounting_operation("fence_setup"):
+                    prepared.configure_transaction_timeouts(statement,
+                        min(LOCK_TIMEOUT_MS, statement), read_committed=True)
+            operation = "fence_enter"
             with prepared if prepared is not None else self._connect() as connection:
                 if read_committed:
                     # Only post-pair canonical cleanup opts in. The ordinary
@@ -330,8 +348,10 @@ class RequestBudget:
                     # An injected incompatible snapshot makes SET fail closed.
                     if pair is not None:
                         raise RequestBudgetUnavailable("ewelink_cleanup_pair_reuse_rejected")
-                    connection.execute("set transaction isolation level read committed")
-                    row = connection.execute("select pg_try_advisory_xact_lock(%s),"
+                    with _accounting_operation("fence_setup"):
+                        connection.execute("set transaction isolation level read committed")
+                    with _accounting_operation("fence_acquire"):
+                        row = connection.execute("select pg_try_advisory_xact_lock(%s),"
                         "current_setting('transaction_isolation')", (GLOBAL_SEND_LOCK,)).fetchone()
                     if not row or row[1] != "read committed":
                         raise RequestBudgetUnavailable("ewelink_cleanup_isolation_unproven")
@@ -339,19 +359,23 @@ class RequestBudget:
                 elif pair is not None and pair.owner is self:
                     if pair.fence is not None:
                         raise RequestBudgetUnavailable("ewelink_pair_nested_fence_rejected")
-                    row = connection.execute("select pg_try_advisory_xact_lock(%s),"
+                    with _accounting_operation("fence_acquire"):
+                        row = connection.execute("select pg_try_advisory_xact_lock(%s),"
                         "current_setting('transaction_isolation'),pg_backend_pid()",
-                        (GLOBAL_SEND_LOCK,)).fetchone()
+                            (GLOBAL_SEND_LOCK,)).fetchone()
                     if not row or row[1] != "read committed":
                         raise RequestBudgetUnavailable("ewelink_pair_isolation_unproven")
                     locked = row[0]
                     pair.fence, pair.backend = connection, row[2]
                 else:
-                    locked = connection.execute("select pg_try_advisory_xact_lock(%s)",
-                        (GLOBAL_SEND_LOCK,)).fetchone()[0]
+                    with _accounting_operation("fence_acquire"):
+                        locked = connection.execute("select pg_try_advisory_xact_lock(%s)",
+                            (GLOBAL_SEND_LOCK,)).fetchone()[0]
                 if not locked:
                     raise RequestBudgetUnavailable("ewelink_dispatch_busy")
+                operation = "fenced_body"
                 yield connection
+                operation = "fence_close"
         except RequestBudgetUnavailable:
             raise
         except Exception as exc:
@@ -359,26 +383,30 @@ class RequestBudget:
                 raise
             raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable",
                 failure_diagnostics={"accounting_stage": "locked", "cause_type": type(exc).__name__,
-                    "sqlstate": getattr(exc, "sqlstate", None)}) from None
+                    "sqlstate": getattr(exc, "sqlstate", None),
+                    "accounting_operation": getattr(exc, "failure_diagnostics", {}).get("accounting_operation", operation)}) from None
 
     @staticmethod
     def _now(connection):
         pair = _private_pair.get()
         if pair is not None and connection is pair.fence:
-            row = connection.execute("select clock_timestamp(),pg_backend_pid(),"
+            with _accounting_operation("fence_clock"):
+                row = connection.execute("select clock_timestamp(),pg_backend_pid(),"
                 "exists(select 1 from pg_locks where pid=pg_backend_pid() and locktype='advisory' "
                 "and classid=0 and objid=%s and objsubid=1 and granted)", (GLOBAL_SEND_LOCK,)).fetchone()
             if not row or row[1] != pair.backend or row[2] is not True:
                 raise RequestBudgetUnavailable("ewelink_pair_fence_unproven")
             return row[0]
-        return connection.execute("select clock_timestamp()").fetchone()[0]
+        with _accounting_operation("clock_read"):
+            return connection.execute("select clock_timestamp()").fetchone()[0]
 
     def _load(self, connection):
-        row = connection.execute("""select review_json->'ewelink_request_budget'
+        with _accounting_operation("ledger_load"):
+            row = connection.execute("""select review_json->'ewelink_request_budget'
             from public.sam_live_stock_conversation_review_events
             where chatwoot_conversation_id=%s and event_source=%s
             order by created_at desc,review_event_id desc limit 1""",
-            (LEDGER_ID, EVENT_SOURCE)).fetchone()
+                (LEDGER_ID, EVENT_SOURCE)).fetchone()
         if row and row[0] is None:
             raise RequestBudgetUnavailable("ewelink_request_ledger_invalid")
         return self._ledger_state(row[0] if row else None, self._now(connection) if not row else None)
@@ -399,7 +427,8 @@ class RequestBudget:
     def _admission_preimage(self, connection, *, scope, region):
         # Each endpoint takes a NEW READ COMMITTED snapshot. Reconciliation
         # remains a separate fresh canonical query and appends zero attempt units.
-        row = connection.execute("""with stamp as materialized (select clock_timestamp() as at),
+        with _accounting_operation("admission_preimage"):
+            row = connection.execute("""with stamp as materialized (select clock_timestamp() as at),
             latest as (select review_json->'ewelink_request_budget' as body
                 from public.sam_live_stock_conversation_review_events
                 where chatwoot_conversation_id=%s and event_source=%s
@@ -413,10 +442,11 @@ class RequestBudget:
                     (review_json #>> '{ewelink_request_budget,attempt_units}')::int else 0 end),0) as recent
                 from public.sam_live_stock_conversation_review_events cross join stamp
                 where chatwoot_conversation_id=%s and event_source=%s
-                    and created_at >= stamp.at-(%s * interval '1 day'))
+                    and created_at >= stamp.at-(%s * interval '1 day')
+                    and (review_json #>> '{ewelink_request_budget,attempt_units}') collate "C" is distinct from '0')
             select latest.body,stamp.at,counts.rolling,counts.recent,exists(select 1 from latest)
             from stamp cross join counts left join latest on true""",
-            (LEDGER_ID, EVENT_SOURCE, scope, scope, region, LEDGER_ID, EVENT_SOURCE, ROLLING_DAYS)).fetchone()
+                (LEDGER_ID, EVENT_SOURCE, scope, scope, region, LEDGER_ID, EVENT_SOURCE, ROLLING_DAYS)).fetchone()
         if not row or len(row) != 5 or (row[4] and row[0] is None):
             raise RequestBudgetUnavailable("ewelink_request_ledger_invalid")
         return self._ledger_state(row[0], row[1]), row[1], (int(row[2]), int(row[3]))
@@ -432,7 +462,8 @@ class RequestBudget:
         return zone is timezone.utc or (isinstance(zone, ZoneInfo) and zone.key in {"UTC", "Etc/UTC"})
 
     def _counts(self, connection, now, *, scope=None, region=None):
-        row = connection.execute("""select
+        with _accounting_operation("counts_fallback"):
+            row = connection.execute("""select
             coalesce(sum(case when cast(%s as text) is null or
                 (review_json #>> '{ewelink_request_budget,detail,scope}'=%s and
                  review_json #>> '{ewelink_request_budget,detail,region}'=%s)
@@ -441,8 +472,8 @@ class RequestBudget:
                 (review_json #>> '{ewelink_request_budget,attempt_units}')::int else 0 end),0)
             from public.sam_live_stock_conversation_review_events
             where chatwoot_conversation_id=%s and event_source=%s and created_at >= %s""",
-            (scope, scope, region, now-timedelta(minutes=5), LEDGER_ID, EVENT_SOURCE,
-             now-timedelta(days=ROLLING_DAYS))).fetchone()
+                (scope, scope, region, now-timedelta(minutes=5), LEDGER_ID, EVENT_SOURCE,
+                 now-timedelta(days=ROLLING_DAYS))).fetchone()
         return int(row[0]), int(row[1])
 
     def _append(self, state, *, action, attempt_units=0, detail=None):
@@ -469,6 +500,8 @@ class RequestBudget:
             if status >= 400 or result.get("success") is not True:
                 raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable",
                     failure_diagnostics={"accounting_stage": "append",
+                        "accounting_operation": result.get("accounting_operation", "audit_record"),
+                        "sqlstate": result.get("sqlstate"),
                         "cause_type": result.get("error_type"), "recorder_status": result.get("status"),
                         "recorder_http_status": status})
             if private:
@@ -476,77 +509,82 @@ class RequestBudget:
                 if receipt.get("review_event_id") != identity or receipt.get("review_json") != event["review_json"]:
                     raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
             else:
-                actual = audit.execute("""select review_json->'ewelink_request_budget'
+                with _accounting_operation("audit_readback"):
+                    actual = audit.execute("""select review_json->'ewelink_request_budget'
                     from public.sam_live_stock_conversation_review_events where review_event_id=%s""",
-                    (identity,)).fetchone()
+                        (identity,)).fetchone()
                 if not actual or actual[0] != payload:
                     raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
 
     @contextmanager
     def _audit_transaction(self, action):
         """One worker may reuse only its idle audit client, never its send fence."""
-        session = _dispatch_audit.get()
-        if (action not in {"request_attempt_reserved", "request_completed"}
-                or session is None or session["owner"] is not self
-                or session["thread"] != threading.get_ident()):
-            with self._connect() as connection:
-                yield connection
-            return
-        from psycopg.pq import TransactionStatus
-        from modules.oom_sakkie.bounded_postgres_read import STATEMENT_TIMEOUT_MS, LOCK_TIMEOUT_MS
-        from modules.telemetry.rootline_cycle_budget import remaining_seconds
-        connection = session["connection"]
-        fresh = connection is None
-        try:
-            if session["poisoned"]:
-                raise RequestBudgetUnavailable("ewelink_audit_client_unavailable")
-            if fresh:
-                connection = self._connect()
-                session["connection"] = connection
-            # Internal identity checks do not hand the raw client to a caller.
-            raw = getattr(connection, "_connection", None)
-            if raw is None:
-                raw = getattr(connection, "connection", connection)
-            fence = session.get("fence")
-            fence_raw = getattr(fence, "_connection", None)
-            if fence_raw is None:
-                fence_raw = getattr(fence, "connection", fence)
-            if (connection is fence or raw is fence_raw
-                    or connection.closed
-                    or raw.info.transaction_status not in
-                        ({TransactionStatus.IDLE, TransactionStatus.INTRANS} if fresh else
-                         {TransactionStatus.IDLE})):
-                raise RequestBudgetUnavailable("ewelink_audit_transaction_state_unproven")
-            # The first connection's transaction contains only bounded setup.
-            # A reused client MUST be idle before beginning this distinct append.
-            remaining = min(request_timeout(), remaining_seconds())
-            statement = max(1, min(STATEMENT_TIMEOUT_MS, int(remaining*1000)))
-            lock = max(1, min(LOCK_TIMEOUT_MS, statement))
-            pair = _private_pair.get()
-            configure = getattr(connection, "configure_transaction_timeouts", None)
-            if pair is not None and pair.owner is self and callable(configure):
-                configure(statement, lock, read_committed=True)
-            else:
-                connection.execute("select set_config('statement_timeout',%s,true),"
+        with _accounting_operation("audit_transaction"):
+            session = _dispatch_audit.get()
+            if (action not in {"request_attempt_reserved", "request_completed"}
+                    or session is None or session["owner"] is not self
+                    or session["thread"] != threading.get_ident()):
+                with self._connect() as connection:
+                    yield connection
+                return
+            from psycopg.pq import TransactionStatus
+            from modules.oom_sakkie.bounded_postgres_read import STATEMENT_TIMEOUT_MS, LOCK_TIMEOUT_MS
+            from modules.telemetry.rootline_cycle_budget import remaining_seconds
+            connection = session["connection"]
+            fresh = connection is None
+            try:
+                if session["poisoned"]:
+                    raise RequestBudgetUnavailable("ewelink_audit_client_unavailable")
+                if fresh:
+                    connection = self._connect()
+                    session["connection"] = connection
+                # Internal identity checks do not hand the raw client to a caller.
+                raw = getattr(connection, "_connection", None)
+                if raw is None:
+                    raw = getattr(connection, "connection", connection)
+                fence = session.get("fence")
+                fence_raw = getattr(fence, "_connection", None)
+                if fence_raw is None:
+                    fence_raw = getattr(fence, "connection", fence)
+                if (connection is fence or raw is fence_raw
+                        or connection.closed
+                        or raw.info.transaction_status not in
+                            ({TransactionStatus.IDLE, TransactionStatus.INTRANS} if fresh else
+                             {TransactionStatus.IDLE})):
+                    raise RequestBudgetUnavailable("ewelink_audit_transaction_state_unproven")
+                # The first connection's transaction contains only bounded setup.
+                # A reused client MUST be idle before beginning this distinct append.
+                remaining = min(request_timeout(), remaining_seconds())
+                statement = max(1, min(STATEMENT_TIMEOUT_MS, int(remaining*1000)))
+                lock = max(1, min(LOCK_TIMEOUT_MS, statement))
+                pair = _private_pair.get()
+                configure = getattr(connection, "configure_transaction_timeouts", None)
+                if pair is not None and pair.owner is self and callable(configure):
+                    with _accounting_operation("audit_setup"):
+                        configure(statement, lock, read_committed=True)
+                else:
+                    with _accounting_operation("audit_setup"):
+                        connection.execute("select set_config('statement_timeout',%s,true),"
                     "set_config('lock_timeout',%s,true)", (str(statement), str(lock)))
-            yield connection
-            request_timeout()
-            remaining_seconds()
-            connection.commit()
-            if connection.closed or raw.info.transaction_status != TransactionStatus.IDLE:
-                raise RequestBudgetUnavailable("ewelink_audit_commit_unproven")
-            # Unknown/late acknowledgement cannot admit a send or expose output.
-            request_timeout()
-            remaining_seconds()
-        except BaseException:
-            session["poisoned"] = True
-            if connection is not None:
-                try:
-                    connection.close()
-                except Exception:
-                    pass
-            session["connection"] = None
-            raise
+                yield connection
+                request_timeout()
+                remaining_seconds()
+                with _accounting_operation("audit_commit"):
+                    connection.commit()
+                if connection.closed or raw.info.transaction_status != TransactionStatus.IDLE:
+                    raise RequestBudgetUnavailable("ewelink_audit_commit_unproven")
+                # Unknown/late acknowledgement cannot admit a send or expose output.
+                request_timeout()
+                remaining_seconds()
+            except BaseException:
+                session["poisoned"] = True
+                if connection is not None:
+                    try:
+                        connection.close()
+                    except Exception:
+                        pass
+                session["connection"] = None
+                raise
 
     def _scope(self, state, key):
         scopes = state["scopes"]
@@ -561,7 +599,8 @@ class RequestBudget:
         from modules.telemetry.rootline_irrigation_execution_store import EVENT_SOURCE as execution_source
         # One bounded set read; no hardware/token locks. Keep cardinality while
         # projecting repeated history, and retain each bounded OFF barrier.
-        rows = connection.execute("""with ranked as (
+        with _accounting_operation("reserve_terminal_read"):
+            rows = connection.execute("""with ranked as (
             select review_event_id,chatwoot_conversation_id,created_at,
                 review_json->'rootline_execution' as body,
                 count(*) over duty as copies, row_number() over duty as ordinal
@@ -578,8 +617,8 @@ class RequestBudget:
                 rows between unbounded preceding and unbounded following))
             select review_event_id,chatwoot_conversation_id,created_at,body,copies
             from ranked where ordinal=1 limit %s""",
-            (execution_source, identities, sorted(_RECONCILE_ACTIONS), sorted(_OFF_ACTIONS),
-             MAX_RECONCILE_ROWS+1)).fetchall()
+                (execution_source, identities, sorted(_RECONCILE_ACTIONS), sorted(_OFF_ACTIONS),
+                 MAX_RECONCILE_ROWS+1)).fetchall()
         if len(rows) > MAX_RECONCILE_ROWS:
             return []  # Incomplete proof cannot refund an attempted duty.
         return [{"event_id": row[0], "execution_id": row[1], "created_at": row[2],
