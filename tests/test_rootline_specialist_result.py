@@ -105,6 +105,98 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertNotIn("Lifecycle:", text)
         self.assertNotIn("59.9833 minutes", text)
 
+    def test_current_four_camp_plan_reaches_typed_observation_with_e_lifecycle(self):
+        from modules.oom_sakkie.rootline_reassessment_lifecycle import _typed_zone_projection
+        from modules.telemetry.rootline_timed_control import timed_control_scope
+        from modules.telemetry.rootline_water_energy_plan import build_water_energy_plan
+        from tests.test_rootline_scheduled_planner import NOW as current_time, payload
+
+        _, advisor = payload(current_time)
+        current_evidence = {
+            "weather": {"observed_at": current_time.isoformat(), "rain_rate_mm_h": 0},
+            "irrigation": {
+                "source": "rootline_daily_advisor",
+                "advisor_generated_at": current_time.isoformat(),
+                "advisor_operating_date": current_time.date().isoformat(),
+                "zones": advisor["zones"],
+                "adaptive_management": {"enabled": True, "zones": [
+                    {"zone_id": row["zone_id"]} for row in advisor["zones"]]},
+            },
+            "irrigation_history": {"status": "Available", "zones": {
+                row["zone_id"]: {
+                    "planning_epoch_start": current_time.isoformat(),
+                    "epoch_complete_through": current_time.isoformat(),
+                    "complete_through": current_time.isoformat(), "events": [],
+                } for row in advisor["zones"]}},
+        }
+        with timed_control_scope({"ROOTLINE_TIMED_CONTROL_ENABLED": "true"}):
+            plan = build_water_energy_plan(current_evidence, now=current_time)
+            result = build_rootline_specialist_result(current_evidence, now=current_time)
+            e_task = next(row for row in plan["candidate_tasks"]
+                          if row["task_id"] == "irrigation_E12345")
+            e_camp = self.recommendation(result, "E12345")
+            self.assertEqual(e_camp["status"], "Recommend")
+            self.assertEqual(e_camp["reason"], e_task["reason"])
+            self.assertEqual(e_camp["planned_duration_minutes"], 120)
+            self.assertEqual(e_camp["preferred_window"], e_task["preferred_window"])
+            self.assertIn("zone_operating_policy", e_camp["supported_by"])
+            rows = _typed_zone_projection(result)
+            self.assertEqual([row["zone_id"] for row in rows],
+                             ["A12345", "B12345", "C12345", "E12345"])
+            self.assertEqual(rows[-1]["decision"], "Run")
+            self.assertEqual(rows[-1]["lifecycle"]["state"], "Recommended")
+            current_evidence["irrigation_history"]["zones"]["E12345"]["latest_execution"] = {
+                "action": "mark_active", "state": "Active", "execution_id": "SYNTHETIC-E-ACTIVE",
+            }
+            active = build_rootline_specialist_result(current_evidence, now=current_time)
+        self.assertEqual(_typed_zone_projection(active)[-1]["lifecycle"]["state"], "Started")
+        for packet in (result, active):
+            self.assertTrue(all(value is False for value in packet["authority"].values()))
+            self.assertEqual(packet["outcome_separation"]["water_flow"], "Unavailable")
+            for row in packet["recommendations"]:
+                for key in ("command_authority", "hardware_control", "schedule_mutation", "workflow_activation"):
+                    self.assertFalse(row[key])
+
+    def test_persisted_e_plan_retains_status_timing_cadence_and_typed_observation(self):
+        from modules.oom_sakkie.rootline_reassessment_lifecycle import _typed_zone_projection
+
+        for status, decision, lifecycle in (("Recommend", "Run", "Recommended"),
+                                             ("Hold", "Hold", "Held")):
+            with self.subTest(status=status):
+                plan = {
+                    "success": True, "operating_date": "2026-11-16", "evidence_generation": "E-PLAN",
+                    "candidate_tasks": [{
+                        "task_id": "irrigation_E12345", "recommendation": status,
+                        "reason": "Current canonical E decision.", "preferred_window": "next_due_time",
+                        "planned_start_at": "2026-11-16T14:00:00+02:00", "planned_duration_minutes": 120,
+                        "weekly_cadence": {"target_days_per_week": 4}, "actuation_blocked": True,
+                    }],
+                }
+                result = project_water_energy_plan(plan, now=NOW)
+                e_camp = self.recommendation(result, "E12345")
+                self.assertEqual(e_camp["status"], status)
+                self.assertEqual(e_camp["planned_start_at"], "2026-11-16T14:00:00+02:00")
+                self.assertEqual(e_camp["weekly_cadence"]["target_days_per_week"], 4)
+                row = _typed_zone_projection(result)[-1]
+                self.assertEqual(row["zone_id"], "E12345")
+                self.assertEqual(row["decision"], decision)
+                self.assertEqual(row["reason"], "Current canonical E decision.")
+                self.assertEqual(row["planned_duration_minutes"], 120)
+                self.assertEqual(row["feasible_window"], "next_due_time")
+                self.assertEqual(row["lifecycle"]["state"], lifecycle)
+                self.assertTrue(all(value is False for value in result["authority"].values()))
+                self.assertFalse(e_camp["hardware_control"])
+
+    def test_missing_e_task_is_visible_as_unknown_without_invented_timing(self):
+        for result in (self.build(), project_water_energy_plan({
+                "success": True, "operating_date": "2026-11-16", "candidate_tasks": []}, now=NOW)):
+            e_camp = self.recommendation(result, "E12345")
+            self.assertEqual(e_camp["status"], "Needs Data")
+            self.assertIsNone(e_camp["planned_duration_minutes"])
+            self.assertIsNone(e_camp["planned_start_at"])
+            self.assertEqual(result["irrigation_lifecycle"]["E12345"]["state"], "Held")
+            self.assertFalse(e_camp["hardware_control"])
+
     def test_plan_projection_retains_timing_cadence_and_recovery(self):
         plan = {
             "success": True,

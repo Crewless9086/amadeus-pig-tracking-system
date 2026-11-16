@@ -23,7 +23,7 @@ _ROOTLINE_PRIVATE_SQL_SHA256 = frozenset({
     # rootline_ewelink_oauth_store.py: select token_binding_id,provider_account_digest,device_id,
     "02a9cd24f7c7682c259c7b2d269303a9e611ee2a5170e9080955306480d1c100",
     # rootline_ewelink_request_budget.py: with stamp as materialized (select clock_timestamp() as at),
-    "1ac0384674c7c35676dda33abead0096f1f3942a758906c9b48d023bd9008a4b",
+    "cf3bc81090d2ac5b8ef6331e63e26a043634315eb4bcba9c0ce44dcd55deab0b",
     # rootline_irrigation_execution_store.py: insert into public.sam_live_stock_conversation_review_events
     "1b8ba0058e849a33491806b786a808e38776b812ef3deb26624fb63460cf00cf",
     # sam_live_stock_launch_control.py: insert into public.sam_live_stock_conversation_review_events (

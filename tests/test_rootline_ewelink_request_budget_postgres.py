@@ -40,6 +40,60 @@ def ledger(client):
         return client._load(connection), client._counts(connection, client._now(connection))
 
 
+def test_accounting_json_paths_preserve_scope_windows_and_prepared_contract():
+    import hashlib
+    import psycopg
+    from psycopg.types.json import Jsonb
+    from modules.oom_sakkie.bounded_postgres_read import _ROOTLINE_PRIVATE_SQL_SHA256
+
+    client = budget.RequestBudget(environment())
+    with psycopg.connect(DATABASE_URL) as connection:
+        now = connection.execute("select clock_timestamp()").fetchone()[0]
+        rows = [(1, "s1", "eu", 0), (0, "s1", "eu", 1),
+                (-2, "s1", "eu", 5), (3, "s2", "eu", 1),
+                (4, "s1", "us", 1), (5, "s1", "eu", 31 * 1440),
+                (100, "s1", "eu", 31 * 1440 + 1), (None, "s1", "eu", 1)]
+        for index, (units, scope, region, age) in enumerate(rows):
+            payload = {"ewelink_request_budget": {"attempt_units": units,
+                "detail": {"scope": scope, "region": region}, "state": {"version": 1}}}
+            connection.execute("insert into public.sam_live_stock_conversation_review_events "
+                "(review_event_id,chatwoot_conversation_id,event_source,created_at,review_json) "
+                "values(%s,%s,%s,%s,%s)",
+                (f"SYNTHETIC-PATH-{index}", budget.LEDGER_ID, budget.EVENT_SOURCE,
+                 now - timedelta(minutes=age), Jsonb(payload)))
+        assert client._counts(connection, now) == (11, 6)
+        assert client._counts(connection, now, scope="s1", region="eu") == (4, 6)
+        assert client._counts(connection, now, scope="s1", region="us") == (4, 6)
+
+        class ExactPreparedQuery:
+            def execute(self, sql, params):
+                assert hashlib.sha256(sql.encode()).hexdigest() in _ROOTLINE_PRIVATE_SQL_SHA256
+                return connection.execute(sql, params)
+
+        state, stamp, counts = client._admission_preimage(ExactPreparedQuery(), scope="s1", region="eu")
+        assert state == {"version": 1}
+        assert counts == client._counts(connection, stamp, scope="s1", region="eu")
+
+
+@pytest.mark.parametrize("units", ["bad", "1.5", True, {}])
+def test_accounting_json_paths_still_reject_malformed_attempt_units(units):
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    client = budget.RequestBudget(environment())
+    with psycopg.connect(DATABASE_URL) as connection:
+        connection.execute("insert into public.sam_live_stock_conversation_review_events "
+            "(review_event_id,chatwoot_conversation_id,event_source,review_json) values(%s,%s,%s,%s)",
+            ("SYNTHETIC-INVALID-UNITS", budget.LEDGER_ID, budget.EVENT_SOURCE,
+             Jsonb({"ewelink_request_budget": {"attempt_units": units,
+                 "detail": {"scope": "s1", "region": "eu"}, "state": {"version": 1}}})))
+        for query in (lambda: client._counts(connection, datetime.now(timezone.utc)),
+                      lambda: client._admission_preimage(connection, scope="s1", region="eu")):
+            with pytest.raises(psycopg.errors.InvalidTextRepresentation):
+                with connection.transaction():
+                    query()
+
+
 def _dispatch_worker(url, ready, release, result):
     client = budget.RequestBudget(environment(url))
     ready.put(os.getpid())
