@@ -382,7 +382,8 @@ class RequestBudget:
             if hasattr(exc, "provider_failure"):
                 raise
             raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable",
-                failure_diagnostics={"accounting_stage": "locked", "cause_type": type(exc).__name__,
+                failure_diagnostics={**getattr(exc, "failure_diagnostics", {}),
+                    "accounting_stage": "locked", "cause_type": type(exc).__name__,
                     "sqlstate": getattr(exc, "sqlstate", None),
                     "accounting_operation": getattr(exc, "failure_diagnostics", {}).get("accounting_operation", operation)}) from None
 
@@ -755,7 +756,22 @@ class RequestBudget:
         if group is not None and (group["scope"] != key or group["region"] != region):
             raise RequestBudgetUnavailable("ewelink_snapshot_scope_changed")
         _dispatch_audit.get()["fence"] = connection
-        state, now, counts = self._admission_preimage(connection, scope=key, region=region)
+        # Sample original deadlines immediately before admission; never reset them.
+        from modules.telemetry.rootline_cycle_budget import on_deadline, work_deadline
+        sampled_at = time.monotonic()
+        cycle = on_deadline() if on_deadline() is not None else work_deadline()
+        samples = {name: int(max(0, bound-sampled_at)*1000)
+            for name, bound in (("dispatch_remaining_ms", deadline),
+                ("group_remaining_ms", group.get("deadline") if group else None),
+                ("cycle_remaining_ms", cycle))
+            if isinstance(bound, (int, float)) and math.isfinite(bound)}
+        try:
+            state, now, counts = self._admission_preimage(connection, scope=key, region=region)
+        except Exception as exc:
+            from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+            exc.failure_diagnostics = sanitize_failure({
+                **getattr(exc, "failure_diagnostics", {}), **samples})
+            raise
         if pair is None and not self._utc_preimage_counts(now):
             counts = None
         scope = state.get("scopes", {}).get(key)

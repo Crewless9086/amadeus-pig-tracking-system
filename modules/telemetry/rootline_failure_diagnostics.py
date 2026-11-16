@@ -154,6 +154,12 @@ def sanitize_failure(value):
     status = value.get("recorder_http_status")
     if type(status) is int and 100 <= status <= 599:
         result["recorder_http_status"] = status
+    # Finite measurements only; never SQL, URLs or exception text.
+    for key in ("statement_timeout_ms", "query_elapsed_ms", "dispatch_remaining_ms",
+                "group_remaining_ms", "cycle_remaining_ms"):
+        measured = value.get(key)
+        if type(measured) is int and 0 <= measured <= 86400000:
+            result[key] = measured
     return result
 
 

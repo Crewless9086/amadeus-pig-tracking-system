@@ -141,6 +141,10 @@ def _managed_outcomes(value):
             continue
         rows.append({key: str(item.get(key) or "")[:100]
             for key in ("managed_device", "status", "error_type")})
+        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+        failure = sanitize_failure(item.get("current_failure"))
+        if failure:
+            rows[-1]["current_failure"] = failure
         eskom = item.get("eskom")
         if isinstance(eskom, Mapping):
             pending.insert(0, {"managed_device": "eskom",

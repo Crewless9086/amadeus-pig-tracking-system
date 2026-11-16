@@ -47,7 +47,8 @@ DATABASE_URL = os.getenv("RENDER_MIGRATION_TEST_DATABASE_URL", "").strip()
 # The complete successor is exercised separately in test_render_rootline_a_migration_rail.
 ALLOWLIST = CURRENT_ALLOWLIST[:8]
 CATALOG_RELATIONS = tuple(name for name in CURRENT_CATALOG_RELATIONS
-                          if name not in migration_rail.ROOTLINE_CATALOG_RELATIONS)
+                          if name not in migration_rail.ROOTLINE_CATALOG_RELATIONS
+                          and name != migration_rail.accounting_index.TABLE_NAME)
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
     key: value for key, value in CURRENT_MIGRATION_LOG_DESCRIPTIONS.items()
     if key in {item.migration_id for item in ALLOWLIST}

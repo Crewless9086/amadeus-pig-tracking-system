@@ -437,10 +437,11 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     scheduled=eligibility.get("stop_mode")=="scheduled" or continuous
     native=eligibility.get("native_fail_stop_seconds",14400)
     if scheduled:
-        current=_read_borehole(transport)
+        current=_read_borehole(transport, routine_read=True)
         if not (_continuous_borehole_off(current, now=_aware(clock())) if continuous
                 else _scheduled_borehole_off(current,now=_aware(clock()))):
-            return _borehole_result("borehole_current_off_unproven",success=False)
+            return _borehole_result("borehole_current_off_unproven",success=False,
+                current_failure=current.get("current_failure", {}))
     if eligibility.get("contract_version") == "rootline_borehole_runtime_eligibility.v3":
         proof = _borehole_provider_configuration(eligibility.get("provider_evidence"), now=_aware(clock()))
         if not proof or proof["native_auto_off_seconds"] != native:
@@ -590,11 +591,14 @@ def _contain_failed_borehole_start(execution, store, transport):
         execution=contained)
 
 
-def _read_borehole(transport):
+def _read_borehole(transport, *, routine_read=False):
     try:
-        return transport.read_output_state(device_id="1002851416", channel=1)
-    except Exception:
-        return {"authoritative": False, "state": "Unknown"}
+        return transport.read_output_state(device_id="1002851416", channel=1,
+            **({"routine_read": True} if routine_read else {}))
+    except Exception as exc:
+        from modules.telemetry.rootline_failure_diagnostics import exception_failure
+        return {"authoritative": False, "state": "Unknown",
+            "current_failure": exception_failure(exc)}
 
 
 def _borehole_result(status, *, commands=0, success=True, **extra):

@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from services.database_service import DATABASE_URL_ENV
+from scripts.rootline_accounting_index import prepare_index
 
 
 SUPERSESSIONS_PATH = REPO_ROOT / "supabase" / "migrations" / "supersessions.json"
@@ -134,9 +135,11 @@ def main() -> int:
     sql = migration_path.read_text(encoding="utf-8")
     import psycopg
 
-    with psycopg.connect(database_url, connect_timeout=10) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(sql)
+    with psycopg.connect(database_url, connect_timeout=10, autocommit=True) as connection:
+        prepare_index(connection, migration_path.stem)
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(sql)
 
     print(f"Applied migration: {migration_path.name}")
     return 0
