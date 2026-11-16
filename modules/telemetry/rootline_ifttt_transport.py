@@ -450,14 +450,16 @@ class RootlineIFTTTTransport:
         if state == "ON":
             from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
             duty = current_duty()
+            from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+            continuous = continuous_borehole(duty)
             try:
                 if (idempotency_key != str(duty.get("execution_id") or "") + ":ON"
-                        or not duty.get("claimed_at") or not duty.get("primary_stop_deadline")):
+                        or not duty.get("claimed_at") or (not continuous and not duty.get("primary_stop_deadline"))):
                     raise ValueError("execution_binding_missing")
                 edge_deadline = RequestBudget(self._request_environment()).begin_on(
                     execution_id=duty["execution_id"], permit=duty.get("provider_capacity_permit"),
                     device_id=device_id, channel=channel, claimed_at=duty["claimed_at"],
-                    primary_stop_deadline=duty["primary_stop_deadline"])
+                    primary_stop_deadline=duty.get("primary_stop_deadline"), continuous=continuous)
             except Exception:
                 if known_no_send is not None: known_no_send("provider_capacity_not_available")
                 return {"accepted_unambiguous": False,

@@ -79,6 +79,29 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     def current_borehole_safety():
         from modules.telemetry.rootline_water_energy_plan import read_current_borehole_faults
         return read_current_borehole_faults(database_url,now=_aware(clock()),clock=clock)
+    def borehole_energy(power, decision_at, *, continuous):
+        decision = managed_energy_decision(power, now=decision_at)
+        if not continuous:
+            return {"eligible": decision["borehole_eligible"]}
+        return {**decision["borehole_energy_context"], "eligible": decision["continuous_borehole_eligible"],
+            "fresh": decision["continuous_borehole_fresh"], "reason": decision["continuous_borehole_reason"]}
+    def current_borehole_conditions(forecast=None):
+        from modules.telemetry.weather_service import get_weather_control_snapshot
+        try:
+            weather, status = get_weather_control_snapshot(database_url, now=_aware(clock()), dry_interval_minutes=60)
+            if status >= 400:
+                weather = {}
+        except Exception:
+            weather = {}
+        try:
+            from modules.telemetry.rootline_water_energy_plan import read_current_borehole_faults
+            protection = read_current_borehole_faults(database_url, now=_aware(clock()),
+                clock=clock, include_evidence=True)
+        except Exception:
+            protection = {}
+        return store("assess_borehole_conditions", {"weather_snapshot": weather,
+            "forecast": forecast, "protection_safe": protection.get("safe"),
+            "protection_evidence": protection})
     def current_decision_time(selected):
         current = _aware(clock())
         if current.astimezone(ZA_TZ).date().isoformat() != str(selected):
@@ -169,14 +192,20 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                 baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
                 decision_at = current_decision_time(selected)
                 if baseline:
+                    continuous = baseline.get("stop_mode") == "conditions"
+                    conditions = current_borehole_conditions(evidence.get("forecast")) if continuous else None
+                    if continuous and (not isinstance(conditions, dict) or conditions.get("start_eligible") is not True):
+                        packet["borehole_readiness"] = (conditions or {}).get("reason", "borehole_conditions_unavailable")
+                        packet["borehole_conditions"] = conditions
+                        return packet
                     from modules.telemetry.rootline_borehole_commissioning import prepare_borehole_execution_plan
                     request = dict(need={"eligible": True, "task_id": "borehole",
                             "reason": borehole_task.get("reason")}, commissioned_baseline=baseline,
                         authority={"inside_standing_authority": True}, provider={},
                         interlocks=interlocks,
-                        energy={"eligible": managed_energy_decision(evidence.get("power"), now=decision_at)["borehole_eligible"]},
+                        energy=borehole_energy(evidence.get("power"), decision_at, continuous=continuous),
                         concurrency={"borehole_claim_available": True},
-                        requested_seconds=min(14400, int(baseline["maximum_routine_runtime_seconds"])),
+                        requested_seconds=None if continuous else min(14400, int(baseline["maximum_routine_runtime_seconds"])),
                         execution_id="PENDING", now=decision_at)
                     preflight = prepare_borehole_execution_plan(**request)
                     if any(not passed for gate, passed in preflight["gates"].items() if gate != "provider_off"):
@@ -187,8 +216,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                     # Ten hours is the independent fallback. Keep the existing
                     # planned supply window for a new start; an owner's already
                     # running output keeps its current native deadline instead.
-                    requested = min(14400, int(baseline["maximum_routine_runtime_seconds"]))
-                    if provider.get("state") == "ON":
+                    requested = None if continuous else min(14400, int(baseline["maximum_routine_runtime_seconds"]))
+                    if not continuous and provider.get("state") == "ON":
                         from modules.telemetry.rootline_borehole_commissioning import _borehole_provider_configuration
                         proof = _borehole_provider_configuration(provider, now=decision_at)
                         if proof:
@@ -198,8 +227,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                             "reason": borehole_task.get("reason")}, baseline=baseline,
                         authority={"inside_standing_authority": True}, provider=provider,
                         interlocks=interlocks,
-                        energy={"eligible": managed_energy_decision(evidence.get("power"), now=decision_at)["borehole_eligible"]},
-                        requested_seconds=requested, now=decision_at)
+                        energy=borehole_energy(evidence.get("power"), decision_at, continuous=continuous),
+                        requested_seconds=requested, now=decision_at, conditions=conditions)
                 else:
                     packet["borehole_readiness"] = "canonical_commissioning_required"
             except Exception:
@@ -215,6 +244,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         evidence_factory=build_evidence, allow_new_starts=allow_new_starts,
         allow_borehole_starts=allow_borehole_starts,
         energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock,
+        borehole_conditions_reader=current_borehole_conditions,
         after_safety=after_safety)
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
         return result

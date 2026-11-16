@@ -86,6 +86,7 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
         "provider": provider, "interlocks": interlocks, "energy": energy,
         "concurrency": concurrency}.items()}
     maximum = packets["commissioned_baseline"].get("maximum_routine_runtime_seconds")
+    continuous=packets["commissioned_baseline"].get("stop_mode")=="conditions"
     scheduled=packets["commissioned_baseline"].get("stop_mode")=="scheduled"
     native=maximum if scheduled else packets["commissioned_baseline"].get("native_fail_stop_seconds",maximum)
     seconds_ok = (type(requested_seconds) is int and requested_seconds > 0
@@ -104,6 +105,9 @@ def prepare_borehole_execution_plan(*, need, commissioned_baseline, authority, p
         "energy": packets["energy"].get("eligible") is True,
         "concurrency": packets["concurrency"].get("borehole_claim_available") is True,
         "bounded_runtime": seconds_ok}
+    if continuous:
+        gates.pop("bounded_runtime")
+        gates["condition_supervision"] = requested_seconds is None and maximum == 0
     blockers = [name for name, passed in gates.items() if not passed]
     identity = str(execution_id or "").strip()
     if not identity: blockers.append("execution_identity")
@@ -140,8 +144,9 @@ def borehole_protection_assessment(baseline, observations, *, now):
     always blocks the corresponding duty.
     """
     baseline, observations = dict(baseline or {}), dict(observations or {})
-    if baseline.get("stop_mode")=="scheduled" and baseline.get("current") is True:
-        isolated=observations.get("manual_isolation_active") is True
+    if baseline.get("stop_mode") in {"scheduled", "conditions"} and baseline.get("current") is True:
+        isolated=(observations.get("manual_isolation_active") is True
+            or observations.get("manual_off_active") is True)
         return {"dry_run":not isolated and observations.get("dry_run_safe") is not False,
             "low_water":not isolated and observations.get("low_water_clear") is not False,
             "supply_pressure":not isolated and observations.get("supply_pressure_safe") is not False,
@@ -183,6 +188,18 @@ def load_registered_borehole_baseline(*, connect_factory):
     if not isinstance(loaded, dict):
         return None
     record = loaded.get("device_record") or {}
+    from modules.telemetry.rootline_borehole_conditions import continuous_device_profile
+    if (continuous_device_profile(record) and record.get("standing_authority") is True
+            and record.get("commissioning_stage") == "standing_active"):
+        # load_device_record has already resolved and validated the exact live
+        # standing authority, including the approved continuous policy fields.
+        return {"current": True, "stop_mode": "conditions", "device_identity": IDENTITY,
+            "device_key": DEVICE_KEY, "provider": record["provider"],
+            "provider_account_binding": record["provider_account_binding"],
+            "device_id": record["device_id"], "channel": record["channel"], "safe_state": "OFF",
+            "registry_generation": loaded["registry_generation"], "baseline_sha256": loaded["evidence_digest"],
+            "maximum_routine_runtime_seconds": 0, "native_fail_stop_seconds": 0,
+            "authority_envelope": dict(record.get("authority_envelope") or {})}
     from modules.telemetry.rootline_timed_control import timed_control_enabled,canonical_timed_authority
     scheduled=(timed_control_enabled() and record.get("stop_mode")=="scheduled"
         and canonical_timed_authority(loaded,connect_factory=connect_factory,identity=IDENTITY,
@@ -236,11 +253,12 @@ def load_registered_borehole_baseline(*, connect_factory):
 
 
 def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
-                                      interlocks, energy, requested_seconds, now=None):
+                                      interlocks, energy, requested_seconds, now=None, conditions=None):
     """Build one immutable canonical eligibility identity; never claim or command."""
     now = _aware(now or datetime.now(timezone.utc))
+    continuous=baseline.get("stop_mode")=="conditions"
     scheduled=baseline.get("stop_mode")=="scheduled"
-    configuration = None if scheduled else _borehole_provider_configuration(provider, now=now)
+    configuration = None if scheduled or continuous else _borehole_provider_configuration(provider, now=now)
     if configuration and configuration["native_auto_off_seconds"] not in {
             baseline.get("native_fail_stop_seconds"), BOREHOLE_FALLBACK_MAX_SECONDS}:
         configuration = None
@@ -260,7 +278,7 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
     blockers = [item for item in plan["blockers"]
         if item != "canonical_validator_and_coordinator_integration_absent"]
     gates = dict(plan["gates"])
-    if not scheduled and isinstance(provider, dict) and "borehole_configuration" in provider and not configuration:
+    if not scheduled and not continuous and isinstance(provider, dict) and "borehole_configuration" in provider and not configuration:
         gates["provider_off"] = False
         blockers.append("provider_configuration_unproven")
     if configuration:
@@ -269,10 +287,15 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
         gates.pop("provider_off")
         gates["provider_state_safe"] = True
         blockers = [item for item in blockers if item != "provider_off"]
-    if scheduled and not _scheduled_borehole_off(provider,now=now):
+    if (scheduled or continuous) and not _scheduled_borehole_off(provider,now=now):
         gates["provider_off"]=False
         blockers.append("current_provider_off_unproven")
-    material = {"contract_version": "rootline_borehole_runtime_eligibility.v4" if scheduled else "rootline_borehole_runtime_eligibility.v3" if configuration
+    if continuous:
+        conditions = conditions if isinstance(conditions, dict) else {}
+        gates["weather"] = conditions.get("start_eligible") is True
+        gates["provider_off"] = _continuous_borehole_off(provider, now=now)
+        blockers = [key for key, passed in gates.items() if not passed]
+    material = {"contract_version": "rootline_borehole_runtime_eligibility.v5" if continuous else "rootline_borehole_runtime_eligibility.v4" if scheduled else "rootline_borehole_runtime_eligibility.v3" if configuration
             else "rootline_borehole_runtime_eligibility.v2",
         "device_key": DEVICE_KEY, "baseline_sha256": baseline.get("baseline_sha256"),
         "registry_generation": baseline.get("registry_generation"),
@@ -284,9 +307,12 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
         material.update(provider_evidence=dict(provider),
             operation="adopt_observed_on" if provider["state"] == "ON" else "command_off_to_on",
             commissioned_native_fail_stop_seconds=baseline.get("native_fail_stop_seconds"))
-    if scheduled:
-        material.update(stop_mode="scheduled",device_id="1002851416",channel=1,
+    if scheduled or continuous:
+        material.update(stop_mode="conditions" if continuous else "scheduled",device_id="1002851416",channel=1,
             auxiliary_device_id=IDENTITY,provider_evidence=dict(provider),operation="command_off_to_on")
+    if continuous:
+        material["condition_evidence"] = dict(conditions)
+        material["energy_context"] = dict(energy or {})
     digest = _digest(material)
     execution_id = "ROOTLINE-BOREHOLE-" + digest[:24].upper()
     return {**material, "eligibility_sha256": digest, "execution_id": execution_id,
@@ -327,15 +353,24 @@ def _borehole_provider_configuration(provider, *, now):
 
 
 def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_for_energy=False, clock=None,
-                               defer_no_send_proof=None):
+                               defer_no_send_proof=None, stop_reason=None, stop_trigger=None):
     """Advance one exact Borehole execution with one ON and bounded OFF recovery."""
     from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
     from modules.telemetry.rootline_ewelink_request_budget import (
         bind_execution_transport, prepare_execution_capacity)
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
+    from modules.telemetry.rootline_borehole_conditions import continuous_borehole
     active = store("load_active_borehole", None)
     if isinstance(active, dict):
+        continuous = continuous_borehole(active)
+        if continuous and active.get("stop_requested") is True:
+            stop_for_energy = True
+            stop_reason = active.get("stop_reason") or stop_reason
+            stop_trigger = active.get("stop_trigger") or stop_trigger
+        if continuous and stop_for_energy:
+            active = {**active, **({"stop_reason": stop_reason} if stop_reason else {}),
+                **({"stop_trigger": stop_trigger} if isinstance(stop_trigger, dict) else {})}
         transport = bind_execution_transport(transport, active)
         if active.get("on_not_dispatched") is True:
             from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
@@ -347,15 +382,23 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         start = active.get("provider_start_evidence") or {}
         if start.get("authoritative") is not True or start.get("state") != "ON":
             deadline = _time(active.get("primary_stop_deadline"))
-            if deadline is None or now >= deadline or stop_for_energy:
+            if (not continuous and (deadline is None or now >= deadline)) or stop_for_energy:
                 return _contain_failed_borehole_start(
                     {**active, "reason": "startup_deadline_or_safety_stop"}, store, transport)
             # An interrupted observation is not an OFF decision. The original
             # claim and native deadline remain consumed; only observe, never ON
             # again. A later exact ON can complete startup under that same claim.
-            observed = _read_borehole(transport)
+            if continuous:
+                from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
+                try:
+                    with routine_execution_observation({**active, "device_type": "borehole_pump_power"}):
+                        observed = _read_borehole(transport)
+                except Exception:
+                    observed = {"authoritative": False, "state": "Unknown"}
+            else:
+                observed = _read_borehole(transport)
             now = _aware(clock())
-            if now >= deadline:
+            if not continuous and now >= deadline:
                 return _contain_failed_borehole_start(
                     {**active, "reason": "startup_deadline_reached"}, store, transport)
             if observed.get("authoritative") is True and observed.get("state") == "ON":
@@ -370,7 +413,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             return _borehole_result("borehole_start_observation_pending", success=False,
                 effects_unknown=True, execution=active)
         deadline = _time(active.get("primary_stop_deadline"))
-        if active.get("state") == "Active" and deadline is not None and now < deadline and not stop_for_energy:
+        if active.get("state") == "Active" and (continuous or deadline is not None and now < deadline) and not stop_for_energy:
             from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
             try:
                 with routine_execution_observation({**active, "device_type": "borehole_pump_power"}):
@@ -381,19 +424,22 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             if observed.get("authoritative") is True and observed.get("state") == "OFF":
                 return _finish_borehole(active, store, transport, now, clock=clock,
                     observed_off=observed)
-            if now >= deadline:
+            if not continuous and now >= deadline:
                 return _finish_borehole(active, store, transport, now, clock=clock)
             return _borehole_result("borehole_active", execution=active,
                 supervision_evidence_pending=observed.get("authoritative") is not True
                     or observed.get("state") != "ON")
-        return _finish_borehole({**active, "energy_stop":stop_for_energy}, store, transport, now, clock=clock)
+        return _finish_borehole({**active, "energy_stop":stop_for_energy,
+            **({"stop_reason":stop_reason} if stop_reason else {})}, store, transport, now, clock=clock)
     if not _valid_borehole_eligibility(eligibility):
         return _borehole_result("borehole_eligibility_invalid", success=False)
-    scheduled=eligibility.get("stop_mode")=="scheduled"
+    continuous = continuous_borehole(eligibility)
+    scheduled=eligibility.get("stop_mode")=="scheduled" or continuous
     native=eligibility.get("native_fail_stop_seconds",14400)
     if scheduled:
         current=_read_borehole(transport)
-        if not _scheduled_borehole_off(current,now=_aware(clock())):
+        if not (_continuous_borehole_off(current, now=_aware(clock())) if continuous
+                else _scheduled_borehole_off(current,now=_aware(clock()))):
             return _borehole_result("borehole_current_off_unproven",success=False)
     if eligibility.get("contract_version") == "rootline_borehole_runtime_eligibility.v3":
         proof = _borehole_provider_configuration(eligibility.get("provider_evidence"), now=_aware(clock()))
@@ -417,7 +463,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     # the original eligibility or the genuine final provider observation.
     now = _aware(clock())
     execution.update(state="claimed", claimed_at=now.isoformat(),
-        primary_stop_deadline=(now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
+        primary_stop_deadline=None if continuous else (now + timedelta(seconds=eligibility["requested_seconds"])).isoformat(),
         native_fail_stop_deadline=None if scheduled else (now + timedelta(seconds=native)).isoformat(),
         on_attempts=0, off_attempts=0)
     if scheduled:
@@ -458,7 +504,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     started = _read_borehole(transport)
     if started.get("authoritative") is not True or started.get("state") != "ON":
         if (started.get("authoritative") is True and started.get("state") == "OFF"
-                or _aware(clock()) >= _time(execution["primary_stop_deadline"])):
+                or (not continuous and _aware(clock()) >= _time(execution["primary_stop_deadline"]))):
             return _contain_failed_borehole_start(
                 {**execution, "reason": "startup_observed_off_or_deadline"}, store, transport)
         return _borehole_result("borehole_start_observation_pending", commands=1,
@@ -486,6 +532,9 @@ def _finish_borehole(active, store, transport, now, *, clock=None, observed_off=
             "final": final})[:24].upper()}
     provider = {**final, "execution_id": active["execution_id"],
         "evidence_id": str(final.get("evidence_id") or final.get("response_digest") or "")}
+    from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+    if continuous_borehole(active) and observed_off is not None and not active.get("stop_reason"):
+        active = {**active, "stop_reason": "provider_observed_off_cause_unknown"}
     completed = {**active, "action": "record_borehole_completed", "state": "Completed",
         "completed_at": now.isoformat(), "shutdown_verified": True,
         "operational_proof": "provider_app_on_to_off",
@@ -501,13 +550,16 @@ def _finish_borehole(active, store, transport, now, *, clock=None, observed_off=
 def _stop_borehole(execution, store, transport):
     """The store consumes each OFF slot before its lock-serialized provider send."""
     commands = 0
+    from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+    trigger = ({key: execution.get(key) for key in ("stop_reason", "stop_trigger")}
+        if continuous_borehole(execution) else {})
     prior = store("load_borehole_off_attempts", execution["execution_id"]) or []
     used = {int(row.get("attempt") or 0) for row in prior if isinstance(row, dict)}
     for attempt in range(1, 4):
         if attempt in used:
             continue
         outcome = store("dispatch_borehole_off_edge", {"execution_id": execution["execution_id"],
-            "attempt": attempt, "dispatch": lambda attempt=attempt:
+            **trigger, "attempt": attempt, "dispatch": lambda attempt=attempt:
                 transport.set_state(device_id="1002851416", channel=1, state="OFF",
                     idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")})
         if not isinstance(outcome, dict):
@@ -546,6 +598,12 @@ def _read_borehole(transport):
 
 
 def _borehole_result(status, *, commands=0, success=True, **extra):
+    from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+    execution = extra.get("execution") or {}
+    if continuous_borehole(execution):
+        extra.update(operation_mode="continuous", planned_stop_at=None,
+            stop_supervision="owned_condition_checks", water_delivery="Unmeasured",
+            stop_reason=execution.get("stop_reason"), energy_context=execution.get("energy_context"))
     return {"success": success, "status": status, "hardware_commands": commands,
         "automatic_on_retry": False, "maximum_off_attempts": 3,
         "physical_presence_required": False, "preview_confirmation_required": False,
@@ -587,3 +645,9 @@ def _scheduled_borehole_off(value,*,now):
         and timedelta(0)<=now-observed<=timedelta(seconds=30)
         and isinstance(digest,str) and len(digest)==64
         and configuration.get("online") is True)
+
+
+def _continuous_borehole_off(value, *, now):
+    """The real native timer must be disabled before admitting the new mode."""
+    return (_scheduled_borehole_off(value, now=now)
+        and (value.get("borehole_configuration") or {}).get("native_auto_off_enabled") is False)

@@ -67,7 +67,10 @@ def test_metadata_then_locked_status_keep_six_acknowledged_audits_and_fresh_prei
         "100204e9bc", "100204e9bc", "1002851416"]
     assert all(row[1].closed for row in observations)
     assert observations[2][0].fence.closed
-    assert len(snapshots) == 1 and snapshots[0][1] is None and snapshots[0][2] is not None
+    assert [row[0] for row in snapshots] == [(0, 0), (1, 1), (2, 2)]
+    assert all(row[1] is None for row in snapshots)
+    assert snapshots[0][2] is None
+    assert all(row[2] is not None for row in snapshots[1:])
     audit = subject.audit()
     assert len([r for r in audit if r["action"] == "request_attempt_reserved"]) == 3
     assert len([r for r in audit if r["action"] == "request_completed"]) == 3
