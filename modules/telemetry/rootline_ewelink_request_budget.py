@@ -69,6 +69,11 @@ MAX_RECONCILE_ROWS = 512
 class RequestBudgetUnavailable(RuntimeError):
     """Sanitized local refusal; never an authentication failure."""
 
+    def __init__(self, message, *, failure_diagnostics=None):
+        super().__init__(message)
+        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+        self.failure_diagnostics = sanitize_failure(failure_diagnostics)
+
 
 class OptionalObservationDeferred(RequestBudgetUnavailable):
     """No provider attempt; never evidence that a device or account failed."""
@@ -342,7 +347,9 @@ class RequestBudget:
         except Exception as exc:
             if hasattr(exc, "provider_failure"):
                 raise
-            raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable") from None
+            raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable",
+                failure_diagnostics={"accounting_stage": "locked", "cause_type": type(exc).__name__,
+                    "sqlstate": getattr(exc, "sqlstate", None)}) from None
 
     @staticmethod
     def _now(connection):
@@ -440,7 +447,10 @@ class RequestBudget:
                 connect_factory=lambda: nullcontext(audit),
                 **({"durable_receipt": True} if private else {"created_at": self._now(audit)}))
             if status >= 400 or result.get("success") is not True:
-                raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable")
+                raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable",
+                    failure_diagnostics={"accounting_stage": "append",
+                        "cause_type": result.get("error_type"), "recorder_status": result.get("status"),
+                        "recorder_http_status": status})
             if private:
                 receipt = result.get("persisted_receipt") or {}
                 if receipt.get("review_event_id") != identity or receipt.get("review_json") != event["review_json"]:
