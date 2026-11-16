@@ -578,7 +578,7 @@ def test_borehole_eligibility_assesses_power_after_baseline_and_provider_reads(m
     class Reader(Transport):
         def read_safety_configuration(self,**_):raise RuntimeError("No auxiliary authority")
         def read_output_state(self,**kwargs):
-            assert kwargs=={"device_id":"1002851416","channel":1}
+            assert kwargs=={"device_id":"1002851416","channel":1,"routine_read":True}
             current[0]+=timedelta(seconds=5)
             output={"authoritative":True,"state":"OFF","retrieved_at":current[0].isoformat(),
                 "evidence_id":"synthetic-off"}

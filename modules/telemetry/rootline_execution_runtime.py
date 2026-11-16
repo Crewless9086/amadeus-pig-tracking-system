@@ -251,7 +251,9 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     from modules.telemetry.rootline_device_spine import load_device_record
     from modules.telemetry.rootline_eskom_runtime import run_eskom_cycle
     try:
-        from modules.telemetry.rootline_cycle_budget import remaining_seconds
+        from modules.telemetry.rootline_cycle_budget import (
+            remaining_seconds, RootlineCycleDeadlineExceeded,
+        )
         remaining_seconds()
         current_energy()
         canonical = load_device_record("ifttt_smartlife:smartlife_owner_account:"
@@ -259,6 +261,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         grid = run_eskom_cycle(power=power_cache["value"],configuration=source,
             canonical=canonical,store=store,now=_aware(clock()),clock=clock,
             allow_new_commands=allow_new_starts)
+    except RootlineCycleDeadlineExceeded:
+        grid = {"success":False,"status":"eskom_cycle_deadline_deferred","hardware_commands":0}
     except Exception:
         grid = {"success":False,"status":"eskom_readiness_unavailable","hardware_commands":0}
     # Grid exceptions remain local. They do not suppress gravity irrigation.
@@ -1020,11 +1024,16 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         zone_containment_reader=lambda zone_id: store("load_zone_containment", zone_id),
         enabled_zone_ids=commissioned_irrigation_contracts(environ=source) if require_enabled else None)
     reader_capability = _admission_eligibility_reader.get()
+    # Scheduled A/B/C/E use the same two read-only eligibility lookups.
+    # Reuse only this builder's connection, closing it before provider I/O and
+    # rebuilding a fresh scope for the final decision. Legacy A stays separate.
+    scheduled = timed_control_enabled(source)
+    scoped_zones = set(IRRIGATION_ZONE_IDS) if scheduled else {"B12345", "C12345"}
     scoped_reads = (require_enabled and reader_capability is not None
         and reader_capability.guarded_store is store
-        and str(source.get("ROOTLINE_A_ENABLED") or "").lower() != "true"
+        and (scheduled or str(source.get("ROOTLINE_A_ENABLED") or "").lower() != "true")
         and bool(eligibility_args["enabled_zone_ids"])
-        and set(eligibility_args["enabled_zone_ids"]).issubset({"B12345", "C12345"}))
+        and set(eligibility_args["enabled_zone_ids"]).issubset(scoped_zones))
     def build_current_eligibility(**kwargs):
         with (_bounded_eligibility_reads(reader_capability, store)
                 if scoped_reads else nullcontext()):
