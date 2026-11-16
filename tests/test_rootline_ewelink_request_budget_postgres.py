@@ -75,6 +75,50 @@ def test_accounting_json_paths_preserve_scope_windows_and_prepared_contract():
         assert counts == client._counts(connection, stamp, scope="s1", region="eu")
 
 
+@pytest.mark.parametrize("session_zone", ["UTC", "America/New_York"])
+def test_count_cutoffs_preserve_exact_caller_instants_across_dst(session_zone):
+    import psycopg
+    from psycopg.types.json import Jsonb
+    from zoneinfo import ZoneInfo
+
+    client = budget.RequestBudget(environment())
+    # The window crosses US DST. PostgreSQL calendar-day subtraction must not
+    # replace the original Python caller's exact five-minute/31-day cutoffs.
+    now = datetime(2026, 3, 9, 12, tzinfo=ZoneInfo("America/New_York"))
+    recent = now - timedelta(minutes=5)
+    rolling = now - timedelta(days=budget.ROLLING_DAYS)
+    rows = [
+        (2, "s1", "eu", rolling, budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (1000, "s1", "eu", rolling - timedelta(microseconds=1), budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (3, "s1", "eu", rolling + timedelta(microseconds=1), budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (5, "s1", "eu", recent, budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (7, "s1", "eu", recent - timedelta(microseconds=1), budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (6, "s1", "eu", now + timedelta(seconds=1), budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (11, "s2", "eu", now, budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (13, "s1", "us", now, budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (17, "s1", "eu", now, budget.LEDGER_ID, "unrelated-source"),
+        (19, "s1", "eu", now, "unrelated-ledger", budget.EVENT_SOURCE),
+        (None, "s1", "eu", now, budget.LEDGER_ID, budget.EVENT_SOURCE),
+        (0, "s1", "eu", now, budget.LEDGER_ID, budget.EVENT_SOURCE),
+    ]
+    with psycopg.connect(DATABASE_URL) as connection:
+        connection.execute("select set_config('TimeZone', %s, true)", (session_zone,))
+        for index, (units, scope, region, at, ledger_id, source) in enumerate(rows):
+            connection.execute("insert into public.sam_live_stock_conversation_review_events "
+                "(review_event_id,chatwoot_conversation_id,event_source,created_at,review_json) "
+                "values(%s,%s,%s,%s,%s)",
+                (f"SYNTHETIC-EXACT-CUTOFF-{index}", ledger_id, source, at,
+                 Jsonb({"ewelink_request_budget": {"attempt_units": units,
+                    "detail": {"scope": scope, "region": region}}})))
+        assert client._counts(connection, now, scope="s1", region="eu") == (23, 35)
+        assert client._counts(connection, now, scope="s1", region="us") == (13, 35)
+        assert client._counts(connection, now, scope="s2", region="eu") == (11, 35)
+        assert client._counts(connection, now, scope="missing", region="eu") == (0, 35)
+        assert client._counts(connection, now, scope="s1", region=None) == (0, 35)
+        assert client._counts(connection, now) == (47, 35)
+        assert client._counts(connection, now, scope=None, region="us") == (47, 35)
+
+
 @pytest.mark.parametrize("units", ["bad", "1.5", True, {}])
 def test_accounting_json_paths_still_reject_malformed_attempt_units(units):
     import psycopg
@@ -577,3 +621,35 @@ def test_real_canonical_query_retains_conflicting_or_forged_duty(defect):
     restarted=budget.RequestBudget(environment())
     restarted.dispatch(region="eu",endpoint="/v2/family",send=lambda _: {})
     assert claim["execution_id"] in ledger(restarted)[0]["reserves"]
+
+
+@pytest.mark.parametrize("stamp_text,event_text,sql_recent,python_recent", [
+    ("2026-03-08T07:02:00+00:00", "2026-03-08T07:00:00+00:00", 1, 0),
+    ("2026-11-01T06:02:00+00:00", "2026-11-01T05:30:00+00:00", 0, 1),
+])
+def test_ordinary_non_utc_fallback_preserves_actual_dst_gap_and_fold_cutoffs(
+        stamp_text, event_text, sql_recent, python_recent):
+    import psycopg
+    from psycopg.types.json import Jsonb
+    client = budget.RequestBudget(environment())
+    # This deliberately partial ledger state is local to the cutoff assertion;
+    # do not leave it for later modules that exercise real capacity admission.
+    with psycopg.connect(DATABASE_URL) as connection, connection.transaction(force_rollback=True):
+        connection.execute("set local timezone='America/New_York'")
+        connection.execute("insert into public.sam_live_stock_conversation_review_events "
+            "(review_event_id,chatwoot_conversation_id,event_source,created_at,review_json) "
+            "values(%s,%s,%s,%s,%s)",
+            ("SYNTHETIC-DST-BOUNDARY", budget.LEDGER_ID, budget.EVENT_SOURCE,
+             datetime.fromisoformat(event_text), Jsonb({"ewelink_request_budget": {
+                 "attempt_units": 1, "detail": {"scope": "s1", "region": "eu"},
+                 "state": {"version": 1}}})))
+        class FixedServerClock:
+            def execute(self, sql, params):
+                assert sql.count("clock_timestamp()") == 1
+                return connection.execute(sql.replace("clock_timestamp()", "%s::timestamptz"),
+                    (datetime.fromisoformat(stamp_text), *params))
+        _, now, counts = client._admission_preimage(FixedServerClock(), scope="s1", region="eu")
+        assert now.tzinfo.key == "America/New_York"
+        assert counts == (1, sql_recent)
+        assert not client._utc_preimage_counts(now)
+        assert client._counts(connection, now, scope="s1", region="eu") == (1, python_recent)

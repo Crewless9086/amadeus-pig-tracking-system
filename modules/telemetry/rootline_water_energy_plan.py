@@ -1022,11 +1022,12 @@ def _project_borehole_interlocks(rows, now):
         key=lambda pair:pair[0])
     facts={}
     positive=("dry_run_safe","low_water_clear","supply_pressure_safe","full_tank_not_blocking")
-    negative=("manual_isolation_active","full_tank_cutoff_fault")
+    negative=("manual_isolation_active","manual_off_active","full_tank_cutoff_fault")
     for at,row in ordered:
         if at>current: continue
         attributable=bool(row.get("evidence_id") or row.get("provider_message_id"))
         for key in positive+negative:
+            if key == "manual_off_active" and not attributable: continue
             if type(row.get(key)) is not bool: continue
             unsafe = row[key] is (key in negative)
             if key in facts and facts[key][0] == at and facts[key][1] != row[key]:
@@ -1042,7 +1043,7 @@ def _project_borehole_interlocks(rows, now):
         "observed_at":max(at for at,_ in facts.values()).isoformat()}
 
 
-def read_current_borehole_faults(database_url, *, now, clock=None):
+def read_current_borehole_faults(database_url, *, now, clock=None, include_evidence=False):
     """One bounded safety read, independent of reports and planning history."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     with connect_bounded_rootline_postgres(database_url=database_url) as connection:
@@ -1061,8 +1062,15 @@ def read_current_borehole_faults(database_url, *, now, clock=None):
     # A newly recorded negative fault must not be discarded against a start clock.
     checked_at = clock() if clock is not None else now
     facts=_project_borehole_interlocks(observations,checked_at) or {}
-    return not (any(facts.get(key) is False for key in ("dry_run_safe","low_water_clear","supply_pressure_safe"))
-        or facts.get("manual_isolation_active") is True or facts.get("full_tank_cutoff_fault") is True)
+    safe = not (any(facts.get(key) is False for key in ("dry_run_safe","low_water_clear","supply_pressure_safe"))
+        or facts.get("manual_isolation_active") is True or facts.get("manual_off_active") is True
+        or facts.get("full_tank_cutoff_fault") is True)
+    if include_evidence:
+        return {"safe": safe, "facts": facts, "source_observations": observations,
+            "source": "canonical_rootline_operational_intake", "assessed_at": checked_at.isoformat(),
+            "evidence_sha256": sha256(json.dumps(observations, sort_keys=True,
+                separators=(",", ":"), default=str).encode()).hexdigest()}
+    return safe
 
 
 def _valid_borehole_interlocks(value, now):
@@ -1302,8 +1310,8 @@ def _rain_effect(weather, weather_state, forecast, forecast_state):
 
 def _borehole_task(tanks, tank_state, demand, rain, reserve):
     return _task("borehole", "Recommend",
-        "Protect water continuity: keep borehole supply available under fresh battery/grid protections; the internal full-tank cutoff controls pumping.",
-        "standing_supply_with_native_fail_stop", ["fresh_energy_and_canonical_device_authority"], reserve)
+        "Protect water continuity using the sunshine proxy and battery/grid support; preserve local rain, explicit OFF and installed pump protections.",
+        "standing_supply_with_owned_stop_supervision", ["fresh_energy_and_canonical_device_authority"], reserve)
 
 
 def _transfer_task(tanks, tank_state, demand, reserve):

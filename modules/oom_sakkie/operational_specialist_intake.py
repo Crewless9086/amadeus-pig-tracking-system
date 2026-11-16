@@ -188,6 +188,10 @@ def handle_operational_specialist_message(
         and not semantic.get("protected_preview_required"))
     commissioning_request = is_exact_fertilizer_commissioning_request(parsed)
     commissioning_command = bool(_FERTILIZER_COMMISSIONING_COMMAND.fullmatch(text))
+    borehole_instruction = _borehole_instruction(text)
+    if borehole_instruction:
+        return _record_borehole_instruction(parsed, gateway_authority, borehole_instruction,
+            now=now, store=operation_store or _operation_event_store)
     batch_fact = _fertilizer_batch_fact(text)
     if batch_fact:
         return _record_fertilizer_batch_fact(parsed, gateway_authority, batch_fact,
@@ -882,9 +886,21 @@ def _operation_event_store(action, identity, payload):
     event["review_json"] = {"rootline_operational_intake": dict(payload)}
     event["decision_json"] = {}; event["facts_json"] = {}
     event["customer_message_excerpt"] = ""; event["sam_reply_excerpt"] = ""
+    def connect_for_operation():
+        instruction = (payload.get("context") or {}).get("event_type") == "borehole_owner_instruction"
+        connection = connect_bounded_rootline_postgres(read_only=False, connect_deadline_seconds=3,
+            read_committed=instruction)
+        try:
+            if instruction:
+                # The same transaction inserts the durable instruction below.
+                # A later ON edge takes this lock and rereads canonical holds.
+                connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            return connection
+        except BaseException:
+            connection.close()
+            raise
     result, status = record_sam_live_stock_review_event(event,
-        connect_factory=lambda: connect_bounded_rootline_postgres(
-            read_only=False, connect_deadline_seconds=3))
+        connect_factory=connect_for_operation)
     return {**result, "success": status < 400 and result.get("success") is True,
             "created": result.get("created", result.get("success") is True)}
 
@@ -1014,3 +1030,82 @@ def _time(value):
 
 def _digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+
+def _borehole_instruction(text):
+    """Only an explicit device instruction, never a question or observed OFF."""
+    text = str(text or "").strip()
+    device = r"(?:the\s+|die\s+)?(?:borehole|boorgat)(?:\s+1)?"
+    choices = (
+        (rf"(?:(?:please\s+)?(?:turn|switch)\s+{device}\s+off|stop\s+{device}|{device}\s+off|skakel\s+{device}\s+af)", "manual_off_active", True),
+        (rf"(?:resume\s+{device}|hervat\s+{device})", "manual_off_active", False),
+        (rf"{device}\s+(?:is\s+)?isolated", "manual_isolation_active", True),
+        (rf"{device}\s+isolation\s+cleared", "manual_isolation_active", False),
+    )
+    for pattern, field, value in choices:
+        if re.fullmatch(pattern+r"[.!]?", text, re.I):
+            return {"field": field, "value": value}
+    return None
+
+
+def is_exact_borehole_instruction(parsed):
+    return _borehole_instruction((parsed or {}).get("text")) is not None
+
+
+def _record_borehole_instruction(parsed, gateway_authority, instruction, *, now, store):
+    """Persist the owner's exact hold/resume fact atomically on existing intake.
+
+    This grants no direct hardware command. The owned-run scheduler consumes the
+    durable fact; clearing a manual OFF does not clear a separate isolation fact.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    at = _time(parsed.get("provider_timestamp"))
+    provider = str(parsed.get("provider_message_id") or "").strip()
+    authority = bind_gateway_owner_authority(gateway_authority, ROOTLINE_READ_ONLY_TOOL)
+    if (not provider or at is None or not validates_rootline_gateway_authority(authority)
+            or authority.principal_role != "owner"
+            or authority.owner_user_id != str(parsed.get("telegram_user_id") or "")
+            or authority.private_chat_id != str(parsed.get("telegram_chat_id") or "")
+            or not 0 <= (now-at).total_seconds() <= 300):
+        return _contained(parsed, "borehole_owner_instruction_invalid", now), 409
+    mission = _mission(parsed)
+    context = {"mission_id": mission, "provider_message_id": provider,
+        "provider_timestamp": at.isoformat(), "event_type": "borehole_owner_instruction",
+        "instruction": instruction, "content_sha256": hashlib.sha256(str(parsed.get("text") or "").encode()).hexdigest()}
+    def prior_result():
+        rows = list(store("load", mission, None) or [])
+        return next((row for row in reversed(rows) if row.get("state") == "completed"), None)
+    def replay(prior):
+        if prior.get("context") != context:
+            return _contained(parsed, "borehole_instruction_replay_conflict", now), 409
+        return {**prior["outcome"], "replay_suppressed": True, "writes_farm_data": False}, 200
+    try:
+        prior = prior_result()
+        if prior:
+            return replay(prior)
+        field, value = instruction["field"], instruction["value"]
+        fact = {field: value, "observed_at": at.isoformat(), "provider_message_id": provider,
+            "source": "authenticated_owner_instruction"}
+        if value:
+            message = "Borehole stop instruction recorded. ROOTLINE will stop its owned run and hold automatic starts."
+        else:
+            message = "Borehole hold update recorded. ROOTLINE will reassess the current operating conditions."
+        outcome = {"handled": True, "success": True, "status": "specialist_accepted",
+            "specialist_identity": "ROOTLINE", "mission_id": mission, "provider_message_id": provider,
+            "hardware_commands": 0, "provider_control_calls": 0, "writes_farm_data": True,
+            "sends_telegram": False, "question_count": 0, "borehole_interlocks": fact,
+            "answer": "🌿 <b>ROOTLINE — BOREHOLE</b>\n\n" + message}
+        # One fixed provider-message identity commits the instruction and terminal
+        # together. There is no intermediate claim whose crash could lose an OFF.
+        identity = mission + "-BOREHOLE-INSTRUCTION"
+        saved = store("record", identity, {"event_id": identity, "mission_id": mission,
+            "state": "completed", "context": context, "outcome": outcome})
+        if saved.get("success") is not True:
+            return _persistence_failed(parsed, now)
+        if saved.get("created") is not True:
+            prior = prior_result()
+            return replay(prior) if prior else _persistence_failed(parsed, now)
+        return outcome, 200
+    except Exception:
+        return _persistence_failed(parsed, now)

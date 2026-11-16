@@ -54,6 +54,10 @@ class MemoryBudget(budget.RequestBudget):
             "external_clients_counted": False, "scopes": {}, "reserves": {},
             "last_finished_at": None, "pending_attempt": None})
 
+    def _admission_preimage(self, connection, *, scope, region):
+        now = self._now(connection)
+        return self._load(connection), now, self._counts(connection, now, scope=scope, region=region)
+
     def _counts(self, connection, now, *, scope=None, region=None):
         return (sum(row["units"] for row in connection.events if row["at"] >= now-timedelta(days=31)
             and (scope is None or row["detail"].get("scope") == scope and row["detail"].get("region") == region)),
@@ -710,3 +714,60 @@ def test_budget_acquisition_failure_precedes_coordinator_claim(monkeypatch):
     assert result["hardware_commands"] == 0 and store.rows == []
     assert transport.calls == [] and notices == []
     assert connection.rolled_back and connection.closed.wait(.8)
+
+
+@pytest.mark.parametrize("zone_name", ["UTC", "Etc/UTC", "Europe/London", "America/New_York"])
+@pytest.mark.parametrize("entry", ["dispatch", "reserve"])
+def test_ordinary_preimage_reuses_only_fixed_utc_counts_after_same_fence(zone_name, entry):
+    from zoneinfo import ZoneInfo
+    class ObservedBudget(MemoryBudget):
+        def __init__(self):
+            super().__init__()
+            self.backend.now = datetime(2026, 11, 1, 1, 2, tzinfo=ZoneInfo(zone_name), fold=1)
+            self.steps = []
+        def _admission_preimage(self, connection, *, scope, region):
+            assert connection is self.backend and self.backend.lock.locked()
+            self.steps.append("preimage")
+            return self._load(connection), connection.now, (0, 0)
+        def _reconcile_reserves(self, connection, state, now):
+            self.steps.append("reconcile")
+            return super()._reconcile_reserves(connection, state, now)
+        def _counts(self, connection, now, *, scope=None, region=None):
+            assert connection is self.backend and self.backend.lock.locked()
+            assert self.steps == ["preimage", "reconcile"]
+            self.steps.append("compatibility_counts")
+            assert now == self.backend.now
+            return super()._counts(connection, now, scope=scope, region=region)
+    client = ObservedBudget()
+    sent = []
+    if entry == "dispatch":
+        client.dispatch(region="eu", endpoint="/v2/family", send=lambda _: sent.append(True))
+        assert sent == [True]
+    else:
+        client.reserve_for_on(execution_id="UTC-REUSE", device_id="synthetic-device", channel=0,
+            device_type="fertilizer_mixer", region="eu")
+        assert not sent
+    expected = ["preimage", "reconcile"]
+    if zone_name not in {"UTC", "Etc/UTC"}:
+        expected.append("compatibility_counts")
+    assert client.steps == expected
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_preimage_and_optional_suppression_never_send_when_not_due(failure):
+    class ObservedBudget(MemoryBudget):
+        def _admission_preimage(self, connection, *, scope, region):
+            assert self.backend.lock.locked()
+            if failure:
+                raise budget.RequestBudgetUnavailable("synthetic_invalid_accounting")
+            return super()._admission_preimage(connection, scope=scope, region=region)
+    client = ObservedBudget()
+    sent = []
+    expected = budget.RequestBudgetUnavailable if failure else budget.OptionalObservationDeferred
+    with budget.optional_observation("mixer_readiness", first_read_at=(NOW+timedelta(hours=1)).isoformat()):
+        with budget.snapshot_group(expected_device="synthetic-device", environ=client.environ, region="eu"):
+            with pytest.raises(expected):
+                client.dispatch(region="eu", endpoint="/v2/family", send=lambda _: sent.append(True))
+    assert not sent
+    assert not any(event["units"] for event in client.backend.events)
+    assert not client.backend.lock.locked()

@@ -42,7 +42,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         store=rootline_irrigation_execution_store, canonical_loader=None,
         connect_factory=None, now=None, evidence_factory=None, allow_new_starts=True,
         allow_borehole_starts=None, energy_reader=None, borehole_safety_reader=None,
-        clock=None, after_safety=None):
+        clock=None, after_safety=None, borehole_conditions_reader=None):
     """Supervise every owned device, then admit independent eligible work.
 
     The shared transaction locks serialize command edges. They do not reserve
@@ -60,6 +60,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         deferred_no_send[execution["execution_id"]] = (deepcopy(execution), _aware(clock()))
     safety_args = dict(store=store, transport=transport, energy_reader=energy_reader,
         borehole_safety_reader=borehole_safety_reader, clock=clock,
+        borehole_conditions_reader=borehole_conditions_reader,
         defer_no_send_proof=defer_no_send if callable(after_safety) else None,
         deferred_no_send=deferred_no_send)
     initial = _supervise_owned_devices(**safety_args)
@@ -251,6 +252,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
 
 def _supervise_owned_devices(*, store, transport, energy_reader,
         borehole_safety_reader, clock, previous_borehole=None, previous_due_auxiliaries=(),
+        borehole_conditions_reader=None,
         defer_no_send_proof=None, deferred_no_send=None):
     # Inventory, due OFF, and durable final proof remain mandatory even when
     # the shared optional-work deadline expired. ON keeps its original fence.
@@ -258,12 +260,14 @@ def _supervise_owned_devices(*, store, transport, energy_reader,
         return _supervise_owned_devices_unbounded(store=store, transport=transport,
             energy_reader=energy_reader, borehole_safety_reader=borehole_safety_reader,
             clock=clock, previous_borehole=previous_borehole,
+            borehole_conditions_reader=borehole_conditions_reader,
             previous_due_auxiliaries=previous_due_auxiliaries,
             defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send)
 
 
 def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
         borehole_safety_reader, clock, previous_borehole, previous_due_auxiliaries,
+        borehole_conditions_reader=None,
         defer_no_send_proof=None, deferred_no_send=None):
     outcomes = []
     auxiliary_inventory_proven = borehole_inventory_proven = True
@@ -329,12 +333,21 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
         try:
             continuing = _before_deadline(active_borehole, now)
             stop_for_energy = stop_for_protection = False
+            from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+            continuous = continuous_borehole(active_borehole)
+            energy_reason = "energy_stop"
+            energy = {}; protection = None
             evidence_pending = False
             try:
                 energy = energy_reader() if continuing and energy_reader is not None else {}
-                stop_for_energy = (energy.get("fresh") is True
-                    and energy.get("borehole_eligible") is False)
-                evidence_pending = continuing and energy_reader is not None and energy.get("fresh") is not True
+                known = (energy.get("continuous_borehole_fresh", energy.get("borehole_fresh", energy.get("fresh")))
+                    if continuous else energy.get("fresh"))
+                eligible = (energy.get("continuous_borehole_eligible", energy.get("borehole_eligible"))
+                    if continuous else energy.get("borehole_eligible"))
+                energy_reason = (energy.get("continuous_borehole_reason", energy.get("borehole_reason"))
+                    if continuous else energy.get("borehole_reason")) or "energy_stop"
+                stop_for_energy = known is True and eligible is False
+                evidence_pending = continuing and energy_reader is not None and known is not True
             except Exception:
                 evidence_pending = True
             try:
@@ -344,6 +357,15 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                 evidence_pending = evidence_pending or protection is None
             except Exception:
                 evidence_pending = True
+            from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+            condition_result = {}
+            if continuous_borehole(active_borehole):
+                try:
+                    condition_result = borehole_conditions_reader() if callable(borehole_conditions_reader) else {}
+                    stop_for_protection = stop_for_protection or condition_result.get("stop_required") is True
+                    evidence_pending = evidence_pending or condition_result.get("success") is not True
+                except Exception:
+                    evidence_pending = True
             # A completed observation is local to this invocation, not provider
             # evidence for another command. Still check current canonical ownership,
             # adverse evidence and the clock after those reads before omitting a
@@ -366,6 +388,19 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                 result = advance_borehole_execution(eligibility={}, store=store,
                     transport=observed_transport, now=now,
                     stop_for_energy=stop_for_energy or stop_for_protection, clock=clock,
+                    **({"stop_reason": (condition_result.get("reason") if condition_result.get("stop_required") is True
+                        else energy_reason if stop_for_energy
+                        else "explicit_protection_or_manual_stop"),
+                        "stop_trigger": {"assessed_at": _aware(clock()).isoformat(),
+                            "condition_event_id": condition_result.get("event_id"),
+                            "condition_reason": condition_result.get("reason"),
+                            "condition_assessed_at": condition_result.get("assessed_at"),
+                            "energy_stop": stop_for_energy,
+                            "energy_reason": energy_reason if stop_for_energy else None,
+                            "energy_context": energy.get("borehole_energy_context"),
+                            "protection_reader_safe": protection,
+                            "condition_stop_required": condition_result.get("stop_required")}}
+                        if stop_for_energy or stop_for_protection else {}),
                     **({"defer_no_send_proof": defer_no_send_proof} if callable(defer_no_send_proof) else {}))
                 if evidence_pending:
                     result = {**result, "supervision_evidence_pending": True}
@@ -400,6 +435,9 @@ class _AttemptedTransport:
 
 
 def _before_deadline(active, now):
+    from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+    if continuous_borehole(active):
+        return True
     try:
         deadline = datetime.fromisoformat(str(active.get("primary_stop_deadline") or "").replace("Z", "+00:00"))
         return now < _aware(deadline)

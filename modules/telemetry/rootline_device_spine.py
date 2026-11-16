@@ -201,6 +201,10 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
     profile = DEVICE_PROFILES[record["device_type"]]
     eskom = eskom_hysteresis_profile(record)
     scheduled = scheduled_device_profile(record)
+    from modules.telemetry.rootline_borehole_conditions import continuous_device_profile, continuous_policy_valid
+    continuous = continuous_device_profile(record)
+    if record.get("stop_mode") == "conditions" and not continuous:
+        raise ValueError("rootline_continuous_borehole_binding_invalid")
     owner_hysteresis = eskom and record.get("stop_mode") == "hysteresis"
     if record.get("stop_mode") == "scheduled" and not scheduled:
         raise ValueError("rootline_scheduled_binding_invalid")
@@ -218,7 +222,7 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
         and record["native_fail_stop_seconds"] == 0)
     if eskom and (record["maximum_runtime_seconds"] != 0 or record["native_fail_stop_seconds"] != 0):
         raise ValueError("rootline_eskom_countdown_not_permitted")
-    if not eskom and not scheduled and not profile.get("read_only") and not unknown_pre_actuation_bounds and (
+    if not eskom and not scheduled and not continuous and not profile.get("read_only") and not unknown_pre_actuation_bounds and (
             record["maximum_runtime_seconds"] <= 0
             or record["native_fail_stop_seconds"] <= 0
             or record["native_fail_stop_seconds"] > record["maximum_runtime_seconds"]):
@@ -231,7 +235,7 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
             else ("provider_discovered", "readback_proven", "bounded_actuation_ready",
                 "physical_identity_proven", "fail_stop_proven", "replay_proven",
                 "operational_dependencies_proven", "supervised"))
-        if scheduled or owner_hysteresis:
+        if scheduled or owner_hysteresis or continuous:
             required = ("owner_configuration", "provider_readback")
         if eskom and not owner_hysteresis:
             required = tuple(key for key in required if key != "fail_stop_proven") + (
@@ -263,13 +267,15 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
                 or str(resolved_authority.get("policy_sha256") or "") !=
                    str(authority.get("policy_sha256") or "")):
             raise ValueError("rootline_standing_authority_unresolved")
+        if continuous and not continuous_policy_valid(record, resolved_authority):
+            raise ValueError("rootline_continuous_borehole_policy_unproven")
         if owner_hysteresis and not _owner_hysteresis_policy_valid(record, resolved_authority):
             raise ValueError("rootline_eskom_owner_policy_unproven")
         if eskom and not owner_hysteresis and (record.get("independent_physical_identity_proven") is not True
                 or record.get("independent_electrical_protection_proven") is not True
                 or not str(record.get("manual_isolation") or "").strip()):
             raise ValueError("rootline_eskom_electrical_protection_unproven")
-        if not eskom and not scheduled and profile.get("strict") and (
+        if not eskom and not scheduled and not continuous and profile.get("strict") and (
                 record.get("independent_physical_identity_proven") is not True
                 or record.get("independent_fail_stop_proven") is not True):
             raise ValueError("rootline_strict_device_proof_missing")

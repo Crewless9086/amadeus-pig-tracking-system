@@ -36,6 +36,8 @@ def rootline_irrigation_execution_store(action, payload):
                   "load_active_borehole", "load_borehole_off_attempts", "load_eskom_events"}:
         return _load(action, payload)
     body = dict(payload or {})
+    if action == "assess_borehole_conditions":
+        return _assess_borehole_conditions(body)
     if action == "dispatch_borehole_off_edge":
         return _dispatch_borehole_off_edge(body)
     if action == "record_borehole_aborted":
@@ -938,6 +940,14 @@ def _active_borehole(rows):
                 if row.get("action") == "claim_borehole_before_on" else row)
             if _no_send_preimage(by_execution[identity], identity) is not None:
                 result = {**result, "on_not_dispatched": True}
+            from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+            if continuous_borehole(result):
+                stopping = next((item for item in by_execution[identity]
+                    if item.get("action") == "claim_borehole_off_attempt"), None)
+                if stopping is not None:
+                    result = {**result, "stop_requested": True,
+                        "stop_reason": stopping.get("stop_reason") or stopping.get("reason") or "conditional_stop_pending",
+                        "stop_trigger": stopping.get("stop_trigger")}
             return result
     return None
 
@@ -1663,7 +1673,8 @@ def _claim_borehole_material_load(body, *, adopt=False):
     action = "mark_borehole_active" if adopt else "claim_borehole_before_on"
     event_id=_event_id(action,body)
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-                                           read_only=False) as connection:
+                                           read_only=False,
+                                           read_committed=body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5") as connection:
       with connection.cursor() as cursor:
         # The common output lock serializes admission, not operating duration.
         # Only a prior borehole claim conflicts; other devices own their outputs.
@@ -1683,7 +1694,8 @@ def _claim_borehole_material_load(body, *, adopt=False):
           "baseline_sha256","registry_generation","need_sha256","evidence_sha256",
           "requested_seconds","assessed_at","gates","blockers","contract_version",
           "native_fail_stop_seconds","provider_evidence","operation",
-          "commissioned_native_fail_stop_seconds","stop_mode","device_id","channel","auxiliary_device_id")
+          "commissioned_native_fail_stop_seconds","stop_mode","device_id","channel","auxiliary_device_id",
+          "condition_evidence", "energy_context")
         if (not _valid_borehole_eligibility(canonical)
                 or not _valid_borehole_eligibility(body)
                 or any(body.get(field)!=canonical.get(field) for field in immutable)):
@@ -1701,6 +1713,24 @@ def _claim_borehole_material_load(body, *, adopt=False):
                     or native_deadline != claimed+timedelta(seconds=body["native_fail_stop_seconds"])
                     or deadline <= now
                     or body.get("operation") != ("adopt_observed_on" if adopt else "command_off_to_on")):
+                return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
+        elif body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5":
+            from modules.telemetry.rootline_borehole_commissioning import _continuous_borehole_off
+            from modules.telemetry.rootline_cycle_budget import CYCLE_WORK_SECONDS
+            cursor.execute("select clock_timestamp()")
+            now = cursor.fetchone()[0]
+            claimed = _time(body.get("claimed_at")); assessed = _time(body.get("assessed_at"))
+            proof = body.get("claim_provider_evidence") or {}
+            observed = _time(proof.get("retrieved_at") or proof.get("observed_at"))
+            if (adopt or not _continuous_borehole_off(proof, now=now)
+                    or proof.get("execution_id") != execution_id
+                    or claimed is None or assessed is None or observed is None
+                    or not assessed <= observed <= claimed
+                    or not timedelta(0) <= now-assessed <= timedelta(seconds=CYCLE_WORK_SECONDS)
+                    or not timedelta(0) <= now-claimed <= timedelta(seconds=30)
+                    or body.get("primary_stop_deadline") is not None
+                    or body.get("native_fail_stop_deadline") is not None
+                    or not _current_borehole_conditions_match(cursor, body, now)):
                 return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
         elif body.get("contract_version")=="rootline_borehole_runtime_eligibility.v4":
             from modules.telemetry.rootline_borehole_commissioning import _scheduled_borehole_off
@@ -1788,15 +1818,31 @@ def _valid_borehole_eligibility(value):
             return False
         material.update({key:value.get(key) for key in ("stop_mode","native_fail_stop_seconds",
             "device_id","channel","auxiliary_device_id","provider_evidence","operation")})
+    if version == "rootline_borehole_runtime_eligibility.v5":
+        from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+        from modules.telemetry.rootline_borehole_commissioning import _continuous_borehole_off
+        assessed = _time(value.get("assessed_at"))
+        condition = value.get("condition_evidence") or {}
+        if (not continuous_borehole(value) or assessed is None
+                or value.get("operation") != "command_off_to_on"
+                or not _continuous_borehole_off(value.get("provider_evidence"), now=assessed)
+                or condition.get("start_eligible") is not True
+                or not re.fullmatch(r"ROOTLINE-EXEC-[0-9A-F]{32}", str(condition.get("event_id") or ""))):
+            return False
+        material.update({key: value.get(key) for key in ("stop_mode", "native_fail_stop_seconds",
+            "device_id", "channel", "auxiliary_device_id", "provider_evidence", "operation", "condition_evidence", "energy_context")})
     digest=hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),
       default=str).encode()).hexdigest()
     required_gates={"canonical_need","commissioned_baseline","standing_authority",
       "provider_off","dry_run","low_water","supply_pressure","full_tank",
       "energy","concurrency","bounded_runtime"}
+    if version == "rootline_borehole_runtime_eligibility.v5":
+        required_gates = required_gates - {"bounded_runtime"} | {"condition_supervision", "weather"}
     if version == "rootline_borehole_runtime_eligibility.v3":
         required_gates = required_gates - {"provider_off"} | {"provider_state_safe"}
     return (version in {"rootline_borehole_runtime_eligibility.v1","rootline_borehole_runtime_eligibility.v2",
-            "rootline_borehole_runtime_eligibility.v3","rootline_borehole_runtime_eligibility.v4"}
+            "rootline_borehole_runtime_eligibility.v3","rootline_borehole_runtime_eligibility.v4",
+            "rootline_borehole_runtime_eligibility.v5"}
       and material["device_key"]=="ewelink:ewelink_owner_account:1002851416:1"
       and value.get("eligibility_sha256")==digest
       and value.get("execution_id")=="ROOTLINE-BOREHOLE-"+digest[:24].upper()
@@ -1996,7 +2042,7 @@ def _guarded_managed_transition(action, body):
     if not str(body.get("execution_id") or ""):
         return {"success":False,"created":False,"status":"execution_identity_missing"}
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-                                           read_only=False) as connection:
+                                           read_only=False, read_committed=borehole and (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5" or isinstance(body.get("stop_trigger"), dict))) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
@@ -2009,6 +2055,12 @@ def _guarded_managed_transition(action, body):
                         if any(row == exact and _verified_borehole_completion(row) for row in rows):
                             return {"success":True,"created":False,"event_id":event_id}
                     return {"success":False,"created":False,"status":"borehole_execution_retired"}
+            if borehole and action in {family["off"], "record_borehole_completed"}:
+                first_trigger = next((row for row in rows if row.get("action") == family["off"]
+                    and isinstance(row.get("stop_trigger"), dict)), None)
+                if first_trigger is not None and any(body.get(key) != first_trigger.get(key)
+                        for key in ("stop_reason", "stop_trigger")):
+                    return {"success":False,"created":False,"status":"borehole_stop_trigger_changed"}
             if action==family["active"]:
                 if (not _managed_claim_matches(rows,body,family)
                         or _managed_edge_retired(rows,family)
@@ -2042,7 +2094,8 @@ def _dispatch_borehole_off_edge(body):
     if not callable(dispatch):
         return {"accepted_unambiguous":False, "provider_command_attempted":False,
             "status":"borehole_off_dispatch_invalid"}
-    slot = {"execution_id":body.get("execution_id"), "attempt":body.get("attempt")}
+    slot = {"execution_id":body.get("execution_id"), "attempt":body.get("attempt"),
+        **{key: body[key] for key in ("stop_reason", "stop_trigger") if key in body}}
     claimed = _guarded_managed_transition("claim_borehole_off_attempt", slot)
     if claimed.get("created") is not True:
         return {"accepted_unambiguous":False, "provider_command_attempted":False,
@@ -2113,6 +2166,7 @@ def _record_borehole_aborted(body):
             claim = claims[0]
             aborted = {**claim, "action":"record_borehole_aborted", "state":"Aborted",
                 "terminal_contract":_BOREHOLE_ABORT_CONTRACT, "reason":body.get("reason"),
+                **{key: barriers[0][key] for key in ("stop_reason", "stop_trigger") if key in barriers[0]},
                 # These count durable consumed attempts, not proven HTTP sends
                 # or pumping. Keep the original claim and every outcome intact.
                 "on_attempts":int(any(row.get("action") in {family["dispatch"], family["outcome"]}
@@ -2159,27 +2213,35 @@ def _dispatch_managed_on_edge(body, *, borehole):
         return {"accepted_unambiguous":False,"status":"atomic_on_edge_invalid"}
     def permitted(rows):
         now=datetime.now(timezone.utc);claimed=_time(body.get("claimed_at"));deadline=_time(body.get("primary_stop_deadline"))
-        return (claimed is not None and claimed.tzinfo is not None and deadline is not None
-            and deadline.tzinfo is not None and timedelta(0)<=now-claimed<=timedelta(seconds=30)
-            and now<deadline and _managed_claim_matches(rows,body,family)
+        from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+        continuous = borehole and continuous_borehole(body)
+        deadline_valid = (body.get("primary_stop_deadline") is None and body.get("native_fail_stop_deadline") is None
+            if continuous else deadline is not None and deadline.tzinfo is not None and now < deadline)
+        return (claimed is not None and claimed.tzinfo is not None and deadline_valid
+            and timedelta(0)<=now-claimed<=timedelta(seconds=30)
+            and _managed_claim_matches(rows,body,family)
             and not _managed_edge_retired(rows,family)
             and not any(row.get("action") in {family["active"],family["outcome"]} for row in rows))
     # Unique review_event_id is the existing database-backed at-most-once fence.
-    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False) as connection:
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False,
+            read_committed=borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5") as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             rows=_managed_edge_rows(cursor,body.get("execution_id"))
-            if not permitted(rows):
+            if (not permitted(rows) or (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5"
+                    and not _current_borehole_conditions_match(cursor, body, datetime.now(timezone.utc)))):
                 return {"accepted_unambiguous":False,"status":"managed_start_ownership_retired"}
             if not _insert_managed_event(cursor,family["dispatch"],body)["created"]:
                 return {"accepted_unambiguous":False,"status":"managed_dispatch_already_consumed"}
-    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False) as connection:
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False,
+            read_committed=borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5") as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             rows=_managed_edge_rows(cursor,body["execution_id"])
-            if not permitted(rows):
+            if (not permitted(rows) or (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5"
+                    and not _current_borehole_conditions_match(cursor, body, datetime.now(timezone.utc)))):
                 return {"accepted_unambiguous":False,"status":"managed_start_ownership_retired"}
             if not borehole and body["device_type"]=="fertilizer_injection_valve":
                 cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
@@ -2938,3 +3000,74 @@ def _scheduled_auxiliary_claim_valid(body, stored, now):
         return (timedelta(0)<=now-claimed<=timedelta(seconds=30)
             and deadline==claimed+timedelta(seconds=artifact["maximum_duration_seconds"]))
     except (ValueError,TypeError,KeyError): return False
+
+
+_BOREHOLE_CONDITION_ACTION = "record_borehole_condition_state"
+
+
+def _latest_borehole_conditions(cursor):
+    cursor.execute("""select review_json->'rootline_execution'
+        from public.sam_live_stock_conversation_review_events where event_source=%s
+          and review_json->'rootline_execution'->>'action'=%s
+        order by coalesce((review_json->'rootline_execution'->>'state_generation')::bigint,0) desc,
+                 created_at desc,review_event_id desc limit 1""", (EVENT_SOURCE, _BOREHOLE_CONDITION_ACTION))
+    row = cursor.fetchone()
+    return dict(row[0]) if row and isinstance(row[0], dict) else {}
+
+
+def _current_borehole_conditions_match(cursor, body, now):
+    expected = body.get("condition_evidence") or {}
+    current = _latest_borehole_conditions(cursor)
+    assessed = _time(current.get("assessed_at"))
+    from modules.telemetry.rootline_cycle_budget import CYCLE_WORK_SECONDS
+    snapshot_valid = (current.get("event_id") == expected.get("event_id") and bool(current.get("event_id"))
+        and current.get("start_eligible") is True and current.get("stop_required") is False
+        and assessed is not None and timedelta(0) <= now-assessed <= timedelta(seconds=CYCLE_WORK_SECONDS))
+    if not snapshot_valid:
+        return False
+    # Read through the caller's locked transaction. The intake writer uses the
+    # same output lock, so an OFF/isolation committed first cannot be missed by
+    # either claim or final ON admission. An already-dispatched ON remains owned.
+    cursor.execute("""select review_json->'rootline_operational_intake'->'outcome'
+        from public.sam_live_stock_conversation_review_events
+        where event_source='oom_sakkie_rootline_operational_intake'
+          and review_json->'rootline_operational_intake'->>'state'
+            in ('completed','contextual_followup_completed')
+          and jsonb_typeof(review_json->'rootline_operational_intake'->'outcome'->'borehole_interlocks')='object'
+        order by created_at,review_event_id""")
+    observations = []
+    for row in cursor.fetchall():
+        outcome = row[0] if isinstance(row[0], dict) else {}
+        fact = outcome.get("borehole_interlocks") or {}
+        observations.append({**fact, "provider_message_id": fact.get("provider_message_id") or outcome.get("provider_message_id")})
+    from modules.telemetry.rootline_water_energy_plan import _project_borehole_interlocks
+    facts = _project_borehole_interlocks(observations, now) or {}
+    return not (facts.get("manual_off_active") is True or facts.get("manual_isolation_active") is True)
+
+
+def _assess_borehole_conditions(body):
+    """One existing-store lock preserves forecast opportunity and rain holds."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_borehole_conditions import assess_weather, advance_conditions
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"), read_only=False,
+            read_committed=True) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select clock_timestamp()")
+            now = cursor.fetchone()[0]
+            prior = _latest_borehole_conditions(cursor)
+            active = _active_borehole(_borehole_state_rows(cursor))
+            weather = assess_weather(body.get("weather_snapshot"), now=now)
+            state = advance_conditions(prior, weather=weather, forecast=body.get("forecast"), active=active, now=now)
+            if body.get("protection_safe") is False:
+                state.update(start_eligible=False, stop_required=True, reason="explicit_protection_or_manual_stop")
+            elif body.get("protection_safe") is not True:
+                state.update(start_eligible=False, reason="protection_observation_unavailable")
+            # Transaction start timestamps can precede a lock wait. Serialize
+            # state generations rather than ordering this state by created_at.
+            state["state_generation"] = int(prior.get("state_generation") or 0) + 1
+            state["protection_evidence"] = body.get("protection_evidence")
+            state["protection_safe"] = body.get("protection_safe")
+            state["execution_id"] = "ROOTLINE-BOREHOLE-CONDITIONS"
+            saved = _insert_managed_event(cursor, _BOREHOLE_CONDITION_ACTION, state)
+            return {**state, "event_id": saved["event_id"], "success": saved["success"]}

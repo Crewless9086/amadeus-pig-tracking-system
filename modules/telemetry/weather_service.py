@@ -236,7 +236,7 @@ def get_current_weather_state(database_url=None):
     return _format_current_weather_response(row), 200
 
 
-def get_weather_control_snapshot(database_url=None, *, now=None):
+def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_minutes=30):
     """Read current weather and its exact dry interval in one database snapshot.
 
     The selected durable reading is at or before the caller's cutoff. The dry
@@ -247,6 +247,8 @@ def get_weather_control_snapshot(database_url=None, *, now=None):
     database_url = _database_url(database_url)
     if not database_url:
         return _not_configured()
+    if dry_interval_minutes not in (30, 60):
+        raise ValueError("weather_control_interval_invalid")
     cutoff = now or datetime.now(timezone.utc)
     try:
         with connect_bounded_read(database_url=database_url) as connection:
@@ -269,7 +271,8 @@ def get_weather_control_snapshot(database_url=None, *, now=None):
                           where r.source_id=ts.source_id and r.reading_at <= %s
                           order by r.reading_at desc limit 1) wr on true
                      where ts.source_id=%s
-                """, (cutoff, DEFAULT_WEATHER_SOURCE_ID))
+                """.replace("interval '35 minutes'", "interval '65 minutes'" if dry_interval_minutes == 60
+                    else "interval '35 minutes'"), (cutoff, DEFAULT_WEATHER_SOURCE_ID))
                 row = cursor.fetchone()
     except Exception as exc:
         return _service_failed("weather_control_snapshot_failed",

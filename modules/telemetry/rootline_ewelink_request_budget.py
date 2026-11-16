@@ -104,8 +104,14 @@ def routine_execution_observation(execution):
     purpose = "borehole_routine" if borehole else "irrigation_routine"
     interval = (max(1800, math.ceil(int(execution.get("planned_runtime_seconds") or
         execution.get("requested_seconds") or execution.get("maximum_duration_seconds") or 0)/480)*60) if borehole else 900)
+    from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+    if continuous_borehole(execution):
+        interval = OPTIONAL_OBSERVATION_SECONDS["borehole_routine"]
     start = execution.get("provider_start_evidence" if borehole else "start_evidence") or {}
     started = _time(start.get("retrieved_at") or start.get("observed_at"))
+    if started is None and continuous_borehole(execution):
+        # This anchors a read slot, never a claimed provider ON or water start.
+        started = _time(execution.get("claimed_at"))
     if started is None or not execution.get("execution_id"):
         raise RequestBudgetUnavailable("ewelink_optional_execution_binding_unproven")
     with optional_observation(purpose, binding={"execution_id": execution["execution_id"],
@@ -411,6 +417,16 @@ class RequestBudget:
             raise RequestBudgetUnavailable("ewelink_request_ledger_invalid")
         return self._ledger_state(row[0], row[1]), row[1], (int(row[2]), int(row[3]))
 
+    @staticmethod
+    def _utc_preimage_counts(now):
+        # Ordinary admission historically used Python wall-time cutoffs. Across
+        # DST transitions these can differ from PostgreSQL interval arithmetic.
+        # Reuse the single-read counts only for a provably fixed UTC session;
+        # other sessions retain the original post-reconciliation count query.
+        from zoneinfo import ZoneInfo
+        zone = now.tzinfo
+        return zone is timezone.utc or (isinstance(zone, ZoneInfo) and zone.key in {"UTC", "Etc/UTC"})
+
     def _counts(self, connection, now, *, scope=None, region=None):
         row = connection.execute("""select
             coalesce(sum(case when cast(%s as text) is null or
@@ -696,11 +712,8 @@ class RequestBudget:
         if group is not None and (group["scope"] != key or group["region"] != region):
             raise RequestBudgetUnavailable("ewelink_snapshot_scope_changed")
         _dispatch_audit.get()["fence"] = connection
-        if pair is not None:
-            state, now, counts = self._admission_preimage(connection, scope=key, region=region)
-        else:
-            state = self._load(connection)
-            now = self._now(connection)
+        state, now, counts = self._admission_preimage(connection, scope=key, region=region)
+        if pair is None and not self._utc_preimage_counts(now):
             counts = None
         self._reconcile_reserves(connection, state, now)
         scope = self._scope(state, key)
@@ -754,7 +767,9 @@ class RequestBudget:
         reserved = sum(row["remaining"] for row in state["reserves"].values())
         scoped_reserved = sum(row["remaining"] for row in state["reserves"].values()
             if row["scope"] == key and row.get("region") == region)
-        if bound and reserve["remaining"] == 0:
+        from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+        continuous_optional = bool(bound and optional and continuous_borehole(duty))
+        if bound and reserve["remaining"] == 0 and not continuous_optional:
             # Do not strand an unresolved device after a prolonged outage.
             # One refresh plus one whole snapshot may be replenished hourly,
             # only within existing capacity. This cannot restore ON authority.
@@ -768,10 +783,10 @@ class RequestBudget:
             reserve["recovery_due_at"] = (now+timedelta(hours=1)).isoformat()
             reserved += 4
             scoped_reserved += 4
-        usable = bound and reserve["remaining"] > 0
+        usable = bound and reserve["remaining"] > 0 and not continuous_optional
         if optional and group.get("optional_attempts", 0) >= 4:
             raise RequestBudgetUnavailable("ewelink_optional_snapshot_group_exhausted")
-        if bound:
+        if bound and not continuous_optional:
             # An admission only earmarks existing capacity. Per-send charging
             # remains authoritative; no old or failed attempt is refunded.
             groups = reserve.setdefault("optional_groups", {})
@@ -828,7 +843,7 @@ class RequestBudget:
         state["pending_attempt"] = {"id": attempt, "recorded_at": now.isoformat()}
         self._append(state, action="request_attempt_reserved", attempt_units=1,
             detail={"attempt_id": attempt, "scope": key, "region": region, "endpoint": endpoint,
-                "execution_id": identity if usable else None,
+                "execution_id": identity if usable or continuous_optional else None,
                 "group_id": group["id"] if group else None})
         self._now(connection)
         remaining()
@@ -927,8 +942,7 @@ class RequestBudget:
         if not amount or not execution_id:
             raise RequestBudgetUnavailable("ewelink_active_duty_binding_invalid")
         with self._locked() as connection:
-            state = self._load(connection)
-            now = self._now(connection)
+            state, now, counts = self._admission_preimage(connection, scope=key, region=region)
             # Only a never-authorized sender can age out.  begin_on durably
             # changes phase before network I/O; active/ambiguous reserves never
             # expire and require exact fresh OFF proof.
@@ -940,7 +954,8 @@ class RequestBudget:
             existing = state["reserves"].get(execution_id)
             if existing:
                 raise RequestBudgetUnavailable("ewelink_active_duty_already_reserved")
-            count, recent = self._counts(connection, now, scope=key, region=region)
+            count, recent = (counts if self._utc_preimage_counts(now)
+                else self._counts(connection, now, scope=key, region=region))
             reserved = sum(row["remaining"] for row in state["reserves"].values())
             scoped_reserved = sum(row["remaining"] for row in state["reserves"].values()
                 if row["scope"] == key and row.get("region") == region)
@@ -960,7 +975,7 @@ class RequestBudget:
             return state["reserves"][execution_id]["permit"]
 
     def begin_on(self, *, execution_id, permit, device_id, channel,
-                 claimed_at=None, primary_stop_deadline=None):
+                 claimed_at=None, primary_stop_deadline=None, continuous=False):
         """No pacing/probe wait at the command edge; a refusal proves no send."""
         with self._locked() as connection:
             state = self._load(connection)
@@ -973,11 +988,18 @@ class RequestBudget:
                     or self._scope(state, reserve["scope"])["category"]):
                 raise RequestBudgetUnavailable("ewelink_final_on_capacity_unavailable")
             command_until = _time(reserve["admit_until"])
+            if continuous and (claimed_at is None or device_id != "1002851416" or channel != 1
+                    or reserve.get("device_type") != "borehole_pump_power"):
+                raise RequestBudgetUnavailable("ewelink_continuous_binding_invalid")
             if claimed_at is not None or primary_stop_deadline is not None:
                 claim, primary = _time(claimed_at), _time(primary_stop_deadline)
-                if claim is None or primary is None or now < claim:
+                if claim is None or now < claim or (primary is None and not continuous):
                     raise RequestBudgetUnavailable("ewelink_final_on_deadline_invalid")
-                command_until = min(command_until, claim+timedelta(seconds=30), primary)
+                if continuous and (device_id != "1002851416" or channel != 1 or primary is not None):
+                    raise RequestBudgetUnavailable("ewelink_continuous_binding_invalid")
+                command_until = min(command_until, claim+timedelta(seconds=30))
+                if primary is not None:
+                    command_until = min(command_until, primary)
             # Carry an independent monotonic bound over the accounting commit;
             # the returned deadline is checked immediately beside the HTTP call.
             edge_deadline = time.monotonic() + (command_until-now).total_seconds()

@@ -1,5 +1,45 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-approved continuous borehole policy — 16 November 2026
+
+This section supersedes contrary borehole duration and weather rules below.
+The owner explicitly approved the corrected policy in the current conversation.
+It is policy authority, not evidence that the replacement runtime or controller
+configuration has already been deployed and verified.
+
+- Reliable water supply is the primary goal. Prefer solar and appropriate battery
+  use, but use Eskom when needed rather than sacrifice water availability.
+- The hybrid borehole has its own solar supply, separate from the Sunsynk system.
+  Use Sunsynk solar production at or above 1.5 kW as the owner's agreed sunshine
+  proxy for borehole solar operation. It is not a direct pump energy meter.
+- Below that sunshine signal, assess battery SOC, charging/discharging and grid
+  support. Retain the existing 30% battery floor and Eskom support policy. Negative
+  battery power in the existing telemetry convention indicates charging; SOC is
+  the percentage remaining. Household AC load is supporting context and cannot
+  by itself establish pump-only battery or grid consumption.
+- Operate continuously while conditions support operation. Remove the four-hour
+  run cap and ten-hour automatic cutoff from the new operating mode. Do not
+  replace these with another arbitrary duration cap or artificial segmentation.
+  The existing scheduler must retain durable ownership and condition-based OFF
+  supervision across restart. Historical timed executions retain their original
+  evidence and are not silently rewritten as continuous executions.
+- Forecast heavy rain may postpone a new start once for one hour. Reassess local
+  observed rain at the end of that hour; if none is detected, resume eligibility
+  assessment. Forecast alone must not repeatedly defer the same opportunity.
+- Detected local rain stops a ROOTLINE-owned borehole run. Reassess hourly and
+  resume eligibility after one rain-free hour, subject to energy and safety.
+  Missing readings do not prove a rain-free hour and do not alone stop a running
+  pump. Preserve explicit OFF/isolation instructions and installed dry-run and
+  storage-full protections. A full tank remains handled by the installed cutoff.
+- Record decisions, switch outcomes, available energy context and forecast
+  performance for later improvement. Use approximately R9.20/kWh for estimated
+  grid costs. Label estimates and do not attribute all household grid import to
+  the borehole or infer measured water delivery from electrical ON.
+
+Implement and verify this through the existing ROOTLINE control path. Coordinate
+the controller change only when replacement continuous supervision is ready;
+do not claim timer removal or new weather behaviour from this policy update.
+
 ## Owner-directed simplified operation — 15 November 2026
 
 This latest owner instruction supersedes contrary requirements below for

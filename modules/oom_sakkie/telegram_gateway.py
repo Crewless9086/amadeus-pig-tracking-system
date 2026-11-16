@@ -13,7 +13,7 @@ from modules.oom_sakkie.herdmaster_farrowing_runtime import handle_farrowing_lit
 from modules.oom_sakkie.herdmaster_litter_first_treatment_runtime import handle_litter_first_treatment_message
 from modules.oom_sakkie.operational_specialist_intake import (
     handle_operational_specialist_message, is_exact_fertilizer_commissioning_request,
-    recover_contextual_specialist_replay)
+    recover_contextual_specialist_replay, is_exact_borehole_instruction)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result, mission_identity
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
@@ -396,7 +396,7 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
     # structurally owner-only so FARM_MANAGER can never dispatch CORE, CHARLIE
     # or development tasks through an allow-list identity check.
     owner_task, owner_task_status = ({"handled": False}, 200)
-    if family_principal.role is FamilyRole.OWNER:
+    if family_principal.role is FamilyRole.OWNER and not is_exact_borehole_instruction(parsed):
         owner_task, owner_task_status = handle_owner_task_input(
             payload,
             environ=source,
@@ -691,7 +691,7 @@ def _dispatch_authenticated_telegram_message(payload, *, environ, policy,
     # broad manager-question continuation while retaining every check inside
     # the operational specialist handler.
     operational_result, operational_status = ({"handled": False}, 200)
-    if is_exact_fertilizer_commissioning_request(parsed):
+    if is_exact_fertilizer_commissioning_request(parsed) or is_exact_borehole_instruction(parsed):
         operational_result, operational_status = handle_operational_specialist_message(
             parsed, gateway_authority,
         )
