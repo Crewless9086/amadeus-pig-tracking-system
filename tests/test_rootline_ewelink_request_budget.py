@@ -771,3 +771,47 @@ def test_preimage_and_optional_suppression_never_send_when_not_due(failure):
     assert not sent
     assert not any(event["units"] for event in client.backend.events)
     assert not client.backend.lock.locked()
+
+
+def test_proposed_50000_boundary_preserves_all_prior_charges_across_restart():
+    assert budget.LOCAL_ROLLING_LIMIT==50000 and budget.ROLLING_DAYS==31 and budget.FIVE_MINUTE_LIMIT==250
+    client=MemoryBudget();scope=budget.scope_digest(ENV,"eu")
+    prior=[{"at":NOW-timedelta(hours=1),"units":n,"detail":{"scope":scope,"region":"eu"}} for n in (41000,8999)]
+    client.backend.events.extend(deepcopy(prior));client.backend.state=client._load(client.backend)
+    client.backend.state["coverage_start"]=(NOW-timedelta(days=20)).isoformat()
+    coverage=client.backend.state["coverage_start"];sent=[]
+    client.dispatch(region="eu",endpoint="/v2/family",send=lambda _:sent.append(True) or {})
+    assert client._counts(client.backend,client.backend.now,scope=scope,region="eu")[0]==50000
+    restarted=MemoryBudget(client.backend)
+    with pytest.raises(budget.RequestBudgetUnavailable,match="rolling_capacity_exhausted"):
+        restarted.dispatch(region="eu",endpoint="/v2/family",send=lambda _:pytest.fail("over cap"))
+    assert sent==[True] and client.backend.events[:2]==prior
+    assert client.backend.state["coverage_start"]==coverage
+
+
+def test_proposed_50000_retains_strict_31day_expiry_without_ledger_reset():
+    client=MemoryBudget();scope=budget.scope_digest(ENV,"eu")
+    prior={"at":NOW-timedelta(days=31),"units":50000,"detail":{"scope":scope,"region":"eu"}}
+    client.backend.events.append(deepcopy(prior))
+    with pytest.raises(budget.RequestBudgetUnavailable,match="rolling_capacity_exhausted"):
+        client.dispatch(region="eu",endpoint="/v2/family",send=lambda _:pytest.fail("boundary still charged"))
+    client.backend.advance(.000001)
+    client.dispatch(region="eu",endpoint="/v2/family",send=lambda _: {})
+    assert client.backend.events[0]==prior
+    assert client._counts(client.backend,client.backend.now,scope=scope,region="eu")[0]==1
+
+
+def test_proposed_50000_keeps_existing_shutdown_reserve_inside_limit():
+    client=MemoryBudget();scope=budget.scope_digest(ENV,"eu")
+    permit=client.reserve_for_on(execution_id="OWNED",device_id="1002851416",channel=1,device_type="borehole_pump_power",region="eu")
+    client.begin_on(execution_id="OWNED",permit=permit,device_id="1002851416",channel=1)
+    remaining=client.backend.state["reserves"]["OWNED"]["remaining"]
+    client.backend.events.append({"at":NOW-timedelta(hours=1),"units":50000-remaining,"detail":{"scope":scope,"region":"eu"}})
+    with pytest.raises(budget.RequestBudgetUnavailable,match="rolling_capacity_exhausted"):
+        client.dispatch(region="eu",endpoint="/v2/family",send=lambda _:pytest.fail("reserve cannot be borrowed"))
+    assert client.backend.state["reserves"]["OWNED"]["remaining"]==remaining
+    with budget.execution_duty({"execution_id":"OWNED"}):
+        snapshot(client,device="1002851416")
+    assert client.backend.state["reserves"]["OWNED"]["remaining"]==remaining-3
+    count,_=client._counts(client.backend,client.backend.now,scope=scope,region="eu")
+    assert count+client.backend.state["reserves"]["OWNED"]["remaining"]==50000

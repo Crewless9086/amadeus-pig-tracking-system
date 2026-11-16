@@ -202,14 +202,15 @@ class MinuteJourney:
                     "optional":(budget._optional_observation.get() or {}).get("purpose")})
                 if self.delay_once and (budget._optional_observation.get() or {}).get("purpose")=="irrigation_routine":
                     self.client.backend.advance(self.delay_once);self.delay_once=0
+                if endpoint=="/v2/user/refresh":return {"at":"rotated-access","rt":"rotated-refresh"}
                 if endpoint=="/v2/family":
                     return {"currentFamilyId":"farm","familyList":[{"id":"farm","apikey":"account"}]}
                 if endpoint=="/v2/device/thing":
                     return {"thingList":[{"itemType":1,"itemData":{
                         "deviceid":device,"apikey":"account","online":True,
                         "productModel":"MINIR4" if device=="1002851416" else "4CHPROR3",
-                        "updatedAt":self.now().isoformat(),"extra":{"uiid":138 if device=="1002851416" else 4},
-                        "params":({"switch":states[0],"startup":"off","pulse":"off"}
+                        "updatedAt":self.now().isoformat(),"extra":{"uiid":138 if device=="1002851416" else 9},
+                        "params":({"switch":states[0],"configure":[{"outlet":0,"startup":"off"}],"pulses":[{"outlet":0,"pulse":"off","width":0}]}
                             if len(states)==1 else {"switches":[{"outlet":i,"switch":state} for i,state in enumerate(states)],
                                 "configure":[{"outlet":i,"startup":"off"} for i in range(4)],
                                 "pulses":[{"outlet":i,"pulse":"off","width":0} for i in range(4)]})}}
@@ -218,10 +219,10 @@ class MinuteJourney:
                 raise AssertionError(endpoint)
             return self.client.dispatch(region="eu",endpoint=endpoint,send=send)
         class Transport(transport_module.RootlineIFTTTTransport):
-            def _snapshot(self,device_id,channel):
+            def _snapshot(self,device_id,channel,*,routine_read=False):
                 return self._validated_snapshot(read_registered_device(device_id,
                     token_store=self.token_store,environ=self.environ,http_request=request,
-                    now=journey.now()),device_id,channel)
+                    now=journey.now(),routine_read=routine_read),device_id,channel)
         class Response:
             status=200
             def __enter__(self):return self
@@ -236,7 +237,7 @@ class MinuteJourney:
                 "channel":int(values["value3"]),"state":state,"execution_id":current_duty().get("execution_id")})
             return Response()
         self.transport=Transport(token_store=self.tokens,environ=self.source,http_open=command)
-        self.readback=lambda **_: self.transport._snapshot("100204e9bc",1)
+        self.readback=lambda **kwargs: self.transport._snapshot("100204e9bc",1, routine_read=kwargs.get("routine_read",False))
 
     def now(self):return self.client.backend.now
     def power(self):
@@ -251,13 +252,18 @@ class MinuteJourney:
             return {**payload["dispatch"](),"provider_command_attempted":True}
         if action in {"claim_auxiliary_before_on","mark_auxiliary_active"}:
             self.aux[payload["auxiliary_device_id"]]=deepcopy(payload)
-        if action in {"record_auxiliary_completed","record_auxiliary_control_pulse_stopped"}:
+        from modules.telemetry.rootline_irrigation_execution_store import _terminal_closes_active
+        if _terminal_closes_active({**payload,"action":action}, auxiliary=True) if isinstance(payload,dict) else False:
             self.aux.pop(payload["auxiliary_device_id"],None)
         if action in {"claim_borehole_before_on","mark_borehole_active"}:self.borehole=deepcopy(payload)
         if action=="record_borehole_completed":self.borehole=None
         if action=="record_completed":self.parent_finished=True
         if action in {"load_auxiliary_off_attempts","load_borehole_off_attempts"}:return []
-        if action in {"load_auxiliary_containment","load_auxiliary_physical_outcome"}:return None
+        if action=="load_auxiliary_containment":
+            held=next((row for row in reversed(self.rows) if row.get("action")=="contain_auxiliary_device"
+                and row.get("auxiliary_device_id")==payload),None)
+            return {"contained":True,"evidence":held} if held else None
+        if action=="load_auxiliary_physical_outcome":return None
         if action.startswith("load_"):return self.store(action,payload)
         self.rows.append({**deepcopy(payload),"action":action})
         return self.store(action,payload)
@@ -354,7 +360,7 @@ def test_actual_managed_borehole_minutes(monkeypatch,hours):
         "max_recent_plus_reserved",max(row["recent"]+row["remaining"] for row in journey.admissions))
 
 
-def test_actual_combined_reserves_and_preclaim_traffic(monkeypatch):
+def test_actual_combined_near_deadline_contains_without_completion_credit(monkeypatch):
     journey=MinuteJourney(monkeypatch)
     journey.tick(0,parent=False,allow_borehole=True)
     for minute in range(1,243):
@@ -363,10 +369,13 @@ def test_actual_combined_reserves_and_preclaim_traffic(monkeypatch):
     from collections import Counter
     counts=Counter((row["device"],row["channel"],row["state"]) for row in journey.commands)
     assert counts[("100204e9bc",1,"on")]==counts[("100204e9bc",1,"off")]==1
-    assert counts[("100204d497",1,"on")]==counts[("100204d497",1,"off")]==4
+    assert counts[("100204d497",1,"on")]==counts[("100204d497",1,"off")]==1
+    held=[row for row in journey.rows if row.get("action")=="contain_auxiliary_device"]
+    assert len(held)==1 and held[0]["shutdown_verified"] is True
+    assert not any(row.get("action")=="record_auxiliary_completed" and row.get("auxiliary_device_id")=="FERTILIZER-INJECTION-CH1" for row in journey.rows)
     assert counts[("100204d497",2,"on")]==counts[("100204d497",2,"off")]==3
     assert counts[("1002851416",1,"on")]==counts[("1002851416",1,"off")]==1
-    assert sum(row["optional"]=="borehole_routine" for row in journey.reads)==21
+    assert sum(row["optional"]=="borehole_routine" for row in journey.reads)==14
     assert max(row["recent"]+row["remaining"] for row in journey.admissions)<=250
     print("ACTUAL_COMBINED_TRACE",len(journey.reads),dict(counts),
         "charged_by_execution",dict(Counter(row.get("execution_id") or "preclaim"

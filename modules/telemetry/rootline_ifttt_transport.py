@@ -149,9 +149,9 @@ class RootlineIFTTTTransport:
         self.commissioning_connect_factory = commissioning_connect_factory
         self.auxiliary_active_reader = auxiliary_active_reader
 
-    def read_safety_configuration(self, *, device_id, channel):
+    def read_safety_configuration(self, *, device_id, channel, routine_read=False):
         contract = self._binding(device_id, channel)
-        snapshot = self._snapshot(device_id, channel)
+        snapshot = self._snapshot(device_id, channel, routine_read=routine_read)
         return self._safety_from_snapshot(contract, snapshot, device_id, channel)
 
     def final_bc_check(self, artifact, snapshot, *, device_id, channel):
@@ -357,8 +357,8 @@ class RootlineIFTTTTransport:
                 environ=self._request_environment()) as prepared:
             yield _PreparedNoSendOutput(self, prepared, binding)
 
-    def read_output_state(self, *, device_id, channel):
-        snapshot = self._snapshot(device_id, channel)
+    def read_output_state(self, *, device_id, channel, routine_read=False):
+        snapshot = self._snapshot(device_id, channel, routine_read=routine_read)
         output = output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
         from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
         duty = current_duty()
@@ -579,12 +579,12 @@ class RootlineIFTTTTransport:
                 raise ValueError("a_commissioning_reserve_release_unproven")
         return True
 
-    def _snapshot(self, device_id, channel):
+    def _snapshot(self, device_id, channel, *, routine_read=False):
         contract = self._binding(device_id, channel)
         if self.readback is None:
             from modules.telemetry.rootline_ewelink_readback import read_registered_device
             value = read_registered_device(device_id, token_store=self.token_store,
-                                           environ=self.environ)
+                                           environ=self.environ, routine_read=routine_read)
         else:
             value = self.readback(token_store=self.token_store, environ=self.environ)
         return self._validated_snapshot(value, device_id, channel)

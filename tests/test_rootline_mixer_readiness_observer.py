@@ -11,87 +11,6 @@ from modules.oom_sakkie.general_manager_worker import (
 NOW = datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc)
 
 
-def provider(*args, **kwargs):
-    assert args == ("100204d497",)
-    observed = kwargs.get("now") or NOW
-    return {"authoritative": True, "observation_fresh": True,
-        "provider_timestamp_fresh": True, "device_id": "100204d497",
-        "retrieved_at": observed.isoformat(),
-        "response_digest": ("a" if observed == NOW else "c") * 64,
-        "provider_control_calls": 0, "channels": [
-            {"channel": 1, "output_state": "OFF", "native_auto_off_enabled": True,
-             "native_auto_off_seconds": 120},
-            {"channel": 2, "output_state": "OFF", "native_auto_off_enabled": True,
-             "native_auto_off_seconds": 1800}]}
-
-
-def test_ready_readback_is_bounded_stable_and_replay_silent():
-    first = collect_mixer_readiness(now=NOW, token_store=object(), readback=provider,
-        execution_store=lambda action, payload: None)[0]
-    later = collect_mixer_readiness(now=NOW.replace(minute=4), token_store=object(),
-        readback=provider, execution_store=lambda action, payload: None)[0]
-    assert first["urgency"] == "watch"
-    assert first["unknowns"] == []
-    assert first["attention_visibility"] == "equipment_health_only"
-    assert first["presentation_identity"]["human_name"] == "Fertilizer mixer"
-    assert first["equipment_identity"] == "FERTILIZER-MIXER-CH2"
-    assert first["equipment_lifecycle"] == "ready_for_commissioning"
-    assert first["equipment_evidence"]["provider_readiness_proven"] is True
-    assert "physical_commissioning_proven" not in first["equipment_evidence"]
-    assert "Automatic mixing is not proven enabled" in first["summary"]
-    assert first["evidence_refs"][:-1] == later["evidence_refs"][:-1]
-    assert "100204d497" not in first["summary"]
-    assert "token" not in repr(first).lower()
-
-
-def test_active_execution_or_unsafe_channel_fails_closed():
-    def unsafe(*args, **kwargs):
-        value = provider(*args, **kwargs)
-        value["channels"][1] = {"channel": 2, "output_state": "ON",
-            "native_auto_off_enabled": False, "native_auto_off_seconds": 1}
-        return value
-    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=unsafe,
-        execution_store=lambda action, payload: {"execution_id": "EXEC-1"})[0]
-    assert row["urgency"] == "urgent"
-    assert set(row["unknowns"]) == {"current_off", "native_fail_stop_enabled",
-        "native_fail_stop_seconds", "no_conflicting_active_execution"}
-    assert row["attention_visibility"] == "owner_attention_exception"
-    assert row["equipment_lifecycle"] == "held"
-    assert "EXEC-1" not in repr(row)
-
-
-def test_control_call_claim_never_projects_ready():
-    def invalid(*args, **kwargs):
-        value = provider(*args, **kwargs)
-        value["provider_control_calls"] = 1
-        return value
-    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=invalid,
-        execution_store=lambda action, payload: None)[0]
-    assert row["unknowns"] == ["zero_control_calls"]
-
-
-def test_stale_provider_timestamp_fails_closed():
-    def stale(*args, **kwargs):
-        value = provider(*args, **kwargs)
-        value["observation_fresh"] = False
-        value["provider_timestamp_fresh"] = False
-        return value
-    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=stale,
-        execution_store=lambda action, payload: None)[0]
-    assert set(row["unknowns"]) == {
-        "provider_observation_fresh", "provider_timestamp_not_stale"}
-
-
-def test_authenticated_current_receipt_allows_omitted_provider_timestamp():
-    def no_timestamp(*args, **kwargs):
-        value = provider(*args, **kwargs)
-        value["provider_timestamp_fresh"] = None
-        return value
-    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=no_timestamp,
-        execution_store=lambda action, payload: None)[0]
-    assert row["unknowns"] == []
-
-
 def test_existing_manager_cycle_collects_readiness_without_a_second_scheduler(monkeypatch):
     import modules.oom_sakkie.manager_case_sources as sources
     import modules.telemetry.rootline_mixer_readiness_observer as observer
@@ -126,19 +45,6 @@ def test_readiness_attention_never_uses_telegram_delivery():
     assert result["provider_actions"] == 0
 
 
-@pytest.mark.parametrize("seconds", [None, 300, 1799, 1801, 3600])
-def test_uncommissioned_native_duration_keeps_readiness_held(seconds):
-    def mismatched(*args, **kwargs):
-        value = provider(*args, **kwargs)
-        value["channels"][1]["native_auto_off_seconds"] = seconds
-        return value
-    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=mismatched,
-        execution_store=lambda action, payload: None)[0]
-    assert row["unknowns"] == ["native_fail_stop_seconds"]
-    assert row["equipment_lifecycle"] == "held"
-    assert row["equipment_evidence"]["provider_readiness_proven"] is False
-
-
 def test_registry_binding_drift_fails_before_provider_or_ledger_calls(monkeypatch):
     import modules.telemetry.rootline_mixer_readiness_observer as observer
     from modules.telemetry.rootline_device_registry import get_device_contract
@@ -152,31 +58,42 @@ def test_registry_binding_drift_fails_before_provider_or_ledger_calls(monkeypatc
             execution_store=unexpected)
 
 
-@pytest.mark.parametrize("mixer_active", [False, True])
-def test_readiness_selects_mixer_under_independent_injector_operation(mixer_active):
-    from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
-    calls = []
-    def ledger(action, selector):
-        calls.append((action, selector))
-        if selector is None:
-            raise RootlineExecutionStoreUnavailable("auxiliary_device_selector_required")
-        assert action == "load_active_auxiliary" and selector == "FERTILIZER-MIXER-CH2"
-        return {"execution_id":"MIXER-OWNED"} if mixer_active else None
-    def overlapping_provider(*args, **kwargs):
-        snapshot = provider(*args, **kwargs)
-        snapshot["channels"][0]["output_state"] = "ON"
-        return snapshot
-    row = collect_mixer_readiness(now=NOW, token_store=object(), readback=overlapping_provider,
-        execution_store=ledger)[0]
-    assert calls == [("load_active_auxiliary", "FERTILIZER-MIXER-CH2")]
-    assert row["unknowns"] == (["no_conflicting_active_execution"] if mixer_active else [])
-    assert row["equipment_evidence"]["provider_readiness_proven"] is (not mixer_active)
+@pytest.mark.parametrize("age,state", [(0,"ON"),(0,"OFF"),(121,"OFF")])
+def test_projection_is_timestamped_informational_and_never_command_ready(age,state):
+    from datetime import timedelta
+    stamp=NOW-timedelta(seconds=age)
+    proof={"authoritative":True,"device_id":"100204d497","channel":2,"state":state,
+        "retrieved_at":stamp.isoformat(),"evidence_id":"proof"}
+    execution={"auxiliary_device_id":"FERTILIZER-MIXER-CH2","device_id":"100204d497",
+        "channel":2,"start_evidence":proof}
+    calls=[]
+    def ledger(action,selector):
+        calls.append((action,selector))
+        return [execution] if action=="load_auxiliary_history" else None
+    row=collect_mixer_readiness(now=NOW,readback=lambda *_a,**_k:pytest.fail("provider poll"),execution_store=ledger)[0]
+    assert all(selector=="FERTILIZER-MIXER-CH2" for _,selector in calls)
+    assert row["canonical_observation"]["observed_at"]==stamp.isoformat()
+    assert row["canonical_observation"]["current_state"]==(state if age<=120 else "Unknown")
+    assert not row["equipment_evidence"]["provider_readiness_proven"]
+    assert row["attention_visibility"]=="equipment_health_only"
 
 
-def test_shared_optional_suppression_creates_no_equipment_or_owner_exception():
-    from modules.telemetry.rootline_ewelink_request_budget import OptionalObservationDeferred
-    from modules.telemetry.rootline_mixer_readiness_observer import collect_mixer_readiness
-    def suppressed(*a, **kw):
-        raise OptionalObservationDeferred("2026-10-31T18:15:00Z")
-    assert collect_mixer_readiness(now=datetime(2026,10,31,18,tzinfo=timezone.utc),
-        token_store=object(), readback=suppressed, execution_store=lambda *a: None) == []
+def test_missing_canonical_observation_never_invents_current_timestamp():
+    row=collect_mixer_readiness(now=NOW,execution_store=lambda *_:None)[0]
+    assert row["canonical_observation"]["current_state"]=="Unknown"
+    assert row["canonical_observation"]["observed_at"] is None
+    assert not any(ref.startswith("observed:") for ref in row["evidence_refs"])
+
+
+def test_actual_projection_retires_old_readiness_exception_without_claiming_ready():
+    from modules.oom_sakkie.owner_attention_projection import build_owner_attention_projection
+    candidate=collect_mixer_readiness(now=NOW,execution_store=lambda *_:None)[0]
+    prior={"dedupe_key":candidate["dedupe_key"],"specialist":"ROOTLINE","urgency":"urgent",
+        "lifecycle":"open","operational_status":"exception","evidence_refs":["readiness:old"],
+        "unknowns":["current_provider_mixer_readiness"],"summary":"Old readiness unavailable",
+        "next_action":"Check readiness"}
+    result=build_owner_attention_projection([candidate],generated_at=NOW,prior_cases=[prior])
+    assert result["items"]==[]
+    assert not candidate["equipment_evidence"]["provider_readiness_proven"]
+    faulty={**candidate,"unknowns":["shutdown_unverified"]}
+    assert build_owner_attention_projection([faulty],generated_at=NOW)["items"]

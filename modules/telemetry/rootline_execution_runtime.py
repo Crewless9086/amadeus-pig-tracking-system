@@ -179,7 +179,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                     if identity == "FERTILIZER-INJECTION-CH1" else nullcontext())
                 with gate:
                     packet["auxiliary_safety"][identity] = transport.read_safety_configuration(
-                        device_id=contract["device_id"], channel=contract["channel"])
+                        device_id=contract["device_id"], channel=contract["channel"], routine_read=True)
             except Exception:
                 continue
         borehole_task = next((row for row in plan.get("candidate_tasks") or []
@@ -211,7 +211,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                     if any(not passed for gate, passed in preflight["gates"].items() if gate != "provider_off"):
                         packet["borehole_readiness"] = "borehole_prerequisites_unproven"
                         return packet
-                    provider = transport.read_output_state(device_id="1002851416", channel=1)
+                    provider = transport.read_output_state(device_id="1002851416", channel=1, routine_read=True)
                     decision_at = current_decision_time(selected)
                     # Ten hours is the independent fallback. Keep the existing
                     # planned supply window for a new start; an owner's already
@@ -1033,7 +1033,8 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         now=now, _provider_preflight=True)
     controller = {}
     if artifact.get("provider_read_required") is True:
-        controller = readback(token_store=token_store, environ=source, now=now)
+        controller = readback(token_store=token_store, environ=source, now=now,
+            **({"routine_read": True} if persist_resolutions else {}))
         # Evaluate original evidence at the independent post-I/O clock. Never
         # refresh a weather/history timestamp merely because a request finished.
         checked_at = _aware((clock or (lambda: datetime.now(timezone.utc)))())

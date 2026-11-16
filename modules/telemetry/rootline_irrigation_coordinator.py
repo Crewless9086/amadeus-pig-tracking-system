@@ -50,10 +50,12 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     clock = clock or (lambda: datetime.now(timezone.utc))
     try:
         active = store("load_active", None)
-    except RootlineExecutionStoreUnavailable:
+    except RootlineExecutionStoreUnavailable as exc:
+        from modules.telemetry.rootline_failure_diagnostics import exception_failure
         return _result("execution_store_degraded_hold", commands=0, messages=0,
             autonomous_on_enabled=False, durable_execution_truth_loaded=False,
-            current_segment_consumed=False, degraded=True)
+            current_segment_consumed=False, degraded=True,
+            irrigation_failure=exception_failure(exc))
     if active:
         result = _recover_or_observe(active, store, bind_execution_transport(transport, active),
             notify, outcome_reader, now, clock=clock,
@@ -415,7 +417,7 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
         return _aux_result("auxiliary_restart_contained",commands=recovery["commands"],
             state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
     if active.get("device_type") == "fertilizer_injection_valve" and now < deadline:
-        parent_on = _injection_parent_still_on(active, store, transport, now, clock=clock)
+        parent_on = _injection_parent_still_on(active, store, transport, now, clock=clock, routine_read=True)
         now = _aware((clock or (lambda: datetime.now(timezone.utc)))())
     else:
         parent_on = True
@@ -509,7 +511,7 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
 
 
 
-def _injection_parent_still_on(active, store, transport, now, *, clock=None):
+def _injection_parent_still_on(active, store, transport, now, *, clock=None, routine_read=False):
     try:
         parent = store("load_active", None)
         if (not isinstance(parent, dict) or parent.get("state") != "Active"
@@ -532,7 +534,7 @@ def _injection_parent_still_on(active, store, transport, now, *, clock=None):
             read_deadline = min(read_deadline, claimed+timedelta(seconds=30))
         bounded_transport = bind_execution_transport(transport, active, read_deadline=read_deadline)
         output = bounded_transport.read_output_state(device_id=binding["device_id"],
-            channel=binding["channel"])
+            channel=binding["channel"], **({"routine_read": True} if routine_read else {}))
         observed = _timestamp(output.get("retrieved_at"))
         checked_at = _aware(clock()) if clock else now
         from modules.telemetry.rootline_ifttt_transport import irrigation_dependency_verified

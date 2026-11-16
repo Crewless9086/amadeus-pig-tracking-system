@@ -20,7 +20,7 @@ from modules.telemetry.rootline_ewelink_commissioned_baseline import (
 from modules.telemetry.rootline_device_registry import rootline_device_registry
 
 
-def read_current_device(*, token_store, environ=None, http_request=None, now=None):
+def read_current_device(*, token_store, environ=None, http_request=None, now=None, routine_read=False):
     source = environ if environ is not None else os.environ
     return _read_bound_device(
         expected=str(source.get("EWELINK_EXPECTED_DEVICE_ID") or ""),
@@ -29,12 +29,12 @@ def read_current_device(*, token_store, environ=None, http_request=None, now=Non
         http_request=http_request,
         now=now,
         commissioned_baseline=commissioned_controller_baseline(),
-        registered_discovery_only=False,
+        registered_discovery_only=False, routine_read=routine_read,
     )
 
 
 def read_registered_device(device_id, *, token_store, environ=None,
-                           http_request=None, now=None, commissioning_connect_factory=None):
+                           http_request=None, now=None, commissioning_connect_factory=None, routine_read=False):
     """Read an exact registry-bound device without expanding command authority."""
     source = environ if environ is not None else os.environ
     requested = str(device_id or "").strip()
@@ -51,7 +51,7 @@ def read_registered_device(device_id, *, token_store, environ=None,
         http_request=http_request,
         now=now,
         commissioned_baseline=commissioned_registered_device_baseline(requested),
-        registered_discovery_only=False,
+        registered_discovery_only=False, routine_read=routine_read,
     )
     if requested == "1002851416":
         connect = commissioning_connect_factory
@@ -75,7 +75,7 @@ def read_registered_device(device_id, *, token_store, environ=None,
 
 
 def _read_bound_device(*, expected, token_store, source, http_request, now,
-                       commissioned_baseline, registered_discovery_only):
+                       commissioned_baseline, registered_discovery_only, routine_read=False):
     if str(source.get("EWELINK_READBACK_ENABLED") or "").lower() != "true":
         raise OAuthFailure("ewelink_readback_disabled")
     now = now or datetime.now(timezone.utc)
@@ -89,17 +89,25 @@ def _read_bound_device(*, expected, token_store, source, http_request, now,
     request_source = dict(source)
     if not request_source.get("DATABASE_URL"):
         request_source["DATABASE_URL"] = getattr(token_store, "database_url", "")
+    from modules.telemetry.rootline_ewelink_request_budget import _optional_observation
+    optional = _optional_observation.get() or {}
+    routine_read = routine_read or optional.get("purpose") in {"irrigation_routine", "borehole_routine"}
+    if routine_read:
+        contracts = [row for row in rootline_device_registry().values() if row.get("device_id") == expected]
+        if not contracts or any(row.get("provider_account_binding") != "ewelink_owner_account" for row in contracts):
+            raise OAuthFailure("ewelink_registered_device_rejected")
     with snapshot_group(expected_device=expected, environ=request_source, region=record["region"]) as group:
+        group["routine_read"] = bool(routine_read)
         result = _read_snapshot(expected=expected, token_store=token_store,
             source=request_source, http_request=http_request, now=now, record=record,
             commissioned_baseline=commissioned_baseline,
-            registered_discovery_only=registered_discovery_only)
+            registered_discovery_only=registered_discovery_only, routine_read=routine_read)
         group["normalized_complete"] = True
         return result
 
 
 def _read_snapshot(*, expected, token_store, source, http_request, now, record,
-                   commissioned_baseline, registered_discovery_only):
+                   commissioned_baseline, registered_discovery_only, routine_read=False):
     request = http_request or _provider_request
     token_refreshed = False
     if record.get("access_expires_at") <= now:
@@ -108,7 +116,24 @@ def _read_snapshot(*, expected, token_store, source, http_request, now, record,
         token_refreshed = True
     access = decrypt_access_token(record, source)
     host = REGION_HOSTS[record["region"]]
-    family = request("GET", host + "/v2/family", mode="bearer", token=access, environ=source)
+    from modules.telemetry.rootline_ewelink_request_budget import FullSnapshotRequired, _group
+    family = None
+    if not routine_read:
+        family = request("GET", host + "/v2/family", mode="bearer", token=access, environ=source)
+    try:
+        return _read_device_status(expected=expected, source=source, request=request,
+            now=now, record=record, access=access, family=family,
+            commissioned_baseline=commissioned_baseline,
+            registered_discovery_only=registered_discovery_only,
+            token_refreshed=token_refreshed, fresh_receipt=http_request is None)
+    except FullSnapshotRequired:
+        # A due provider recovery requires family discovery in this same group.
+        # The signal is raised before admission, charging or provider I/O.
+        group = _group.get()
+        if not routine_read or group is None:
+            raise
+        group["routine_read"] = False
+        family = request("GET", host + "/v2/family", mode="bearer", token=access, environ=source)
     return _read_device_status(expected=expected, source=source, request=request,
         now=now, record=record, access=access, family=family,
         commissioned_baseline=commissioned_baseline,
@@ -122,7 +147,25 @@ def _read_device_status(*, expected, source, request, now, record, access, famil
     """Both output-bearing requests stay together in the caller's read phase."""
     host = REGION_HOSTS[record["region"]]
     things = request("GET", host + "/v2/device/thing?num=0", mode="bearer", token=access, environ=source)
-    account, device = _bind_account_device(family, things, expected, source)
+    if family is None:
+        rows = things.get("thingList") if isinstance(things.get("thingList"), list) else []
+        matches = [row.get("itemData") for row in rows if isinstance(row, dict) and row.get("itemType") == 1
+            and isinstance(row.get("itemData"), dict)
+            and str(row["itemData"].get("deviceid")) == expected]
+        if len(matches) != 1:
+            raise OAuthFailure("ewelink_expected_owned_device_not_found")
+        device = matches[0]
+        expected_uiid = 138 if expected == "1002851416" else 9
+        extra = device.get("extra")
+        uiid = extra.get("uiid") if isinstance(extra, dict) else None
+        if type(uiid) is not int or uiid != expected_uiid:
+            raise OAuthFailure("ewelink_readback_device_class_mismatch")
+        account = str(device.get("apikey") or "")
+        expected_account = str(source.get("EWELINK_EXPECTED_ACCOUNT_ID") or "").strip()
+        if not account or (expected_account and not __import__("hmac").compare_digest(account, expected_account)):
+            raise OAuthFailure("ewelink_account_identity_mismatch")
+    else:
+        account, device = _bind_account_device(family, things, expected, source)
     if not __import__("hmac").compare_digest(_digest(account), record["provider_account_digest"]):
         raise OAuthFailure("ewelink_account_binding_changed")
     request_source = dict(source)
@@ -140,7 +183,7 @@ def _read_device_status(*, expected, source, request, now, record, access, famil
     safe_material = {key: value for key, value in result.items() if key != "response_digest"}
     result["response_digest"] = sha256(json.dumps(safe_material, sort_keys=True,
         separators=(",", ":"), default=str).encode()).hexdigest()
-    result["provider_calls"] = 4 if token_refreshed else 3
+    result["provider_calls"] = (2 if family is None else 3) + int(token_refreshed)
     result["provider_control_calls"] = 0
     result["token_refreshed"] = token_refreshed
     result["autonomous_control_enabled"] = False

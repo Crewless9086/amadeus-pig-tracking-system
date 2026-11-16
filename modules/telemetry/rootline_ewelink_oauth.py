@@ -528,7 +528,7 @@ def _provider_request(method, url, *, body=None, mode, token=None, environ):
     else:
         raise OAuthFailure("ewelink_provider_auth_mode_rejected")
     from modules.telemetry.rootline_ewelink_request_budget import (
-        RequestBudget, RequestBudgetUnavailable, OptionalObservationDeferred, classify_failure,
+        RequestBudget, RequestBudgetUnavailable, OptionalObservationDeferred, FullSnapshotRequired, classify_failure,
     )
     def send(timeout):
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -559,6 +559,8 @@ def _provider_request(method, url, *, body=None, mode, token=None, environ):
         if urllib.parse.urlparse(host).netloc == parsed.netloc)
     try:
         return RequestBudget(environ).dispatch(region=region, endpoint=parsed.path, send=send)
+    except FullSnapshotRequired:
+        raise
     except OptionalObservationDeferred:
         raise
     except RequestBudgetUnavailable as exc:

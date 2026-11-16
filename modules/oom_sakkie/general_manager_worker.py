@@ -1351,10 +1351,10 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
                     "dedupe_key": "rootline-readiness:fertilizer-mixer-ch2",
                     "specialist": "ROOTLINE", "urgency": "urgent",
                     "evidence_refs": [f"collector:mixer_readiness:{mixer_failure_kind}"],
-                    "unknowns": ["current_provider_mixer_readiness"],
-                    "summary": "ROOTLINE fertilizer mixer readiness could not be observed.",
-                    "next_action": ("Keep mixer execution fail-closed and retry the existing "
-                                    "zero-control-call readback on the next manager cycle."),
+                    "unknowns": ["canonical_mixer_observation"],
+                    "summary": "ROOTLINE fertilizer mixer canonical observation is unavailable.",
+                    "next_action": ("ROOTLINE retains its runtime safety checks; retry the canonical "
+                                    "observation projection on the next manager cycle."),
                     "next_reassessment_at": (now + CADENCE).isoformat(),
                 })
             else:
