@@ -12,6 +12,7 @@ import sys
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 DATABASE_NAME = 'herd_first_treatment_test_weaning_test'
 MODULES = [
     # Projection scenarios assume only their explicitly supplied work items.
@@ -112,6 +113,8 @@ def isolate():
 def bootstrap(dsn):
     """Apply existing SQL only to a fresh isolated test database."""
     import psycopg
+    from scripts.rootline_accounting_index import prepare_index
+
     with psycopg.connect(dsn) as db:
         assert not db.execute("select 1 from pg_tables where schemaname not in ('pg_catalog','information_schema') limit 1").fetchone(), 'Fresh empty fixture database required'
         db.execute('''
@@ -148,8 +151,10 @@ def bootstrap(dsn):
         *audit, *(f'supabase/migrations/{name}' for name in extra)]))
     for relative in sequence:
         source = ROOT / relative
-        with psycopg.connect(dsn) as db:
-            db.execute(source.read_text(encoding='utf-8'))
+        with psycopg.connect(dsn, autocommit=True) as db:
+            prepare_index(db, source.stem)
+            with db.transaction():
+                db.execute(source.read_text(encoding='utf-8'))
         print(json.dumps({'classification': 'synthetic_disposable_schema_only',
             'source': relative, 'sha256': hashlib.sha256(source.read_bytes()).hexdigest()}), flush=True)
     print(f'Disposable herd schema ready: {len(sequence)} existing SQL files', flush=True)
