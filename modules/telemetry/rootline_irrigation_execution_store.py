@@ -33,9 +33,12 @@ def rootline_irrigation_execution_store(action, payload):
                   "load_active_auxiliary", "load_active_auxiliaries", "load_auxiliary_off_attempts",
                   "load_auxiliary_containment", "load_auxiliary_history",
                   "load_auxiliary_physical_outcome", "load_job_events",
-                  "load_active_borehole", "load_borehole_off_attempts", "load_eskom_events"}:
+                  "load_active_borehole", "load_borehole_off_attempts", "load_eskom_events",
+                  "load_notification_transitions"}:
         return _load(action, payload)
     body = dict(payload or {})
+    if action == "claim_notification_recovery_epoch":
+        return _claim_notification_recovery_epoch()
     if action == "assess_borehole_conditions":
         return _assess_borehole_conditions(body)
     if action == "dispatch_borehole_off_edge":
@@ -434,6 +437,8 @@ def _event_id(action, body):
         material = f"{execution}:CLAIM"
     elif action == "record_completed" and body.get("state") == "Stopped":
         material = f"{execution}:WEATHER-STOPPED"
+    elif action == "claim_notification_recovery_epoch":
+        material = f"{execution}:NOTIFICATION-RECOVERY-EPOCH"
     elif action == "claim_notification":
         material = f"{execution}:NOTIFY:{body.get('notification_state')}"
     elif action == "record_fertilizer_sequence_completed":
@@ -591,6 +596,32 @@ def _bounded_eligibility_reads(capability, guarded_store):
             _eligibility_read_scope.reset(scope.context_token)
 
 
+_NOTIFICATION_EPOCH_ID = "ROOTLINE-OWNER-NOTIFICATION-RECOVERY-V1"
+
+
+def _claim_notification_recovery_epoch():
+    """One server-timed boundary on the existing event rail; never reset on deploy."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with connect_bounded_rootline_postgres(
+            database_url=os.environ.get("DATABASE_URL"), read_only=False) as connection:
+        connection.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+            ("rootline-owner-notification-recovery-v1",))
+        event_id = _event_id("claim_notification_recovery_epoch", {"execution_id": _NOTIFICATION_EPOCH_ID})
+        prior = connection.execute("""select review_json->'rootline_execution'
+            from public.sam_live_stock_conversation_review_events
+            where event_source=%s and review_event_id=%s""", (EVENT_SOURCE, event_id)).fetchone()
+        if prior:
+            return {"success": True, "created": False, "epoch": prior[0]}
+        since, at = connection.execute("""select
+            date_trunc('day',clock_timestamp() at time zone 'Africa/Johannesburg')
+                at time zone 'Africa/Johannesburg', clock_timestamp()""").fetchone()
+        body = {"execution_id": _NOTIFICATION_EPOCH_ID, "since": since.isoformat(),
+            "initialized_at": at.isoformat(), "recovery_contract": "rootline_owner_notifications.v1",
+            "historical_before_cutoff": "preserved_not_claimed_delivered"}
+        written = _write_terminal_review(connection, "claim_notification_recovery_epoch", body)
+        return {**written, "epoch": written.get("resolution")}
+
+
 def _load_connection(action):
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     scope = _eligibility_read_scope.get()
@@ -607,6 +638,39 @@ def _load(action, payload):
     try:
       with _load_connection(action) as connection:
         with connection.cursor() as cursor:
+            if action == "load_notification_transitions":
+                # The initial server-day boundary persists across midnight/redeploy.
+                epoch_id = _event_id("claim_notification_recovery_epoch", {"execution_id": _NOTIFICATION_EPOCH_ID})
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s and review_event_id=%s""", (EVENT_SOURCE, epoch_id))
+                found = cursor.fetchone()
+                if not found:
+                    return {"epoch": None, "transitions": []}
+                epoch = found[0]
+                cursor.execute("""select e.review_json->'rootline_execution',
+                        n.review_json->'rootline_execution', e.review_event_id
+                    from public.sam_live_stock_conversation_review_events e
+                    left join lateral (
+                        select r.review_json from public.sam_live_stock_conversation_review_events r
+                        where r.event_source=%s
+                          and r.review_json->'rootline_execution'->>'action'='record_notification_delivery'
+                          and r.review_json->'rootline_execution'->>'transition_event_id'=e.review_event_id
+                        order by (coalesce(r.review_json->'rootline_execution'->>'delivery_confirmed','false')='true') desc,
+                            r.created_at desc,r.review_event_id desc limit 1
+                    ) n on true
+                    where e.event_source=%s and e.created_at >= %s and e.created_at <= clock_timestamp()
+                      and e.review_json->'rootline_execution'->>'action' in
+                        ('mark_active','record_completed','mark_auxiliary_active',
+                         'record_auxiliary_completed','record_auxiliary_control_pulse_stopped',
+                         'mark_borehole_active','record_borehole_completed','record_eskom_completed')
+                      and coalesce(n.review_json->'rootline_execution'->>'delivery_confirmed','false') != 'true'
+                      and coalesce(n.review_json->'rootline_execution'->>'delivery_ambiguous','false') != 'true'
+                      and coalesce(n.review_json->'rootline_execution'->>'notification_projection_rejected','false') != 'true'
+                    order by e.created_at,e.review_event_id limit 8""",
+                    (EVENT_SOURCE, EVENT_SOURCE, epoch['since']))
+                return {"epoch": epoch, "transitions": [
+                    {"transition": row[0], "notification": row[1] or {}, "review_event_id": row[2]} for row in cursor.fetchall()]}
             if action == "load_eskom_events":
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events

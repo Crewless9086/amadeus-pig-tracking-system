@@ -91,9 +91,6 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
         if not _fresh_result(result, now):
             return {**_safe("rootline_daily_waiting_for_fresh_evidence"),
                     "daily_identity": identity, "retry_on_next_scheduler_tick": True}
-        if not owner_notification_required(result):
-            return {**_safe("rootline_daily_observed_silently"),
-                    "daily_identity": identity, "notify_owner": False}
         material = rootline_material_digest(result)
         packet = {"contract_version": CONTRACT_VERSION, "identity": identity,
             "owner_user_id": owner_user_id, "chat_id": chat_id,
@@ -156,6 +153,16 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
                        if isinstance(row, Mapping)}
     lines = ["<b>ROOTLINE — VANDAG SE WATERPLAN</b>" if af else
              "<b>ROOTLINE — TODAY’S WATER PLAN</b>", ""]
+    if result.get("control_observation") == "deadline_deferred":
+        lines.extend([("Die jongste outomatiese toerustingkontrole het sy tydsperk bereik. "
+            "Die plan hieronder is nog voorneme; ROOTLINE probeer weer op die volgende minuut."
+            if af else "The latest automatic equipment check reached its time limit. "
+            "The plan below remains intended work; ROOTLINE will check again next minute."), ""])
+    elif result.get("control_observation") == "unverified":
+        lines.extend([("Die jongste outomatiese toerustingkontrole kon nie bevestig word nie. "
+            "Die plan hieronder is nog voorneme; ROOTLINE kontroleer weer op die volgende minuut."
+            if af else "The latest automatic equipment check could not be verified. "
+            "The plan below remains intended work; ROOTLINE will check again next minute."), ""])
     reasons = []
     for zone in IRRIGATION_ZONE_IDS:
         label = zone[0] + (" Kamp" if af else " Camp")

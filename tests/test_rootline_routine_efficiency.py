@@ -16,7 +16,7 @@ def fixture(changes=None):
             calls.append((method,'/v2/user/refresh')); return {'at':'new-access','rt':'new-refresh'}
         value=deepcopy(raw(method,url,**kwargs))
         if 'thingList' in value:
-            value['thingList'][0]['itemData']['extra']={'uiid':9}
+            value['thingList'][0]['itemData']['extra']={'uiid':4}
             if changes: changes(value)
         return value
     return source,tokens,request,calls

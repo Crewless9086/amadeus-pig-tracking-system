@@ -37,6 +37,8 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
     selected = {"recommendations": recommendations,
         "next_reassessment": stable_reassessment(result.get("next_reassessment")),
         "owner_question": _owner_question((result.get("owner_brief") or {}).get("family_fact_needed"))}
+    if result.get("control_observation") in {"unverified", "deadline_deferred"}:
+        selected["control_observation"] = result["control_observation"]
     exceptions = rootline_exception_material(result)
     if exceptions:
         selected["execution_exceptions"] = exceptions

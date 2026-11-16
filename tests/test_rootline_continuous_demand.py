@@ -209,7 +209,7 @@ class MinuteJourney:
                     return {"thingList":[{"itemType":1,"itemData":{
                         "deviceid":device,"apikey":"account","online":True,
                         "productModel":"MINIR4" if device=="1002851416" else "4CHPROR3",
-                        "updatedAt":self.now().isoformat(),"extra":{"uiid":138 if device=="1002851416" else 9},
+                        "updatedAt":self.now().isoformat(),"extra":{"uiid":138 if device=="1002851416" else 4},
                         "params":({"switch":states[0],"configure":[{"outlet":0,"startup":"off"}],"pulses":[{"outlet":0,"pulse":"off","width":0}]}
                             if len(states)==1 else {"switches":[{"outlet":i,"switch":state} for i,state in enumerate(states)],
                                 "configure":[{"outlet":i,"startup":"off"} for i in range(4)],

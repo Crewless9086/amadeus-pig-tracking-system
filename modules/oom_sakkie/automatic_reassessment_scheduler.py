@@ -107,6 +107,7 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                "provider_effects_unknown": result.get("provider_effects_unknown") is True,
                "report_effects_unknown": result.get("report_effects_unknown") is True,
                "plan_delivery_status": str(result.get("plan_delivery_status") or ""),
+               "equipment_notification_status": str(result.get("equipment_notification_status") or ""),
                "fertilizer_commissioning_status": str(
                    result.get("fertilizer_commissioning_status") or ""),
                "next_due_at": next_due.isoformat(), "telegram_sends": int(result.get("telegram_sends") or 0),

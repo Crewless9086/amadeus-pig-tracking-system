@@ -99,6 +99,7 @@ _REASONS = frozenset({
     'ewelink_provider_transport_or_response_error_hold',
     'ewelink_read_deadline_reached',
     'ewelink_readback_device_mismatch',
+    'ewelink_readback_device_class_mismatch',
     'ewelink_readback_disabled',
     'ewelink_readback_token_unavailable',
     'ewelink_refresh_recovery_required',
