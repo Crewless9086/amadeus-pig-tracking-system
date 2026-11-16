@@ -321,6 +321,16 @@ def _attention_visibility(raw: Mapping[str, Any]) -> str:
     readiness_key = str(raw.get("dedupe_key") or "") == "rootline-readiness:fertilizer-mixer-ch2"
     if readiness_key:
         lifecycle, evidence = _equipment_state(raw)
+        informational_projection = (
+            lifecycle == "registered" and evidence.get("canonical_observation_only") is True
+            and evidence.get("provider_readiness_proven") is False
+            and "projection:rootline_canonical_output.v1" in (raw.get("evidence_refs") or ())
+            and set(raw.get("unknowns") or ()).issubset({"current_command_readiness", "current_output_state"})
+        )
+        if informational_projection:
+            # Timestamped canonical status grants no command authority;
+            # absence of a recent poll is not itself an owner task.
+            return "equipment_health_only"
         healthy = (
             not tuple(raw.get("unknowns") or ())
             and lifecycle == "ready_for_commissioning"

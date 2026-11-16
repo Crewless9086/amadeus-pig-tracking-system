@@ -98,3 +98,34 @@ def test_normal_cycle_has_no_failure_metadata_and_unchanged_effects(reports, rep
     assert "irrigation_failure" not in result and "irrigation_failure" not in outcome
     assert outcome["hardware_commands"] == 0 and outcome["provider_effects_unknown"] is False
     assert len(starts) == 1 and outcome["report_work_due"] is report_due
+
+
+@pytest.mark.parametrize("report_due", [True, False])
+def test_load_active_hold_carries_sanitized_diagnostic_through_actual_scheduler(reports, report_due):
+    from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
+    store=ExecutionStore()
+    calls=[]
+    def failing_store(action,payload):
+        calls.append(action)
+        if action=="load_active":
+            exc=RootlineExecutionStoreUnavailable("load_active")
+            exc.failure_diagnostics={"cause_type":"QueryCanceled","sqlstate":"57014",
+                "provider_payload":SECRET,"reason":SECRET}
+            raise exc
+        return store(action,payload)
+    schedules=ScheduleStore()
+    if not report_due:
+        schedules.rows["prior:outcome"]={"specialist":"ROOTLINE","status":"completed",
+            "next_due_at":(NOW+timedelta(minutes=30)).isoformat()}
+    result,status,starts,messages=gateway(failing_store,Transport(),schedules=schedules)
+    outcome=schedules.rows[result["schedule_identity"]+":outcome"]
+    expected={"error_type":"RootlineExecutionStoreUnavailable","store_action":"load_active",
+        "cause_type":"QueryCanceled","sqlstate":"57014"}
+    assert outcome["irrigation_failure"]==result["irrigation_failure"]==expected
+    assert outcome["active_supervision_status"]=="execution_store_degraded_hold"
+    assert outcome["status"]=="contained" and outcome["report_work_due"] is report_due
+    assert outcome["hardware_commands"]==0 and outcome["provider_effects_unknown"] is False
+    assert outcome["active_supervision_write_attempted"] is False
+    assert status==202 and starts==messages==[]
+    assert all(action.startswith("load_") for action in calls)
+    assert "secret" not in json.dumps(outcome).lower()

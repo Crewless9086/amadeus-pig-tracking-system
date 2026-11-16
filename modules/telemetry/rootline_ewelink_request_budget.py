@@ -24,7 +24,7 @@ import uuid
 EVENT_SOURCE = "rootline_provider_availability"
 LEDGER_ID = "ROOTLINE-EWELINK-REQUEST-BUDGET-V1"
 GLOBAL_SEND_LOCK = 1874320915
-LOCAL_ROLLING_LIMIT = 41000
+LOCAL_ROLLING_LIMIT = 50000
 ROLLING_DAYS = 31
 FIVE_MINUTE_LIMIT = 250
 MIN_DISPATCH_INTERVAL = 1.0
@@ -73,6 +73,10 @@ class RequestBudgetUnavailable(RuntimeError):
         super().__init__(message)
         from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
         self.failure_diagnostics = sanitize_failure(failure_diagnostics)
+
+
+class FullSnapshotRequired(RequestBudgetUnavailable):
+    """Pre-send signal: the same snapshot must perform full recovery discovery."""
 
 
 class OptionalObservationDeferred(RequestBudgetUnavailable):
@@ -665,7 +669,7 @@ class RequestBudget:
             raise RequestBudgetUnavailable("ewelink_read_deadline_reached") from None
         if success:
             return value
-        if group is not None:
+        if group is not None and not isinstance(value, FullSnapshotRequired):
             group["failed"] = True
         raise value
 
@@ -715,6 +719,16 @@ class RequestBudget:
         state, now, counts = self._admission_preimage(connection, scope=key, region=region)
         if pair is None and not self._utc_preimage_counts(now):
             counts = None
+        scope = state.get("scopes", {}).get(key)
+        if group and group.get("routine_read") and scope and scope["category"]:
+            own_probe = (scope.get("probe_group") == group["id"]
+                and (_time(scope.get("probe_until")) or now) > now)
+            due = _time(scope.get("next_probe_at"))
+            if own_probe or (due is not None and now >= due):
+                # Refresh can already own this probe. It remains charged once;
+                # only the next GET changes to full family/thing/status.
+                if endpoint != "/v2/user/refresh":
+                    raise FullSnapshotRequired("ewelink_full_recovery_snapshot_required")
         self._reconcile_reserves(connection, state, now)
         scope = self._scope(state, key)
         optional = group.get("optional_purpose") if group else None
