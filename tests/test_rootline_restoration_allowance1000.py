@@ -1,4 +1,4 @@
-"""Bounded proposed local cap amendment; production admission, offline boundaries."""
+"""Historical restoration fixtures against the current cap; offline admission boundaries."""
 from datetime import timedelta
 import pytest
 from modules.telemetry import rootline_ewelink_request_budget as budget
@@ -22,33 +22,33 @@ def reserve(value,identity="BH"):
 
 
 def test_exact_cap_and_original_limits_reserves_unchanged():
-    assert budget.LOCAL_ROLLING_LIMIT==41000
+    assert budget.LOCAL_ROLLING_LIMIT==50000
     assert budget.FIVE_MINUTE_LIMIT==250 and budget.ROLLING_DAYS==31
     assert budget.DUTY_CAPACITY=={"irrigation_zone_valve":87,"borehole_pump_power":45,
         "fertilizer_mixer":24,"fertilizer_injection_valve":79}
 
 
-@pytest.mark.parametrize("used",[40999,41000])
+@pytest.mark.parametrize("used",[49999,50000])
 def test_each_attempt_obeys_new_exact_monthly_boundary_without_reset(used):
     value=seeded(used)
-    if used==40999:
+    if used==49999:
         value.dispatch(region="eu",endpoint="/v2/family",send=lambda _: {})
-        assert charged(value)==41000
+        assert charged(value)==50000
     with pytest.raises(budget.RequestBudgetUnavailable,match="rolling_capacity"):
         value.dispatch(region="eu",endpoint="/v2/family",send=lambda _: pytest.fail("past cap"))
-    assert charged(value)==41000
+    assert charged(value)==50000
 
 
 def test_reserve_preserves_exact_capacity_and_final_proof_at_cap():
-    value=seeded(40955);permit=reserve(value)
+    value=seeded(49955);permit=reserve(value)
     assert value.backend.state["reserves"]["BH"]["remaining"]==45
     value.begin_on(execution_id="BH",permit=permit,device_id="1002851416",channel=1)
     with pytest.raises(budget.RequestBudgetUnavailable,match="rolling_capacity"):snapshot(value)
     with budget.execution_duty({"execution_id":"BH","device_id":"1002851416","channel":1}):
         assert len(snapshot(value,device="1002851416"))==3
-    assert charged(value)==40958 and value.backend.state["reserves"]["BH"]["remaining"]==42
+    assert charged(value)==49958 and value.backend.state["reserves"]["BH"]["remaining"]==42
     with pytest.raises(budget.RequestBudgetUnavailable,match="capacity_unavailable"):reserve(value,"SECOND")
-    assert charged(value)==40958
+    assert charged(value)==49958
 
 
 @pytest.mark.parametrize("recent",[249,250])
@@ -88,7 +88,9 @@ def test_actual_two_independent_four_hour_borehole_windows_after_changeover_read
     for minute in range(243,485):journey.tick(minute,parent=False)
     assert journey.borehole is None and journey.client.backend.state["reserves"]=={}
     assert [row["state"] for row in journey.commands]==["on","off","on","off"]
-    assert len(journey.reads)==72 and charged(journey.client)==40072
+    # Six changeover reads plus two windows: five preclaim, six start/stop,
+    # and seven two-request routine observations per window. Keep all charges.
+    assert len(journey.reads)==56 and charged(journey.client)==40056
     assert max(row["recent"]+row["remaining"] for row in journey.admissions)<=250
-    print("TWO_BOREHOLE_WINDOWS",{"requests":72,"rolling_after":40072,"distinct_executions":2,
+    print("TWO_BOREHOLE_WINDOWS",{"requests":56,"rolling_after":40056,"distinct_executions":2,
         "commands":journey.commands,"remaining_reserves":journey.client.backend.state["reserves"]})

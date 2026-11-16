@@ -151,7 +151,7 @@ class RootlineIFTTTTransport:
 
     def read_safety_configuration(self, *, device_id, channel, routine_read=False):
         contract = self._binding(device_id, channel)
-        snapshot = self._snapshot(device_id, channel, routine_read=routine_read)
+        snapshot = self._snapshot(device_id, channel, **({"routine_read": True} if routine_read else {}))
         return self._safety_from_snapshot(contract, snapshot, device_id, channel)
 
     def final_bc_check(self, artifact, snapshot, *, device_id, channel):
@@ -358,7 +358,7 @@ class RootlineIFTTTTransport:
             yield _PreparedNoSendOutput(self, prepared, binding)
 
     def read_output_state(self, *, device_id, channel, routine_read=False):
-        snapshot = self._snapshot(device_id, channel, routine_read=routine_read)
+        snapshot = self._snapshot(device_id, channel, **({"routine_read": True} if routine_read else {}))
         output = output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
         from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
         duty = current_duty()
@@ -584,7 +584,7 @@ class RootlineIFTTTTransport:
         if self.readback is None:
             from modules.telemetry.rootline_ewelink_readback import read_registered_device
             value = read_registered_device(device_id, token_store=self.token_store,
-                                           environ=self.environ, routine_read=routine_read)
+                                           environ=self.environ, **({"routine_read": True} if routine_read else {}))
         else:
             value = self.readback(token_store=self.token_store, environ=self.environ)
         return self._validated_snapshot(value, device_id, channel)

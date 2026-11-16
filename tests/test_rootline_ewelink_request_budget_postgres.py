@@ -376,7 +376,7 @@ def test_terminated_send_transaction_cannot_use_its_committed_intent():
     assert counts == (1,1) and state["pending_attempt"] is not None
 
 
-def test_real_manager_initial_claim_and_fresh_readiness_refresh_are_not_starved(monkeypatch):
+def test_real_manager_canonical_projection_preserves_timestamp_and_lease_without_provider_polls(monkeypatch):
     import psycopg
     import uuid
     from types import SimpleNamespace
@@ -384,7 +384,6 @@ def test_real_manager_initial_claim_and_fresh_readiness_refresh_are_not_starved(
     from modules.oom_sakkie import manager_case_sources
     from modules.telemetry import rootline_mixer_readiness_observer as observer
     from tests.test_oom_sakkie_general_manager_postgres import _IsolatedConnection
-    from tests.test_rootline_mixer_readiness_observer import provider
     owner = SimpleNamespace(schema="budget_manager_"+uuid.uuid4().hex, statements=0)
     def connect():
         return _IsolatedConnection(psycopg.connect(DATABASE_URL), owner)
@@ -408,42 +407,52 @@ def test_real_manager_initial_claim_and_fresh_readiness_refresh_are_not_starved(
         monkeypatch.setattr(manager, "datetime", Clock)
         monkeypatch.setattr(manager_case_sources, "collect_manager_candidates", lambda **_: [])
         monkeypatch.setattr(manager, "build_scheduled_brain_guard_audit", lambda **_: {"passed":True})
-        reads = []
-        def read(device, **kwargs):
-            with budget.snapshot_group(expected_device=device, environ=environment(), region="eu") as group:
-                for endpoint in ("/v2/family", "/v2/device/thing", "/v2/device/thing/status"):
-                    client.dispatch(region="eu", endpoint=endpoint, send=lambda _: {})
-                group["normalized_complete"] = True
-            reads.append(group["optional_purpose"]["purpose"])
-            result = provider(device, now=kwargs["now"])
-            result["channels"][1]["native_auto_off_enabled"] = False
-            return result
+        observed_at = current[0]
+        proof = {"authoritative": True, "state": "OFF", "device_id": "100204d497",
+            "channel": 2, "retrieved_at": observed_at.isoformat(), "evidence_id": "a"*64}
+        _insert_canonical("record_auxiliary_completed", {
+            "execution_id": "MIXER-CANONICAL-PROJECTION", "auxiliary_device_id": "FERTILIZER-MIXER-CH2",
+            "device_id": "100204d497", "channel": 2, "state": "Completed",
+            "shutdown_verified": True, "shutdown_evidence": proof})
+        projected = []
         original = observer.collect_mixer_readiness
+        def no_provider(*args, **kwargs):
+            pytest.fail("manager canonical projection must not poll provider")
+        monkeypatch.setattr(budget.RequestBudget, "dispatch", no_provider)
         def collect(**kwargs):
-            return original(**kwargs, token_store=object(), readback=read, execution_store=lambda *a: None)
+            rows = original(**kwargs, token_store=object(), readback=no_provider,
+                execution_store=store.rootline_irrigation_execution_store)
+            projected.extend(deepcopy(rows))
+            return rows
         monkeypatch.setattr(observer, "collect_mixer_readiness", collect)
         manager_store = manager.PostgresManagerCaseStore(connect_factory=connect)
-        # First natural collection creates a case; its normal five-minute due
-        # time follows. The next cycle's initial collector is suppressed, while
-        # its independent fresh refresh admits a complete new snapshot.
+        # Three actual manager cycles retain their ordinary claim/lease flow.
+        # Later projections become Unknown without refreshing the observation.
         first = manager.run_general_manager_cycle(now=current[0], source_revision="synthetic-local",
             store=manager_store, deliver=lambda case, **_: manager.deliver_farm_manager_case(case))
         assert first["success"] is True
+        assert first["candidates_created"] == 1 and first["cases_claimed"] == 0
         current[0] += timedelta(minutes=5)
         second = manager.run_general_manager_cycle(now=current[0], source_revision="synthetic-local",
             store=manager_store, deliver=lambda case, **_: manager.deliver_farm_manager_case(case))
         assert second["success"] is True, second
-        assert reads == ["mixer_readiness", "mixer_readiness_delivery"]
-        assert any(row["outcome_status"] == "readiness_attention_only" for row in second["case_results"]), second
+        assert second["candidates_changed"] == 1 and second["cases_claimed"] == 0
+        assert second["case_results"] == []
         current[0] += timedelta(minutes=5)
         third = manager.run_general_manager_cycle(now=current[0], source_revision="synthetic-local",
             store=manager_store, deliver=lambda case, **_: manager.deliver_farm_manager_case(case))
         assert third["success"] is True, third
-        assert any(row["outcome_status"] == "manager_optional_observation_deferred" for row in third["case_results"])
+        assert third["candidate_replays"] == 1 and third["cases_claimed"] == 1
+        assert any(row["outcome_status"] == "readiness_attention_only" for row in third["case_results"])
+        assert projected[0]["canonical_observation"]["current_state"] == "OFF"
+        assert projected[-1]["canonical_observation"]["current_state"] == "Unknown"
+        assert all(row["canonical_observation"]["observed_at"] == observed_at.isoformat() for row in projected)
+        assert all(row["equipment_evidence"]["provider_readiness_proven"] is False for row in projected)
+        assert projected[-1]["evidence_refs"] == projected[-2]["evidence_refs"]
         with connect() as connection:
             row = connection.execute("select status,assigned_worker_id,lease_until from app_private.oom_manager_cases").fetchone()
             assert row == ("waiting_reassessment", None, None)
-        assert ledger(client)[1][0] == 6
+        assert ledger(client)[1] == (0, 0)
     finally:
         assert owner.schema.startswith("budget_manager_") and len(owner.schema) == 47
         with psycopg.connect(DATABASE_URL) as connection:
