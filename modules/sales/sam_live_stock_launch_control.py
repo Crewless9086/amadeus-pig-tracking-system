@@ -428,10 +428,12 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
         import psycopg
     except ImportError:
         return {"success": False, "status": "psycopg_dependency_missing", "event": params, **AUTHORITY_FLAGS}, 500
+    accounting_operation = "review_event_transaction"
     try:
         with (connect_factory() if connect_factory else
               psycopg.connect(database_url, connect_timeout=10)) as connection:
             with connection.cursor() as cursor:
+                accounting_operation = "review_event_insert"
                 cursor.execute(
                     """
                     insert into public.sam_live_stock_conversation_review_events (
@@ -511,6 +513,7 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
                 if durable_receipt:
                     actual = cursor.fetchone() if created else None
                     if actual is None:
+                        accounting_operation = "review_event_receipt_read"
                         cursor.execute("select review_event_id,review_json,created_at from "
                             "public.sam_live_stock_conversation_review_events where review_event_id=%s",
                             (params["review_event_id"],))
@@ -521,6 +524,7 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
                         raise ValueError("review_event_receipt_mismatch")
                     receipt = {"review_event_id": actual[0], "review_json": actual[1], "created_at": actual[2]}
                 else:
+                    accounting_operation = "review_event_count"
                     cursor.execute(
                         """
                         select count(*) from public.sam_live_stock_conversation_review_events
@@ -529,6 +533,7 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
                         params,
                     )
                     conversation_event_count = int((cursor.fetchone() or [0])[0] or 0)
+                accounting_operation = "review_event_transaction"
         return {
             "success": True,
             "status": "sam_live_stock_review_event_recorded" if created else "sam_live_stock_review_event_already_recorded",
@@ -544,6 +549,9 @@ def record_sam_live_stock_review_event(event, database_url=None, *, connect_fact
             "success": False,
             "status": "sam_live_stock_review_event_write_failed",
             "error_type": exc.__class__.__name__,
+            "accounting_operation": accounting_operation,
+            **({"sqlstate": exc.sqlstate} if isinstance(getattr(exc, "sqlstate", None), str)
+                and len(exc.sqlstate) == 5 and all(ch in '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ' for ch in exc.sqlstate) else {}),
             "error": _clean(str(exc), 240),
             "review_event_id": params["review_event_id"],
             **AUTHORITY_FLAGS,

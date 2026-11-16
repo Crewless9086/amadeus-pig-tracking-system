@@ -300,6 +300,9 @@ def test_historical_off_timestamp_changes_do_not_reemit_resolved_warning(change)
     item=second["irrigation_lifecycle"]["B12345"]["execution_exceptions"][0]
     item[change]=(datetime.fromisoformat(item[change])+timedelta(seconds=1)).isoformat()
     assert compose_daily_rootline_plan(first)==compose_daily_rootline_plan(second)
+    initial=reassess(first,store)
+    assert initial["notify_owner"] is True
+    deliver(initial,store)
     assert reassess(first,store)["notify_owner"] is False
     assert reassess(second,store)["notify_owner"] is False
 

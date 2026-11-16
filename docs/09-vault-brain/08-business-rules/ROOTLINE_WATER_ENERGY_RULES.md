@@ -1,5 +1,34 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed plan and equipment visibility — 16 November 2026
+
+This instruction supersedes routine-plan silence below. Through the existing
+Oom Sakkie Telegram delivery path, show the first fresh current daily irrigation
+plan even when no owner decision is needed. Retain confirmed same-day unchanged
+plan suppression and report material changes. A plan describes intended work;
+it never establishes that equipment ran or that water was delivered.
+
+After mandatory equipment supervision, bounded current-plan and verified
+transition reporting must remain independent of unrelated manager reports and
+control success. Report unavailable or failed checks honestly. Reporting never
+extends the control-cycle deadline, delays owned shutdown or grants actuation.
+
+Each verified valve, injector, mixer, borehole and Eskom ON/OFF transition gets
+one concise visible notice with the observed time. Use canonical execution and
+provider evidence, stable transition identities and existing durable delivery
+claims. Accepted commands alone do not establish a transition. Preserve exact
+provider ambiguity without resend; only a proven unsent attempt permits the
+existing bounded retry. Do not invent continuous-borehole stop times or measured
+water, nutrient or whole-job completion from switch state.
+
+The deployed worker establishes one immutable, server-dated notification
+recovery boundary at the start of its first operating day. It recovers bounded
+batches of subsequent canonical transitions across midnight and restart using
+the existing execution and family delivery records. Older events remain
+historical evidence and are not relabelled delivered. Invalid transition
+projections retain an explicit verification-required reason and ROOTLINE owner;
+they cannot block later valid notices or masquerade as provider success.
+
 ## Owner-approved continuous borehole policy — 16 November 2026
 
 This section supersedes contrary borehole duration and weather rules below.

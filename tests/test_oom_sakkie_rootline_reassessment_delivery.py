@@ -53,17 +53,17 @@ def test_changed_reassessment_uses_family_rail_then_replay_is_zero_send():
     assert len(calls)==1 and first["hardware_commands"]==0 and first["writes_farm_data"] is False
 
 
-def test_no_action_reassessment_records_observation_without_telegram_delivery():
+def test_first_no_action_reassessment_delivers_current_plan():
     rows, store = memory_store(); calls = []
     quiet = {**current(), "irrigation_lifecycle": {
         "B12345": {"state": "Eligible"}, "C12345": {"state": "Held"}}}
     outcome, status = handle_rootline_reassessment_trigger(payload(), HEADERS, ENV,
         specialist_loader=lambda: quiet, state_store=store,
-        family_delivery=lambda *_args, **_kwargs: calls.append(1))
+        family_delivery=lambda *_args, **_kwargs: calls.append(1) or {"success": True, "telegram_message_id": "9000", "telegram_sends": 1})
     assert status == 200
-    assert outcome["status"] == "rootline_reassessment_observed_silently"
-    assert outcome["notify_owner"] is False and outcome["telegram_sends"] == 0
-    assert calls == []
+    assert outcome["status"] == "rootline_reassessment_changed"
+    assert outcome["notify_owner"] is True and outcome["telegram_sends"] == 1
+    assert calls == [1]
     assert any(row.get("delivery_state") == "observation_only" for row in rows.values())
 
 def test_ambiguous_delivery_is_contained_and_never_blind_retried():

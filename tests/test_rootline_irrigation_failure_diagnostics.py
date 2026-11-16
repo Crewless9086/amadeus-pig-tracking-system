@@ -54,12 +54,14 @@ def test_actual_accounting_failure_survives_oauth_gateway_and_durable_outcome(
     outcome = schedules.rows[result["schedule_identity"] + ":outcome"]
     expected = {"error_type": "OAuthFailure", "reason": "ewelink_request_accounting_unavailable",
         "accounting_stage": failure_stage, "cause_type": "QueryCanceled"}
-    expected.update({"sqlstate": "57014"} if failure_stage == "locked" else {
-        "recorder_status": "sam_live_stock_review_event_write_failed", "recorder_http_status": 500})
+    expected.update({"sqlstate": "57014", "accounting_operation":
+        "fence_acquire" if failure_stage == "locked" else "review_event_insert"})
+    if failure_stage == "append":
+        expected.update({"recorder_status": "sam_live_stock_review_event_write_failed", "recorder_http_status": 500})
     assert outcome["irrigation_failure"] == result["irrigation_failure"] == expected
     assert outcome["execution_status"] == "irrigation_control_unproven"
     assert outcome["status"] == "contained" and outcome["report_work_due"] is report_due
-    assert status == 202 and starts == messages == []
+    assert status == 202 and starts == [] and len(messages) == int(report_due)
     assert outcome["hardware_commands"] == 0 and outcome["provider_effects_unknown"] is True
     assert "secret" not in json.dumps(outcome).lower()
     assert "private-host" not in json.dumps(result)
@@ -126,6 +128,6 @@ def test_load_active_hold_carries_sanitized_diagnostic_through_actual_scheduler(
     assert outcome["status"]=="contained" and outcome["report_work_due"] is report_due
     assert outcome["hardware_commands"]==0 and outcome["provider_effects_unknown"] is False
     assert outcome["active_supervision_write_attempted"] is False
-    assert status==202 and starts==messages==[]
+    assert status==202 and starts==[] and len(messages)==int(report_due)
     assert all(action.startswith("load_") for action in calls)
     assert "secret" not in json.dumps(outcome).lower()

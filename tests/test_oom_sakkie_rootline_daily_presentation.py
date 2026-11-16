@@ -54,7 +54,7 @@ def test_first_fresh_tick_after_0700_sends_one_daily_plan_and_replay_is_silent()
     assert len(calls) == 1 and len(rows) == 1
 
 
-def test_no_action_daily_plan_is_observed_silently_and_internal_tokens_never_render():
+def test_first_no_action_daily_plan_is_visible_and_internal_tokens_never_render():
     rows, state = store(); calls = []; now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
     quiet = result(b="Recommend", c="Hold", reason="durable parent objective")
     quiet["irrigation_lifecycle"] = {
@@ -62,9 +62,9 @@ def test_no_action_daily_plan_is_observed_silently_and_internal_tokens_never_ren
     quiet["recommendations"][0]["preferred_window"] = "now_after_fresh_execution_revalidation"
     outcome = present_daily_rootline_plan(owner_user_id="42", chat_id="42",
         specialist_loader=lambda: quiet, state_store=state, deliver=delivery(calls), now=now)
-    assert outcome["status"] == "rootline_daily_observed_silently"
-    assert outcome["notify_owner"] is False and outcome["telegram_sends"] == 0
-    assert calls == [] and rows == {}
+    assert outcome["status"] == "rootline_daily_delivered"
+    assert outcome["telegram_sends"] == 1
+    assert len(calls) == len(rows) == 1
     rendered = compose_daily_rootline_plan(quiet)
     assert "now_after_fresh_execution_revalidation" not in rendered
     assert "durable parent objective" not in rendered

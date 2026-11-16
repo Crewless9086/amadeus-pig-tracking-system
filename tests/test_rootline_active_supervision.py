@@ -181,9 +181,10 @@ def test_overdue_active_stops_before_actual_daily_report_timeout(reports, monkey
     value, status, starts, messages = gateway(store, transport, schedules=schedules)
     assert status == 202 and value["status"] == "scheduled_reassessment_evidence_deadline_exceeded"
     assert value["execution_status"] == "segment_completed"
-    assert value["hardware_commands"] == 1 and value["telegram_sends"] == 1
+    assert value["hardware_commands"] == 1 and value["telegram_sends"] == 2
     assert value["writes_farm_data"] is True and len(starts) == 1
-    assert store.active is None and len(messages) == 1
+    assert store.active is None and len(messages) == 2
+    assert value["plan_delivery_status"] == "delivered_current_irrigation_plan"
     assert "controller OFF" in messages[0][0][1]["answer"]
     outcome = next(row for key, row in schedules.rows.items() if key.endswith(":outcome"))
     assert outcome["status"] == "contained" and outcome["hardware_commands"] == 1
@@ -244,11 +245,12 @@ def test_unauthenticated_and_wrong_private_chat_never_reach_supervision():
     assert calls == []
 
 
-def test_store_failure_blocks_all_reporting_and_new_starts(reports):
+def test_store_failure_preserves_new_start_hold_but_reports_current_plan(reports):
     value, status, starts, messages = gateway(ExecutionStore(fail="load_active"), Transport(),
-        specialist_loader=lambda: pytest.fail("reports must not run after unknown active state"))
+        specialist_loader=current)
     assert status == 202 and value["execution_status"] == "execution_store_degraded_hold"
-    assert starts == messages == [] and value["hardware_commands"] == 0
+    assert starts == [] and len(messages) == 1 and value["hardware_commands"] == 0
+    assert "could not be verified" in messages[0][0][1]["answer"]
 
 
 def test_unknown_irrigation_state_does_not_block_independent_borehole_or_hide_its_outcome(reports):
@@ -260,8 +262,9 @@ def test_unknown_irrigation_state_does_not_block_independent_borehole_or_hide_it
     value, status, starts, messages = gateway(ExecutionStore(fail="load_active"), Transport(),
         schedules=schedules, source_env={**ENV, "ROOTLINE_BOREHOLE_ENABLED": "true"},
         managed_device_cycle=managed,
-        specialist_loader=lambda: pytest.fail("unknown irrigation state still holds its reports"))
-    assert status == 202 and starts == messages == []
+        specialist_loader=current)
+    assert status == 202 and starts == [] and len(messages) == 1
+    assert "could not be verified" in messages[0][0][1]["answer"]
     assert len(calls) == 1 and calls[0]["allow_borehole_starts"] is True
     assert calls[0]["allow_new_starts"] is False
     assert value["managed_device_status"] == "borehole_started" and value["hardware_commands"] == 1
@@ -720,16 +723,16 @@ def test_actual_managed_provider_failure_preserves_uncertainty_in_durable_schedu
     transport = FailedProvider()
     managed = partial(run_rootline_managed_device_cycle, evidence={}, store=store,
         transport=transport, clock=lambda: NOW)
-    forbidden = lambda *a, **k: pytest.fail("uncertain device effects cannot enter reporting")
     value, status, starts, messages = gateway(store, transport, schedules=schedules,
         source_env={**ENV, "ROOTLINE_AUTONOMOUS_BC_ENABLED": "false"},
-        managed_device_cycle=managed, specialist_loader=forbidden, daily_plan_generator=forbidden)
+        managed_device_cycle=managed, specialist_loader=current)
     assert status == 202 and value["success"] is False
     assert value["effects_unknown"] is value["provider_effects_unknown"] is True
     assert value["managed_device_status"] == "auxiliary_supervision_unproven"
     assert value["execution_status"] == "auxiliary_supervision_unproven"
     assert value["hardware_commands"] == len(transport.calls) == 1
-    assert store.auxiliary is not None and starts == messages == []
+    assert store.auxiliary is not None and starts == []
+    assert len(messages) == int(report_due)
     outcome = schedules.rows[value["schedule_identity"] + ":outcome"]
     assert outcome["status"] == "contained" and outcome["report_work_due"] is report_due
     assert outcome["provider_effects_unknown"] is True and outcome["report_effects_unknown"] is False
@@ -737,7 +740,7 @@ def test_actual_managed_provider_failure_preserves_uncertainty_in_durable_schedu
     assert outcome["execution_status"] == "auxiliary_supervision_unproven"
     replay = gateway(store, transport, schedules=schedules, source_env={**ENV,
         "ROOTLINE_AUTONOMOUS_BC_ENABLED": "false"}, managed_device_cycle=managed,
-        specialist_loader=forbidden)[0]
+        specialist_loader=current)[0]
     assert replay["status"] == "scheduled_reassessment_replayed_noop"
     assert len(transport.calls) == 1
 
@@ -755,12 +758,12 @@ def test_unknown_control_result_contains_before_report_or_delivery(report_due, f
         if failure == "exception":
             raise RuntimeError("synthetic control result unavailable")
         return object() if failure == "malformed" else None
-    forbidden = lambda *a, **k: pytest.fail("reporting cannot run after unknown control")
+    # Unknown control remains contained, but a current plan can report that fact.
     cycle = {"execution_cycle" if stream == "irrigation" else "managed_device_cycle": control}
     value, status, starts, messages = gateway(ExecutionStore(), Transport(), schedules=schedules,
-        specialist_loader=forbidden, daily_plan_generator=forbidden, **cycle)
+        specialist_loader=current, **cycle)
     assert status == 202 and value["success"] is False and value["terminal_outcome"] == "contained"
-    assert calls == ["control"] and messages == []
+    assert calls == ["control"] and len(messages) == int(report_due)
     expected = "irrigation_control_unproven" if stream == "irrigation" else "managed_supervision_unproven"
     assert value["irrigation_admission_status" if stream == "irrigation" else "managed_device_status"] == expected
     assert starts == []

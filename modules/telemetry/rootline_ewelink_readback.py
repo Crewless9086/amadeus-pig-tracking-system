@@ -155,7 +155,11 @@ def _read_device_status(*, expected, source, request, now, record, access, famil
         if len(matches) != 1:
             raise OAuthFailure("ewelink_expected_owned_device_not_found")
         device = matches[0]
-        expected_uiid = 138 if expected == "1002851416" else 9
+        # Exact commissioned controller identities: both 4CH Pro R3 devices
+        # report UIID4; the registered MINI R4 reports UIID138. The protocol
+        # profile name UIID9 is not the provider's observed device class.
+        expected_uiid = {"100204e9bc": 4, "100204d497": 4,
+                         "1002851416": 138}.get(expected)
         extra = device.get("extra")
         uiid = extra.get("uiid") if isinstance(extra, dict) else None
         if type(uiid) is not int or uiid != expected_uiid:
