@@ -37,15 +37,14 @@ RESULT_AUTHORITY = {
     "telegram_send": False,
 }
 
-RECOMMENDATION_IDS = (
-    "borehole",
-    "A12345",
-    "B12345",
-    "C12345",
-    "fertilizer_injection",
-    "fertilizer_mixing",
-    "solar_transfer_dependency",
+_RECOMMENDATION_TASKS = (
+    ("borehole", "borehole"),
+    *((zone, f"irrigation_{zone}") for zone in sorted(IRRIGATION_ZONE_IDS)),
+    ("fertilizer_injection", "fertilizer_injection_ch1"),
+    ("fertilizer_mixing", "fertilizer_mixing_ch2"),
+    ("solar_transfer_dependency", "solar_transfer_pump"),
 )
+RECOMMENDATION_IDS = tuple(identity for identity, _ in _RECOMMENDATION_TASKS)
 
 
 def build_rootline_specialist_result(
@@ -419,15 +418,7 @@ def _recommendations(
         and now < delay_deadline
     )
     result = []
-    for identity, task_id in (
-        ("borehole", "borehole"),
-        ("A12345", "irrigation_A12345"),
-        ("B12345", "irrigation_B12345"),
-        ("C12345", "irrigation_C12345"),
-        ("fertilizer_injection", "fertilizer_injection_ch1"),
-        ("fertilizer_mixing", "fertilizer_mixing_ch2"),
-        ("solar_transfer_dependency", "solar_transfer_pump"),
-    ):
+    for identity, task_id in _RECOMMENDATION_TASKS:
         task = deepcopy(tasks.get(task_id) or {})
         status = _public_status(task.get("recommendation"))
         reason = task.get("reason") or "Canonical task evidence is unavailable."
@@ -697,6 +688,7 @@ def _support_for(identity, plan):
     mapping = {
         "borehole": ["current_power", "current_local_weather", "forecast", "water_observations", "water_policy"],
         "A12345": ["rootline_daily_advisor", "current_local_weather", "zone_operating_policy"],
+        "E12345": ["rootline_daily_advisor", "current_local_weather", "zone_operating_policy"],
         "B12345": ["rootline_daily_advisor", "current_local_weather", "battery_policy"],
         "C12345": ["rootline_daily_advisor", "current_local_weather", "battery_policy"],
         "fertilizer_injection": ["irrigation_interlocks", "fertilizer_policy"],
@@ -759,15 +751,7 @@ def _recommendations_from_tasks(tasks):
         item.get("task_id"): item for item in tasks if isinstance(item, dict)
     }
     result = []
-    for identity, task_id in (
-        ("borehole", "borehole"),
-        ("A12345", "irrigation_A12345"),
-        ("B12345", "irrigation_B12345"),
-        ("C12345", "irrigation_C12345"),
-        ("fertilizer_injection", "fertilizer_injection_ch1"),
-        ("fertilizer_mixing", "fertilizer_mixing_ch2"),
-        ("solar_transfer_dependency", "solar_transfer_pump"),
-    ):
+    for identity, task_id in _RECOMMENDATION_TASKS:
         task = indexed.get(task_id, {})
         reason = task.get("reason") or "Canonical task evidence is unavailable."
         if identity == "solar_transfer_dependency":
