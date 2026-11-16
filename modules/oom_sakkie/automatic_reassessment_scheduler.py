@@ -113,6 +113,9 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                "telegram_edits": int(result.get("telegram_edits") or 0),
                "hardware_commands": int(result.get("hardware_commands") or 0),
                "writes_farm_data": result.get("writes_farm_data", False)}
+    if result.get("irrigation_failure"):
+        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+        outcome["irrigation_failure"] = sanitize_failure(result["irrigation_failure"])
     try:
         stored = store("record_outcome", identity, outcome)
     except Exception:

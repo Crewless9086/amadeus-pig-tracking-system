@@ -44,9 +44,11 @@ REQUIRED_ENV = (
 class OAuthFailure(RuntimeError):
     """Sanitized failure whose message is safe for an HTTP response."""
 
-    def __init__(self, message, *, provider_failure=None):
+    def __init__(self, message, *, provider_failure=None, failure_diagnostics=None):
         super().__init__(message)
         self.provider_failure = provider_failure
+        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+        self.failure_diagnostics = sanitize_failure(failure_diagnostics)
 
 
 def oauth_readiness(environ=None):
@@ -560,7 +562,7 @@ def _provider_request(method, url, *, body=None, mode, token=None, environ):
     except OptionalObservationDeferred:
         raise
     except RequestBudgetUnavailable as exc:
-        raise OAuthFailure(str(exc)) from None
+        raise OAuthFailure(str(exc), failure_diagnostics=exc.failure_diagnostics) from None
 
 
 def _enforce_provider_operation(method, parsed, body, mode, environ):

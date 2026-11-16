@@ -1643,8 +1643,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         if not control:
                             raise ValueError("irrigation_control_result_missing")
                     except Exception as exc:
+                        from modules.telemetry.rootline_failure_diagnostics import exception_failure
                         control = {"success": False, "status": "irrigation_control_unproven",
                             "error_type": type(exc).__name__, "effects_unknown": True}
+                        supervision["irrigation_failure"] = exception_failure(exc)
                     supervision["irrigation_admission_status"] = str(control.get("status") or "unknown")
                     supervision["execution_status"] = (str(supervision.get("active_supervision_status"))
                         if supervision.get("active_execution_found") is True and not control.get("hardware_commands")
