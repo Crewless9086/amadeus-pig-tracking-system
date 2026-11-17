@@ -1193,12 +1193,15 @@ def _provider_bounded_outcome(execution, shutdown, now):
 
 
 def _valid_native_final_check(final, decision, output, now):
+    scheduled = scheduled_execution(decision.get("execution_eligibility") or {})
+    zones = {"A12345", "B12345", "C12345", "E12345"} if scheduled else {"B12345", "C12345"}
     if (type(final) is not NativeBCFinalCheck
-            or decision.get("zone_id") not in {"B12345", "C12345"}
+            or decision.get("zone_id") not in zones
             or not isinstance(final.artifact, dict) or not isinstance(final.safety, dict)):
         return False
     snapshot, safety, artifact = final.snapshot, final.safety, final.artifact
-    validate_native_bc_snapshot(snapshot, device_id=output["device_id"], channel=output["channel"])
+    validate_native_bc_snapshot(snapshot, device_id=output["device_id"], channel=output["channel"],
+        scheduled=scheduled)
     receipt = datetime.fromisoformat(str(snapshot.get("retrieved_at") or "").replace("Z", "+00:00"))
     if (receipt.tzinfo is None or receipt.utcoffset() is None
             or not timedelta(0) <= now - receipt <= timedelta(minutes=5)
@@ -1210,6 +1213,20 @@ def _valid_native_final_check(final, decision, output, now):
         trusted = datetime.fromisoformat(str(snapshot["trusted_receipt_at"]).replace("Z", "+00:00"))
         if trusted != receipt:
             return False
+    if scheduled_execution(artifact) != scheduled:
+        return False
+    if scheduled:
+        # Scheduled execution owns OFF; its registry mapping is the safety
+        # generation. Do not require the unrelated legacy inching baseline.
+        generation = output.get("contract_sha256")
+        generation_matches = (timed_control_enabled() and bool(generation)
+            and safety.get("scheduled_generation") == generation
+            and artifact.get("controller_safety_generation") == generation)
+    else:
+        generation = snapshot.get("commissioned_baseline_id")
+        generation_matches = (bool(generation)
+            and safety.get("controller_safety_generation") == generation
+            and artifact.get("controller_safety_generation") == generation)
     outputs = {str(row["channel"]): row.get("output_state") for row in snapshot["channels"]}
     return (artifact.get("zone_id") == decision["zone_id"]
         and type(artifact.get("channel")) is int and artifact["channel"] == output["channel"]
@@ -1218,13 +1235,12 @@ def _valid_native_final_check(final, decision, output, now):
         and bool(snapshot.get("response_digest"))
         and safety.get("response_digest") == snapshot["response_digest"]
         and artifact.get("controller_response_digest") == snapshot["response_digest"]
-        and bool(snapshot.get("commissioned_baseline_id"))
-        and safety.get("controller_safety_generation") == snapshot["commissioned_baseline_id"]
-        and artifact.get("controller_safety_generation") == snapshot["commissioned_baseline_id"]
+        and generation_matches
         and safety.get("relevant_outputs_off") is True
         and outputs == {str(channel): "OFF" for channel in range(1, 5)}
         and artifact.get("provider_output_state") == outputs
-        and _safe_configuration(safety, decision["zone_id"]))
+        and _safe_configuration(safety, decision["zone_id"],
+            stop_mode="scheduled" if scheduled else None, now=now))
 
 
 def _safe_configuration(value, zone, *, stop_mode=None, now=None):

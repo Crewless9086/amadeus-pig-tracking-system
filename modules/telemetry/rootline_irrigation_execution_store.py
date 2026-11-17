@@ -1759,7 +1759,7 @@ def _claim_borehole_material_load(body, *, adopt=False):
           "requested_seconds","assessed_at","gates","blockers","contract_version",
           "native_fail_stop_seconds","provider_evidence","operation",
           "commissioned_native_fail_stop_seconds","stop_mode","device_id","channel","auxiliary_device_id",
-          "condition_evidence", "energy_context")
+          "condition_evidence", "energy_context", "start_gates", "adoption_interlocks")
         if (not _valid_borehole_eligibility(canonical)
                 or not _valid_borehole_eligibility(body)
                 or any(body.get(field)!=canonical.get(field) for field in immutable)):
@@ -1779,14 +1779,17 @@ def _claim_borehole_material_load(body, *, adopt=False):
                     or body.get("operation") != ("adopt_observed_on" if adopt else "command_off_to_on")):
                 return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
         elif body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5":
-            from modules.telemetry.rootline_borehole_commissioning import _continuous_borehole_off
+            from modules.telemetry.rootline_borehole_commissioning import (
+                _continuous_borehole_off, _continuous_borehole_on, _continuous_adoption_stop)
             from modules.telemetry.rootline_cycle_budget import CYCLE_WORK_SECONDS
             cursor.execute("select clock_timestamp()")
             now = cursor.fetchone()[0]
             claimed = _time(body.get("claimed_at")); assessed = _time(body.get("assessed_at"))
             proof = body.get("claim_provider_evidence") or {}
             observed = _time(proof.get("retrieved_at") or proof.get("observed_at"))
-            if (adopt or not _continuous_borehole_off(proof, now=now)
+            observed_state = _continuous_borehole_on if adopt else _continuous_borehole_off
+            if (body.get("operation") != ("adopt_observed_on" if adopt else "command_off_to_on")
+                    or not observed_state(proof, now=now)
                     or proof.get("execution_id") != execution_id
                     or claimed is None or assessed is None or observed is None
                     or not assessed <= observed <= claimed
@@ -1794,8 +1797,32 @@ def _claim_borehole_material_load(body, *, adopt=False):
                     or not timedelta(0) <= now-claimed <= timedelta(seconds=30)
                     or body.get("primary_stop_deadline") is not None
                     or body.get("native_fail_stop_deadline") is not None
-                    or not _current_borehole_conditions_match(cursor, body, now)):
+                    or (not adopt and not _current_borehole_conditions_match(cursor, body, now))):
                 return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
+            if adopt:
+                current = _latest_borehole_conditions(cursor)
+                stamp = _time(current.get("assessed_at"))
+                if (current.get("event_id") != (body.get("condition_evidence") or {}).get("event_id")
+                        or stamp is None or not timedelta(0) <= now-stamp <= timedelta(seconds=CYCLE_WORK_SECONDS)
+                        or type(current.get("stop_required")) is not bool):
+                    return {"success":False,"created":False,"status":"borehole_current_conditions_unproven"}
+                # The existing instruction writer holds this same output lock.
+                # New OFF/isolation evidence becomes a durable stop, never clearance.
+                observed_facts = body.get("adoption_interlocks") or {}
+                current_facts = _current_borehole_manual_interlocks(cursor, now)
+                facts = {**observed_facts, **current_facts}
+                # An observed unsafe fact is not erased by an unrelated or older
+                # clearance. Once observed in this takeover, stopping is sticky.
+                for key in ("dry_run_safe", "low_water_clear", "supply_pressure_safe"):
+                    if observed_facts.get(key) is False or current_facts.get(key) is False:
+                        facts[key] = False
+                for key in ("manual_off_active", "manual_isolation_active", "full_tank_cutoff_fault"):
+                    if observed_facts.get(key) is True or current_facts.get(key) is True:
+                        facts[key] = True
+                body = {key: value for key, value in body.items()
+                    if key not in {"stop_requested", "stop_reason", "stop_trigger"}}
+                body.update(_continuous_adoption_stop(body,
+                    conditions=current, interlocks=facts, now=now))
         elif body.get("contract_version")=="rootline_borehole_runtime_eligibility.v4":
             from modules.telemetry.rootline_borehole_commissioning import _scheduled_borehole_off
             cursor.execute("select clock_timestamp()")
@@ -1823,14 +1850,19 @@ def _claim_borehole_material_load(body, *, adopt=False):
         if adopt and (body.get("state") != "Active" or body.get("on_attempts") != 0
                 or body.get("execution_origin") != "observed_external_on"
                 or body.get("original_start_at") is not None
-                or body.get("provider_start_evidence") != body.get("provider_evidence")):
+                or body.get("provider_start_evidence") != (
+                    {key: value for key, value in (body.get("claim_provider_evidence") or {}).items()
+                     if key != "execution_id"}
+                    if body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5"
+                    else body.get("provider_evidence"))):
             return {"success":False,"created":False,"status":"borehole_adoption_invalid"}
-        if _active_borehole(_borehole_state_rows(cursor)) is not None:
-            return {"success":True,"created":False,"status":"material_load_active"}
+        active = _active_borehole(_borehole_state_rows(cursor))
+        if active is not None:
+            return {"success":True,"created":False,"status":"material_load_active", "execution": active}
         if adopt:
-            # This is observed external activity, not a manufactured ON claim or
-            # dispatch. The existing legacy-active OFF rail owns its deadline.
-            return _insert_managed_event(cursor, action, body)
+            # Observed external activity is not a manufactured ON claim/dispatch.
+            # Existing active/OFF rails own v3 deadlines or v5 condition stops.
+            return {**_insert_managed_event(cursor, action, body), "execution": body}
         cursor.execute("""insert into public.sam_live_stock_conversation_review_events
           (review_event_id,chatwoot_conversation_id,source_agent,event_source,recommended_action,review_json)
           values (%s,%s,'rootline_backend',%s,'claim_borehole_before_on',%s::jsonb)
@@ -1884,17 +1916,24 @@ def _valid_borehole_eligibility(value):
             "device_id","channel","auxiliary_device_id","provider_evidence","operation")})
     if version == "rootline_borehole_runtime_eligibility.v5":
         from modules.telemetry.rootline_borehole_conditions import continuous_borehole
-        from modules.telemetry.rootline_borehole_commissioning import _continuous_borehole_off
+        from modules.telemetry.rootline_borehole_commissioning import _continuous_borehole_off, _continuous_borehole_on
         assessed = _time(value.get("assessed_at"))
         condition = value.get("condition_evidence") or {}
+        adopting = value.get("operation") == "adopt_observed_on"
+        expected = _continuous_borehole_on if adopting else _continuous_borehole_off
         if (not continuous_borehole(value) or assessed is None
-                or value.get("operation") != "command_off_to_on"
-                or not _continuous_borehole_off(value.get("provider_evidence"), now=assessed)
-                or condition.get("start_eligible") is not True
+                or value.get("operation") not in {"command_off_to_on", "adopt_observed_on"}
+                or not expected(value.get("provider_evidence"), now=assessed)
+                or (type(condition.get("stop_required")) is not bool if adopting
+                    else condition.get("start_eligible") is not True)
                 or not re.fullmatch(r"ROOTLINE-EXEC-[0-9A-F]{32}", str(condition.get("event_id") or ""))):
             return False
         material.update({key: value.get(key) for key in ("stop_mode", "native_fail_stop_seconds",
             "device_id", "channel", "auxiliary_device_id", "provider_evidence", "operation", "condition_evidence", "energy_context")})
+        if adopting:
+            if not isinstance(value.get("start_gates"), dict) or not isinstance(value.get("adoption_interlocks"), dict):
+                return False
+            material.update(start_gates=value["start_gates"], adoption_interlocks=value["adoption_interlocks"])
     digest=hashlib.sha256(json.dumps(material,sort_keys=True,separators=(",",":"),
       default=str).encode()).hexdigest()
     required_gates={"canonical_need","commissioned_baseline","standing_authority",
@@ -1902,6 +1941,9 @@ def _valid_borehole_eligibility(value):
       "energy","concurrency","bounded_runtime"}
     if version == "rootline_borehole_runtime_eligibility.v5":
         required_gates = required_gates - {"bounded_runtime"} | {"condition_supervision", "weather"}
+        if value.get("operation") == "adopt_observed_on":
+            required_gates = {"commissioned_baseline", "standing_authority", "concurrency",
+                "condition_supervision", "provider_on", "current_conditions"}
     if version == "rootline_borehole_runtime_eligibility.v3":
         required_gates = required_gates - {"provider_off"} | {"provider_state_safe"}
     return (version in {"rootline_borehole_runtime_eligibility.v1","rootline_borehole_runtime_eligibility.v2",
@@ -3089,6 +3131,11 @@ def _current_borehole_conditions_match(cursor, body, now):
         and assessed is not None and timedelta(0) <= now-assessed <= timedelta(seconds=CYCLE_WORK_SECONDS))
     if not snapshot_valid:
         return False
+    facts = _current_borehole_manual_interlocks(cursor, now)
+    return not (facts.get("manual_off_active") is True or facts.get("manual_isolation_active") is True)
+
+
+def _current_borehole_manual_interlocks(cursor, now):
     # Read through the caller's locked transaction. The intake writer uses the
     # same output lock, so an OFF/isolation committed first cannot be missed by
     # either claim or final ON admission. An already-dispatched ON remains owned.
@@ -3105,8 +3152,7 @@ def _current_borehole_conditions_match(cursor, body, now):
         fact = outcome.get("borehole_interlocks") or {}
         observations.append({**fact, "provider_message_id": fact.get("provider_message_id") or outcome.get("provider_message_id")})
     from modules.telemetry.rootline_water_energy_plan import _project_borehole_interlocks
-    facts = _project_borehole_interlocks(observations, now) or {}
-    return not (facts.get("manual_off_active") is True or facts.get("manual_isolation_active") is True)
+    return _project_borehole_interlocks(observations, now) or {}
 
 
 def _assess_borehole_conditions(body):
