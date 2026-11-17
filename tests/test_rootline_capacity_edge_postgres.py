@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 import json
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 import pytest
 from modules.telemetry import rootline_ewelink_request_budget as budget
@@ -24,7 +25,11 @@ def isolated():
     assert target.hostname in {"127.0.0.1","localhost"}
     assert target.path in {"/rootline_capacity_edge_test_20261117_01","/rootline_managed"}
     import psycopg
-    with psycopg.connect(URL) as c:c.execute("truncate public.sam_live_stock_conversation_review_events")
+    migration = (Path(budget.__file__).resolve().parents[2] / "supabase/migrations/"
+        "202607070001_create_sam_live_stock_conversation_review_events.sql")
+    with psycopg.connect(URL) as c:
+        c.execute(migration.read_text(encoding="utf-8"))
+        c.execute("truncate public.sam_live_stock_conversation_review_events")
 
 class RealReserveJourney(ScheduledJourney):
     def __init__(self,patch,*,fault=None,sql_seconds=.35,connect_seconds=.8,prior_safety_seconds=0):
