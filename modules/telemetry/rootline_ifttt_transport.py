@@ -123,10 +123,11 @@ class NativeBCFinalCheck:
     snapshot: dict
 
 
-def validate_native_bc_snapshot(snapshot, *, device_id, channel):
-    """Strict shapes apply only to the optional native B/C final check."""
+def validate_native_bc_snapshot(snapshot, *, device_id, channel, scheduled=False):
+    """Same-snapshot checks cover B/C and explicitly scheduled A/E."""
     rows = snapshot.get("channels") if isinstance(snapshot, dict) else None
-    if (device_id != DEVICE_ID or type(channel) is not int or channel not in (1, 2)
+    if (device_id != DEVICE_ID or type(channel) is not int
+            or channel not in ((1, 2, 3, 4) if scheduled else (1, 2))
             or not isinstance(snapshot, dict) or snapshot.get("device_id") != device_id
             or type(snapshot.get("provider_control_calls")) is not int
             or snapshot["provider_control_calls"] != 0
@@ -155,7 +156,9 @@ class RootlineIFTTTTransport:
         return self._safety_from_snapshot(contract, snapshot, device_id, channel)
 
     def final_bc_check(self, artifact, snapshot, *, device_id, channel):
-        validate_native_bc_snapshot(snapshot, device_id=device_id, channel=channel)
+        from modules.telemetry.rootline_timed_control import scheduled_execution, timed_control_enabled
+        scheduled = scheduled_execution(artifact) and timed_control_enabled(self.environ)
+        validate_native_bc_snapshot(snapshot, device_id=device_id, channel=channel, scheduled=scheduled)
         self._validated_snapshot(snapshot, device_id, channel)
         safety = self._safety_from_snapshot(
             self._binding(device_id, channel), snapshot, device_id, channel)

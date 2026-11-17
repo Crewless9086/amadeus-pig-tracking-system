@@ -186,20 +186,26 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             if row.get("task_id") == "borehole"), {})
         interlocks = evidence.get("borehole_interlocks") or {}
         if ("BOREHOLE-1-MINI-R4-CH1" in pending_devices
-                and borehole_task.get("recommendation") == "Recommend"
                 and str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true"):
             try:
                 baseline = load_registered_borehole_baseline(connect_factory=connect_factory)
                 decision_at = current_decision_time(selected)
-                if baseline:
+                if baseline and (baseline.get("stop_mode") == "conditions"
+                        or borehole_task.get("recommendation") == "Recommend"):
                     continuous = baseline.get("stop_mode") == "conditions"
                     conditions = current_borehole_conditions(evidence.get("forecast")) if continuous else None
-                    if continuous and (not isinstance(conditions, dict) or conditions.get("start_eligible") is not True):
+                    # Observe before applying new-start gates: an already-ON output
+                    # needs durable supervision even during a forecast deferral.
+                    provider = (transport.read_output_state(device_id="1002851416", channel=1, routine_read=True)
+                        if continuous else None)
+                    adopting = continuous and isinstance(provider, dict) and provider.get("state") == "ON"
+                    if continuous and not adopting and (borehole_task.get("recommendation") != "Recommend"
+                            or not isinstance(conditions, dict) or conditions.get("start_eligible") is not True):
                         packet["borehole_readiness"] = (conditions or {}).get("reason", "borehole_conditions_unavailable")
                         packet["borehole_conditions"] = conditions
                         return packet
                     from modules.telemetry.rootline_borehole_commissioning import prepare_borehole_execution_plan
-                    request = dict(need={"eligible": True, "task_id": "borehole",
+                    request = dict(need={"eligible": borehole_task.get("recommendation") == "Recommend", "task_id": "borehole",
                             "reason": borehole_task.get("reason")}, commissioned_baseline=baseline,
                         authority={"inside_standing_authority": True}, provider={},
                         interlocks=interlocks,
@@ -208,10 +214,11 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                         requested_seconds=None if continuous else min(14400, int(baseline["maximum_routine_runtime_seconds"])),
                         execution_id="PENDING", now=decision_at)
                     preflight = prepare_borehole_execution_plan(**request)
-                    if any(not passed for gate, passed in preflight["gates"].items() if gate != "provider_off"):
+                    if not adopting and any(not passed for gate, passed in preflight["gates"].items() if gate != "provider_off"):
                         packet["borehole_readiness"] = "borehole_prerequisites_unproven"
                         return packet
-                    provider = transport.read_output_state(device_id="1002851416", channel=1, routine_read=True)
+                    if not continuous:
+                        provider = transport.read_output_state(device_id="1002851416", channel=1, routine_read=True)
                     decision_at = current_decision_time(selected)
                     # Ten hours is the independent fallback. Keep the existing
                     # planned supply window for a new start; an owner's already
@@ -223,13 +230,13 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                         if proof:
                             requested = proof["native_auto_off_seconds"]
                     packet["borehole_execution"] = build_borehole_runtime_eligibility(
-                        need={"eligible": True, "task_id": "borehole",
+                        need={"eligible": borehole_task.get("recommendation") == "Recommend", "task_id": "borehole",
                             "reason": borehole_task.get("reason")}, baseline=baseline,
                         authority={"inside_standing_authority": True}, provider=provider,
                         interlocks=interlocks,
                         energy=borehole_energy(evidence.get("power"), decision_at, continuous=continuous),
                         requested_seconds=requested, now=decision_at, conditions=conditions)
-                else:
+                elif not baseline:
                     packet["borehole_readiness"] = "canonical_commissioning_required"
             except Exception:
                 packet["borehole_readiness"] = "canonical_protection_evidence_unavailable"
@@ -818,7 +825,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
             "native_inching_seconds": selected.get("native_auto_off_seconds"),
             **({"evidence": baseline.get("evidence", {})} if zone == "A12345" else
                {"accepted_controller_baseline": baseline})}
-    native_transport = None if scheduled_execution(artifact) else _native_bc_final_transport(transport, zone, readback, token_store, source)
+    native_transport = _native_bc_final_transport(transport, zone, readback, token_store, source,
+        scheduled=scheduled_execution(artifact))
 
     def final_current():
         current_now = _aware(clock())
@@ -854,9 +862,11 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         native_final_revalidator=native_revalidate if native_transport is not None else None)
 
 
-def _native_bc_final_transport(transport, zone, readback, token_store, source):
+def _native_bc_final_transport(transport, zone, readback, token_store, source, *, scheduled=False):
     """Transparent observers may forward the native method; overrides may not."""
-    if zone not in {"B12345", "C12345"} or readback is not _NATIVE_CONTROLLER_READBACK:
+    allowed = zone in {"B12345", "C12345"} or (scheduled and timed_control_enabled(source)
+        and zone in {"A12345", "E12345"})
+    if not allowed or readback is not _NATIVE_CONTROLLER_READBACK:
         return None
     method = getattr(transport, "read_safety_configuration", None)
     native = getattr(method, "__self__", None)

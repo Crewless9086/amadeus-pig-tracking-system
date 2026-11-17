@@ -313,6 +313,18 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
     if continuous:
         material["condition_evidence"] = dict(conditions)
         material["energy_context"] = dict(energy or {})
+    if continuous and isinstance(provider, dict) and provider.get("state") == "ON":
+        # Taking responsibility for an observed run is not permission to start.
+        # Keep failed start/protection evidence intact for immediate owned OFF.
+        material.update(operation="adopt_observed_on", start_gates=dict(gates),
+            adoption_interlocks=dict(interlocks or {}))
+        gates = {key: gates[key] for key in (
+            "commissioned_baseline", "standing_authority", "concurrency", "condition_supervision")}
+        gates.update(provider_on=_continuous_borehole_on(provider, now=now),
+            current_conditions=bool(conditions.get("event_id"))
+                and type(conditions.get("stop_required")) is bool)
+        blockers = [key for key, passed in gates.items() if not passed]
+        material.update(gates=gates, blockers=blockers)
     digest = _digest(material)
     execution_id = "ROOTLINE-BOREHOLE-" + digest[:24].upper()
     return {**material, "eligibility_sha256": digest, "execution_id": execution_id,
@@ -436,11 +448,13 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     continuous = continuous_borehole(eligibility)
     scheduled=eligibility.get("stop_mode")=="scheduled" or continuous
     native=eligibility.get("native_fail_stop_seconds",14400)
+    adopting = continuous and eligibility.get("operation") == "adopt_observed_on"
     if scheduled:
         current=_read_borehole(transport, routine_read=True)
-        if not (_continuous_borehole_off(current, now=_aware(clock())) if continuous
+        expected = _continuous_borehole_on if adopting else _continuous_borehole_off
+        if not (expected(current, now=_aware(clock())) if continuous
                 else _scheduled_borehole_off(current,now=_aware(clock()))):
-            return _borehole_result("borehole_current_off_unproven",success=False,
+            return _borehole_result("borehole_current_on_unproven" if adopting else "borehole_current_off_unproven",success=False,
                 current_failure=current.get("current_failure", {}))
     if eligibility.get("contract_version") == "rootline_borehole_runtime_eligibility.v3":
         proof = _borehole_provider_configuration(eligibility.get("provider_evidence"), now=_aware(clock()))
@@ -458,7 +472,7 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     # Capacity admission is preparation, not a persisted hardware claim. Its
     # own finite permit deadline remains unchanged and is checked at the sender.
     execution = dict(eligibility)
-    if scheduled and not prepare_execution_capacity(transport, execution):
+    if scheduled and not adopting and not prepare_execution_capacity(transport, execution):
         return _borehole_result("provider_capacity_unavailable")
     # Start these clocks once, after preparation. Never retime an owned claim,
     # the original eligibility or the genuine final provider observation.
@@ -468,19 +482,31 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         native_fail_stop_deadline=None if scheduled else (now + timedelta(seconds=native)).isoformat(),
         on_attempts=0, off_attempts=0)
     if scheduled:
-        # Keep canonical eligibility immutable; this is the genuine final OFF
-        # observation already obtained above, bound to this exact new claim.
+        # Keep canonical eligibility immutable; bind the genuine final output
+        # observation already obtained above to this exact claim or adoption.
         execution["claim_provider_evidence"] = {**current,
             "execution_id": execution["execution_id"]}
     if eligibility.get("operation") == "adopt_observed_on":
         # No ON edge, invented original start time, or claim of delivered water.
-        # The native stop was already armed by the external start; observation
-        # supplies only a conservative latest stop bound for our supervision.
+        # Legacy v3 retains its conservative native stop bound. Continuous v5
+        # creates no deadline and takes only condition-based stop ownership.
         execution.update(state="Active", execution_origin="observed_external_on",
-            original_start_at=None, provider_start_evidence=eligibility["provider_evidence"])
+            original_start_at=None, provider_start_evidence=(current if adopting else eligibility["provider_evidence"]))
         adopted = store("adopt_borehole_observed_on", execution)
         if not isinstance(adopted, dict) or adopted.get("success") is not True:
             return _borehole_result("borehole_observed_on_adoption_unproven", success=False)
+        if adopting:
+            if adopted.get("created") is not True:
+                # Another current owner or a retired replay is never this claim.
+                return _borehole_result("borehole_observed_on_already_owned",
+                    execution=adopted.get("execution"), writes_farm_data=False)
+            execution = adopted.get("execution") or execution
+            if execution.get("stop_requested") is True:
+                # Durable takeover and its stop reason precede existing OFF slots.
+                # A crash here is recovered by the ordinary active supervisor.
+                return {**advance_borehole_execution(eligibility={}, store=store,
+                    transport=transport, now=_aware(clock()), clock=clock),
+                    "adopted_observed_on": True}
         return _borehole_result("borehole_observed_on_adopted" if adopted.get("created") is True
             else "borehole_observed_on_already_owned", execution=execution,
             writes_farm_data=adopted.get("created") is True)
@@ -638,17 +664,49 @@ def _time(value):
     except (TypeError, ValueError): return None
 
 
-def _scheduled_borehole_off(value,*,now):
+def _scheduled_borehole_state(value, *, now, state):
     value=value if isinstance(value,dict) else {}
     observed=_time(value.get("retrieved_at") or value.get("observed_at"))
     configuration=value.get("borehole_configuration") or {}
     digest=value.get("evidence_id")
-    return (value.get("authoritative") is True and value.get("state")=="OFF"
+    return (value.get("authoritative") is True and value.get("state")==state
         and value.get("device_id")=="1002851416" and type(value.get("channel")) is int
         and value["channel"]==1 and observed is not None
         and timedelta(0)<=now-observed<=timedelta(seconds=30)
         and isinstance(digest,str) and len(digest)==64
         and configuration.get("online") is True)
+
+
+def _scheduled_borehole_off(value, *, now):
+    return _scheduled_borehole_state(value, now=now, state="OFF")
+
+
+def _continuous_borehole_on(value, *, now):
+    return (_scheduled_borehole_state(value, now=now, state="ON")
+        and (value.get("borehole_configuration") or {}).get("native_auto_off_enabled") is False)
+
+
+def _continuous_adoption_stop(execution, *, conditions, interlocks, now):
+    """Preserve current adverse evidence; missing readings alone do not stop."""
+    energy = execution.get("energy_context") or {}
+    protection = (interlocks.get("manual_off_active") is True
+        or interlocks.get("manual_isolation_active") is True
+        or any(interlocks.get(key) is False for key in ("dry_run_safe", "low_water_clear", "supply_pressure_safe"))
+        or interlocks.get("full_tank_cutoff_fault") is True
+        or conditions.get("protection_safe") is False)
+    energy_stop = energy.get("fresh") is True and energy.get("eligible") is False
+    reason = ("explicit_protection_or_manual_stop" if protection
+        else conditions.get("reason") or "observed_rain_stop" if conditions.get("stop_required") is True
+        else energy.get("reason") or "energy_stop" if energy_stop else None)
+    if not reason:
+        return {}
+    return {"stop_requested": True, "stop_reason": reason, "stop_trigger": {
+        "assessed_at": now.isoformat(), "condition_event_id": conditions.get("event_id"),
+        "condition_reason": conditions.get("reason"), "condition_assessed_at": conditions.get("assessed_at"),
+        "energy_stop": energy_stop, "energy_reason": energy.get("reason") if energy_stop else None,
+        "energy_context": energy, "protection_reader_safe": not protection,
+        "condition_stop_required": conditions.get("stop_required"),
+        "adoption_interlocks": dict(interlocks)}}
 
 
 def _continuous_borehole_off(value, *, now):
