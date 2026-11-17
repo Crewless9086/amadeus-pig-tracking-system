@@ -20,6 +20,8 @@ from modules.telemetry.rootline_device_registry import (
     find_device_contract,
 )
 
+from modules.telemetry.rootline_ewelink_readback import read_current_device as _NATIVE_CONTROLLER_READBACK
+
 DEVICE_ID = "100204e9bc"
 EVENTS = {
     (1, "ON"): "irrigation_1_ch1_on", (1, "OFF"): "irrigation_1_ch1_off",
@@ -348,10 +350,14 @@ class RootlineIFTTTTransport:
     @property
     def prepare_no_send_off(self):
         # Injected adapters retain ownership of their full readback contract.
-        return self._prepare_no_send_off if self.readback is None else None
+        return (self._prepare_no_send_off if self.readback is None
+                or self.readback is _NATIVE_CONTROLLER_READBACK else None)
 
     @contextmanager
     def _prepare_no_send_off(self, *, device_id, channel, binding):
+        if (self.readback is _NATIVE_CONTROLLER_READBACK and
+                str(self.environ.get("EWELINK_EXPECTED_DEVICE_ID", "")) != device_id):
+            raise ValueError("no_send_target_changed")
         self._binding(device_id, channel)
         if binding.get("device_id") != device_id or binding.get("channel") != channel:
             raise ValueError("no_send_target_changed")
@@ -361,6 +367,10 @@ class RootlineIFTTTTransport:
             yield _PreparedNoSendOutput(self, prepared, binding)
 
     def read_output_state(self, *, device_id, channel, routine_read=False):
+        from modules.telemetry.rootline_ewelink_request_budget import current_duty
+        if (current_duty().get("stop_mode") == "scheduled"
+                and (self.readback is None or self.readback is _NATIVE_CONTROLLER_READBACK)):
+            routine_read = True
         snapshot = self._snapshot(device_id, channel, **({"routine_read": True} if routine_read else {}))
         output = output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
         from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
@@ -589,7 +599,8 @@ class RootlineIFTTTTransport:
             value = read_registered_device(device_id, token_store=self.token_store,
                                            environ=self.environ, **({"routine_read": True} if routine_read else {}))
         else:
-            value = self.readback(token_store=self.token_store, environ=self.environ)
+            value = self.readback(token_store=self.token_store, environ=self.environ,
+                **({"routine_read": True} if routine_read and self.readback is _NATIVE_CONTROLLER_READBACK else {}))
         return self._validated_snapshot(value, device_id, channel)
 
     def _validated_snapshot(self, value, device_id, channel):

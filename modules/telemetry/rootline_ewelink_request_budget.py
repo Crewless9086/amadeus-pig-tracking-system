@@ -501,13 +501,10 @@ class RequestBudget:
         # The outer transaction owns only the advisory fence.  This independent
         # transaction durably counts a possible attempt before any network send.
         with self._audit_transaction(action) as audit:
-            pair = _private_pair.get()
-            private = pair is not None and pair.owner is self
-            receipt_read = private or action == "active_duty_reserved"
             result, status = record_sam_live_stock_review_event(event,
                 database_url=self.database_url or "injected-local-connection",
                 connect_factory=lambda: nullcontext(audit),
-                **({"durable_receipt": True} if receipt_read else {"created_at": self._now(audit)}))
+                durable_receipt=True)
             if status >= 400 or result.get("success") is not True:
                 raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable",
                     failure_diagnostics={"accounting_stage": "append",
@@ -515,17 +512,9 @@ class RequestBudget:
                         "sqlstate": result.get("sqlstate"),
                         "cause_type": result.get("error_type"), "recorder_status": result.get("status"),
                         "recorder_http_status": status})
-            if receipt_read:
-                receipt = result.get("persisted_receipt") or {}
-                if receipt.get("review_event_id") != identity or receipt.get("review_json") != event["review_json"]:
-                    raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
-            else:
-                with _accounting_operation("audit_readback"):
-                    actual = audit.execute("""select review_json->'ewelink_request_budget'
-                    from public.sam_live_stock_conversation_review_events where review_event_id=%s""",
-                        (identity,)).fetchone()
-                if not actual or actual[0] != payload:
-                    raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
+            receipt = result.get("persisted_receipt") or {}
+            if receipt.get("review_event_id") != identity or receipt.get("review_json") != event["review_json"]:
+                raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")
 
     @contextmanager
     def _audit_transaction(self, action):

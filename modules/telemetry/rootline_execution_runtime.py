@@ -558,6 +558,11 @@ def supervise_rootline_active_execution(*, notify, environ=None, now=None,
         def read_output_state(self, **kwargs):
             return current_transport().read_output_state(**kwargs)
 
+        @property
+        def prepare_no_send_off(self):
+            # Expose only native read-only preparation; ON remains forbidden.
+            return getattr(current_transport(), "prepare_no_send_off", None)
+
     active_found = None
     def tracked_store(action, payload):
         nonlocal active_found
@@ -1059,7 +1064,7 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
     controller = {}
     if artifact.get("provider_read_required") is True:
         controller = readback(token_store=token_store, environ=source, now=now,
-            **({"routine_read": True} if persist_resolutions else {}))
+            **({"routine_read": True} if persist_resolutions or (scheduled and readback is _NATIVE_CONTROLLER_READBACK) else {}))
         # Evaluate original evidence at the independent post-I/O clock. Never
         # refresh a weather/history timestamp merely because a request finished.
         checked_at = _aware((clock or (lambda: datetime.now(timezone.utc)))())

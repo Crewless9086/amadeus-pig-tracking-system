@@ -182,7 +182,7 @@ def test_gateway_real_capacity_commit_begin_on_and_sender(monkeypatch):
     assert entry["remaining"]==budget.DUTY_CAPACITY["irrigation_zone_valve"]
     assert "active_duty_reserved" in j.committed
     assert next(t for kind,t,_ in j.events if kind=="HTTP ON")<140
-    assert sum("returning review_event_id,review_json,created_at" in r["sql"] for r in j.sql_trace)==1
+    assert sum("returning review_event_id,review_json,created_at" in r["sql"] for r in j.sql_trace)==2
     assert not any("_provider_capacity_failure" in str(item) for _,item in j.backing.rows)
     assert any("pg_try_advisory_xact_lock" in r["sql"] for r in j.sql_trace)
 
@@ -224,17 +224,17 @@ def test_hostile_capacity_metadata_is_sanitized_at_gateway_and_durable_outcome(m
 
 
 def test_observed_late_capacity_edge_still_sends_before_original_deadline(monkeypatch):
-    j=RealReserveJourney(monkeypatch,prior_safety_seconds=29.6)
+    j=RealReserveJourney(monkeypatch,prior_safety_seconds=37.6)
     value,_=j.gateway()
     assert j.reserve_started==pytest.approx(128)
     assert j.controls, json.dumps(value,default=str)
     assert j.controls[0]["status"]=="segment_started",j.controls
     on_at=next(t for kind,t,_ in j.events if kind=="HTTP ON")
-    assert on_at==pytest.approx(139.35) and on_at<140
+    assert on_at==pytest.approx(138.3) and on_at<140
     assert len(j.calls)==1
 
 
 def test_capacity_after_same_profile_expires_safely_without_deadline_extension(monkeypatch):
-    j=RealReserveJourney(monkeypatch,prior_safety_seconds=33)
+    j=RealReserveJourney(monkeypatch,prior_safety_seconds=42)
     value,_=j.gateway()
     assert not any(c["state"]=="ON" for c in j.calls)

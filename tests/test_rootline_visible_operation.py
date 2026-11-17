@@ -89,8 +89,8 @@ def test_verified_all_device_edges_recover_after_restart_without_duplicate(kind)
     assert http==202 and first['success'] is False # Failed control stays failed despite successful notices.
     assert first['plan_delivery_status']=='delivered_current_irrigation_plan'
     assert len(sends)==3 and all(r['delivery_confirmed'] for r in events.notifications)
-    assert 'plan below remains intended work' in sends[-1]
-    assert 'ON' in sends[0] and 'OFF' in sends[1]
+    assert 'plan below remains intended work' in sends[0]
+    assert 'ON' in sends[1] and 'OFF' in sends[2]
     assert first['hardware_commands']==0
     again,_=gateway(events,send,now=NOW+timedelta(minutes=1),plans=plans,schedules=schedules)
     assert len(sends)==3
