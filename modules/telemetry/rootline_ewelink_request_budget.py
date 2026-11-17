@@ -256,13 +256,22 @@ def current_duty():
 
 def prepare_execution_capacity(transport, execution):
     """Admit before durable hardware claim; injected transports own their rails."""
+    execution.pop("_provider_capacity_failure", None)
     prepare = getattr(transport, "prepare_execution_capacity", None)
     if prepare is None:
         return True
     try:
         execution["provider_capacity_permit"] = prepare(execution)
         return bool(execution["provider_capacity_permit"])
-    except Exception:
+    except Exception as exc:
+        from modules.telemetry.rootline_failure_diagnostics import exception_failure
+        from modules.telemetry.rootline_cycle_budget import work_deadline
+        failure = exception_failure(exc)
+        deadline = work_deadline()
+        if deadline is not None:
+            failure["cycle_remaining_ms"] = max(0, min(86400000,
+                int((deadline-time.monotonic())*1000)))
+        execution["_provider_capacity_failure"] = failure
         return False
 
 
@@ -494,10 +503,11 @@ class RequestBudget:
         with self._audit_transaction(action) as audit:
             pair = _private_pair.get()
             private = pair is not None and pair.owner is self
+            receipt_read = private or action == "active_duty_reserved"
             result, status = record_sam_live_stock_review_event(event,
                 database_url=self.database_url or "injected-local-connection",
                 connect_factory=lambda: nullcontext(audit),
-                **({"durable_receipt": True} if private else {"created_at": self._now(audit)}))
+                **({"durable_receipt": True} if receipt_read else {"created_at": self._now(audit)}))
             if status >= 400 or result.get("success") is not True:
                 raise RequestBudgetUnavailable("ewelink_request_accounting_unavailable",
                     failure_diagnostics={"accounting_stage": "append",
@@ -505,7 +515,7 @@ class RequestBudget:
                         "sqlstate": result.get("sqlstate"),
                         "cause_type": result.get("error_type"), "recorder_status": result.get("status"),
                         "recorder_http_status": status})
-            if private:
+            if receipt_read:
                 receipt = result.get("persisted_receipt") or {}
                 if receipt.get("review_event_id") != identity or receipt.get("review_json") != event["review_json"]:
                     raise RequestBudgetUnavailable("ewelink_request_accounting_unproven")

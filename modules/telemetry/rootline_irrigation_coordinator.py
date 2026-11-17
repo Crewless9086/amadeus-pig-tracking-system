@@ -153,7 +153,10 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "state": "claimed", "on_attempts": 0, "off_attempts": 0,
     }
     if not prepare_execution_capacity(transport, execution):
-        return _result("provider_capacity_unavailable", commands=0, messages=0)
+        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+        failure = sanitize_failure(execution.pop("_provider_capacity_failure", None))
+        return _result("provider_capacity_unavailable", commands=0, messages=0,
+            **({"irrigation_failure": failure} if failure else {}))
     transport = bind_execution_transport(transport, execution)
     try:
         claim = store("claim_before_on", execution)

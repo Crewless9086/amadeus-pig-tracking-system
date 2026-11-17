@@ -1715,6 +1715,11 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         control = {"success": False, "status": "irrigation_control_unproven",
                             "error_type": type(exc).__name__, "effects_unknown": True}
                         supervision["irrigation_failure"] = exception_failure(exc)
+                    if control.get("irrigation_failure"):
+                        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+                        failure = sanitize_failure(control["irrigation_failure"])
+                        if failure:
+                            supervision["irrigation_failure"] = failure
                     supervision["irrigation_admission_status"] = str(control.get("status") or "unknown")
                     supervision["execution_status"] = (str(supervision.get("active_supervision_status"))
                         if supervision.get("active_execution_found") is True and not control.get("hardware_commands")
