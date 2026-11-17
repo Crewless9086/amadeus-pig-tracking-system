@@ -997,7 +997,13 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
 def _current(evidence_loader, readback, token_store, source, database_url, now,
              store=rootline_irrigation_execution_store, *, require_enabled=False, clock=None,
              authority_checker=None, reconcile_stale=True, persist_resolutions=True):
-    _refresh_a_irrigation_binding(source, database_url, now)
+    if require_enabled and timed_control_enabled(source):
+        # Scheduled starts use their current registry/policy authority below.
+        # Never carry a legacy native-A proof into this new-start scope.
+        from modules.telemetry.rootline_device_registry import _canonical_irrigation_binding
+        _canonical_irrigation_binding.set(None)
+    else:
+        _refresh_a_irrigation_binding(source, database_url, now)
     try:
         from modules.telemetry.rootline_bounded_read_group import (
             RootlineReadGroupDeadlineExceeded,
