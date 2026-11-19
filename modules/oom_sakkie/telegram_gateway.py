@@ -1425,6 +1425,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 from modules.oom_sakkie.rootline_transition_notifications import recover_transition_notifications
                 reporter = equipment_notification_cycle or recover_transition_notifications
                 outcome = reporter(notify=notify, now=scheduler_now)
+            except RootlineCycleDeadlineExceeded:
+                outcome = {"success": False, "status": "rootline_transition_notifications_deferred",
+                    "telegram_sends": 0}
             except Exception as exc:
                 outcome = {"success": False, "status": "rootline_transition_notifications_unavailable",
                     "error_type": type(exc).__name__, "telegram_sends": 0}
@@ -1725,6 +1728,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         if supervision.get("active_execution_found") is True and not control.get("hardware_commands")
                         else supervision["irrigation_admission_status"])
                     supervision["control_result"] = control
+                    from modules.telemetry.rootline_failure_diagnostics import sanitize_no_send
+                    supervision.update(sanitize_no_send(control))
                     for field in ("hardware_commands", "telegram_sends", "telegram_edits"):
                         value = control.get(field) or (control.get("telegram_messages") if field == "telegram_sends" else 0)
                         supervision[field] = int(supervision.get(field) or 0) + int(value or 0)
@@ -1786,7 +1791,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
 
         def invoke():
             nonlocal current_plan_result
-            supervision = equipment_reports(supervise())
+            supervision = supervise()
             try:
                 remaining_seconds(minimum=REPORT_MINIMUM_SECONDS)
             except RootlineCycleDeadlineExceeded:
@@ -1796,6 +1801,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
             try:
                 current_plan_result = current_plan_report(supervision)
+                supervision = equipment_reports(supervision)
                 if supervision.get("success") is True and current_plan_result.get("success") is True:
                     result = dict(invoke_reports(supervision) or {})
                 else:

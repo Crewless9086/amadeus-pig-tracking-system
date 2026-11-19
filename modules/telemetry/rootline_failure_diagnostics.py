@@ -171,3 +171,24 @@ def exception_failure(exc):
     if len(exc.args) == 1 and isinstance(exc.args[0], str) and exc.args[0] in _REASONS:
         result["reason"] = exc.args[0]
     return result
+
+_NO_SEND_STAGES = frozenset({"context", "prepared", "token_current", "device_status", "device_list",
+    "proof_received", "preparation", "token_lookup", "native_clients", "token_refresh", "family",
+    "preliminary_preimage", "hardware_lock", "locked_preimage", "final_read", "final_preimage",
+    "terminal_insert", "terminal_commit", "preimage", "final_proof", "deferred_proof", "optional_proof", "optional_budget"})
+_NO_SEND_REASONS = _REASONS | frozenset({"changed_or_consumed", "prepared_metadata_changed",
+    "registered_target_rejected", "readback_disabled", "reader_or_identity_missing", "unproven",
+    "changed_during_preparation", "changed_during_final_read", "conflicting_identity", "database_unavailable",
+    "deadline", "read_unavailable", "unavailable", "after_bc_admission", "rootline_cycle_deadline_exceeded"})
+
+
+def sanitize_no_send(value):
+    """Project only finite recovery diagnostics, never provider or SQL messages."""
+    if not isinstance(value, Mapping):
+        return {}
+    stage, reason = value.get("no_send_stage"), value.get("no_send_reason")
+    if (not isinstance(stage, str) or not isinstance(reason, str)
+            or stage not in _NO_SEND_STAGES or reason not in _NO_SEND_REASONS):
+        return {}
+    return {"no_send_stage": stage, "no_send_reason": reason,
+        "error_type": "no_send_" + stage + "_" + reason}
