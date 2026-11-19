@@ -43,7 +43,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
         evidence_loader=read_current_water_energy_evidence, allow_new_starts=True,
-        allow_borehole_starts=None, clock=None, after_safety=None):
+        allow_borehole_starts=None, clock=None, after_safety=None, refresh_after_safety=True):
     """Supervise owned devices and advance independently eligible managed tasks.
 
     This composes existing planners, canonical device records and coordinators.
@@ -78,14 +78,15 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             database_url=database_url, read_only=True)
     def current_borehole_safety():
         from modules.telemetry.rootline_water_energy_plan import read_current_borehole_faults
-        return read_current_borehole_faults(database_url,now=_aware(clock()),clock=clock)
+        return read_current_borehole_faults(database_url, now=_aware(clock()),
+            clock=clock, include_evidence=True)
     def borehole_energy(power, decision_at, *, continuous):
         decision = managed_energy_decision(power, now=decision_at)
         if not continuous:
             return {"eligible": decision["borehole_eligible"]}
         return {**decision["borehole_energy_context"], "eligible": decision["continuous_borehole_eligible"],
             "fresh": decision["continuous_borehole_fresh"], "reason": decision["continuous_borehole_reason"]}
-    def current_borehole_conditions(forecast=None):
+    def current_borehole_conditions(forecast=None, *, protection=None):
         from modules.telemetry.weather_service import get_weather_control_snapshot
         try:
             weather, status = get_weather_control_snapshot(database_url, now=_aware(clock()), dry_interval_minutes=60)
@@ -95,8 +96,9 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             weather = {}
         try:
             from modules.telemetry.rootline_water_energy_plan import read_current_borehole_faults
-            protection = read_current_borehole_faults(database_url, now=_aware(clock()),
-                clock=clock, include_evidence=True)
+            if protection is None:
+                protection = read_current_borehole_faults(database_url, now=_aware(clock()),
+                    clock=clock, include_evidence=True)
         except Exception:
             protection = {}
         return store("assess_borehole_conditions", {"weather_snapshot": weather,
@@ -252,7 +254,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         allow_borehole_starts=allow_borehole_starts,
         energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock,
         borehole_conditions_reader=current_borehole_conditions,
-        after_safety=after_safety)
+        after_safety=after_safety, refresh_after_safety=refresh_after_safety)
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
         return result
     from modules.telemetry.rootline_device_spine import load_device_record

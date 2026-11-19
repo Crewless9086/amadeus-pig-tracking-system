@@ -555,7 +555,7 @@ def test_current_borehole_fault_reader_keeps_negative_facts_across_read_delay(mo
     monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_rootline_postgres",
         lambda **_:Connection())
     def cycle(**kwargs):
-        results.append(kwargs["borehole_safety_reader"]())
+        results.append(kwargs["borehole_safety_reader"]()["safe"])
         return {"status":"observed","hardware_commands":0}
     monkeypatch.setattr(managed,"run_rootline_managed_device_cycle",cycle)
     _managed_reassessment(environ={},database_url="synthetic",store=Store(),token_store=object(),

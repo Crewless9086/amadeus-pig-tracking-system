@@ -468,7 +468,11 @@ def test_production_plan_recovery_failure_happens_only_after_supervision(reports
         execution_cycle=lambda **k: {"success": True, "status": "not_eligible"},
         managed_device_cycle=lambda **k: {"success":True,"status":"no_active_managed_device","blocks_bc":False},
         family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"})
-    assert status == 202 and value["status"] == "scheduled_rootline_daily_plan_persistence_ambiguous"
+    assert status == 202 and value["status"] == "scheduled_rootline_plan_evidence_unavailable"
+    assert value["daily_plan_stage"] == "evidence_load"
+    assert value["daily_plan_status"] == "other"
+    assert value["writes_farm_data"] is True  # Completed control retains its write.
+    assert value["report_effects_unknown"] is True
     assert value["execution_status"] == "segment_completed" and value["hardware_commands"] == 1
 
 

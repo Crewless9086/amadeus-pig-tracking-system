@@ -184,10 +184,10 @@ def test_later_distinct_tick_gets_fresh_borehole_observation_without_duplicate_o
     second, _ = path.gateway(tick=NOW + timedelta(minutes=3))
     assert first["schedule_identity"] != second["schedule_identity"]
     assert second["active_supervision_status"] == "active_segment_owned"
-    assert len(path.borehole_reads) == 4 and path.managed_calls == 2
+    assert len(path.borehole_reads) == 3 and path.managed_calls == 2
     assert path.borehole_reads[:2] == first_reads
-    assert first_reads[0] < first_reads[1] < 180 < path.borehole_reads[2] < path.borehole_reads[3]
-    assert path.fault_checks == 6
+    assert first_reads[0] < first_reads[1] < 180 < path.borehole_reads[2]
+    assert path.fault_checks == 5
     assert [row["state"] for row in path.transport.calls] == ["ON"]
 
 
