@@ -8,8 +8,8 @@ from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_tri
 from modules.oom_sakkie.rootline_transition_notifications import recover_transition_notifications, transition, compose_transition_notice
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.telemetry.rootline_cycle_budget import cycle_budget
-from test_oom_sakkie_automatic_reassessment_scheduler import memory_store as schedule_store, scheduled_payload, NOW
-from test_oom_sakkie_rootline_reassessment_delivery import memory_store as plan_store, ENV, HEADERS
+from tests.test_oom_sakkie_automatic_reassessment_scheduler import memory_store as schedule_store, scheduled_payload, NOW
+from tests.test_oom_sakkie_rootline_reassessment_delivery import memory_store as plan_store, ENV, HEADERS
 
 
 class Events:
