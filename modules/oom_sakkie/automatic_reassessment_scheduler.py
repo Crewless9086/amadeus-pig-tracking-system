@@ -15,6 +15,28 @@ MAX_CLOCK_DRIFT = timedelta(minutes=5)
 MAX_MISSED_RUN_AGE = timedelta(minutes=5)
 
 
+def safe_daily_plan_diagnostics(result):
+    """Persist finite diagnostic labels only; never exception messages."""
+    allowed = {
+        "daily_plan_stage": {"not_started", "evidence_load", "receipt_generation", "receipt_readback"},
+        "daily_plan_status": {"rootline_manager_observation_recovery_failed",
+            "manager_observation_recovery_read_failed", "manager_observation_recovery_binding_invalid",
+            "observation_write_authority_denied", "owner_observation_binding_invalid",
+            "duplicate_water_observation_ambiguous", "canonical_observation_write_failed",
+            "canonical_observation_readback_mismatch", "water_energy_plan_append_failed",
+            "canonical_plan_append_failed", "canonical_plan_readback_mismatch",
+            "canonical_evidence_unavailable", "owner_identity_required",
+            "unsafe_or_invalid_plan", "database_not_configured",
+            "scheduled_reassessment_evidence_unavailable",
+            "scheduled_reassessment_evidence_cutoff_unproven",
+            "scheduled_reassessment_evidence_after_cutoff"},
+        "daily_plan_error_type": {"RootlineCycleDeadlineExceeded", "TimeoutError",
+            "RuntimeError", "ValueError", "TypeError", "ConnectionError", "OperationalError"},
+    }
+    return {key: (value if isinstance(value, str) and value in labels else "other")
+        for key, labels in allowed.items() if (value := result.get(key)) not in (None, "")}
+
+
 def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Mapping[str, Any]],
                          store: Callable[[str, str, Any], Any], now: datetime | None = None,
                          recover_delivery: Callable[[], Mapping[str, Any]] | None = None,
@@ -116,6 +138,7 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                "writes_farm_data": result.get("writes_farm_data", False)}
     from modules.telemetry.rootline_failure_diagnostics import sanitize_no_send
     outcome.update(sanitize_no_send(result))
+    outcome.update(safe_daily_plan_diagnostics(result))
     if result.get("irrigation_failure"):
         from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
         outcome["irrigation_failure"] = sanitize_failure(result["irrigation_failure"])

@@ -42,7 +42,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         store=rootline_irrigation_execution_store, canonical_loader=None,
         connect_factory=None, now=None, evidence_factory=None, allow_new_starts=True,
         allow_borehole_starts=None, energy_reader=None, borehole_safety_reader=None,
-        clock=None, after_safety=None, borehole_conditions_reader=None):
+        clock=None, after_safety=None, borehole_conditions_reader=None, refresh_after_safety=True):
     """Supervise every owned device, then admit independent eligible work.
 
     The shared transaction locks serialize command edges. They do not reserve
@@ -85,11 +85,23 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         initial = current
     optional_proof_started = False
     if after_safety is not None:
+        callback_completed = False
         try:
             after_safety(_combined(outcomes, "no_active_managed_device"))
+            callback_completed = True
         finally:
-            # Callback failure must not bypass newly due or changed ownership.
-            refresh_safety()
+            # A no-op callback can still follow slow mandatory reads. Preserve
+            # due/unknown obligations and incomplete inventory before skipping.
+            checked_at = _aware(clock())
+            owned_deadline_due = any(not _before_deadline(row, checked_at)
+                for row in initial["active_aux"])
+            if initial["active_borehole"]:
+                owned_deadline_due = owned_deadline_due or not _before_deadline(
+                    initial["active_borehole"], checked_at)
+            if (refresh_after_safety or not callback_completed or owned_deadline_due
+                    or not initial["auxiliary_inventory_proven"]
+                    or not initial["borehole_inventory_proven"]):
+                refresh_safety()
         # B/C may take time or overlap another canonical claim. Safety is fresh
         # before optional retirement, and again after actual optional planning.
         for execution_id in tuple(deferred_no_send):
@@ -336,7 +348,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             from modules.telemetry.rootline_borehole_conditions import continuous_borehole
             continuous = continuous_borehole(active_borehole)
             energy_reason = "energy_stop"
-            energy = {}; protection = None
+            energy = {}; protection = None; protection_evidence = None
             evidence_pending = False
             try:
                 energy = energy_reader() if continuing and energy_reader is not None else {}
@@ -353,6 +365,9 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             try:
                 protection = (borehole_safety_reader()
                     if continuing and borehole_safety_reader is not None else True)
+                if isinstance(protection, dict):
+                    protection_evidence = protection
+                    protection = protection_evidence.get("safe")
                 stop_for_protection = protection is False
                 evidence_pending = evidence_pending or protection is None
             except Exception:
@@ -361,7 +376,11 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             condition_result = {}
             if continuous_borehole(active_borehole):
                 try:
-                    condition_result = borehole_conditions_reader() if callable(borehole_conditions_reader) else {}
+                    # Reuse only this pass's fault packet; callbacks and planning
+                    # are followed by a new supervision pass and a fresh read.
+                    condition_result = (borehole_conditions_reader(
+                        **({"protection": protection_evidence} if protection_evidence is not None else {}))
+                        if callable(borehole_conditions_reader) else {})
                     stop_for_protection = stop_for_protection or condition_result.get("stop_required") is True
                     evidence_pending = evidence_pending or condition_result.get("success") is not True
                 except Exception:

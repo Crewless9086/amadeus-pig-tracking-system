@@ -426,6 +426,13 @@ jobs:
           tests/test_rootline_borehole_commissioning.py
           tests/test_rootline_commissioning_bridges.py
           tests/test_rootline_active_supervision.py
+          tests/test_rootline_active_pass.py
+          tests/test_rootline_borehole_fault_read_reuse.py
+          tests/test_report_diagnostics.py
+          tests/test_rootline_continuous_demand.py
+          tests/test_rootline_continuous_borehole.py
+          tests/test_rootline_managed_devices_runtime.py
+          tests/test_rootline_no_send_scheduling.py
           tests/test_rootline_ewelink_request_budget.py
           tests/test_rootline_ewelink_request_budget_postgres.py
           tests/test_rootline_ewelink_request_budget_workload.py

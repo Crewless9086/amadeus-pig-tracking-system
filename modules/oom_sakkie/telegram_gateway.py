@@ -1248,6 +1248,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 base_scheduled_loader = lambda: build_current_rootline_specialist_result(now=cutoff())
         def scheduled_loader():
             current = base_scheduled_loader()
+            if not isinstance(current, dict) or current.get("success") is not True:
+                return current if isinstance(current, dict) else {
+                    "success": False, "status": "scheduled_reassessment_evidence_unavailable"}
             try:
                 observed = datetime.fromisoformat(str(current.get("evidence_cutoff") or "").replace("Z", "+00:00"))
                 requested = datetime.fromisoformat(str(payload.get("evidence_cutoff")).replace("Z", "+00:00"))
@@ -1256,7 +1259,25 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if observed > requested:
                 return {"success": False, "status": "scheduled_reassessment_evidence_after_cutoff"}
             return current
-        plan_context = {"current": None, "receipt": None, "error": None}
+        plan_context = {"current": None, "receipt": None, "error": None,
+            "stage": "not_started", "evidence_status": "", "work_started": False}
+        def daily_plan_failure(exc):
+            from modules.oom_sakkie.automatic_reassessment_scheduler import safe_daily_plan_diagnostics
+            deadline = isinstance(exc, RootlineCycleDeadlineExceeded)
+            stage = plan_context["stage"]
+            status = ("scheduled_rootline_reporting_deadline_deferred" if deadline else
+                "scheduled_rootline_plan_evidence_unavailable" if stage == "evidence_load" else
+                "scheduled_rootline_daily_plan_persistence_ambiguous")
+            # The production evidence loader can persist a refreshed canonical
+            # plan. No failure after entering it proves that writes did not occur.
+            unknown = plan_context["work_started"]
+            return {"success": False, "status": status, "telegram_sends": 0,
+                "hardware_commands": 0, "writes_farm_data": None if unknown else False,
+                "write_state": "unknown" if unknown else "not_attempted",
+                "report_effects_unknown": unknown,
+                **safe_daily_plan_diagnostics({"daily_plan_stage": stage,
+                    "daily_plan_status": plan_context["evidence_status"],
+                    "daily_plan_error_type": type(exc).__name__})}
         def ensure_daily_plan():
             if plan_context["receipt"] is not None:
                 return plan_context["current"], plan_context["receipt"]
@@ -1264,13 +1285,19 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 raise plan_context["error"]
             try:
                 remaining_seconds()
+                plan_context.update(stage="evidence_load", work_started=True)
                 current = scheduled_loader()
+                if current.get("success") is not True:
+                    plan_context["evidence_status"] = current.get("status") or current.get("reason")
+                    raise RuntimeError("daily_plan_evidence_unavailable")
                 remaining_seconds()
+                plan_context["stage"] = "receipt_generation"
                 generator = daily_plan_generator
                 if generator is None:
                     receipt = _canonical_rootline_plan_receipt(current)
                 else:
                     receipt = dict(generator(current) or {})
+                plan_context["stage"] = "receipt_readback"
                 plan = receipt.get("daily_plan")
                 required = ("daily_plan_id", "operating_date", "generation", "evidence_sha256")
                 if (receipt.get("success") is not True
@@ -1327,11 +1354,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 try:
                     ensure_daily_plan()
                 except Exception as exc:
-                    return {"success": False,
-                        "status": "scheduled_rootline_daily_plan_persistence_ambiguous",
-                        "daily_plan_error_type": type(exc).__name__, "telegram_sends": 0,
-                        "hardware_commands": 0, "writes_farm_data": None,
-                        "write_state": "unknown"}
+                    return daily_plan_failure(exc)
             return recover_pending_protected_delivery()
         deliver = family_delivery or deliver_family_result
         parsed = {"telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
@@ -1383,9 +1406,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 try:
                     current, receipt = ensure_daily_plan()
                 except Exception as exc:
-                    return {"success": False, "status": "scheduled_rootline_daily_plan_persistence_ambiguous",
-                        "daily_plan_error_type": type(exc).__name__, "telegram_sends": 0,
-                        "writes_farm_data": None, "write_state": "unknown",
+                    return {**daily_plan_failure(exc),
                         "plan_delivery_status": "current_irrigation_plan_delivery_unconfirmed"}
             else:
                 current, receipt = scheduled_loader(), {"created": False, "daily_plan": {}}
@@ -1461,12 +1482,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 try:
                     projected_current, plan_projection = ensure_daily_plan()
                 except Exception as exc:
-                    return {"success": False,
-                        "status": "scheduled_rootline_daily_plan_persistence_ambiguous",
-                        "daily_plan_error_type": type(exc).__name__,
-                        "telegram_sends": 0, "hardware_commands": 0,
-                        "writes_farm_data": None, "write_state": "unknown",
-                        "automatic_irrigation_authority": False}
+                    return {**daily_plan_failure(exc), "automatic_irrigation_authority": False}
             report_progress["writes_farm_data"] = plan_projection.get("created") is True
             remaining_seconds()
             plan_loader = ((lambda: projected_current)
@@ -1754,6 +1770,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 try:
                     managed_result = dict(managed(environ=source, now=scheduler_now,
                         after_safety=admit_irrigation,
+                        # Active ownership makes admission inert. Keep callback
+                        # sequencing for deferred proof, without a redundant pass.
+                        refresh_after_safety=supervision["active_supervision_status"] != "active_segment_owned",
                         allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
                         allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
                             "no_active_irrigation", "active_segment_owned", "segment_completed",

@@ -360,7 +360,7 @@ def test_actual_managed_borehole_minutes(monkeypatch,hours):
         "max_recent_plus_reserved",max(row["recent"]+row["remaining"] for row in journey.admissions))
 
 
-def test_actual_combined_near_deadline_contains_without_completion_credit(monkeypatch):
+def test_actual_combined_normal_four_pulses_complete(monkeypatch):
     journey=MinuteJourney(monkeypatch)
     journey.tick(0,parent=False,allow_borehole=True)
     for minute in range(1,243):
@@ -369,10 +369,26 @@ def test_actual_combined_near_deadline_contains_without_completion_credit(monkey
     from collections import Counter
     counts=Counter((row["device"],row["channel"],row["state"]) for row in journey.commands)
     assert counts[("100204e9bc",1,"on")]==counts[("100204e9bc",1,"off")]==1
-    assert counts[("100204d497",1,"on")]==counts[("100204d497",1,"off")]==1
-    held=[row for row in journey.rows if row.get("action")=="contain_auxiliary_device"]
-    assert len(held)==1 and held[0]["shutdown_verified"] is True
-    assert not any(row.get("action")=="record_auxiliary_completed" and row.get("auxiliary_device_id")=="FERTILIZER-INJECTION-CH1" for row in journey.rows)
+    assert counts[("100204d497",1,"on")]==counts[("100204d497",1,"off")]==4
+    assert not any(row.get("action")=="contain_auxiliary_device" for row in journey.rows)
+    pulses=[row for row in journey.rows if row.get("action")=="record_auxiliary_completed"
+        and row.get("auxiliary_device_id")=="FERTILIZER-INJECTION-CH1"]
+    assert len(pulses)==len({row["execution_id"] for row in pulses})==4
+    assert [row["pulse_number"] for row in pulses]==[1,2,3,4]
+    assert all(row["control_completed"] is True and row["shutdown_verified"] is True for row in pulses)
+    assert all(row["fertilizer_delivery_verified"] is False for row in pulses)
+    sequences=[row for row in journey.rows if row.get("action")=="record_fertilizer_sequence_completed"]
+    assert len(sequences)==1 and sequences[0]["completed"] is True
+    parent_on=next(datetime.fromisoformat(row["at"]) for row in journey.commands
+        if row["device"]=="100204e9bc" and row["state"]=="on")
+    starts=[datetime.fromisoformat(row["start_evidence"]["retrieved_at"]) for row in pulses]
+    stops=[datetime.fromisoformat(row["shutdown_evidence"]["retrieved_at"]) for row in pulses]
+    assert starts[0]-parent_on>=timedelta(minutes=10)
+    assert all(timedelta(0)<stop-start<=timedelta(seconds=120) for start,stop in zip(starts,stops))
+    assert all(later-earlier>=timedelta(minutes=10) for earlier,later in zip(stops,starts[1:]))
+    parent_off=next(datetime.fromisoformat(row["at"]) for row in journey.commands
+        if row["device"]=="100204e9bc" and row["state"]=="off")
+    assert parent_off-stops[-1]>=timedelta(minutes=10)
     assert counts[("100204d497",2,"on")]==counts[("100204d497",2,"off")]==3
     assert counts[("1002851416",1,"on")]==counts[("1002851416",1,"off")]==1
     assert sum(row["optional"]=="borehole_routine" for row in journey.reads)==14
@@ -382,6 +398,41 @@ def test_actual_combined_near_deadline_contains_without_completion_credit(monkey
             for row in journey.admissions if row["action"]=="request_attempt_reserved")),
         "optional",dict(Counter(row["optional"] or "mandatory" for row in journey.reads)),
         "max_recent_plus_reserved",max(row["recent"]+row["remaining"] for row in journey.admissions))
+
+
+def test_actual_combined_delayed_on_past_pulse_window_contains_without_credit(monkeypatch):
+    journey=MinuteJourney(monkeypatch)
+    original_open=journey.transport.http_open
+    delayed=[]
+    def late_response(req, **kwargs):
+        # Model ON reaching the provider but its response arriving after the
+        # original pulse window. The real transport must treat it as ambiguous.
+        response=original_open(req, **kwargs)
+        if not delayed and "controller_1_ch1_on" in req.full_url:
+            active=deepcopy(journey.aux["FERTILIZER-INJECTION-CH1"])
+            journey.client.backend.advance(121)
+            delayed.append({"execution":active,"returned_at":journey.now()})
+            raise TimeoutError("injector ON response delayed beyond pulse window")
+        return response
+    monkeypatch.setattr(journey.transport,"http_open",late_response)
+    journey.tick(0,parent=False,allow_borehole=True)
+    for minute in range(1,243):
+        for worker in range(2):journey.tick(minute)
+    assert len(delayed)==1
+    assert delayed[0]["returned_at"]>datetime.fromisoformat(delayed[0]["execution"]["primary_stop_deadline"])
+    assert journey.parent_finished and journey.borehole is None and not journey.aux
+    injection=[row for row in journey.commands if row["device"]=="100204d497" and row["channel"]==1]
+    assert [row["state"] for row in injection]==["on","off"]
+    assert len({row["execution_id"] for row in injection})==1
+    held=[row for row in journey.rows if row.get("action")=="contain_auxiliary_device"]
+    assert len(held)==1 and held[0]["shutdown_verified"] is True
+    assert held[0]["reason"]=="ambiguous_on"
+    assert held[0]["execution_id"]==delayed[0]["execution"]["execution_id"]
+    assert not any(row.get("action")=="record_auxiliary_completed"
+        and row.get("auxiliary_device_id")=="FERTILIZER-INJECTION-CH1" for row in journey.rows)
+    assert not any(row.get("action")=="record_fertilizer_sequence_completed" for row in journey.rows)
+    assert all(state=="off" for states in journey.outputs.values() for state in states)
+    assert max(row["recent"]+row["remaining"] for row in journey.admissions)<=250
 
 
 @pytest.mark.parametrize("case",["manual_off","unknown","rain","slow_deadline"])
