@@ -31,7 +31,7 @@ class OfflineAdmission:
   patch.setattr(cycle.time,'monotonic',lambda:1000+self.elapsed)
   patch.setattr(bounded,'connect_bounded_rootline_postgres',self.connect)
   patch.setattr(runtime,'_refresh_a_irrigation_binding',lambda *a:self.cost('A_binding',2))
-  patch.setattr(runtime,'build_water_energy_plan',lambda *a,**k:deepcopy(self.plan))
+  patch.setattr(runtime,'project_saved_program_for_execution',lambda *a,**k:deepcopy(self.plan))
   patch.setattr(runtime,'_reconcile_contained_bc_parents',lambda **k:[])
   original_load=store._load
   def load(action,payload):

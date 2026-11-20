@@ -236,7 +236,7 @@ def test_a_only_flag_runs_through_existing_coordinator_and_restart_stops_with_fl
     def refresh(source, database_url, now):
         registry._canonical_irrigation_binding.set(a_binding() if source.get("ROOTLINE_A_ENABLED") == "true" else None)
     with mock.patch("modules.telemetry.rootline_execution_runtime._refresh_a_irrigation_binding", side_effect=refresh), mock.patch(
-            "modules.telemetry.rootline_execution_runtime.build_water_energy_plan", return_value=plan):
+            "modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution", return_value=plan):
         result = run_rootline_execution_cycle(notify=lambda *_: {"success": True},
             environ={"ROOTLINE_A_ENABLED": "true"}, now=NOW, clock=lambda: NOW,
             store=store, token_store=object(), transport=transport,

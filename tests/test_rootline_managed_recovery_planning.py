@@ -331,13 +331,19 @@ def test_provider_write_exception_keeps_existing_propagation():
 @pytest.mark.parametrize("stage", ["load", "refresh", "build"])
 def test_idle_original_planning_error_result_is_preserved(monkeypatch, stage):
     loader = Evidence(fail=stage == "load")
-    def fail(*_args, **_kwargs): raise RuntimeError("planning-boundary-error")
+    fault_calls = []
+    def fail(*_args, **_kwargs):
+        fault_calls.append(stage)
+        raise RuntimeError("planning-boundary-error")
     if stage == "refresh": monkeypatch.setattr(runtime, "_refresh_active_irrigation_readback", fail)
-    if stage == "build": monkeypatch.setattr(runtime, "build_water_energy_plan", fail)
+    if stage == "build": monkeypatch.setattr(runtime, "project_saved_program_for_execution", fail)
     flags = {FLAGS[0]: "true"}
     old = invoke(Store(), OffOnlyTransport(), loader, function=predecessor(), environ=flags)
     new = invoke(Store(), OffOnlyTransport(), Evidence(fail=stage == "load"), environ=flags)
     assert new == old == {**runtime._safe("managed_device_evidence_unavailable"), "blocks_bc": False}
+    if stage in {"refresh", "build"}:
+        assert fault_calls == [stage, stage]  # both implementations reached the injected fault
+
 
 
 def test_legacy_unknown_mixer_duration_is_held_without_fabricated_budget():
@@ -354,11 +360,11 @@ def test_legacy_unknown_mixer_duration_is_held_without_fabricated_budget():
 def test_idle_enabled_and_reenabled_calls_use_fresh_planning_once_each(monkeypatch, flag):
     loader, transport, store = Evidence(), OffOnlyTransport(), Store()
     observed = []
-    original = runtime.build_water_energy_plan
-    def build(evidence, *args, **kwargs):
+    original = runtime.project_saved_program_for_execution
+    def build(saved, evidence, *args, **kwargs):
         observed.append(evidence["synthetic_generation"])
-        return original(evidence, *args, **kwargs)
-    monkeypatch.setattr(runtime, "build_water_energy_plan", build)
+        return original(saved, evidence, *args, **kwargs)
+    monkeypatch.setattr(runtime, "project_saved_program_for_execution", build)
     for value in ("true", "false", " TRUE "):
         result = invoke(store, transport, loader, environ={flag: value})
         assert result["status"] == "no_eligible_managed_device_task"

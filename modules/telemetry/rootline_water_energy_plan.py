@@ -8,6 +8,7 @@ device transport, retry, SmartLife, SONOFF, IFTTT, n8n, or hardware consumer.
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
@@ -307,14 +308,608 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     return plan
 
 
-def get_current_water_energy_plan(operating_date=None, database_url=None):
-    selected = str(operating_date or datetime.now(ZA_TZ).date().isoformat())[:10]
+
+DAILY_PROGRAM_VERSION = "rootline_saved_daily_program.v1"
+
+
+def _saved_program(plan):
+    return (_dict(plan).get("success") is True and
+        _dict(plan.get("daily_program")).get("version") == DAILY_PROGRAM_VERSION)
+
+
+def build_daily_program(evidence, operating_date, *, now=None, history=None):
+    """Bind intended work once; observations at creation never authorize tomorrow's ON."""
+    now = _as_za(now or datetime.now(timezone.utc))
+    selected = date.fromisoformat(str(operating_date))
+    forecast = _dict(evidence.get("forecast"))
+    target_rows = [row for row in forecast.get("days", [])
+        if str(row.get("forecast_date") or row.get("date")) == selected.isoformat()]
+    if not target_rows or not forecast.get("observed_at"):
+        raise ValueError("dated_nightly_forecast_required")
+    plan = build_water_energy_plan(evidence, selected.isoformat(), now=now)
+    history = deepcopy(history or {"status": UNAVAILABLE, "plans": [], "unresolved_origins": []})
+    origins = _reconcile_carry_origins(history, evidence, selected.isoformat())
+    tasks = plan["candidate_tasks"]
+    for task in tasks:
+        task["program_task_id"] = plan["plan_id"] + ":" + task["task_id"]
+        if task["task_id"].startswith("irrigation_"):
+            # A hold at the previous night's cutoff does not erase the normal
+            # objective. No catch-up is added to this allowance.
+            normal = task.get("requested_total_duration_minutes") or task.get("max_execution_minutes")
+            if type(normal) is int and normal > 0:
+                task["requested_total_duration_minutes"] = normal
+                task["planned_duration_minutes"] = min(normal, task.get("max_execution_minutes") or normal)
+                task["expected_segment_count"] = task.get("expected_segment_count") or 1
+        if task["task_id"].startswith("irrigation_"):
+            zone = task["task_id"].removeprefix("irrigation_")
+            allowance = task.get("requested_total_duration_minutes") or 0
+            task["carry_allocations"] = []
+            for origin in sorted(origins, key=lambda o: (o["operating_date"], o["origin_id"])):
+                if origin["zone_id"] != zone or allowance <= 0:
+                    continue
+                allocated = min(allowance, origin["remaining_minutes"])
+                if allocated > 0:
+                    task["carry_allocations"].append({"origin_id": origin["origin_id"], "minutes": allocated})
+                    allowance -= allocated
+            parent = _dict(_dict(task.get("incomplete_parent_job")).get("job"))
+            if parent and parent.get("operating_date") != selected.isoformat():
+                task["incomplete_parent_job"] = None
+            task["intended_work"] = "supported_daily_objective_subject_to_live_need_and_safety"
+        task["due_window"] = {"start": selected.isoformat() + "T00:00:00+02:00",
+            "end": (selected + timedelta(days=1)).isoformat() + "T00:00:00+02:00"}
+    _assign_intended_slots(tasks, evidence, selected)
+    program = {"version": DAILY_PROGRAM_VERSION, "operating_date": selected.isoformat(),
+        "start_at": selected.isoformat() + "T00:00:00+02:00",
+        "end_at": (selected + timedelta(days=1)).isoformat() + "T00:00:00+02:00",
+        "creation_cutoff": now.isoformat(), "canonical_outcome_cutoff": now.isoformat(),
+        "forecast": {"source": deepcopy(forecast.get("source")),
+            "run_at": forecast["observed_at"], "target_date": selected.isoformat(),
+            "sha256": _canonical_sha(forecast)},
+        "policy_sha256": _canonical_sha({"zones": {
+            str(z.get("zone_id")): z.get("operating_policy") for z in
+            _dict(evidence.get("irrigation")).get("zones", [])},
+            "operating_knowledge": OPERATING_KNOWLEDGE}),
+        "base_tasks": deepcopy(tasks), "previous_plans": [{k: v for k, v in p.items() if k != "tasks"}
+            for p in history.get("plans", [])],
+        "history_coverage": history.get("status", UNAVAILABLE),
+        "history_missing_plan_dates": history.get("missing_plan_dates"),
+        "carry_origins": origins,
+        "adjustments": []}
+    plan["daily_program"] = program
+    plan["replacement_reason"] = "nightly_program_bound"
+    _hash_program(plan)
+    return plan
+
+
+
+def _assign_intended_slots(tasks, evidence, selected):
+    """Rank serial slots within the owner's window using the pinned estimates.
+
+    Hourly probabilities are ordering evidence, never a new rain threshold or
+    local water credit. Daily-only packets cannot claim intraday weather skill.
+    """
+    policies = {str(z.get("zone_id")): _dict(z.get("operating_policy")) for z in
+        _dict(evidence.get("irrigation")).get("zones", [])}
+    intended = sorted((t for t in tasks if t["task_id"].startswith("irrigation_")
+        and t.get("requested_total_duration_minutes") and t.get("zone_decision") != "Completed"),
+        key=lambda t: (t.get("rank") or 999, t["task_id"]))
+    allowed = []
+    for task in intended:
+        policy = policies.get(task["task_id"].removeprefix("irrigation_"), {})
+        if policy.get("daylight_window") != "any_time":
+            task["slot_status"] = "allowed_operating_window_unavailable"
+            continue
+        allowed.append(task)
+    if not allowed:
+        return
+    start = datetime.combine(selected, datetime.min.time(), tzinfo=ZA_TZ)
+    end = start + timedelta(days=1)
+    duration = sum(t["requested_total_duration_minutes"] for t in allowed)
+    rows = [r for d in _dict(evidence.get("forecast")).get("days", [])
+        if str(d.get("forecast_date") or d.get("date")) == selected.isoformat()
+        for r in d.get("planning_hours", [])]
+    hours = {datetime.fromisoformat(r["start_at"]).astimezone(ZA_TZ): r for r in rows}
+    candidates = []
+    for hour in range(24):
+        proposed = start + timedelta(hours=hour)
+        if proposed + timedelta(minutes=duration) > end:
+            continue
+        interval = [proposed + timedelta(hours=i) for i in range((duration+59)//60)]
+        available = [hours.get(t, {}) for t in interval]
+        unknown = sum(r.get("rain_probability_pct") is None or r.get("rain_sum_mm") is None for r in available)
+        rain = sum(_number(r.get("rain_sum_mm")) or 0 for r in available)
+        probability = sum(_number(r.get("rain_probability_pct")) or 0 for r in available)
+        candidates.append(((unknown, rain, probability, proposed), proposed))
+    if not candidates:
+        for task in allowed:
+            task["slot_status"] = "normal_objectives_do_not_fit_operating_date"
+        return
+    _, cursor = min(candidates)
+    basis = ("lowest_pinned_hourly_rain_risk_within_owner_any_time_window"
+        if hours else "earliest_serial_owner_any_time_window_daily_forecast_has_no_intraday_resolution")
+    for order, task in enumerate(allowed, 1):
+        finish = cursor + timedelta(minutes=task["requested_total_duration_minutes"])
+        task.update(scheduled_order=order, planned_start_at=cursor.isoformat(),
+            planned_end_at=finish.isoformat(), preferred_window=cursor.isoformat(),
+            slot_status="intended_subject_to_fresh_execution_checks", slot_basis=basis)
+        task["due_window"] = {"start": cursor.isoformat(), "end": finish.isoformat()}
+        cursor = finish
+
+
+def _adjust_live_slots(plan, evidence, now):
+    """Move remaining slots only; preserve accepted jobs and original deadlines."""
+    if plan["daily_program"].get("provenance") == "legacy_current_day_adoption":
+        return
+    end = datetime.fromisoformat(plan["daily_program"]["end_at"])
+    active = _dict(evidence.get("active_irrigation_context"))
+    active_zones = active.get("active_zone_ids", [])
+    deadline = _managed_time(active.get("irrigation_stop_deadline"))
+    cursor = max(now, deadline) if deadline else now
+    for task in plan["candidate_tasks"]:
+        if (str(task.get("task_id") or "").startswith("irrigation_")
+                and not task.get("scheduled_order")
+                and task.get("zone_decision") in {"Run now", "Run later"}):
+            task.update(zone_decision="Hold", recommendation="Hold",
+                live_adjustment_reason="saved_permitted_operating_slot_unavailable")
+    for task in sorted((t for t in plan["candidate_tasks"] if t.get("scheduled_order")),
+            key=lambda t: t["scheduled_order"]):
+        if task["task_id"].removeprefix("irrigation_") in active_zones:
+            continue
+        if task.get("zone_decision") not in {"Run now", "Run later"}:
+            continue
+        original = datetime.fromisoformat(task["planned_start_at"])
+        proposed = max(original, cursor)
+        finish = proposed + timedelta(minutes=task["requested_total_duration_minutes"])
+        if finish > end:
+            task.update(zone_decision="Hold", recommendation="Hold",
+                live_adjustment_reason="remaining_objective_moves_to_next_normal_operating_date",
+                slot_status="carry_next_operating_date")
+            continue
+        task.update(planned_start_at=proposed.isoformat(), planned_end_at=finish.isoformat(),
+            due_window={"start": proposed.isoformat(), "end": finish.isoformat()},
+            preferred_window=proposed.isoformat())
+        if proposed > now:
+            task.update(zone_decision="Run later", recommendation="Hold",
+                live_adjustment_reason="saved_serial_slot_not_yet_due")
+        elif proposed != original:
+            task["live_adjustment_reason"] = "remaining_slot_moved_from_saved_time_using_live_availability"
+        cursor = finish
+
+
+def _hash_program(plan):
+    digest = _canonical_sha({"daily_program": plan["daily_program"],
+        "candidate_tasks": plan["candidate_tasks"]})
+    plan.update(evidence_sha256=digest, evidence_generation=digest[:16].upper())
+
+
+
+def _reconcile_carry_origins(history, evidence, selected, *, include_unstarted=True):
+    """Allocate verified repayment once; recovery never becomes a second debt."""
+    origins = {o["origin_id"]: deepcopy(o) for o in history.get("carry_origins", history.get("unresolved_origins", []))
+        if o.get("origin_id")}
+    plans = {(str(p.get("operating_date")), t.get("task_id")): t
+        for p in history.get("allocation_plans", []) + history.get("origin_candidate_plans", []) + history.get("plans", [])
+        for t in p.get("tasks", [])}
+    for zone, ledger in _dict(_dict(evidence.get("irrigation_history")).get("zones")).items():
+        parents = list(ledger.get("deferred_parent_jobs", [])) + list(ledger.get("stale_incomplete_parent_jobs", []))
+        if isinstance(ledger.get("incomplete_parent_job"), dict):
+            parents.append(ledger["incomplete_parent_job"])
+        for deferred in parents:
+            job = _dict(deferred.get("job"))
+            origin_id = job.get("job_id")
+            day = str(job.get("operating_date") or "")
+            if (not origin_id or not day or day >= selected or origin_id in origins
+                    or deferred.get("remaining_seconds") is None):
+                continue
+            remaining = max(0, float(deferred["remaining_seconds"]) / 60)
+            # A deferred recovery day still owes the original debt; do not
+            # create that allocated portion a second time under the new job.
+            allocated = sum(float(a.get("minutes") or 0) for a in
+                plans.get((day, "irrigation_" + zone), {}).get("carry_allocations", []))
+            remaining = max(0, remaining - allocated)
+            prior_program = next((o for o in origins.values()
+                if o.get("zone_id") == zone and o.get("operating_date") == day
+                and o.get("basis") == "saved_supported_unfulfilled_objective"), None)
+            if prior_program is not None:
+                # A forecast snapshot can precede this same day's canonical
+                # job becoming deferred. Bind that job to the existing task
+                # obligation instead of creating a second debt identity.
+                aliases = prior_program.setdefault("canonical_job_ids", [])
+                if origin_id not in aliases:
+                    aliases.append(origin_id)
+                repaid = sum(float(r.get("minutes") or 0) for r in prior_program.get("repayments", []))
+                prior_program["remaining_minutes"] = min(prior_program["remaining_minutes"],
+                    max(0, remaining - repaid))
+                continue
+            if remaining:
+                origins[origin_id] = {"origin_id": origin_id, "zone_id": zone,
+                    "operating_date": day, "original_minutes": remaining,
+                    "remaining_minutes": remaining, "repayments": []}
+        # Explicitly saved, supported but never-started work also remains an
+        # obligation. Prior recovery allocations are subtracted rather than
+        # reissued as another full normal objective on each advancing date.
+        accounted_days = {str(_dict(d.get("job")).get("operating_date") or "")
+            for d in parents + list(ledger.get("contained_parent_jobs", []))}
+        completed_days = {str(e.get("operating_date") or e.get("event_at_sast") or "")[:10]
+            for e in ledger.get("events", []) if e.get("qualifies_as_completed_watering") is True}
+        for prior in (history.get("origin_candidate_plans", []) + history.get("plans", [])) if include_unstarted else []:
+            day = str(prior.get("operating_date") or "")
+            if not day or day >= selected or day in accounted_days or day in completed_days:
+                continue
+            task = plans.get((day, "irrigation_" + zone), {})
+            obligation = _dict(task.get("weekly_obligation"))
+            if (task.get("zone_decision") == "Completed" or obligation.get("status") != "available"
+                    or not (obligation.get("delivery_debt_days") or 0) > 0):
+                continue
+            identity = task.get("program_task_id") or str(prior.get("plan_id")) + ":irrigation_" + zone
+            if identity in origins:
+                continue
+            remaining = max(0, float(task.get("requested_total_duration_minutes") or 0)
+                - sum(float(a.get("minutes") or 0) for a in task.get("carry_allocations", [])))
+            if remaining:
+                origins[identity] = {"origin_id": identity, "zone_id": zone, "operating_date": day,
+                    "original_minutes": remaining, "remaining_minutes": remaining,
+                    "repayments": [], "basis": "saved_supported_unfulfilled_objective"}
+        for event in ledger.get("events", []):
+            identity = event.get("execution_id")
+            day = str(event.get("operating_date") or event.get("event_at_sast") or "")[:10]
+            if not identity or event.get("qualifies_as_completed_watering") is not True:
+                continue
+            amount = max(0, float(event.get("verified_runtime_minutes") or 0))
+            # A parent may finish after the next programme was pinned at
+            # 23:30. Its canonical operating day settles its own obligation;
+            # the completion timestamp must not turn it into recovery work.
+            # Reserve only the measured amount, once per canonical outcome,
+            # before applying this same event to older recovery allocations.
+            for origin in origins.values():
+                if origin.get("zone_id") != zone or origin.get("operating_date") != day:
+                    continue
+                fulfillments = origin.setdefault("fulfillments", [])
+                prior = next((p for p in fulfillments if p.get("execution_id") == identity), None)
+                if prior:
+                    amount = max(0, amount - float(prior["minutes"]))
+                    continue
+                fulfilled = min(amount, float(origin.get("remaining_minutes") or 0))
+                if fulfilled > 0:
+                    fulfillments.append({"execution_id": identity, "minutes": fulfilled})
+                    origin["remaining_minutes"] -= fulfilled
+                    amount -= fulfilled
+            allocations = plans.get((day, "irrigation_" + zone), {}).get("carry_allocations", [])
+            for allocation in allocations:
+                origin = origins.get(allocation.get("origin_id"))
+                if not origin or day <= origin["operating_date"]:
+                    continue
+                repayments = origin.setdefault("repayments", [])
+                prior = next((p for p in repayments if p.get("execution_id") == identity), None)
+                if prior:
+                    amount = max(0, amount - float(prior["minutes"]))
+                    continue
+                repaid = min(amount, float(allocation["minutes"]), origin["remaining_minutes"])
+                if repaid > 0:
+                    repayments.append({"execution_id": identity, "minutes": repaid})
+                    origin["remaining_minutes"] -= repaid
+                    amount -= repaid
+    return list(origins.values())
+
+
+def read_program_history(operating_date, database_url=None, *, connection=None):
+    """Bound full plan context; retain canonical carry and compact allocation facts."""
+    selected = date.fromisoformat(str(operating_date))
+    start = selected - timedelta(days=selected.weekday() + 28)
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
-    if not database_url:
-        return _unavailable("database_not_configured", selected), 503
+    if not database_url and connection is None:
+        return {"status": UNAVAILABLE, "plans": [], "unresolved_origins": []}
     try:
         import psycopg
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with (nullcontext(connection) if connection is not None else
+              psycopg.connect(database_url, connect_timeout=10)) as owned:
+            with owned.cursor() as cursor:
+                cursor.execute("""with current_plans as (
+                    select i.operating_date, g.plan_json, g.generation from
+                    public.rootline_water_energy_plan_identities i join
+                    public.rootline_water_energy_plan_generations g on
+                    g.plan_id=i.plan_id and g.generation=i.current_generation
+                    where i.operating_date < %s
+                    and g.plan_json->'daily_program'->>'version'=%s
+                ), latest as (select max(operating_date) as day from current_plans)
+                select case when i.operating_date >= %s then i.plan_json
+                    else jsonb_build_object('plan_id',i.plan_json->'plan_id',
+                        'operating_date',i.plan_json->'operating_date',
+                        'daily_program',jsonb_build_object(
+                            'version',i.plan_json->'daily_program'->'version',
+                            'carry_origins',case when i.operating_date=latest.day then
+                                i.plan_json->'daily_program'->'carry_origins' else '[]'::jsonb end,
+                            'base_tasks',coalesce((select jsonb_agg(jsonb_build_object(
+                                'task_id',t->'task_id','carry_allocations',t->'carry_allocations',
+                                'program_task_id',t->'program_task_id','zone_decision',t->'zone_decision',
+                                'weekly_obligation',t->'weekly_obligation',
+                                'requested_total_duration_minutes',t->'requested_total_duration_minutes'))
+                                from jsonb_array_elements(i.plan_json->'daily_program'->'base_tasks') t
+                                where i.operating_date=latest.day or
+                                jsonb_array_length(coalesce(t->'carry_allocations','[]'::jsonb))>0),
+                                '[]'::jsonb))) end, i.generation
+                from current_plans i cross join latest
+                where i.operating_date >= %s or i.operating_date=latest.day or exists (
+                    select 1 from jsonb_array_elements(i.plan_json->'daily_program'->'base_tasks') t
+                    where jsonb_array_length(coalesce(t->'carry_allocations','[]'::jsonb))>0)
+                order by i.operating_date""", (selected, DAILY_PROGRAM_VERSION, start, start))
+                rows = cursor.fetchall()
+        plans, allocation_plans, origin_candidate_plans, origins = [], [], [], {}
+        for index, (stored, generation) in enumerate(rows):
+            program = _dict(stored.get("daily_program"))
+            # Each saved generation carries the full origin/repayment ledger.
+            # Only the latest ledger is authoritative; do not concatenate its
+            # historical copies or include old full task lists as context.
+            origins = {o["origin_id"]: deepcopy(o) for o in program.get("carry_origins", [])
+                if o.get("origin_id")}
+            reference = {"plan_id": stored.get("plan_id"), "generation": generation,
+                "operating_date": stored.get("operating_date")}
+            if str(stored.get("operating_date") or "") >= start.isoformat():
+                plans.append(dict(reference, tasks=deepcopy(program.get("base_tasks", []))))
+            else:
+                if index == len(rows) - 1:
+                    # After an extended outage the last programme's own work
+                    # may not have become carry yet. Preserve only the fields
+                    # needed to materialize that origin, not its full context.
+                    candidates = [{key: deepcopy(t.get(key)) for key in (
+                        "task_id", "program_task_id", "zone_decision", "weekly_obligation",
+                        "requested_total_duration_minutes", "carry_allocations")}
+                        for t in program.get("base_tasks", [])]
+                    for candidate in candidates:
+                        candidate["carry_allocations"] = candidate.get("carry_allocations") or []
+                    origin_candidate_plans.append(dict(reference, tasks=candidates))
+                allocations = [{"task_id": t.get("task_id"),
+                    "carry_allocations": deepcopy(t["carry_allocations"])}
+                    for t in program.get("base_tasks", []) if t.get("carry_allocations")]
+                if allocations:
+                    allocation_plans.append(dict(reference, tasks=allocations))
+        completed_weeks_end = selected - timedelta(days=selected.weekday())
+        present = {p["operating_date"] for p in plans}
+        missing = [(start+timedelta(days=i)).isoformat() for i in range(28)
+            if (start+timedelta(days=i)).isoformat() not in present]
+        return {"status": "partial" if missing else "Available", "from_date": start.isoformat(),
+            "completed_weeks_through_date": (completed_weeks_end-timedelta(days=1)).isoformat(),
+            "missing_plan_dates": missing,
+            "through_date": (selected-timedelta(days=1)).isoformat(), "plans": plans,
+            "allocation_plans": allocation_plans,
+            "origin_candidate_plans": origin_candidate_plans,
+            "carry_origins": list(origins.values()),
+            "unresolved_origins": [o for o in origins.values() if o.get("remaining_minutes", 0) > 0]}
+    except Exception as exc:
+        return {"status": UNAVAILABLE, "plans": [], "unresolved_origins": [],
+            "error_type": type(exc).__name__}
+
+
+def ensure_saved_daily_program(operating_date, *, database_url=None, now=None,
+        actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER", connection=None,
+        evidence_loader=None, forecast_reader=None):
+    """Serialize initial binding under the exact existing append date lock."""
+    selected = date.fromisoformat(str(operating_date)).isoformat()
+    now = _as_za(now or datetime.now(timezone.utc))
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url and connection is None:
+        return _unavailable("database_not_configured", selected), 503
+    if connection is None:
+        current, status = get_current_water_energy_plan(selected, database_url)
+        if _saved_program(current):
+            return current, status
+    try:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        from modules.telemetry.weather_service import get_weather_forecast
+        with (nullcontext(connection) if connection is not None else
+              connect_bounded_rootline_postgres(database_url=database_url, read_only=False)) as owned:
+            with owned.cursor() as cursor:
+                # Only initial programmes use this namespace-wide fence. It
+                # serializes the one-time transition across a midnight race.
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("rootline-water-energy:daily-program-transition",))
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("rootline-water-energy:" + selected,))
+            current, status = get_current_water_energy_plan(selected, database_url, connection=owned)
+            if _saved_program(current):
+                return current, status
+            if current.get("status") not in {"no_current_water_energy_plan"} and current.get("success") is not True:
+                return current, status
+            if selected == now.date().isoformat() and _safe_plan(current):
+                with owned.cursor() as cursor:
+                    cursor.execute("""select exists(select 1 from
+                        public.rootline_water_energy_plan_generations
+                        where plan_json->'daily_program'->>'version'=%s)""",
+                        (DAILY_PROGRAM_VERSION,))
+                    transitioned = cursor.fetchone()[0]
+                if not transitioned:
+                    adopted = _adopt_current_day_program(current, now)
+                    return _append_program_readback(adopted, actor_identity, database_url, owned)
+            packet, forecast_status = (forecast_reader or get_weather_forecast)(days=1,
+                database_url=database_url, as_of=now, operating_date=selected, nightly=True)
+            if forecast_status >= 400 or packet.get("success") is not True:
+                return _unavailable("nightly_forecast_missing_new_starts_held", selected), 200
+            evidence, _, _ = (evidence_loader or read_current_water_energy_evidence)(
+                operating_date=selected, database_url=database_url, now=now,
+                forecast_mode="nightly_pinned", forecast_packet=packet)
+            history = read_program_history(selected, database_url, connection=owned)
+            if history.get("status") == UNAVAILABLE:
+                return _unavailable("canonical_program_history_unavailable_new_starts_held", selected), 503
+            plan = build_daily_program(evidence, selected, now=now, history=history)
+            result, status = _append_program_readback(plan, actor_identity, database_url, owned)
+            if status >= 400:
+                raise RuntimeError("daily_program_append_failed")
+            return result, status
+    except Exception as exc:
+        return _unavailable("saved_daily_program_unavailable", selected, exc), 503
+
+
+
+
+def _append_program_readback(plan, actor_identity, database_url, connection):
+    written, status = append_water_energy_plan(plan, actor_identity, database_url, connection=connection)
+    if status >= 400 or written.get("success") is not True:
+        raise RuntimeError("daily_program_append_failed")
+    current, read_status = get_current_water_energy_plan(plan["operating_date"], database_url, connection=connection)
+    if (read_status >= 400 or current.get("success") is not True or
+            any(current.get(k) != written.get(k) for k in ("plan_id", "generation", "evidence_sha256"))):
+        raise RuntimeError("daily_program_readback_mismatch")
+    current.update(created=written.get("created"), superseded_generation=written.get("superseded_generation"))
+    return current, status
+
+
+def _adopt_current_day_program(current, now):
+    """One-time deployment transition; preserve the exact existing inert work."""
+    if current.get("operating_date") != now.date().isoformat() or not _safe_plan(current):
+        raise ValueError("current_day_adoption_invalid")
+    plan = deepcopy(current)
+    selected = now.date()
+    reference = {key: deepcopy(current.get(key)) for key in (
+        "plan_id", "generation", "evidence_sha256", "evidence_observed_at")}
+    plan["daily_program"] = {"version": DAILY_PROGRAM_VERSION,
+        "operating_date": selected.isoformat(),
+        "start_at": selected.isoformat() + "T00:00:00+02:00",
+        "end_at": (selected+timedelta(days=1)).isoformat() + "T00:00:00+02:00",
+        "creation_cutoff": now.isoformat(),
+        "canonical_outcome_cutoff": current.get("evidence_observed_at"),
+        "provenance": "legacy_current_day_adoption", "legacy_plan": reference,
+        "forecast": {"mode": "legacy_provenance_only", "nightly_cycle": None},
+        "policy_sha256": _canonical_sha(current.get("operating_knowledge") or {}),
+        "base_tasks": deepcopy(current.get("candidate_tasks", [])),
+        "base_auxiliary_tasks": deepcopy(current.get("irrigation_auxiliary_tasks", [])),
+        "previous_plans": [reference], "history_coverage": "legacy_current_day_only",
+        "carry_origins": _reconcile_carry_origins({"plans": []},
+            {"irrigation_history": current.get("recent_irrigation_history") or {}},
+            (selected+timedelta(days=1)).isoformat()), "adjustments": []}
+    plan["replacement_reason"] = "one_time_current_day_program_adopted"
+    _hash_program(plan)
+    return plan
+
+
+def ensure_due_daily_program(*, database_url=None, now=None):
+    now = _as_za(now or datetime.now(timezone.utc))
+    selected = now.date() + (timedelta(days=1) if (now.hour, now.minute) >= (23, 30) else timedelta())
+    return ensure_saved_daily_program(selected.isoformat(), database_url=database_url, now=now)
+
+
+def project_saved_program_for_execution(saved, evidence, *, now=None):
+    """Apply live safety to fixed work; do not read or re-evaluate a forecast."""
+    now = _as_za(now or datetime.now(timezone.utc))
+    if not _saved_program(saved) or saved.get("operating_date") != now.date().isoformat():
+        return _unavailable("saved_daily_program_missing_new_starts_held", now.date().isoformat())
+    plan = deepcopy(saved)
+    if evidence.get("evidence_purpose") == "managed":
+        return _project_managed_live_fields(plan, evidence, now)
+    power, weather, tanks = (_dict(evidence.get(k)) for k in ("power", "weather", "tanks"))
+    history = _dict(evidence.get("irrigation_history"))
+    # The saved reserve is provenance only. Current managed energy uses the
+    # standing policy and real observations, never forecast-derived reserves.
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    energy = managed_energy_decision(power, now=now)
+    reserve = {"governing_reserve_soc_pct": OPERATING_KNOWLEDGE["energy"]["learned_reserve_candidates_pct"]["uncertain"],
+        "absolute_floor_soc_pct": OPERATING_KNOWLEDGE["energy"]["absolute_discretionary_floor_soc_pct"],
+        "governing_reason": "standing_discretionary_policy_current_observations",
+        "discretionary_battery_energy_available": energy["mixing_eligible"]}
+    rain = _rain_effect(weather, _freshness(weather, now), {}, UNAVAILABLE)
+    current = _irrigation_tasks(_dict(evidence.get("irrigation")), history,
+        reserve, rain, weather, {}, tanks, _tank_freshness(tanks, now), power,
+        _freshness(power, now), _freshness(weather, now), now, plan["operating_date"])
+    live_tasks = {t["task_id"]: t for t in current}
+    advisor_zones = {str(z.get("zone_id")): z for z in
+        _dict(evidence.get("irrigation")).get("zones", [])}
+    plan["candidate_tasks"] = deepcopy(plan["daily_program"]["base_tasks"])
+    for task in plan["candidate_tasks"]:
+        live = live_tasks.get(task["task_id"])
+        if live is None:
+            if task["task_id"] == "borehole":
+                live = _borehole_task(tanks, _tank_freshness(tanks, now),
+                    _dict(evidence.get("water_demand")), rain, reserve, power=power, now=now)
+            elif task["task_id"] == "solar_transfer":
+                live = _transfer_task(tanks, _tank_freshness(tanks, now),
+                    _dict(evidence.get("water_demand")), reserve)
+            else:
+                continue
+        task["live_adjustment_reason"] = live.get("reason")
+        for key in ("zone_decision", "recommendation", "preferred_window", "dependencies",
+                    "incomplete_parent_job", "stale_incomplete_parent_jobs", "contained_parent_jobs"):
+            if key in live:
+                task[key] = deepcopy(live[key])
+        # Keep the original rationale, rank, duration and weekly obligation in
+        # the execution digest. Fresh history/containment is evaluated separately.
+        if task["task_id"].startswith("irrigation_"):
+            zone = task["task_id"].removeprefix("irrigation_")
+            parent = _dict(task.get("incomplete_parent_job"))
+            if _dict(parent.get("projection")).get("status") == "job_deferred":
+                task.update(zone_decision="Hold", recommendation="Hold",
+                    live_adjustment_reason="consumed_original_job_deferred_to_next_normal_program")
+            elif task.get("zone_decision") in {"Run now", "Run later"} and (
+                    _freshness(weather, now) != "fresh" or
+                    advisor_zones.get(zone, {}).get("live_rain_release_proven") is not True):
+                task.update(zone_decision="Hold", recommendation="Hold",
+                    live_adjustment_reason="current_local_weather_release_unproven")
+        if isinstance(task.get("weekly_obligation"), dict):
+            task["weekly_obligation"]["ledger_complete_through"] = _dict(live.get("weekly_obligation")).get("ledger_complete_through")
+        if task["task_id"].startswith("irrigation_") and not task.get("planned_duration_minutes"):
+            task.update(zone_decision="Hold", recommendation="Hold")
+    batch = build_fertilizer_batch_lifecycle(observations=evidence.get("fertilizer_batch_observations"),
+        executions=evidence.get("fertilizer_executions"), now=now)
+    auxiliary = build_auxiliary_tasks(batch=batch, power=power,
+        verified_mixing=evidence.get("fertilizer_executions"),
+        mixing_history_complete_through=evidence.get("fertilizer_history_complete_through"),
+        active_irrigation_context=evidence.get("active_irrigation_context"), now=now)
+    plan["current_power"] = {"status": _freshness(power, now),
+        "age_minutes": _age_minutes(power, now), **deepcopy(power)}
+    plan.update(recent_irrigation_history=deepcopy(history), managed_energy_decision=energy,
+        irrigation_auxiliary_devices=auxiliary["irrigation_auxiliary_devices"],
+        irrigation_auxiliary_tasks=auxiliary["irrigation_auxiliary_tasks"],
+        fertilizer_batch_lifecycle=batch, live_evidence_cutoff=now.isoformat(),
+        current_local_weather=deepcopy(weather))
+    plan["daily_program"]["carry_origins"] = _reconcile_carry_origins({
+        "carry_origins": plan["daily_program"].get("carry_origins", []),
+        "plans": [{"plan_id": plan["plan_id"], "operating_date": plan["operating_date"],
+            "tasks": plan["daily_program"]["base_tasks"]}]}, evidence,
+        (now.date()+timedelta(days=1)).isoformat(), include_unstarted=False)
+    _adjust_live_slots(plan, evidence, now)
+    plan["status"] = _overall_status(plan["candidate_tasks"])
+    plan["authority"] = deepcopy(AUTHORITY)
+    return plan
+
+
+def revise_program_remainder(saved, evidence, *, now=None, database_url=None,
+        actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER", connection=None):
+    """CAS live remainder adjustments without replacing immutable work or claims."""
+    candidate = project_saved_program_for_execution(saved, evidence, now=now)
+    if candidate.get("success") is not True:
+        return candidate, 200
+    adjustments = [{"task_id": t["task_id"], "decision": t.get("zone_decision"),
+        "reason": t.get("live_adjustment_reason"), "window": t.get("preferred_window"),
+        "start_at": t.get("planned_start_at"), "end_at": t.get("planned_end_at")}
+        for t in candidate["candidate_tasks"] if t.get("live_adjustment_reason")]
+    if (adjustments == saved["daily_program"].get("adjustments") and
+            candidate["daily_program"].get("carry_origins") == saved["daily_program"].get("carry_origins")):
+        return candidate, 200
+    candidate["daily_program"]["adjustments"] = adjustments
+    candidate["replacement_reason"] = "live_remaining_work_adjusted"
+    _hash_program(candidate)
+    try:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        with (nullcontext(connection) if connection is not None else
+              connect_bounded_rootline_postgres(database_url=database_url, read_only=False)) as owned:
+            with owned.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("rootline-water-energy:" + saved["operating_date"],))
+            current, status = get_current_water_energy_plan(saved["operating_date"], database_url, connection=owned)
+            if current.get("generation") != saved.get("generation"):
+                return current, status
+            return _append_program_readback(candidate, actor_identity, database_url, owned)
+    except Exception as exc:
+        return _unavailable("daily_program_revision_unavailable", saved["operating_date"], exc), 503
+
+
+def get_current_water_energy_plan(operating_date=None, database_url=None, *, connection=None):
+    selected = str(operating_date or datetime.now(ZA_TZ).date().isoformat())[:10]
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url and connection is None:
+        return _unavailable("database_not_configured", selected), 503
+    try:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        with (nullcontext(connection) if connection is not None else
+              connect_bounded_rootline_postgres(database_url=database_url, read_only=True)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -372,10 +967,71 @@ def build_current_water_energy_plan(operating_date=None, database_url=None, now=
     return build_water_energy_plan(evidence, selected, now=now)
 
 
+
+def _read_managed_live_evidence(operating_date, database_url, now, *, pending_devices, evidence_cutoff=None):
+    """Fresh admission facts for the actual pending managed devices only."""
+    from modules.telemetry.power_service import get_current_power_state
+    from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
+    now = _as_za(now or datetime.now(timezone.utc))
+    selected = str(operating_date or now.date().isoformat())[:10]
+    if not isinstance(pending_devices, (list, tuple, set, frozenset)):
+        raise ValueError("managed_pending_device_scope_required")
+    pending = set(pending_devices)
+    if evidence_cutoff is not None and (not isinstance(evidence_cutoff, datetime)
+            or evidence_cutoff.tzinfo is None or _as_za(evidence_cutoff) != now):
+        raise ValueError("reporting_cutoff_epoch_mismatch")
+    as_of = {"as_of": evidence_cutoff} if evidence_cutoff is not None else {}
+    bounded = {"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}
+    readers = {"power": lambda: get_current_power_state(database_url=database_url, **as_of)}
+    needs_program = bool(pending & {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1", "BOREHOLE-1-MINI-R4-CH1"})
+    if needs_program:
+        readers["saved_daily_plan"] = lambda: get_current_water_energy_plan(selected, database_url)
+        readers["managed_devices"] = lambda: _read_managed_device_evidence(database_url, now, **bounded)
+    loaded = run_bounded_read_group(readers, max_workers=3, deadline_seconds=25)
+    managed = loaded.get("managed_devices") or {}
+    power, power_status = loaded["power"]
+    evidence = {"power": _normalize_power(power) if power_status < 400 else {},
+        "forecast": {}, "forecast_mode": "live_only", "evidence_purpose": "managed",
+        "pending_devices": sorted(pending),
+        "saved_daily_plan": loaded.get("saved_daily_plan", ({}, 200))[0],
+        "fertilizer_batch_observations": managed.get("fertilizer_batch_observations") or [],
+        "fertilizer_executions": managed.get("fertilizer_executions") or [],
+        "fertilizer_history_complete_through": managed.get("fertilizer_history_complete_through"),
+        "active_irrigation_context": managed.get("active_irrigation_context"),
+        "borehole_interlocks": managed.get("borehole_interlocks")}
+    return evidence, selected, now
+
+
+def _project_managed_live_fields(plan, evidence, now):
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    power = _dict(evidence.get("power"))
+    batch = build_fertilizer_batch_lifecycle(observations=evidence.get("fertilizer_batch_observations"),
+        executions=evidence.get("fertilizer_executions"), now=now)
+    auxiliary = build_auxiliary_tasks(batch=batch, power=power,
+        verified_mixing=evidence.get("fertilizer_executions"),
+        mixing_history_complete_through=evidence.get("fertilizer_history_complete_through"),
+        active_irrigation_context=evidence.get("active_irrigation_context"), now=now)
+    plan.update(managed_energy_decision=managed_energy_decision(power, now=now),
+        irrigation_auxiliary_devices=auxiliary["irrigation_auxiliary_devices"],
+        irrigation_auxiliary_tasks=auxiliary["irrigation_auxiliary_tasks"],
+        fertilizer_batch_lifecycle=batch, live_evidence_cutoff=now.isoformat())
+    plan["current_power"] = {"status": _freshness(power, now),
+        "age_minutes": _age_minutes(power, now), **deepcopy(power)}
+    return plan
+
+
 def read_current_water_energy_evidence(
-    operating_date=None, database_url=None, now=None, *, evidence_cutoff=None
+    operating_date=None, database_url=None, now=None, *, evidence_cutoff=None,
+    forecast_mode="current", forecast_packet=None, purpose="irrigation", pending_devices=None
 ):
     """Read canonical ROOTLINE evidence without persisting a plan or observation."""
+    if purpose == "managed":
+        if forecast_mode != "live_only":
+            raise ValueError("managed_evidence_requires_live_only")
+        return _read_managed_live_evidence(operating_date, database_url, now,
+            pending_devices=pending_devices, evidence_cutoff=evidence_cutoff)
+    if purpose != "irrigation":
+        raise ValueError("rootline_evidence_purpose_invalid")
     from modules.telemetry.power_service import get_current_power_state
     from modules.telemetry.weather_service import (
         get_current_weather_state,
@@ -386,6 +1042,10 @@ def read_current_water_energy_evidence(
 
     now = _as_za(now or datetime.now(timezone.utc))
     selected = str(operating_date or now.date().isoformat())[:10]
+    if forecast_mode not in {"current", "nightly_pinned", "live_only"}:
+        raise ValueError("forecast_evidence_mode_invalid")
+    if forecast_mode == "nightly_pinned" and not isinstance(forecast_packet, dict):
+        raise ValueError("pinned_forecast_required")
     reporting = evidence_cutoff is not None
     if reporting:
         if not isinstance(evidence_cutoff, datetime) or evidence_cutoff.tzinfo is None:
@@ -395,7 +1055,26 @@ def read_current_water_energy_evidence(
     as_of = {"as_of": evidence_cutoff} if reporting else {}
     bounded = {"evidence_cutoff": evidence_cutoff} if reporting else {}
 
+    from threading import Lock
+    power_lock, power_cache = Lock(), {}
+    def read_power_once():
+        with power_lock:
+            if "packet" not in power_cache:
+                power_cache["packet"] = get_current_power_state(database_url=database_url, **as_of)
+            return power_cache["packet"]
+
     def read_advisor():
+        if forecast_mode != "current":
+            from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
+            from modules.telemetry.weather_service import get_weather_control_snapshot
+            brief_readers = {"weather_snapshot": lambda: get_weather_control_snapshot(
+                database_url=database_url, now=now),
+                "power": read_power_once}
+            if forecast_mode == "nightly_pinned":
+                brief_readers["forecast"] = lambda: (deepcopy(forecast_packet), 200)
+            return get_rootline_daily_advisor(selected, now=now, database_url=database_url,
+                brief_reader=lambda: get_rootline_daily_brief(selected, now=now,
+                    database_url=database_url, readers=brief_readers))
         if not reporting:
             return get_rootline_daily_advisor(selected, now=now, database_url=database_url)
         from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
@@ -421,7 +1100,7 @@ def read_current_water_energy_evidence(
     # aggregate latency to the slowest source instead of their sum.
     from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
     readers = {
-        "power": lambda: get_current_power_state(database_url=database_url, **as_of),
+        "power": read_power_once,
         "forecast": lambda: get_weather_forecast(days=3, database_url=database_url, **as_of),
         "advisor": read_advisor,
         "balances": lambda: read_latest_zone_water_balances(database_url, now=now),
@@ -431,6 +1110,12 @@ def read_current_water_energy_evidence(
         "owner_zone_need": lambda: _read_latest_owner_zone_need(database_url, now, **bounded),
         "managed_devices": lambda: _read_managed_device_evidence(database_url, now, **bounded),
     }
+    if forecast_mode == "live_only":
+        readers.pop("forecast")
+        readers.pop("history")
+        readers["saved_daily_plan"] = lambda: get_current_water_energy_plan(selected, database_url)
+    elif forecast_mode == "nightly_pinned":
+        readers["forecast"] = lambda: (deepcopy(forecast_packet), 200)
     # The advisor is itself a bounded aggregate of canonical reads and can
     # legitimately consume most of its 18-second inner deadline. Give that
     # reader a worker immediately and keep the outer bound above the nested
@@ -438,7 +1123,7 @@ def read_current_water_energy_evidence(
     # database outage.
     loaded = run_bounded_read_group(readers,max_workers=4,deadline_seconds=25)
     power_packet, _ = loaded["power"]
-    forecast_packet, _ = loaded["forecast"]
+    forecast_packet, _ = loaded.get("forecast", ({}, 200))
     advisor, _ = loaded["advisor"]
     # Use the same current row that proved the advisor's dry interval.
     weather_packet = advisor.get("current_weather_packet") or {}
@@ -459,7 +1144,7 @@ def read_current_water_energy_evidence(
                     for row in zone_credits), 3) if zone_credits else "Unknown",
                 "credits": zone_credits,
                 "dependency": None if zone_credits else "measured_volume_or_supported_calibration_required"}
-    history = loaded["history"]
+    history = loaded.get("history") or _dict(loaded.get("saved_daily_plan", ({},))[0]).get("historical_context") or {"status": UNAVAILABLE}
     tanks = loaded["tanks"]
     owner_zone_need = loaded["owner_zone_need"]
     managed = loaded["managed_devices"] if isinstance(
@@ -518,20 +1203,26 @@ def read_current_water_energy_evidence(
         "active_irrigation_context": managed.get("active_irrigation_context"),
         "borehole_interlocks": managed.get("borehole_interlocks"),
     }
+    if forecast_mode == "live_only":
+        evidence["saved_daily_plan"] = loaded["saved_daily_plan"][0]
+        evidence["forecast_mode"] = "live_only"
+    elif forecast_mode == "nightly_pinned":
+        evidence["forecast_mode"] = "nightly_pinned"
     return evidence, selected, now
 
 
-def append_water_energy_plan(plan, actor_identity, database_url=None):
+def append_water_energy_plan(plan, actor_identity, database_url=None, *, connection=None):
     if not actor_identity:
         return {"success": False, "status": "owner_identity_required"}, 403
     if not _safe_plan(plan):
         return {"success": False, "status": "unsafe_or_invalid_plan"}, 400
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
-    if not database_url:
+    if not database_url and connection is None:
         return {"success": False, "status": "database_not_configured"}, 503
     try:
         import psycopg
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with (nullcontext(connection) if connection is not None else
+              psycopg.connect(database_url, connect_timeout=10)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -1433,7 +2124,8 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             if canonical.get("contained_parent_jobs"):
                 zone["contained_parent_jobs"] = deepcopy(canonical["contained_parent_jobs"])
             zone["completion_events"] = [{
-                "completed_at": event.get("event_at_sast"), "state": "Completed",
+                "completed_at": event.get("event_at_sast"), "operating_date": event.get("operating_date"),
+                "state": "Completed",
                 "shutdown_verified": event.get("shutdown_verified") is True,
                 "objective_satisfied": event.get("objective_satisfied") is True,
                 "verified_runtime_minutes": event.get("verified_runtime_minutes"),
@@ -1472,13 +2164,14 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                 "storage_replenishment_assumed_required": True,
             },
             "policy": {
-                "season": _irrigation_season(now),
+                "season": _irrigation_season(datetime.fromisoformat(str(operating_date)).replace(tzinfo=ZA_TZ)),
                 "target_days_per_week": 4,
                 "governing_reserve_soc_pct": reserve["governing_reserve_soc_pct"],
                 "absolute_floor_soc_pct": reserve["absolute_floor_soc_pct"],
             },
         }
-        decisions = build_adaptive_irrigation_decisions(payload, now=now)
+        decisions = build_adaptive_irrigation_decisions(payload, now=now,
+            operating_date=operating_date)
         tasks = []
         recommendation_map = {
             "Run now": "Recommend", "Run later": "Recommend", "Hold": "Hold",

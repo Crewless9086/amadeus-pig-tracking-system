@@ -788,3 +788,346 @@ def test_artifact_expiry_and_tamper_rejected():
     assert validate_auxiliary_eligibility(artifact,now=NOW) is None
     artifact=injection_eligibility();artifact["hardware_control"]=False
     assert validate_auxiliary_eligibility(artifact,now=NOW) is None
+
+
+# Production-shaped late-start regression: a 140-second cycle reached claim
+# with only 5.7 seconds remaining. The reserve and claim gates are independent.
+@pytest.mark.parametrize("slow_stage", ["revalidation", "safety", "capacity"])
+@pytest.mark.parametrize("mandatory", [False, True])
+@pytest.mark.parametrize("finished_at", [111.0, 134.3])
+def test_auxiliary_actual_cycle_budget_refuses_late_start_before_claim(monkeypatch, slow_stage, mandatory, finished_at):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from modules.telemetry import rootline_cycle_budget as cycle
+    from tests.test_rootline_ewelink_request_budget import MemoryBudget
+    elapsed = [100.0]
+    monkeypatch.setattr(cycle, "time", SimpleNamespace(monotonic=lambda: elapsed[0]))
+    client = MemoryBudget()
+    client.backend.now = NOW + timedelta(seconds=elapsed[0])
+    reserve_calls = []
+    def consume():
+        elapsed[0] = finished_at
+        client.backend.now = NOW + timedelta(seconds=elapsed[0])
+    class SlowTransport(Transport):
+        def read_safety_configuration(self, **kwargs):
+            if slow_stage == "safety": consume()
+            return super().read_safety_configuration(**kwargs)
+        def prepare_execution_capacity(self, execution):
+            reserve_calls.append(execution["execution_id"])
+            permit = client.reserve_for_on(execution_id=execution["execution_id"],
+                device_id=execution["device_id"], channel=execution["channel"],
+                device_type=execution["device_type"], region="eu")
+            if slow_stage == "capacity": consume()
+            return permit
+    def context(_artifact):
+        if slow_stage == "revalidation": consume()
+        return {"plan_generation": "PLAN-MIX-1", "injection_active": False,
+            "verified_mixing_minutes_today": 20, "verified_mixing_sessions_today": 0,
+            "reserved_mixing_seconds_today": 1200, "mixing_history_valid": True,
+            "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True}
+    store, transport = Store(), SlowTransport()
+    # Explicitly retain the actual cycle bound, not an enlarged test deadline.
+    with cycle.cycle_budget(deadline=140.0):
+        with cycle.mandatory_safety() if mandatory else nullcontext():
+            result = advance_auxiliary_execution(eligibility=mixer_eligibility(verified_mixing_minutes_today=20),
+                store=store, transport=transport, revalidate=context, now=NOW,
+                clock=lambda: NOW+timedelta(seconds=elapsed[0]))
+            assert cycle.on_deadline() == 140.0
+            assert cycle.work_deadline() == (None if mandatory else 140.0)
+    assert result["status"] == "auxiliary_start_budget_unavailable"
+    assert result["hardware_commands"] == 0 and transport.calls == []
+    assert store.rows == [] and store.consumed == set() and store.active is None
+    assert len(reserve_calls) == (1 if slow_stage == "capacity" else 0)
+    if slow_stage == "capacity":
+        identity = reserve_calls[0]
+        reserve = client.backend.state["reserves"][identity]
+        assert reserve["phase"] == "pre_on"
+        assert datetime.fromisoformat(reserve["admit_until"])-datetime.fromisoformat(reserve["reserved_at"]) == timedelta(seconds=30)
+        if finished_at < 130.0:
+            assert datetime.fromisoformat(reserve["admit_until"]) > client.backend.now
+        client.backend.advance(max(0, 130.001-finished_at))
+        # The following normal admission executes the real existing cleanup.
+        client.reserve_for_on(execution_id="NEXT-NORMAL-ELIGIBILITY", device_id="100204d497",
+            channel=2, device_type="fertilizer_mixer", region="eu")
+        assert identity not in client.backend.state["reserves"]
+        assert all(event["units"] == 0 for event in client.backend.events)
+        assert any(identity in event["detail"].get("expired_never_attempted", [])
+            for event in client.backend.events)
+    else:
+        assert client.backend.state is None
+
+
+@pytest.mark.parametrize("remaining,expected", [(30.001, True), (30.0, False), (5.7, False), (0, False), (-1, False)])
+def test_auxiliary_on_start_window_keeps_existing_bound_in_mandatory_safety(monkeypatch, remaining, expected):
+    from types import SimpleNamespace
+    from modules.telemetry import rootline_cycle_budget as cycle
+    monkeypatch.setattr(cycle, "time", SimpleNamespace(monotonic=lambda: 140.0-remaining))
+    assert cycle.on_start_window_available() is True  # Existing unbudgeted direct callers.
+    with cycle.cycle_budget(deadline=140.0):
+        with cycle.mandatory_safety():
+            assert cycle.remaining_seconds() == float("inf")
+            assert cycle.on_start_window_available() is expected
+            with cycle.cycle_budget(deadline=1000.0):
+                assert cycle.on_deadline() == 140.0
+                assert cycle.on_start_window_available() is expected
+
+
+def test_expired_start_budget_does_not_abandon_owned_auxiliary_off(monkeypatch):
+    from types import SimpleNamespace
+    from modules.telemetry import rootline_cycle_budget as cycle
+    monkeypatch.setattr(cycle, "time", SimpleNamespace(monotonic=lambda: 141.0))
+    store, transport = Store(), Transport(read="ON")
+    store.active = {"execution_id": "OWNED-UNSTARTED", "state": "claimed_recovery_required",
+        "device_id": "100204d497", "channel": 2, "auxiliary_device_id": "FERTILIZER-MIXER-CH2",
+        "claimed_at": (NOW-timedelta(seconds=60)).isoformat(),
+        "primary_stop_deadline": (NOW+timedelta(seconds=540)).isoformat()}
+    with cycle.cycle_budget(deadline=140.0), cycle.mandatory_safety():
+        result = advance_auxiliary_execution(eligibility=None, store=store, transport=transport, now=NOW,
+            auxiliary_device_id="FERTILIZER-MIXER-CH2")
+    assert result["status"] == "auxiliary_restart_contained"
+    assert [call["state"] for call in transport.calls] == ["OFF"]
+    held = next(payload for action, payload in store.rows if action == "contain_auxiliary_device")
+    assert held["shutdown_verified"] is True and not store.consumed
+
+
+# Exact canonical receipt from the 2026-11-20 incident: claim then OFF/hold,
+# with no dispatch or ON outcome. No provider responses are fabricated here.
+_NO_DISPATCH_HISTORY_553987 = json.loads(r'''[
+  {
+    "action": "record_auxiliary_eligibility",
+    "status": "auxiliary_execution_eligible",
+    "channel": 2,
+    "eligible": true,
+    "event_id": "ROOTLINE-EXEC-15C5FA8B81273E9D0DDFECF1B7878F50",
+    "on_event": "controller_1_ch2_on",
+    "device_id": "100204d497",
+    "off_event": "controller_1_ch2_off",
+    "stop_mode": "scheduled",
+    "expires_at": "2026-11-20T13:08:12.889983+00:00",
+    "single_use": true,
+    "decision_at": "2026-11-20T13:03:12.889983+00:00",
+    "device_type": "fertilizer_mixer",
+    "execution_id": "ROOTLINE-AUX-EXECUTION-553987A35A632CAFABFCA9F4",
+    "eligibility_id": "ROOTLINE-AUX-ELIGIBILITY-553987A35A632CAFABFCA9F4",
+    "consumption_key": "ROOTLINE-AUX-CONSUME-6AF0309D24E8E1149DED591D",
+    "plan_generation": "4AC9F6E0D72E5D27",
+    "batch_generation": "ROOTLINE-BATCH-9F3FBBA19BC526F5B430A4DF",
+    "contract_version": "rootline_auxiliary_eligibility.v2",
+    "hardware_control": true,
+    "command_authority": true,
+    "eligibility_sha256": "553987a35a632cafabfca9f45a9484e36b83d8286c17b13f8e3725efc850a4c4",
+    "auxiliary_device_id": "FERTILIZER-MIXER-CH2",
+    "provider_output_state": "OFF",
+    "device_contract_sha256": "ba0018a4688c2ad6be62f91a8056127b307cec3a294b92c509e4e553541e0b95",
+    "maximum_duration_seconds": 600,
+    "controller_safety_generation": "ba0018a4688c2ad6be62f91a8056127b307cec3a294b92c509e4e553541e0b95",
+    "simultaneous_with_other_auxiliary": true
+  },
+  {
+    "state": "claimed",
+    "action": "claim_auxiliary_before_on",
+    "job_id": null,
+    "channel": 2,
+    "zone_id": null,
+    "event_id": "ROOTLINE-EXEC-6E29587BBD4871367516EE91E26CB666",
+    "device_id": "100204d497",
+    "stop_mode": "scheduled",
+    "claimed_at": "2026-11-20T13:03:59.057858+00:00",
+    "job_sha256": null,
+    "device_type": "fertilizer_mixer",
+    "on_attempts": 0,
+    "execution_id": "ROOTLINE-AUX-EXECUTION-553987A35A632CAFABFCA9F4",
+    "off_attempts": 0,
+    "phase_number": null,
+    "pulse_number": null,
+    "eligibility_id": "ROOTLINE-AUX-ELIGIBILITY-553987A35A632CAFABFCA9F4",
+    "consumption_key": "ROOTLINE-AUX-CONSUME-6AF0309D24E8E1149DED591D",
+    "batch_generation": "ROOTLINE-BATCH-9F3FBBA19BC526F5B430A4DF",
+    "segment_identity": null,
+    "zone_execution_id": null,
+    "eligibility_sha256": "553987a35a632cafabfca9f45a9484e36b83d8286c17b13f8e3725efc850a4c4",
+    "auxiliary_device_id": "FERTILIZER-MIXER-CH2",
+    "primary_stop_deadline": "2026-11-20T13:13:59.057858+00:00",
+    "maximum_duration_seconds": 600,
+    "provider_capacity_permit": "20c455b268ad4379a9db73ced5a9ac14"
+  },
+  {
+    "action": "claim_auxiliary_off_attempt",
+    "attempt": 1,
+    "event_id": "ROOTLINE-EXEC-2E992F99CD7FD1AB1DDF0A97FCC10D5F",
+    "execution_id": "ROOTLINE-AUX-EXECUTION-553987A35A632CAFABFCA9F4"
+  },
+  {
+    "action": "record_auxiliary_off_outcome",
+    "attempt": 1,
+    "outcome": {
+      "event": "controller_1_ch2_off",
+      "status": "accepted",
+      "provider_status": 200,
+      "accepted_unambiguous": true
+    },
+    "event_id": "ROOTLINE-EXEC-F527E93086478AD4000CE7CD799A068A",
+    "execution_id": "ROOTLINE-AUX-EXECUTION-553987A35A632CAFABFCA9F4"
+  },
+  {
+    "state": "claimed_recovery_required",
+    "action": "contain_auxiliary_device",
+    "job_id": null,
+    "reason": "restart_or_deadline_ambiguous",
+    "channel": 2,
+    "zone_id": null,
+    "event_id": "ROOTLINE-EXEC-063F332E2B01546B11F081401CCCAC51",
+    "device_id": "100204d497",
+    "stop_mode": "scheduled",
+    "claimed_at": "2026-11-20T13:03:59.057858+00:00",
+    "job_sha256": null,
+    "device_type": "fertilizer_mixer",
+    "on_attempts": 0,
+    "execution_id": "ROOTLINE-AUX-EXECUTION-553987A35A632CAFABFCA9F4",
+    "off_attempts": 0,
+    "phase_number": null,
+    "pulse_number": null,
+    "eligibility_id": "ROOTLINE-AUX-ELIGIBILITY-553987A35A632CAFABFCA9F4",
+    "consumption_key": "ROOTLINE-AUX-CONSUME-6AF0309D24E8E1149DED591D",
+    "batch_generation": "ROOTLINE-BATCH-9F3FBBA19BC526F5B430A4DF",
+    "segment_identity": null,
+    "shutdown_evidence": {
+      "state": "OFF",
+      "channel": 2,
+      "device_id": "100204d497",
+      "evidence_id": "09c3784658aff0caac6caef4746afaa2c641fae15419794870ce851d98553a93",
+      "retrieved_at": "2026-11-20T13:05:02.287233+00:00",
+      "authoritative": true
+    },
+    "shutdown_verified": true,
+    "zone_execution_id": null,
+    "eligibility_sha256": "553987a35a632cafabfca9f45a9484e36b83d8286c17b13f8e3725efc850a4c4",
+    "auxiliary_device_id": "FERTILIZER-MIXER-CH2",
+    "primary_stop_deadline": "2026-11-20T13:13:59.057858+00:00",
+    "maximum_duration_seconds": 600,
+    "provider_capacity_permit": "20c455b268ad4379a9db73ced5a9ac14"
+  }
+]''')
+
+
+def unstarted_incident_history():
+    return deepcopy(_NO_DISPATCH_HISTORY_553987)
+
+
+def unstarted_incident_terminal(monkeypatch):
+    import importlib
+    store = importlib.import_module("modules.telemetry.rootline_irrigation_execution_store")
+    history = unstarted_incident_history()
+    claim = history[1]
+    held = history[-1]
+    started = datetime.fromisoformat(held["shutdown_evidence"]["retrieved_at"])+timedelta(seconds=1)
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None): return started+timedelta(seconds=2)
+    monkeypatch.setattr(store, "datetime", Clock)
+    receipt = {**claim, "state": "Aborted", "terminal_contract": "rootline_auxiliary_startup_abort.v2",
+        "claim_event_id": claim["event_id"], "claim_sha256": store._event_digest(claim),
+        "containment_event_id": held["event_id"], "containment_sha256": store._event_digest(held),
+        "startup_preimage": "never_dispatched", "dispatch_count": 0,
+        "startup_aborted_verified": True, "startup_unstarted_verified": True,
+        "reason": "startup_never_dispatched", "provider_on_outcome": "Not dispatched",
+        "shutdown_verified": True, "on_attempts": 0, "off_attempts": 1,
+        "shutdown_evidence": {**held["shutdown_evidence"], "retrieved_at": (started+timedelta(seconds=.25)).isoformat()},
+        "read_started_at": started.isoformat(), "aborted_at": (started+timedelta(seconds=.5)).isoformat(),
+        "read_elapsed_seconds": .5, "objective_satisfied": False, "control_completed": False,
+        "reservation_preserved": True, "on_authority": False}
+    receipt = store._stored_event_body("record_auxiliary_startup_aborted", receipt,
+        store._event_id("record_auxiliary_startup_aborted", receipt))
+    return store, history, receipt
+
+
+def test_actual_unstarted_incident_supports_distinct_abort_without_refunding_mixing(monkeypatch):
+    from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
+    store, history, terminal = unstarted_incident_terminal(monkeypatch)
+    preimage = store._auxiliary_startup_abort_preimage(history, history[-1]["event_id"])
+    assert preimage is not None and preimage[1] is None
+    binding = store._auxiliary_abort_binding(preimage)
+    assert binding["startup_preimage"] == "never_dispatched" and binding["dispatch_count"] == 0
+    assert "dispatch_event_id" not in binding and "dispatch_sha256" not in binding
+    assert store._verified_auxiliary_startup_abort(terminal, history)
+    assert store._auxiliary_startup_terminal(history+[terminal]) == terminal
+    accounting = mixing_daily_accounting(history+[terminal], now=store.datetime.now(timezone.utc))
+    assert accounting["reserved_seconds"] == 600 and accounting["controller_completed_seconds"] == 0
+    assert accounting["sessions"] == 1 and accounting["premix_verified"] is False
+
+
+@pytest.mark.parametrize("missing", ["claim_auxiliary_before_on", "claim_auxiliary_off_attempt", "contain_auxiliary_device"])
+def test_unstarted_incident_missing_required_history_cannot_retire(monkeypatch, missing):
+    store, history, terminal = unstarted_incident_terminal(monkeypatch)
+    history = [row for row in history if row["action"] != missing]
+    assert not store._verified_auxiliary_startup_abort(terminal, history)
+
+
+@pytest.mark.parametrize("action", ["claim_auxiliary_dispatch", "record_auxiliary_on_outcome", "mark_auxiliary_active",
+    "record_auxiliary_exception", "record_auxiliary_completed", "unknown_action"])
+def test_unstarted_incident_late_or_contradictory_history_invalidates_receipt(monkeypatch, action):
+    store, history, terminal = unstarted_incident_terminal(monkeypatch)
+    late = {**history[1], "on_outcome": {"accepted_unambiguous": True}}
+    late = store._stored_event_body(action, late, store._event_id(action, late))
+    assert not store._verified_auxiliary_startup_abort(terminal, history+[late])
+    assert store._auxiliary_startup_terminal(history+[terminal, late]) is None
+
+
+@pytest.mark.parametrize("field,value", [("terminal_contract", "rootline_auxiliary_startup_abort.v1"),
+    ("terminal_contract", []),
+    ("dispatch_event_id", "invented"), ("dispatch_sha256", "a"*64), ("dispatch_count", True),
+    ("on_attempts", 1), ("on_attempts", False), ("startup_unstarted_verified", False),
+    ("startup_preimage", "dispatch_outcome_unknown"), ("provider_on_outcome", "Unknown"),
+    ("reservation_preserved", False), ("objective_satisfied", True), ("control_completed", True),
+    ("on_authority", True), ("read_elapsed_seconds", 8.01), ("read_elapsed_seconds", -1)])
+def test_unstarted_receipt_cannot_invent_dispatch_delivery_or_more_read_time(monkeypatch, field, value):
+    store, history, terminal = unstarted_incident_terminal(monkeypatch)
+    changed = {**terminal, field: value}
+    changed["event_id"] = store._event_id("record_auxiliary_startup_aborted", changed)
+    assert not store._verified_auxiliary_startup_abort(changed, history)
+
+
+@pytest.mark.parametrize("field,value", [("authoritative", False), ("state", "ON"), ("channel", 1),
+    ("channel", True), ("device_id", "other"), ("evidence_id", ""),
+    ("retrieved_at", "2026-11-20T13:05:02+00:00"), ("retrieved_at", "2099-01-01T00:00:00+00:00")])
+def test_unstarted_receipt_requires_bracketed_fresh_exact_off(monkeypatch, field, value):
+    store, history, terminal = unstarted_incident_terminal(monkeypatch)
+    changed = {**terminal, "shutdown_evidence": {**terminal["shutdown_evidence"], field: value}}
+    changed["event_id"] = store._event_id("record_auxiliary_startup_aborted", changed)
+    assert not store._verified_auxiliary_startup_abort(changed, history)
+
+
+def test_affordable_auxiliary_start_keeps_normal_claim_and_on(monkeypatch):
+    from types import SimpleNamespace
+    from modules.telemetry import rootline_cycle_budget as cycle
+    monkeypatch.setattr(cycle, "time", SimpleNamespace(monotonic=lambda: 100.0))
+    store, transport = Store(), Transport()
+    context = {"plan_generation": "PLAN-MIX-1", "verified_mixing_minutes_today": 20,
+        "verified_mixing_sessions_today": 0, "reserved_mixing_seconds_today": 1200,
+        "mixing_history_valid": True, "mixing_history_complete_through": NOW.isoformat(),
+        "power_suitable": True}
+    with cycle.cycle_budget(deadline=140.0):
+        result = advance_auxiliary_execution(eligibility=mixer_eligibility(verified_mixing_minutes_today=20),
+            store=store, transport=transport, revalidate=lambda _: context, now=NOW)
+    assert result["status"] == "auxiliary_started"
+    assert [call["state"] for call in transport.calls] == ["ON"]
+    assert len(store.consumed) == 1
+
+
+
+def test_existing_v1_unknown_dispatch_receipt_still_validates_unchanged(monkeypatch):
+    store, history, unstarted = unstarted_incident_terminal(monkeypatch)
+    claim = history[1]
+    dispatch = store._stored_event_body("claim_auxiliary_dispatch", claim,
+        store._event_id("claim_auxiliary_dispatch", claim))
+    history.insert(2, dispatch)
+    previous = {key: value for key, value in unstarted.items()
+        if key not in {"startup_preimage", "dispatch_count", "startup_unstarted_verified"}}
+    previous.update(terminal_contract="rootline_auxiliary_startup_abort.v1",
+        reason="startup_dispatch_outcome_unknown", provider_on_outcome="Unknown", on_attempts=1,
+        dispatch_event_id=dispatch["event_id"], dispatch_sha256=store._event_digest(dispatch))
+    assert store._verified_auxiliary_startup_abort(previous, history)
+    assert store._auxiliary_startup_terminal(history+[previous]) == previous
+    assert not store._verified_auxiliary_startup_abort(unstarted, history)
+    assert not store._verified_auxiliary_startup_abort(previous,
+        [row for row in history if row["action"] != "claim_auxiliary_dispatch"])

@@ -25,6 +25,22 @@ from tests.test_rootline_active_weather_stop import dry_weather_reader
 class ComposedPath(Path):
     def __init__(self, monkeypatch, *, optional_seconds=65, **kwargs):
         super().__init__(monkeypatch, **kwargs)
+        # This path deliberately exercises the existing two-segment legacy
+        # obligation. Adopt its inert task once, then run the real saved-plan
+        # projection with complete canonical live facts on every read.
+        from tests.test_rootline_water_energy_plan import daily_program_facts
+        from tests.test_rootline_execution_runtime import plan as legacy_task_plan
+        self.live_facts = daily_program_facts(NOW)
+        self.live_facts['weather'].update(evidence()['weather'])
+        self.live_facts['tanks'] = {**evidence()['tanks'], 'reservoir_fraction': [1, 1]}
+        legacy = planning.build_water_energy_plan(self.live_facts, NOW.date().isoformat(), now=NOW)
+        original_task = legacy_task_plan()['candidate_tasks'][0]
+        material = next(t for t in legacy['candidate_tasks'] if t['task_id']==original_task['task_id'])
+        material.update(deepcopy(original_task))
+        material['max_execution_minutes'] = 60
+        legacy['candidate_tasks'] = [material]
+        legacy['generation'] = 1
+        self.saved_program = planning._adopt_current_day_program(legacy, planning._as_za(NOW))
         self.optional_seconds = optional_seconds
         self.borehole = {"execution_id": "SYNTHETIC-OWNED-BOREHOLE",
             "device_id": "1002851416", "channel": 1, "state": "Active",
@@ -64,6 +80,11 @@ class ComposedPath(Path):
         self.transport.set_state = send
         monkeypatch.setattr(power_service, "get_current_power_state", self.power)
         monkeypatch.setattr(planning, "read_current_borehole_faults", self.protection)
+
+    def loader(self, **kwargs):
+        # Retain the original modeled evidence latency and all runtime guards.
+        _, selected, at = super().loader(**kwargs)
+        return {**deepcopy(self.live_facts), 'saved_daily_plan': deepcopy(self.saved_program)}, selected, at
 
     def power(self, **kwargs):
         # These ordering scenarios own AC backup below the sunshine OFF threshold.
@@ -108,7 +129,7 @@ class ComposedPath(Path):
         self.clock.spend("optional managed evidence", available)
         self.optional_hook()
         budget.remaining_seconds()
-        return evidence(), NOW.date().isoformat(), NOW
+        return {**deepcopy(self.live_facts), "saved_daily_plan": deepcopy(self.saved_program)}, NOW.date().isoformat(), NOW
 
     def managed(self, **kwargs):
         self.managed_calls += 1

@@ -1,5 +1,26 @@
 # Implementation Source Map
 
+## ROOTLINE saved nightly programme and live execution
+
+- Owner direction and operating limits: `08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`.
+- Existing cron entry `scripts/run_forecast_logger.py` and
+  `modules/telemetry/forecast_logger.py` perform the bounded nightly acquisition;
+  `forecast_provider_health.py` binds its cycle and ingestion to existing source
+  metadata. `weather_service.py` selects the dated, attributed stored snapshot.
+- `rootline_water_energy_plan.py` binds and revises intended work in existing
+  dated plan generations. `rootline_adaptive_irrigation.py` separates target-date
+  allocation from real-time evidence. No new plan store or scheduler is created.
+- `rootline_execution_runtime.py`, `rootline_specialist_result.py` and the existing
+  `modules/oom_sakkie/telegram_gateway.py` project saved intent plus current
+  progress and guards; routine live adjustment does not reconsider forecasts.
+- `rootline_cycle_budget.py`, `rootline_irrigation_coordinator.py` and
+  `rootline_irrigation_execution_store.py` retain the existing start budget,
+  command locks and fresh-OFF recovery, distinguishing never-dispatched starts.
+- Existing forecast, water-energy plan, scheduler, execution, reporting,
+  continuous-demand and auxiliary recovery test modules qualify the same path.
+  Hosted disposable-Postgres gates cover acquisition, plan concurrency and
+  recovery. Source qualification does not establish live autonomous operation.
+
 ## ROOTLINE borehole AC backup and concurrent recovery
 
 - The owner correction of 20 November identifies device 1002851416/channel 1

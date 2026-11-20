@@ -117,7 +117,7 @@ def run(store,transport,rain=0,notify=None,clock=lambda:NOW):
     def observation_store(action,identity,payload):
         created=identity not in observations; observations.setdefault(identity,payload)
         return {"success":True,"created":created}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",
                     return_value=plan()):
         return run_rootline_execution_cycle(notify=notify or (lambda *_:{"success":True,
             "provider_delivery_confirmed":True,"provider_message_id":"MSG-1"}),
@@ -134,7 +134,7 @@ def test_scheduler_owner_binding_persists_hold_observation_without_notification_
         created=identity not in observations; observations.setdefault(identity,payload)
         return {"success":True,"created":created}
     loader=lambda **_kwargs:(evidence(.25),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",
                     return_value=plan()):
         value=run_rootline_execution_cycle(notify=lambda *args:notices.append(args),
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=execution_store,
@@ -220,7 +220,7 @@ def test_eligible_artifact_without_canonical_database_fails_closed_before_on():
     observations={}
     def observation_store(action,identity,payload):
         observations.setdefault(identity,payload); return {"success":True,"created":True}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",
                     return_value=plan()):
         result=run_rootline_execution_cycle(notify=lambda *_:None,
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
@@ -272,7 +272,7 @@ def test_run_to_technical_block_notifies_once_and_replay_is_silent():
     def notify(state,payload):
         notices.append((state,payload)); return {"provider_delivery_confirmed":True,
             "provider_message_id":"BLOCK-1"}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
             store=store,token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",
@@ -296,7 +296,7 @@ def test_blocked_notification_failure_is_durable_and_never_retried():
             if isinstance(response,Exception): raise response
             return response
         loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-        with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
             args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
                 store=store,token_store=object(),transport=transport,evidence_loader=loader,
                 readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
@@ -318,7 +318,7 @@ def test_blocked_notification_outcome_store_failure_is_unproven_and_not_retried(
     def notify(*_args):
         calls.append(1); return {"provider_delivery_confirmed":True,"provider_message_id":"BLOCK-1"}
     loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
             store=store,token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
@@ -345,7 +345,7 @@ def test_real_advancing_clock_accepts_fresh_revalidation_before_claim():
 
 def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_governed_identity():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller("PREVIEW-RECEIPT"),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
@@ -364,7 +364,7 @@ def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_govern
 
 def test_protected_segment_rejects_changed_stable_job_identity_with_zero_control():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         expected={**expected,"job_sha256":"wrong"}
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
@@ -425,7 +425,7 @@ def test_protected_runner_contains_unavailable_canonical_history_before_provider
 
 def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
@@ -438,7 +438,7 @@ def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation()
 
 def test_protected_restart_requires_full_claim_binding_and_never_reissues_on():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         first=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
@@ -464,7 +464,7 @@ def test_weather_ages_past_thirty_minutes_during_provider_read():
     def read(**kwargs):
         current[0] += timedelta(seconds=2)
         return {**controller(), "trusted_receipt_at": current[0].isoformat()}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         result = _current(lambda **_: (sampled,"2026-08-08",NOW), read, object(), {}, "db", NOW,
             Store(), clock=lambda:current[0])
     assert result["artifact"]["eligible"] is False
@@ -479,7 +479,7 @@ def test_no_dispatchable_work_never_requests_optional_controller_evidence():
             planned["candidate_tasks"] = []
         else:
             planned["candidate_tasks"][0].update(task)
-        with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=planned):
+        with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=planned):
             result = _current(lambda **_: (evidence(),"2026-08-08",NOW),
                 lambda **_: (_ for _ in ()).throw(AssertionError("unnecessary provider read")),
                 object(), {}, "db", NOW, Store(), clock=lambda:NOW)

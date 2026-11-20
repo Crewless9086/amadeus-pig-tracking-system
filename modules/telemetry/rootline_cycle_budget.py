@@ -8,6 +8,7 @@ import time
 # recording and any already-owned shutdown duty. This does not extend a service.
 CYCLE_WORK_SECONDS = 140.0
 REPORT_MINIMUM_SECONDS = 25.0
+ON_START_WINDOW_SECONDS = 30.0
 _work_deadline = ContextVar("rootline_cycle_work_deadline", default=None)
 _on_deadline = ContextVar("rootline_cycle_on_deadline", default=None)
 
@@ -22,6 +23,12 @@ def work_deadline():
 
 def on_deadline():
     return _on_deadline.get()
+
+
+def on_start_window_available():
+    """A new ON must fit its existing start window, even during mandatory OFF."""
+    deadline = on_deadline()
+    return deadline is None or deadline-time.monotonic() > ON_START_WINDOW_SECONDS
 
 
 def remaining_seconds(maximum=None, *, minimum=0.0):

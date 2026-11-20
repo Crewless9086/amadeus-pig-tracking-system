@@ -62,24 +62,28 @@ def off_proof(execution, *, prior=False):
         'channel': execution['channel'], 'evidence_id': uuid.uuid4().hex*2, 'retrieved_at': at.isoformat()}
 
 
-def contained(db, kind='mixer', *, defect=None):
+def contained(db, kind='mixer', *, defect=None, dispatched=True, age_seconds=None):
     original = claim(kind)
+    if age_seconds is not None:
+        at = datetime.now(timezone.utc)-timedelta(seconds=age_seconds)
+        original.update(claimed_at=at.isoformat(), primary_stop_deadline=(
+            at+timedelta(seconds=original['maximum_duration_seconds'])).isoformat())
     held = {**original, 'state': 'claimed_recovery_required', 'reason': 'restart_or_deadline_ambiguous',
         'shutdown_verified': True, 'shutdown_evidence': off_proof(original, prior=True)}
-    dispatched = dict(original)
-    if defect == 'wrong_device': original['device_id'] = held['device_id'] = dispatched['device_id'] = 'other'
-    if defect == 'wrong_channel': original['channel'] = held['channel'] = dispatched['channel'] = True
+    dispatch_body = dict(original)
+    if defect == 'wrong_device': original['device_id'] = held['device_id'] = dispatch_body['device_id'] = 'other'
+    if defect == 'wrong_channel': original['channel'] = held['channel'] = dispatch_body['channel'] = True
     if defect == 'claim_not_zero': original['on_attempts'] = 1
     if defect == 'claim_not_claimed': original['state'] = 'Active'
-    if defect == 'dispatch_changed': dispatched['maximum_duration_seconds'] += 1
+    if defect == 'dispatch_changed': dispatch_body['maximum_duration_seconds'] += 1
     if defect == 'held_binding_changed': held['consumption_key'] = 'other'
     if defect == 'held_reason': held['reason'] = 'physical_fault'
     if defect == 'held_off_unverified': held['shutdown_verified'] = False
     if defect == 'held_off_wrong_channel': held['shutdown_evidence']['channel'] = 1 if kind == 'mixer' else 2
     if defect == 'held_off_future': held['shutdown_evidence']['retrieved_at'] = (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
-    if defect == 'duration_extended': original['primary_stop_deadline'] = held['primary_stop_deadline'] = dispatched['primary_stop_deadline'] = (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
+    if defect == 'duration_extended': original['primary_stop_deadline'] = held['primary_stop_deadline'] = dispatch_body['primary_stop_deadline'] = (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
     seed(db, 'claim_auxiliary_before_on', original)
-    if defect != 'no_dispatch': seed(db, 'claim_auxiliary_dispatch', dispatched)
+    if dispatched: seed(db, 'claim_auxiliary_dispatch', dispatch_body)
     if defect != 'no_off_barrier': seed(db, 'claim_auxiliary_off_attempt', {'execution_id': original['execution_id'], 'attempt': 1})
     seed(db, 'record_auxiliary_off_outcome', {'execution_id': original['execution_id'], 'attempt': 1,
         'outcome': {'accepted_unambiguous': True}})
@@ -92,6 +96,11 @@ def contained(db, kind='mixer', *, defect=None):
         'containment_event_id': saved['event_id'], 'read_final_off': lambda: off_proof(original)}
 
 
+@pytest.fixture(params=[True, False], ids=['unknown-dispatch-v1', 'never-dispatched-v2'])
+def startup_dispatched(request):
+    return request.param
+
+
 def recover(body):
     return store.rootline_irrigation_execution_store('recover_auxiliary_startup_containment', body)
 
@@ -101,13 +110,18 @@ def state(execution):
 
 
 @pytest.mark.parametrize('kind', ['mixer', 'injector'])
-def test_abort_seals_unknown_dispatch_preserves_history_and_reservation(db, kind):
-    execution, body = contained(db, kind)
+def test_abort_seals_unknown_dispatch_preserves_history_and_reservation(db, kind, startup_dispatched):
+    execution, body = contained(db, kind, dispatched=startup_dispatched)
     before = rows(db, execution)
     result = recover(body)
     assert result['success'] and result['created'] and not result['auxiliary_contained'], result
     terminal = result['execution']
-    assert terminal['provider_on_outcome'] == 'Unknown' and terminal['on_authority'] is False
+    assert terminal['provider_on_outcome'] == ('Unknown' if startup_dispatched else 'Not dispatched')
+    assert terminal['on_authority'] is False and terminal['on_attempts'] == int(startup_dispatched)
+    assert terminal['terminal_contract'] == ('rootline_auxiliary_startup_abort.v1' if startup_dispatched else 'rootline_auxiliary_startup_abort.v2')
+    if not startup_dispatched:
+        assert terminal['startup_unstarted_verified'] is True and terminal['dispatch_count'] == 0
+        assert 'dispatch_event_id' not in terminal and 'dispatch_sha256' not in terminal
     assert terminal['control_completed'] is False and terminal['objective_satisfied'] is False
     assert terminal['reservation_preserved'] is True and 'not_dispatched_verified' not in terminal
     assert rows(db, execution)[:-1] == before and not state(execution)['contained']
@@ -128,8 +142,8 @@ def test_abort_seals_unknown_dispatch_preserves_history_and_reservation(db, kind
         assert account['sessions'] == 1 and account['premix_verified'] is False
 
 
-def test_replay_does_not_read_provider_or_append(db):
-    execution, body = contained(db)
+def test_replay_does_not_read_provider_or_append(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     first = recover(body)
     assert first['created']
     body['read_final_off'] = lambda: pytest.fail('exact replay must not read provider')
@@ -141,12 +155,12 @@ def test_replay_does_not_read_provider_or_append(db):
 
 
 @pytest.mark.parametrize('defect', ['wrong_device', 'wrong_channel', 'claim_not_zero', 'claim_not_claimed',
-    'dispatch_changed', 'held_binding_changed', 'held_reason', 'held_off_unverified', 'held_off_wrong_channel',
-    'held_off_future', 'duration_extended', 'no_dispatch', 'no_off_barrier', 'record_auxiliary_on_outcome',
+    'held_binding_changed', 'held_reason', 'held_off_unverified', 'held_off_wrong_channel',
+    'held_off_future', 'duration_extended', 'no_off_barrier', 'record_auxiliary_on_outcome',
     'mark_auxiliary_active', 'record_auxiliary_completed', 'record_auxiliary_control_pulse_stopped',
     'record_auxiliary_exception', 'second_hold'])
-def test_unqualified_preimages_never_release_or_read_provider(db, defect):
-    execution, body = contained(db, defect=defect)
+def test_unqualified_preimages_never_release_or_read_provider(db, defect, startup_dispatched):
+    execution, body = contained(db, defect=defect, dispatched=startup_dispatched)
     body['read_final_off'] = lambda: pytest.fail('invalid preimage must not reach fresh read')
     result = recover(body)
     assert not result['success'] and state(execution)['contained']
@@ -157,8 +171,8 @@ def test_unqualified_preimages_never_release_or_read_provider(db, defect):
     ('channel', 1), ('channel', True), ('device_id', 'other'), ('evidence_id', ''),
     ('retrieved_at', '2026-01-01T00:00:00+00:00'), ('retrieved_at', '2099-01-01T00:00:00+00:00'),
     ('retrieved_at', '2026-11-20T05:00:00'), ('execution_id', 'other')])
-def test_fresh_exact_off_required(db, field, value):
-    execution, body = contained(db)
+def test_fresh_exact_off_required(db, field, value, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     body['read_final_off'] = lambda: {**off_proof(execution), field: value}
     assert not recover(body)['success'] and state(execution)['contained']
 
@@ -168,8 +182,8 @@ def test_caller_cannot_insert_terminal_directly(db):
     assert not result['success']
 
 
-def test_other_active_auxiliary_or_independent_hold_is_preserved(db):
-    execution, body = contained(db)
+def test_other_active_auxiliary_or_independent_hold_is_preserved(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     sibling = claim('injector')
     seed(db, 'claim_auxiliary_before_on', sibling)
     body['read_final_off'] = lambda: pytest.fail('active sibling must be preserved')
@@ -177,23 +191,23 @@ def test_other_active_auxiliary_or_independent_hold_is_preserved(db):
     assert state(execution)['contained']
 
 
-def test_newer_different_hold_invalidates_prepared_expected_identity(db):
-    execution, body = contained(db)
-    other, _ = contained(db)
+def test_newer_different_hold_invalidates_prepared_expected_identity(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
+    other, _ = contained(db, dispatched=startup_dispatched)
     body['read_final_off'] = lambda: pytest.fail('newer hold must not be cleared')
     assert not recover(body)['success'] and state(other)['contained']
 
 
-def test_recovery_does_not_clear_an_older_independent_hold(db):
-    older, _ = contained(db)
-    execution, body = contained(db)
+def test_recovery_does_not_clear_an_older_independent_hold(db, startup_dispatched):
+    older, _ = contained(db, dispatched=startup_dispatched)
+    execution, body = contained(db, dispatched=startup_dispatched)
     result = recover(body)
     assert result['success'] and result['auxiliary_contained'], result
     assert state(execution)['contained'] and state(execution)['evidence']['execution_id'] == older['execution_id']
 
 
-def test_insert_failure_rolls_back_and_preserves_containment(db, monkeypatch):
-    execution, body = contained(db); original = store._insert_managed_event
+def test_insert_failure_rolls_back_and_preserves_containment(db, monkeypatch, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched); original = store._insert_managed_event
     def fail(cursor, action, record):
         result = original(cursor, action, record)
         if action == 'record_auxiliary_startup_aborted': raise RuntimeError('synthetic rollback')
@@ -204,8 +218,8 @@ def test_insert_failure_rolls_back_and_preserves_containment(db, monkeypatch):
     assert not any(row['action'] == 'record_auxiliary_startup_aborted' for row in rows(db, execution))
 
 
-def test_final_read_changed_preimage_fails_closed(db):
-    execution, body = contained(db)
+def test_final_read_changed_preimage_fails_closed(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     def read():
         seed(db, 'record_auxiliary_on_outcome', {**execution, 'on_outcome': {'accepted_unambiguous': True}})
         return off_proof(execution)
@@ -214,15 +228,15 @@ def test_final_read_changed_preimage_fails_closed(db):
     assert not result['success'] and state(execution)['contained']
 
 
-def test_concurrent_recovery_records_one_terminal(db):
-    execution, body = contained(db)
+def test_concurrent_recovery_records_one_terminal(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: recover(body), range(2)))
     assert all(result['success'] for result in results) and sum(result['created'] for result in results) == 1, results
 
 
-def test_new_claim_waits_for_fresh_off_and_commit(db):
-    execution, body = contained(db)
+def test_new_claim_waits_for_fresh_off_and_commit(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     entered = Event(); release = Event(); requested = Event()
     def read():
         entered.set(); assert release.wait(2)
@@ -239,8 +253,8 @@ def test_new_claim_waits_for_fresh_off_and_commit(db):
         assert abort.result(3)['created'] and following.result(3)['created']
 
 
-def test_old_off_arriving_after_new_claim_cannot_stop_new_on(db, monkeypatch):
-    execution, body = contained(db)
+def test_old_off_arriving_after_new_claim_cannot_stop_new_on(db, monkeypatch, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     claimed = Event(); release = Event(); commands = []
     original = store._guarded_managed_transition
     def pause(action, payload):
@@ -265,8 +279,8 @@ def test_old_off_arriving_after_new_claim_cannot_stop_new_on(db, monkeypatch):
     assert commands == ['NEW_ON']
 
 
-def test_off_already_in_flight_finishes_before_recovery_final_read(db):
-    execution, body = contained(db)
+def test_off_already_in_flight_finishes_before_recovery_final_read(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     entered = Event(); release = Event(); order = []
     def old_off():
         order.append('OFF_ENTER'); entered.set(); assert release.wait(2)
@@ -284,12 +298,13 @@ def test_off_already_in_flight_finishes_before_recovery_final_read(db):
     assert order == ['OFF_ENTER', 'OFF_RETURN', 'FRESH_OFF']
 
 
-def test_prepared_read_binding_and_cleanup_only_after_commit(db):
-    execution, body = contained(db); events = []
+def test_prepared_read_binding_and_cleanup_only_after_commit(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched); events = []
     class Prepared:
         def read_locked(self, *, binding, connection, deadline):
             assert binding['execution_id'] == execution['execution_id']
-            assert binding['dispatch_event_id'] and binding['containment_event_id'] == body['containment_event_id']
+            assert binding['containment_event_id'] == body['containment_event_id']
+            assert bool(binding.get('dispatch_event_id')) is startup_dispatched
             assert connection.execute("select count(*) from pg_locks where pid=pg_backend_pid() and locktype='advisory' and granted").fetchone()[0] >= 2
             events.append('read'); return off_proof(execution)
         def after_abort_commit(self, terminal):
@@ -306,8 +321,8 @@ def test_prepared_read_binding_and_cleanup_only_after_commit(db):
     assert events == ['prepare', 'read', 'cleanup', 'close']
 
 
-def test_runtime_clock_reversal_never_records_terminal(db, monkeypatch):
-    execution, body = contained(db)
+def test_runtime_clock_reversal_never_records_terminal(db, monkeypatch, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     def read():
         proof = off_proof(execution)
         reversed_at = datetime.now(timezone.utc) - timedelta(seconds=1)
@@ -324,10 +339,10 @@ def test_runtime_clock_reversal_never_records_terminal(db, monkeypatch):
 
 
 @pytest.mark.parametrize('offset', [9, -1])
-def test_monotonic_elapsed_or_reversal_never_records_terminal(db, monkeypatch, offset):
+def test_monotonic_elapsed_or_reversal_never_records_terminal(db, monkeypatch, offset, startup_dispatched):
     import time
     from types import SimpleNamespace
-    execution, body = contained(db)
+    execution, body = contained(db, dispatched=startup_dispatched)
     def read():
         proof = off_proof(execution)
         observed = time.monotonic() + offset
@@ -341,10 +356,10 @@ def test_monotonic_elapsed_or_reversal_never_records_terminal(db, monkeypatch, o
 
 
 @pytest.mark.parametrize('kind', ['mixer', 'injector'])
-def test_coordinator_recovers_held_start_without_on_or_same_cycle_claim(db, kind):
+def test_coordinator_recovers_held_start_without_on_or_same_cycle_claim(db, kind, startup_dispatched):
     from modules.telemetry.rootline_irrigation_coordinator import advance_auxiliary_execution
     from tests.test_rootline_fertilizer_auxiliary import mixer_eligibility, injection_eligibility, NOW
-    execution, body = contained(db, kind)
+    execution, body = contained(db, kind, dispatched=startup_dispatched)
     calls = []
     class Transport:
         def read_output_state(self, *, device_id, channel):
@@ -365,9 +380,9 @@ def test_coordinator_recovers_held_start_without_on_or_same_cycle_claim(db, kind
 
 
 @pytest.mark.parametrize('kind', ['mixer', 'injector'])
-def test_native_prepared_output_contract_keeps_consumed_reservation(db, kind):
+def test_native_prepared_output_contract_keeps_consumed_reservation(db, kind, startup_dispatched):
     from modules.telemetry.rootline_ifttt_transport import _PreparedNoSendOutput
-    execution, body = contained(db, kind)
+    execution, body = contained(db, kind, dispatched=startup_dispatched)
     events = []
     class NativeStatus:
         def read_locked(self, *, binding, connection, deadline):
@@ -388,11 +403,11 @@ def test_native_prepared_output_contract_keeps_consumed_reservation(db, kind):
     assert result['success'] and result['created'], result
     assert result['cleanup_status'] == 'retained_for_reconciliation'
     assert events == ['read'] and not state(execution)['contained']
-    assert sum(row['action'] == 'claim_auxiliary_dispatch' for row in rows(db, execution)) == 1
+    assert sum(row['action'] == 'claim_auxiliary_dispatch' for row in rows(db, execution)) == int(startup_dispatched)
 
 
-def test_guarded_off_provider_exception_commits_unknown_then_propagates(db):
-    execution, body = contained(db)
+def test_guarded_off_provider_exception_commits_unknown_then_propagates(db, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     calls=[]
     def unknown():
         calls.append('OFF')
@@ -410,8 +425,8 @@ def test_guarded_off_provider_exception_commits_unknown_then_propagates(db):
 
 
 @pytest.mark.parametrize('malformed', [None, [], False])
-def test_guarded_off_malformed_outcome_stays_unknown_and_consumed(db, malformed):
-    execution, body = contained(db)
+def test_guarded_off_malformed_outcome_stays_unknown_and_consumed(db, malformed, startup_dispatched):
+    execution, body = contained(db, dispatched=startup_dispatched)
     with pytest.raises(RuntimeError, match='auxiliary_off_outcome_unknown'):
         store.rootline_irrigation_execution_store('dispatch_auxiliary_off_edge',
             {'execution_id':execution['execution_id'],'attempt':2,'dispatch':lambda:malformed})
@@ -423,8 +438,8 @@ def test_guarded_off_malformed_outcome_stays_unknown_and_consumed(db, malformed)
 @pytest.mark.parametrize('kind', ['mixer', 'injector'])
 @pytest.mark.parametrize('action', ['record_auxiliary_on_outcome', 'record_auxiliary_exception'])
 @pytest.mark.parametrize('boundary', ['final_read', 'terminal_insert', 'after_commit'])
-def test_late_history_invalidates_startup_abort_without_reopening_commands(db, monkeypatch, kind, action, boundary):
-    execution, body = contained(db, kind)
+def test_late_history_invalidates_startup_abort_without_reopening_commands(db, monkeypatch, kind, action, boundary, startup_dispatched):
+    execution, body = contained(db, kind, dispatched=startup_dispatched)
     incoming = {**execution, 'on_outcome': {'accepted_unambiguous': True},
         'reason': 'late_observed_provider_result'}
     appended = []
@@ -488,8 +503,8 @@ def test_late_history_invalidates_startup_abort_without_reopening_commands(db, m
 
 
 @pytest.mark.parametrize('kind', ['mixer', 'injector'])
-def test_late_off_history_remains_appendable_without_new_command_authority(db, kind):
-    execution, body = contained(db, kind)
+def test_late_off_history_remains_appendable_without_new_command_authority(db, kind, startup_dispatched):
+    execution, body = contained(db, kind, dispatched=startup_dispatched)
     terminal = recover(body)['execution']
     outcome = {'execution_id': execution['execution_id'], 'attempt': 1,
         'outcome': {'accepted_unambiguous': False, 'status': 'late_off_acknowledgement'}}
@@ -501,3 +516,76 @@ def test_late_off_history_remains_appendable_without_new_command_authority(db, k
     denied = store.rootline_irrigation_execution_store('dispatch_auxiliary_off_edge',
         {**execution, 'attempt': 2, 'dispatch': lambda: calls.append('OFF')})
     assert not denied.get('provider_command_attempted') and calls == []
+
+
+@pytest.mark.parametrize('kind', ['mixer', 'injector'])
+def test_unstarted_late_sender_waits_for_recovery_locks_then_cannot_dispatch(db, kind):
+    # Keep the stale sender inside its normal 30-second window, so the lock,
+    # OFF barrier and terminal exclusion (not expiry) must stop it.
+    execution, body = contained(db, kind, dispatched=False, age_seconds=25)
+    entered, release, requested = Event(), Event(), Event()
+    commands = []
+    def read():
+        entered.set()
+        assert release.wait(2)
+        return off_proof(execution)
+    def late_sender():
+        requested.set()
+        return store.rootline_irrigation_execution_store('dispatch_auxiliary_on_edge',
+            {**execution, 'dispatch': lambda: commands.append('ON') or {'accepted_unambiguous': True}})
+    body['read_final_off'] = read
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        recovery = pool.submit(recover, body)
+        assert entered.wait(2)
+        sender = pool.submit(late_sender)
+        assert requested.wait(2) and not sender.done()
+        release.set()
+        terminal = recovery.result(3)
+        denied = sender.result(3)
+    assert terminal['success'] and terminal['execution']['on_attempts'] == 0
+    assert denied['accepted_unambiguous'] is False and commands == []
+    assert datetime.now(timezone.utc)-datetime.fromisoformat(execution['claimed_at']) < timedelta(seconds=30)
+    assert not any(row['action'] == 'claim_auxiliary_dispatch' for row in rows(db, execution))
+    assert not state(execution)['contained']
+
+
+def test_actual_553987_history_recovers_on_existing_locked_runtime_rail(db):
+    from tests.test_rootline_fertilizer_auxiliary import unstarted_incident_history
+    original = unstarted_incident_history()
+    execution = original[1]
+    for item in original:
+        saved = seed(db, item['action'], item)
+        assert saved['event_id'] == item['event_id']
+    result = recover({'execution_id': execution['execution_id'],
+        'auxiliary_device_id': execution['auxiliary_device_id'],
+        'containment_event_id': original[-1]['event_id'], 'read_final_off': lambda: off_proof(execution)})
+    assert result['success'] and result['created'], result
+    terminal = result['execution']
+    assert terminal['startup_unstarted_verified'] is True and terminal['on_attempts'] == 0
+    assert terminal['provider_on_outcome'] == 'Not dispatched'
+    assert terminal['reservation_preserved'] is True and terminal['objective_satisfied'] is False
+    assert rows(db, execution)[:-1] == original and not state(execution)['contained']
+
+
+
+def test_changed_dispatch_preimage_stays_unqualified(db):
+    execution, body = contained(db, defect='dispatch_changed', dispatched=True)
+    body['read_final_off'] = lambda: pytest.fail('tampered dispatch cannot reach final read')
+    assert not recover(body)['success'] and state(execution)['contained']
+
+
+def test_unstarted_binding_changed_during_preparation_cannot_retire(db):
+    execution, body = contained(db, dispatched=False)
+    class Prepared:
+        def read_locked(self, **kwargs): pytest.fail('changed preparation cannot reach final read')
+    @contextmanager
+    def prepare(binding):
+        assert binding['startup_preimage'] == 'never_dispatched'
+        seed(db, 'claim_auxiliary_dispatch', execution)
+        yield Prepared()
+    body['prepare_final_off'] = prepare
+    body['read_final_off'] = lambda: pytest.fail('prepared path required')
+    result = recover(body)
+    assert not result['success'] and result['recovery_reason'] == 'changed_during_preparation'
+    assert state(execution)['contained']
+    assert not any(row['action'] == 'record_auxiliary_startup_aborted' for row in rows(db, execution))

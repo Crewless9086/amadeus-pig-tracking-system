@@ -45,7 +45,21 @@ class Path:
         self.revoke = revoke
         self.claim_seconds = claim_seconds
         monkeypatch.setattr(budget.time, "monotonic", self.clock.monotonic)
-        monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *a, **k: plan())
+        # Retain the original legacy two-segment objective as a real saved
+        # current-day programme; production projection remains active.
+        from modules.telemetry import rootline_water_energy_plan as planning
+        from tests.test_rootline_water_energy_plan import daily_program_facts
+        self.live_facts = daily_program_facts(NOW)
+        self.live_facts['weather'].update(evidence()['weather'])
+        self.live_facts['tanks'] = {**evidence()['tanks'], 'reservoir_fraction': [1, 1]}
+        legacy = planning.build_water_energy_plan(self.live_facts, NOW.date().isoformat(), now=NOW)
+        original_task = plan()['candidate_tasks'][0]
+        material = next(t for t in legacy['candidate_tasks'] if t['task_id'] == original_task['task_id'])
+        material.update(deepcopy(original_task))
+        material['max_execution_minutes'] = 60
+        legacy['candidate_tasks'] = [material]
+        legacy['generation'] = 1
+        self.saved_program = planning._adopt_current_day_program(legacy, planning._as_za(NOW))
         original_maintenance = runtime._persist_stale_parent_resolutions
         def maintenance(*args):
             self.maintenance_calls.append(self.clock.elapsed)
@@ -73,7 +87,7 @@ class Path:
 
     def loader(self, **kwargs):
         self.clock.spend("canonical weather and history", self.evidence_seconds)
-        return evidence(), NOW.date().isoformat(), NOW
+        return {**deepcopy(self.live_facts), 'saved_daily_plan': deepcopy(self.saved_program)}, NOW.date().isoformat(), NOW
 
     def readback(self, **kwargs):
         self.clock.spend("provider controller", self.provider_seconds)

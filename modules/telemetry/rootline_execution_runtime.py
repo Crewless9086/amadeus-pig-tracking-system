@@ -28,6 +28,7 @@ from modules.telemetry.rootline_irrigation_execution_store import (
 )
 from modules.telemetry.rootline_water_energy_plan import (
     ZA_TZ, build_water_energy_plan, read_current_water_energy_evidence,
+    project_saved_program_for_execution,
 )
 
 
@@ -120,13 +121,15 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         try:
             read_at = _aware(clock())
             evidence, selected, _planned_at = evidence_loader(
-                database_url=database_url, now=read_at)
+                database_url=database_url, now=read_at, forecast_mode="live_only",
+                purpose="managed", pending_devices=sorted(pending_devices))
             evidence = _refresh_active_irrigation_readback(
                 evidence, transport, read_at, clock=clock, only_when_due=True,
                 injection_enabled="FERTILIZER-INJECTION-CH1" in pending_devices,
                 preparation_token=preparation_token)
             decision_at = current_decision_time(selected)
-            plan = build_water_energy_plan(evidence, selected, now=decision_at)
+            plan = project_saved_program_for_execution(evidence.get("saved_daily_plan"),
+                evidence, now=decision_at)
         except Exception as exc:
             from modules.telemetry.rootline_cycle_budget import RootlineCycleDeadlineExceeded
             if isinstance(exc, RootlineCycleDeadlineExceeded):
@@ -201,14 +204,17 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                     provider = (transport.read_output_state(device_id="1002851416", channel=1, routine_read=True)
                         if continuous else None)
                     adopting = continuous and isinstance(provider, dict) and provider.get("state") == "ON"
-                    if continuous and not adopting and (borehole_task.get("recommendation") != "Recommend"
-                            or not isinstance(conditions, dict) or conditions.get("start_eligible") is not True):
+                    if continuous and not adopting and (not isinstance(conditions, dict)
+                            or conditions.get("start_eligible") is not True):
                         packet["borehole_readiness"] = (conditions or {}).get("reason", "borehole_conditions_unavailable")
                         packet["borehole_conditions"] = conditions
                         return packet
                     from modules.telemetry.rootline_borehole_commissioning import prepare_borehole_execution_plan
-                    request = dict(need={"eligible": borehole_task.get("recommendation") == "Recommend", "task_id": "borehole",
-                            "reason": borehole_task.get("reason")}, commissioned_baseline=baseline,
+                    need = ({"eligible": (conditions or {}).get("start_eligible") is True,
+                        "task_id": "borehole", "reason": (conditions or {}).get("reason")}
+                        if continuous else {"eligible": borehole_task.get("recommendation") == "Recommend",
+                            "task_id": "borehole", "reason": borehole_task.get("reason")})
+                    request = dict(need=need, commissioned_baseline=baseline,
                         authority={"inside_standing_authority": True}, provider={},
                         interlocks=interlocks,
                         energy=borehole_energy(evidence.get("power"), decision_at, continuous=continuous),
@@ -232,8 +238,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                         if proof:
                             requested = proof["native_auto_off_seconds"]
                     packet["borehole_execution"] = build_borehole_runtime_eligibility(
-                        need={"eligible": borehole_task.get("recommendation") == "Recommend", "task_id": "borehole",
-                            "reason": borehole_task.get("reason")}, baseline=baseline,
+                        need=need, baseline=baseline,
                         authority={"inside_standing_authority": True}, provider=provider,
                         interlocks=interlocks,
                         energy=borehole_energy(evidence.get("power"), decision_at, continuous=continuous),
@@ -1016,7 +1021,7 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
             RootlineReadGroupDeadlineExceeded,
         )
         evidence, operating_date, generated_at = evidence_loader(
-            database_url=database_url,now=now)
+            database_url=database_url,now=now, forecast_mode="live_only")
     except Exception as exc:
         if isinstance(exc, RootlineReadGroupDeadlineExceeded):
             raise RootlineExecutionStoreUnavailable(
@@ -1039,7 +1044,8 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
                 store, require_enabled=True, clock=clock,
                 authority_checker=authority_checker, reconcile_stale=False)
             return {**current, "parent_reconciliations": reconciled}
-    plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
+    plan = project_saved_program_for_execution(evidence.get("saved_daily_plan"),
+        evidence, now=generated_at)
     if persist_resolutions:
         _persist_stale_parent_resolutions(plan, store)
     eligibility_args = dict(plan=plan, evidence=evidence,

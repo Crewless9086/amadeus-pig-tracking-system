@@ -309,7 +309,7 @@ def test_normal_cycles_recover_today_c_then_allow_distinct_fresh_work(database, 
                 "advisor_operating_date": case.job["operating_date"],
                 "zones": [{"zone_id": "C12345", "live_rain_release_proven": True}]},
             "tanks": {"observed_at": case.now.isoformat(), "reservoir_state": "FULL", "reservoir_fraction": 1}}, case.job["operating_date"], datetime.now(timezone.utc)
-    monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *a, **k: {
+    monkeypatch.setattr(runtime, "project_saved_program_for_execution", lambda *a, **k: {
         "evidence_generation": "SYNTHETIC-FRESH", "operating_date": case.job["operating_date"], "candidate_tasks": []})
     monkeypatch.setattr(runtime, "_planning_observation", lambda *a: {"identity": "SYNTHETIC-OBSERVATION"})
     options = dict(notify=lambda *a: {"success": True}, environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"},
@@ -328,7 +328,7 @@ def test_normal_cycles_recover_today_c_then_allow_distinct_fresh_work(database, 
     assert sum(row["action"] == "claim_before_on" for row in current) == 1
     assert next(row for row in current if row["action"] == "claim_before_on")["consumption_key"] == "ORIGINAL-C-CONSUMED"
     assert not any(row["action"] == "record_completed" for row in current)
-    monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *a, **k: {
+    monkeypatch.setattr(runtime, "project_saved_program_for_execution", lambda *a, **k: {
         "evidence_generation": "SYNTHETIC-FRESH", "operating_date": case.job["operating_date"],
         "candidate_tasks": [{"task_id": "irrigation_C12345", "zone_decision": "Run now",
             "recommendation": "Recommend", "planned_duration_minutes": 60,

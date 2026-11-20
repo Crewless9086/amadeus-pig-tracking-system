@@ -53,7 +53,7 @@ def test_nonreport_tick_completes_then_starts_real_parent_segment_once(monkeypat
         value["candidate_tasks"][0]["incomplete_parent_job"]={"job":job,
             "projection":{"status":"segment_ready","current_segment":2},"remaining_seconds":3599}
         return value
-    monkeypatch.setattr(runtime,"build_water_energy_plan",current_plan)
+    monkeypatch.setattr(runtime,"project_saved_program_for_execution",current_plan)
     def execute(**kwargs):
         return runtime.run_rootline_execution_cycle(**kwargs, store=store,transport=transport,
             token_store=object(),clock=lambda:NOW,evidence_loader=lambda **k:(evidence(),"2026-08-08",NOW),

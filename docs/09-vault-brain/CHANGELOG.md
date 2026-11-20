@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-11-20 - One nightly ROOTLINE programme with live-only adjustment
+
+Reconcile the owner's simplified operating model: one 23:30 SAST forecast cycle,
+one saved next-day programme, and daytime execution/adjustment using current
+observations and verified progress. Reuse existing provider metadata, dated plan
+generations, scheduler, claims and reporting. Preserve task identity, original
+shutdown obligations and unresolved work without adding daily watering budget.
+Condition-based AC backup and Eskom remain independent of plan availability.
+
+The same repair checks available start time before an auxiliary claim and lets
+the deployed runtime retire a never-dispatched contained start after locked fresh
+OFF proof. Reserved mixing remains accounted and its objective remains unfinished.
+This entry describes owner direction and source intent, not deployment, delivered
+notifications or completed irrigation/mixing/injection.
+
 ## 2026-11-20 - Correct borehole AC backup actuator meaning
 
 The owner clarified that the controlled borehole outlet supplies AC backup;

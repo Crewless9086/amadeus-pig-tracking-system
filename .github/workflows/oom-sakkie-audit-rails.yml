@@ -390,8 +390,22 @@ jobs:
       - name: Run ROOTLINE Operating Knowledge policy-review permission gates
         run: ROOTLINE_POLICY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_operating_policy_postgres
 
+      - name: Create isolated forecast qualification databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          createdb --host=127.0.0.1 --port=5432 --username=postgres forecast_health_20261120
+          createdb --host=127.0.0.1 --port=5432 --username=postgres forecast_consumer_20261120
+
+      - name: Prove nightly forecast acquisition and persisted consumer contracts
+        env:
+          FORECAST_HEALTH_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/forecast_health_20261120
+          FORECAST_CONSUMER_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/forecast_consumer_20261120
+          PYTHON_DOTENV_DISABLED: "1"
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_forecast_logger.py tests/test_forecast_provider_health.py tests/test_forecast_consumers.py
+
       - name: Run ROOTLINE Water and Energy Plan permission gates
-        run: ROOTLINE_WATER_ENERGY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_water_energy_plan_postgres
+        run: ROOTLINE_WATER_ENERGY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -B -m pytest -q -p no:cacheprovider tests/test_rootline_water_energy_plan_postgres.py
 
       - name: Run ROOTLINE effective-rainfall append and replay gates
         run: |

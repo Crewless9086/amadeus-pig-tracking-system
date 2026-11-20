@@ -39,7 +39,7 @@ class Journey:
                 value["channels"][self.channel-1]["output_state"] = "ON"
             return value
         monkeypatch.setattr(provider, "_read_bound_device", read)
-        monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *_a, **_k: self.plan())
+        monkeypatch.setattr(runtime, "project_saved_program_for_execution", lambda *_a, **_k: self.plan())
         def capacity(_transport, execution):
             self.capacities.append(execution)
             return True

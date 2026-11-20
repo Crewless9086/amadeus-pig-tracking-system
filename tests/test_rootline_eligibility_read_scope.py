@@ -171,7 +171,7 @@ def test_current_scope_selection_and_close_before_provider(monkeypatch, clients,
     if variant == "A": source["ROOTLINE_A_ENABLED"] = "true"
     phases = []
     monkeypatch.setattr(runtime, "_refresh_a_irrigation_binding", lambda *_: None)
-    monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *_a, **_k: plan())
+    monkeypatch.setattr(runtime, "project_saved_program_for_execution", lambda *_a, **_k: plan())
     monkeypatch.setattr(runtime, "_reconcile_contained_bc_parents", lambda **_: [])
     def build(**kwargs):
         scope = store._eligibility_read_scope.get()

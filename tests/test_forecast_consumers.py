@@ -199,7 +199,15 @@ def test_real_ingest_rejects_expired_claim_atomically_then_commits_current_claim
     with psycopg.connect(db) as c:
         now=c.execute("select clock_timestamp()").fetchone()[0].astimezone(timezone.utc)
         state,_,_,_=health.transition({}, {"action":"claim","provider":"visual_crossing","attempt_id":claim["attempt_id"]},now-timedelta(minutes=16))
-        c.execute("update public.telemetry_sources set metadata=%s::jsonb where source_id=%s",(json.dumps({"preserve":"unrelated","forecast_provider_health":state}),packet["source_id"]))
+        cycle={'attempt_id':str(uuid4()),'cycle_date':now.date().isoformat(),
+            'operating_date':(now.date()+timedelta(days=1)).isoformat()}
+        state['nightly_cycle']=cycle
+        owner={**cycle,'status':'pending','claimed_at':(now-timedelta(minutes=20)).isoformat(),
+            'attempts':[{'provider':'visual_crossing','attempt_id':state['attempt_id'],
+                'generation':state['generation'],'status':'pending'}]}
+        packet['provenance']['nightly_cycle']=cycle
+        c.execute("update public.telemetry_sources set metadata=%s::jsonb where source_id=%s",(json.dumps({
+            "preserve":"unrelated","forecast_provider_health":state,'forecast_nightly_cycle':owner}),packet["source_id"]))
     result,code=subject.ingest_weather_forecast(packet,provided_api_key="synthetic-test-ingest-key",database_url=db)
     assert code==400 and result["success"] is False
     with psycopg.connect(db) as c:
@@ -207,7 +215,15 @@ def test_real_ingest_rejects_expired_claim_atomically_then_commits_current_claim
         now=c.execute("select clock_timestamp()").fetchone()[0].astimezone(timezone.utc)
         new_attempt=str(uuid4())
         state,_,_,_=health.transition(state,{"action":"claim","provider":"visual_crossing","attempt_id":new_attempt},now)
-        c.execute("update public.telemetry_sources set metadata=%s::jsonb where source_id=%s",(json.dumps({"preserve":"unrelated","forecast_provider_health":state}),packet["source_id"]))
+        cycle={'attempt_id':str(uuid4()),'cycle_date':now.date().isoformat(),
+            'operating_date':(now.date()+timedelta(days=1)).isoformat()}
+        state['nightly_cycle']=cycle
+        owner={**cycle,'status':'pending','claimed_at':(now-timedelta(minutes=20)).isoformat(),
+            'attempts':[{'provider':'visual_crossing','attempt_id':state['attempt_id'],
+                'generation':state['generation'],'status':'pending'}]}
+        packet['provenance']['nightly_cycle']=cycle
+        c.execute("update public.telemetry_sources set metadata=%s::jsonb where source_id=%s",(json.dumps({
+            "preserve":"unrelated","forecast_provider_health":state,'forecast_nightly_cycle':owner}),packet["source_id"]))
     # Old generation is blocked even after a replacement claim exists.
     result,code=subject.ingest_weather_forecast(packet,provided_api_key="synthetic-test-ingest-key",database_url=db)
     assert code==400
@@ -258,3 +274,77 @@ def test_reader_provider_switch_committed_before_fetch_keeps_one_statement_snaps
     assert len(statements)==2
     assert second["success"] is True and second["source"]["provider"]=="visual_crossing"
     assert all(day["provenance"]["provider"]=="visual_crossing" for day in second["days"])
+
+
+@pytest.mark.parametrize('mutation',[
+    {'start_at':'2026-11-22T08:00:00+02:00'}, {'start_at':'2026-11-21T08:00:00'},
+    {'source':'obs'}, {'local_observation_credit':True}, {'rain_sum_mm':-1},
+    {'rain_probability_pct':101}, {'wind_max_kmh':float('nan')}])
+def test_hourly_planning_rejects_invalid_estimates(mutation):
+    from datetime import date
+    hour={'start_at':'2026-11-21T08:00:00+02:00','source':'fcst',
+        'local_observation_credit':False,'rain_sum_mm':0,'rain_probability_pct':20,'wind_max_kmh':3}
+    with pytest.raises(ValueError):
+        subject._validated_planning_hours({'planning_hours':[{**hour,**mutation}]},date(2026,11,21))
+
+
+def test_nightly_dated_reader_target_boundary_and_true_stale_age(monkeypatch):
+    from datetime import date
+    from modules.oom_sakkie import bounded_postgres_read
+    calls=[]
+    run=datetime.fromisoformat('2026-11-20T23:30:00+02:00')
+    target=date(2026,11,21)
+    class Connection:
+        def __enter__(self):return self
+        def __exit__(self,*a):pass
+        def cursor(self):return self
+        def execute(self,query,params):calls.append((query,params))
+        def fetchall(self):return [('visual-crossing-forecast-main','Forecast','visual_crossing',360,
+            run,'Africa/Johannesburg',target,1,25,10,0,20,3,5,{},
+            {'planning_hours':[{'start_at':'2026-11-21T08:00:00+02:00','source':'fcst',
+                'local_observation_credit':False,'rain_sum_mm':0,'rain_probability_pct':20,'wind_max_kmh':3}]} )]
+    monkeypatch.setattr(bounded_postgres_read,'connect_bounded_read',lambda **_:Connection())
+    early,status=subject.get_weather_forecast(1,'offline',operating_date=target.isoformat(),
+        as_of=run-timedelta(minutes=1),nightly=True)
+    assert early['success'] is False and calls==[]
+    initial,status=subject.get_weather_forecast(1,'offline',operating_date=target.isoformat(),as_of=run,nightly=True)
+    assert status==200 and initial['days'][0]['forecast_date']==target.isoformat()
+    query,params=calls[-1]
+    assert params[0]==target and params[3]==run
+    assert "forecast_nightly_cycle" in query and "completed_at" in query
+    assert "f.ingested_at <= (select at from reporting_epoch)" in query
+    assert "f.forecast_date >= (select day from requested_forecast)" in query
+    midday,status=subject.get_weather_forecast(1,'offline',operating_date=target.isoformat(),
+        as_of=run+timedelta(hours=12,minutes=30),nightly=True)
+    assert midday['source']['is_stale'] is True and midday['source']['data_age_minutes']==750
+    assert midday['source']['snapshot_role']=='pinned_nightly_programme'
+    assert midday['days'][0]['planning_hours'][0]['local_observation_credit'] is False
+
+
+def test_real_postgres_nightly_target_pin_midday_and_completed_cutoff(clean_database):
+    db=clean_database
+    packet=payload(age=1)
+    seed(db,packet)
+    today=datetime.now(subject.ZA_TZ).date()
+    target=today+timedelta(days=1)
+    at=datetime.combine(today,datetime.min.time(),tzinfo=subject.ZA_TZ)+timedelta(hours=23,minutes=30)
+    cycle={'status':'ingested','operating_date':target.isoformat(),
+        'completed_at':(at-timedelta(seconds=1)).isoformat(),
+        'result':{'source_id':packet['source_id'],'forecast_run_at':packet['forecast_run_at']}}
+    with psycopg.connect(db) as c:
+        c.execute("update public.telemetry_sources set metadata=jsonb_set(metadata,'{forecast_nightly_cycle}',%s::jsonb,true) where source_id=%s",
+            (json.dumps(cycle),'visual-crossing-forecast-main'))
+    actual,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=at,nightly=True)
+    assert status==200 and actual['success'] is True,actual
+    assert len(actual['days'])==1 and actual['days'][0]['forecast_date']==target.isoformat()
+    assert actual['source']['last_forecast_run_at']==datetime.fromisoformat(packet['forecast_run_at']).isoformat()
+    midday=at+timedelta(hours=12,minutes=30)
+    later,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=midday,nightly=True)
+    assert later['success'] is True and later['source']['is_stale'] is True,later
+    assert later['source']['snapshot_role']=='pinned_nightly_programme'
+    with psycopg.connect(db) as c:
+        cycle['completed_at']=(at+timedelta(seconds=1)).isoformat()
+        c.execute("update public.telemetry_sources set metadata=jsonb_set(metadata,'{forecast_nightly_cycle}',%s::jsonb,true) where source_id=%s",
+            (json.dumps(cycle),'visual-crossing-forecast-main'))
+    future,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=at,nightly=True)
+    assert future['success'] is False

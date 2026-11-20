@@ -11,6 +11,9 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from modules.telemetry.rootline_irrigation_execution_contract import validate_commissioning
+from modules.telemetry.rootline_cycle_budget import (
+    ON_START_WINDOW_SECONDS, on_start_window_available,
+)
 from modules.telemetry.rootline_execution_authority import (
     equivalent_fresh_eligibility, validate_execution_eligibility,
 )
@@ -293,9 +296,15 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         return _aux_result("auxiliary_edge_revalidation_failed")
     execution.update(claimed_at=now.isoformat(), primary_stop_deadline=(
         now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat())
+    if not on_start_window_available():
+        return _aux_result("auxiliary_start_budget_unavailable")
     if not prepare_execution_capacity(transport, execution):
         return _aux_result("provider_capacity_unavailable")
     transport = bind_execution_transport(transport, execution)
+    if not on_start_window_available():
+        # No canonical claim or ON exists. The never-attempted pre_on reserve
+        # retains its existing 30-second expiry and next-admission cleanup.
+        return _aux_result("auxiliary_start_budget_unavailable")
     claim=store("claim_auxiliary_before_on",execution)
     if not isinstance(claim,dict) or claim.get("created") is not True:
         return _aux_result("auxiliary_claim_conflict")
@@ -311,7 +320,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         # A slow final provider read can consume programme/flush time or age
         # the original evidence. Revalidate at the actual command edge.
         edge_now = _aware(clock())
-        if (not timedelta(0) <= edge_now-_timestamp(execution["claimed_at"]) <= timedelta(seconds=30)
+        if (not timedelta(0) <= edge_now-_timestamp(execution["claimed_at"]) <= timedelta(seconds=ON_START_WINDOW_SECONDS)
                 or edge_now >= _timestamp(execution["primary_stop_deadline"])):
             return {"accepted_unambiguous": False, "status": "auxiliary_start_window_expired",
                 "provider_command_attempted": False}
@@ -410,7 +419,7 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
     deadline=_timestamp(active.get("primary_stop_deadline"))
     claimed_at=_timestamp(active.get("claimed_at"))
     if (active.get("state") in {"claimed","claimed_recovery_required"} and claimed_at is not None
-            and timedelta(0)<=now-claimed_at<=timedelta(seconds=30)):
+            and timedelta(0)<=now-claimed_at<=timedelta(seconds=ON_START_WINDOW_SECONDS)):
         return _aux_result("auxiliary_claim_in_progress",execution=active)
     if active.get("state") in {"claimed","claimed_recovery_required"} or deadline is None:
         recovery=_bounded_auxiliary_off(active,store,transport)
@@ -553,7 +562,7 @@ def _injection_parent_still_on(active, store, transport, now, *, clock=None, rou
         claimed = _timestamp(active.get("claimed_at"))
         read_deadline = min(deadline, own_deadline) if own_deadline else deadline
         if active.get("state") == "claimed" and claimed:
-            read_deadline = min(read_deadline, claimed+timedelta(seconds=30))
+            read_deadline = min(read_deadline, claimed+timedelta(seconds=ON_START_WINDOW_SECONDS))
         bounded_transport = bind_execution_transport(transport, active, read_deadline=read_deadline)
         output = bounded_transport.read_output_state(device_id=binding["device_id"],
             channel=binding["channel"], **({"routine_read": True} if routine_read else {}))

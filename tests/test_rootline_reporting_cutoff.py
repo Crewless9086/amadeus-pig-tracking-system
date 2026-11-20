@@ -11,10 +11,15 @@ from modules.telemetry import weather_service as weather
 class ReportingCutoffTests(unittest.TestCase):
     def refresh(self, facts, *, cutoff=NOW):
         stored={}
-        def append(value,*args,**kwargs):
-            stored.update(value)
-            return {"success":True},200
-        with mock.patch.object(specialist,'read_current_water_energy_evidence',return_value=(facts,'2026-07-29',NOW)) as reader, mock.patch.object(specialist,'append_water_energy_plan',side_effect=append) as writer, mock.patch.object(specialist,'get_current_water_energy_plan',side_effect=lambda *a,**k:({"success":True,**stored},200)):
+        initial=deepcopy(facts)
+        initial['forecast']['days'][0]['forecast_date']='2026-07-29'
+        saved=plan.build_daily_program(initial,'2026-07-29',now=NOW)
+        saved['generation']=1
+        def revise(value,current,**kwargs):
+            candidate=plan.project_saved_program_for_execution(value,current,now=NOW)
+            stored.update(candidate)
+            return candidate,200
+        with mock.patch.object(specialist,'read_current_water_energy_evidence',return_value=(facts,'2026-07-29',NOW)) as reader, mock.patch.object(plan,'revise_program_remainder',side_effect=revise) as writer, mock.patch.object(plan,'ensure_saved_daily_program',return_value=(saved,200)):
             result=specialist.refresh_current_rootline_specialist_result(now=NOW,**({'evidence_cutoff':cutoff} if cutoff is not None else {}))
         return result,writer,reader,stored
 

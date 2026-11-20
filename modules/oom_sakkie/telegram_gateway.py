@@ -1810,8 +1810,25 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 supervision["execution_status"] = str(managed_result.get("status") or "")
             return supervision
 
+        def ensure_due_program_after_safety():
+            if not production_persistence:
+                return {}
+            try:
+                remaining_seconds()
+                from modules.telemetry.rootline_water_energy_plan import ensure_due_daily_program
+                program, code = ensure_due_daily_program(
+                    database_url=str(source.get("DATABASE_URL") or "") or None,
+                    now=scheduler_now or datetime.now(timezone.utc))
+                return {"daily_program_status": program.get("status"),
+                    "daily_program_ready": code < 400 and program.get("success") is True}
+            except Exception as exc:
+                return {"daily_program_status": "planning_unavailable_safety_preserved",
+                    "daily_program_ready": False, "daily_program_error_type": type(exc).__name__}
+
         def invoke_safety_only():
-            supervision = equipment_reports(supervise())
+            supervision = supervise()
+            supervision.update(ensure_due_program_after_safety())
+            supervision = equipment_reports(supervision)
             return {**supervision,
                 "status": ("scheduled_rootline_active_supervised" if supervision.get("success") is True
                     else "scheduled_rootline_active_supervision_unproven"),
@@ -1822,6 +1839,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         def invoke():
             nonlocal current_plan_result
             supervision = supervise()
+            supervision.update(ensure_due_program_after_safety())
             try:
                 remaining_seconds(minimum=REPORT_MINIMUM_SECONDS)
             except RootlineCycleDeadlineExceeded:

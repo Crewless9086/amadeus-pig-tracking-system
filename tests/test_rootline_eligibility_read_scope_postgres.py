@@ -38,7 +38,7 @@ def insert(action, body):
 
 def run_current(monkeypatch, current_plan, *, provider=None):
     monkeypatch.setattr(runtime, "_refresh_a_irrigation_binding", lambda *_: None)
-    monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *_a, **_k: current_plan)
+    monkeypatch.setattr(runtime, "project_saved_program_for_execution", lambda *_a, **_k: current_plan)
     @runtime._bounded_irrigation_admission
     def run(*, store):
         return runtime._current(lambda **_: (evidence(), "2026-08-08", NOW),
