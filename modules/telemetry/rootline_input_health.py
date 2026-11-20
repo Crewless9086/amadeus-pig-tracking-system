@@ -424,4 +424,3 @@ def power_observation_presentation(power, *, now=None, health=None):
     # do not invent a current freshness threshold.
     fresh = typed_fresh
     return {"show_values": True, "fresh": fresh, "observed_at": observed.isoformat()}
-
