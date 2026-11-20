@@ -50,7 +50,7 @@ _group = ContextVar("rootline_ewelink_snapshot", default=None)
 _optional_observation = ContextVar("rootline_ewelink_optional_observation", default=None)
 OPTIONAL_OBSERVATION_SECONDS = {"mixer_readiness": 1800, "mixer_readiness_delivery": 1800,
     "irrigation_routine": 900, "borehole_routine": 1800,
-    "pulse_preparation": 300, "final_flush": 300}
+    "pulse_preparation": 300, "final_flush": 300, "borehole_unowned_discovery": 300}
 _request_workers = threading.BoundedSemaphore(2)
 _dispatch_audit = ContextVar("rootline_ewelink_dispatch_audit", default=None)
 _private_pair = ContextVar("rootline_ewelink_private_no_send_pair", default=None)
@@ -799,7 +799,15 @@ class RequestBudget:
             binding = optional["binding"]
             identity = key+":"+purpose+(":"+sha256(json.dumps(binding,
                 sort_keys=True, separators=(",", ":")).encode()).hexdigest() if binding else "")
+            discovery = purpose == "borehole_unowned_discovery"
+            binding_digest = sha256(json.dumps(binding, sort_keys=True,
+                separators=(",", ":")).encode()).hexdigest()
+            if discovery:
+                # One current semantic binding: A -> B -> A must read immediately.
+                identity = key+":"+purpose
             prior = observations.get(identity, {})
+            if discovery and prior.get("binding_digest") != binding_digest:
+                prior = {}
             next_at = _time(prior.get("next_read_at")) or _time(optional.get("first_read_at"))
             last_at = _time(optional.get("last_read_at"))
             same_attempt = (optional.get("admission_token") is not None
@@ -819,7 +827,9 @@ class RequestBudget:
                 observations[identity] = {"group_id": group["id"],
                     "admission_token": optional.get("admission_token"),
                     "next_read_at": retry_at.isoformat(),
-                    "expires_at": (last_at+timedelta(seconds=GROUP_SECONDS)).isoformat() if last_at else None}
+                    "expires_at": ((now+timedelta(days=1)).isoformat() if discovery else
+                        (last_at+timedelta(seconds=GROUP_SECONDS)).isoformat() if last_at else None),
+                    **({"binding_digest": binding_digest} if discovery else {})}
             elif same_attempt:
                 prior["group_id"] = group["id"]
         self._admit_availability(scope, group, now)

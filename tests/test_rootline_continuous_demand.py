@@ -215,7 +215,8 @@ class MinuteJourney:
                             if len(states)==1 else {"switches":[{"outlet":i,"switch":state} for i,state in enumerate(states)],
                                 "configure":[{"outlet":i,"startup":"off"} for i in range(4)],
                                 "pulses":[{"outlet":i,"pulse":"off","width":0} for i in range(4)]})}}
-                        for device,states in self.outputs.items()]}
+                        for device,states in self.outputs.items()
+                        if method != "POST" or device == kwargs["body"]["thingList"][0]["id"]]}
                 if endpoint=="/v2/device/thing/status":return {"params":{}}
                 raise AssertionError(endpoint)
             return self.client.dispatch(region="eu",endpoint=endpoint,send=send)
@@ -411,7 +412,7 @@ def test_actual_combined_normal_four_pulses_complete(monkeypatch):
     assert parent_off-stops[-1]>=timedelta(minutes=10)
     assert counts[("100204d497",2,"on")]==counts[("100204d497",2,"off")]==3
     assert counts[("1002851416",1,"on")]==counts[("1002851416",1,"off")]==1
-    assert sum(row["optional"]=="borehole_routine" for row in journey.reads)==14
+    assert sum(row["optional"]=="borehole_routine" for row in journey.reads)==7
     assert max(row["recent"]+row["remaining"] for row in journey.admissions)<=250
     print("ACTUAL_COMBINED_TRACE",len(journey.reads),dict(counts),
         "charged_by_execution",dict(Counter(row.get("execution_id") or "preclaim"
@@ -675,7 +676,9 @@ def test_realistic_cycle_budget_reuses_program_and_narrows_managed_reads(monkeyp
     def delayed_dispatch(**kwargs):
         send=kwargs['send']
         def delayed_send(timeout):
-            journey.client.backend.advance(2)
+            # Preserve six seconds per complete phase so this test still exercises
+            # deferral/report headroom after reducing three requests to one.
+            journey.client.backend.advance(6)
             return send(timeout)
         return dispatch(**{**kwargs,'send':delayed_send})
     journey.evidence=load;journey.canonical=canonical;journey.client.dispatch=delayed_dispatch
@@ -757,7 +760,7 @@ def test_realistic_cycle_budget_reuses_program_and_narrows_managed_reads(monkeyp
     assert any(r['device']=='100204d497' and r['channel']==2 and r['state']=='on' for r in journey.commands),(result,group_trace)
     assert all(g['seconds']>0 for g in group_trace)
     assert all(g['seconds']==6 for g in group_trace if 'advisor' not in g['readers'])
-    assert 'claim_auxiliary_before_on' in operations and len(journey.reads)>=6
+    assert 'claim_auxiliary_before_on' in operations and len(journey.reads)>=3
     print('SAVED_PROGRAM_SLOW_CYCLE',{'initially_completed':initially_completed,
         'first_cycle_seconds':first_elapsed,'report_cycle_seconds':before_report+report_trace[0]['seconds'],
         'actual_report':report_trace,

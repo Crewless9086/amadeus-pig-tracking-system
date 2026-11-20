@@ -40,13 +40,19 @@ class OwnerResponse:
 
 
 def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
+    from modules.oom_sakkie.rootline_transition_notifications import provider_availability_text
+    availability = provider_availability_text(result.get("provider_availability"), language=language)
+    from modules.oom_sakkie.rootline_transition_notifications import input_health_text
+    input_summary = input_health_text(result.get("input_health"), language=language)
     af = str(language).casefold().startswith("af")
     if result.get("success") is not True:
-        message = ("Huidige water- en kragbewyse is nie beskikbaar nie." if af else
-                   "Current water and power evidence is unavailable.")
+        message = (("Die huidige waterplan kon nie bevestig word nie." if af else
+                    "The current water plan could not be verified.") if result.get("input_health") else
+                   ("Huidige water- en kragbewyse is nie beskikbaar nie." if af else
+                    "Current water and power evidence is unavailable."))
         retry = ("Oom Sakkie sal weer met vars kanonieke bewyse beoordeel." if af else
                  "Oom Sakkie will retry from fresh canonical evidence.")
-        return _render(OwnerResponse("ROOTLINE", (("Status", (message,)),), reassessment=retry, language=language))
+        return _render(OwnerResponse("ROOTLINE", (("Status", tuple(filter(None, (availability, input_summary, message)))),), reassessment=retry, language=language))
     power = result.get("current_power") if isinstance(result.get("current_power"), Mapping) else {}
     policy = result.get("battery_policy") if isinstance(result.get("battery_policy"), Mapping) else {}
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
@@ -73,10 +79,21 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
         decisions.append(f"• <b>{labels[subject]}:</b> {_safe(decision)}" +
                          (f" · {_safe(window)}" if window else "") +
                          (f" — {_safe(rendered_reason)}" if reason else ""))
-    soc = _value(power.get("battery_soc_pct"), "%", af=af)
-    solar = _value(power.get("solar_power_w"), " W", af=af)
-    load = _value(power.get("load_power_w"), " W", af=af)
-    grid = _value(power.get("grid_power_w"), " W", af=af)
+    from modules.telemetry.rootline_input_health import power_observation_presentation, _time
+    from zoneinfo import ZoneInfo
+    power_proof = power_observation_presentation(power, health=((result.get("input_health") or {}).get("inputs") or {}).get("power"))
+    shown_power = power if power_proof["show_values"] else {}
+    stamp = (_time(power_proof["observed_at"]).astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%d %b %H:%M SAST")
+        if power_proof["observed_at"] else "")
+    power_label = (("Waargeneem op " if af else "Observed at ") if power_proof["fresh"] else
+        ("Laas bekend op " if af else "Last known at ")) + stamp + "." if stamp else ""
+    power_warning = "" if power_proof["fresh"] else (
+        "Huidige battery-, sonkrag- en netwerktoestande is nie beskikbaar nie." if af else
+        "Current battery, solar and grid conditions are unavailable.")
+    soc = _value(shown_power.get("battery_soc_pct"), "%", af=af)
+    solar = _value(shown_power.get("solar_power_w"), " W", af=af)
+    load = _value(shown_power.get("load_power_w"), " W", af=af)
+    grid = _value(shown_power.get("grid_power_w"), " W", af=af)
     reserve = _value(policy.get("governing_reserve_soc_pct"), "%", af=af)
     reserve_reason = str(policy.get("governing_reason") or "").strip()
     question = _genuine_question(brief.get("family_fact_needed"))
@@ -96,7 +113,7 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
         ((("Huidige besluit" if af else "Current decision"),
           (("ROOTLINE beveel nou aan: " if af else "ROOTLINE recommends now: ") + _safe(rendered_current) + ".",)),
          (("Krag" if af else "Power"),
-          (f"SOC {soc} · {'Sonkrag' if af else 'Solar'} {solar} · {'Las' if af else 'Load'} {load} · {'Netwerk' if af else 'Grid'} {grid}",
+          (power_label, power_warning, f"SOC {soc} · {'Sonkrag' if af else 'Solar'} {solar} · {'Las' if af else 'Load'} {load} · {'Netwerk' if af else 'Grid'} {grid}",
            reserve_line,
            (("Reserwerede: " if af else "Reserve reason: ") +
             _safe(owner_reason(reserve_reason, language=language))) if reserve_reason else "")),
@@ -105,6 +122,14 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
         owner_action=question,
         reassessment=_localized_reassessment(str(brief.get("reassess") or _reassessment_text(result.get("next_reassessment"))), af),
         language=language)
+    if availability:
+        from dataclasses import replace
+        response = replace(response, sections=((("Skakelaarstatus" if af else "Switch status"),
+            (_safe(availability),)),) + response.sections)
+    if input_summary:
+        from dataclasses import replace
+        response = replace(response, sections=((("Inligtingsbronne" if af else "Inputs"),
+            (_safe(input_summary),)),) + response.sections)
     return _render(response)
 
 
@@ -282,6 +307,10 @@ def _irrigation_brief(facts, af):
         # Unknown/other recommendation facts must not disappear behind an OFF
         # status. Use the existing bounded source-word fallback for the item.
         return ""
+    from modules.oom_sakkie.rootline_transition_notifications import provider_availability_text
+    availability = provider_availability_text(facts.get("provider_availability"), language="af" if af else "en")
+    if availability:
+        lines.append(_safe(availability))
     return "\n".join(lines)
 
 

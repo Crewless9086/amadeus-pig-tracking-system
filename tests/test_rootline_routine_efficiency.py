@@ -22,15 +22,15 @@ def fixture(changes=None):
     return source,tokens,request,calls
 
 
-def test_routine_two_fresh_reads_default_three_and_current_status():
+def test_routine_and_default_one_complete_fresh_snapshot():
     source,tokens,request,calls=fixture()
     first=read_registered_device('100204e9bc',token_store=tokens,environ=source,http_request=request,now=NOW,routine_read=True)
-    assert len(calls)==first['provider_calls']==2
-    assert [r[1] for r in calls]==['/v2/device/thing','/v2/device/thing/status']
+    assert len(calls)==first['provider_calls']==1
+    assert calls==[('POST','/v2/device/thing')]
     assert first['authoritative'] and first['channels'][0]['output_state']=='OFF'
     calls.clear()
     read_registered_device('100204e9bc',token_store=tokens,environ=source,http_request=request,now=NOW)
-    assert len(calls)==3 and calls[0][1]=='/v2/family'
+    assert calls==[('POST','/v2/device/thing')]
 
 
 @pytest.mark.parametrize('fault',['account','missing_account','duplicate','uiid','expected_account'])
@@ -94,12 +94,13 @@ def test_manager_uses_canonical_timestamp_without_provider_calls():
         assert 'observed:'+NOW.isoformat() in row['evidence_refs']
 
 
-def test_two_read_observation_uses_fresh_status_and_fresh_offline_metadata():
+def test_complete_observation_uses_fresh_outputs_and_fresh_offline_metadata():
     source,tokens,raw,calls=fixture()
     def request(method,url,**kwargs):
         value=raw(method,url,**kwargs)
-        if urlparse(url).path=='/v2/device/thing':value['thingList'][0]['itemData']['online']=False
-        if urlparse(url).path=='/v2/device/thing/status':value['params']={'switches':[{'outlet':i,'switch':'on'} for i in range(4)]}
+        if urlparse(url).path=='/v2/device/thing':
+            device=value['thingList'][0]['itemData'];device['online']=False
+            device['params']['switches']=[{'outlet':i,'switch':'on'} for i in range(4)]
         return value
     result=read_registered_device('100204e9bc',token_store=tokens,environ=source,http_request=request,now=NOW,routine_read=True)
     assert result['online'] is False

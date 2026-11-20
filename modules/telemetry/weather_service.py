@@ -635,6 +635,8 @@ def evaluate_weather_alerts(payload=None, provided_api_key="", database_url=None
                     candidates.append(_backend_audit_test_alert(now_utc))
                 recent_alerts = _read_recent_weather_alerts(cursor)
                 evaluation = _apply_weather_alert_policy(candidates, recent_alerts, now_utc)
+                from modules.telemetry.rootline_input_health import apply_legacy_ownership
+                evaluation = apply_legacy_ownership(evaluation, "weather")
 
                 written_alerts = []
                 if not dry_run:

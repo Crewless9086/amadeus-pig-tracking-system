@@ -1,5 +1,21 @@
 # Vault Brain Changelog
 
+## 2026-11-20 - Minimize provider requests and expose unavailable inputs
+
+Reconcile the owner's request for fewer eWeLink calls and useful warnings when
+provider, weather, forecast or power evidence is unavailable. Reuse complete
+authenticated observations and coordinate idle discovery while preserving owned
+shutdown and fresh verification. Stable incidents and recipient delivery receipts
+prevent duplicate or falsely confirmed notices; dated recovery cannot imply
+current equipment state. Backend health ownership remains default-disabled until
+paired with the two existing legacy health notices, preserving unrelated alerts.
+
+The source uses existing telemetry, forecast, execution and delivery records.
+Two additive outage-query indexes use the existing reviewed concurrent migration
+route. No provider quota reset, purchase, new scheduler or operating success is
+implied. Deployment, genuine warning delivery, input recovery and independent farm
+cycles remain separate acceptance requirements.
+
 ## 2026-11-20 - One nightly ROOTLINE programme with live-only adjustment
 
 Reconcile the owner's simplified operating model: one 23:30 SAST forecast cycle,

@@ -1,5 +1,31 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed provider economy and visible input failures — 20 November 2026
+
+ROOTLINE must minimize avoidable provider requests while retaining fresh evidence
+at command and verification boundaries. Reuse one complete authenticated device
+observation when it supplies the required facts; coordinate routine discovery
+across workers and restart. Reduced polling must not delay owned shutdown,
+conceal manual isolation, reuse stale evidence as fresh, or weaken identity,
+authority, duplicate-command or verification checks. Measured test savings do
+not prove a provider quota, remaining allowance or restored access.
+
+Provider limits and unavailable weather, forecast or power inputs must not fail
+silently. Through the existing owner channel, identify the affected capability,
+what remains possible, and the next automatic recovery check. Preserve a stable
+incident identity, suppress confirmed duplicates, contain ambiguous delivery,
+and report verified recovery truthfully. A retry time is not a provider reset
+time. A dated recovery is not proof that equipment resumed or is currently OFF.
+
+Use the existing sensor, forecast, execution and notification records. Missing
+evidence remains unavailable; stale numerical readings must not appear current.
+An accepted backup forecast is distinct from complete forecast failure. Input
+recovery and useful warnings belong to the deployed runtime, without recurring
+owner monitoring or confirmations. Coordinate ownership with existing health
+alerts before enabling replacement notices, preserving unrelated alerts and
+rollback. This instruction does not authorize purchasing provider capacity,
+changing account permissions, bypassing limits or manufacturing recovery.
+
 ## Owner-directed daily plan and live-condition adjustment — 20 November 2026
 
 The owner's direct clarification supersedes contrary recurring forecast and

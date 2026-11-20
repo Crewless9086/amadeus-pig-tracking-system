@@ -458,6 +458,8 @@ def evaluate_power_alerts(payload=None, provided_api_key="", database_url=None):
 
                 recent_alerts = _read_recent_power_alerts(cursor)
                 evaluation = _apply_power_alert_policy(candidates, recent_alerts, now_utc)
+                from modules.telemetry.rootline_input_health import apply_legacy_ownership
+                evaluation = apply_legacy_ownership(evaluation, "power")
 
                 written_alerts = []
                 if not dry_run:

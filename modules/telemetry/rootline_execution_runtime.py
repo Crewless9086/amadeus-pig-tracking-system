@@ -201,8 +201,22 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                     conditions = current_borehole_conditions(evidence.get("forecast")) if continuous else None
                     # Observe before applying new-start gates: an already-ON output
                     # needs durable supervision even during a forecast deferral.
-                    provider = (transport.read_output_state(device_id="1002851416", channel=1, routine_read=True)
-                        if continuous else None)
+                    provider = None
+                    if continuous:
+                        from modules.telemetry.rootline_ewelink_request_budget import (
+                            optional_observation, OptionalObservationDeferred)
+                        binding = _borehole_discovery_binding(baseline, conditions, interlocks,
+                            borehole_energy(evidence.get("power"), decision_at, continuous=True))
+                        try:
+                            with optional_observation("borehole_unowned_discovery", binding=binding):
+                                provider = transport.read_output_state(
+                                    device_id="1002851416", channel=1, routine_read=True)
+                        except OptionalObservationDeferred as deferred:
+                            packet["borehole_readiness"] = "borehole_unowned_discovery_deferred"
+                            packet["borehole_discovery_next_read_at"] = deferred.next_read_at
+                            packet["borehole_conditions"] = conditions
+                            current_decision_time(selected)
+                            return packet
                     adopting = continuous and isinstance(provider, dict) and provider.get("state") == "ON"
                     if continuous and not adopting and (not isinstance(conditions, dict)
                             or conditions.get("start_eligible") is not True):
@@ -1453,3 +1467,25 @@ def _timed_mapping_packet(output, identity):
     return {"commissioning_id": identity, "zone_id": output["identity"],
         "channel": output["channel"], "stop_mode": "scheduled",
         "mapping_sha256": output["contract_sha256"], "configuration_generation": 1}
+
+
+def _borehole_discovery_binding(baseline, conditions, interlocks, energy):
+    """Semantic eligibility/protection changes bypass idle discovery cadence.
+
+    Canonical observations are still evaluated on every invocation. Their read
+    timestamps and evidence hashes are not provider discovery invalidations.
+    """
+    conditions = conditions if isinstance(conditions, dict) else {}
+    return {
+        "provider_account_binding": "ewelink_owner_account",
+        "device_id": "1002851416", "channel": 1,
+        "baseline": {key: baseline.get(key) for key in (
+            "current", "baseline_sha256", "commissioning_generation", "registry_generation", "stop_mode")},
+        "conditions": {key: conditions.get(key) for key in (
+            "start_eligible", "stop_required", "reason", "protection_safe",
+            "last_owned_execution_id", "opportunity_id")},
+        "interlocks": {key: interlocks.get(key) for key in (
+            "manual_off_active", "manual_isolation_active", "dry_run_safe",
+            "low_water_clear", "supply_pressure_safe", "full_tank_cutoff_fault")},
+        "energy": {key: energy.get(key) for key in ("eligible", "fresh", "reason")},
+    }

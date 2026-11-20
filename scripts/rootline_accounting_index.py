@@ -1,4 +1,4 @@
-"""One reviewed concurrent index preparation, shared by both migration runners."""
+"""Closed reviewed concurrent-index contracts shared by both migration runners."""
 from psycopg.pq import TransactionStatus
 
 MIGRATION_ID = "20261116211107_rootline_accounting_nonzero_window_index"
@@ -12,30 +12,63 @@ CREATE_SQL = ("CREATE INDEX CONCURRENTLY " + INDEX_NAME + " ON " + TABLE_NAME
     + " (chatwoot_conversation_id, event_source, created_at) WHERE "
     + "(review_json #>> '{ewelink_request_budget,attempt_units}') COLLATE \"C\" IS DISTINCT FROM '0'")
 
+RESTORATION_MIGRATION_ID = '20261120182628_rootline_ewelink_restoration_scope_index'
+RESTORATION_INDEX_NAME = 'idx_rootline_ewelink_restoration_scope_created'
+RESTORATION_DESCRIPTION = 'Add exact provider-failure and restoration scope indexes; preserve outage identity and canonical receipt semantics.'
+RESTORATION_EXPECTED_DEFINITION = "CREATE INDEX idx_rootline_ewelink_restoration_scope_created ON public.sam_live_stock_conversation_review_events USING btree (chatwoot_conversation_id, ((((review_json -> 'ewelink_request_budget'::text) -> 'detail'::text) ->> 'scope'::text)), created_at DESC, review_event_id DESC) WHERE ((event_source = 'rootline_provider_availability'::text) AND (((review_json -> 'ewelink_request_budget'::text) ->> 'action'::text) = 'complete_snapshot_restored_availability'::text))"
+RESTORATION_CREATE_SQL = "CREATE INDEX CONCURRENTLY idx_rootline_ewelink_restoration_scope_created\nON public.sam_live_stock_conversation_review_events\n    (chatwoot_conversation_id,\n     ((review_json->'ewelink_request_budget'->'detail'->>'scope')),\n     created_at DESC, review_event_id DESC)\nWHERE event_source = 'rootline_provider_availability'\n  AND review_json->'ewelink_request_budget'->>'action' =\n      'complete_snapshot_restored_availability'"
+FAILURE_INDEX_NAME = 'idx_rootline_ewelink_failure_scope_created'
+FAILURE_EXPECTED_DEFINITION = "CREATE INDEX idx_rootline_ewelink_failure_scope_created ON public.sam_live_stock_conversation_review_events USING btree (chatwoot_conversation_id, ((((review_json -> 'ewelink_request_budget'::text) -> 'detail'::text) ->> 'scope'::text)), created_at, review_event_id) WHERE ((event_source = 'rootline_provider_availability'::text) AND (((review_json -> 'ewelink_request_budget'::text) ->> 'action'::text) = ANY (ARRAY['request_completed'::text, 'snapshot_validation_failed'::text])) AND ((((((review_json -> 'ewelink_request_budget'::text) -> 'state'::text) -> 'scopes'::text) -> (((review_json -> 'ewelink_request_budget'::text) -> 'detail'::text) ->> 'scope'::text)) ->> 'category'::text) IS NOT NULL))"
+FAILURE_CREATE_SQL = "CREATE INDEX CONCURRENTLY idx_rootline_ewelink_failure_scope_created\nON public.sam_live_stock_conversation_review_events\n    (chatwoot_conversation_id,\n     ((review_json->'ewelink_request_budget'->'detail'->>'scope')),\n     created_at, review_event_id)\nWHERE event_source = 'rootline_provider_availability'\n  AND review_json->'ewelink_request_budget'->>'action' IN\n      ('request_completed','snapshot_validation_failed')\n  AND review_json->'ewelink_request_budget'->'state'->'scopes'\n      ->(review_json->'ewelink_request_budget'->'detail'->>'scope')->>'category' IS NOT NULL"
+MIGRATION_IDS = frozenset((MIGRATION_ID, RESTORATION_MIGRATION_ID))
 
-def verify_index(connection, *, required=True):
+
+def _contracts(migration_id):
+    if migration_id == MIGRATION_ID:
+        return ((INDEX_NAME, EXPECTED_DEFINITION, CREATE_SQL, "rootline_accounting_index"),)
+    if migration_id == RESTORATION_MIGRATION_ID:
+        return ((RESTORATION_INDEX_NAME, RESTORATION_EXPECTED_DEFINITION,
+                 RESTORATION_CREATE_SQL, "rootline_restoration_index"),
+                (FAILURE_INDEX_NAME, FAILURE_EXPECTED_DEFINITION,
+                 FAILURE_CREATE_SQL, "rootline_failure_index"))
+    raise ValueError("unregistered_concurrent_index_migration")
+
+
+def _verify_contract(connection, contract, *, required=True):
+    index_name, definition, _create, error = contract
     row = connection.execute("""select c.relkind, pg_catalog.pg_get_indexdef(i.indexrelid),
              i.indisvalid, i.indisready, i.indislive
         from pg_catalog.pg_class c
         join pg_catalog.pg_namespace n on n.oid=c.relnamespace
         left join pg_catalog.pg_index i on i.indexrelid=c.oid
-       where n.nspname='public' and c.relname=%s""", (INDEX_NAME,)).fetchone()
+       where n.nspname='public' and c.relname=%s""", (index_name,)).fetchone()
     if row is None:
         if required:
-            raise RuntimeError("rootline_accounting_index_missing")
+            raise RuntimeError(error + "_missing")
         return False
-    if tuple(row) != ('i', EXPECTED_DEFINITION, True, True, True):
-        raise RuntimeError("rootline_accounting_index_definition_or_state_mismatch")
+    if tuple(row) != ('i', definition, True, True, True):
+        raise RuntimeError(error + "_definition_or_state_mismatch")
     return True
+
+
+def verify_index(connection, *, required=True, migration_id=MIGRATION_ID):
+    # Do not short-circuit: a missing first index must not hide a wrong sibling.
+    present = [_verify_contract(connection, contract, required=required)
+               for contract in _contracts(migration_id)]
+    return all(present)
 
 
 def prepare_index(connection, migration_id):
     """Never commit a caller transaction or repair/drop a mismatched object."""
-    if migration_id != MIGRATION_ID:
+    if migration_id not in MIGRATION_IDS:
         return None
+    contracts = _contracts(migration_id)
+    error = contracts[0][3]
     if not connection.autocommit or connection.info.transaction_status != TransactionStatus.IDLE:
-        raise RuntimeError("rootline_accounting_index_requires_idle_autocommit")
-    if verify_index(connection, required=False):
+        raise RuntimeError(error + "_requires_idle_autocommit")
+    # Verify every existing member before any DDL, including a partial prior build.
+    present = [_verify_contract(connection, contract, required=False) for contract in contracts]
+    if all(present):
         return "existing_exact_valid"
     # Concurrent failures may leave an invalid index. Preserve it and stop;
     # cleanup is a separate reviewed operation, never an automatic retry/drop.
@@ -48,9 +81,12 @@ def prepare_index(connection, migration_id):
             connection.execute("select pg_catalog.set_config(%s,%s,false)", (name, str(milliseconds)))
         acknowledged = dict(connection.execute("select name, setting::integer from pg_catalog.pg_settings where name in ('statement_timeout','lock_timeout')").fetchall())
         if acknowledged != bounded:
-            raise RuntimeError("rootline_accounting_index_timeout_not_acknowledged")
-        connection.execute(CREATE_SQL)
-        verify_index(connection)
+            raise RuntimeError(error + "_timeout_not_acknowledged")
+        for contract, exists in zip(contracts, present):
+            if not exists:
+                connection.execute(contract[2])
+                _verify_contract(connection, contract)
+        verify_index(connection, migration_id=migration_id)
     finally:
         # Autocommit statement failures leave the session usable. A disconnected
         # session is already contained; restoration failure remains an error.
@@ -58,5 +94,5 @@ def prepare_index(connection, migration_id):
             connection.execute("select pg_catalog.set_config(%s,%s,false)", (name, str(milliseconds)))
         restored = dict(connection.execute("select name, setting::integer from pg_catalog.pg_settings where name in ('statement_timeout','lock_timeout')").fetchall())
         if restored != settings:
-            raise RuntimeError("rootline_accounting_index_timeout_restore_failed")
+            raise RuntimeError(error + "_timeout_restore_failed")
     return "created_exact_valid"

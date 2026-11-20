@@ -43,7 +43,7 @@ jobs:
         run: python -m pip install -r requirements.txt pytest
 
       - name: Prove allowlist, schema readback, replay and rollback
-        run: python -m pytest tests/test_render_production_migration_rail.py tests/test_render_rootline_a_migration_rail.py tests/test_render_rootline_e_migration_rail.py tests/test_rootline_accounting_index_migration.py tests/test_render_production_migration_workflow.py -q
+        run: python -m pytest tests/test_render_production_migration_rail.py tests/test_render_rootline_a_migration_rail.py tests/test_render_rootline_e_migration_rail.py tests/test_rootline_accounting_index_migration.py tests/test_rootline_restoration_index_migration.py tests/test_render_production_migration_workflow.py -q
 
 
       - name: Create isolated A commissioning fixture
@@ -237,6 +237,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608260001_allow_herdmaster_litter_actions_protected_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/20261116211107_rootline_accounting_nonzero_window_index.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/20261120182628_rootline_ewelink_restoration_scope_index.sql
 
       - name: Prove retained mortality first-delivery window and confirmation transactions
         env:

@@ -164,12 +164,27 @@ def build_current_rootline_specialist_result(
         error = _reporting_evidence_error(evidence, evidence_cutoff, generated_at)
         if error:
             return {**_unavailable_result(selected_date, generated_at, error), "status": error}
-    return build_rootline_specialist_result(
+    result = build_rootline_specialist_result(
         evidence,
         selected_date,
         now=generated_at,
         evidence_origin="canonical_read_models",
     )
+    return _with_provider_availability(result, database_url=database_url, now=generated_at)
+
+
+def _with_provider_availability(result, *, database_url=None, now=None):
+    from modules.telemetry.rootline_provider_availability import read_provider_availability, CONTRACT
+    try:
+        availability = read_provider_availability(database_url=database_url, now=now)
+    except Exception:
+        availability = {"contract": CONTRACT, "status": "unknown", "scopes": []}
+    from modules.telemetry.rootline_input_health import read_input_health, CONTRACT as INPUT_CONTRACT
+    try:
+        inputs = read_input_health(database_url=database_url, now=now)
+    except Exception:
+        inputs = {"contract": INPUT_CONTRACT, "status": "unknown", "inputs": {}}
+    return {**result, "provider_availability": availability, "input_health": inputs}
 
 
 def refresh_current_rootline_specialist_result(
@@ -199,7 +214,9 @@ def refresh_current_rootline_specialist_result(
     saved, status = ensure_saved_daily_program(selected_date, database_url=database_url,
         now=generated_at, actor_identity=actor_identity)
     if status >= 400 or saved.get("success") is not True:
-        return _unavailable_result(selected_date, generated_at, saved.get("status"))
+        return _with_provider_availability(
+            _unavailable_result(selected_date, generated_at, saved.get("status")),
+            database_url=database_url, now=generated_at)
     if evidence_cutoff is not None:
         saved_cutoff = datetime.fromisoformat(saved["daily_program"]["creation_cutoff"])
         if saved_cutoff > evidence_cutoff:
@@ -209,11 +226,13 @@ def refresh_current_rootline_specialist_result(
     current, status = revise_program_remainder(saved, evidence, now=generated_at,
         database_url=database_url, actor_identity=actor_identity)
     if status >= 400 or current.get("success") is not True:
-        return _unavailable_result(selected_date, generated_at, current.get("status"))
+        return _with_provider_availability(
+            _unavailable_result(selected_date, generated_at, current.get("status")),
+            database_url=database_url, now=generated_at)
     result = project_water_energy_plan(current, now=generated_at)
     result["canonical_plan"] = {key: current.get(key) for key in (
         "plan_id", "generation", "evidence_sha256", "evidence_observed_at")}
-    return result
+    return _with_provider_availability(result, database_url=database_url, now=generated_at)
 
 
 def _reporting_evidence_error(evidence, cutoff, generated_at):

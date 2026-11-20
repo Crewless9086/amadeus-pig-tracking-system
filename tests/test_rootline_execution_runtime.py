@@ -530,6 +530,9 @@ def _pulse_parent_harness(monkeypatch,fault=None,hold=False,due=False,expired=Fa
     if fault=='uiid':item['extra']['uiid']=138
     if fault=='duplicate':value['thingList'].append(_pulse_parent_deepcopy(value['thingList'][0]))
     if fault=='offline':item['online']=False
+    if fault=='other_on':item['params']['switches'][1]['switch']='on'
+    if fault=='off':item['params']['switches'][0]['switch']='off'
+    if fault=='timeout':raise TimeoutError('synthetic read failed')
    if endpoint=='/v2/device/thing/status':
     value['params']={'switches':[{'outlet':i,'switch':state[0] if i==0 else 'off'} for i in range(4)]}
     if fault=='other_on':value['params']['switches'][1]['switch']='on'
@@ -554,23 +557,23 @@ def _pulse_parent_refresh(module,transport,client,context,**kwargs):
   client.backend.now,clock=lambda:client.backend.now,only_when_due=True,preparation_token='one-invocation',**kwargs)['active_irrigation_context']['zone_output_evidence']
 
 
-def test_pulse_parent_initial_parent_two_http_fresh_authoritative_proof(monkeypatch):
+def test_pulse_parent_initial_parent_single_http_fresh_authoritative_proof(monkeypatch):
  transport,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch)
  output=_pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)
  assert output['state']=='ON' and output['authoritative']
- assert calls==['/v2/device/thing','/v2/device/thing/status']
+ assert calls==['/v2/device/thing']
  assert flags==[True]
  assert len(output['evidence_id'])==64
  assert output['evidence_id']==output['irrigation_output_evidence']['response_digest']
 
 
-def test_pulse_parent_final_flush_retains_full_discovery_even_new_injection_disabled(monkeypatch):
+def test_pulse_parent_final_flush_retains_fresh_snapshot_even_new_injection_disabled(monkeypatch):
  for module in (_pulse_parent_runtime,):
   with monkeypatch.context() as mp:
    transport,calls,flags,client,context,_=_pulse_parent_harness(mp)
    context.update(completed_pulses=2,prior_pulse_shutdown_evidence={'zone_execution_id':'ZONE-EXEC-1','shutdown_verified':True,'observed_at':(client.backend.now-_pulse_parent_timedelta(seconds=600)).isoformat()})
    assert _pulse_parent_refresh(module,transport,client,context,injection_enabled=False)['state']=='ON'
-   assert calls==['/v2/family','/v2/device/thing','/v2/device/thing/status'] and flags==[False]
+   assert calls==['/v2/device/thing'] and flags==[False]
 
 
 @_pulse_parent_pytest.mark.parametrize('fault',['account','missing_account','wrong_device','uiid','duplicate','offline','stale','future','other_on','off','timeout'])
@@ -598,10 +601,10 @@ def test_pulse_parent_not_due412_no_provider_attempt(monkeypatch):
 
 def test_pulse_parent_optional_slot_still_suppresses_new_worker_invocation(monkeypatch):
  transport,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch)
- assert _pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)['state']=='ON';assert len(calls)==2
+ assert _pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)['state']=='ON';assert len(calls)==1
  output=_pulse_parent_runtime._refresh_active_irrigation_readback({'active_irrigation_context':context},transport,client.backend.now,
   clock=lambda:client.backend.now,only_when_due=True,preparation_token='another-invocation')
- assert output['active_irrigation_context']['zone_output_evidence']=={} and len(calls)==2
+ assert output['active_irrigation_context']['zone_output_evidence']=={} and len(calls)==1
 
 
 def test_pulse_parent_default_nonpreparation_and_changed_output_stay_fresh(monkeypatch):
@@ -609,7 +612,7 @@ def test_pulse_parent_default_nonpreparation_and_changed_output_stay_fresh(monke
  assert _pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)['state']=='ON';calls.clear();state[0]='off'
  output=_pulse_parent_runtime._refresh_active_irrigation_readback({'active_irrigation_context':context},transport,client.backend.now,clock=lambda:client.backend.now)
  assert output['active_irrigation_context']['zone_output_evidence']=={}
- assert calls==['/v2/family','/v2/device/thing','/v2/device/thing/status']
+ assert calls==['/v2/device/thing']
 
 
 def test_pulse_parent_custom_transport_signature_is_unchanged(monkeypatch):
@@ -617,4 +620,4 @@ def test_pulse_parent_custom_transport_signature_is_unchanged(monkeypatch):
  class Custom:
   def read_output_state(self,*,device_id,channel):return native.read_output_state(device_id=device_id,channel=channel)
  assert _pulse_parent_refresh(_pulse_parent_runtime,Custom(),client,context)['state']=='ON'
- assert calls==['/v2/family','/v2/device/thing','/v2/device/thing/status']
+ assert calls==['/v2/device/thing']

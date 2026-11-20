@@ -94,6 +94,11 @@ ALLOWLIST = (
         filename="20261116211107_rootline_accounting_nonzero_window_index.sql",
         sha256="81384d093295b0e1d2a2f8901af9caa6c94ec38df6e7545b09c6bb8e4bcccda9",
     ),
+    AllowedMigration(
+        migration_id="20261120182628_rootline_ewelink_restoration_scope_index",
+        filename="20261120182628_rootline_ewelink_restoration_scope_index.sql",
+        sha256="213567a8ce0bf43bc32d45c3510f0255d278d7abb8ab2eb6b246769cb112d29c",
+    ),
 )
 
 
@@ -172,6 +177,7 @@ FARROWING_PREDECESSOR_ACTION_KINDS = tuple(
 )
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
     accounting_index.MIGRATION_ID: accounting_index.DESCRIPTION,
+    accounting_index.RESTORATION_MIGRATION_ID: accounting_index.RESTORATION_DESCRIPTION,
     PURPOSE_MIGRATION.migration_id: (
         "Admit exact-preview HERDMASTER purpose review and correction claims; "
         "no farm facts or delegated permissions are changed."
@@ -2291,6 +2297,23 @@ def _verify_purpose_catalog_transition(connection, latest, manifest, digest, *, 
     }
 
 
+def _prior_catalog_without_prepared_restoration(connection, manifest):
+    result = manifest
+    for contract in accounting_index._contracts(accounting_index.RESTORATION_MIGRATION_ID):
+        name, definition, _create, _error = contract
+        identity = ("public", "sam_live_stock_conversation_review_events", name)
+        rows = [row for row in result.get("indexes", []) if tuple(row[:3]) == identity]
+        if not rows:
+            continue
+        expected = [*identity, False, False, True, True, definition]
+        if len(rows) != 1 or list(rows[0]) != expected:
+            raise RuntimeError("rootline_restoration_index_catalog_mismatch")
+        accounting_index._verify_contract(connection, contract)
+        result = {**result, "indexes": [row for row in result["indexes"]
+                                       if tuple(row[:3]) != identity]}
+    return result
+
+
 def _verify_catalog_checkpoint(connection, *, service_id: str | None = None) -> dict:
     _lock_purpose_claims(connection)
     rows = connection.execute(
@@ -2356,6 +2379,14 @@ def _verify_catalog_checkpoint(connection, *, service_id: str | None = None) -> 
     manifest, digest = _catalog_snapshot(
         connection, relations=expected_relations, functions=expected_functions
     )
+    # A concurrent restoration build can survive a rolled-back receipt transaction.
+    # Compare the immutable predecessor without only those exact valid additive rows;
+    # every other catalog field still must match. Once receipted, no subtraction.
+    restoration_id = accounting_index.RESTORATION_MIGRATION_ID
+    if (restoration_id not in checkpoint_ids
+            and any(item.migration_id == restoration_id for item in ALLOWLIST)):
+        manifest = _prior_catalog_without_prepared_restoration(connection, manifest)
+        digest = _json_sha256(manifest)
     transition = None
     if digest != latest[3] or manifest != latest[4]:
         try:
@@ -2459,8 +2490,8 @@ def _verify_migration_precondition(
     *,
     already_applied: bool,
 ) -> str:
-    if item.migration_id == accounting_index.MIGRATION_ID:
-        accounting_index.verify_index(connection)
+    if item.migration_id in accounting_index.MIGRATION_IDS:
+        accounting_index.verify_index(connection, migration_id=item.migration_id)
         _verify_migration_log(connection, item.migration_id, required=already_applied)
         return "target" if already_applied else "prepared"
     if item.migration_id == ROOTLINE_E_MIGRATION_ID:
@@ -2610,8 +2641,8 @@ def _verify_migration_precondition(
 
 
 def _verify_migration_readback(connection, item: AllowedMigration) -> dict:
-    if item.migration_id == accounting_index.MIGRATION_ID:
-        accounting_index.verify_index(connection)
+    if item.migration_id in accounting_index.MIGRATION_IDS:
+        accounting_index.verify_index(connection, migration_id=item.migration_id)
         _verify_migration_log(connection, item.migration_id, required=True)
         return {"index_exact_valid_ready": True, "migration_log_present": True}
     if item.migration_id == ROOTLINE_E_MIGRATION_ID:
@@ -2737,8 +2768,8 @@ def _prepare_accounting_index(connection, runtime_env, *, service_id):
     Normal transaction gates run again afterward. A later rollback leaves only
     the valid prepared index; replay verifies it and then retries the transaction.
     """
-    selected = next((item for item in ALLOWLIST
-                     if item.migration_id == accounting_index.MIGRATION_ID), None)
+    selected = next((item for item in reversed(ALLOWLIST)
+                     if item.migration_id in accounting_index.MIGRATION_IDS), None)
     if selected is None:
         return None
     if any(runtime_env.get(name, "").strip() for name in (
@@ -2788,7 +2819,7 @@ ACCOUNTING_LOCK_WAIT_SECONDS = 180.0
 
 
 def _acquire_migration_lock(connection):
-    if not any(item.migration_id == accounting_index.MIGRATION_ID for item in ALLOWLIST):
+    if not any(item.migration_id in accounting_index.MIGRATION_IDS for item in ALLOWLIST):
         connection.execute("select pg_advisory_lock(%s)", (LOCK_KEY,))
         return
     # A blocking advisory-lock SELECT holds a snapshot. CREATE INDEX CONCURRENTLY
@@ -2816,12 +2847,15 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
     applying_new_item = False
 
     # Session advisory locking is deliberately outside the one mutation
-    # transaction. The one registered concurrent index is prepared after read-only
+    # transaction. The selected reviewed concurrent index is prepared after read-only
     # eligibility checks. SQL migrations, receipts and checkpoints remain atomic.
     with psycopg.connect(database_url, connect_timeout=10, autocommit=True) as connection:
         _acquire_migration_lock(connection)
         try:
-            report["accounting_index_preparation"] = _prepare_accounting_index(
+            preparation_key = ("restoration_index_preparation" if any(
+                item.migration_id == accounting_index.RESTORATION_MIGRATION_ID for item in ALLOWLIST)
+                else "accounting_index_preparation")
+            report[preparation_key] = _prepare_accounting_index(
                 connection, runtime_env, service_id=service_id
             )
             try:
@@ -3029,11 +3063,11 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
                     )
             except Exception as exc:
                 if active_item is not None and applying_new_item:
-                    prepared = report.get("accounting_index_preparation")
+                    prepared = report.get(preparation_key)
                     if prepared is not None:
                         raise RuntimeError(
                             f"migration_transaction_failed_and_rolled_back:{active_item.migration_id}:"
-                            f"receipt=none:accounting_index_may_persist:preparation={prepared}"
+                            f"receipt=none:{preparation_key.removesuffix('_preparation')}_may_persist:preparation={prepared}"
                         ) from exc
                     raise RuntimeError(
                         f"migration_failed_and_rolled_back:{active_item.migration_id}:receipt=none"
