@@ -242,7 +242,8 @@ class MinuteJourney:
 
     def now(self):return self.client.backend.now
     def power(self):
-        return {"battery_soc_pct":90,"solar_power_w":3000,"load_power_w":100,
+        # Exercise supported AC backup; sunshine shutdown has its own regression.
+        return {"battery_soc_pct":90,"solar_power_w":1499,"load_power_w":100,
             "grid_power_w":0,"observed_at":self.now().isoformat()}
 
     def canonical(self,action,payload):

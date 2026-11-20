@@ -24,11 +24,12 @@ FLAGS = ("ROOTLINE_FERTILIZER_MIXING_ENABLED", "ROOTLINE_FERTILIZER_INJECTION_EN
 
 @pytest.fixture(autouse=True)
 def fresh_synthetic_power(monkeypatch):
+    # Keep backup eligible until the scenario introduces its intended stop duty.
     monkeypatch.setattr(plan_module,"read_current_borehole_faults",lambda *_,**__:True)
     monkeypatch.setattr("modules.telemetry.power_service.get_current_power_state",
         lambda **_: ({"success":True,"source":{"last_reading_at":NOW.isoformat()},
-            "current":{"battery_soc_pct":90,"solar_power_w":3000,"load_power_w":1000,
-                "grid_power_w":0,"battery_power_w":-2000,"battery_state":"charging"}},200))
+            "current":{"battery_soc_pct":90,"solar_power_w":1499,"load_power_w":1000,
+                "grid_power_w":0,"battery_power_w":-499,"battery_state":"charging"}},200))
 
 
 def predecessor_ast():
