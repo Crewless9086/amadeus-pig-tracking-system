@@ -75,10 +75,14 @@ async function loadWeather() {
 async function loadForecast() {
   try {
     const data = await fetchJson("/api/telemetry/weather/forecast?days=3");
-    const next = (data.days || []).find(day => Number(day.offset_days) === 1) || (data.days || [])[0];
-    setText("weather_next", next ? `${number(next.temp_min_c)}-${number(next.temp_max_c)} °C · ${number(next.rain_sum_mm, " mm")}` : "No forecast");
-    if (next?.flags?.work_caution) addPriority("forecast", `Tomorrow: ${number(next.rain_sum_mm, " mm")} rain and ${number(next.wind_max_kmh, " km/h")} wind forecast.`); else removePriority("forecast");
-  } catch (_) { setText("weather_next", "Unavailable"); }
+    const nextDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+    const next = (data.days || []).find(day => day.forecast_date === nextDate);
+    const value = (v, suffix = "") => v == null || v === "" ? "--" : number(v, suffix);
+    setText("weather_next", next ? `${value(next.temp_min_c)}-${value(next.temp_max_c)} °C · ${value(next.rain_sum_mm, " mm")}` : "Unavailable");
+    const attribution = data.source?.attribution?.text || "Forecast source unverified";
+    setText("weather_forecast_source", `${attribution}${data.source?.is_stale ? " · stale" : ""} · ${(data.days || []).length} days available`);
+    if (next?.flags?.work_caution) addPriority("forecast", `Tomorrow: ${value(next.rain_sum_mm, " mm")} rain and ${value(next.wind_max_kmh, " km/h")} wind forecast.`); else removePriority("forecast");
+  } catch (_) { setText("weather_next", "Unavailable"); setText("weather_forecast_source", "Forecast unavailable"); }
 }
 async function loadPower() {
   try {

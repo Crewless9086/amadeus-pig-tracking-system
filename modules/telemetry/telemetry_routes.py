@@ -210,6 +210,13 @@ def telemetry_weather_ingest():
     return jsonify(result), status_code
 
 
+@telemetry_bp.route("/telemetry/weather/forecast/provider-health", methods=["POST"])
+def telemetry_forecast_provider_health():
+    from modules.telemetry.forecast_provider_health import provider_health
+    result, status_code = provider_health(request.get_json(silent=True), _telemetry_key_from_request())
+    return jsonify(result), status_code
+
+
 @telemetry_bp.route("/telemetry/weather/forecast/ingest", methods=["POST"])
 def telemetry_weather_forecast_ingest():
     payload = request.get_json(silent=True) or {}

@@ -184,6 +184,9 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
         (html.escape(question) if question else ("Niks" if af else "Nothing")),
         f"<b>{'Volgende outomatiese herbeoordeling' if af else 'Next automatic reassessment'}:</b> " +
         html.escape(next_check or ("Op die volgende 15-minuut siklus" if af else "On the next 15-minute cycle"))])
+    credit = _forecast_credit(result, language=language, html_link=True)
+    if credit:
+        lines.extend(["", credit])
     if not question:
         lines.extend(["", "Geen aksie word van jou vereis nie." if af else "No action required from you."])
     return "\n".join(lines)
@@ -209,7 +212,9 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
         now_hint=result.get("evidence_cutoff"))
     return {
         "title": ("Besproeiing: " if af else "Irrigation: ") + "; ".join(decisions),
-        "why": _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af),
+        "why": " ".join(filter(None, (
+            _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af),
+            _forecast_credit(result, language=language)))),
         "next_action": (("ROOTLINE heroorweeg outomaties" if af else
                          "ROOTLINE will reassess automatically")
                         + (" wanneer vars lesings of veranderde toestande beskikbaar is." if af else
@@ -217,6 +222,21 @@ def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="
         "question": question,
         "notification_decision_identity": _owner_question_identity(result, brief),
     }
+
+
+def _forecast_credit(result: Mapping[str, Any], *, language="en", html_link=False) -> str:
+    """Credit the selected forecast provider without trusting payload markup."""
+    from modules.telemetry.weather_service import forecast_attribution
+    forecast = result.get("forecast")
+    source = forecast.get("source") if isinstance(forecast, Mapping) else None
+    credit = forecast_attribution(source.get("provider")) if isinstance(source, Mapping) else {}
+    if not credit:
+        return ""
+    prefix = "Weervoorspelling deur" if str(language).casefold().startswith("af") else "Forecast by"
+    name = html.escape(credit["name"]) if html_link else credit["name"]
+    if html_link:
+        name = f'<a href="{html.escape(credit["url"], quote=True)}">{name}</a>'
+    return f"{prefix} {name}."
 
 
 def manager_brief_facts(result: Mapping[str, Any]) -> dict[str, Any]:

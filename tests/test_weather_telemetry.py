@@ -174,6 +174,7 @@ class WeatherTelemetryTests(unittest.TestCase):
         )
         cursor.fetchall.return_value = [
             (
+                "open-meteo-forecast-main", "Amadeus Forecast", "open_meteo", 360,
                 datetime.now(timezone.utc),
                 "Africa/Johannesburg",
                 date(2026, 5, 22),

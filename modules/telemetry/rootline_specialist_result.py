@@ -634,6 +634,7 @@ def _forecast(plan, evidence, now):
     packet = evidence.get("forecast") if isinstance(evidence.get("forecast"), dict) else {}
     return {
         "status": plan["forecast"]["status"],
+        "source": deepcopy(packet.get("source") or {}),
         "observed_at": packet.get("observed_at"),
         "age_minutes": _age_minutes(packet, now),
         "confidence": plan["forecast"]["confidence"],
@@ -829,6 +830,7 @@ def _packet_from_plan_forecast(value):
         "observed_at": value.get("observed_at"),
         "stale_after_minutes": 360,
         "days": deepcopy(value.get("days", [])),
+        "source": deepcopy(value.get("source") or {}),
     }
 
 

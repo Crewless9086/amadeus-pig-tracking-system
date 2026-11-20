@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import os
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -12,7 +13,55 @@ from services.database_service import DATABASE_URL_ENV
 DEFAULT_WEATHER_SOURCE_ID = "weather-station-main"
 DEFAULT_FORECAST_SOURCE_ID = "open-meteo-forecast-main"
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
-WEATHER_ALERT_SOURCE_IDS = (DEFAULT_WEATHER_SOURCE_ID, DEFAULT_FORECAST_SOURCE_ID)
+FORECAST_PROVIDERS = {
+    DEFAULT_FORECAST_SOURCE_ID: "open_meteo",
+    "weatherapi-forecast-main": "weatherapi",
+    "visual-crossing-forecast-main": "visual_crossing",
+}
+FORECAST_ATTRIBUTION = {
+    "open_meteo": ("Open-Meteo", "https://open-meteo.com/"),
+    "weatherapi": ("WeatherAPI.com", "https://www.weatherapi.com/"),
+    "visual_crossing": ("Visual Crossing Weather", "https://www.visualcrossing.com/weather-data/"),
+}
+def forecast_attribution(provider):
+    entry = FORECAST_ATTRIBUTION.get(provider)
+    return {"name": entry[0], "url": entry[1], "text": f"Forecast by {entry[0]}"} if entry else {}
+
+
+WEATHER_ALERT_SOURCE_IDS = (DEFAULT_WEATHER_SOURCE_ID, *FORECAST_PROVIDERS)
+
+# Choose one whole, registered, nonfuture run. Partial horizons and unknown
+# fields are allowed; a current local day is required because control readers
+# interpret days[0] as today's forecast. No cross-provider/day stitching.
+_FORECAST_RUN_CTE = """
+with selected_forecast_run as (
+    select f.source_id, f.forecast_run_at
+      from public.weather_forecast_snapshots f
+      join public.telemetry_sources ts on ts.source_id = f.source_id
+     where ((ts.source_id = 'open-meteo-forecast-main' and ts.provider = 'open_meteo')
+         or (ts.source_id = 'weatherapi-forecast-main' and ts.provider = 'weatherapi')
+         or (ts.source_id = 'visual-crossing-forecast-main' and ts.provider = 'visual_crossing'))
+       and ts.source_type = 'forecast' and ts.active = true
+       and f.forecast_run_at <= now()
+       and f.forecast_run_at >= now() - interval '16 days'
+     group by f.source_id, f.forecast_run_at
+    having bool_or(f.forecast_date = timezone('Africa/Johannesburg', now())::date)
+       and bool_and(f.timezone = 'Africa/Johannesburg')
+       and bool_and(f.rain_sum_mm is null or
+           (f.rain_sum_mm >= 0 and f.rain_sum_mm::text not in ('NaN', 'Infinity', '-Infinity')))
+       and bool_and(f.rain_probability_max_pct is null or
+           (f.rain_probability_max_pct between 0 and 100))
+       and bool_and(f.wind_max_kmh is null or
+           (f.wind_max_kmh >= 0 and f.wind_max_kmh::text not in ('NaN', 'Infinity', '-Infinity')))
+       and bool_and(f.gust_max_kmh is null or
+           (f.gust_max_kmh >= 0 and f.gust_max_kmh::text not in ('NaN', 'Infinity', '-Infinity')))
+       and bool_and(f.temp_max_c is null or f.temp_max_c::text not in ('NaN', 'Infinity', '-Infinity'))
+       and bool_and(f.temp_min_c is null or f.temp_min_c::text not in ('NaN', 'Infinity', '-Infinity'))
+     order by f.forecast_run_at desc,
+              f.source_id asc
+     limit 1
+)
+"""
 
 ALERT_STALE_MINUTES = 30
 ALERT_RAIN_TODAY_MM = 2
@@ -148,6 +197,16 @@ def ingest_weather_forecast(payload, provided_api_key="", database_url=None):
     try:
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
+                # Modern multi-provider ingestion is fenced by the same locked
+                # registry row used for provider admission. Legacy Open-Meteo
+                # payloads without any provenance retain their existing path.
+                modern = (rows[0]["source_id"] != DEFAULT_FORECAST_SOURCE_ID
+                          or payload.get("provider_health_claim") is not None
+                          or payload.get("provenance") is not None
+                          or any(period.get("provenance") is not None for period in (payload.get("days") or payload.get("periods") or [])))
+                if modern:
+                    from modules.telemetry.forecast_provider_health import validate_ingest_claim
+                    validate_ingest_claim(cursor, payload)
                 for row in rows:
                     cursor.execute(
                         """
@@ -178,6 +237,8 @@ def ingest_weather_forecast(payload, provided_api_key="", database_url=None):
                         """,
                         row,
                     )
+    except ValueError as exc:
+        return _validation_error(str(exc))
     except Exception as exc:
         return _service_failed("weather_forecast_ingest_failed", "Weather forecast ingest failed.", exc)
 
@@ -384,33 +445,29 @@ def get_weather_forecast(days=3, database_url=None):
     try:
         with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
+                # One statement snapshot binds provider metadata and all days
+                # to the same chosen run even if another provider commits now.
                 cursor.execute(
-                    """
-                    select source_id, display_name, provider, stale_after_minutes
-                    from public.telemetry_sources
-                    where source_id = %s
+                    _FORECAST_RUN_CTE + """
+                    select ts.source_id, ts.display_name, ts.provider, ts.stale_after_minutes,
+                           f.forecast_run_at, f.timezone, f.forecast_date, f.offset_days,
+                           f.temp_max_c, f.temp_min_c, f.rain_sum_mm, f.rain_probability_max_pct,
+                           f.wind_max_kmh, f.gust_max_kmh, f.flags, f.raw_payload
+                      from selected_forecast_run selected
+                      join public.weather_forecast_snapshots f
+                        on f.source_id = selected.source_id
+                       and f.forecast_run_at = selected.forecast_run_at
+                      join public.telemetry_sources ts on ts.source_id = selected.source_id
+                     where f.forecast_date >= timezone('Africa/Johannesburg', now())::date
+                       and f.forecast_date < timezone('Africa/Johannesburg', now())::date + %s
+                     order by f.forecast_date asc
+                     limit %s
                     """,
-                    (DEFAULT_FORECAST_SOURCE_ID,),
+                    (days, days),
                 )
-                source_row = cursor.fetchone()
-                cursor.execute(
-                    """
-                    select forecast_run_at, timezone, forecast_date, offset_days,
-                           temp_max_c, temp_min_c, rain_sum_mm, rain_probability_max_pct,
-                           wind_max_kmh, gust_max_kmh, flags
-                    from public.weather_forecast_snapshots
-                    where source_id = %s
-                      and forecast_run_at = (
-                          select max(forecast_run_at)
-                          from public.weather_forecast_snapshots
-                          where source_id = %s
-                      )
-                    order by forecast_date asc
-                    limit %s
-                    """,
-                    (DEFAULT_FORECAST_SOURCE_ID, DEFAULT_FORECAST_SOURCE_ID, days),
-                )
-                rows = cursor.fetchall()
+                selected_rows = cursor.fetchall()
+                source_row = selected_rows[0][:4] if selected_rows else None
+                rows = [row[4:] for row in selected_rows]
     except Exception as exc:
         return _service_failed("weather_forecast_read_failed", "Weather forecast read failed.", exc)
 
@@ -597,33 +654,101 @@ def _normalize_weather_payload(payload):
     return reading
 
 
+def _parse_forecast_datetime(value):
+    try:
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Forecast timestamp must be an ISO datetime with timezone.") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("Forecast timestamp must include timezone.")
+    if parsed > datetime.now(timezone.utc):
+        raise ValueError("Forecast timestamp cannot be in the future.")
+    return parsed
+
+
+def _forecast_number(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError("Forecast numeric fields cannot be booleans.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("Forecast numeric field is invalid.") from exc
+    if not math.isfinite(number):
+        raise ValueError("Forecast numeric fields must be finite.")
+    return number
+
+
+def _validate_forecast_provenance(provenance, source_id, forecast_run_at):
+    if not isinstance(provenance, dict):
+        raise ValueError("Forecast provenance must be an object.")
+    if provenance.get("source_id") != source_id or provenance.get("provider") != FORECAST_PROVIDERS[source_id]:
+        raise ValueError("Forecast provenance does not match its source.")
+    if _parse_forecast_datetime(provenance.get("forecast_run_at")) != forecast_run_at:
+        raise ValueError("Forecast provenance run does not match its snapshot.")
+    fetched_at = _parse_forecast_datetime(provenance.get("fetched_at"))
+    if fetched_at != forecast_run_at or provenance.get("freshness_basis") != "retrieved":
+        raise ValueError("Forecast retrieval provenance is inconsistent.")
+    # Retrieval time is never presented as a provider's model-generation time.
+    if provenance.get("provider_model_updated_at") is not None:
+        _parse_forecast_datetime(provenance["provider_model_updated_at"])
+
+
 def _normalize_forecast_payload(payload):
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object.")
     source_id = str(payload.get("source_id") or DEFAULT_FORECAST_SOURCE_ID).strip()
-    forecast_run_at = _parse_datetime(payload.get("forecast_run_at") or payload.get("run_timestamp") or payload.get("timestamp"))
+    if source_id not in FORECAST_PROVIDERS:
+        raise ValueError("Forecast source is not registered for this pipeline.")
+    if payload.get("provider") not in (None, FORECAST_PROVIDERS[source_id]):
+        raise ValueError("Forecast provider does not match source_id.")
+    stamp = payload.get("forecast_run_at") or payload.get("run_timestamp") or payload.get("timestamp")
+    forecast_run_at = _parse_forecast_datetime(stamp)
     timezone_name = str(payload.get("timezone") or "Africa/Johannesburg")
+    if timezone_name != "Africa/Johannesburg":
+        raise ValueError("Forecast timezone must be Africa/Johannesburg.")
     periods = payload.get("days") or payload.get("periods") or []
-    if not periods:
-        raise ValueError("Forecast payload must include days.")
-
+    if not isinstance(periods, list) or not periods or len(periods) > 16:
+        raise ValueError("Forecast payload must include between one and sixteen days.")
+    seen_dates = set()
     rows = []
     for index, period in enumerate(periods):
+        if not isinstance(period, dict):
+            raise ValueError("Forecast day must be an object.")
         forecast_date = _parse_date(period.get("forecast_date") or period.get("date"))
+        if forecast_date in seen_dates:
+            raise ValueError("Forecast dates must be unique.")
+        seen_dates.add(forecast_date)
+        try:
+            offset_days = int(period.get("offset_days", index))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Forecast offset_days must be an integer.") from exc
+        if offset_days < 0 or offset_days > 15:
+            raise ValueError("Forecast offset_days is out of range.")
+        provenance = period.get("provenance", payload.get("provenance"))
+        if provenance is not None:
+            _validate_forecast_provenance(provenance, source_id, forecast_run_at)
+            period = {**period, "provenance": provenance}
         row = {
             "source_id": source_id,
             "forecast_run_at": forecast_run_at,
             "timezone": timezone_name,
             "forecast_date": forecast_date,
-            "offset_days": int(period.get("offset_days", index)),
-            "temp_max_c": _number_or_none(period.get("temp_max_c")),
-            "temp_min_c": _number_or_none(period.get("temp_min_c")),
-            "rain_sum_mm": _number_or_none(period.get("rain_sum_mm")),
-            "rain_probability_max_pct": _number_or_none(period.get("rain_probability_max_pct", period.get("rain_prob_max_pct"))),
-            "wind_max_kmh": _number_or_none(period.get("wind_max_kmh")),
-            "gust_max_kmh": _number_or_none(period.get("gust_max_kmh")),
+            "offset_days": offset_days,
+            "temp_max_c": _forecast_number(period.get("temp_max_c")),
+            "temp_min_c": _forecast_number(period.get("temp_min_c")),
+            "rain_sum_mm": _forecast_number(period.get("rain_sum_mm")),
+            "rain_probability_max_pct": _forecast_number(period.get("rain_probability_max_pct", period.get("rain_prob_max_pct"))),
+            "wind_max_kmh": _forecast_number(period.get("wind_max_kmh")),
+            "gust_max_kmh": _forecast_number(period.get("gust_max_kmh")),
             "raw_payload": _json_param(period),
         }
+        for key in ("rain_sum_mm", "wind_max_kmh", "gust_max_kmh"):
+            if row[key] is not None and row[key] < 0:
+                raise ValueError("Forecast rain and wind must be nonnegative.")
+        if row["rain_probability_max_pct"] is not None and not 0 <= row["rain_probability_max_pct"] <= 100:
+            raise ValueError("Forecast rain probability must be between zero and one hundred.")
         flags = _forecast_flags(row)
         row["flags"] = json.dumps(flags, separators=(",", ":"))
         row["forecast_snapshot_id"] = _hash_id("FCST", source_id, forecast_run_at.isoformat(), forecast_date.isoformat())
@@ -686,7 +811,9 @@ def _format_forecast_response(source_row, rows, requested_days):
     is_stale = age_minutes > int(stale_after_minutes)
     days = []
     for row in rows:
-        _, timezone_name, forecast_date, offset_days, temp_max, temp_min, rain_sum, rain_prob, wind_max, gust_max, flags = row
+        _, timezone_name, forecast_date, offset_days, temp_max, temp_min, rain_sum, rain_prob, wind_max, gust_max, flags = row[:11]
+        raw = row[11] if len(row) > 11 and isinstance(row[11], dict) else {}
+        provenance = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
         flags = dict(flags or {})
         flags["forecast_stale"] = is_stale
         days.append({
@@ -699,8 +826,22 @@ def _format_forecast_response(source_row, rows, requested_days):
             "wind_max_kmh": _json_value(wind_max),
             "gust_max_kmh": _json_value(gust_max),
             "flags": flags,
+            "availability": {
+                "rain_amount": rain_sum is not None,
+                "rain_probability": rain_prob is not None,
+                "wind": wind_max is not None,
+                "gust": gust_max is not None,
+            },
+            "provenance": provenance,
+            "provider_daily_chance_of_rain_pct": raw.get("provider_daily_chance_of_rain_pct"),
+            "provider_source": raw.get("provider_source"),
+            "provider_hour_sources": raw.get("provider_hour_sources"),
+            "local_observation_credit": False,
         })
     summary = _forecast_summary(days, is_stale)
+    attribution_name, attribution_url = FORECAST_ATTRIBUTION.get(provider, (provider, None))
+    summary["headline"] += f" Forecast by {attribution_name}."
+    summary["operator_notes"].append("Provider estimates; not local observed rain or measured water replenishment.")
     return {
         "success": True,
         "configured": True,
@@ -711,6 +852,12 @@ def _format_forecast_response(source_row, rows, requested_days):
             "source_name": display_name,
             "provider": provider,
             "last_forecast_run_at": forecast_run_at.isoformat(),
+            "freshness_basis": days[0]["provenance"].get("freshness_basis", "retrieved"),
+            "provider_model_updated_at": days[0]["provenance"].get("provider_model_updated_at"),
+            "attribution": forecast_attribution(provider),
+            "attribution_name": attribution_name,
+            "attribution_url": attribution_url,
+            "local_observation_credit": False,
             "data_age_minutes": age_minutes,
             "is_stale": is_stale,
             "stale_after_minutes": stale_after_minutes,
@@ -720,6 +867,10 @@ def _format_forecast_response(source_row, rows, requested_days):
         "window": {
             "requested_days": requested_days,
             "returned_days": len(days),
+            "coverage_start": days[0]["forecast_date"],
+            "coverage_end": days[-1]["forecast_date"],
+            "covers_today": any(day["forecast_date"] == datetime.now(ZA_TZ).date().isoformat() for day in days),
+            "complete_requested_horizon": len(days) == requested_days,
             "timezone": rows[0][1],
         },
         "days": days,
@@ -873,6 +1024,14 @@ def _forecast_summary(days, is_stale):
         notes.append(f"Rain is expected or possible on {len(rain_days)} day(s).")
     if wind_days:
         notes.append(f"Wind caution appears on {len(wind_days)} day(s).")
+    partial = any(any(day.get(key) is None for key in (
+        "rain_sum_mm", "rain_probability_max_pct", "wind_max_kmh", "gust_max_kmh"
+    )) for day in days)
+    if partial:
+        notes.append("Some forecast fields are unavailable; missing values do not prove clear conditions.")
+        if not is_stale and not rain_days and not wind_days:
+            status = "partial"
+            headline = "Forecast coverage is partial."
     if not notes:
         notes.append("No major rain or wind warning is showing in the selected window.")
     return {"status": status, "headline": headline, "operator_notes": notes}
@@ -936,21 +1095,20 @@ def _read_weather_alert_context(cursor, now_utc):
     )
     recent_wind_rows = cursor.fetchall()
     cursor.execute(
+        _FORECAST_RUN_CTE + """
+        select f.forecast_run_at, f.forecast_date, f.offset_days,
+               f.temp_max_c, f.temp_min_c, f.rain_sum_mm, f.rain_probability_max_pct,
+               f.wind_max_kmh, f.gust_max_kmh, ts.source_id, ts.display_name,
+               ts.stale_after_minutes, f.raw_payload
+          from selected_forecast_run selected
+          join public.weather_forecast_snapshots f
+            on f.source_id = selected.source_id and f.forecast_run_at = selected.forecast_run_at
+          join public.telemetry_sources ts on ts.source_id = f.source_id
+         where f.forecast_date >= timezone('Africa/Johannesburg', now())::date
+           and f.forecast_date <= timezone('Africa/Johannesburg', now())::date + 3
+           and f.forecast_run_at >= now() - ts.stale_after_minutes * interval '1 minute'
+         order by f.forecast_date asc
         """
-        select
-            forecast_run_at, forecast_date, offset_days, temp_max_c, temp_min_c,
-            rain_sum_mm, rain_probability_max_pct, wind_max_kmh, gust_max_kmh
-        from public.weather_forecast_snapshots
-        where source_id = %s
-          and forecast_run_at = (
-              select max(forecast_run_at)
-              from public.weather_forecast_snapshots
-              where source_id = %s
-          )
-          and offset_days <= 3
-        order by forecast_date asc
-        """,
-        (DEFAULT_FORECAST_SOURCE_ID, DEFAULT_FORECAST_SOURCE_ID),
     )
     forecast_rows = cursor.fetchall()
     return {
@@ -1097,32 +1255,38 @@ def _build_weather_alert_candidates(context, now_utc):
 def _forecast_alert_candidates(rows):
     candidates = []
     for row in rows:
-        forecast_run_at, forecast_date, offset_days, temp_max, temp_min, rain_sum, rain_prob, wind_max, gust_max = row
+        forecast_run_at, forecast_date, offset_days, temp_max, temp_min, rain_sum, rain_prob, wind_max, gust_max = row[:9]
+        source_id = row[9] if len(row) > 9 else DEFAULT_FORECAST_SOURCE_ID
+        source_name = row[10] if len(row) > 10 else "Amadeus Forecast"
+        if source_id not in FORECAST_PROVIDERS:
+            continue
+        raw = row[12] if len(row) > 12 and isinstance(row[12], dict) else {}
+        provenance = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
         label = forecast_date.isoformat() if hasattr(forecast_date, "isoformat") else str(forecast_date)
-        next_12h = int(offset_days or 0) == 0
+        next_12h = forecast_date == datetime.now(ZA_TZ).date()
         if _num(rain_prob) >= ALERT_FORECAST_RAIN_PROBABILITY_PCT or _num(rain_sum) >= ALERT_FORECAST_RAIN_MM:
             candidates.append(_weather_alert_candidate(
                 f"forecast_rain_{label}",
                 "FORECAST_RAIN",
                 "warning",
-                DEFAULT_FORECAST_SOURCE_ID,
-                "Amadeus Forecast",
+                source_id,
+                source_name,
                 forecast_run_at,
                 720,
                 f"Forecast rain risk for {label}: {_format_number(rain_sum)} mm, probability {_format_number(rain_prob)}%.",
-                {"forecast_date": label, "rain_sum_mm": _json_value(rain_sum), "rain_probability_max_pct": _json_value(rain_prob)},
+                {"forecast_date": label, "provider": FORECAST_PROVIDERS[source_id], "provenance": provenance, "rain_sum_mm": _json_value(rain_sum), "rain_probability_max_pct": _json_value(rain_prob)},
             ))
         if _num(rain_sum) >= ALERT_FORECAST_HEAVY_RAIN_MM:
             candidates.append(_weather_alert_candidate(
                 f"forecast_heavy_rain_{label}",
                 "FORECAST_HEAVY_RAIN",
                 "critical",
-                DEFAULT_FORECAST_SOURCE_ID,
-                "Amadeus Forecast",
+                source_id,
+                source_name,
                 forecast_run_at,
                 720,
                 f"Forecast heavy rain risk for {label}: {_format_number(rain_sum)} mm.",
-                {"forecast_date": label, "rain_sum_mm": _json_value(rain_sum), "threshold_mm": ALERT_FORECAST_HEAVY_RAIN_MM},
+                {"forecast_date": label, "provider": FORECAST_PROVIDERS[source_id], "provenance": provenance, "rain_sum_mm": _json_value(rain_sum), "threshold_mm": ALERT_FORECAST_HEAVY_RAIN_MM},
                 bypass_quiet_hours=next_12h,
             ))
         if _num(gust_max) >= ALERT_FORECAST_GUST_KMH or _num(wind_max) >= ALERT_FORECAST_WIND_KMH:
@@ -1130,26 +1294,29 @@ def _forecast_alert_candidates(rows):
                 f"forecast_wind_{label}",
                 "FORECAST_WIND",
                 "warning",
-                DEFAULT_FORECAST_SOURCE_ID,
-                "Amadeus Forecast",
+                source_id,
+                source_name,
                 forecast_run_at,
                 720,
                 f"Forecast wind risk for {label}: wind {_format_number(wind_max)} km/h, gust {_format_number(gust_max)} km/h.",
-                {"forecast_date": label, "wind_max_kmh": _json_value(wind_max), "gust_max_kmh": _json_value(gust_max)},
+                {"forecast_date": label, "provider": FORECAST_PROVIDERS[source_id], "provenance": provenance, "wind_max_kmh": _json_value(wind_max), "gust_max_kmh": _json_value(gust_max)},
             ))
         if _num(gust_max) >= ALERT_FORECAST_STRONG_GUST_KMH:
             candidates.append(_weather_alert_candidate(
                 f"forecast_strong_wind_{label}",
                 "FORECAST_STRONG_WIND",
                 "critical",
-                DEFAULT_FORECAST_SOURCE_ID,
-                "Amadeus Forecast",
+                source_id,
+                source_name,
                 forecast_run_at,
                 720,
                 f"Forecast strong wind risk for {label}: gust {_format_number(gust_max)} km/h.",
-                {"forecast_date": label, "gust_max_kmh": _json_value(gust_max), "threshold_kmh": ALERT_FORECAST_STRONG_GUST_KMH},
+                {"forecast_date": label, "provider": FORECAST_PROVIDERS[source_id], "provenance": provenance, "gust_max_kmh": _json_value(gust_max), "threshold_kmh": ALERT_FORECAST_STRONG_GUST_KMH},
                 bypass_quiet_hours=next_12h,
             ))
+    for candidate in candidates:
+        attribution = forecast_attribution(FORECAST_PROVIDERS[candidate["source_id"]])
+        candidate["message"] += f" {attribution['text']}."
     return candidates
 
 
@@ -1160,7 +1327,7 @@ def _weather_alert_candidate(alert_key, alert_type, severity, source_id, source_
         "alert_id": _hash_id("ALT", alert_key, event_at_utc.isoformat()),
         "source_id": source_id,
         "source_name": source_name,
-        "area": "forecast" if source_id == DEFAULT_FORECAST_SOURCE_ID else "weather",
+        "area": "forecast" if source_id in FORECAST_PROVIDERS else "weather",
         "alert_key": alert_key,
         "alert_type": alert_type,
         "severity": severity,

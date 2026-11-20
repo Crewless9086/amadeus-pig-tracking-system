@@ -19,7 +19,21 @@ function showLogin(){const target=el("detail_irrigation_access");if(!target)retu
 function fail(id, message = "Temporarily unavailable") { const target = el(id); if (target) target.innerHTML = `<p class="detail-error">${safe(message)}</p>`; }
 
 async function weatherCurrent() { try { const data = await get("/api/telemetry/weather/current"); const c=data.current||{}; text("detail_weather_temp",`${num(c.temperature_c)} °C`); text("detail_weather_summary",data.summary?.headline||"Current observed weather"); text("detail_weather_rain",`${num(c.rain_today_mm," mm")} · ${num(c.rain_rate_mm_h," mm/h")}`); text("detail_weather_wind",`${num(c.wind_speed_kmh," km/h")} · gust ${num(c.wind_gust_kmh," km/h")}`); text("detail_weather_age",num(data.source?.data_age_minutes," min")); text("detail_weather_source",data.source?.source_name||data.source?.source||"Local farm station"); } catch(e){ text("detail_weather_summary","Weather is temporarily unavailable."); } }
-async function weatherForecast(){ try {const data=await get("/api/telemetry/weather/forecast?days=3"); const days=data.days||[]; el("detail_weather_forecast").innerHTML=days.length?days.map(d=>`<div class="detail-row"><strong>${safe(d.forecast_date)}</strong><span>${num(d.temp_min_c)}–${num(d.temp_max_c)} °C · ${num(d.rain_sum_mm," mm rain")}</span></div>`).join(""):"<p>No forecast is available.</p>";}catch(e){fail("detail_weather_forecast");}}
+async function weatherForecast() {
+  try {
+    const data = await get("/api/telemetry/weather/forecast?days=3");
+    const days = data.days || [];
+    const source = data.source || {};
+    const attributionData = source.attribution || {};
+    const validAttribution = /^https:\/\/(www\.)?(visualcrossing\.com|weatherapi\.com|open-meteo\.com)\//.test(attributionData.url || "");
+    const value = (v, suffix = "") => v == null || v === "" ? "--" : num(v, suffix);
+    const attribution = validAttribution ? `<a href="${safe(attributionData.url)}" rel="noopener noreferrer">${safe(attributionData.name)}</a>` : "Unverified provider";
+    const freshness = source.is_stale ? "Stale forecast" : "Forecast retrieved";
+    const coverage = days.length < 3 ? ` · ${days.length} of 3 days available` : "";
+    const note = `<p class="detail-muted">Forecast by ${attribution} · ${freshness} ${safe(value(source.data_age_minutes, " min ago"))}${coverage}. Provider estimates, not local observed rain.</p>`;
+    el("detail_weather_forecast").innerHTML = note + (days.length ? days.map(d => `<div class="detail-row"><strong>${safe(d.forecast_date)}</strong><span>${value(d.temp_min_c)}–${value(d.temp_max_c)} °C · ${value(d.rain_sum_mm, " mm rain")} · ${value(d.rain_probability_max_pct, "% maximum hourly rain chance")}</span></div>`).join("") : "<p>No forecast is available.</p>");
+  } catch (e) { fail("detail_weather_forecast"); }
+}
 
 async function powerCurrent(){try{const data=await get("/api/telemetry/power/current"); const c=data.current||{}; text("detail_power_soc",num(c.battery_soc_pct,"%")); text("detail_power_summary",data.summary?.headline||"Current power state"); text("detail_power_solar",num(Number(c.solar_power_w)/1000," kW")); text("detail_power_load",num(Number(c.load_power_w)/1000," kW")); text("detail_power_grid",c.grid_state?label(c.grid_state):num(Number(c.grid_power_w)/1000," kW")); text("detail_power_age",`${num(data.source?.data_age_minutes," min")} old`);}catch(e){text("detail_power_summary","Power is temporarily unavailable.");}}
 async function powerRecent(){try{const data=await get("/api/telemetry/power/recent?hours=24"); const summary=data.summary||data.profile||{}; const entries=Object.entries(summary).filter(([,v])=>["string","number"].includes(typeof v)).slice(0,6); el("detail_power_recent").innerHTML=entries.length?entries.map(([k,v])=>`<div class="detail-row"><strong>${safe(label(k))}</strong><span>${safe(v)}</span></div>`).join(""):"<p>No recent profile is available.</p>";}catch(e){fail("detail_power_recent");}}

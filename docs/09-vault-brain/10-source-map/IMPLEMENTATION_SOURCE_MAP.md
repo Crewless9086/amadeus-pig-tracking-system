@@ -948,6 +948,26 @@ Status: `LOCAL_NOT_RELEASED`; the mission register owns acceptance state.
   `tests/dashboard_litter_attention_browser.spec.js` and
   `tests/litter_weaning_day_browser.spec.js`.
 
+## ROOTLINE forecast continuity
+
+- Governing evidence boundary: `08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`;
+  forecasts remain provider estimates, never local rainfall or delivered water.
+- Existing scheduled logger entry: `scripts/run_forecast_logger.py`; provider
+  adapters and bounded fallback/failback: `modules/telemetry/forecast_logger.py`.
+- Provider admission, cooldown and concurrent-worker fencing:
+  `modules/telemetry/forecast_provider_health.py`, using the existing
+  `telemetry_sources.metadata` record and authenticated telemetry route.
+- Canonical snapshot ingestion and whole-run selection:
+  `modules/telemetry/weather_service.py`. Source identity, actual coverage,
+  retrieval time, unknown fields and attribution travel through the existing
+  planner, specialist result, daily brief and owner displays.
+- Verification: `tests/test_forecast_logger.py`,
+  `tests/test_forecast_provider_health.py`, `tests/test_forecast_consumers.py`
+  and `tests/test_rootline_forecast_attribution.py`.
+- No new scheduler, database, schema, observed-rain credit or device authority.
+  Current deployment, source registration and schedule are proved separately
+  in the mission register and provider/canonical readback.
+
 ## Rootline owner daily brief
 
 - Doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`

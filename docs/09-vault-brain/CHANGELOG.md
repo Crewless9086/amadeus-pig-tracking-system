@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-11-20 - Forecast provider continuity and evidence identity
+
+Map the existing forecast logger, authenticated ingestion and owner displays to
+one provider-aware path. Retain three-day coverage, finite request budgets,
+durable cooldown and generation-fenced ingestion; preserve source identity,
+unknown fields and visible attribution through planning and reporting.
+Provider forecasts remain estimates and confer no observed-rain, water-delivery
+or equipment authority. Live activation and scheduled continuity require their
+own exact release and operational evidence; this entry does not assert them.
+
+
 ## 2026-11-01 - Independently governed A-camp irrigation capability
 
 Reconciled owner-confirmed A pipework readiness and A/B/C all-day drip intent.

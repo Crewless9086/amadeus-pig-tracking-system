@@ -235,6 +235,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         },
         "forecast": {
             "status": forecast_state,
+            "source": deepcopy(_dict(forecast.get("source"))),
             "confidence": forecast_confidence,
             "solar_profile": solar_profile,
             "forecast_dependent_optimization": (
@@ -793,6 +794,8 @@ def _normalize_forecast(packet):
         "stale_after_minutes": source.get("stale_after_minutes", 360),
         "days": deepcopy(packet.get("days", [])),
         "status": packet.get("status"),
+        "source": {key: deepcopy(source[key]) for key in (
+            "source_id", "provider", "display_name", "attribution") if key in source},
     }
 
 
