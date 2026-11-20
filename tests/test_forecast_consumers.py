@@ -46,19 +46,21 @@ def clean_database(database):
     return database
 
 
-def payload(provider="visual_crossing",age=5, count=3):
-    run=datetime.now(timezone.utc)-timedelta(minutes=age)
+def payload(provider="visual_crossing",age=5, count=3, *, now=None):
+    now=now or datetime.now(timezone.utc)
+    run=now-timedelta(minutes=age)
     source_id=next(key for key,value in subject.FORECAST_PROVIDERS.items() if value==provider)
-    today=datetime.now(subject.ZA_TZ).date()
+    today=now.astimezone(subject.ZA_TZ).date()
     provenance={"provider":provider,"source_id":source_id,"forecast_run_at":run.isoformat(),"fetched_at":run.isoformat(),"freshness_basis":"retrieved","provider_model_updated_at":None,"local_observation_credit":False}
     return {"source_id":source_id,"provider":provider,"provenance":provenance,"forecast_run_at":run.isoformat(),"timezone":"Africa/Johannesburg","days":[{"forecast_date":(today+timedelta(days=i)).isoformat(),"offset_days":i,"rain_sum_mm":2,"rain_probability_max_pct":30,"wind_max_kmh":10,"gust_max_kmh":15,"temp_max_c":25,"temp_min_c":10,"provenance":provenance,"provider_daily_chance_of_rain_pct":10,"provider_source":"comb" if i==0 else "fcst","provider_hour_sources":["obs","fcst"] if i==0 else ["fcst"]} for i in range(count)]}
 
 
-def seed(database, packet):
+def seed(database, packet, *, ingested_at=None):
     with psycopg.connect(database) as c:
         for row in subject._normalize_forecast_payload(packet):
-            c.execute("""insert into public.weather_forecast_snapshots(forecast_snapshot_id,source_id,forecast_run_at,timezone,forecast_date,offset_days,temp_max_c,temp_min_c,rain_sum_mm,rain_probability_max_pct,wind_max_kmh,gust_max_kmh,flags,raw_payload)
-              values(%(forecast_snapshot_id)s,%(source_id)s,%(forecast_run_at)s,%(timezone)s,%(forecast_date)s,%(offset_days)s,%(temp_max_c)s,%(temp_min_c)s,%(rain_sum_mm)s,%(rain_probability_max_pct)s,%(wind_max_kmh)s,%(gust_max_kmh)s,%(flags)s::jsonb,%(raw_payload)s::jsonb)""",row)
+            row["ingested_at"]=ingested_at
+            c.execute("""insert into public.weather_forecast_snapshots(forecast_snapshot_id,source_id,forecast_run_at,timezone,forecast_date,offset_days,temp_max_c,temp_min_c,rain_sum_mm,rain_probability_max_pct,wind_max_kmh,gust_max_kmh,flags,raw_payload,ingested_at)
+              values(%(forecast_snapshot_id)s,%(source_id)s,%(forecast_run_at)s,%(timezone)s,%(forecast_date)s,%(offset_days)s,%(temp_max_c)s,%(temp_min_c)s,%(rain_sum_mm)s,%(rain_probability_max_pct)s,%(wind_max_kmh)s,%(gust_max_kmh)s,%(flags)s::jsonb,%(raw_payload)s::jsonb,coalesce(%(ingested_at)s::timestamptz,now()))""",row)
 
 
 def read(database):
@@ -322,13 +324,59 @@ def test_nightly_dated_reader_target_boundary_and_true_stale_age(monkeypatch):
     assert midday['days'][0]['planning_hours'][0]['local_observation_credit'] is False
 
 
-def test_real_postgres_nightly_target_pin_midday_and_completed_cutoff(clean_database):
+FORECAST_CLOCK_CASES=(
+    '2026-11-20T23:29:00+02:00',
+    '2026-11-20T23:41:00+02:00',
+    '2026-11-20T23:59:00+02:00',
+    '2026-11-21T00:01:00+02:00',
+)
+
+
+def nightly_payload(wall_now):
+    local=wall_now.astimezone(subject.ZA_TZ)
+    cycle_date=local.date()-timedelta(days=int((local.hour,local.minute)<(23,30)))
+    at=datetime.combine(cycle_date,datetime.min.time(),tzinfo=subject.ZA_TZ)+timedelta(hours=23,minutes=30)
+    return payload(age=1,now=at),at,cycle_date+timedelta(days=1),at-timedelta(seconds=2)
+
+
+def freeze_forecast_clock(monkeypatch,wall_now):
+    class ClockType(type):
+        def __instancecheck__(cls,value):return isinstance(value,datetime)
+    class Clock(datetime,metaclass=ClockType):
+        @classmethod
+        def now(cls,tz=None):return wall_now.astimezone(tz) if tz else wall_now.replace(tzinfo=None)
+    monkeypatch.setattr(subject,'datetime',Clock)
+
+
+@pytest.mark.parametrize('wall_clock',FORECAST_CLOCK_CASES)
+def test_nightly_fixture_clock_and_provenance_are_one_deterministic_epoch(monkeypatch,wall_clock):
+    wall_now=datetime.fromisoformat(wall_clock)
+    freeze_forecast_clock(monkeypatch,wall_now)
+    packet,at,target,ingested_at=nightly_payload(wall_now)
+    assert nightly_payload(wall_now)==(packet,at,target,ingested_at)
+    run=datetime.fromisoformat(packet['forecast_run_at'])
+    assert run<ingested_at<at-timedelta(seconds=1)<at<=wall_now
+    assert (at.hour,at.minute)==(23,30) and target==at.date()+timedelta(days=1)
+    assert packet['provenance']['forecast_run_at']==packet['provenance']['fetched_at']==packet['forecast_run_at']
+    assert [day['forecast_date'] for day in packet['days']]==[(at.date()+timedelta(days=i)).isoformat() for i in range(3)]
+    normalized=subject._normalize_forecast_payload(packet)
+    assert len(normalized)==3 and all(row['forecast_run_at']==run for row in normalized)
+    future=deepcopy(packet)
+    future['forecast_run_at']=(wall_now+timedelta(seconds=1)).isoformat()
+    future['provenance'].update(forecast_run_at=future['forecast_run_at'],fetched_at=future['forecast_run_at'])
+    with pytest.raises(ValueError,match='cannot be in the future'):
+        subject._normalize_forecast_payload(future)
+
+
+@pytest.mark.parametrize('wall_clock',FORECAST_CLOCK_CASES)
+def test_real_postgres_nightly_target_pin_midday_and_completed_cutoff(clean_database,monkeypatch,wall_clock):
     db=clean_database
-    packet=payload(age=1)
-    seed(db,packet)
-    today=datetime.now(subject.ZA_TZ).date()
-    target=today+timedelta(days=1)
-    at=datetime.combine(today,datetime.min.time(),tzinfo=subject.ZA_TZ)+timedelta(hours=23,minutes=30)
+    wall_now=datetime.fromisoformat(wall_clock)
+    freeze_forecast_clock(monkeypatch,wall_now)
+    packet,at,target,ingested_at=nightly_payload(wall_now)
+    # All chronology belongs to this synthetic epoch; DB wall time must not
+    # make a valid past nightly snapshot appear ingested after its cutoff.
+    seed(db,packet,ingested_at=ingested_at)
     cycle={'status':'ingested','operating_date':target.isoformat(),
         'completed_at':(at-timedelta(seconds=1)).isoformat(),
         'result':{'source_id':packet['source_id'],'forecast_run_at':packet['forecast_run_at']}}
@@ -349,6 +397,24 @@ def test_real_postgres_nightly_target_pin_midday_and_completed_cutoff(clean_data
             (json.dumps(cycle),'visual-crossing-forecast-main'))
     future,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=at,nightly=True)
     assert future['success'] is False
+    # Independently reject ingestion after cutoff with a past run/completion.
+    with psycopg.connect(db) as c:
+        cycle['completed_at']=(at-timedelta(seconds=1)).isoformat()
+        c.execute("update public.telemetry_sources set metadata=jsonb_set(metadata,'{forecast_nightly_cycle}',%s::jsonb,true) where source_id=%s",
+            (json.dumps(cycle),'visual-crossing-forecast-main'))
+        c.execute("update public.weather_forecast_snapshots set ingested_at=%s",(at+timedelta(seconds=1),))
+    future_ingest,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=at,nightly=True)
+    assert future_ingest['success'] is False
+    # Adversarial future run, independently of past ingestion/completion.
+    # Keep the cycle's selected run identity aligned with the changed row.
+    with psycopg.connect(db) as c:
+        future_run=at+timedelta(seconds=1)
+        cycle['result']['forecast_run_at']=future_run.isoformat()
+        c.execute("update public.telemetry_sources set metadata=jsonb_set(metadata,'{forecast_nightly_cycle}',%s::jsonb,true) where source_id=%s",
+            (json.dumps(cycle),'visual-crossing-forecast-main'))
+        c.execute("update public.weather_forecast_snapshots set ingested_at=%s,forecast_run_at=%s",(ingested_at,future_run))
+    future_snapshot,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=at,nightly=True)
+    assert future_snapshot['success'] is False
 
 
 def test_consumer_fixture_exposes_ingest_provenance_before_database_setup():
