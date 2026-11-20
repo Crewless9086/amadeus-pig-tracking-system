@@ -386,7 +386,7 @@ def test_real_postgres_nightly_target_pin_midday_and_completed_cutoff(clean_data
     actual,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=at,nightly=True)
     assert status==200 and actual['success'] is True,actual
     assert len(actual['days'])==1 and actual['days'][0]['forecast_date']==target.isoformat()
-    assert actual['source']['last_forecast_run_at']==datetime.fromisoformat(packet['forecast_run_at']).isoformat()
+    assert datetime.fromisoformat(actual['source']['last_forecast_run_at'])==datetime.fromisoformat(packet['forecast_run_at'])
     midday=at+timedelta(hours=12,minutes=30)
     later,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=midday,nightly=True)
     assert later['success'] is True and later['source']['is_stale'] is True,later
