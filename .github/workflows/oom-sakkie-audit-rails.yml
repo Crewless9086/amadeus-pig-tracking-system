@@ -432,6 +432,8 @@ jobs:
           tests/test_rootline_continuous_demand.py
           tests/test_rootline_continuous_borehole.py
           tests/test_rootline_managed_devices_runtime.py
+          tests/test_rootline_fertilizer_auxiliary.py
+          tests/test_rootline_integrated_operation.py
           tests/test_rootline_auxiliary_startup_recovery_postgres.py
           tests/test_rootline_injector_deadline.py
           tests/test_rootline_borehole_start_observation.py

@@ -225,7 +225,7 @@ def test_a_and_e_mapping_is_ready_but_cannot_inherit_bc_authority():
     for zone,channel in [("A12345",4),("E12345",3)]:
         row=get_device_contract(zone)
         assert row["channel"] == channel and not row["commissioned"]
-        assert row["plumbing_ready"] is (zone == "A12345")
+        assert row["plumbing_ready"] is True
         with pytest.raises(ValueError): commissioned_irrigation_contract(zone)
 
 
