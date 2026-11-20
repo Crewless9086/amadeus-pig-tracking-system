@@ -21,7 +21,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from modules.oom_sakkie.automatic_reassessment_scheduler import (
-    CADENCE_MINUTES, SCHEDULER_IDENTITY,
+    CADENCE_MINUTES, SCHEDULER_IDENTITY, safe_reporting_diagnostics,
 )
 
 
@@ -69,7 +69,7 @@ def run(*, environ=None, now=None, opener=None) -> dict:
     except Exception:
         return {"success": False, "status": "rootline_scheduler_endpoint_unavailable",
                 "hardware_commands": 0, "telegram_sends": 0}
-    return {"success": result.get("success") is True,
+    return {**safe_reporting_diagnostics(result), "success": result.get("success") is True,
             "status": str(result.get("status") or "rootline_scheduler_response_invalid"),
             "scheduled_underlying_status": str(result.get("scheduled_underlying_status") or ""),
             "schedule_identity": str(result.get("schedule_identity") or ""),

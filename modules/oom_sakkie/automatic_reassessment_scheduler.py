@@ -37,6 +37,20 @@ def safe_daily_plan_diagnostics(result):
         for key, labels in allowed.items() if (value := result.get(key)) not in (None, "")}
 
 
+def safe_reporting_diagnostics(result):
+    """Retain a finite exception class label, never provider text or messages."""
+    value = result.get("error_type")
+    if value is None or value == "":
+        return {}
+    allowed = {"RootlineCycleDeadlineExceeded", "RootlineConnectionDeadlineExceeded",
+        "TimeoutError", "RuntimeError", "ValueError", "TypeError", "AttributeError",
+        "KeyError", "NameError", "UnboundLocalError", "ImportError", "ModuleNotFoundError",
+        "ConnectionError", "OperationalError", "InterfaceError", "DatabaseError",
+        "ProgrammingError", "IntegrityError", "QueryCanceled", "UndefinedTable",
+        "UndefinedColumn", "AssertionError"}
+    return {"error_type": value if isinstance(value, str) and value in allowed else "other"}
+
+
 def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Mapping[str, Any]],
                          store: Callable[[str, str, Any], Any], now: datetime | None = None,
                          recover_delivery: Callable[[], Mapping[str, Any]] | None = None,
@@ -139,6 +153,7 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
     from modules.telemetry.rootline_failure_diagnostics import sanitize_no_send
     outcome.update(sanitize_no_send(result))
     outcome.update(safe_daily_plan_diagnostics(result))
+    outcome.update(safe_reporting_diagnostics(result))
     if result.get("irrigation_failure"):
         from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
         outcome["irrigation_failure"] = sanitize_failure(result["irrigation_failure"])
