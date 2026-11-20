@@ -76,6 +76,14 @@ class Store:
     def __call__(self, action, payload):
         if action == "load_active_auxiliary": return self.active
         if action == "dispatch_auxiliary_on_edge": return payload["dispatch"]()
+        if action == "dispatch_auxiliary_off_edge":
+            slot = {key: payload[key] for key in ("execution_id", "attempt")}
+            claimed = self("claim_auxiliary_off_attempt", slot)
+            if claimed.get("created") is not True:
+                return {"accepted_unambiguous": False, "provider_command_attempted": False}
+            outcome = payload["dispatch"]()
+            self("record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+            return {**outcome, "provider_command_attempted": True}
         if action == "load_auxiliary_history": return []
         if action == "load_auxiliary_physical_outcome": return self.physical
         if action == "load_auxiliary_containment": return {"contained": False}
