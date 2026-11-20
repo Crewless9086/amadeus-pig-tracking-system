@@ -1455,13 +1455,15 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         input_reported = False
         def equipment_reports(supervision, *, provider_only=False):
             nonlocal provider_reported, input_reported
+            from modules.telemetry.rootline_input_health import input_health_enabled
+            visibility_enabled = input_health_enabled(source)
             # Readback outages remain visible even when plan refresh fails.
-            if not provider_reported and (production_persistence or provider_notification_cycle is not None):
+            if visibility_enabled and not provider_reported and (production_persistence or provider_notification_cycle is not None):
                 provider_reported = True
                 try:
                     from modules.oom_sakkie.rootline_transition_notifications import recover_provider_notifications
                     provider_reporter = provider_notification_cycle or recover_provider_notifications
-                    provider_outcome = provider_reporter(notify=notify, now=scheduler_now)
+                    provider_outcome = provider_reporter(notify=notify, now=scheduler_now, environ=source)
                 except Exception as exc:
                     provider_outcome = {"success": False, "status": "rootline_provider_notifications_deferred",
                         "error_type": type(exc).__name__, "telegram_sends": 0}
@@ -1470,7 +1472,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "provider_notifications_confirmed": provider_outcome.get("success") is True,
                     "telegram_sends": int(supervision.get("telegram_sends") or 0)
                         + int(provider_outcome.get("telegram_sends") or 0)}
-            if not input_reported and (production_persistence or input_notification_cycle is not None):
+            if visibility_enabled and not input_reported and (production_persistence or input_notification_cycle is not None):
                 input_reported = True
                 try:
                     from modules.oom_sakkie.rootline_transition_notifications import recover_input_notifications

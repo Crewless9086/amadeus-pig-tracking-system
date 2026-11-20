@@ -21,7 +21,15 @@
   suppresses only legacy STATION_STALE and POWER_NOT_LOGGING notices; both legacy
   workflows remain active for unrelated threshold alerts. No new alert scheduler,
   provider call, table or delivery system is introduced.
-- Tests: provider outage visibility, input-health visibility, restoration index
+- The same default-disabled switch guards both new visibility readers and
+  notification paths before database access. Release the guarded source first,
+  verify the two indexes, then activate the one existing switch. Existing safety
+  supervision and legacy health delivery continue while it is disabled.
+- The existing /health/revision endpoint reports the canonical loaded visibility
+  boolean and bounded service/instance identifiers with Cache-Control: no-store;
+  deployment revision readiness semantics remain unchanged.
+- Tests: staged visibility activation, deployment revision health, provider
+  outage visibility, input-health visibility, restoration index
   migration, borehole idle discovery, eWeLink readback and routine efficiency.
   Local tests do not prove delivered warnings, provider access or farm results.
 

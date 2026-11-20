@@ -560,7 +560,7 @@ def health():
 
 @app.route("/health/revision")
 def revision_health():
-    """Expose only the public source revision injected by the deployment provider."""
+    """Expose bounded public deployment identity and loaded visibility state."""
     revision = str(os.environ.get("RENDER_GIT_COMMIT") or "").strip().lower()
     provider_verified = os.environ.get("RENDER") == "true"
     revision_valid = (
@@ -568,12 +568,21 @@ def revision_health():
         and all(character in "0123456789abcdef" for character in revision)
     )
     identity_complete = provider_verified and revision_valid
+    from modules.telemetry.rootline_input_health import input_health_enabled
+    import re
+    service = str(os.environ.get("RENDER_SERVICE_ID") or "")
+    instance = str(os.environ.get("RENDER_INSTANCE_ID") or "")
+    service_valid = provider_verified and re.fullmatch(r"srv-[a-z0-9]{20}", service) is not None
+    instance_valid = provider_verified and re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", instance) is not None
     return {
         "status": "ok" if identity_complete else "deployment_identity_unavailable",
         "provider": "render" if provider_verified else "unknown",
         "revision": revision if identity_complete else "",
         "identity_complete": identity_complete,
-    }, 200 if identity_complete else 503
+        "rootline_input_health_enabled": input_health_enabled(),
+        "service_id": service if service_valid else "unknown",
+        "instance_id": instance if instance_valid else "unknown",
+    }, (200 if identity_complete else 503), {"Cache-Control": "no-store"}
 
 
 @app.route("/health/database")

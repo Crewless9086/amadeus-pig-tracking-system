@@ -112,7 +112,7 @@ class EWeLinkOAuthPostgresTests(unittest.TestCase):
             if path == "/v2/user/refresh": return {"at": "rotated-access", "rt": "rotated-refresh"}
             if path == "/v2/family": return {"currentFamilyId": "farm", "familyList": [{"id": "farm", "apikey": "account"}]}
             if path == "/v2/device/thing": return {"thingList": [{"itemType": 1, "itemData": {
-                "deviceid": "100204e9bc", "apikey": "account", "online": True,
+                "deviceid": "100204e9bc", "apikey": "account", "extra": {"uiid": 4}, "online": True,
                 "updatedAt": now.isoformat(), "params": {"fwVersion": "3.8.2",
                 "switches": [{"outlet": i, "switch": "off"} for i in range(4)],
                 "pulses": [{"outlet": i, "pulse": "on", "width": 3600000} for i in range(4)],
@@ -178,7 +178,7 @@ print(json.dumps({
             if path == "/v2/user/refresh": return {"at": "cas-access", "rt": "cas-refresh"}
             if path == "/v2/family": return {"currentFamilyId": "farm", "familyList": [{"id": "farm", "apikey": "account"}]}
             if path == "/v2/device/thing": return {"thingList": [{"itemType": 1, "itemData": {
-                "deviceid": "100204e9bc", "apikey": "account", "online": True,
+                "deviceid": "100204e9bc", "apikey": "account", "extra": {"uiid": 4}, "online": True,
                 "updatedAt": now.isoformat(), "params": {"fwVersion": "3.8.2",
                 "switches": [{"outlet": i, "switch": "off"} for i in range(4)],
                 "pulses": [{"outlet": i, "pulse": "on", "width": 3600000} for i in range(4)],
@@ -236,7 +236,7 @@ print(json.dumps({
                 refresh_calls.append(path); return {"at": "recovered-access", "rt": "recovered-refresh"}
             if path == "/v2/family": return {"currentFamilyId": "farm", "familyList": [{"id": "farm", "apikey": "account"}]}
             if path == "/v2/device/thing": return {"thingList": [{"itemType": 1, "itemData": {
-                "deviceid": "100204e9bc", "apikey": "account", "online": True,
+                "deviceid": "100204e9bc", "apikey": "account", "extra": {"uiid": 4}, "online": True,
                 "updatedAt": now.isoformat(), "params": {"fwVersion": "3.8.2",
                 "switches": [{"outlet": i, "switch": "off"} for i in range(4)],
                 "pulses": [{"outlet": i, "pulse": "on", "width": 3600000} for i in range(4)],

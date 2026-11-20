@@ -9,6 +9,10 @@ shutdown and fresh verification. Stable incidents and recipient delivery receipt
 prevent duplicate or falsely confirmed notices; dated recovery cannot imply
 current equipment state. Backend health ownership remains default-disabled until
 paired with the two existing legacy health notices, preserving unrelated alerts.
+The same switch guards new provider and input visibility before database access,
+so source deployment can precede index preparation. Enable it only after exact
+index verification, then verify its loaded value on the replacement workers.
+Existing safety supervision continues throughout this staged release.
 
 The source uses existing telemetry, forecast, execution and delivery records.
 Two additive outage-query indexes use the existing reviewed concurrent migration

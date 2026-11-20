@@ -5,6 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock, Barrier
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def enable_reviewed_visibility_paths(monkeypatch):
+    monkeypatch.setenv("ROOTLINE_INPUT_HEALTH_ENABLED", "true")
+
 from modules.telemetry.rootline_provider_availability import (
     CONTRACT, project_scope, read_provider_availability, read_notification_receipt)
 from modules.oom_sakkie.rootline_transition_notifications import (
@@ -403,7 +408,7 @@ def test_actual_gateway_reports_provider_outage_before_failed_plan(report_due,mo
         delivered.append(result)
         return {"success":True,"telegram_message_id":"700","telegram_sends":1}
     env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true","OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
-        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42", "ROOTLINE_INPUT_HEALTH_ENABLED":"true"}
     payload={"scheduler_identity":scheduler.SCHEDULER_IDENTITY,"specialist":"ROOTLINE",
         "owner_user_id":"42","chat_id":"42","due_at":NOW.isoformat(),"evidence_cutoff":NOW.isoformat(),
         "trigger_id":"MINUTE1","trigger":"declared_time","trigger_timestamp":NOW.isoformat()}

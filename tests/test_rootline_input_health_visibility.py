@@ -8,6 +8,11 @@ from uuid import uuid4
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def enable_reviewed_visibility_paths(monkeypatch):
+    monkeypatch.setenv("ROOTLINE_INPUT_HEALTH_ENABLED", "true")
+
 from modules.telemetry import rootline_input_health as health
 from modules.oom_sakkie import rootline_transition_notifications as notices
 

@@ -87,8 +87,11 @@ def project_scope(scope, latest, failure, restoration, *, now):
         "recovery_fresh": (now - restored_at).total_seconds() <= RECOVERY_FRESH_SECONDS}
 
 
-def read_provider_availability(*, database_url=None, now=None, connect=None):
+def read_provider_availability(*, database_url=None, now=None, connect=None, environ=None):
     """Bounded, cutoff-aware canonical reads; no network access to eWeLink."""
+    from modules.telemetry.rootline_input_health import input_health_enabled
+    if not input_health_enabled(environ):
+        return {"contract": CONTRACT, "status": "unknown", "reason": "not_enabled", "scopes": []}
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     now = _time(now or datetime.now(timezone.utc))
     if now is None:
@@ -147,8 +150,11 @@ def read_provider_availability(*, database_url=None, now=None, connect=None):
         "observed_at": now.isoformat(), "scopes": projected}
 
 
-def read_notification_receipt(identity, *, database_url=None, connect=None):
+def read_notification_receipt(identity, *, database_url=None, connect=None, environ=None):
     """Read the existing execution notification receipt, preferring confirmation."""
+    from modules.telemetry.rootline_input_health import input_health_enabled
+    if not input_health_enabled(environ):
+        return {}
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     if not isinstance(identity, str) or not re.fullmatch(
             r"ROOTLINE-PROVIDER-[0-9A-F]{32}:(?:unavailable|restored|safety:[0-9a-f]{24})", identity):

@@ -263,8 +263,12 @@ def _provider_receipt(identity, incident, receipt):
 
 
 def recover_provider_notifications(*, notify, now=None, store=rootline_irrigation_execution_store,
-        loader=None, receipt_loader=None, clock=None):
+        loader=None, receipt_loader=None, clock=None, environ=None):
     """Notify once per episode/severity through existing atomic family delivery."""
+    from modules.telemetry.rootline_input_health import input_health_enabled
+    if not input_health_enabled(environ):
+        return {"success": True, "status": "rootline_provider_notifications_disabled",
+            "telegram_sends": 0, "notification_count": 0, "hardware_commands": 0}
     from modules.telemetry.rootline_provider_availability import (
         read_provider_availability, read_notification_receipt, _time, CONTRACT)
     clock = clock or (lambda: datetime.now(timezone.utc))
@@ -274,8 +278,8 @@ def recover_provider_notifications(*, notify, now=None, store=rootline_irrigatio
         raise ValueError("aware_time_required")
     # Safety may have just recorded a failure after the scheduled evidence cutoff.
     now = max(now, current_time)
-    loader = loader or read_provider_availability
-    receipt_loader = receipt_loader or read_notification_receipt
+    loader = loader or (lambda **kwargs: read_provider_availability(environ=environ, **kwargs))
+    receipt_loader = receipt_loader or (lambda identity: read_notification_receipt(identity, environ=environ))
     result = {"success": True, "status": "rootline_provider_notifications_observed",
         "telegram_sends": 0, "notification_count": 0, "hardware_commands": 0}
     remaining_seconds(minimum=5)
@@ -458,8 +462,8 @@ def recover_input_notifications(*, notify, recipient, now=None, environ=None,
     language = "af" if str(recipient.get("language")).casefold().startswith("af") else "en"
     recipient_key = sha256((user + "|" + chat).encode()).hexdigest()[:32]
     reconcile = reconcile or reconcile_input_health
-    state_loader = state_loader or read_input_notice_state
-    receipt_loader = receipt_loader or read_input_notification_receipt
+    state_loader = state_loader or (lambda kind, **kwargs: read_input_notice_state(kind, environ=environ, **kwargs))
+    receipt_loader = receipt_loader or (lambda identity: read_input_notification_receipt(identity, environ=environ))
     clock = clock or (lambda: datetime.now(timezone.utc))
     remaining_seconds(minimum=5)
     health = reconcile(now=now, environ=environ)

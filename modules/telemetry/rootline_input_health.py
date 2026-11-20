@@ -253,7 +253,9 @@ def _read_projection(cursor, now, *, operating_date=None):
     return projected, sources
 
 
-def read_input_health(*, database_url=None, now=None, connect=None, operating_date=None):
+def read_input_health(*, database_url=None, now=None, connect=None, operating_date=None, environ=None):
+    if not input_health_enabled(environ):
+        return {"contract": CONTRACT, "status": "unknown", "reason": "not_enabled", "inputs": {}}
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     now = _time(now or datetime.now(timezone.utc))
     if now is None:
@@ -368,8 +370,10 @@ def reconcile_input_health(*, database_url=None, now=None, connect=None, environ
         "inputs": inputs, "episodes": episodes}
 
 
-def read_input_notification_receipt(identity, *, database_url=None, connect=None):
+def read_input_notification_receipt(identity, *, database_url=None, connect=None, environ=None):
     """Use the same bounded execution/notification index as equipment receipts."""
+    if not input_health_enabled(environ):
+        return {}
     if not re.fullmatch(r"ROOTLINE-INPUT-[0-9A-F]{32}:(?:unavailable|restored):[0-9a-f]{32}", str(identity)):
         raise ValueError("input_health_notification_identity_invalid")
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
@@ -389,8 +393,11 @@ def read_input_notification_receipt(identity, *, database_url=None, connect=None
 
 
 
-def read_input_notice_state(kind, *, database_url=None, now=None, connect=None):
+def read_input_notice_state(kind, *, database_url=None, now=None, connect=None, environ=None):
     """Revalidate current canonical health and latest episode before delivery."""
+    if not input_health_enabled(environ):
+        return {"status": "unknown", "reason": "not_enabled", "episode": None,
+            "input": {"kind": kind, "state": "unknown", "reason": "not_enabled", "notify": False}}
     if kind not in INPUTS:
         raise ValueError("input_health_kind_invalid")
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
