@@ -1,5 +1,21 @@
 # Implementation Source Map
 
+## ROOTLINE borehole AC backup and concurrent recovery
+
+- The owner correction of 20 November identifies device 1002851416/channel 1
+  as borehole AC backup; its OFF state does not prove that the separate solar
+  pump stopped. Stable commissioned identities and authority remain in use.
+- `rootline_energy_policy.py` maps fresh sunshine at or above the agreed 1.5 kW
+  proxy to AC backup OFF eligibility. The existing managed execution path owns
+  shutdown and prevents a new AC start while solar conditions suffice. Existing
+  below-threshold battery/grid policy and other devices remain separate.
+- Owner-facing transitions distinguish AC backup state from unmeasured pumping.
+  Tests, release and genuine runtime/provider verification remain distinct gates.
+- Auxiliary historical outcomes remain appendable during command locks so final
+  recovery revalidation can observe contradictions. Actual commands and claims
+  retain their fences; late history invalidates stale recovery proof rather than
+  reopening commands or discarding reservations.
+
 ## ROOTLINE operating recovery and reporting cutoff
 
 - `rootline_irrigation_execution_store.py` serializes auxiliary startup retirement

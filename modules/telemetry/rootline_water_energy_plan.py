@@ -160,7 +160,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     rain = _rain_effect(weather, weather_state, forecast, forecast_state)
 
     tasks = [
-        _borehole_task(tanks, tank_state, water_demand, rain, reserve),
+        _borehole_task(tanks, tank_state, water_demand, rain, reserve, power=power, now=now),
         _transfer_task(tanks, tank_state, water_demand, reserve),
         *_irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                            weather, forecast, tanks,
@@ -1359,9 +1359,13 @@ def _rain_effect(weather, weather_state, forecast, forecast_state):
     }
 
 
-def _borehole_task(tanks, tank_state, demand, rain, reserve):
-    return _task("borehole", "Recommend",
-        "Protect water continuity using the sunshine proxy and battery/grid support; preserve local rain, explicit OFF and installed pump protections.",
+def _borehole_task(tanks, tank_state, demand, rain, reserve, *, power, now):
+    from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    energy = managed_energy_decision(power, now=now)
+    sunshine = energy["borehole_sunshine_proxy"]
+    return _task("borehole", "Do Not Run" if sunshine else "Recommend",
+        "Keep borehole AC backup OFF while the sunshine proxy is sufficient; actual pumping on the separate solar supply is unverified." if sunshine else
+        "Protect water continuity by assessing borehole AC backup using battery and grid support; preserve local rain, explicit OFF and installed protections. Actual pumping is unverified.",
         "standing_supply_with_owned_stop_supervision", ["fresh_energy_and_canonical_device_authority"], reserve)
 
 

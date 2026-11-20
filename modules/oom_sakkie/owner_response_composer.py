@@ -52,7 +52,7 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     decisions = []
     labels = {"A12345": "A Kamp" if af else "A Camp", "B12345": "B Kamp" if af else "B Camp", "C12345": "C Kamp" if af else "C Camp",
-              "borehole": "Boorgat" if af else "Borehole",
+              "borehole": "Boorgat se AC-rugsteun" if af else "Borehole AC backup",
               "fertilizer_injection": "Kunsmisinspuiting" if af else "Fertilizer injection",
               "fertilizer_mixing": "Kunsmismenging" if af else "Fertilizer mixing"}
     for item in result.get("recommendations") or ():

@@ -529,7 +529,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             try:
                 energy = energy_reader() if continuing and energy_reader is not None else {}
                 known = (energy.get("continuous_borehole_fresh", energy.get("borehole_fresh", energy.get("fresh")))
-                    if continuous else energy.get("fresh"))
+                    if continuous else energy.get("borehole_fresh", energy.get("fresh")))
                 eligible = (energy.get("continuous_borehole_eligible", energy.get("borehole_eligible"))
                     if continuous else energy.get("borehole_eligible"))
                 energy_reason = (energy.get("continuous_borehole_reason", energy.get("borehole_reason"))

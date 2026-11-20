@@ -25,12 +25,13 @@ class ReportingCutoffTests(unittest.TestCase):
         writer.assert_not_called()
 
     def test_bounded_past_evidence_retains_useful_report_and_replay(self):
-        result,writer,reader,stored=self.refresh(evidence())
+        facts=evidence();facts['power']['solar_power_w']=1499
+        result,writer,reader,stored=self.refresh(facts)
         self.assertTrue(result['success']);writer.assert_called_once()
         self.assertEqual(reader.call_args.kwargs['evidence_cutoff'],NOW)
         self.assertEqual(result['evidence']['freshness']['power'],'fresh')
         self.assertTrue(any(row['status']=='Recommend' for row in result['recommendations']))
-        replay,_,_,again=self.refresh(evidence())
+        replay,_,_,again=self.refresh(facts)
         self.assertEqual(stored['evidence_sha256'],again['evidence_sha256'])
         self.assertEqual(result['result_id'],replay['result_id'])
 

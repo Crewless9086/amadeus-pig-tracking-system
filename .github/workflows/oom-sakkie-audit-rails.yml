@@ -431,6 +431,10 @@ jobs:
           tests/test_report_diagnostics.py
           tests/test_rootline_continuous_demand.py
           tests/test_rootline_continuous_borehole.py
+          tests/test_rootline_borehole_ac_backup.py
+          tests/test_rootline_water_energy_plan.py
+          tests/test_rootline_specialist_result.py
+          tests/test_rootline_visible_operation.py
           tests/test_rootline_managed_devices_runtime.py
           tests/test_rootline_fertilizer_auxiliary.py
           tests/test_rootline_integrated_operation.py

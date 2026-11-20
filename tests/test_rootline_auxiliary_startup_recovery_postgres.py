@@ -23,7 +23,7 @@ def db(monkeypatch):
     from psycopg.conninfo import conninfo_to_dict
     target = conninfo_to_dict(TEST_URL)
     assert target.get('host') == '127.0.0.1' and target.get('dbname') in {
-        'auxiliary_containment_20261120', 'rootline_managed'}
+        'auxiliary_containment_20261120', 'rootline_managed', 'rootline_no_send_test'}
     root = Path(os.getenv('ROOTLINE_TEST_SOURCE_ROOT') or Path(__file__).resolve().parents[1])
     with psycopg.connect(TEST_URL) as connection:
         connection.execute((root/'supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql').read_text())
@@ -118,7 +118,6 @@ def test_abort_seals_unknown_dispatch_preserves_history_and_reservation(db, kind
     assert denied['accepted_unambiguous'] is False
     for action, payload in [('claim_auxiliary_off_attempt', {'execution_id': execution['execution_id'], 'attempt': 2}),
             ('mark_auxiliary_active', {**execution, 'state': 'Active', 'on_attempts': 1}),
-            ('record_auxiliary_on_outcome', {**execution, 'on_outcome': {'accepted_unambiguous': True}}),
             ('contain_auxiliary_device', {**execution, 'reason': 'late_old_hold'})]:
         assert store.rootline_irrigation_execution_store(action, payload)['success'] is False
     assert calls == [] and rows(db, execution)[-1] == terminal
@@ -419,3 +418,86 @@ def test_guarded_off_malformed_outcome_stays_unknown_and_consumed(db, malformed)
     recorded=[row for row in rows(db, execution) if row['action']=='record_auxiliary_off_outcome' and row['attempt']==2]
     assert len(recorded)==1 and recorded[0]['outcome']['status']=='auxiliary_off_outcome_unknown'
     assert state(execution)['contained']
+
+
+@pytest.mark.parametrize('kind', ['mixer', 'injector'])
+@pytest.mark.parametrize('action', ['record_auxiliary_on_outcome', 'record_auxiliary_exception'])
+@pytest.mark.parametrize('boundary', ['final_read', 'terminal_insert', 'after_commit'])
+def test_late_history_invalidates_startup_abort_without_reopening_commands(db, monkeypatch, kind, action, boundary):
+    execution, body = contained(db, kind)
+    incoming = {**execution, 'on_outcome': {'accepted_unambiguous': True},
+        'reason': 'late_observed_provider_result'}
+    appended = []
+    def append():
+        result = store.rootline_irrigation_execution_store(action, incoming)
+        assert result['success'] and result['created']
+        appended.append(result)
+    if boundary == 'final_read':
+        def read():
+            append()
+            return off_proof(execution)
+        body['read_final_off'] = read
+    elif boundary == 'terminal_insert':
+        original = store._insert_managed_event
+        def insert(cursor, event_action, payload):
+            result = original(cursor, event_action, payload)
+            if event_action == 'record_auxiliary_startup_aborted':
+                append()
+            return result
+        monkeypatch.setattr(store, '_insert_managed_event', insert)
+    result = recover(body)
+    if boundary == 'after_commit':
+        assert result['success']
+        append()
+    assert len(appended) == 1
+    history = rows(db, execution)
+    assert any(row['action'] == action for row in history)
+    assert store._auxiliary_startup_terminal(history) is None
+    assert state(execution)['contained']
+    terminals = [row for row in history if row['action'] == 'record_auxiliary_startup_aborted']
+    assert len(terminals) == (1 if boundary == 'after_commit' else 0)
+    if boundary != 'after_commit':
+        assert not result['success']
+    body['read_final_off'] = lambda: pytest.fail('contradictory history cannot be replayed as safe')
+    assert not recover(body)['success']
+    calls = []
+    denied = store.rootline_irrigation_execution_store('dispatch_auxiliary_on_edge',
+        {**execution, 'dispatch': lambda: calls.append('ON')})
+    assert denied.get('accepted_unambiguous') is not True
+    if boundary == 'after_commit':
+        denied = store.rootline_irrigation_execution_store('dispatch_auxiliary_off_edge',
+            {**execution, 'attempt': 2, 'dispatch': lambda: calls.append('OFF')})
+        assert denied.get('provider_command_attempted') is not True
+    fresh = claim(kind, old=False)
+    if kind == 'injector':
+        binding = {'job_id': 'ROOTLINE-IRRIGATION-JOB-'+uuid.uuid4().hex,
+            'job_sha256': 'a'*64, 'segment_identity': 'ROOTLINE-JOB-SEGMENT-'+uuid.uuid4().hex,
+            'zone_id': 'B12345', 'zone_execution_id': 'ZONE-'+uuid.uuid4().hex}
+        parent = {**binding, 'execution_id': binding['zone_execution_id'],
+            'device_id': '100204e9bc', 'channel': 1, 'state': 'Active'}
+        seed(db, 'claim_before_on', parent)
+        seed(db, 'mark_active', parent)
+        fresh.update(binding, pulse_number=1)
+    refused = store.rootline_irrigation_execution_store('claim_auxiliary_before_on', fresh)
+    assert refused['created'] is False and refused['status'] == 'auxiliary_contained'
+    assert calls == []
+    if kind == 'mixer':
+        from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
+        account = mixing_daily_accounting(history, now=datetime.now(timezone.utc))
+        assert account['reserved_seconds'] == 600 and account['controller_completed_seconds'] == 0
+
+
+@pytest.mark.parametrize('kind', ['mixer', 'injector'])
+def test_late_off_history_remains_appendable_without_new_command_authority(db, kind):
+    execution, body = contained(db, kind)
+    terminal = recover(body)['execution']
+    outcome = {'execution_id': execution['execution_id'], 'attempt': 1,
+        'outcome': {'accepted_unambiguous': False, 'status': 'late_off_acknowledgement'}}
+    first = store.rootline_irrigation_execution_store('record_auxiliary_off_outcome', outcome)
+    replay = store.rootline_irrigation_execution_store('record_auxiliary_off_outcome', outcome)
+    assert first['created'] and not replay['created']
+    assert store._verified_auxiliary_startup_abort(terminal, rows(db, execution))
+    calls = []
+    denied = store.rootline_irrigation_execution_store('dispatch_auxiliary_off_edge',
+        {**execution, 'attempt': 2, 'dispatch': lambda: calls.append('OFF')})
+    assert not denied.get('provider_command_attempted') and calls == []

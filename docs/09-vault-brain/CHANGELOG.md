@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-11-20 - Correct borehole AC backup actuator meaning
+
+The owner clarified that the controlled borehole outlet supplies AC backup;
+separate solar panels can run the pump while this outlet is OFF. Correct the
+prior interpretation that sufficient sunshine should enable the AC switch.
+At or above the existing 1.5 kW sunshine proxy, the existing runtime must stop
+owned AC backup and prevent a new AC start. Preserve the below-threshold
+battery/grid policy, device identities, authority and guarded command path.
+Report AC supply transitions without claiming pump or water-delivery state.
+This entry records corrected doctrine and implementation intent, not live proof.
+
+Auxiliary recovery also preserves concurrent historical outcome appends while
+actual commands remain fenced. Late contradictions invalidate stale retirement
+proof and retain unresolved obligations; successful tests are not farm outcomes.
+
 ## 2026-11-20 - ROOTLINE operating recovery and consistent reporting
 
 Repair the existing execution path without changing device policy: preserve

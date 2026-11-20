@@ -1,5 +1,29 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner correction: borehole switch is AC backup — 20 November 2026
+
+This direct owner correction supersedes any contrary interpretation below.
+The controlled borehole switch (eWeLink device 1002851416, channel 1) supplies
+AC backup to the hybrid borehole. The pump has its own separate solar panels.
+Turning this AC supply OFF does not establish that the pump stopped; the pump
+can continue on its own solar supply. Switch ON does not establish pumping.
+
+When the agreed Sunsynk sunshine proxy is at or above 1.5 kW, ROOTLINE must keep
+the borehole AC backup OFF and turn an owned AC supply OFF through its existing
+guarded control path. Sunshine is not a reason to enable this AC switch.
+Below that threshold, assess AC backup using the existing battery, charging/
+discharging and grid-support rules, retaining the 30% battery floor. Do not
+invent a new threshold or confuse the separate solar pump supply with Sunsynk
+household power. Retain current evidence, explicit isolation, installed
+protections and existing duplicate-command safeguards.
+
+Reports must identify borehole AC backup ON/OFF separately from actual pumping,
+which remains unknown without its own evidence. Earlier continuous-operation
+approval did not authorize permanent AC backup during sufficient sunshine.
+Existing weather rules cannot establish that disabling AC also stops solar
+pumping. This correction is authority for repair, not proof of deployment or
+of a verified AC OFF outcome.
+
 ## Owner-directed plan and equipment visibility — 16 November 2026
 
 This instruction supersedes routine-plan silence below. Through the existing

@@ -33,29 +33,33 @@ def managed_energy_decision(power, *, now, reserve_pct=70):
     backup_known = bool(power_fresh and soc is not None and 0 <= soc <= 100
         and grid is not None and solar is not None and solar >= 0)
     borehole_known = sunshine or backup_known
-    borehole_ok = sunshine or (backup_known and (soc > 30 or grid > 0))
-    return {"fresh": usable, "borehole_fresh": usable,
+    # This switch supplies AC backup; the pump has an independent solar supply.
+    borehole_ok = not sunshine and backup_known and (soc > 30 or grid > 0)
+    return {"fresh": usable, "borehole_fresh": bool(sunshine or usable),
         "continuous_borehole_fresh": borehole_known,
         "continuous_borehole_eligible": bool(borehole_ok),
-        "continuous_borehole_reason": ("sunshine_proxy_available" if sunshine else
+        "continuous_borehole_reason": ("sunshine_ac_backup_not_required" if sunshine else
             "fresh_supply_available" if borehole_ok else
             "battery_low_without_verified_grid_supply" if borehole_known else "fresh_power_evidence_required"),
         "borehole_sunshine_proxy": sunshine, "borehole_solar_proxy_w": 1500,
         "borehole_energy_metered": False, "estimated_grid_tariff_zar_per_kwh": 9.2,
         "borehole_energy_context": {**values, "observed_at": observed.isoformat() if fresh else None,
+            "controlled_supply": "borehole_ac_backup", "pump_operation": "Unknown",
+            "ac_backup_off_for_sunshine": sunshine,
             "sunshine_proxy_available": sunshine, "battery_charging": battery < 0 if battery is not None else None,
             "pump_energy_kwh": None, "pump_grid_cost_zar": None,
             "grid_cost_tariff_zar_per_kwh": 9.2, "pump_energy_measured": False,
             "household_grid_import_is_pump_consumption": False,
             "eskom_requested_state": grid_request,
-            "backup_strategy": ("separate_solar_sunshine_proxy" if sunshine else
+            "backup_strategy": ("separate_solar_ac_backup_off" if sunshine else
                 "grid_support" if backup_known and grid > 0 else
                 "battery_charging_above_floor" if backup_known and soc > 30 and battery is not None and battery < 0 else
                 "battery_discharging_above_floor" if backup_known and soc > 30 and battery is not None and battery > 0 else
                 "battery_above_floor_direction_unknown_or_idle" if backup_known and soc > 30 else
                 "battery_floor_requires_grid" if backup_known else "supply_evidence_unavailable")}, "observed_at": observed.isoformat() if fresh else None,
-        "borehole_eligible": bool(usable and (soc > 30 or grid > 0)),
-        "borehole_reason": ("fresh_supply_available" if usable and (soc > 30 or grid > 0)
+        "borehole_eligible": bool(usable and not sunshine and (soc > 30 or grid > 0)),
+        "borehole_reason": ("sunshine_ac_backup_not_required" if sunshine else
+            "fresh_supply_available" if usable and (soc > 30 or grid > 0)
             else "battery_low_without_verified_grid_supply" if usable else "fresh_power_evidence_required"),
         "mixing_eligible": bool(usable and (solar-load >= 1000 or soc > max(50, reserve_pct))),
         "mixing_continue_eligible": bool(usable and (solar >= load or soc > max(50, reserve_pct))),

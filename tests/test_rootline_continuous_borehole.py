@@ -119,7 +119,7 @@ def test_stale_unknown_is_never_dry_or_a_new_stop_without_prior_rain():
     assert not state['stop_required'] and not state['start_eligible']
 
 
-@pytest.mark.parametrize('solar,soc,grid,eligible',[(1500,20,0,True),(1499,30,0,False),(1499,30,20,True),(1499,31,0,True)])
+@pytest.mark.parametrize('solar,soc,grid,eligible',[(1500,20,0,False),(1499,30,0,False),(1499,30,20,True),(1499,31,0,True)])
 def test_sunshine_proxy_and_backup_floor(solar,soc,grid,eligible):
     power={'observed_at':NOW.isoformat(),'solar_power_w':solar,'battery_soc_pct':soc,
         'grid_power_w':grid,'battery_power_w':-200,'load_power_w':10000}
@@ -130,7 +130,7 @@ def test_sunshine_proxy_and_backup_floor(solar,soc,grid,eligible):
 
 def test_sunshine_does_not_require_household_load_or_battery_sensor():
     result=managed_energy_decision({'observed_at':NOW.isoformat(),'solar_power_w':1500},now=NOW)
-    assert result['continuous_borehole_fresh'] and result['continuous_borehole_eligible']
+    assert result['continuous_borehole_fresh'] and not result['continuous_borehole_eligible']
     assert not result['mixing_eligible'] and result['eskom_requested_state']=='UNCHANGED'
 
 
@@ -293,12 +293,12 @@ def test_first_forecast_evidence_and_observed_outcome_are_preserved():
     assert state['forecast_defer_until']==later.isoformat()
 
 
-def test_legacy_energy_keys_stay_unchanged_while_v5_uses_separate_solar_proxy():
+def test_sunshine_does_not_enable_ac_backup_in_legacy_or_continuous_mode():
     power={'observed_at':NOW.isoformat(),'solar_power_w':1500,'battery_soc_pct':20,
         'grid_power_w':0,'load_power_w':10000,'battery_power_w':1000}
     result=managed_energy_decision(power,now=NOW)
     assert result['borehole_eligible'] is False
-    assert result['continuous_borehole_eligible'] is True
+    assert result['continuous_borehole_eligible'] is False
 
 
 def test_direction_materially_controls_integrated_eskom_strategy_without_weakening_floor():

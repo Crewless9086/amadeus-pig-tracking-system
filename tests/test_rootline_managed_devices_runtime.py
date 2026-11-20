@@ -253,12 +253,12 @@ class ManagedConnection:
     def cursor(self): return ManagedCursor(self.outcomes, self.executions)
 
 
-def patch_default_sources(monkeypatch, connection):
+def patch_default_sources(monkeypatch, connection, *, solar_power_w=2000):
     monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
         lambda **_kwargs: connection)
     monkeypatch.setattr("modules.telemetry.power_service.get_current_power_state",
         lambda **_kwargs: ({"success": True, "current": {"battery_soc_pct": 90,
-            "solar_power_w": 2000, "load_power_w": 100, "grid_power_w": 0},
+            "solar_power_w": solar_power_w, "load_power_w": 100, "grid_power_w": 0},
             "source": {"last_reading_at": NOW.isoformat()}}, 200))
     monkeypatch.setattr("modules.telemetry.weather_service.get_current_weather_state",
         lambda **_kwargs: ({"success": True, "current": {"rain_today_mm": 0},
@@ -328,7 +328,8 @@ def _default_injector_clock_case(monkeypatch, *, channel=1, canonical_delay=0,
                 current[0] += timedelta(seconds=canonical_delay)
                 self.delayed = True
             return self
-    patch_default_sources(monkeypatch, DelayedConnection([outcome], [active,mix]))
+    patch_default_sources(monkeypatch, DelayedConnection([outcome], [active,mix]),
+        solar_power_w=1499 if borehole_delay else 2000)
     monkeypatch.setattr("modules.telemetry.rootline_managed_devices_runtime.load_device_record",
         lambda *_args, **_kwargs: canonical("ifttt_ewelink:ewelink_owner_account:100204d497:1"))
     from modules.telemetry import rootline_execution_runtime as runtime
@@ -576,7 +577,7 @@ def test_borehole_eligibility_assesses_power_after_baseline_and_provider_reads(m
     from modules.telemetry import rootline_managed_devices_runtime as managed
     from tests.test_rootline_borehole_commissioning import canonical as baseline
     current=[NOW];packets=[];outputs=[]
-    evidence={"power":{"battery_soc_pct":90,"solar_power_w":2000,"load_power_w":100,
+    evidence={"power":{"battery_soc_pct":90,"solar_power_w":1499,"load_power_w":100,
         "grid_power_w":0,"observed_at":(NOW+timedelta(seconds=power_offset)).isoformat()},
         "borehole_interlocks":{key:True for key in
             ("dry_run_safe","low_water_clear","supply_pressure_safe","full_tank_not_blocking")}}

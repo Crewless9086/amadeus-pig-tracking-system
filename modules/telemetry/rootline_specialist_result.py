@@ -475,7 +475,7 @@ def _recommendations(
         task = deepcopy(tasks.get(task_id) or {})
         status = _public_status(task.get("recommendation"))
         reason = task.get("reason") or "Canonical task evidence is unavailable."
-        if identity == "borehole" and forecast_only_delay and task.get("preferred_window") != "standing_supply_with_native_fail_stop":
+        if identity == "borehole" and status != "Do Not Run" and forecast_only_delay and task.get("preferred_window") != "standing_supply_with_native_fail_stop":
             if water_demand.get("status") == "urgent":
                 status, reason = _borehole_after_forecast_delay(plan, evidence)
             elif delay_active:

@@ -55,8 +55,9 @@ def rootline_irrigation_execution_store(action, payload):
         return _retire_not_dispatched_execution(body)
     if action in {"dispatch_auxiliary_on_edge", "dispatch_borehole_on_edge"}:
         return _dispatch_managed_on_edge(body, borehole=action == "dispatch_borehole_on_edge")
-    if action in {"record_auxiliary_on_outcome", "record_auxiliary_off_outcome", "record_auxiliary_exception",
-                  "claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
+    # Historical outcomes must remain appendable while command locks are held.
+    # Fresh retirement proofs re-read them; they do not authorize a new command.
+    if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
                   "mark_auxiliary_active", "mark_borehole_active",
                   "contain_auxiliary_device", "contain_borehole",
                   "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
