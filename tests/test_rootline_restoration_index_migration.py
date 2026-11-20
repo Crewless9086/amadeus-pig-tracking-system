@@ -290,7 +290,7 @@ def test_real_failure_predicate_equivalence_including_malformed_json():
     latest = event('LATEST')
     capture = QueueConnection([[latest], [], []])
     with pytest.raises(ValueError, match='incident_unproven'):
-        provider.read_provider_availability(now=NOW, connect=lambda **kwargs: capture)
+        provider.read_provider_availability(now=NOW, connect=lambda **kwargs: capture, environ={"ROOTLINE_INPUT_HEALTH_ENABLED": "true"})
     current_sql, current_params = capture.queries[2]
     key = "->(review_json->'ewelink_request_budget'->'detail'->>'scope')"
     assert current_sql.count(key) == 1
