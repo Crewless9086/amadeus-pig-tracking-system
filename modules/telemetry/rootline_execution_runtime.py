@@ -322,7 +322,15 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
             admission_token=preparation_token) if only_when_due else nullcontext())
         with gate, execution_duty({"execution_id": context.get("zone_execution_id")},
                 deadline=context.get("irrigation_stop_deadline")):
-            current = transport.read_output_state(device_id=device_id, channel=channel)
+            # Only initial pulse preparation uses persisted account binding.
+            # Both output-bearing GETs remain fresh. Final flush and custom
+            # transports retain their existing full-read contract.
+            routine_parent = (only_when_due
+                and context.get("completed_pulses") != _pulse_limit(context)
+                and getattr(getattr(transport, "read_output_state", None), "__func__", None)
+                    is RootlineIFTTTTransport.read_output_state)
+            current = transport.read_output_state(device_id=device_id, channel=channel,
+                **({"routine_read": True} if routine_parent else {}))
     except Exception:
         return refreshed
     # Production passes its independent clock. A read timestamp never advances

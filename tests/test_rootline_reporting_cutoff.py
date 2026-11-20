@@ -29,6 +29,30 @@ class ReportingCutoffTests(unittest.TestCase):
         self.assertFalse(result['success']);self.assertEqual(result['status'],'scheduled_reassessment_evidence_after_cutoff')
         writer.assert_not_called()
 
+    def test_invalid_reporting_evidence_cannot_create_available_program(self):
+        for observed in ((NOW+timedelta(seconds=1)).isoformat(),
+                         '2026-07-29T11:58:00'):
+            with self.subTest(observed=observed):
+                facts=evidence();facts['power']['observed_at']=observed
+                initial=evidence()
+                initial['forecast']['days'][0]['forecast_date']='2026-07-29'
+                available=plan.build_daily_program(initial,'2026-07-29',now=NOW)
+                available['generation']=1
+                with mock.patch.object(specialist,'read_current_water_energy_evidence',return_value=(facts,'2026-07-29',NOW)), mock.patch.object(plan,'ensure_saved_daily_program',return_value=(available,200)) as creator, mock.patch.object(plan,'revise_program_remainder') as reviser:
+                    result=specialist.refresh_current_rootline_specialist_result(now=NOW,evidence_cutoff=NOW)
+                self.assertFalse(result['success'])
+                creator.assert_not_called()
+                reviser.assert_not_called()
+
+    def test_saved_program_after_reporting_cutoff_still_rejected(self):
+        facts=evidence();facts['forecast']['days'][0]['forecast_date']='2026-07-29'
+        saved=plan.build_daily_program(facts,'2026-07-29',now=NOW+timedelta(seconds=1))
+        with mock.patch.object(specialist,'read_current_water_energy_evidence',return_value=(facts,'2026-07-29',NOW)), mock.patch.object(plan,'ensure_saved_daily_program',return_value=(saved,200)), mock.patch.object(plan,'revise_program_remainder') as reviser:
+            result=specialist.refresh_current_rootline_specialist_result(now=NOW,evidence_cutoff=NOW)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['status'],'scheduled_reassessment_evidence_after_cutoff')
+        reviser.assert_not_called()
+
     def test_bounded_past_evidence_retains_useful_report_and_replay(self):
         facts=evidence();facts['power']['solar_power_w']=1499
         result,writer,reader,stored=self.refresh(facts)
@@ -183,6 +207,29 @@ class ReportingCutoffPostgresTests(unittest.TestCase):
         with self.psycopg.connect(self.url) as c:
             c.execute('truncate power_readings_5min,power_latest_state,weather_forecast_snapshots,rootline_tank_observations,sam_live_stock_conversation_review_events,irrigation_events,irrigation_water_credit_events,power_daily_rollups,rootline_water_energy_plan_identities,rootline_water_energy_plan_generations cascade')
 
+    def seed_saved_program(self, facts):
+        # Reporting revises an existing nightly programme. Persist that prerequisite
+        # through the production append/readback rail, not a mocked writer.
+        initial=deepcopy(facts)
+        initial['forecast']['days'][0]['forecast_date']='2026-07-29'
+        saved=plan.build_daily_program(initial,'2026-07-29',now=NOW)
+        written,status=plan.append_water_energy_plan(saved,'reporting-cutoff-fixture',self.url)
+        self.assertLess(status,400);self.assertTrue(written['success'])
+        current,status=plan.get_current_water_energy_plan('2026-07-29',self.url)
+        self.assertLess(status,400);self.assertTrue(current['success'])
+        self.assertEqual(current['generation'],written['generation'])
+        self.assertEqual(current['evidence_sha256'],written['evidence_sha256'])
+        # Publish the first live remainder through the real production revision
+        # rail, so subsequent reporting proves replay of a reachable programme.
+        revised,status=plan.revise_program_remainder(current,facts,now=NOW,database_url=self.url)
+        self.assertLess(status,400);self.assertTrue(revised['success'])
+        current,status=plan.get_current_water_energy_plan('2026-07-29',self.url)
+        self.assertLess(status,400);self.assertEqual(current['generation'],revised['generation'])
+        with self.psycopg.connect(self.url) as c:
+            count=c.execute('select count(*) from rootline_water_energy_plan_generations').fetchone()[0]
+        self.assertEqual(count,2)
+        return count
+
     def insert_power(self,at,soc,*,ingested=None):
         with self.psycopg.connect(self.url) as c:
             c.execute("insert into power_readings_5min(reading_id,source_id,reading_at,battery_soc_pct,battery_power_w,\n                solar_power_w,load_power_w,grid_power_w,grid_active,generator_active,battery_charging,battery_discharging,ingested_at)\n                values (%s,'sunsynk-main-inverter',%s,%s,-200,3500,900,0,false,false,true,false,%s)",(at.isoformat(),at,soc,ingested or at))
@@ -271,11 +318,12 @@ class ReportingCutoffPostgresTests(unittest.TestCase):
             result=specialist.refresh_current_rootline_specialist_result(now=NOW,evidence_cutoff=NOW,database_url=self.url)
         self.assertFalse(result['success'])
         with self.psycopg.connect(self.url) as c:self.assertEqual(c.execute('select count(*) from rootline_water_energy_plan_generations').fetchone()[0],0)
+        seeded_generations=self.seed_saved_program(evidence())
         with mock.patch.object(specialist,'read_current_water_energy_evidence',return_value=(evidence(),'2026-07-29',NOW)):
             first=specialist.refresh_current_rootline_specialist_result(now=NOW,evidence_cutoff=NOW,database_url=self.url)
             second=specialist.refresh_current_rootline_specialist_result(now=NOW,evidence_cutoff=NOW,database_url=self.url)
         self.assertTrue(first['success']);self.assertEqual(first['canonical_plan'],second['canonical_plan'])
-        with self.psycopg.connect(self.url) as c:self.assertEqual(c.execute('select count(*) from rootline_water_energy_plan_generations').fetchone()[0],1)
+        with self.psycopg.connect(self.url) as c:self.assertEqual(c.execute('select count(*) from rootline_water_energy_plan_generations').fetchone()[0],seeded_generations)
 
     def test_reporting_race_retains_prior_power_and_same_canonical_generation(self):
         old=NOW-timedelta(minutes=2)
@@ -284,6 +332,7 @@ class ReportingCutoffPostgresTests(unittest.TestCase):
             packet,_=power.get_current_power_state(database_url=self.url,as_of=kwargs['evidence_cutoff'])
             facts=evidence();facts['power']=plan._normalize_power(packet)
             return facts,'2026-07-29',NOW
+        self.seed_saved_program(load(evidence_cutoff=NOW)[0])
         with mock.patch.object(specialist,'read_current_water_energy_evidence',side_effect=load):
             before=specialist.refresh_current_rootline_specialist_result(now=NOW,evidence_cutoff=NOW,database_url=self.url)
             self.insert_power(NOW+timedelta(seconds=30),5)

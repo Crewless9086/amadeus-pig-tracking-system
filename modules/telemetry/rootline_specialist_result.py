@@ -186,21 +186,26 @@ def refresh_current_rootline_specialist_result(
     from modules.telemetry.rootline_water_energy_plan import (
         ensure_saved_daily_program, revise_program_remainder)
     selected_date = str(operating_date or generated_at.date().isoformat())[:10]
-    saved, status = ensure_saved_daily_program(selected_date, database_url=database_url,
-        now=generated_at, actor_identity=actor_identity)
-    if status >= 400 or saved.get("success") is not True:
-        return _unavailable_result(selected_date, generated_at, saved.get("status"))
     evidence, _, _ = read_current_water_energy_evidence(
         operating_date=selected_date, database_url=database_url, now=generated_at,
         forecast_mode="live_only",
         **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}))
     if evidence_cutoff is not None:
         error = _reporting_evidence_error(evidence, evidence_cutoff, generated_at)
+        if error:
+            return {**_unavailable_result(selected_date, generated_at, error),
+                "status": error}
+    # Reject inadmissible reporting evidence before initial programme persistence.
+    saved, status = ensure_saved_daily_program(selected_date, database_url=database_url,
+        now=generated_at, actor_identity=actor_identity)
+    if status >= 400 or saved.get("success") is not True:
+        return _unavailable_result(selected_date, generated_at, saved.get("status"))
+    if evidence_cutoff is not None:
         saved_cutoff = datetime.fromisoformat(saved["daily_program"]["creation_cutoff"])
-        if error or saved_cutoff > evidence_cutoff:
-            return {**_unavailable_result(selected_date, generated_at, error or
+        if saved_cutoff > evidence_cutoff:
+            return {**_unavailable_result(selected_date, generated_at,
                 "scheduled_reassessment_evidence_after_cutoff"),
-                "status": error or "scheduled_reassessment_evidence_after_cutoff"}
+                "status": "scheduled_reassessment_evidence_after_cutoff"}
     current, status = revise_program_remainder(saved, evidence, now=generated_at,
         database_url=database_url, actor_identity=actor_identity)
     if status >= 400 or current.get("success") is not True:
