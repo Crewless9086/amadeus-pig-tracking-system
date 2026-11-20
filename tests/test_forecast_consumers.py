@@ -51,7 +51,7 @@ def payload(provider="visual_crossing",age=5, count=3):
     source_id=next(key for key,value in subject.FORECAST_PROVIDERS.items() if value==provider)
     today=datetime.now(subject.ZA_TZ).date()
     provenance={"provider":provider,"source_id":source_id,"forecast_run_at":run.isoformat(),"fetched_at":run.isoformat(),"freshness_basis":"retrieved","provider_model_updated_at":None,"local_observation_credit":False}
-    return {"source_id":source_id,"provider":provider,"forecast_run_at":run.isoformat(),"timezone":"Africa/Johannesburg","days":[{"forecast_date":(today+timedelta(days=i)).isoformat(),"offset_days":i,"rain_sum_mm":2,"rain_probability_max_pct":30,"wind_max_kmh":10,"gust_max_kmh":15,"temp_max_c":25,"temp_min_c":10,"provenance":provenance,"provider_daily_chance_of_rain_pct":10,"provider_source":"comb" if i==0 else "fcst","provider_hour_sources":["obs","fcst"] if i==0 else ["fcst"]} for i in range(count)]}
+    return {"source_id":source_id,"provider":provider,"provenance":provenance,"forecast_run_at":run.isoformat(),"timezone":"Africa/Johannesburg","days":[{"forecast_date":(today+timedelta(days=i)).isoformat(),"offset_days":i,"rain_sum_mm":2,"rain_probability_max_pct":30,"wind_max_kmh":10,"gust_max_kmh":15,"temp_max_c":25,"temp_min_c":10,"provenance":provenance,"provider_daily_chance_of_rain_pct":10,"provider_source":"comb" if i==0 else "fcst","provider_hour_sources":["obs","fcst"] if i==0 else ["fcst"]} for i in range(count)]}
 
 
 def seed(database, packet):
@@ -158,6 +158,7 @@ def test_ingest_rejects_untrustworthy_identity_time_and_dates(mutation):
 def test_legacy_partial_payload_remains_accepted_and_null_is_not_zero():
     packet=payload(count=1)
     packet.pop("provider")
+    packet.pop("provenance")
     packet["days"][0].pop("provenance")
     packet["days"][0]["rain_sum_mm"]=None
     rows=subject._normalize_forecast_payload(packet)
@@ -348,3 +349,18 @@ def test_real_postgres_nightly_target_pin_midday_and_completed_cutoff(clean_data
             (json.dumps(cycle),'visual-crossing-forecast-main'))
     future,status=subject.get_weather_forecast(1,db,operating_date=target.isoformat(),as_of=at,nightly=True)
     assert future['success'] is False
+
+
+def test_consumer_fixture_exposes_ingest_provenance_before_database_setup():
+    packet=payload()
+    cycle={'attempt_id':'offline-cycle','cycle_date':'2026-11-20','operating_date':'2026-11-21'}
+    packet['provenance']['nightly_cycle']=cycle
+    assert packet['provenance']['provider']==packet['provider']
+    assert packet['provenance']['source_id']==packet['source_id']
+    assert packet['provenance']['forecast_run_at']==packet['forecast_run_at']
+    assert all(day['provenance']['nightly_cycle']==cycle for day in packet['days'])
+    # The production normalizer still validates every period; this fixture
+    # correction does not bypass the separate persisted claim/receipt gate.
+    normalized=subject._normalize_forecast_payload(packet)
+    assert len(normalized)==3
+    assert all(json.loads(row['raw_payload'])['provenance']['nightly_cycle']==cycle for row in normalized)
