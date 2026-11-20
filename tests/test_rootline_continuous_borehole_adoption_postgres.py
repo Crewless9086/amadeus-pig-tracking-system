@@ -213,7 +213,9 @@ def test_actual_scheduler_composition_adopts_on_while_new_start_plan_waits(datab
         lambda *args, **kwargs: (snapshot(now=now()), 200))
     def evidence_loader(**kwargs):
         stamp = now()
-        return ({"power": {"observed_at": stamp.isoformat(), "solar_power_w": 2000},
+        return ({"power": {"observed_at": stamp.isoformat(), "solar_power_w": 1499,
+            "battery_soc_pct": 60, "grid_power_w": 0, "load_power_w": 1000,
+            "battery_power_w": -499, "battery_state": "charging"},
             "forecast": {"observed_at": stamp.isoformat(), "days": [{"rain_sum_mm": 20}]}},
             stamp.astimezone(ZA_TZ).date().isoformat(), stamp)
     transport = Transport()

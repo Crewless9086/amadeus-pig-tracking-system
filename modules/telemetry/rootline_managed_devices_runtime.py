@@ -9,9 +9,10 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import os
+from time import sleep, monotonic
 
 from modules.telemetry.rootline_cycle_budget import (
-    mandatory_safety, remaining_seconds, RootlineCycleDeadlineExceeded,
+    mandatory_safety, remaining_seconds, on_deadline, RootlineCycleDeadlineExceeded,
 )
 from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
 from modules.telemetry.rootline_borehole_commissioning import advance_borehole_execution
@@ -38,11 +39,153 @@ class ManagedDevicePlanningUnavailable(Exception):
 
 
 @timed_control_call
-def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
+def run_rootline_managed_device_cycle(*, deadline_wait=None, **kwargs):
+    """Supervise owned injector deadlines alongside independent device work.
+
+    Waiting owns no database lock and does not synthesize provider reads. The
+    existing work deadline leaves its existing mandatory shutdown reserve.
+    """
+    clock = kwargs.get("clock") or (lambda: datetime.now(timezone.utc))
+    kwargs["clock"] = clock
+    if deadline_wait is not None:
+        kwargs["deadline_wait"] = deadline_wait
+    result = _run_rootline_managed_device_cycle(**kwargs)
+    # Only a just-started injector can introduce a new near deadline after the
+    # inventory safety pass. Empty/mixer-only cycles retain zero extra reads.
+    def started(value):
+        if (value.get("status") == "auxiliary_started"
+                and (value.get("execution") or {}).get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"):
+            return value["execution"]
+        return next((row for child in value.get("outcomes", [])
+            if isinstance(child, dict) for row in [started(child)] if row), None)
+    active = started(result)
+    continuation = (_finish_injector_deadline(
+        store=kwargs.get("store", rootline_irrigation_execution_store),
+        transport=kwargs["transport"], clock=clock, wait=deadline_wait or sleep,
+        active=active, horizon_seconds=120, require_stop=True) if active else None)
+    return (_combined([result, continuation], "no_active_managed_device")
+        if continuation is not None else result)
+
+
+def _admit_injector_wait(delay):
+    remaining_seconds(minimum=delay)
+    # mandatory_safety clears the optional work deadline but deliberately
+    # retains this original cycle bound. Waiting must not spend the OFF tail.
+    deadline = on_deadline()
+    if deadline is not None and deadline-monotonic() <= delay:
+        raise RootlineCycleDeadlineExceeded("injector_wait_exceeds_cycle_budget")
+
+
+def _finish_injector_deadline(*, store, transport, clock, wait, horizon_seconds=None, verify_parent=False, active=None, inventory=None, require_stop=False):
+    """Do not return to a minute tick that would miss this owned deadline.
+
+    A conflict with another known stop or exhausted work budget causes early
+    OFF with partial programme credit. Native inching remains optional.
+    """
+    identity = "FERTILIZER-INJECTION-CH1"
+    observed_transport = _AttemptedTransport(transport)
+    try:
+        active = active if active is not None else store("load_active_auxiliary", identity)
+        if not active or active.get("stop_mode") != "scheduled":
+            return None
+        if (active.get("auxiliary_device_id") != identity
+                or active.get("device_id") != "100204d497"
+                or type(active.get("channel")) is not int or active["channel"] != 1
+                or not active.get("execution_id")):
+            raise RootlineExecutionStoreUnavailable("injector_deadline_identity_unproven")
+        if active.get("state") != "Active":
+            return None  # Existing claim/restart recovery owns these states.
+        try:
+            deadline = _aware(datetime.fromisoformat(str(active.get("primary_stop_deadline") or "").replace("Z", "+00:00")))
+        except (ValueError, TypeError):
+            return None  # Existing ambiguous-deadline recovery must still run.
+        now = _aware(clock())
+        delay = (_aware(deadline)-now).total_seconds()
+        from modules.oom_sakkie.automatic_reassessment_scheduler import CADENCE_MINUTES
+        horizon = CADENCE_MINUTES * 60 if horizon_seconds is None else horizon_seconds
+        reason = None
+        if delay > horizon:
+            if not require_stop:
+                return None
+            # A newly started pulse cannot escape its same-call stop duty if
+            # the wall clock reverses before the epilogue.
+            reason = "injector_deadline_clock_unproven"
+        if delay > 0 and reason is None:
+            try:
+                # Inventory and budget precede any provider observation/wait.
+                # Do not postpone an earlier known duty just to verify a pulse
+                # that must already stop early to preserve that duty.
+                _admit_injector_wait(delay)
+                others = inventory["aux"] if inventory is not None else store("load_active_auxiliaries", None)
+                parent = store("load_active", None)
+                borehole = inventory["borehole"] if inventory is not None else store("load_active_borehole", None)
+                if inventory is not None and inventory.get("proven") is not True:
+                    raise RootlineExecutionStoreUnavailable("deadline_inventory_unproven")
+                if not isinstance(others, list) or any(not isinstance(row, dict) for row in others):
+                    raise RootlineExecutionStoreUnavailable("deadline_inventory_unproven")
+                from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+                for row in others + [parent, borehole]:
+                    if not row or row.get("execution_id") == active["execution_id"] or continuous_borehole(row):
+                        continue
+                    other_deadline = datetime.fromisoformat(str(row.get("primary_stop_deadline") or "").replace("Z", "+00:00"))
+                    if _aware(other_deadline) <= _aware(deadline):
+                        reason = "injector_early_stop_other_owned_deadline"
+                        break
+            except RootlineCycleDeadlineExceeded:
+                reason = "injector_early_stop_worker_budget"
+            except Exception:
+                reason = "injector_deadline_inventory_unproven"
+        if delay > 0 and verify_parent and reason is None:
+            # Preserve the existing fresh parent ON supervision before waiting.
+            # This replaces the normal initial pass, rather than duplicating it.
+            with mandatory_safety():
+                current = advance_auxiliary_execution(eligibility={}, store=store,
+                    transport=observed_transport, now=now, clock=clock,
+                    auxiliary_device_id=identity, expected_execution_id=active["execution_id"],
+                    expected_stop_deadline=active["primary_stop_deadline"])
+            if current.get("status") != "auxiliary_active":
+                return {**current, "managed_device": identity, "managed_device_recovery": True,
+                    "blocks_bc": current.get("status") not in {
+                        "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified",
+                        "auxiliary_recovery_already_terminal", "auxiliary_emergency_off_verified"}}
+            delay = (_aware(deadline)-_aware(clock())).total_seconds()
+        if delay > 0 and reason is None:
+            try:
+                # Reads may consume time. Never sleep the stale original delay,
+                # extend optional work, or loop on a wall-clock reversal.
+                delay = max(0.0, (_aware(deadline)-_aware(clock())).total_seconds())
+                _admit_injector_wait(delay)
+                if delay > horizon:
+                    reason = "injector_deadline_clock_unproven"
+                elif delay:
+                    wait(delay)
+                if _aware(clock()) < _aware(deadline):
+                    reason = "injector_deadline_clock_unproven"
+            except RootlineCycleDeadlineExceeded:
+                reason = "injector_early_stop_worker_budget"
+            except Exception:
+                reason = "injector_deadline_wait_unproven"
+        with mandatory_safety():
+            result = advance_auxiliary_execution(eligibility={}, store=store,
+                transport=observed_transport, now=_aware(clock()), clock=clock,
+                auxiliary_device_id=identity, expected_execution_id=active["execution_id"],
+                stop_for_deadline=reason, expected_stop_deadline=active["primary_stop_deadline"])
+        return {**result, "managed_device": identity, "managed_device_recovery": True,
+            "blocks_bc": result.get("status") not in {
+                "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified",
+                "auxiliary_recovery_already_terminal", "auxiliary_emergency_off_verified"}}
+    except Exception as exc:
+        return {**_safe("injector_deadline_supervision_unproven", blocks_bc=True),
+            "success": False, "effects_unknown": True, "managed_device": identity,
+            "error_type": type(exc).__name__, "hardware_commands": observed_transport.commands}
+
+
+def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         store=rootline_irrigation_execution_store, canonical_loader=None,
         connect_factory=None, now=None, evidence_factory=None, allow_new_starts=True,
         allow_borehole_starts=None, energy_reader=None, borehole_safety_reader=None,
-        clock=None, after_safety=None, borehole_conditions_reader=None, refresh_after_safety=True):
+        clock=None, after_safety=None, borehole_conditions_reader=None, refresh_after_safety=True,
+        deadline_wait=None):
     """Supervise every owned device, then admit independent eligible work.
 
     The shared transaction locks serialize command edges. They do not reserve
@@ -62,7 +205,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         borehole_safety_reader=borehole_safety_reader, clock=clock,
         borehole_conditions_reader=borehole_conditions_reader,
         defer_no_send_proof=defer_no_send if callable(after_safety) else None,
-        deferred_no_send=deferred_no_send)
+        deferred_no_send=deferred_no_send, deadline_wait=deadline_wait)
     initial = _supervise_owned_devices(**safety_args)
     outcomes = list(initial["outcomes"])
     active_aux = initial["active_aux"]
@@ -86,8 +229,10 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     optional_proof_started = False
     if after_safety is not None:
         callback_completed = False
+        callback_requires_refresh = True
         try:
-            after_safety(_combined(outcomes, "no_active_managed_device"))
+            callback_requires_refresh = after_safety(
+                _combined(outcomes, "no_active_managed_device")) is not False
             callback_completed = True
         finally:
             # A no-op callback can still follow slow mandatory reads. Preserve
@@ -98,9 +243,12 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             if initial["active_borehole"]:
                 owned_deadline_due = owned_deadline_due or not _before_deadline(
                     initial["active_borehole"], checked_at)
-            if (refresh_after_safety or not callback_completed or owned_deadline_due
+            if ((refresh_after_safety and callback_requires_refresh)
+                    or not callback_completed or owned_deadline_due
                     or not initial["auxiliary_inventory_proven"]
-                    or not initial["borehole_inventory_proven"]):
+                    or not initial["borehole_inventory_proven"]
+                    or any(row.get("success") is not True or row.get("effects_unknown") is True
+                        for row in initial["outcomes"])):
                 refresh_safety()
         # B/C may take time or overlap another canonical claim. Safety is fresh
         # before optional retirement, and again after actual optional planning.
@@ -241,6 +389,12 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             now=now, auxiliary_device_id=identity, clock=clock)
         outcomes.append({**result, "managed_device": identity,
             "blocks_bc": identity == "FERTILIZER-INJECTION-CH1" and result.get("status") == "auxiliary_started"})
+        if (identity == "FERTILIZER-INJECTION-CH1"
+                and result.get("status") == "auxiliary_started"
+                and (result.get("execution") or {}).get("stop_mode") == "scheduled"):
+            # The public wrapper now owns this pulse through OFF. Do not spend
+            # its remaining window on another optional start or provider read.
+            return _combined(outcomes, "no_eligible_managed_device_task")
 
     borehole = packet.get("borehole_execution") or {}
     if ("BOREHOLE-1-MINI-R4-CH1" in pending and allow_borehole_starts
@@ -265,7 +419,7 @@ def run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
 def _supervise_owned_devices(*, store, transport, energy_reader,
         borehole_safety_reader, clock, previous_borehole=None, previous_due_auxiliaries=(),
         borehole_conditions_reader=None,
-        defer_no_send_proof=None, deferred_no_send=None):
+        defer_no_send_proof=None, deferred_no_send=None, deadline_wait=None):
     # Inventory, due OFF, and durable final proof remain mandatory even when
     # the shared optional-work deadline expired. ON keeps its original fence.
     with mandatory_safety():
@@ -274,13 +428,14 @@ def _supervise_owned_devices(*, store, transport, energy_reader,
             clock=clock, previous_borehole=previous_borehole,
             borehole_conditions_reader=borehole_conditions_reader,
             previous_due_auxiliaries=previous_due_auxiliaries,
-            defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send)
+            defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send,
+            deadline_wait=deadline_wait)
 
 
 def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
         borehole_safety_reader, clock, previous_borehole, previous_due_auxiliaries,
         borehole_conditions_reader=None,
-        defer_no_send_proof=None, deferred_no_send=None):
+        defer_no_send_proof=None, deferred_no_send=None, deadline_wait=None):
     outcomes = []
     auxiliary_inventory_proven = borehole_inventory_proven = True
     try:
@@ -301,8 +456,29 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
     # Capture every obligation first. Failure of one device never skips another
     # device's deadline or permits a new claim for the failed device.
     due_auxiliaries = []
+    deadline_results = {}
+    # Reuse this mandatory inventory. An owned short injector precedes slow
+    # broader provider supervision, while earlier known duties force partial
+    # OFF instead of a wait. No new registry read is added to an idle cycle.
+    for active in active_aux:
+        if (active.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
+                and active.get("stop_mode") == "scheduled" and active.get("state") == "Active"
+                and active not in previous_due_auxiliaries):
+            # Wait admission uses the original cycle bound retained by the
+            # ON deadline even inside mandatory safety.
+            result = _finish_injector_deadline(store=store, transport=transport,
+                clock=clock, wait=deadline_wait or sleep, horizon_seconds=120,
+                verify_parent=True, active=active,
+                inventory={"aux": active_aux, "borehole": active_borehole,
+                    "proven": auxiliary_inventory_proven and borehole_inventory_proven})
+            if result is not None:
+                deadline_results[active.get("execution_id")] = result
+                due_auxiliaries.append(deepcopy(active))
     for active in active_aux:
         identity = active.get("auxiliary_device_id")
+        if active.get("execution_id") in deadline_results:
+            outcomes.append(deadline_results[active["execution_id"]])
+            continue
         observed_transport = _AttemptedTransport(transport)
         now = _aware(clock())
         try:
@@ -353,7 +529,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             try:
                 energy = energy_reader() if continuing and energy_reader is not None else {}
                 known = (energy.get("continuous_borehole_fresh", energy.get("borehole_fresh", energy.get("fresh")))
-                    if continuous else energy.get("fresh"))
+                    if continuous else energy.get("borehole_fresh", energy.get("fresh")))
                 eligible = (energy.get("continuous_borehole_eligible", energy.get("borehole_eligible"))
                     if continuous else energy.get("borehole_eligible"))
                 energy_reason = (energy.get("continuous_borehole_reason", energy.get("borehole_reason"))

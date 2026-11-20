@@ -1,5 +1,46 @@
 # Implementation Source Map
 
+## ROOTLINE borehole AC backup and concurrent recovery
+
+- The owner correction of 20 November identifies device 1002851416/channel 1
+  as borehole AC backup; its OFF state does not prove that the separate solar
+  pump stopped. Stable commissioned identities and authority remain in use.
+- `rootline_energy_policy.py` maps fresh sunshine at or above the agreed 1.5 kW
+  proxy to AC backup OFF eligibility. The existing managed execution path owns
+  shutdown and prevents a new AC start while solar conditions suffice. Existing
+  below-threshold battery/grid policy and other devices remain separate.
+- Owner-facing transitions distinguish AC backup state from unmeasured pumping.
+  Tests, release and genuine runtime/provider verification remain distinct gates.
+- Auxiliary historical outcomes remain appendable during command locks so final
+  recovery revalidation can observe contradictions. Actual commands and claims
+  retain their fences; late history invalidates stale recovery proof rather than
+  reopening commands or discarding reservations.
+
+## ROOTLINE operating recovery and reporting cutoff
+
+- `rootline_irrigation_execution_store.py` serializes auxiliary startup retirement
+  with exact claim/OFF evidence and preserves uncertain sender outcomes.
+- `rootline_irrigation_coordinator.py` and `rootline_managed_devices_runtime.py`
+  supervise a newly started injector before returning within the original cycle
+  budget; no optional start delays its saved OFF obligation. The existing
+  water-energy planner permits independent qualified mixing opportunities.
+- `rootline_borehole_commissioning.py` distinguishes pending-start observation
+  from the slower routine active-state observation cadence.
+- `modules/oom_sakkie/telegram_gateway.py` omits a redundant middle refresh only
+  for a successful inert planner hold; due or uncertain duties and final safety
+  supervision still run. Reporting never extends the equipment work deadline.
+- Scheduled reports use the optional original-trigger cutoff in
+  `rootline_water_energy_plan.py`, `rootline_specialist_result.py`,
+  `rootline_irrigation_history.py`, `power_service.py` and `weather_service.py`.
+  Whole forecast runs, independent tank observations and prior power history
+  remain attributable; missing historical evidence is unavailable. This is an
+  observation cutoff, not a historical policy/configuration reconstruction.
+- Regression coverage includes `test_rootline_injector_deadline.py`,
+  `test_rootline_auxiliary_startup_recovery_postgres.py`,
+  `test_rootline_borehole_start_observation.py`,
+  `test_rootline_reporting_starvation.py` and `test_rootline_reporting_cutoff.py`.
+  No new scheduler, schema, device identity, authority or operating limit is added.
+
 ## ROOTLINE integrated operation
 
 - `modules/telemetry/rootline_execution_runtime.py`,

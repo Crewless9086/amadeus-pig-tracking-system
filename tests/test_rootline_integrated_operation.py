@@ -117,6 +117,13 @@ class Store:
         if action=="load_auxiliary_containment": return None
         if action=="load_auxiliary_physical_outcome": return None
         if action=="load_auxiliary_off_attempts": return [{"attempt":n} for identity,n in self.off if identity==payload]
+        if action=="dispatch_auxiliary_off_edge":
+            slot={key:payload[key] for key in ("execution_id","attempt")}
+            if self("claim_auxiliary_off_attempt",slot).get("created") is not True:
+                return {"provider_command_attempted":False}
+            outcome=payload["dispatch"]()
+            self("record_auxiliary_off_outcome",{**slot,"outcome":outcome})
+            return {**outcome,"provider_command_attempted":True}
         if action=="dispatch_auxiliary_on_edge": return payload["dispatch"]()
         if action=="claim_auxiliary_before_on":
             if payload["consumption_key"] in self.claims: return {"success":True,"created":False}
@@ -218,7 +225,7 @@ def test_a_and_e_mapping_is_ready_but_cannot_inherit_bc_authority():
     for zone,channel in [("A12345",4),("E12345",3)]:
         row=get_device_contract(zone)
         assert row["channel"] == channel and not row["commissioned"]
-        assert row["plumbing_ready"] is (zone == "A12345")
+        assert row["plumbing_ready"] is True
         with pytest.raises(ValueError): commissioned_irrigation_contract(zone)
 
 

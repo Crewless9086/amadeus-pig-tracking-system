@@ -430,7 +430,7 @@ def build_weather_dry_release_evidence(rows, *, evaluated_at, stale_after_minute
         "writes_to_supabase": False, "writes_to_sheets": False}
 
 
-def get_weather_forecast(days=3, database_url=None):
+def get_weather_forecast(days=3, database_url=None, *, as_of=None):
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     days = _bounded_days(days)
     database_url = _database_url(database_url)
@@ -447,8 +447,19 @@ def get_weather_forecast(days=3, database_url=None):
             with connection.cursor() as cursor:
                 # One statement snapshot binds provider metadata and all days
                 # to the same chosen run even if another provider commits now.
-                cursor.execute(
-                    _FORECAST_RUN_CTE + """
+                if as_of is not None and (
+                        not isinstance(as_of, datetime) or as_of.tzinfo is None):
+                    raise ValueError("forecast_as_of_requires_aware_datetime")
+                # The optional reporting epoch bounds both provider selection
+                # and every selected day; current callers retain DB-now semantics.
+                anchor = "(select at from reporting_epoch)" if as_of is not None else "now()"
+                cte = _FORECAST_RUN_CTE
+                if as_of is not None:
+                    cte = cte.replace("with selected_forecast_run as (",
+                        "with reporting_epoch as (select %s::timestamptz as at), selected_forecast_run as (")
+                    cte = cte.replace("now()", anchor).replace(
+                        "and f.forecast_run_at <=", "and f.ingested_at <= " + anchor + "\n       and f.forecast_run_at <=")
+                query = cte + """
                     select ts.source_id, ts.display_name, ts.provider, ts.stale_after_minutes,
                            f.forecast_run_at, f.timezone, f.forecast_date, f.offset_days,
                            f.temp_max_c, f.temp_min_c, f.rain_sum_mm, f.rain_probability_max_pct,
@@ -462,9 +473,11 @@ def get_weather_forecast(days=3, database_url=None):
                        and f.forecast_date < timezone('Africa/Johannesburg', now())::date + %s
                      order by f.forecast_date asc
                      limit %s
-                    """,
-                    (days, days),
-                )
+                    """
+                if as_of is not None:
+                    query = query.replace("now()", anchor).replace(
+                        "where f.forecast_date >=", "where f.ingested_at <= " + anchor + " and f.forecast_date >=")
+                cursor.execute(query, (as_of, days, days) if as_of is not None else (days, days))
                 selected_rows = cursor.fetchall()
                 source_row = selected_rows[0][:4] if selected_rows else None
                 rows = [row[4:] for row in selected_rows]
@@ -481,7 +494,7 @@ def get_weather_forecast(days=3, database_url=None):
             "window": {"requested_days": days, "returned_days": 0},
         }, 200
 
-    return _format_forecast_response(source_row, rows, days), 200
+    return _format_forecast_response(source_row, rows, days, now=as_of), 200
 
 
 def get_weather_today_summary(summary_date=None, database_url=None):
@@ -802,12 +815,12 @@ def _format_current_weather_response(row, *, now=None):
     }
 
 
-def _format_forecast_response(source_row, rows, requested_days):
+def _format_forecast_response(source_row, rows, requested_days, *, now=None):
     source_id, display_name, provider, stale_after_minutes = source_row or (
         DEFAULT_FORECAST_SOURCE_ID, "Amadeus Forecast", "open_meteo", 360
     )
     forecast_run_at = rows[0][0]
-    age_minutes = max(0, int((datetime.now(timezone.utc) - forecast_run_at.astimezone(timezone.utc)).total_seconds() // 60))
+    age_minutes = max(0, int(((now or datetime.now(timezone.utc)) - forecast_run_at.astimezone(timezone.utc)).total_seconds() // 60))
     is_stale = age_minutes > int(stale_after_minutes)
     days = []
     for row in rows:
@@ -869,7 +882,7 @@ def _format_forecast_response(source_row, rows, requested_days):
             "returned_days": len(days),
             "coverage_start": days[0]["forecast_date"],
             "coverage_end": days[-1]["forecast_date"],
-            "covers_today": any(day["forecast_date"] == datetime.now(ZA_TZ).date().isoformat() for day in days),
+            "covers_today": any(day["forecast_date"] == (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ).date().isoformat() for day in days),
             "complete_requested_horizon": len(days) == requested_days,
             "timezone": rows[0][1],
         },

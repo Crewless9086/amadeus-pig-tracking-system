@@ -137,11 +137,14 @@ def compose_transition_notice(state, execution, *, language="en"):
     if execution.get("action") == "record_eskom_completed":
         label = "Eskom-toevoer" if af else "Eskom supply"
     else:
-        label = labels.get(kind, "Boorgattoevoer" if af else "Borehole supply")
+        label = labels.get(kind, "Boorgat se AC-rugsteun" if af else "Borehole AC backup")
     observed = datetime.fromisoformat(execution["notification_observed_at"])
     stamp = observed.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%d %b %H:%M")
     on = state == "Started"
     edge = ("AAN" if on else "AF") if af else ("ON" if on else "OFF")
     header = "ROOTLINE — TOERUSTING" if af else "ROOTLINE — EQUIPMENT"
     body = f"{label}: {edge} bevestig op {stamp} SAST." if af else f"{label}: {edge} verified at {stamp} SAST."
+    if execution.get("action") in {"mark_borehole_active", "record_borehole_completed"}:
+        body += (" Die pomp se eie sonkragwerking is nie hierdeur bevestig nie." if af else
+            " This does not verify whether the pump is operating on its own solar supply.")
     return f"<b>{header}</b>\n\n{body}"

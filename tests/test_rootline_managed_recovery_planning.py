@@ -24,11 +24,12 @@ FLAGS = ("ROOTLINE_FERTILIZER_MIXING_ENABLED", "ROOTLINE_FERTILIZER_INJECTION_EN
 
 @pytest.fixture(autouse=True)
 def fresh_synthetic_power(monkeypatch):
+    # Keep backup eligible until the scenario introduces its intended stop duty.
     monkeypatch.setattr(plan_module,"read_current_borehole_faults",lambda *_,**__:True)
     monkeypatch.setattr("modules.telemetry.power_service.get_current_power_state",
         lambda **_: ({"success":True,"source":{"last_reading_at":NOW.isoformat()},
-            "current":{"battery_soc_pct":90,"solar_power_w":3000,"load_power_w":1000,
-                "grid_power_w":0,"battery_power_w":-2000,"battery_state":"charging"}},200))
+            "current":{"battery_soc_pct":90,"solar_power_w":1499,"load_power_w":1000,
+                "grid_power_w":0,"battery_power_w":-499,"battery_state":"charging"}},200))
 
 
 def predecessor_ast():
@@ -108,12 +109,13 @@ class Store:
             return [{"attempt": n} for n in sorted(self.used.get(payload, set()))]
         if action == "load_auxiliary_physical_outcome":
             return None
-        if action == "dispatch_borehole_off_edge":
+        if action in {"dispatch_borehole_off_edge", "dispatch_auxiliary_off_edge"}:
+            family = "borehole" if action == "dispatch_borehole_off_edge" else "auxiliary"
             slot = {key: payload[key] for key in ("execution_id", "attempt")}
-            if not self("claim_borehole_off_attempt", slot)["created"]:
+            if not self("claim_" + family + "_off_attempt", slot)["created"]:
                 return {"accepted_unambiguous": False, "provider_command_attempted": False}
             outcome = payload["dispatch"]()
-            self("record_borehole_off_outcome", {**slot, "outcome": outcome})
+            self("record_" + family + "_off_outcome", {**slot, "outcome": outcome})
             return {**outcome, "provider_command_attempted": True}
         if action == "record_borehole_aborted":
             return {"success": False, "provider_final_off_evidence": payload["read_final_off"]()}

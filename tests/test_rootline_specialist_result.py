@@ -283,7 +283,7 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         result = self.build(tanks={})
         self.assertEqual(result["water_observations"]["status"], "Unavailable")
         self.assertEqual(
-            self.recommendation(result, "borehole")["status"], "Recommend"
+            self.recommendation(result, "borehole")["status"], "Do Not Run"
         )
         self.assertTrue(result["current_power"]["battery_soc_pct"])
         self.assertEqual(result["owner_questions"], [])
@@ -314,7 +314,7 @@ class RootlineSpecialistResultTests(unittest.TestCase):
 
     def test_water_emergency_outranks_grid_avoidance(self):
         result = self.build(
-            power=evidence()["power"] | {"battery_soc_pct": 42},
+            power=evidence()["power"] | {"battery_soc_pct": 42, "solar_power_w": 1499},
             water_demand={"status": "urgent"},
         )
         borehole = self.recommendation(result, "borehole")
@@ -326,7 +326,7 @@ class RootlineSpecialistResultTests(unittest.TestCase):
             "observed_at": "2026-07-29T04:00:00+02:00",
         }
         result = self.build(
-            power=evidence()["power"] | {"battery_soc_pct": 73},
+            power=evidence()["power"] | {"battery_soc_pct": 73, "solar_power_w": 1499},
             forecast=stale_forecast,
             tanks=evidence()["tanks"] | {
                 "storage_reported_count": 3.75,
@@ -382,10 +382,9 @@ class RootlineSpecialistResultTests(unittest.TestCase):
                              for question in result["owner_questions"]))
 
 
-    def test_standing_supply_survives_rain_forecast_and_unknown_storage_without_actuation(self):
-        # Owner correction 2026-10-29 replaces weather/tank-based borehole
-        # stopping. Internal cutoff governs full tanks; runtime energy and
-        # installed protections remain separate mandatory execution gates.
+    def test_sunshine_keeps_ac_backup_off_across_rain_forecast_and_storage_evidence(self):
+        # The 2026-11-20 AC-backup correction holds even when weather and
+        # storage facts differ. Switch policy cannot establish solar pumping.
         for weather in ({}, evidence()["weather"], evidence()["weather"] | {
                 "rain_rate_mm_h":3, "rain_today_mm":20}, evidence()["weather"] | {
                 "conflicting":True}):
@@ -395,8 +394,8 @@ class RootlineSpecialistResultTests(unittest.TestCase):
                     result=self.build(weather=weather,tanks=tanks,forecast=evidence()["forecast"] | {
                         "days":[{"rain_sum_mm":20,"rain_probability_max_pct":100}]})
                     borehole=self.recommendation(result,"borehole")
-                    self.assertEqual(borehole["status"],"Recommend")
-                    self.assertIn("internal full-tank cutoff",borehole["reason"])
+                    self.assertEqual(borehole["status"],"Do Not Run")
+                    self.assertIn("AC backup OFF",borehole["reason"])
                     self.assertFalse(borehole["command_authority"])
                     self.assertEqual(result["outcome_separation"]["water_flow"],"Unavailable")
                     self.assertNotEqual(result["next_reassessment"]["trigger"],"bounded_forecast_rain_check")

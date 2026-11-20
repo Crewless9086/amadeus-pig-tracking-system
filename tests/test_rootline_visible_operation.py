@@ -148,7 +148,7 @@ def test_two_concurrent_workers_cannot_duplicate_transition_send():
     def send(chat,text,**kwargs):sends.append(text);return {'success':True,'telegram_message_id':str(len(sends))}
     with ThreadPoolExecutor(max_workers=2) as pool:
         outcomes=list(pool.map(lambda i:gateway(events,send,now=NOW+timedelta(minutes=i)),range(2)))
-    assert len([x for x in sends if 'Borehole supply' in x])==1
+    assert len([x for x in sends if 'Borehole AC backup' in x])==1
 
 
 def test_expired_optional_budget_never_delivers_or_loads_notifications():

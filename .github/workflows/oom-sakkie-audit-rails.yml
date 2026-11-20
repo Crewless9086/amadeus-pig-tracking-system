@@ -431,7 +431,17 @@ jobs:
           tests/test_report_diagnostics.py
           tests/test_rootline_continuous_demand.py
           tests/test_rootline_continuous_borehole.py
+          tests/test_rootline_borehole_ac_backup.py
+          tests/test_rootline_water_energy_plan.py
+          tests/test_rootline_specialist_result.py
+          tests/test_rootline_visible_operation.py
           tests/test_rootline_managed_devices_runtime.py
+          tests/test_rootline_fertilizer_auxiliary.py
+          tests/test_rootline_integrated_operation.py
+          tests/test_rootline_auxiliary_startup_recovery_postgres.py
+          tests/test_rootline_injector_deadline.py
+          tests/test_rootline_borehole_start_observation.py
+          tests/test_rootline_reporting_starvation.py
           tests/test_rootline_no_send_scheduling.py
           tests/test_rootline_ewelink_request_budget.py
           tests/test_rootline_ewelink_request_budget_postgres.py
@@ -452,6 +462,17 @@ jobs:
           tests/test_rootline_shutdown_preservation.py
           tests/test_oom_sakkie_rootline_daily_presentation.py
           tests/test_oom_sakkie_owner_response_composer.py
+
+      - name: Create isolated ROOTLINE reporting cutoff database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --port=5432 --username=postgres rootline_reporting_cutoff_20261120
+
+      - name: Prove ROOTLINE reporting cutoff with dedicated Postgres
+        env:
+          ROOTLINE_REPORTING_CUTOFF_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_reporting_cutoff_20261120
+          PYTHON_DOTENV_DISABLED: "1"
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_reporting_cutoff.py
 
       - name: Run ROOTLINE irrigation job persistence and concurrency gates
         run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m pytest tests/test_rootline_irrigation_execution_store.py -q

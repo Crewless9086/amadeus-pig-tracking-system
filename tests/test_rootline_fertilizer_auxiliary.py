@@ -299,6 +299,14 @@ class Store:
                 self.consumed.add(key);self.active=payload;self.rows.append((action,payload))
                 return {"success":True,"created":True}
         if action=="dispatch_auxiliary_on_edge":return payload["dispatch"]()
+        if action == "dispatch_auxiliary_off_edge":
+            slot = {key: payload[key] for key in ("execution_id", "attempt")}
+            claimed = self("claim_auxiliary_off_attempt", slot)
+            if claimed.get("created") is not True:
+                return {"accepted_unambiguous": False, "provider_command_attempted": False}
+            outcome = payload["dispatch"]()
+            self("record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+            return {**outcome, "provider_command_attempted": True}
         if action=="claim_auxiliary_off_attempt":
             row={"attempt":payload["attempt"]};self.off.append(row);return {"created":True,"success":True}
         self.rows.append((action,payload))
@@ -474,6 +482,14 @@ class ParentAuxStore:
         if action=="mark_stopping":
             self.parent=dict(payload);self.rows.append((action,payload))
             return {"success":True,"created":True}
+        if action == "dispatch_auxiliary_off_edge":
+            slot = {key: payload[key] for key in ("execution_id", "attempt")}
+            claimed = self("claim_auxiliary_off_attempt", slot)
+            if claimed.get("created") is not True:
+                return {"accepted_unambiguous": False, "provider_command_attempted": False}
+            outcome = payload["dispatch"]()
+            self("record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+            return {**outcome, "provider_command_attempted": True}
         if action=="claim_auxiliary_off_attempt":
             with self.lock:
                 if any(row.get("attempt")==payload["attempt"] for row in self.off):

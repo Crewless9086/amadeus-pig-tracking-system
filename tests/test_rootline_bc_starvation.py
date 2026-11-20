@@ -66,10 +66,11 @@ class ComposedPath(Path):
         monkeypatch.setattr(planning, "read_current_borehole_faults", self.protection)
 
     def power(self, **kwargs):
+        # These ordering scenarios own AC backup below the sunshine OFF threshold.
         self.clock.spend("power evidence", 2)
         return {"success": True, "source": {"last_reading_at": self.clock.now().isoformat()},
-            "current": {"battery_soc_pct": 60, "solar_power_w": 1500,
-                "load_power_w": 1000, "grid_power_w": 0, "battery_power_w": -100,
+            "current": {"battery_soc_pct": 60, "solar_power_w": 1499,
+                "load_power_w": 1000, "grid_power_w": 0, "battery_power_w": -499,
                 "battery_state": "charging"}}, 200
 
     def protection(self, *args, **kwargs):

@@ -1242,10 +1242,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     if recovery.get("success") is not True:
                         return {"success": False, "status": str(recovery.get("status") or
                             "rootline_manager_observation_recovery_failed")}
-                    return refresh_current_rootline_specialist_result(now=cutoff())
+                    return refresh_current_rootline_specialist_result(
+                        now=cutoff(), evidence_cutoff=cutoff())
             else:
                 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
-                base_scheduled_loader = lambda: build_current_rootline_specialist_result(now=cutoff())
+                base_scheduled_loader = lambda: build_current_rootline_specialist_result(
+                    now=cutoff(), evidence_cutoff=cutoff())
         def scheduled_loader():
             current = base_scheduled_loader()
             if not isinstance(current, dict) or current.get("success") is not True:
@@ -1757,6 +1759,15 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         supervision["effects_unknown"] = True
                     if control.get("success") is not True:
                         supervision["success"] = False
+                    # Only a proven inert admission may omit the middle pass.
+                    # Owned deadlines/inventory and post-planning safety remain
+                    # the managed runtime's independent mandatory obligations.
+                    return not (control.get("success") is True
+                        and control.get("status") == "planner_hold_or_no_dispatchable_zone"
+                        and type(control.get("hardware_commands")) is int
+                        and control["hardware_commands"] == 0
+                        and control.get("writes_farm_data") is False
+                        and control.get("effects_unknown") is not True)
             managed_enabled = any(str(source.get(flag) or "").lower() == "true" for flag in (
                 "ROOTLINE_FERTILIZER_MIXING_ENABLED",
                 "ROOTLINE_FERTILIZER_INJECTION_ENABLED", "ROOTLINE_BOREHOLE_ENABLED",
