@@ -400,15 +400,10 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             # An interrupted observation is not an OFF decision. The original
             # claim and native deadline remain consumed; only observe, never ON
             # again. A later exact ON can complete startup under that same claim.
-            if continuous:
-                from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
-                try:
-                    with routine_execution_observation({**active, "device_type": "borehole_pump_power"}):
-                        observed = _read_borehole(transport)
-                except Exception:
-                    observed = {"authoritative": False, "state": "Unknown"}
-            else:
-                observed = _read_borehole(transport)
+            # Startup confirmation is an owned recovery read, not a routine
+            # observation slot. Keep the existing execution-bound admission,
+            # request limits and failure holds; pace only after proven ON.
+            observed = _read_borehole(transport)
             now = _aware(clock())
             if not continuous and now >= deadline:
                 return _contain_failed_borehole_start(
@@ -423,7 +418,8 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
                 return _contain_failed_borehole_start(
                     {**active, "reason": "startup_observed_off"}, store, transport)
             return _borehole_result("borehole_start_observation_pending", success=False,
-                effects_unknown=True, execution=active)
+                effects_unknown=True, execution=active,
+                current_failure=observed.get("current_failure", {}))
         deadline = _time(active.get("primary_stop_deadline"))
         if active.get("state") == "Active" and (continuous or deadline is not None and now < deadline) and not stop_for_energy:
             from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
@@ -535,7 +531,8 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             return _contain_failed_borehole_start(
                 {**execution, "reason": "startup_observed_off_or_deadline"}, store, transport)
         return _borehole_result("borehole_start_observation_pending", commands=1,
-            success=False, effects_unknown=True, execution=execution)
+            success=False, effects_unknown=True, execution=execution,
+            current_failure=started.get("current_failure", {}))
     active = {**execution, "state": "Active", "on_attempts": 1,
         "provider_start_evidence": started}
     marked=store("mark_borehole_active", active)

@@ -232,7 +232,7 @@ def ingest_power_reading(payload, provided_api_key="", database_url=None):
     }, 201
 
 
-def get_current_power_state(database_url=None):
+def get_current_power_state(database_url=None, *, as_of=None):
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -258,37 +258,63 @@ def get_current_power_state(database_url=None):
     try:
         with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    select
-                        ts.source_id,
-                        ts.display_name,
-                        ts.provider,
-                        ts.stale_after_minutes,
-                        pls.reading_at,
-                        pls.battery_soc_pct,
-                        pls.battery_power_w,
-                        pls.solar_power_w,
-                        pls.pv1_power_w,
-                        pls.pv2_power_w,
-                        pls.load_power_w,
-                        pls.grid_power_w,
-                        pls.generator_power_w,
-                        pls.inverter_output_w,
-                        pls.battery_state,
-                        pls.grid_state,
-                        pls.generator_state,
-                        pls.flags,
-                        pls.summary_status,
-                        pls.summary_headline,
-                        pls.summary_notes
-                    from public.telemetry_sources ts
-                    left join public.power_latest_state pls on pls.source_id = ts.source_id
-                    where ts.source_id = %s
-                    """,
-                    (DEFAULT_POWER_SOURCE_ID,),
-                )
-                row = cursor.fetchone()
+                if as_of is None:
+                    cursor.execute(
+                        """
+                        select
+                            ts.source_id,
+                            ts.display_name,
+                            ts.provider,
+                            ts.stale_after_minutes,
+                            pls.reading_at,
+                            pls.battery_soc_pct,
+                            pls.battery_power_w,
+                            pls.solar_power_w,
+                            pls.pv1_power_w,
+                            pls.pv2_power_w,
+                            pls.load_power_w,
+                            pls.grid_power_w,
+                            pls.generator_power_w,
+                            pls.inverter_output_w,
+                            pls.battery_state,
+                            pls.grid_state,
+                            pls.generator_state,
+                            pls.flags,
+                            pls.summary_status,
+                            pls.summary_headline,
+                            pls.summary_notes
+                        from public.telemetry_sources ts
+                        left join public.power_latest_state pls on pls.source_id = ts.source_id
+                        where ts.source_id = %s
+                        """,
+                        (DEFAULT_POWER_SOURCE_ID,),
+                    )
+                    row = cursor.fetchone()
+                else:
+                    if not isinstance(as_of, datetime) or as_of.tzinfo is None:
+                        raise ValueError("power_as_of_requires_aware_datetime")
+                    cursor.execute("""select ts.source_id, ts.display_name, ts.provider,
+                            ts.stale_after_minutes, to_jsonb(p)
+                        from public.telemetry_sources ts
+                        left join lateral (
+                            select * from public.power_readings_5min
+                            where source_id=ts.source_id and reading_at<=%s
+                              and ingested_at<=%s
+                            order by reading_at desc, reading_id desc limit 1
+                        ) p on true
+                        where ts.source_id=%s""", (as_of, as_of, DEFAULT_POWER_SOURCE_ID))
+                    selected = cursor.fetchone()
+                    row = None
+                    if selected and isinstance(selected[4], dict):
+                        reading = _normalize_power_payload(selected[4])
+                        row = (*selected[:4], *(reading[key] for key in (
+                            "reading_at", "battery_soc_pct", "battery_power_w",
+                            "solar_power_w", "pv1_power_w", "pv2_power_w",
+                            "load_power_w", "grid_power_w", "generator_power_w",
+                            "inverter_output_w", "battery_state", "grid_state",
+                            "generator_state")), json.loads(reading["flags"]),
+                            reading["summary_status"], reading["summary_headline"],
+                            json.loads(reading["summary_notes"]))
     except Exception as exc:
         return {
             "success": False,
@@ -308,7 +334,7 @@ def get_current_power_state(database_url=None):
             "source": _source_metadata(writes_to_supabase=False),
         }, 200
 
-    return _format_current_power_response(row), 200
+    return _format_current_power_response(row, now=as_of), 200
 
 
 def get_recent_power_profile(hours=24, database_url=None):
@@ -842,7 +868,7 @@ def _quiet_hours_state(now_utc):
     }
 
 
-def _format_current_power_response(row):
+def _format_current_power_response(row, *, now=None):
     (
         source_id,
         display_name,
@@ -867,7 +893,7 @@ def _format_current_power_response(row):
         summary_notes,
     ) = row
 
-    age_minutes = max(0, int((datetime.now(timezone.utc) - reading_at.astimezone(timezone.utc)).total_seconds() // 60))
+    age_minutes = max(0, int(((now or datetime.now(timezone.utc)) - reading_at.astimezone(timezone.utc)).total_seconds() // 60))
     is_stale = age_minutes > int(stale_after_minutes)
     response_status = "stale" if is_stale else summary_status
 

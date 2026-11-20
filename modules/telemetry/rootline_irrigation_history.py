@@ -34,7 +34,7 @@ QUALIFYING_FIELDS = (
 )
 
 
-def read_canonical_irrigation_history(database_url=None, *, connect=None, now=None):
+def read_canonical_irrigation_history(database_url=None, *, connect=None, now=None, evidence_cutoff=None):
     now = _aware(now or datetime.now(timezone.utc))
     if connect is None:
         import os
@@ -48,22 +48,31 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
             with connection.cursor() as cursor:
                 cursor.execute("""select credit_json
                     from public.irrigation_water_credit_events
-                    order by created_at,credit_id""")
+                    """ + (" where created_at <= %s" if evidence_cutoff is not None else "") +
+                    " order by created_at,credit_id",
+                    (evidence_cutoff,) if evidence_cutoff is not None else None)
                 credit_rows = [row[0] for row in cursor.fetchall()]
                 cursor.execute("select clock_timestamp()")
                 snapshot_cutoff = _aware(cursor.fetchone()[0])
                 cursor.execute("""select irrigation_event_id,event_at,event_type,zone_id,
                     planned_minutes,actual_minutes,details,source_id,actor,created_at
                     from public.irrigation_events
-                    where zone_id = any(%s) or event_type=%s
-                    order by event_at,irrigation_event_id""", (list(ZONES), EPOCH_EVENT))
+                    where (zone_id = any(%s) or event_type=%s)
+                    """ + (" and event_at <= %s and created_at <= %s"
+                        if evidence_cutoff is not None else "") +
+                    " order by event_at,irrigation_event_id",
+                    (list(ZONES), EPOCH_EVENT, evidence_cutoff, evidence_cutoff)
+                    if evidence_cutoff is not None else (list(ZONES), EPOCH_EVENT))
                 rows = cursor.fetchall()
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
                     where event_source='rootline_irrigation_execution'
                       and review_json->'rootline_execution'->>'action'
                           = any(%s)
-                    order by created_at,review_event_id""", (list(PARENT_ACCOUNTING_ACTIONS),))
+                    """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
+                    " order by created_at,review_event_id",
+                    (list(PARENT_ACCOUNTING_ACTIONS), evidence_cutoff) if evidence_cutoff is not None
+                    else (list(PARENT_ACCOUNTING_ACTIONS),))
                 execution_rows = [row[0] for row in cursor.fetchall()]
         result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
         _attach_parent_jobs(result, execution_rows, canonical_ordered=True)

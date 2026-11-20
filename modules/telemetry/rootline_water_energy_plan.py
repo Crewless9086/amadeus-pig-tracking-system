@@ -175,17 +175,11 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
     energy = managed_energy_decision(power, now=now,
         reserve_pct=reserve["governing_reserve_soc_pct"])
-    from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
-    mixing = mixing_daily_accounting(evidence.get("fertilizer_executions"), now=now,
-        batch=fertilizer_batch)
     for task in auxiliary["irrigation_auxiliary_tasks"]:
         if task.get("device_type") != "fertilizer_mixer" or task.get("decision") != "Run now":
             continue
         if not energy["mixing_eligible"]:
             task.update(decision="Run later", reason="fresh_power_or_discretionary_reserve_required")
-        elif evidence.get("active_irrigation_context") or (mixing["premix_verified"]
-                and any(row.get("recommendation") == "Recommend" and str(row.get("task_id") or "").startswith("irrigation_") for row in tasks)):
-            task.update(decision="Run later", reason="irrigation_and_injection_opportunity_first")
     status = _overall_status(tasks)
     evidence_observed_at = _latest_observed_at(power, weather, forecast, tanks, now)
     canonical_evidence = {
@@ -379,7 +373,7 @@ def build_current_water_energy_plan(operating_date=None, database_url=None, now=
 
 
 def read_current_water_energy_evidence(
-    operating_date=None, database_url=None, now=None
+    operating_date=None, database_url=None, now=None, *, evidence_cutoff=None
 ):
     """Read canonical ROOTLINE evidence without persisting a plan or observation."""
     from modules.telemetry.power_service import get_current_power_state
@@ -392,6 +386,34 @@ def read_current_water_energy_evidence(
 
     now = _as_za(now or datetime.now(timezone.utc))
     selected = str(operating_date or now.date().isoformat())[:10]
+    reporting = evidence_cutoff is not None
+    if reporting:
+        if not isinstance(evidence_cutoff, datetime) or evidence_cutoff.tzinfo is None:
+            raise ValueError("reporting_cutoff_requires_aware_datetime")
+        if now != _as_za(evidence_cutoff):
+            raise ValueError("reporting_cutoff_epoch_mismatch")
+    as_of = {"as_of": evidence_cutoff} if reporting else {}
+    bounded = {"evidence_cutoff": evidence_cutoff} if reporting else {}
+
+    def read_advisor():
+        if not reporting:
+            return get_rootline_daily_advisor(selected, now=now, database_url=database_url)
+        from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
+        from modules.telemetry.weather_service import get_weather_control_snapshot
+        # Preserve the canonical local-weather/dry-interval proof and standing
+        # policy. Legacy mutable daily aggregates have no historical contract;
+        # the brief represents their absence as Unavailable instead of admitting
+        # diagnostics computed after the scheduled reporting epoch.
+        return get_rootline_daily_advisor(selected, now=now, database_url=database_url,
+            brief_reader=lambda: get_rootline_daily_brief(selected, now=now,
+                database_url=database_url, readers={
+                    "weather_snapshot": lambda: get_weather_control_snapshot(
+                        database_url=database_url, now=now),
+                    "forecast": lambda: get_weather_forecast(3,
+                        database_url=database_url, **as_of),
+                    "power": lambda: get_current_power_state(
+                        database_url=database_url, **as_of),
+                }))
     # These sources are independent read models. Loading them serially can add
     # several individually bounded database waits and exceed the enclosing web
     # worker deadline before protected execution reaches its claim boundary.
@@ -399,15 +421,15 @@ def read_current_water_energy_evidence(
     # aggregate latency to the slowest source instead of their sum.
     from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
     readers = {
-        "power": lambda: get_current_power_state(database_url=database_url),
-        "forecast": lambda: get_weather_forecast(days=3, database_url=database_url),
-        "advisor": lambda: get_rootline_daily_advisor(selected, now=now, database_url=database_url),
+        "power": lambda: get_current_power_state(database_url=database_url, **as_of),
+        "forecast": lambda: get_weather_forecast(days=3, database_url=database_url, **as_of),
+        "advisor": read_advisor,
         "balances": lambda: read_latest_zone_water_balances(database_url, now=now),
-        "history": lambda: _read_historical_context(database_url),
-        "irrigation_history": lambda: _read_recent_irrigation_history(database_url, now),
-        "tanks": lambda: _read_latest_tank_observation(database_url),
-        "owner_zone_need": lambda: _read_latest_owner_zone_need(database_url, now),
-        "managed_devices": lambda: _read_managed_device_evidence(database_url, now),
+        "history": lambda: _read_historical_context(database_url, **bounded),
+        "irrigation_history": lambda: _read_recent_irrigation_history(database_url, now, **bounded),
+        "tanks": lambda: _read_latest_tank_observation(database_url, **bounded),
+        "owner_zone_need": lambda: _read_latest_owner_zone_need(database_url, now, **bounded),
+        "managed_devices": lambda: _read_managed_device_evidence(database_url, now, **bounded),
     }
     # The advisor is itself a bounded aggregate of canonical reads and can
     # legitimately consume most of its 18-second inner deadline. Give that
@@ -799,7 +821,7 @@ def _normalize_forecast(packet):
     }
 
 
-def _read_historical_context(database_url):
+def _read_historical_context(database_url, *, evidence_cutoff=None):
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -815,12 +837,19 @@ def _read_historical_context(database_url):
                            round(sum(estimated_grid_import_kwh*tariff_zar_per_kwh),2)
                       from public.power_daily_rollups
                      where source_id='sunsynk-main-inverter'
-                    """
+                    """ + (" and rollup_date < %s and source_window_end <= %s"
+                        " and generated_at <= %s and updated_at <= %s"
+                        if evidence_cutoff is not None else ""),
+                    ((_as_za(evidence_cutoff).date(), evidence_cutoff,
+                        evidence_cutoff, evidence_cutoff)
+                        if evidence_cutoff is not None else None),
                 )
                 days, coverage, grid_kwh, schema_cost = cursor.fetchone()
         return {
             "status": "Available" if days else UNAVAILABLE,
             "daily_rollup_count": days,
+            **({"historical_scope": "completed_days_available_at_reporting_cutoff",
+                "current_day": UNAVAILABLE} if evidence_cutoff is not None else {}),
             "average_coverage_pct": _number(coverage),
             "estimated_grid_import_kwh": _number(grid_kwh),
             "estimated_grid_cost_at_schema_tariff_zar": _number(schema_cost),
@@ -835,12 +864,13 @@ def _read_historical_context(database_url):
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
 
 
-def _read_recent_irrigation_history(database_url, now):
+def _read_recent_irrigation_history(database_url, now, *, evidence_cutoff=None):
     from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
-    return read_canonical_irrigation_history(database_url, now=now)
+    return read_canonical_irrigation_history(database_url, now=now,
+        **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}))
 
 
-def _read_managed_device_evidence(database_url, now):
+def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
     """Compose managed-device facts from existing append-only ROOTLINE rails."""
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -865,14 +895,18 @@ def _read_managed_device_evidence(database_url, now):
                                'record_fertilizer_sequence_completed',
                                'record_execution_not_dispatched','record_auxiliary_on_outcome',
                                'record_on_outcome'))
-                    order by created_at,review_event_id""")
+                    """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
+                    " order by created_at,review_event_id",
+                    (evidence_cutoff,) if evidence_cutoff is not None else None)
                 executions = [_json_object(row[0]) for row in cursor.fetchall()]
                 cursor.execute("""select review_json->'rootline_operational_intake'->'outcome'
                     from public.sam_live_stock_conversation_review_events
                     where event_source='oom_sakkie_rootline_operational_intake'
                       and review_json->'rootline_operational_intake'->>'state'
                           in ('completed','contextual_followup_completed')
-                    order by created_at,review_event_id""")
+                    """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
+                    " order by created_at,review_event_id",
+                    (evidence_cutoff,) if evidence_cutoff is not None else None)
                 outcomes = [_json_object(row[0]) for row in cursor.fetchall()]
     except Exception as exc:
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
@@ -1106,7 +1140,7 @@ def _managed_time(value):
         return None
 
 
-def _read_latest_tank_observation(database_url):
+def _read_latest_tank_observation(database_url, *, evidence_cutoff=None):
     """Compose the newest independent storage and reservoir observations."""
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -1124,9 +1158,11 @@ def _read_latest_tank_observation(database_url):
                            reservoir_fraction_numerator,reservoir_fraction_denominator,
                            provider_message_id
                       from public.rootline_tank_observations
-                     where storage_reported_count is not null or storage_fraction_numerator is not null
-                     order by observed_at desc,recorded_at desc limit 1
-                    """
+                     where (storage_reported_count is not null or storage_fraction_numerator is not null)
+                    """ + (" and observed_at <= %s and recorded_at <= %s"
+                        if evidence_cutoff is not None else "") +
+                    " order by observed_at desc,recorded_at desc limit 1",
+                    (evidence_cutoff, evidence_cutoff) if evidence_cutoff is not None else None,
                 )
                 storage = cursor.fetchone()
                 cursor.execute(
@@ -1138,9 +1174,11 @@ def _read_latest_tank_observation(database_url):
                            reservoir_fraction_numerator,reservoir_fraction_denominator,
                            provider_message_id
                       from public.rootline_tank_observations
-                     where reservoir_reported_count is not null or reservoir_fraction_numerator is not null
-                     order by observed_at desc,recorded_at desc limit 1
-                    """
+                     where (reservoir_reported_count is not null or reservoir_fraction_numerator is not null)
+                    """ + (" and observed_at <= %s and recorded_at <= %s"
+                        if evidence_cutoff is not None else "") +
+                    " order by observed_at desc,recorded_at desc limit 1",
+                    (evidence_cutoff, evidence_cutoff) if evidence_cutoff is not None else None,
                 )
                 reservoir = cursor.fetchone()
         if not storage and not reservoir:
@@ -1171,7 +1209,7 @@ def _read_latest_tank_observation(database_url):
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
 
 
-def _read_latest_owner_zone_need(database_url, now):
+def _read_latest_owner_zone_need(database_url, now, *, evidence_cutoff=None):
     """Load one fresh provider-bound need without turning free text into authority."""
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -1188,10 +1226,20 @@ def _read_latest_owner_zone_need(database_url, now):
                        and review_json->'rootline_operational_intake'->'outcome'->>'visible_irrigation_need_zone'
                            in ('A12345','B12345','C12345','E12345')
                        and (review_json->'rootline_operational_intake'->'outcome'->>'writes_farm_data')::boolean is true
-                     order by created_at desc,review_event_id desc limit 1
-                """)
-                row = cursor.fetchone()
-        outcome = row[0] if row and isinstance(row[0], dict) else {}
+                """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
+                " order by created_at desc,review_event_id desc" +
+                ("" if evidence_cutoff is not None else " limit 1"),
+                (evidence_cutoff,) if evidence_cutoff is not None else None)
+                rows = cursor.fetchall() if evidence_cutoff is not None else [cursor.fetchone()]
+        outcome = {}
+        for row in rows:
+            candidate = row[0] if row and isinstance(row[0], dict) else {}
+            if evidence_cutoff is not None:
+                observed = _managed_time(candidate.get("provider_timestamp"))
+                if observed is None or not timedelta(0) <= evidence_cutoff-observed <= timedelta(hours=24):
+                    continue
+            outcome = candidate
+            break
         try:
             observed = datetime.fromisoformat(
                 str(outcome.get("provider_timestamp") or "").replace("Z", "+00:00"))

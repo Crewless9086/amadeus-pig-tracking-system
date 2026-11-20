@@ -108,12 +108,13 @@ class Store:
             return [{"attempt": n} for n in sorted(self.used.get(payload, set()))]
         if action == "load_auxiliary_physical_outcome":
             return None
-        if action == "dispatch_borehole_off_edge":
+        if action in {"dispatch_borehole_off_edge", "dispatch_auxiliary_off_edge"}:
+            family = "borehole" if action == "dispatch_borehole_off_edge" else "auxiliary"
             slot = {key: payload[key] for key in ("execution_id", "attempt")}
-            if not self("claim_borehole_off_attempt", slot)["created"]:
+            if not self("claim_" + family + "_off_attempt", slot)["created"]:
                 return {"accepted_unambiguous": False, "provider_command_attempted": False}
             outcome = payload["dispatch"]()
-            self("record_borehole_off_outcome", {**slot, "outcome": outcome})
+            self("record_" + family + "_off_outcome", {**slot, "outcome": outcome})
             return {**outcome, "provider_command_attempted": True}
         if action == "record_borehole_aborted":
             return {"success": False, "provider_final_off_evidence": payload["read_final_off"]()}

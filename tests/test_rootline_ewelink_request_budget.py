@@ -565,6 +565,8 @@ def test_parent_emergency_shutdown_uses_injectors_own_read_reserve():
     def store(action,payload):
         if action == "load_active_auxiliary": return active
         if action == "load_auxiliary_off_attempts": return []
+        if action == "dispatch_auxiliary_off_edge":
+            return {**payload["dispatch"](), "provider_command_attempted": True}
         return {"created":True,"success":True}
     result=emergency_off_auxiliary_execution(store=store,
         transport=budget.bind_execution_transport(Transport(),{"execution_id":"PARENT"}),

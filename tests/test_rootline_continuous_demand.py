@@ -162,6 +162,7 @@ class MinuteJourney:
             @classmethod
             def now(cls, tz=None): return journey.now().astimezone(tz or timezone.utc)
         monkeypatch.setattr(budget,"datetime",Clock)
+        monkeypatch.setattr(managed,"sleep",lambda seconds: self.client.backend.advance(seconds))
         original_dispatch=self.client.dispatch
         def dispatch(**kwargs):
             # Same production fenced body, without per-request test threads.
@@ -248,6 +249,13 @@ class MinuteJourney:
         if action=="load_active_auxiliaries":return deepcopy(list(self.aux.values()))
         if action=="load_active_auxiliary":return deepcopy(self.aux.get(payload))
         if action=="load_active_borehole":return deepcopy(self.borehole)
+        if action == "dispatch_auxiliary_off_edge":
+            slot = {key: payload[key] for key in ("execution_id", "attempt")}
+            if self.canonical("claim_auxiliary_off_attempt", slot).get("created") is not True:
+                return {"provider_command_attempted": False}
+            outcome = payload["dispatch"]()
+            self.canonical("record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+            return {**outcome, "provider_command_attempted": True}
         if action in {"dispatch_auxiliary_on_edge","dispatch_borehole_on_edge","dispatch_borehole_off_edge"}:
             return {**payload["dispatch"](),"provider_command_attempted":True}
         if action in {"claim_auxiliary_before_on","mark_auxiliary_active"}:
@@ -476,7 +484,21 @@ def test_actual_active_injector_parent_proof_bypasses_optional_gate(monkeypatch)
     journey.source["ROOTLINE_BOREHOLE_ENABLED"]="false"
     for minute in range(12):journey.tick(minute,parent=False)
     journey.source["ROOTLINE_FERTILIZER_MIXING_ENABLED"]="false"
-    for minute in range(12,24):journey.tick(minute)
+    # A normal starting worker now stops the pulse before it returns. Model a
+    # process death after durable ON instead, then exercise genuine recovery.
+    class WorkerRestart(BaseException):
+        pass
+    original_store = journey.canonical
+    def interrupted_store(action, payload):
+        result = original_store(action, payload)
+        if (action == "mark_auxiliary_active"
+                and payload.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"):
+            raise WorkerRestart()
+        return result
+    journey.canonical = interrupted_store
+    with pytest.raises(WorkerRestart):
+        for minute in range(12,24):journey.tick(minute)
+    journey.canonical = original_store
     assert "FERTILIZER-INJECTION-CH1" in journey.aux
     before=len(journey.reads)
     journey.outputs["100204e9bc"][0]="off"
@@ -526,3 +548,29 @@ def test_actual_last_pulse_opportunity_rechecks_after_slow_preparation(monkeypat
     journey.tick(47)
     assert not any(row["device"]=="100204d497" and row["channel"]==1 for row in journey.commands)
     assert journey.store.active["primary_stop_deadline"]==original
+
+
+
+def test_actual_new_injector_stops_before_return_with_delayed_next_worker(monkeypatch):
+    journey = MinuteJourney(monkeypatch)
+    journey.tick(0, parent=False, allow_borehole=True)
+    for minute in range(1, 40):
+        journey.tick(minute)
+        commands = [row for row in journey.commands
+            if row["device"] == "100204d497" and row["channel"] == 1]
+        if commands:
+            break
+    assert [row["state"] for row in commands] == ["on", "off"]
+    assert "FERTILIZER-INJECTION-CH1" not in journey.aux
+    first_id = commands[0]["execution_id"]
+    pulse = next(row for row in journey.rows
+        if row.get("execution_id") == first_id and row.get("action") == "record_auxiliary_completed")
+    assert pulse["control_completed"] is True and pulse["shutdown_verified"] is True
+    assert 0 < pulse["observed_control_seconds"] <= 120
+    assert (datetime.fromisoformat(commands[1]["at"])
+        - datetime.fromisoformat(commands[0]["at"])).total_seconds() <= 120
+    journey.client.backend.advance(130)
+    journey.tick(minute+1)
+    assert [row["state"] for row in journey.commands
+        if row["execution_id"] == first_id and row["device"] == "100204d497"
+        and row["channel"] == 1] == ["on", "off"]

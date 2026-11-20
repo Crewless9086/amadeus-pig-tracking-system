@@ -43,6 +43,13 @@ class ExecutionStore:
         self.auxiliary = None
 
     def __call__(self, action, payload):
+        if action == "dispatch_auxiliary_off_edge":
+            slot = {key: payload[key] for key in ("execution_id", "attempt")}
+            if self("claim_auxiliary_off_attempt", slot).get("created") is not True:
+                return {"provider_command_attempted": False}
+            outcome = payload["dispatch"]()
+            self("record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+            return {**outcome, "provider_command_attempted": True}
         with self.lock:
             if action == self.fail:
                 raise RootlineExecutionStoreUnavailable("synthetic failure")

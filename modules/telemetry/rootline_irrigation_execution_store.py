@@ -27,6 +27,12 @@ class RootlineExecutionStoreUnavailable(RuntimeError):
 def rootline_irrigation_execution_store(action, payload):
     if action in _A_COMMISSIONING_ACTIONS:
         return _a_commissioning_store(action, payload)
+    if action == "record_auxiliary_startup_aborted":
+        return {"success": False, "created": False, "status": "use_locked_auxiliary_startup_recovery"}
+    if action == "recover_auxiliary_startup_containment":
+        return _recover_auxiliary_startup_containment(dict(payload or {}))
+    if action == "dispatch_auxiliary_off_edge":
+        return _dispatch_auxiliary_off_edge(dict(payload or {}))
     if action == "record_execution_not_dispatched":
         return {"success": False, "created": False, "status": "use_locked_no_send_retirement"}
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
@@ -49,7 +55,8 @@ def rootline_irrigation_execution_store(action, payload):
         return _retire_not_dispatched_execution(body)
     if action in {"dispatch_auxiliary_on_edge", "dispatch_borehole_on_edge"}:
         return _dispatch_managed_on_edge(body, borehole=action == "dispatch_borehole_on_edge")
-    if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
+    if action in {"record_auxiliary_on_outcome", "record_auxiliary_off_outcome", "record_auxiliary_exception",
+                  "claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
                   "mark_auxiliary_active", "mark_borehole_active",
                   "contain_auxiliary_device", "contain_borehole",
                   "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
@@ -451,6 +458,8 @@ def _event_id(action, body):
         material = f"{execution}:BOREHOLE-ABORTED"
     elif action == "record_execution_not_dispatched":
         material = f"{execution}:PROVEN-NO-SEND"
+    elif action == "record_auxiliary_startup_aborted":
+        material = f"{execution}:STARTUP-ABORTED"
     elif action == "reconcile_unstarted_auxiliary":
         material = f"{execution}:UNSTARTED-RECONCILIATION"
     elif action == "claim_eskom_dispatch":
@@ -773,7 +782,7 @@ def _load(action, payload):
                     where event_source=%s
                       and review_json->'rootline_execution'->>'action' in (
                           'record_auxiliary_completed','claim_auxiliary_before_on',
-                          'mark_auxiliary_active','contain_auxiliary_device',
+                          'mark_auxiliary_active','contain_auxiliary_device','record_auxiliary_startup_aborted',
                           'record_execution_not_dispatched','record_auxiliary_on_outcome')
                       and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
                     order by created_at,review_event_id""", (EVENT_SOURCE, str(payload or "")))
@@ -1979,12 +1988,12 @@ def _sha256_text(value):
 
 
 def _auxiliary_containment_state(cursor, auxiliary_id):
-    """Only an exact canonical no-dispatch reconciliation supersedes its hold."""
+    """Only exact verified reconciliation or runtime abort supersedes its own hold."""
     cursor.execute("""select review_json->'rootline_execution'
         from public.sam_live_stock_conversation_review_events
         where event_source=%s and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
           and review_json->'rootline_execution'->>'action' in
-              ('contain_auxiliary_device','reconcile_unstarted_auxiliary')
+              ('contain_auxiliary_device','reconcile_unstarted_auxiliary','record_auxiliary_startup_aborted')
         order by created_at,review_event_id""", (EVENT_SOURCE, auxiliary_id))
     pending = {}; resolved = None
     for (row,) in cursor.fetchall():
@@ -1994,6 +2003,12 @@ def _auxiliary_containment_state(cursor, auxiliary_id):
             pending[row.get("event_id")] = row
             continue
         held = pending.get(row.get("containment_event_id"))
+        if row.get("action") == "record_auxiliary_startup_aborted":
+            if held is not None and _verified_auxiliary_startup_abort(
+                    row, _managed_edge_rows(cursor, row.get("execution_id"))):
+                del pending[row["containment_event_id"]]
+                resolved = row
+            continue
         if (held is not None and row.get("contract_version") == _UNSTARTED_RECONCILIATION
                 and row.get("resolution") == "never_dispatched_verified_off"
                 and row.get("execution_id") == held.get("execution_id")
@@ -2102,7 +2117,8 @@ def _managed_family(*, borehole):
         "active":"mark_auxiliary_active", "off":"claim_auxiliary_off_attempt",
         "outcome":"record_auxiliary_on_outcome",
         "terminals":{"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
-                     "contain_auxiliary_device", "record_execution_not_dispatched"}})
+                     "contain_auxiliary_device", "record_execution_not_dispatched",
+                     "record_auxiliary_startup_aborted"}})
 
 
 def _managed_edge_rows(cursor, execution_id):
@@ -2153,6 +2169,8 @@ def _guarded_managed_transition(action, body):
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             rows=_managed_edge_rows(cursor,body["execution_id"])
+            if not borehole and any(row.get("action") == "record_auxiliary_startup_aborted" for row in rows):
+                return {"success": False, "created": False, "status": "auxiliary_execution_retired"}
             if borehole and action in {family["off"], "record_borehole_completed"}:
                 if _borehole_terminal_proven(rows):
                     if action == "record_borehole_completed":
@@ -3181,3 +3199,297 @@ def _assess_borehole_conditions(body):
             state["execution_id"] = "ROOTLINE-BOREHOLE-CONDITIONS"
             saved = _insert_managed_event(cursor, _BOREHOLE_CONDITION_ACTION, state)
             return {**state, "event_id": saved["event_id"], "success": saved["success"]}
+
+
+_AUXILIARY_STARTUP_ABORT = "rootline_auxiliary_startup_abort.v1"
+_AUXILIARY_STARTUP_ABORT_ACTION = "record_auxiliary_startup_aborted"
+
+
+def _auxiliary_startup_abort_preimage(rows, containment_event_id):
+    """A consumed dispatch with no durable ON result is unknown, never no-send."""
+    from modules.telemetry.rootline_device_registry import get_device_contract
+    if not rows or any(not isinstance(row, dict) for row in rows):
+        return None
+    claims = [row for row in rows if row.get("action") == "claim_auxiliary_before_on"]
+    dispatches = [row for row in rows if row.get("action") == "claim_auxiliary_dispatch"]
+    holds = [row for row in rows if row.get("action") == "contain_auxiliary_device"]
+    barriers = [row for row in rows if row.get("action") == "claim_auxiliary_off_attempt"]
+    if len(claims) != 1 or len(dispatches) != 1 or len(holds) != 1 or not barriers:
+        return None
+    claim, dispatch, held = claims[0], dispatches[0], holds[0]
+    identity = claim.get("auxiliary_device_id")
+    contract = get_device_contract(identity) or {}
+    allowed = {"record_auxiliary_eligibility", "claim_auxiliary_before_on",
+        "claim_auxiliary_dispatch", "claim_auxiliary_off_attempt", "record_auxiliary_off_outcome",
+        "contain_auxiliary_device", _AUXILIARY_STARTUP_ABORT_ACTION}
+    immutable = ("execution_id", "auxiliary_device_id", "device_id", "channel", "device_type",
+        "claimed_at", "primary_stop_deadline", "maximum_duration_seconds", "consumption_key")
+    prior = held.get("shutdown_evidence") or {}
+    if (identity not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
+            or any(claim.get(key) != contract.get(key) for key in ("device_id", "channel", "device_type"))
+            or type(claim.get("channel")) is not int or claim.get("state") != "claimed"
+            or type(claim.get("on_attempts")) is not int or claim["on_attempts"] != 0
+            or claim.get("event_id") != _event_id("claim_auxiliary_before_on", claim)
+            or dispatch.get("event_id") != _event_id("claim_auxiliary_dispatch", claim)
+            or any(dispatch.get(key) != value for key, value in claim.items()
+                   if key not in {"action", "event_id", "state", "on_attempts", "off_attempts"})
+            or held.get("event_id") != containment_event_id
+            or held.get("reason") != "restart_or_deadline_ambiguous"
+            or held.get("state") != "claimed_recovery_required"
+            or held.get("shutdown_verified") is not True
+            or any(held.get(key) != claim.get(key) for key in immutable)
+            or not isinstance(prior, dict) or prior.get("authoritative") is not True
+            or prior.get("state") != "OFF" or prior.get("device_id") != claim["device_id"]
+            or type(prior.get("channel")) is not int or prior["channel"] != claim["channel"]
+            or not _sha256_text(prior.get("evidence_id")) or _time(prior.get("retrieved_at")) is None
+            or any(row.get("action") not in allowed or row.get("execution_id") != claim["execution_id"] for row in rows)
+            or any(type(row.get("attempt")) is not int or not 1 <= row["attempt"] <= 3
+                   or row.get("event_id") != _event_id("claim_auxiliary_off_attempt", row) for row in barriers)):
+        return None
+    claimed = _time(claim.get("claimed_at")); deadline = _time(claim.get("primary_stop_deadline"))
+    previous_off = _time(prior["retrieved_at"])
+    if (claimed is None or deadline is None or claimed.tzinfo is None or deadline.tzinfo is None
+            or previous_off.tzinfo is None or previous_off < claimed
+            or previous_off > datetime.now(timezone.utc)
+            or type(claim.get("maximum_duration_seconds")) is not int
+            or not 0 < claim["maximum_duration_seconds"] <= (600 if identity == "FERTILIZER-MIXER-CH2" else 120)
+            or deadline != claimed + timedelta(seconds=claim["maximum_duration_seconds"])):
+        return None
+    return claim, dispatch, held
+
+
+def _auxiliary_abort_binding(preimage):
+    claim, dispatch, held = preimage
+    return {"execution_id": claim["execution_id"], "auxiliary_device_id": claim["auxiliary_device_id"],
+        "device_id": claim["device_id"], "channel": claim["channel"],
+        "claim_event_id": claim["event_id"], "claim_sha256": _event_digest(claim),
+        "dispatch_event_id": dispatch["event_id"], "dispatch_sha256": _event_digest(dispatch),
+        "containment_event_id": held["event_id"], "containment_sha256": _event_digest(held)}
+
+
+def _verified_auxiliary_startup_abort(item, rows):
+    if (not isinstance(item, dict) or item.get("action") != _AUXILIARY_STARTUP_ABORT_ACTION
+            or item.get("terminal_contract") != _AUXILIARY_STARTUP_ABORT
+            or item.get("event_id") != _event_id(_AUXILIARY_STARTUP_ABORT_ACTION, item)
+            or item.get("state") != "Aborted" or item.get("startup_aborted_verified") is not True
+            or item.get("reservation_preserved") is not True or item.get("on_authority") is not False
+            or item.get("objective_satisfied") is not False or item.get("control_completed") is not False
+            or item.get("shutdown_verified") is not True or item.get("provider_on_outcome") != "Unknown"):
+        return False
+    preimage = _auxiliary_startup_abort_preimage(rows, item.get("containment_event_id"))
+    if preimage is None:
+        return False
+    binding = _auxiliary_abort_binding(preimage)
+    if any(item.get(key) != value for key, value in binding.items()):
+        return False
+    claim, _, held = preimage
+    if any(item.get(key) != value for key, value in claim.items()
+            if key not in {"action", "event_id", "state", "on_attempts", "off_attempts"}):
+        return False
+    proof = item.get("shutdown_evidence")
+    if not isinstance(proof, dict):
+        return False
+    started, observed, finished = map(_time, (item.get("read_started_at"),
+        proof.get("retrieved_at"), item.get("aborted_at")))
+    prior_off = _time(held["shutdown_evidence"]["retrieved_at"])
+    elapsed = item.get("read_elapsed_seconds")
+    return (type(elapsed) in (int, float) and 0 <= elapsed <= 8
+        and proof.get("authoritative") is True and proof.get("state") == "OFF"
+        and proof.get("device_id") == claim["device_id"] and type(proof.get("channel")) is int
+        and proof["channel"] == claim["channel"] and _sha256_text(proof.get("evidence_id"))
+        and proof.get("execution_id", claim["execution_id"]) == claim["execution_id"]
+        and all(stamp is not None and stamp.tzinfo is not None for stamp in (started, observed, finished))
+        and prior_off <= started <= observed <= finished
+        and finished-observed <= timedelta(seconds=60) and finished-started <= timedelta(seconds=8))
+
+
+def _auxiliary_startup_terminal(rows):
+    return next((row for row in rows if _verified_auxiliary_startup_abort(row, rows)), None)
+
+
+def _auxiliary_abort_pending(stage, reason, *, unknown=False):
+    return {"success": False, "created": False, "status": "auxiliary_startup_recovery_pending",
+        "recovery_stage": stage, "recovery_reason": reason,
+        "auxiliary_contained": True, **({"effects_unknown": True} if unknown else {})}
+
+
+def _auxiliary_abort_current(cursor, body):
+    rows = _managed_edge_rows(cursor, body["execution_id"])
+    previous = [row for row in rows if row.get("action") == _AUXILIARY_STARTUP_ABORT_ACTION]
+    if previous:
+        terminal = _auxiliary_startup_terminal(rows)
+        if (len(previous) != 1 or terminal is None
+                or terminal.get("containment_event_id") != body["containment_event_id"]
+                or terminal.get("auxiliary_device_id") != body["auxiliary_device_id"]):
+            return None, None, _auxiliary_abort_pending("preimage", "terminal_conflict")
+        return rows, terminal, None
+    held = _auxiliary_containment_state(cursor, body["auxiliary_device_id"])
+    evidence = held.get("evidence") or {}
+    preimage = _auxiliary_startup_abort_preimage(rows, body["containment_event_id"])
+    if (held.get("contained") is not True or preimage is None
+            or evidence.get("event_id") != body["containment_event_id"]
+            or evidence.get("execution_id") != body["execution_id"]
+            or preimage[0].get("auxiliary_device_id") != body["auxiliary_device_id"]):
+        return None, None, _auxiliary_abort_pending("preimage", "startup_dispatch_unknown_unproven")
+    return rows, preimage, None
+
+
+def _recover_auxiliary_startup_containment(body):
+    """Runtime-owned recovery of one consumed but unobserved startup, never ON.
+
+    Native metadata preparation remains outside hardware locks. The final fresh
+    OFF and exact canonical terminal share both existing command locks.
+    """
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_cycle_budget import cycle_budget, work_deadline, on_deadline
+    from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+    required = {"execution_id", "auxiliary_device_id", "containment_event_id", "read_final_off"}
+    if (not required <= set(body) or set(body) - required - {"prepare_final_off"}
+            or not callable(body.get("read_final_off"))
+            or body.get("auxiliary_device_id") not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
+            or not str(body.get("execution_id") or "") or not str(body.get("containment_event_id") or "")):
+        return _auxiliary_abort_pending("preimage", "binding_invalid")
+    prepare = body.get("prepare_final_off")
+    parent = work_deadline() if work_deadline() is not None else on_deadline()
+    stage = "preliminary_preimage"
+    try:
+        with cycle_budget(deadline=parent) if parent is not None else nullcontext():
+            with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                    read_only=True) as connection, connection.cursor() as cursor:
+                _, current, failure = _auxiliary_abort_current(cursor, body)
+            if failure:
+                return failure
+            if isinstance(current, dict) or not callable(prepare):
+                return _recover_auxiliary_startup_locked(body)
+            binding = _auxiliary_abort_binding(current)
+            stage = "preparation"
+            with execution_duty(current[0]), prepare(binding) as prepared:
+                result = _recover_auxiliary_startup_locked(body, prepared=prepared, expected=binding)
+                if result.get("success") is True and result.get("created") is True:
+                    cleanup = getattr(prepared, "after_abort_commit", None)
+                    try:
+                        result["cleanup_status"] = (cleanup(result["execution"]) if callable(cleanup)
+                            else "retained_for_reconciliation")
+                    except Exception:
+                        result["cleanup_status"] = "retained_for_reconciliation"
+                return result
+    except Exception:
+        return _auxiliary_abort_pending(stage, "unavailable")
+
+
+def _recover_auxiliary_startup_locked(body, *, prepared=None, expected=None):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_cycle_budget import cycle_budget
+    from modules.telemetry.rootline_ewelink_request_budget import execution_duty
+    stage = "hardware_lock"
+    try:
+        with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                read_only=False, read_committed=True, reuse_local_settings=prepared is not None) as connection, connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            stage = "locked_preimage"
+            rows, current, failure = _auxiliary_abort_current(cursor, body)
+            if failure:
+                return failure
+            if isinstance(current, dict):
+                return {"success": True, "created": False, "status": "auxiliary_startup_aborted_reassess",
+                    "execution": current, "auxiliary_contained": _auxiliary_containment_state(
+                        cursor, body["auxiliary_device_id"])["contained"]}
+            binding = _auxiliary_abort_binding(current)
+            if expected is not None and binding != expected:
+                return _auxiliary_abort_pending("preimage", "changed_during_preparation")
+            # Do not interfere with another owned auxiliary, including the sibling.
+            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events candidate
+                where candidate.event_source=%s
+                  and candidate.review_json->'rootline_execution'->>'action'
+                      in ('claim_auxiliary_before_on','mark_auxiliary_active')
+                  and not exists (select 1 from public.sam_live_stock_conversation_review_events terminal
+                    where terminal.event_source=%s
+                      and terminal.review_json->'rootline_execution'->>'execution_id'=
+                          candidate.review_json->'rootline_execution'->>'execution_id'
+                      and (terminal.review_json->'rootline_execution'->>'action'
+                           in ('record_auxiliary_completed','record_auxiliary_control_pulse_stopped')
+                           or (terminal.review_json->'rootline_execution'->>'action'='contain_auxiliary_device'
+                               and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true')))
+                limit 1""", (EVENT_SOURCE, EVENT_SOURCE))
+            if cursor.fetchone():
+                return _auxiliary_abort_pending("preimage", "auxiliary_owner_still_active")
+            claim = current[0]
+            # Provider retrieval timestamps use the runtime clock. Bracket that
+            # read with the same clock, as the existing borehole abort does;
+            # database clock skew must not turn a fresh read into a stale one.
+            started_monotonic = time.monotonic()
+            started = datetime.now(timezone.utc)
+            deadline = started + timedelta(seconds=8)
+            with cycle_budget(deadline=started_monotonic+8):
+                stage = "final_read"
+                with execution_duty(claim, deadline=deadline):
+                    proof = (prepared.read_locked(binding=binding, connection=connection, deadline=deadline)
+                        if prepared is not None else body["read_final_off"]())
+                stage = "final_preimage"
+                rows, check, failure = _auxiliary_abort_current(cursor, body)
+                if failure or isinstance(check, dict) or _auxiliary_abort_binding(check) != binding:
+                    return _auxiliary_abort_pending("preimage", "changed_during_final_read")
+                finished = datetime.now(timezone.utc)
+                aborted = {**claim, **binding, "state": "Aborted", "terminal_contract": _AUXILIARY_STARTUP_ABORT,
+                    "startup_aborted_verified": True, "reason": "startup_dispatch_outcome_unknown",
+                    "provider_on_outcome": "Unknown", "shutdown_verified": True,
+                    "on_attempts": 1, "off_attempts": len({row["attempt"] for row in rows
+                        if row.get("action") == "claim_auxiliary_off_attempt"}),
+                    "shutdown_evidence": proof, "read_started_at": started.isoformat(), "aborted_at": finished.isoformat(),
+                    "read_elapsed_seconds": time.monotonic()-started_monotonic,
+                    "objective_satisfied": False, "control_completed": False,
+                    "reservation_preserved": True, "on_authority": False}
+                aborted = _stored_event_body(_AUXILIARY_STARTUP_ABORT_ACTION, aborted,
+                    _event_id(_AUXILIARY_STARTUP_ABORT_ACTION, aborted))
+                if not _verified_auxiliary_startup_abort(aborted, rows):
+                    return _auxiliary_abort_pending("final_proof", "current_exact_off_unproven")
+                stage = "terminal_insert"
+                result = _insert_managed_event(cursor, _AUXILIARY_STARTUP_ABORT_ACTION, aborted)
+                stored = _managed_edge_rows(cursor, body["execution_id"])
+                if result.get("created") is not True or _auxiliary_startup_terminal(stored) != aborted:
+                    raise RuntimeError("auxiliary_abort_readback_conflict")
+                contained = _auxiliary_containment_state(cursor, body["auxiliary_device_id"])["contained"]
+                stage = "terminal_commit"
+                return {**result, "status": "auxiliary_startup_aborted_reassess", "execution": aborted,
+                    "auxiliary_contained": contained}
+    except Exception:
+        return _auxiliary_abort_pending(stage, "unavailable", unknown=stage == "terminal_commit")
+
+
+def _dispatch_auxiliary_off_edge(body):
+    """One consumed OFF slot, with its sender serialized against startup recovery."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    dispatch = body.get("dispatch")
+    if not callable(dispatch):
+        return {"accepted_unambiguous": False, "provider_command_attempted": False,
+            "status": "auxiliary_off_dispatch_invalid"}
+    slot = {"execution_id": body.get("execution_id"), "attempt": body.get("attempt")}
+    claimed = _guarded_managed_transition("claim_auxiliary_off_attempt", slot)
+    if claimed.get("created") is not True:
+        return {"accepted_unambiguous": False, "provider_command_attempted": False,
+            "status": "auxiliary_off_attempt_unavailable"}
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False, read_committed=True) as connection, connection.cursor() as cursor:
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+        rows = _managed_edge_rows(cursor, slot["execution_id"])
+        if any(row.get("action") == _AUXILIARY_STARTUP_ABORT_ACTION for row in rows):
+            return {"accepted_unambiguous": False, "provider_command_attempted": False,
+                "status": "auxiliary_execution_retired"}
+        dispatch_failure = None
+        try:
+            outcome = dispatch()
+        except Exception as exc:
+            dispatch_failure = exc
+            outcome = {"accepted_unambiguous": False, "status": "auxiliary_off_outcome_unknown"}
+        if not isinstance(outcome, dict):
+            dispatch_failure = RuntimeError("auxiliary_off_outcome_unknown")
+            outcome = {"accepted_unambiguous": False, "status": "auxiliary_off_outcome_unknown"}
+        _insert_managed_event(cursor, "record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+    # Preserve the existing unknown-effects path, after the attempted outcome
+    # commits. A provider exception must not become an ordinary rejected OFF
+    # that the coordinator retries or subsequently calls a verified completion.
+    if dispatch_failure is not None:
+        raise dispatch_failure
+    return {**outcome, "provider_command_attempted": True}

@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-11-20 - ROOTLINE operating recovery and consistent reporting
+
+Repair the existing execution path without changing device policy: preserve
+unknown OFF outcomes, retire contained auxiliary startups only after locked
+fresh OFF proof, supervise a newly started injector through its bounded stop,
+and observe pending borehole starts without the routine observation delay.
+Skip redundant middle supervision only after a proven inert planner result;
+initial uncertainty, due duties and final supervision remain mandatory.
+Scheduled reporting reads evidence as of its original trigger and rejects
+future evidence before recording a new plan. Current control reads retain
+their existing freshness semantics. Source tests and review do not establish
+live recovery, message delivery or autonomous farm completion.
+
 ## 2026-11-20 - Forecast provider continuity and evidence identity
 
 Map the existing forecast logger, authenticated ingestion and owner displays to

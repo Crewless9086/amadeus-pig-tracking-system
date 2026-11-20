@@ -117,6 +117,13 @@ class Store:
         if action=="load_auxiliary_containment": return None
         if action=="load_auxiliary_physical_outcome": return None
         if action=="load_auxiliary_off_attempts": return [{"attempt":n} for identity,n in self.off if identity==payload]
+        if action=="dispatch_auxiliary_off_edge":
+            slot={key:payload[key] for key in ("execution_id","attempt")}
+            if self("claim_auxiliary_off_attempt",slot).get("created") is not True:
+                return {"provider_command_attempted":False}
+            outcome=payload["dispatch"]()
+            self("record_auxiliary_off_outcome",{**slot,"outcome":outcome})
+            return {**outcome,"provider_command_attempted":True}
         if action=="dispatch_auxiliary_on_edge": return payload["dispatch"]()
         if action=="claim_auxiliary_before_on":
             if payload["consumption_key"] in self.claims: return {"success":True,"created":False}

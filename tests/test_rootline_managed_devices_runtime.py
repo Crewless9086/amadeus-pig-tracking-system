@@ -62,6 +62,14 @@ class Store:
             return {**payload["dispatch"](), "provider_command_attempted": True}
         if action == "record_borehole_aborted":
             return {"success": False, "provider_final_off_evidence": payload["read_final_off"]()}
+        if action == "dispatch_auxiliary_off_edge":
+            slot = {key: payload[key] for key in ("execution_id", "attempt")}
+            claimed = self("claim_auxiliary_off_attempt", slot)
+            if claimed.get("created") is not True:
+                return {"accepted_unambiguous": False, "provider_command_attempted": False}
+            outcome = payload["dispatch"]()
+            self("record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+            return {**outcome, "provider_command_attempted": True}
         if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt"}:
             self.rows.append((action, payload)); return {"success": True, "created": True}
         if action in {"record_auxiliary_eligibility", "record_auxiliary_on_outcome"}:

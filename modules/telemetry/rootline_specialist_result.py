@@ -147,7 +147,7 @@ def _lifecycle_exceptions(lifecycle):
 
 
 def build_current_rootline_specialist_result(
-    operating_date=None, database_url=None, now=None
+    operating_date=None, database_url=None, now=None, *, evidence_cutoff=None
 ):
     """Read canonical evidence through Phase 1 and return an in-memory result.
 
@@ -158,7 +158,12 @@ def build_current_rootline_specialist_result(
         operating_date=operating_date,
         database_url=database_url,
         now=generated_at,
+        **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}),
     )
+    if evidence_cutoff is not None:
+        error = _reporting_evidence_error(evidence, evidence_cutoff, generated_at)
+        if error:
+            return {**_unavailable_result(selected_date, generated_at, error), "status": error}
     return build_rootline_specialist_result(
         evidence,
         selected_date,
@@ -169,7 +174,7 @@ def build_current_rootline_specialist_result(
 
 def refresh_current_rootline_specialist_result(
     operating_date=None, database_url=None, now=None,
-    actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER",
+    actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER", *, evidence_cutoff=None,
 ):
     """Publish and project one exact canonical evidence snapshot.
 
@@ -179,7 +184,12 @@ def refresh_current_rootline_specialist_result(
     """
     generated_at = _as_za(now or datetime.now(timezone.utc))
     evidence, selected_date, generated_at = read_current_water_energy_evidence(
-        operating_date=operating_date, database_url=database_url, now=generated_at)
+        operating_date=operating_date, database_url=database_url, now=generated_at,
+        **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}))
+    if evidence_cutoff is not None:
+        error = _reporting_evidence_error(evidence, evidence_cutoff, generated_at)
+        if error:
+            return {**_unavailable_result(selected_date, generated_at, error), "status": error}
     plan = build_water_energy_plan(evidence, selected_date, now=generated_at)
     persisted, status = append_water_energy_plan(
         plan, actor_identity, database_url=database_url)
@@ -202,6 +212,49 @@ def refresh_current_rootline_specialist_result(
         "evidence_observed_at": current.get("evidence_observed_at"),
     }
     return result
+
+
+def _reporting_evidence_error(evidence, cutoff, generated_at):
+    """Validate admitted observation times before publishing a reporting plan.
+
+    Forecast target dates and planned future work are deliberately not observed
+    facts. Current/control callers do not enter this optional reporting boundary.
+    """
+    if (not isinstance(cutoff, datetime) or cutoff.tzinfo is None
+            or generated_at != cutoff):
+        return "scheduled_reassessment_evidence_cutoff_unproven"
+    observation_keys = {
+        "observed_at", "storage_observed_at", "reservoir_observed_at",
+        "visible_need_observed_at", "provider_timestamp", "provider_model_updated_at",
+        "reading_at", "last_reading_at", "last_forecast_run_at", "forecast_run_at",
+        "event_at", "event_at_sast", "completed_at", "started_at",
+        "recorded_at", "created_at", "complete_through", "snapshot_cutoff",
+        "evidence_cutoff", "calibrated_at", "reported_at", "retrieved_at",
+        "fertilizer_history_complete_through", "fertilizer_need_observed_at",
+    }
+    def visit(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in observation_keys and item not in (None, "", "Unknown", "Unavailable"):
+                    try:
+                        parsed = item if isinstance(item, datetime) else datetime.fromisoformat(
+                            str(item).replace("Z", "+00:00"))
+                        if parsed.tzinfo is None:
+                            return "scheduled_reassessment_evidence_cutoff_unproven"
+                        if parsed > cutoff:
+                            return "scheduled_reassessment_evidence_after_cutoff"
+                    except (TypeError, ValueError):
+                        return "scheduled_reassessment_evidence_cutoff_unproven"
+                error = visit(item)
+                if error:
+                    return error
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                error = visit(item)
+                if error:
+                    return error
+        return None
+    return visit(evidence)
 
 
 def reconsider_rootline_forecast_hold(
