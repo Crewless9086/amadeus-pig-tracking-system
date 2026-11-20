@@ -417,7 +417,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertNotIn("absolute floor", response["summary"])
         self.assertIn("Reserve reason: sunny forecast", response["summary"])
         self.assertIn("ROOTLINE recommends now: borehole", response["summary"])
-        self.assertIn("<b>Borehole:</b> Recommend", response["summary"])
+        self.assertIn("<b>Borehole AC backup:</b> Recommend", response["summary"])
         self.assertIn("new_canonical_evidence", response["summary"])
         af_response = rootline_water_energy_plan_handler(
             {"date": "2026-07-29", "semantic_language": "af"}
