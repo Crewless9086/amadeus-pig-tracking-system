@@ -38,6 +38,22 @@ def seed(db, action, body):
         return store._insert_managed_event(cursor, action, body)
 
 
+def seed_historical_event(db, body):
+    """Replay an already stored fixture row without minting a new event identity."""
+    import json
+    import psycopg
+    with psycopg.connect(db) as connection, connection.cursor() as cursor:
+        cursor.execute("""insert into public.sam_live_stock_conversation_review_events
+            (review_event_id,chatwoot_conversation_id,source_agent,event_source,
+             recommended_action,review_json)
+            values (%s,%s,'rootline_backend',%s,%s,%s::jsonb)
+            returning review_json->'rootline_execution'""",
+            (body['event_id'], body['execution_id'], store.EVENT_SOURCE,
+             body['action'], json.dumps({'rootline_execution': body},
+                sort_keys=True, separators=(',', ':'))))
+        return cursor.fetchone()[0]
+
+
 def rows(db, execution):
     import psycopg
     with psycopg.connect(db) as connection, connection.cursor() as cursor:
@@ -554,7 +570,7 @@ def test_actual_553987_history_recovers_on_existing_locked_runtime_rail(db):
     original = unstarted_incident_history()
     execution = original[1]
     for item in original:
-        saved = seed(db, item['action'], item)
+        saved = seed_historical_event(db, item)
         assert saved['event_id'] == item['event_id']
     result = recover({'execution_id': execution['execution_id'],
         'auxiliary_device_id': execution['auxiliary_device_id'],
