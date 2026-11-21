@@ -1131,7 +1131,7 @@ def _rootline_irrigation_start_summary(zone, execution):
     if type(limit) is int and limit > 0:
         minutes, seconds = divmod(limit, 60)
         lines.append(f"Configured segment limit: {minutes}m {seconds}s.")
-    lines.append("ROOTLINE will check shutdown. Water flow and elapsed watering time are not measured by this controller reading.")
+    lines.append("This start report does not establish the current controller state. Shutdown requires a separate verified OFF reading. Water flow and elapsed watering time are not measured by this controller reading.")
     return "\n".join(lines)
 
 
