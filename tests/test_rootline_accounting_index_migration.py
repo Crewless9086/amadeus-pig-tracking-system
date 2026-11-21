@@ -17,6 +17,13 @@ PREFIX = rail.ALLOWLIST[:rail.ALLOWLIST.index(ITEM)]
 EVENT_MIGRATION = "202607070001_create_sam_live_stock_conversation_review_events.sql"
 
 
+@pytest.fixture(autouse=True)
+def accounting_prefix_only():
+    # Qualify this historical ceremony independently of later append-only entries.
+    with patch.object(rail, "ALLOWLIST", PREFIX + (ITEM,)):
+        yield
+
+
 def connect():
     if not legacy.DATABASE_URL:
         pytest.skip("disposable migration database not configured")

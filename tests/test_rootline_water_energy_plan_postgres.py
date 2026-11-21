@@ -358,5 +358,213 @@ class WaterEnergyPlanPostgresTests(unittest.TestCase):
         self.assertEqual(result["status"], "future_observation_prohibited")
 
 
+    def _program_facts(self, at, selected=None):
+        from tests.test_rootline_water_energy_plan import daily_program_facts
+        return daily_program_facts(at, selected)
+
+    def _program_counts(self):
+        with psycopg.connect(self.url) as db:
+            return db.execute("select count(*),max(generation) from public.rootline_water_energy_plan_generations").fetchone()
+
+    def _initial_program(self, at, selected):
+        from modules.telemetry import rootline_water_energy_plan as subject
+        with psycopg.connect(self.url) as db:
+            result, status = subject.ensure_saved_daily_program(selected, now=at, connection=db,
+                evidence_loader=lambda **_: (self._program_facts(at, selected), selected, at),
+                forecast_reader=lambda **_: ({'success':True},200))
+        self.assertLess(status,400)
+        self.assertTrue(result['success'])
+        return result
+
+    def test_daily_program_concurrent_different_evidence_one_initial_and_restart(self):
+        from threading import Barrier
+        from modules.telemetry import rootline_water_energy_plan as subject
+        barrier=Barrier(2);loaded=[]
+        at=datetime.fromisoformat('2026-11-19T23:30:00+02:00');selected='2026-11-20'
+        def worker(number):
+            facts=self._program_facts(at,selected)
+            facts['power']['battery_soc_pct']+=number
+            def evidence_loader(**_):
+                loaded.append(number)
+                return facts,selected,at
+            with psycopg.connect(self.url) as db:
+                barrier.wait(timeout=10)
+                return subject.ensure_saved_daily_program(selected,now=at,connection=db,
+                    evidence_loader=evidence_loader,forecast_reader=lambda **_:({'success':True},200))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(worker,[0,1]))
+        self.assertTrue(all(status<400 and result['success'] for result,status in results),results)
+        self.assertEqual(len(loaded),1)
+        self.assertEqual(self._program_counts(),(1,1))
+        first=results[0][0]
+        self.assertEqual(first['evidence_sha256'],results[1][0]['evidence_sha256'])
+        self.assertEqual(first['daily_program'],results[1][0]['daily_program'])
+        def forbidden(**_):raise AssertionError('committed programme must survive lost response without rebuilding')
+        # The winner connection is closed and its return is discarded: a new
+        # caller recovers only from the committed canonical generation.
+        with psycopg.connect(self.url) as db:
+            restarted,status=subject.ensure_saved_daily_program(selected,now=at,connection=db,
+                evidence_loader=forbidden,forecast_reader=forbidden)
+        self.assertEqual(restarted['generation'],1)
+        self.assertEqual(restarted['evidence_sha256'],first['evidence_sha256'])
+        self.assertEqual(self._program_counts(),(1,1))
+
+    def test_daily_program_uncommitted_crash_rolls_back_before_restart(self):
+        from modules.telemetry import rootline_water_energy_plan as subject
+        at=datetime.fromisoformat('2026-11-19T23:30:00+02:00');selected='2026-11-20'
+        with self.assertRaisesRegex(RuntimeError,'simulated process loss'):
+            with psycopg.connect(self.url) as db:
+                result,status=subject.ensure_saved_daily_program(selected,now=at,connection=db,
+                    evidence_loader=lambda **_:(self._program_facts(at,selected),selected,at),
+                    forecast_reader=lambda **_:({'success':True},200))
+                self.assertEqual(status,201)
+                self.assertEqual(result['generation'],1)
+                raise RuntimeError('simulated process loss')
+        self.assertEqual(self._program_counts(),(0,None))
+        recovered=self._initial_program(at,selected)
+        self.assertEqual(recovered['generation'],1)
+        self.assertEqual(self._program_counts(),(1,1))
+
+    def test_daily_program_concurrent_revision_expected_generation_cas(self):
+        from threading import Barrier
+        from modules.telemetry import rootline_water_energy_plan as subject
+        at=datetime.fromisoformat('2026-11-20T09:00:00+02:00');selected=at.date().isoformat()
+        saved=self._initial_program(at,selected);barrier=Barrier(2)
+        def worker(minutes):
+            later=at+timedelta(minutes=minutes)
+            with psycopg.connect(self.url) as db:
+                barrier.wait(timeout=10)
+                return subject.revise_program_remainder(saved,self._program_facts(later),now=later,connection=db)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(worker,[1,2]))
+        self.assertTrue(all(status<400 and result['success'] for result,status in results),results)
+        self.assertEqual(self._program_counts(),(2,2))
+        self.assertEqual({result['generation'] for result,_ in results},{2})
+        self.assertEqual(len({result['evidence_sha256'] for result,_ in results}),1)
+        for result,_ in results:
+            self.assertEqual(result['daily_program']['base_tasks'],saved['daily_program']['base_tasks'])
+        later=at+timedelta(minutes=3)
+        with psycopg.connect(self.url) as db:
+            stale,status=subject.revise_program_remainder(saved,self._program_facts(later),now=later,connection=db)
+        self.assertEqual(stale['generation'],2)
+        self.assertEqual(self._program_counts(),(2,2))
+
+    def _legacy_program(self, at, selected):
+        from modules.telemetry import rootline_water_energy_plan as subject
+        legacy=subject.build_water_energy_plan(self._program_facts(at,selected),selected,now=at)
+        with psycopg.connect(self.url) as db:
+            result,status=subject.append_water_energy_plan(legacy,'owner-admin:test',connection=db)
+            self.assertEqual(status,201)
+            current,status=subject.get_current_water_energy_plan(selected,connection=db)
+        self.assertTrue(current['success'])
+        return current
+
+    def test_daily_program_exact_current_day_adoption_once(self):
+        from unittest.mock import patch
+        from modules.telemetry import rootline_water_energy_plan as subject
+        at=datetime.fromisoformat('2026-11-20T12:00:00+02:00');selected=at.date().isoformat()
+        legacy=self._legacy_program(at,selected)
+        def forbidden(**_):raise AssertionError('adoption must preserve exact saved material')
+        with patch.object(subject,'build_water_energy_plan',side_effect=AssertionError('no rebuild')):
+            with psycopg.connect(self.url) as db:
+                adopted,status=subject.ensure_saved_daily_program(selected,now=at,connection=db,
+                    evidence_loader=forbidden,forecast_reader=forbidden)
+        self.assertEqual(status,201)
+        self.assertEqual(adopted['generation'],2)
+        self.assertEqual(adopted['candidate_tasks'],legacy['candidate_tasks'])
+        self.assertEqual(adopted['irrigation_auxiliary_tasks'],legacy['irrigation_auxiliary_tasks'])
+        self.assertEqual(adopted['daily_program']['base_tasks'],legacy['candidate_tasks'])
+        self.assertEqual(adopted['daily_program']['legacy_plan']['generation'],legacy['generation'])
+        self.assertEqual(adopted['daily_program']['legacy_plan']['evidence_sha256'],legacy['evidence_sha256'])
+        self.assertEqual(adopted['daily_program']['provenance'],'legacy_current_day_adoption')
+        with psycopg.connect(self.url) as db:
+            replay,status=subject.ensure_saved_daily_program(selected,now=at,connection=db,
+                evidence_loader=forbidden,forecast_reader=forbidden)
+        self.assertEqual(replay['generation'],2)
+        self.assertEqual(self._program_counts(),(2,2))
+
+    def test_daily_program_cross_midnight_concurrent_adoption_cannot_bypass_global_once(self):
+        from threading import Barrier
+        from modules.telemetry import rootline_water_energy_plan as subject
+        before=datetime.fromisoformat('2026-11-20T23:59:59+02:00')
+        after=before+timedelta(seconds=2)
+        legacy={at.date().isoformat():self._legacy_program(at,at.date().isoformat()) for at in (before,after)}
+        barrier=Barrier(2)
+        def worker(at):
+            with psycopg.connect(self.url) as db:
+                barrier.wait(timeout=10)
+                return subject.ensure_saved_daily_program(at.date().isoformat(),now=at,connection=db,
+                    evidence_loader=lambda **_:(_ for _ in ()).throw(AssertionError('no evidence without forecast')),
+                    forecast_reader=lambda **_:({'success':False},200))
+        with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(worker,[before,after]))
+        adopted=[result for result,status in results if result.get('daily_program')]
+        held=[result for result,status in results if result.get('status')=='nightly_forecast_missing_new_starts_held']
+        self.assertEqual(len(adopted),1,results)
+        self.assertEqual(len(held),1,results)
+        self.assertEqual(self._program_counts(),(3,2))
+        winner=adopted[0]
+        self.assertEqual(winner['candidate_tasks'],legacy[winner['operating_date']]['candidate_tasks'])
+        # A fresh connection on the other date still cannot adopt after midnight.
+        loser=next(at for at in (before,after) if at.date().isoformat()!=winner['operating_date'])
+        with psycopg.connect(self.url) as db:
+            retry,status=subject.ensure_saved_daily_program(loser.date().isoformat(),now=loser,connection=db,
+                forecast_reader=lambda **_:({'success':False},200))
+            versions=db.execute("select count(*) from public.rootline_water_energy_plan_generations where plan_json->'daily_program'->>'version'=%s",(subject.DAILY_PROGRAM_VERSION,)).fetchone()[0]
+        self.assertEqual(retry['status'],'nightly_forecast_missing_new_starts_held')
+        self.assertEqual(versions,1)
+        self.assertEqual(self._program_counts(),(3,2))
+
+    def test_daily_program_missing_current_or_future_legacy_cannot_adopt(self):
+        from modules.telemetry import rootline_water_energy_plan as subject
+        at=datetime.fromisoformat('2026-11-20T12:00:00+02:00')
+        self._legacy_program(at,'2026-11-21')
+        for selected in ('2026-11-20','2026-11-21'):
+            with self.subTest(selected=selected), psycopg.connect(self.url) as db:
+                held,status=subject.ensure_saved_daily_program(selected,now=at,connection=db,
+                    forecast_reader=lambda **_:({'success':False},200))
+                self.assertEqual(held['status'],'nightly_forecast_missing_new_starts_held')
+        self.assertEqual(self._program_counts(),(1,1))
+
+
+
+    def test_daily_program_history_sql_bounds_context_but_keeps_old_allocation_and_latest_debt(self):
+        from copy import deepcopy
+        from modules.telemetry import rootline_water_energy_plan as subject
+        unresolved={'origin_id':'old-open','zone_id':'B12345','operating_date':'2026-08-01',
+            'original_minutes':120,'remaining_minutes':60,'repayments':['verified-old-half']}
+        resolved={'origin_id':'old-closed','zone_id':'C12345','operating_date':'2026-08-01',
+            'original_minutes':120,'remaining_minutes':0,'repayments':['verified-full']}
+        for selected in ('2026-08-01','2026-08-02','2026-11-18','2026-11-19','2026-11-21'):
+            at=datetime.fromisoformat(selected+'T09:00:00+02:00')
+            plan=subject.build_daily_program(self._program_facts(at,selected),selected,now=at)
+            plan['daily_program']['carry_origins']=deepcopy([unresolved,resolved])
+            if selected=='2026-11-21':
+                plan['daily_program']['carry_origins'][0]['remaining_minutes']=0
+            for task in plan['daily_program']['base_tasks']:
+                task['old_full_context_marker']='must_not_expand_old_context'
+                task['carry_allocations']=[]
+            if selected=='2026-08-01':
+                plan['daily_program']['base_tasks'][0]['carry_allocations']=[{'origin_id':'old-open','minutes':60}]
+            subject._hash_program(plan)
+            with psycopg.connect(self.url) as db:
+                result,status=subject.append_water_energy_plan(plan,'owner-admin:test',connection=db)
+                self.assertEqual(status,201,result)
+        with psycopg.connect(self.url) as db:
+            history=subject.read_program_history('2026-11-20',connection=db)
+        self.assertNotIn('error_type',history)
+        self.assertEqual(history['status'],'partial')
+        self.assertEqual([p['operating_date'] for p in history['plans']],['2026-11-18','2026-11-19'])
+        self.assertEqual([p['operating_date'] for p in history['allocation_plans']],['2026-08-01'])
+        compact=history['allocation_plans'][0]['tasks']
+        self.assertEqual(len(compact),1)
+        self.assertEqual(set(compact[0]),{'task_id','carry_allocations'})
+        self.assertEqual(compact[0]['carry_allocations'],[{'origin_id':'old-open','minutes':60}])
+        self.assertEqual(history['carry_origins'],[unresolved,resolved])
+        self.assertEqual(history['unresolved_origins'],[unresolved])
+        self.assertEqual(history['from_date'],'2026-10-19')
+        self.assertEqual(history['completed_weeks_through_date'],'2026-11-15')
+        self.assertEqual(len(history['missing_plan_dates']),28)
+
+
 if __name__ == "__main__":
     unittest.main()

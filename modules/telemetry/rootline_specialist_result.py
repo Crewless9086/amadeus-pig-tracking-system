@@ -164,12 +164,27 @@ def build_current_rootline_specialist_result(
         error = _reporting_evidence_error(evidence, evidence_cutoff, generated_at)
         if error:
             return {**_unavailable_result(selected_date, generated_at, error), "status": error}
-    return build_rootline_specialist_result(
+    result = build_rootline_specialist_result(
         evidence,
         selected_date,
         now=generated_at,
         evidence_origin="canonical_read_models",
     )
+    return _with_provider_availability(result, database_url=database_url, now=generated_at)
+
+
+def _with_provider_availability(result, *, database_url=None, now=None):
+    from modules.telemetry.rootline_provider_availability import read_provider_availability, CONTRACT
+    try:
+        availability = read_provider_availability(database_url=database_url, now=now)
+    except Exception:
+        availability = {"contract": CONTRACT, "status": "unknown", "scopes": []}
+    from modules.telemetry.rootline_input_health import read_input_health, CONTRACT as INPUT_CONTRACT
+    try:
+        inputs = read_input_health(database_url=database_url, now=now)
+    except Exception:
+        inputs = {"contract": INPUT_CONTRACT, "status": "unknown", "inputs": {}}
+    return {**result, "provider_availability": availability, "input_health": inputs}
 
 
 def refresh_current_rootline_specialist_result(
@@ -183,35 +198,41 @@ def refresh_current_rootline_specialist_result(
     endpoint from disagreeing with the scheduler's in-memory recommendation.
     """
     generated_at = _as_za(now or datetime.now(timezone.utc))
-    evidence, selected_date, generated_at = read_current_water_energy_evidence(
-        operating_date=operating_date, database_url=database_url, now=generated_at,
+    from modules.telemetry.rootline_water_energy_plan import (
+        ensure_saved_daily_program, revise_program_remainder)
+    selected_date = str(operating_date or generated_at.date().isoformat())[:10]
+    evidence, _, _ = read_current_water_energy_evidence(
+        operating_date=selected_date, database_url=database_url, now=generated_at,
+        forecast_mode="live_only",
         **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}))
     if evidence_cutoff is not None:
         error = _reporting_evidence_error(evidence, evidence_cutoff, generated_at)
         if error:
-            return {**_unavailable_result(selected_date, generated_at, error), "status": error}
-    plan = build_water_energy_plan(evidence, selected_date, now=generated_at)
-    persisted, status = append_water_energy_plan(
-        plan, actor_identity, database_url=database_url)
-    if status >= 400 or persisted.get("success") is not True:
-        return _unavailable_result(selected_date, generated_at,
-                                   persisted.get("status") or "canonical_plan_append_failed")
-    current, current_status = get_current_water_energy_plan(
-        selected_date, database_url=database_url)
-    if (current_status >= 400 or current.get("success") is not True
-            or current.get("plan_id") != plan.get("plan_id")
-            or current.get("evidence_sha256") != plan.get("evidence_sha256")):
-        return _unavailable_result(selected_date, generated_at,
-                                   "canonical_plan_readback_mismatch")
-    result = build_rootline_specialist_result(
-        evidence, selected_date, now=generated_at,
-        evidence_origin="canonical_current_plan")
-    result["canonical_plan"] = {
-        "plan_id": current.get("plan_id"), "generation": current.get("generation"),
-        "evidence_sha256": current.get("evidence_sha256"),
-        "evidence_observed_at": current.get("evidence_observed_at"),
-    }
-    return result
+            return {**_unavailable_result(selected_date, generated_at, error),
+                "status": error}
+    # Reject inadmissible reporting evidence before initial programme persistence.
+    saved, status = ensure_saved_daily_program(selected_date, database_url=database_url,
+        now=generated_at, actor_identity=actor_identity)
+    if status >= 400 or saved.get("success") is not True:
+        return _with_provider_availability(
+            _unavailable_result(selected_date, generated_at, saved.get("status")),
+            database_url=database_url, now=generated_at)
+    if evidence_cutoff is not None:
+        saved_cutoff = datetime.fromisoformat(saved["daily_program"]["creation_cutoff"])
+        if saved_cutoff > evidence_cutoff:
+            return {**_unavailable_result(selected_date, generated_at,
+                "scheduled_reassessment_evidence_after_cutoff"),
+                "status": "scheduled_reassessment_evidence_after_cutoff"}
+    current, status = revise_program_remainder(saved, evidence, now=generated_at,
+        database_url=database_url, actor_identity=actor_identity)
+    if status >= 400 or current.get("success") is not True:
+        return _with_provider_availability(
+            _unavailable_result(selected_date, generated_at, current.get("status")),
+            database_url=database_url, now=generated_at)
+    result = project_water_energy_plan(current, now=generated_at)
+    result["canonical_plan"] = {key: current.get(key) for key in (
+        "plan_id", "generation", "evidence_sha256", "evidence_observed_at")}
+    return _with_provider_availability(result, database_url=database_url, now=generated_at)
 
 
 def _reporting_evidence_error(evidence, cutoff, generated_at):
@@ -359,7 +380,7 @@ def project_water_energy_plan(plan, now=None):
     # decisions and provenance by rebuilding only when raw evidence is present.
     if plan.get("success") is not True:
         return _unavailable_result(selected_date, generated_at, plan.get("status"))
-    if not evidence["weather"].get("observed_at"):
+    if plan.get("daily_program") or not evidence["weather"].get("observed_at"):
         result = _project_existing_plan(plan, generated_at)
         return result
     return build_rootline_specialist_result(evidence, selected_date, generated_at)
@@ -434,6 +455,11 @@ def _project_existing_plan(plan, now):
         },
         "authority": deepcopy(RESULT_AUTHORITY),
     }
+    if plan.get("daily_program"):
+        result["daily_program"] = deepcopy(plan["daily_program"])
+        result["canonical_plan"] = {key: plan.get(key) for key in (
+            "plan_id", "generation", "evidence_sha256", "evidence_observed_at")}
+        result["current_local_weather"] = deepcopy(plan.get("current_local_weather") or {})
     result["owner_brief"] = _owner_brief(result)
     return result
 
@@ -474,7 +500,12 @@ def _recommendations(
     for identity, task_id in _RECOMMENDATION_TASKS:
         task = deepcopy(tasks.get(task_id) or {})
         status = _public_status(task.get("recommendation"))
-        reason = task.get("reason") or "Canonical task evidence is unavailable."
+        reason = task.get("live_adjustment_reason") or task.get("reason") or "Canonical task evidence is unavailable."
+        reason = {"saved_serial_slot_not_yet_due": "This job is planned for its next available time below.",
+            "current_local_weather_release_unproven": "Current local weather has not cleared this start.",
+            "consumed_original_job_deferred_to_next_normal_program": "Today's job is deferred; its remaining work stays within the next day's normal allowance.",
+            "remaining_objective_moves_to_next_normal_operating_date": "Today's remaining window cannot fit this job; retain it for the next normal plan.",
+            "remaining_slot_moved_from_saved_time_using_live_availability": "The remaining job has moved to the next available time below."}.get(reason, reason)
         if identity == "borehole" and status != "Do Not Run" and forecast_only_delay and task.get("preferred_window") != "standing_supply_with_native_fail_stop":
             if water_demand.get("status") == "urgent":
                 status, reason = _borehole_after_forecast_delay(plan, evidence)
@@ -830,6 +861,9 @@ def _task_plan_projection(task):
     return {
         "zone_decision": task.get("zone_decision"),
         "planned_start_at": task.get("planned_start_at"),
+        "planned_end_at": task.get("planned_end_at"),
+        "program_task_id": task.get("program_task_id"),
+        "carry_allocations": deepcopy(task.get("carry_allocations")),
         "planned_duration_minutes": task.get("planned_duration_minutes"),
         "weekly_cadence": deepcopy(task.get("weekly_cadence")),
         "recommendation_source": task.get("recommendation_source"),

@@ -563,3 +563,44 @@ def test_material_change_notifies_once_then_next_bucket_is_silent():
     assert len(observations) == 2
     assert {row["evidence_cutoff"] for row in observations} == {
         "2026-08-05T10:14:00+02:00", "2026-08-05T10:29:00+02:00"}
+
+
+@pytest.mark.parametrize("report_due", [False, True])
+def test_actual_gateway_callbacks_ensure_due_program_after_safety_even_without_report(monkeypatch, report_due):
+    from modules.oom_sakkie import automatic_reassessment_scheduler as scheduler
+    from modules.telemetry import rootline_water_energy_plan as planning
+    calls=[]
+    now=datetime.fromisoformat("2026-11-20T23:30:00+02:00")
+    def dispatch(**kwargs):
+        return (kwargs['invoke'] if report_due else kwargs['invoke_not_due'])()
+    monkeypatch.setattr(scheduler,'run_due_reassessment',dispatch)
+    def ensure(**kwargs):
+        calls.append('programme')
+        assert kwargs['now'] == now
+        return {'success':True,'status':'saved_daily_program'},200
+    monkeypatch.setattr(planning,'ensure_due_daily_program',ensure)
+    def safety(**kwargs):
+        calls.append('safety')
+        return {'success':True,'status':'active_segment_owned','active_execution_found':True,
+            'hardware_commands':0,'writes_farm_data':False}
+    def managed(**kwargs):
+        calls.append('managed_safety')
+        return {'success':True,'status':'managed_safe','hardware_commands':0,'writes_farm_data':False}
+    def loader():
+        calls.append('report_evidence')
+        return {'success':False,'status':'offline_report_evidence_unavailable'}
+    env={'OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED':'true',
+        'OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN':'x'*40,
+        'OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS':'42'}
+    result,status=handle_rootline_reassessment_trigger(
+        {**scheduled_payload(),'owner_user_id':'42','chat_id':'42'},
+        {'X-Oom-Sakkie-Telegram-Token':'x'*40},env,
+        schedule_store=lambda *args: {},state_store=None,scheduler_now=now,
+        specialist_loader=loader,active_supervision_cycle=safety,managed_device_cycle=managed,
+        equipment_notification_cycle=lambda **kwargs:{'success':True,'status':'no_notifications',
+            'telegram_sends':0,'hardware_commands':0})
+    assert calls[:3] == ['safety','managed_safety','programme']
+    assert calls.count('programme') == 1
+    assert ('report_evidence' in calls) is report_due
+    assert result['daily_program_ready'] is True
+    assert result['hardware_commands'] == 0

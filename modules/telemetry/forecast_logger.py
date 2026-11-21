@@ -317,8 +317,10 @@ def _health_request(payload):
     if not AMADEUS_BACKEND_URL or not TELEMETRY_INGEST_API_KEY:
         raise RuntimeError("forecast_health_not_configured")
     try:
+        request_payload = {**payload, "request_expires_at":
+            (datetime.now(timezone.utc) + timedelta(seconds=15)).isoformat()}
         response = requests.post(AMADEUS_BACKEND_URL+"/api/telemetry/weather/forecast/provider-health",
-            json=payload, headers={"X-Amadeus-Telemetry-Key": TELEMETRY_INGEST_API_KEY}, timeout=10)
+            json=request_payload, headers={"X-Amadeus-Telemetry-Key": TELEMETRY_INGEST_API_KEY}, timeout=(3, 15))
         result = response.json()
     except (requests.RequestException, ValueError):
         raise RuntimeError("forecast_health_unavailable") from None
@@ -329,9 +331,11 @@ def _health_request(payload):
     return result
 
 
-def _finish_provider(claim, status, *, failure_kind=None, retry_not_before=None, forecast_run_at=None):
+def _finish_provider(claim, status, *, failure_kind=None, retry_not_before=None, forecast_run_at=None, nightly_cycle=None):
     payload = {"action": "result", **claim, "status": status, "failure_kind": failure_kind,
         "retry_not_before": retry_not_before, "forecast_run_at": forecast_run_at}
+    if nightly_cycle is not None:
+        payload["nightly_cycle"] = nightly_cycle
     try:
         return _health_request(payload).get("success") is True
     except RuntimeError:
@@ -344,7 +348,7 @@ def provider_configuration():
     return [{"provider": name, "configured": name != "weatherapi" or bool(
         os.getenv("WEATHERAPI_API_KEY", "").strip())} for name in order if name in PROVIDERS]
 
-def acquire_forecast(lat, lon, tz, days):
+def acquire_forecast(lat, lon, tz, days, *, nightly_cycle=None):
     failures = []
     order = [name.strip() for name in os.getenv("FORECAST_PROVIDERS", "visual_crossing,weatherapi").split(",")]
     if not order or len(set(order)) != len(order) or any(name not in PROVIDERS for name in order):
@@ -357,7 +361,8 @@ def acquire_forecast(lat, lon, tz, days):
             continue
         attempt = str(uuid4())
         try:
-            admission = _health_request({"action": "claim", "provider": provider, "attempt_id": attempt})
+            admission = _health_request({"action": "claim", "provider": provider, "attempt_id": attempt,
+                **({"nightly_cycle": nightly_cycle} if nightly_cycle is not None else {})})
             if admission.get("allowed") is not True:
                 failures.append({"provider": provider, "failure_kind": "health_hold",
                     "status": admission.get("status")})
@@ -377,7 +382,7 @@ def acquire_forecast(lat, lon, tz, days):
             kind = getattr(exc, "failure_kind", "quota" if isinstance(exc, ForecastProviderRateLimited)
                 else "invalid_data" if isinstance(exc, ValueError) else "network")
             saved = _finish_provider(claim, "fetch_failed", failure_kind=kind,
-                retry_not_before=getattr(exc, "retry_not_before", None))
+                retry_not_before=getattr(exc, "retry_not_before", None), nightly_cycle=nightly_cycle)
             failures.append({"provider": provider, "failure_kind": kind, "health_persisted": saved})
             continue
         source_id, label, attribution = PROVIDERS[provider]
@@ -412,6 +417,27 @@ def append_history(ws, rows: list[list]):
     ws.append_rows(rows, value_input_option="RAW")
 
 
+
+def _planning_hours(data, selected_date):
+    provider = data.get("provenance", {}).get("provider")
+    response = data.get("response") or {}
+    if provider == "visual_crossing":
+        selected = next((d for d in response.get("days", []) if d.get("datetime") == selected_date), {})
+        rows = selected.get("hours", [])
+        return [{"start_at": selected_date + "T" + h["datetime"] + "+02:00",
+            "rain_sum_mm": h.get("precip"), "rain_probability_pct": h.get("precipprob"),
+            "wind_max_kmh": h.get("windspeed"), "source": h.get("source"),
+            "local_observation_credit": False} for h in rows if h.get("source") == "fcst"]
+    if provider == "weatherapi":
+        selected = next((d for d in response.get("forecast", {}).get("forecastday", [])
+            if d.get("date") == selected_date), {})
+        return [{"start_at": h["time"].replace(" ", "T") + ":00+02:00",
+            "rain_sum_mm": h.get("precip_mm"), "rain_probability_pct": h.get("chance_of_rain"),
+            "wind_max_kmh": h.get("wind_kph"), "source": "fcst",
+            "local_observation_credit": False} for h in selected.get("hour", [])]
+    return []
+
+
 def build_backend_payload(rows: list[list], data: dict) -> dict:
     days = []
     for row in rows:
@@ -425,6 +451,7 @@ def build_backend_payload(rows: list[list], data: dict) -> dict:
             "wind_max_kmh": row[8],
             "gust_max_kmh": row[9],
             "provenance": data.get("provenance", {}),
+            "planning_hours": _planning_hours(data, row[2]),
             **({"provider_daily_chance_of_rain_pct": _number(data["response"]["forecast"][
                 "forecastday"][row[3]]["day"].get("daily_chance_of_rain"), 0, 100, required=False)}
                 if data.get("provenance", {}).get("provider") == "weatherapi" else {}),
@@ -466,7 +493,7 @@ def post_backend_ingest(payload: dict) -> tuple[bool, Optional[str]]:
     return True, None
 
 
-def main():
+def main(*, nightly=True):
     load_dotenv()
     refresh_configuration()
     require_backend_env()
@@ -482,9 +509,36 @@ def main():
     tz = env_required("TIMEZONE")
     days = min(16, max(3, int(os.getenv("DAYS", "3"))))
 
+    cycle = None
+    if nightly:
+        try:
+            admission = _health_request({"action": "nightly_claim", "provider": "visual_crossing",
+                "attempt_id": str(uuid4())})
+            if admission.get("success") is not True or admission.get("allowed") is not True:
+                if (admission.get("success") is True and admission.get("allowed") is False
+                        and admission.get("status") in {"nightly_not_due", "nightly_cycle_already_claimed"}):
+                    print(json.dumps({"success": True, "status": admission["status"], "provider_calls": 0}))
+                    return
+                raise RuntimeError("nightly_cycle_admission_invalid")
+            cycle = admission.get("cycle")
+            if not isinstance(cycle, dict) or not all(isinstance(cycle.get(k), str) and cycle[k]
+                    for k in ("attempt_id", "cycle_date", "operating_date")):
+                raise RuntimeError("nightly_cycle_claim_unproven")
+        except RuntimeError as exc:
+            print(json.dumps({"success": False, "status": "nightly_cycle_admission_unavailable",
+                "provider_calls": 0, "existing_forecast_preserved": True, "error": str(exc)}))
+            raise SystemExit(2) from None
     try:
-        rows, data, failures = acquire_forecast(lat, lon, tz, days)
+        rows, data, failures = acquire_forecast(lat, lon, tz, days,
+            **({"nightly_cycle": {k: cycle[k] for k in ("attempt_id", "cycle_date", "operating_date")}} if cycle else {}))
+        if cycle is not None:
+            data["provenance"]["nightly_cycle"] = {key: cycle[key] for key in (
+                "attempt_id", "cycle_date", "operating_date")}
+
     except (RuntimeError, ValueError) as exc:
+        if cycle is not None:
+            _health_request({"action": "nightly_result", "provider": "visual_crossing",
+                "attempt_id": cycle["attempt_id"], "status": "failed"})
         print(json.dumps({
             "success": False,
             "status": "provider_rate_limited" if isinstance(exc, ForecastProviderRateLimited) else "forecast_unavailable",
@@ -518,8 +572,15 @@ def main():
 
     required_ingest = BACKEND_INGEST_ENABLED and backend_ingest_success
     health_saved = _finish_provider(data["health_claim"], "ingested" if required_ingest else "ingest_failed",
-        failure_kind=None if required_ingest else "backend_ingest", forecast_run_at=rows[0][0])
+        failure_kind=None if required_ingest else "backend_ingest", forecast_run_at=rows[0][0],
+        nightly_cycle={k: cycle[k] for k in ("attempt_id", "cycle_date", "operating_date")} if cycle else None)
     success = required_ingest and health_saved and all(item.get("health_persisted", True) for item in failures)
+    if cycle is not None:
+        recorded = _health_request({"action": "nightly_result", "provider": "visual_crossing",
+            "attempt_id": cycle["attempt_id"], "status": "ingested" if success else "failed",
+            "source_id": data["provenance"]["source_id"] if success else None,
+            "forecast_run_at": rows[0][0] if success else None})
+        success = success and recorded.get("success") is True
     print(json.dumps({
         "success": success,
         "provider": data["provenance"]["provider"],

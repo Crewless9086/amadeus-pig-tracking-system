@@ -117,7 +117,7 @@ def run(store,transport,rain=0,notify=None,clock=lambda:NOW):
     def observation_store(action,identity,payload):
         created=identity not in observations; observations.setdefault(identity,payload)
         return {"success":True,"created":created}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",
                     return_value=plan()):
         return run_rootline_execution_cycle(notify=notify or (lambda *_:{"success":True,
             "provider_delivery_confirmed":True,"provider_message_id":"MSG-1"}),
@@ -134,7 +134,7 @@ def test_scheduler_owner_binding_persists_hold_observation_without_notification_
         created=identity not in observations; observations.setdefault(identity,payload)
         return {"success":True,"created":created}
     loader=lambda **_kwargs:(evidence(.25),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",
                     return_value=plan()):
         value=run_rootline_execution_cycle(notify=lambda *args:notices.append(args),
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=execution_store,
@@ -220,7 +220,7 @@ def test_eligible_artifact_without_canonical_database_fails_closed_before_on():
     observations={}
     def observation_store(action,identity,payload):
         observations.setdefault(identity,payload); return {"success":True,"created":True}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",
                     return_value=plan()):
         result=run_rootline_execution_cycle(notify=lambda *_:None,
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
@@ -272,7 +272,7 @@ def test_run_to_technical_block_notifies_once_and_replay_is_silent():
     def notify(state,payload):
         notices.append((state,payload)); return {"provider_delivery_confirmed":True,
             "provider_message_id":"BLOCK-1"}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
             store=store,token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",
@@ -296,7 +296,7 @@ def test_blocked_notification_failure_is_durable_and_never_retried():
             if isinstance(response,Exception): raise response
             return response
         loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-        with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
             args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
                 store=store,token_store=object(),transport=transport,evidence_loader=loader,
                 readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
@@ -318,7 +318,7 @@ def test_blocked_notification_outcome_store_failure_is_unproven_and_not_retried(
     def notify(*_args):
         calls.append(1); return {"provider_delivery_confirmed":True,"provider_message_id":"BLOCK-1"}
     loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,clock=lambda:NOW,
             store=store,token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
@@ -345,7 +345,7 @@ def test_real_advancing_clock_accepts_fresh_revalidation_before_claim():
 
 def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_governed_identity():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller("PREVIEW-RECEIPT"),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
@@ -364,7 +364,7 @@ def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_govern
 
 def test_protected_segment_rejects_changed_stable_job_identity_with_zero_control():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         expected={**expected,"job_sha256":"wrong"}
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
@@ -425,7 +425,7 @@ def test_protected_runner_contains_unavailable_canonical_history_before_provider
 
 def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
@@ -438,7 +438,7 @@ def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation()
 
 def test_protected_restart_requires_full_claim_binding_and_never_reissues_on():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store,clock=lambda:NOW)["artifact"]
         first=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
@@ -464,7 +464,7 @@ def test_weather_ages_past_thirty_minutes_during_provider_read():
     def read(**kwargs):
         current[0] += timedelta(seconds=2)
         return {**controller(), "trusted_receipt_at": current[0].isoformat()}
-    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+    with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=plan()):
         result = _current(lambda **_: (sampled,"2026-08-08",NOW), read, object(), {}, "db", NOW,
             Store(), clock=lambda:current[0])
     assert result["artifact"]["eligible"] is False
@@ -479,8 +479,145 @@ def test_no_dispatchable_work_never_requests_optional_controller_evidence():
             planned["candidate_tasks"] = []
         else:
             planned["candidate_tasks"][0].update(task)
-        with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=planned):
+        with mock.patch("modules.telemetry.rootline_execution_runtime.project_saved_program_for_execution",return_value=planned):
             result = _current(lambda **_: (evidence(),"2026-08-08",NOW),
                 lambda **_: (_ for _ in ()).throw(AssertionError("unnecessary provider read")),
                 object(), {}, "db", NOW, Store(), clock=lambda:NOW)
         assert result["artifact"]["eligible"] is False
+
+
+# Initial pulse-parent readback: real transport and request-budget regressions.
+from copy import deepcopy as _pulse_parent_deepcopy
+from datetime import datetime as _pulse_parent_datetime, timedelta as _pulse_parent_timedelta
+from pathlib import Path as _pulse_parent_Path
+from urllib.parse import urlparse as _pulse_parent_urlparse
+import importlib.util as _pulse_parent_importlib, json as _pulse_parent_json, sys as _pulse_parent_sys
+import pytest as _pulse_parent_pytest
+from modules.telemetry import rootline_execution_runtime as _pulse_parent_runtime
+from modules.telemetry import rootline_ewelink_request_budget as _pulse_parent_budget
+from modules.telemetry.rootline_ewelink_readback import read_registered_device as _pulse_parent_read_registered_device
+from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport as _pulse_parent_RootlineIFTTTTransport
+from modules.telemetry.rootline_ewelink_oauth import OAuthFailure as _pulse_parent_OAuthFailure
+from tests.test_rootline_routine_efficiency import fixture as _pulse_parent_fixture
+from tests.test_rootline_ewelink_readback import NOW as _pulse_parent_NOW
+from tests.test_rootline_ewelink_request_budget import MemoryBudget as _pulse_parent_MemoryBudget, fail as _pulse_parent_fail, snapshot as _pulse_parent_snapshot
+from tests.test_rootline_fertilizer_auxiliary import injection_context as _pulse_parent_injection_context
+
+def _pulse_parent_harness(monkeypatch,fault=None,hold=False,due=False,expired=False):
+ source,tokens,raw,rawcalls=_pulse_parent_fixture();client=_pulse_parent_MemoryBudget(environ=source);client.backend.now=_pulse_parent_NOW
+ monkeypatch.setattr(_pulse_parent_budget,'RequestBudget',lambda *_a,**_k:client)
+ class FixtureClock(_pulse_parent_datetime):
+  @classmethod
+  def now(cls,tz=None):return client.backend.now if tz else client.backend.now.replace(tzinfo=None)
+ monkeypatch.setattr(_pulse_parent_budget,'datetime',FixtureClock)
+ if hold:
+  with _pulse_parent_pytest.raises(_pulse_parent_OAuthFailure):_pulse_parent_snapshot(client,send=_pulse_parent_fail())
+  if due:client.backend.advance(3601)
+ tokens.record['access_expires_at']=client.backend.now+_pulse_parent_timedelta(days=1)
+ if expired:tokens.record['access_expires_at']=client.backend.now-_pulse_parent_timedelta(seconds=1)
+ endpoints=[];state=['on'];read_flags=[]
+ def request(method,url,**kwargs):
+  endpoint=_pulse_parent_urlparse(url).path
+  def send(_):
+   endpoints.append(endpoint);value=_pulse_parent_deepcopy(raw(method,url,**kwargs))
+   if endpoint=='/v2/device/thing':
+    item=value['thingList'][0]['itemData'];item['updatedAt']=client.backend.now.isoformat()
+    if fault in ('stale','future'):item['updatedAt']=(client.backend.now+_pulse_parent_timedelta(seconds=-301 if fault=='stale' else 60)).isoformat()
+    item['params']['switches']=[{'outlet':i,'switch':state[0] if i==0 else 'off'} for i in range(4)]
+    if fault=='account':item['apikey']='changed'
+    if fault=='missing_account':item.pop('apikey')
+    if fault=='wrong_device':item['deviceid']='other'
+    if fault=='uiid':item['extra']['uiid']=138
+    if fault=='duplicate':value['thingList'].append(_pulse_parent_deepcopy(value['thingList'][0]))
+    if fault=='offline':item['online']=False
+    if fault=='other_on':item['params']['switches'][1]['switch']='on'
+    if fault=='off':item['params']['switches'][0]['switch']='off'
+    if fault=='timeout':raise TimeoutError('synthetic read failed')
+   if endpoint=='/v2/device/thing/status':
+    value['params']={'switches':[{'outlet':i,'switch':state[0] if i==0 else 'off'} for i in range(4)]}
+    if fault=='other_on':value['params']['switches'][1]['switch']='on'
+    if fault=='off':value['params']['switches'][0]['switch']='off'
+    if fault=='timeout':raise TimeoutError('synthetic read failed')
+   return value
+  return client.dispatch(region='eu',endpoint=endpoint,send=send)
+ class NativeSnapshot(_pulse_parent_RootlineIFTTTTransport):
+  def _snapshot(self,device_id,channel,*,routine_read=False):
+   read_flags.append(routine_read)
+   return self._validated_snapshot(_pulse_parent_read_registered_device(device_id,token_store=tokens,
+    environ=source,http_request=request,now=client.backend.now+(_pulse_parent_timedelta(seconds=-301) if fault=='stale' else _pulse_parent_timedelta(seconds=60) if fault=='future' else _pulse_parent_timedelta()),routine_read=routine_read),device_id,channel)
+ transport=NativeSnapshot(token_store=tokens,environ=source,http_open=lambda *_a,**_k:_pulse_parent_pytest.fail('no hardware'))
+ now=client.backend.now
+ context=_pulse_parent_injection_context(zone_start_evidence={'evidence_id':'START','zone_execution_id':'ZONE-EXEC-1','observed_at':(now-_pulse_parent_timedelta(seconds=600)).isoformat()},
+  fertilizer_history_complete_through=now.isoformat(),irrigation_stop_deadline=(now+_pulse_parent_timedelta(seconds=1800)).isoformat())
+ return transport,endpoints,read_flags,client,context,state
+
+
+def _pulse_parent_refresh(module,transport,client,context,**kwargs):
+ return module._refresh_active_irrigation_readback({'active_irrigation_context':_pulse_parent_deepcopy(context)},transport,
+  client.backend.now,clock=lambda:client.backend.now,only_when_due=True,preparation_token='one-invocation',**kwargs)['active_irrigation_context']['zone_output_evidence']
+
+
+def test_pulse_parent_initial_parent_single_http_fresh_authoritative_proof(monkeypatch):
+ transport,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch)
+ output=_pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)
+ assert output['state']=='ON' and output['authoritative']
+ assert calls==['/v2/device/thing']
+ assert flags==[True]
+ assert len(output['evidence_id'])==64
+ assert output['evidence_id']==output['irrigation_output_evidence']['response_digest']
+
+
+def test_pulse_parent_final_flush_retains_fresh_snapshot_even_new_injection_disabled(monkeypatch):
+ for module in (_pulse_parent_runtime,):
+  with monkeypatch.context() as mp:
+   transport,calls,flags,client,context,_=_pulse_parent_harness(mp)
+   context.update(completed_pulses=2,prior_pulse_shutdown_evidence={'zone_execution_id':'ZONE-EXEC-1','shutdown_verified':True,'observed_at':(client.backend.now-_pulse_parent_timedelta(seconds=600)).isoformat()})
+   assert _pulse_parent_refresh(module,transport,client,context,injection_enabled=False)['state']=='ON'
+   assert calls==['/v2/device/thing'] and flags==[False]
+
+
+@_pulse_parent_pytest.mark.parametrize('fault',['account','missing_account','wrong_device','uiid','duplicate','offline','stale','future','other_on','off','timeout'])
+def test_pulse_parent_changed_identity_or_unfresh_parent_never_retains_historical_on(monkeypatch,fault):
+ transport,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch,fault=fault)
+ assert _pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)=={}
+ assert '/v2/family' not in calls
+
+
+@_pulse_parent_pytest.mark.parametrize('expired',[False,True])
+def test_pulse_parent_due412_restores_full_discovery_same_charge(monkeypatch,expired):
+ transport,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch,hold=True,due=True,expired=expired)
+ units=sum(row['units'] for row in client.backend.events)
+ output=_pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)
+ assert output['state']=='ON'
+ assert calls==(['/v2/user/refresh'] if expired else [])+['/v2/family','/v2/device/thing','/v2/device/thing/status']
+ assert sum(row['units'] for row in client.backend.events)-units==3+int(expired)
+ assert not client.backend.state['scopes'][_pulse_parent_budget.scope_digest(transport.environ,'eu')]['category']
+
+
+def test_pulse_parent_not_due412_no_provider_attempt(monkeypatch):
+ transport,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch,hold=True)
+ assert _pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)=={} and calls==[]
+
+
+def test_pulse_parent_optional_slot_still_suppresses_new_worker_invocation(monkeypatch):
+ transport,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch)
+ assert _pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)['state']=='ON';assert len(calls)==1
+ output=_pulse_parent_runtime._refresh_active_irrigation_readback({'active_irrigation_context':context},transport,client.backend.now,
+  clock=lambda:client.backend.now,only_when_due=True,preparation_token='another-invocation')
+ assert output['active_irrigation_context']['zone_output_evidence']=={} and len(calls)==1
+
+
+def test_pulse_parent_default_nonpreparation_and_changed_output_stay_fresh(monkeypatch):
+ transport,calls,flags,client,context,state=_pulse_parent_harness(monkeypatch)
+ assert _pulse_parent_refresh(_pulse_parent_runtime,transport,client,context)['state']=='ON';calls.clear();state[0]='off'
+ output=_pulse_parent_runtime._refresh_active_irrigation_readback({'active_irrigation_context':context},transport,client.backend.now,clock=lambda:client.backend.now)
+ assert output['active_irrigation_context']['zone_output_evidence']=={}
+ assert calls==['/v2/device/thing']
+
+
+def test_pulse_parent_custom_transport_signature_is_unchanged(monkeypatch):
+ native,calls,flags,client,context,_=_pulse_parent_harness(monkeypatch)
+ class Custom:
+  def read_output_state(self,*,device_id,channel):return native.read_output_state(device_id=device_id,channel=channel)
+ assert _pulse_parent_refresh(_pulse_parent_runtime,Custom(),client,context)['state']=='ON'
+ assert calls==['/v2/device/thing']

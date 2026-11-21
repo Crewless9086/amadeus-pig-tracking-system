@@ -1,5 +1,59 @@
 # Implementation Source Map
 
+## ROOTLINE provider economy and input-health visibility — 20 November 2026
+
+- Owner authority: ROOTLINE Water And Energy Rules, provider economy and visible
+  input failures. Source mapping does not establish deployment or recovery.
+- The existing OAuth/readback modules use one authenticated complete device
+  snapshot for ordinary observation. Request-budget and execution-runtime
+  modules coordinate unowned discovery; owned safety and command verification
+  retain their independent fresh reads.
+- `modules/telemetry/rootline_provider_availability.py` projects canonical
+  outage/restoration episodes. Its two exact partial indexes are prepared by
+  `scripts/rootline_accounting_index.py` through the existing migration route;
+  migration `20261120182628_rootline_ewelink_restoration_scope_index.sql`
+  verifies and records the prepared definitions.
+- `modules/telemetry/rootline_input_health.py` projects weather, power and dated
+  forecast acquisition into the existing telemetry alerts. The specialist,
+  daily presentation, transition notifications, composer and minute gateway use
+  the existing recipient-scoped family delivery path.
+- `ROOTLINE_INPUT_HEALTH_ENABLED` defaults false. Paired backend ownership
+  suppresses only legacy STATION_STALE and POWER_NOT_LOGGING notices; both legacy
+  workflows remain active for unrelated threshold alerts. No new alert scheduler,
+  provider call, table or delivery system is introduced.
+- The same default-disabled switch guards both new visibility readers and
+  notification paths before database access. Release the guarded source first,
+  verify the two indexes, then activate the one existing switch. Existing safety
+  supervision and legacy health delivery continue while it is disabled.
+- The existing /health/revision endpoint reports the canonical loaded visibility
+  boolean and bounded service/instance identifiers with Cache-Control: no-store;
+  deployment revision readiness semantics remain unchanged.
+- Tests: staged visibility activation, deployment revision health, provider
+  outage visibility, input-health visibility, restoration index
+  migration, borehole idle discovery, eWeLink readback and routine efficiency.
+  Local tests do not prove delivered warnings, provider access or farm results.
+
+## ROOTLINE saved nightly programme and live execution
+
+- Owner direction and operating limits: `08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`.
+- Existing cron entry `scripts/run_forecast_logger.py` and
+  `modules/telemetry/forecast_logger.py` perform the bounded nightly acquisition;
+  `forecast_provider_health.py` binds its cycle and ingestion to existing source
+  metadata. `weather_service.py` selects the dated, attributed stored snapshot.
+- `rootline_water_energy_plan.py` binds and revises intended work in existing
+  dated plan generations. `rootline_adaptive_irrigation.py` separates target-date
+  allocation from real-time evidence. No new plan store or scheduler is created.
+- `rootline_execution_runtime.py`, `rootline_specialist_result.py` and the existing
+  `modules/oom_sakkie/telegram_gateway.py` project saved intent plus current
+  progress and guards; routine live adjustment does not reconsider forecasts.
+- `rootline_cycle_budget.py`, `rootline_irrigation_coordinator.py` and
+  `rootline_irrigation_execution_store.py` retain the existing start budget,
+  command locks and fresh-OFF recovery, distinguishing never-dispatched starts.
+- Existing forecast, water-energy plan, scheduler, execution, reporting,
+  continuous-demand and auxiliary recovery test modules qualify the same path.
+  Hosted disposable-Postgres gates cover acquisition, plan concurrency and
+  recovery. Source qualification does not establish live autonomous operation.
+
 ## ROOTLINE borehole AC backup and concurrent recovery
 
 - The owner correction of 20 November identifies device 1002851416/channel 1

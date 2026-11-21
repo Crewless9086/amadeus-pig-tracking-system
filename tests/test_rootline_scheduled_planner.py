@@ -104,3 +104,42 @@ class PlannerProposalTests(unittest.TestCase):
         outcome.pop('stop_mode')
         with self.assertRaises(ValueError):build_run_outcome_evidence(outcome)
 
+
+def test_live_reader_closes_nested_forecast_and_historical_power_reads(monkeypatch):
+    from modules.telemetry import rootline_water_energy_plan as plan
+    from modules.telemetry import rootline_daily_brief as brief
+    from modules.telemetry import weather_service as weather, power_service as power
+    from unittest.mock import Mock
+    calls=[]
+    power_packet={'success':True,'source':{'last_reading_at':NOW.isoformat(),'stale_after_minutes':15},
+        'current':{'battery_soc_pct':80,'solar_power_w':2000,'load_power_w':900,'grid_power_w':0}}
+    weather_packet={'success':True,'source':{'last_reading_at':NOW.isoformat(),'stale_after_minutes':30},
+        'current':{'rain_rate_mm_h':0,'rain_today_mm':0}}
+    monkeypatch.setattr(power,'get_current_power_state',lambda **_: (calls.append('power') or power_packet,200))
+    monkeypatch.setattr(weather,'get_weather_control_snapshot',lambda **_:({'success':True,
+        'weather_current':weather_packet,'rain_release':{}},200))
+    outer=Mock(side_effect=AssertionError('outer forecast'));inner=Mock(side_effect=AssertionError('nested forecast'))
+    monkeypatch.setattr(weather,'get_weather_forecast',outer);monkeypatch.setattr(brief,'get_weather_forecast',inner)
+    historical=Mock(side_effect=AssertionError('historical power read'))
+    monkeypatch.setattr(plan,'_read_historical_context',historical)
+    monkeypatch.setattr('modules.telemetry.rootline_daily_advisor.list_policy_review',lambda **_:({'success':True},200))
+    for name in ('read_latest_zone_water_balances','_read_recent_irrigation_history',
+        '_read_latest_tank_observation','_read_latest_owner_zone_need','_read_managed_device_evidence'):
+        monkeypatch.setattr(plan,name,lambda *a,**k:{})
+    monkeypatch.setattr(plan,'get_current_water_energy_plan',lambda *a,**k:({'success':False,'status':'missing'},200))
+    facts,_,_=plan.read_current_water_energy_evidence(now=NOW,forecast_mode='live_only')
+    assert facts['forecast']=={} and facts['forecast_mode']=='live_only'
+    assert calls==['power']
+    outer.assert_not_called();inner.assert_not_called();historical.assert_not_called()
+
+
+def test_week_rollover_uses_canonical_operating_date_not_midnight_receipt_date():
+    at=datetime.fromisoformat('2026-11-23T00:30:00+02:00')
+    zone={'completion_ledger_complete_through':at.isoformat(),'completion_events':[{
+        'outcome_id':'overnight','completed_at':'2026-11-23T00:20:00+02:00',
+        'operating_date':'2026-11-22','state':'Completed','shutdown_verified':True,
+        'verified_runtime_minutes':120,'objective_satisfied':True,'source':'canonical'}]}
+    monday=project_weekly_delivery_obligation(zone,now=at,operating_date='2026-11-23')
+    assert monday['week_start']=='2026-11-23' and monday['completed_days']==0
+    sunday=project_weekly_delivery_obligation(zone,now=at,operating_date='2026-11-22')
+    assert sunday['completed_days']==1 and sunday['verified_runtime_minutes']==120

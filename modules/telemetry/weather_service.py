@@ -430,7 +430,8 @@ def build_weather_dry_release_evidence(rows, *, evaluated_at, stale_after_minute
         "writes_to_supabase": False, "writes_to_sheets": False}
 
 
-def get_weather_forecast(days=3, database_url=None, *, as_of=None):
+def get_weather_forecast(days=3, database_url=None, *, as_of=None, operating_date=None,
+                         source_id=None, forecast_run_at=None, nightly=False):
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     days = _bounded_days(days)
     database_url = _database_url(database_url)
@@ -459,6 +460,33 @@ def get_weather_forecast(days=3, database_url=None, *, as_of=None):
                         "with reporting_epoch as (select %s::timestamptz as at), selected_forecast_run as (")
                     cte = cte.replace("now()", anchor).replace(
                         "and f.forecast_run_at <=", "and f.ingested_at <= " + anchor + "\n       and f.forecast_run_at <=")
+                dated = operating_date is not None
+                if dated:
+                    selected_day = date.fromisoformat(str(operating_date))
+                    if nightly:
+                        cutoff = (as_of or datetime.now(timezone.utc)).astimezone(ZA_TZ)
+                        allowed_dates = {cutoff.date()}
+                        if (cutoff.hour, cutoff.minute) >= (23, 30):
+                            allowed_dates.add(cutoff.date() + timedelta(days=1))
+                        if selected_day not in allowed_dates:
+                            raise ValueError("nightly_forecast_target_outside_operating_window")
+                    if (source_id is None) != (forecast_run_at is None):
+                        raise ValueError("forecast_pin_incomplete")
+                    cte = cte.replace("with ", "with requested_forecast as (select %s::date as day, "
+                        "%s::text as source_id, %s::timestamptz as run_at), ", 1)
+                    extra = " and ((select source_id from requested_forecast) is null or " \
+                        "(f.source_id=(select source_id from requested_forecast) and " \
+                        "f.forecast_run_at=(select run_at from requested_forecast))) "
+                    if nightly:
+                        extra += " and exists (select 1 from public.telemetry_sources owner " \
+                            "where owner.source_id='visual-crossing-forecast-main' " \
+                            "and owner.metadata->'forecast_nightly_cycle'->>'status'='ingested' " \
+                            "and owner.metadata->'forecast_nightly_cycle'->>'operating_date'=" \
+                            "(select day::text from requested_forecast) " \
+                            "and (owner.metadata->'forecast_nightly_cycle'->>'completed_at')::timestamptz <= " + anchor + " " \
+                            "and owner.metadata->'forecast_nightly_cycle'->'result'->>'source_id'=f.source_id " \
+                            "and (owner.metadata->'forecast_nightly_cycle'->'result'->>'forecast_run_at')::timestamptz=f.forecast_run_at) "
+                    cte = cte.replace("group by f.source_id", extra + " group by f.source_id")
                 query = cte + """
                     select ts.source_id, ts.display_name, ts.provider, ts.stale_after_minutes,
                            f.forecast_run_at, f.timezone, f.forecast_date, f.offset_days,
@@ -477,7 +505,12 @@ def get_weather_forecast(days=3, database_url=None, *, as_of=None):
                 if as_of is not None:
                     query = query.replace("now()", anchor).replace(
                         "where f.forecast_date >=", "where f.ingested_at <= " + anchor + " and f.forecast_date >=")
-                cursor.execute(query, (as_of, days, days) if as_of is not None else (days, days))
+                params = (as_of, days, days) if as_of is not None else (days, days)
+                if dated:
+                    query = query.replace("timezone('Africa/Johannesburg', " + anchor + ")::date",
+                        "(select day from requested_forecast)")
+                    params = (selected_day, source_id, forecast_run_at, *params)
+                cursor.execute(query, params)
                 selected_rows = cursor.fetchall()
                 source_row = selected_rows[0][:4] if selected_rows else None
                 rows = [row[4:] for row in selected_rows]
@@ -494,7 +527,11 @@ def get_weather_forecast(days=3, database_url=None, *, as_of=None):
             "window": {"requested_days": days, "returned_days": 0},
         }, 200
 
-    return _format_forecast_response(source_row, rows, days, now=as_of), 200
+    result = _format_forecast_response(source_row, rows, days, now=as_of)
+    if nightly:
+        result["source"].update(snapshot_role="pinned_nightly_programme",
+            nightly_operating_date=str(operating_date), nightly_cycle_confirmed=True)
+    return result, 200
 
 
 def get_weather_today_summary(summary_date=None, database_url=None):
@@ -598,6 +635,8 @@ def evaluate_weather_alerts(payload=None, provided_api_key="", database_url=None
                     candidates.append(_backend_audit_test_alert(now_utc))
                 recent_alerts = _read_recent_weather_alerts(cursor)
                 evaluation = _apply_weather_alert_policy(candidates, recent_alerts, now_utc)
+                from modules.telemetry.rootline_input_health import apply_legacy_ownership
+                evaluation = apply_legacy_ownership(evaluation, "weather")
 
                 written_alerts = []
                 if not dry_run:
@@ -708,6 +747,31 @@ def _validate_forecast_provenance(provenance, source_id, forecast_run_at):
         _parse_forecast_datetime(provenance["provider_model_updated_at"])
 
 
+
+def _validated_planning_hours(period, selected_date):
+    rows = period.get("planning_hours", [])
+    if not isinstance(rows, list) or len(rows) > 24:
+        raise ValueError("forecast_hourly_planning_invalid")
+    result, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("forecast_hourly_planning_invalid")
+        stamp = datetime.fromisoformat(str(row.get("start_at")).replace("Z", "+00:00"))
+        if (stamp.tzinfo is None or stamp.astimezone(ZA_TZ).date() != selected_date
+                or stamp.minute or stamp.second or stamp in seen or row.get("source") != "fcst"
+                or row.get("local_observation_credit") is not False):
+            raise ValueError("forecast_hourly_planning_invalid")
+        seen.add(stamp)
+        values = {k: _forecast_number(row.get(k)) for k in (
+            "rain_sum_mm", "rain_probability_pct", "wind_max_kmh")}
+        if any(v is not None and v < 0 for v in values.values()) or (
+                values["rain_probability_pct"] is not None and values["rain_probability_pct"] > 100):
+            raise ValueError("forecast_hourly_planning_invalid")
+        result.append({"start_at": stamp.astimezone(ZA_TZ).isoformat(), **values,
+            "source": "fcst", "local_observation_credit": False})
+    return sorted(result, key=lambda row: row["start_at"])
+
+
 def _normalize_forecast_payload(payload):
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object.")
@@ -743,6 +807,7 @@ def _normalize_forecast_payload(payload):
         if provenance is not None:
             _validate_forecast_provenance(provenance, source_id, forecast_run_at)
             period = {**period, "provenance": provenance}
+        period = {**period, "planning_hours": _validated_planning_hours(period, forecast_date)}
         row = {
             "source_id": source_id,
             "forecast_run_at": forecast_run_at,
@@ -846,6 +911,7 @@ def _format_forecast_response(source_row, rows, requested_days, *, now=None):
                 "gust": gust_max is not None,
             },
             "provenance": provenance,
+            "planning_hours": _validated_planning_hours(raw, forecast_date),
             "provider_daily_chance_of_rain_pct": raw.get("provider_daily_chance_of_rain_pct"),
             "provider_source": raw.get("provider_source"),
             "provider_hour_sources": raw.get("provider_hour_sources"),

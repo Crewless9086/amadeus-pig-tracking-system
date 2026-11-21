@@ -207,7 +207,7 @@ def test_actual_scheduler_composition_adopts_on_while_new_start_plan_waits(datab
     from modules.telemetry import rootline_execution_runtime as runtime
     from modules.telemetry.rootline_water_energy_plan import ZA_TZ
     monkeypatch.setattr(borehole, "load_registered_borehole_baseline", lambda **kwargs: baseline())
-    monkeypatch.setattr(runtime, "build_water_energy_plan", lambda *args, **kwargs: {
+    monkeypatch.setattr(runtime, "project_saved_program_for_execution", lambda *args, **kwargs: {
         "candidate_tasks": [{"task_id": "borehole", "recommendation": "Wait", "reason": "forecast_start_deferred"}]})
     monkeypatch.setattr("modules.telemetry.weather_service.get_weather_control_snapshot",
         lambda *args, **kwargs: (snapshot(now=now()), 200))

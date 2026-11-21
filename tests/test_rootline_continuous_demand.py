@@ -215,7 +215,8 @@ class MinuteJourney:
                             if len(states)==1 else {"switches":[{"outlet":i,"switch":state} for i,state in enumerate(states)],
                                 "configure":[{"outlet":i,"startup":"off"} for i in range(4)],
                                 "pulses":[{"outlet":i,"pulse":"off","width":0} for i in range(4)]})}}
-                        for device,states in self.outputs.items()]}
+                        for device,states in self.outputs.items()
+                        if method != "POST" or device == kwargs["body"]["thingList"][0]["id"]]}
                 if endpoint=="/v2/device/thing/status":return {"params":{}}
                 raise AssertionError(endpoint)
             return self.client.dispatch(region="eu",endpoint=endpoint,send=send)
@@ -294,7 +295,7 @@ class MinuteJourney:
                     and row.get("completed") is True and row.get("zone_execution_id")==context["zone_execution_id"]
                     for row in self.rows),
                 fertilizer_history_complete_through=now.isoformat())
-        value={"power":self.power(),"weather":{"observed_at":now.isoformat(),"status":"fresh","rain_rate_mm_h":0},
+        value={"power":self.power(),"weather":{"observed_at":now.isoformat(),"stale_after_minutes":30,"status":"fresh","rain_rate_mm_h":0},
             "irrigation":{"source":"rootline_daily_advisor","advisor_generated_at":now.isoformat(),
                 "advisor_operating_date":now.astimezone(ZA_TZ).date().isoformat(),"zones":advisor["zones"],
                 "adaptive_management":{"enabled":True,"zones":[{"zone_id":z["zone_id"]} for z in advisor["zones"]]}},
@@ -302,7 +303,18 @@ class MinuteJourney:
                 "epoch_complete_through":now.isoformat(),"complete_through":now.isoformat(),"events":[]} for z in advisor["zones"]}},
             "fertilizer_executions":self.rows,"fertilizer_history_complete_through":now.isoformat(),
             "active_irrigation_context":context}
-        return value,now.astimezone(ZA_TZ).date().isoformat(),now
+        selected = now.astimezone(ZA_TZ).date().isoformat()
+        if not hasattr(self, "saved_program"):
+            from modules.telemetry.rootline_water_energy_plan import build_daily_program
+            initial = deepcopy(value)
+            initial["forecast"] = {"observed_at": now.isoformat(),
+                "source": {"source_id": "offline-nightly"},
+                "days": [{"forecast_date": selected, "rain_sum_mm": 0, "rain_probability_max_pct": 0}]}
+            self.saved_program = build_daily_program(initial, selected, now=now)
+            self.saved_program["generation"] = 1
+        value["saved_daily_plan"] = deepcopy(self.saved_program)
+        value["forecast_mode"] = "live_only"
+        return value,selected,now
 
     def tick(self,minute,*,parent=True,allow_borehole=False):
         from modules.telemetry import rootline_execution_runtime as runtime
@@ -400,7 +412,7 @@ def test_actual_combined_normal_four_pulses_complete(monkeypatch):
     assert parent_off-stops[-1]>=timedelta(minutes=10)
     assert counts[("100204d497",2,"on")]==counts[("100204d497",2,"off")]==3
     assert counts[("1002851416",1,"on")]==counts[("1002851416",1,"off")]==1
-    assert sum(row["optional"]=="borehole_routine" for row in journey.reads)==14
+    assert sum(row["optional"]=="borehole_routine" for row in journey.reads)==7
     assert max(row["recent"]+row["remaining"] for row in journey.admissions)<=250
     print("ACTUAL_COMBINED_TRACE",len(journey.reads),dict(counts),
         "charged_by_execution",dict(Counter(row.get("execution_id") or "preclaim"
@@ -575,3 +587,238 @@ def test_actual_new_injector_stops_before_return_with_delayed_next_worker(monkey
     assert [row["state"] for row in journey.commands
         if row["execution_id"] == first_id and row["device"] == "100204d497"
         and row["channel"] == 1] == ["on", "off"]
+
+@pytest.mark.parametrize("initially_completed", [False, True])
+def test_realistic_cycle_budget_reuses_program_and_narrows_managed_reads(monkeypatch, initially_completed):
+    """Same final provider/claim guards, slow canonical calls and useful ON work."""
+    from modules.telemetry import rootline_water_energy_plan as plan
+    from modules.telemetry import rootline_bounded_read_group as groups
+    from modules.telemetry import rootline_cycle_budget as cycle
+    from modules.telemetry import power_service, rootline_daily_advisor
+    from collections import Counter
+    journey=MinuteJourney(monkeypatch)
+    journey.source.update(ROOTLINE_BOREHOLE_ENABLED='false',ROOTLINE_FERTILIZER_INJECTION_ENABLED='false')
+    original_fixture=journey.evidence
+    canonical_plan_reader=plan.get_current_water_energy_plan
+    journey.parent_finished=initially_completed
+    # Construct one already-durable programme before measuring the minute.
+    from modules.telemetry.rootline_timed_control import timed_control_scope
+    with timed_control_scope(journey.source): original_fixture()
+    start=journey.now(); elapsed=lambda:(journey.now()-start).total_seconds()
+    monkeypatch.setattr(time,'monotonic',elapsed)
+    current={}; reads=[]; group_trace=[]; decisions=[]
+    auxiliary_builder=plan.build_auxiliary_tasks
+    def traced_auxiliary(**kwargs):
+        result=auxiliary_builder(**kwargs)
+        decisions.append((elapsed(),result['irrigation_auxiliary_tasks']))
+        return result
+    monkeypatch.setattr(plan,'build_auxiliary_tasks',traced_auxiliary)
+    def read(name,cost,value):
+        reads.append(name);journey.client.backend.advance(cost)
+        return value() if callable(value) else deepcopy(value)
+    def power_packet():
+        value=current['facts']['power']
+        return {'success':True,'current':value,'source':{'last_reading_at':value['observed_at'],'stale_after_minutes':15}},200
+    def advisor_packet():
+        facts=current['facts'];irrigation=facts['irrigation']
+        return {'success':True,'zones':deepcopy(irrigation['zones']),
+            'generated_at':irrigation['advisor_generated_at'],'operating_date':irrigation['advisor_operating_date'],
+            'current_weather_packet':{'success':True,'source':{'last_reading_at':facts['weather']['observed_at'],'stale_after_minutes':30},
+                'current':deepcopy(facts['weather'])}},200
+    def managed_packet():
+        result={k:deepcopy(current['facts'].get(k)) for k in ('fertilizer_batch_observations',
+            'fertilizer_executions','fertilizer_history_complete_through','active_irrigation_context','borehole_interlocks')}
+        # Match the actual managed reader's canonical action/auxiliary filter;
+        # eligibility advice is not a reserved or dispatched mixing event.
+        result['fertilizer_executions']=[r for r in result['fertilizer_executions'] if
+            r.get('auxiliary_device_id') in {'FERTILIZER-MIXER-CH2','FERTILIZER-INJECTION-CH1'} and
+            r.get('action') in {'record_auxiliary_completed','claim_auxiliary_before_on',
+                'record_auxiliary_control_pulse_stopped','contain_auxiliary_device',
+                'mark_auxiliary_active','record_auxiliary_on_outcome'}]
+        return result
+    monkeypatch.setattr(power_service,'get_current_power_state',lambda **_:read('power',3,power_packet))
+    monkeypatch.setattr(rootline_daily_advisor,'get_rootline_daily_advisor',lambda *a,**k:read('advisor',20,advisor_packet))
+    monkeypatch.setattr(plan,'read_latest_zone_water_balances',lambda *a,**k:read('balances',3,{}))
+    monkeypatch.setattr(plan,'_read_recent_irrigation_history',lambda *a,**k:read('irrigation_history',4,lambda:current['facts']['irrigation_history']))
+    monkeypatch.setattr(plan,'_read_latest_tank_observation',lambda *a,**k:read('tanks',3,{}))
+    monkeypatch.setattr(plan,'_read_latest_owner_zone_need',lambda *a,**k:read('owner_need',3,{}))
+    monkeypatch.setattr(plan,'_read_managed_device_evidence',lambda *a,**k:read('managed_history',6,managed_packet))
+    monkeypatch.setattr(plan,'get_current_water_energy_plan',lambda *a,**k:read('saved_program',3,lambda:(deepcopy(journey.saved_program),200)))
+    monkeypatch.setattr(plan,'build_water_energy_plan',lambda *a,**k:(_ for _ in ()).throw(AssertionError('minute rebuild')))
+    monkeypatch.setattr('modules.telemetry.weather_service.get_weather_forecast',lambda *a,**k:(_ for _ in ()).throw(AssertionError('forecast read')))
+    def deterministic_parallel_group(readers,*,max_workers=4,**_):
+        # Schedule actual reader callbacks on virtual worker lanes. This makes
+        # parallel group latency deterministic without making any read free.
+        entered=elapsed();lanes=[entered]*max_workers;loaded={}
+        for name,reader in readers.items():
+            lane=min(range(max_workers),key=lambda i:lanes[i])
+            journey.client.backend.now=start+timedelta(seconds=lanes[lane])
+            loaded[name]=reader();lanes[lane]=elapsed()
+        journey.client.backend.now=start+timedelta(seconds=max(lanes))
+        group_trace.append({'readers':list(readers),'seconds':elapsed()-entered})
+        return loaded
+    monkeypatch.setattr(groups,'run_bounded_read_group',deterministic_parallel_group)
+    def load(**kwargs):
+        observed=journey.now();journey.client.backend.now=kwargs.get('now',observed)
+        current['facts']=original_fixture(**kwargs)[0];journey.client.backend.now=observed
+        if initially_completed:
+            for zone,history in current['facts']['irrigation_history']['zones'].items():
+                history['events']=[{'execution_id':'done-'+zone,'event_at_sast':(start-timedelta(hours=1)).isoformat(),
+                    'operating_date':start.astimezone(plan.ZA_TZ).date().isoformat(),
+                    'qualifies_as_completed_watering':True,'shutdown_verified':True,
+                    'objective_satisfied':True,'verified_runtime_minutes':120,'provenance':'canonical'}]
+        return plan.read_current_water_energy_evidence(**kwargs)
+    store=journey.canonical;dispatch=journey.client.dispatch
+    operations=[]
+    def canonical(action,payload):
+        operations.append(action);journey.client.backend.advance(1.5)
+        return store(action,payload)
+    def delayed_dispatch(**kwargs):
+        send=kwargs['send']
+        def delayed_send(timeout):
+            # Preserve six seconds per complete phase so this test still exercises
+            # deferral/report headroom after reducing three requests to one.
+            journey.client.backend.advance(6)
+            return send(timeout)
+        return dispatch(**{**kwargs,'send':delayed_send})
+    journey.evidence=load;journey.canonical=canonical;journey.client.dispatch=delayed_dispatch
+    report_trace=[]
+    def actual_report():
+        from tests.test_rootline_water_energy_plan import MemoryProgrammeDB
+        from modules.telemetry import rootline_specialist_result as specialist
+        from modules.oom_sakkie import bounded_postgres_read
+        from modules.oom_sakkie.telegram_gateway import _canonical_rootline_plan_receipt
+        from modules.oom_sakkie.owner_response_composer import compose_rootline
+        report_at=journey.now(); entered=elapsed()
+        database=MemoryProgrammeDB()
+        database.plans[journey.saved_program['operating_date']]=deepcopy(journey.saved_program)
+        def connection(**kwargs):
+            base=database.connect()
+            original_cursor=base.cursor
+            def cursor():
+                value=original_cursor(); execute=value.execute
+                def measured(sql,params=None):
+                    journey.client.backend.advance(1.5)
+                    return execute(sql,params)
+                value.execute=measured
+                return value
+            base.cursor=cursor
+            return base
+        def canonical_read(*args,**kwargs):
+            journey.client.backend.advance(3)
+            return canonical_plan_reader(*args,**kwargs)
+        with monkeypatch.context() as scoped:
+            scoped.setattr(bounded_postgres_read,'connect_bounded_rootline_postgres',connection)
+            scoped.setattr(plan,'get_current_water_energy_plan',canonical_read)
+            scoped.setattr(specialist,'read_current_water_energy_evidence',load)
+            result=specialist.refresh_current_rootline_specialist_result(
+                now=report_at,evidence_cutoff=report_at,database_url='offline')
+        assert result['success'] is True,result
+        receipt=_canonical_rootline_plan_receipt(result)
+        assert receipt['readback_bound'] is True,receipt
+        answer=compose_rootline(result,language='en')
+        assert isinstance(answer,str) and answer
+        # Only the external delivery is a fixture. It acknowledges the actual
+        # owner projection bound to the actual canonical append/readback result.
+        journey.client.backend.advance(2)
+        delivery={'provider_delivery_confirmed':True,'message_id':'offline-report',
+            'canonical_plan':deepcopy(result['canonical_plan']),'answer':answer}
+        assert delivery['canonical_plan']['generation']==receipt['daily_plan']['generation']
+        journey.saved_program=deepcopy(database.plans[journey.saved_program['operating_date']])
+        report_trace.append({'seconds':elapsed()-entered,'canonical_plan':result['canonical_plan'],
+            'delivery_confirmed':delivery['provider_delivery_confirmed']})
+    with cycle.cycle_budget():
+        result=journey.tick(0)
+        first_elapsed=elapsed()
+    first_on={(r['device'],r['channel']) for r in journey.commands if r['state']=='on'}
+    first_groups=deepcopy(group_trace)
+    if not initially_completed:
+        assert ('100204e9bc',1) in first_on and ('100204d497',2) not in first_on
+        assert result['status']=='auxiliary_start_budget_unavailable',result
+        assert 'claim_auxiliary_before_on' not in operations
+        assert [g['seconds'] for g in first_groups]==[20,20,6],first_groups
+        # A normal following eligible minute supervises the owned valve, then makes the
+        # deferred mixer opportunity without repeating irrigation planning.
+        journey.client.backend.now=max(journey.now(),start+timedelta(minutes=3))
+        cycle_start=elapsed()
+        with cycle.cycle_budget():
+            result=journey.tick(3)
+            before_report=elapsed()-cycle_start
+            cycle.remaining_seconds(minimum=cycle.REPORT_MINIMUM_SECONDS)
+            actual_report()
+            assert elapsed()-cycle_start<cycle.CYCLE_WORK_SECONDS
+        assert Counter(reads)['advisor']==3 and Counter(reads)['irrigation_history']==3
+    else:
+        assert ('100204e9bc',1) not in first_on
+        assert ('100204d497',2) in first_on,(result,group_trace,journey.commands)
+        assert first_elapsed<cycle.CYCLE_WORK_SECONDS-cycle.REPORT_MINIMUM_SECONDS
+        assert Counter(reads)['advisor']==1 and Counter(reads)['irrigation_history']==1
+        before_report=first_elapsed
+        with cycle.cycle_budget(elapsed()+cycle.CYCLE_WORK_SECONDS-first_elapsed):
+            cycle.remaining_seconds(minimum=cycle.REPORT_MINIMUM_SECONDS)
+            actual_report()
+    assert any(r['device']=='100204d497' and r['channel']==2 and r['state']=='on' for r in journey.commands),(result,group_trace)
+    assert all(g['seconds']>0 for g in group_trace)
+    assert all(g['seconds']==6 for g in group_trace if 'advisor' not in g['readers'])
+    assert 'claim_auxiliary_before_on' in operations and len(journey.reads)>=3
+    print('SAVED_PROGRAM_SLOW_CYCLE',{'initially_completed':initially_completed,
+        'first_cycle_seconds':first_elapsed,'report_cycle_seconds':before_report+report_trace[0]['seconds'],
+        'actual_report':report_trace,
+        'reader_groups':group_trace,'provider_reads':len(journey.reads),'canonical_calls':len(operations)})
+    # Owned shutdown remains mandatory even after new-start flags are disabled.
+    journey.source.update(ROOTLINE_FERTILIZER_MIXING_ENABLED='false',ROOTLINE_AUTONOMOUS_BC_ENABLED='false')
+    journey.client.backend.advance(11*60)
+    with cycle.cycle_budget(): journey.tick(0,parent=False)
+    assert any(r['device']=='100204d497' and r['state']=='off' for r in journey.commands)
+
+
+
+
+
+def test_missing_saved_program_allows_independent_continuous_ac_and_owned_sunshine_off(monkeypatch):
+    from tests.test_rootline_borehole_ac_backup import Store, power
+    from tests.test_rootline_continuous_borehole import NOW, Transport, snapshot
+    from tests.test_rootline_managed_devices_runtime import canonical
+    from modules.telemetry import rootline_execution_runtime as runtime
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from modules.telemetry import rootline_borehole_commissioning as borehole
+    from modules.telemetry import rootline_water_energy_plan as planning
+    store=Store();transport=Transport();solar={'watts':1499}
+    monkeypatch.setattr(managed,'_canonical_loader',lambda _:canonical)
+    monkeypatch.setattr(managed,'canonical_timed_authority',lambda *a,**k:True)
+    monkeypatch.setattr(borehole,'load_registered_borehole_baseline',lambda **_: {
+        'current':True,'stop_mode':'conditions','registry_generation':3,'baseline_sha256':'b'*64,
+        'maximum_routine_runtime_seconds':0,'native_fail_stop_seconds':0})
+    monkeypatch.setattr('modules.telemetry.power_service.get_current_power_state',lambda **_: ({
+        'success':True,'current':power(solar_power_w=solar['watts']),
+        'source':{'last_reading_at':NOW.isoformat()}},200))
+    monkeypatch.setattr('modules.telemetry.weather_service.get_weather_control_snapshot',lambda *a,**k:(snapshot(),200))
+    monkeypatch.setattr(planning,'read_current_borehole_faults',lambda *a,**k:{'safe':True})
+    def canonical_store(action,body):
+        if action=='assess_borehole_conditions':
+            assert body['forecast'] is None
+            return {'success':True,'start_eligible':True,'stop_required':False,
+                'reason':'conditions_allow_start','event_id':'ROOTLINE-EXEC-'+'C'*32,
+                'assessed_at':NOW.isoformat()}
+        return store(action,body)
+    def evidence(**kwargs):
+        return {'saved_daily_plan':{'success':False,'status':'no_current_water_energy_plan'},
+            'power':power(solar_power_w=solar['watts']),'forecast_mode':'live_only',
+            'evidence_purpose':'managed'},NOW.date().isoformat(),NOW
+    env={'ROOTLINE_TIMED_CONTROL_ENABLED':'true','ROOTLINE_BOREHOLE_ENABLED':'true',
+        'ROOTLINE_FERTILIZER_MIXING_ENABLED':'false','ROOTLINE_FERTILIZER_INJECTION_ENABLED':'false'}
+    def run():
+        return runtime.run_rootline_managed_device_reassessment(environ=env,now=NOW,clock=lambda:NOW,
+            token_store=object(),transport=transport,store=canonical_store,evidence_loader=evidence,
+            allow_borehole_starts=True)
+    first=run()
+    assert [row['state'] for row in transport.commands]==['ON'],first
+    assert store.active is not None
+    solar['watts']=4800
+    second=run()
+    assert [row['state'] for row in transport.commands]==['ON','OFF'],second
+    assert store.active is None
+    terminal=next(row for action,row in store.events if action=='record_borehole_completed')
+    assert terminal['stop_reason']=='sunshine_ac_backup_not_required'
+    run()
+    assert [row['state'] for row in transport.commands]==['ON','OFF']

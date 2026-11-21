@@ -118,7 +118,7 @@ class ForecastLoggerTests(unittest.TestCase):
             side_effect=forecast_logger.ForecastProviderRateLimited("Open-Meteo daily request limit exceeded"),
         ), redirect_stdout(output):
             with self.assertRaisesRegex(SystemExit, "2"):
-                forecast_logger.main()
+                forecast_logger.main(nightly=False)
         result = json.loads(output.getvalue())
         self.assertEqual(result["status"], "provider_rate_limited")
         self.assertTrue(result["existing_forecast_preserved"])
@@ -230,7 +230,7 @@ class ForecastResilienceTests(unittest.TestCase):
                 forecast_logger,"fetch_weatherapi_daily",side_effect=RuntimeError()), patch.dict(os.environ,
                 {"WEATHERAPI_API_KEY":"offline-test-key","LAT":"-34","LON":"21","TIMEZONE":"Africa/Johannesburg"}), patch.object(
                 forecast_logger,"GOOGLE_SHEETS_ENABLED",False), patch.object(forecast_logger,"require_backend_env"), redirect_stdout(io.StringIO()) as output:
-            with self.assertRaisesRegex(SystemExit,"2"):forecast_logger.main()
+            with self.assertRaisesRegex(SystemExit,"2"):forecast_logger.main(nightly=False)
         self.assertTrue(json.loads(output.getvalue())["existing_forecast_preserved"])
 
     def test_long_retry_after_is_not_shortened_or_retried(self):
@@ -261,7 +261,7 @@ class ForecastResilienceTests(unittest.TestCase):
                 forecast_logger,"require_backend_env"), patch.object(forecast_logger,"get_gspread_client"), patch.object(
                 forecast_logger,"acquire_forecast",return_value=(rows,data,[])), patch.object(forecast_logger,
                 "post_backend_ingest",return_value=(False,"backend_unavailable")), redirect_stdout(io.StringIO()) as output:
-            with self.assertRaisesRegex(SystemExit,"3"):forecast_logger.main()
+            with self.assertRaisesRegex(SystemExit,"3"):forecast_logger.main(nightly=False)
         self.assertFalse(json.loads(output.getvalue())["success"])
 
     def test_backup_requests_free_three_day_contract(self):
@@ -347,9 +347,9 @@ class CommercialPrimaryTests(unittest.TestCase):
                     "GOOGLE_SHEETS_ENABLED",False), patch.object(forecast_logger,"BACKEND_INGEST_ENABLED",True), patch.object(
                     forecast_logger,"fetch_visual_crossing_daily",return_value=visual_fixture()), patch.object(forecast_logger,
                     "_health_request",side_effect=health), patch.object(forecast_logger,"post_backend_ingest",side_effect=ingest), redirect_stdout(io.StringIO()) as output:
-                if accepted:forecast_logger.main()
+                if accepted:forecast_logger.main(nightly=False)
                 else:
-                    with self.assertRaisesRegex(SystemExit,"3"):forecast_logger.main()
+                    with self.assertRaisesRegex(SystemExit,"3"):forecast_logger.main(nightly=False)
             self.assertEqual([item["action"] for item in order],["claim","ingest","result"])
             self.assertEqual(order[-1]["status"],"ingested" if accepted else "ingest_failed")
             self.assertEqual(json.loads(output.getvalue())["success"],accepted)
@@ -428,10 +428,107 @@ class LoggerStartupConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ,{},clear=True), patch.object(module,"load_dotenv",side_effect=lambda:os.environ.update(loaded)), patch.object(
                 module,"acquire_forecast",side_effect=acquire), patch.object(module,"post_backend_ingest",return_value=(True,None)), patch.object(
                 module,"_finish_provider",return_value=True), redirect_stdout(io.StringIO()) as output:
-            module.main()
+            module.main(nightly=False)
         self.assertTrue(json.loads(output.getvalue())["success"])
         self.assertNotIn("offline-startup-key",output.getvalue())
 
 
 if __name__ == "__main__":
     unittest.main()
+
+def test_duplicate_whole_nightly_logger_never_reaches_primary_or_backup():
+    env={'LAT':'-34','LON':'21','TIMEZONE':'Africa/Johannesburg',
+        'GOOGLE_SHEETS_ENABLED':'false','BACKEND_INGEST_ENABLED':'true',
+        'AMADEUS_BACKEND_URL':'https://offline.invalid','TELEMETRY_INGEST_API_KEY':'offline'}
+    with patch.dict(os.environ,env,clear=True), patch.object(forecast_logger,'load_dotenv'), \
+            patch.object(forecast_logger,'_health_request',return_value={'success':True,'allowed':False,'status':'nightly_cycle_already_claimed'}) as health_call, \
+            patch.object(forecast_logger,'acquire_forecast',side_effect=AssertionError('extra acquisition')), \
+            redirect_stdout(io.StringIO()) as output:
+        forecast_logger.main()
+    assert health_call.call_count==1
+    assert json.loads(output.getvalue())['provider_calls']==0
+
+
+def test_health_request_client_outlasts_existing_endpoint_bound():
+    from modules.oom_sakkie.bounded_postgres_read import OWNER_REQUEST_DEADLINE_SECONDS
+    class Response:
+        status_code=200
+        def json(self):return {'success':True,'provider':'visual_crossing','source_id':'visual-crossing-forecast-main'}
+    with patch.object(forecast_logger,'AMADEUS_BACKEND_URL','https://offline.invalid'), \
+            patch.object(forecast_logger,'TELEMETRY_INGEST_API_KEY','offline'), \
+            patch.object(forecast_logger.requests,'post',return_value=Response()) as post:
+        forecast_logger._health_request({'provider':'visual_crossing','action':'nightly_claim'})
+    connect,read=post.call_args.kwargs['timeout']
+    assert connect==3 and read>OWNER_REQUEST_DEADLINE_SECONDS
+
+
+def test_nightly_admission_failures_exit_without_provider_calls():
+    import pytest
+    env={'LAT':'-34','LON':'21','TIMEZONE':'Africa/Johannesburg',
+        'GOOGLE_SHEETS_ENABLED':'false','BACKEND_INGEST_ENABLED':'true',
+        'AMADEUS_BACKEND_URL':'https://offline.invalid','TELEMETRY_INGEST_API_KEY':'offline'}
+    failures = [RuntimeError('forecast_health_unavailable'),
+        {'success':False,'allowed':False,'status':'database_unavailable'},
+        {'success':False,'allowed':True,'cycle':{'attempt_id':'x'}},
+        {'success':True,'allowed':True,'cycle':{'attempt_id':'x'}},
+        {'success':True,'allowed':False,'status':'unrecognized_hold'}]
+    for failure in failures:
+        kwargs={'side_effect':failure} if isinstance(failure,Exception) else {'return_value':failure}
+        with patch.dict(os.environ,env,clear=True), patch.object(forecast_logger,'load_dotenv'), \
+                patch.object(forecast_logger,'_health_request',**kwargs) as health, \
+                patch.object(forecast_logger,'acquire_forecast',side_effect=AssertionError('provider call')), \
+                redirect_stdout(io.StringIO()) as output:
+            with pytest.raises(SystemExit) as error: forecast_logger.main()
+        assert error.value.code == 2 and health.call_count == 1
+        result=json.loads(output.getvalue())
+        assert result['success'] is False and result['provider_calls'] == 0
+        assert result['existing_forecast_preserved'] is True
+
+
+def test_health_http_unconfirmed_claim_never_reaches_provider_for_legacy_client(monkeypatch):
+    import pytest
+    from modules.telemetry import forecast_provider_health as health
+    from tests.test_forecast_provider_health import Connection
+    monkeypatch.setenv(health.INGEST_API_KEY_ENV,'offline-key')
+    connection=Connection(({'owner':'preserve'},'visual_crossing','forecast',True))
+    replies=[]
+    def server(url,*,json,headers,timeout):
+        # Exact legacy claim fields: deployed clients had neither a nightly
+        # cycle nor an expiry. Route that request to the real new endpoint.
+        legacy={k:v for k,v in json.items() if k!='request_expires_at'}
+        assert set(legacy)=={'provider','action','attempt_id'}
+        body,status=health.provider_health(legacy,headers['X-Amadeus-Telemetry-Key'],
+            connect_factory=lambda:connection)
+        replies.append((body,status))
+        class Response:
+            status_code=status
+            def json(self):return body
+        return Response()
+    with patch.dict(os.environ,{'FORECAST_PROVIDERS':'visual_crossing'}), \
+            patch.object(forecast_logger,'AMADEUS_BACKEND_URL','https://offline.invalid'), \
+            patch.object(forecast_logger,'TELEMETRY_INGEST_API_KEY','offline-key'), \
+            patch.object(forecast_logger.requests,'post',side_effect=server) as post, \
+            patch.object(forecast_logger,'fetch_visual_crossing_daily',side_effect=AssertionError('provider call')):
+        with pytest.raises(RuntimeError,match='forecast_all_providers_unavailable'):
+            forecast_logger.acquire_forecast(-34,21,'Africa/Johannesburg',3)
+    assert post.call_count == 1 and connection.sql==[]
+    assert replies[0][1]==400 and replies[0][0]['status']=='nightly_cycle_required'
+
+
+def test_hourly_planning_preserves_forecast_only_and_target_date():
+    data={'provenance':{'provider':'visual_crossing'},'response':{'days':[
+        {'datetime':'2026-11-20','hours':[{'datetime':'08:00:00','source':'fcst',
+            'precip':2,'precipprob':40,'windspeed':10},
+            {'datetime':'09:00:00','source':'obs','precip':99}]},
+        {'datetime':'2026-11-21','hours':[{'datetime':'10:00:00','source':'fcst',
+            'precip':0,'precipprob':0,'windspeed':5}]}]}}
+    hours=forecast_logger._planning_hours(data,'2026-11-21')
+    assert len(hours)==1 and hours[0]['start_at']=='2026-11-21T10:00:00+02:00'
+    assert hours[0]['local_observation_credit'] is False
+    assert len(forecast_logger._planning_hours(data,'2026-11-20'))==1
+    backup={'provenance':{'provider':'weatherapi'},'response':{'forecast':{'forecastday':[
+        {'date':'2026-11-21','hour':[{'time':'2026-11-21 12:00','precip_mm':1,
+            'chance_of_rain':30,'wind_kph':4}]}]}}}
+    hour=forecast_logger._planning_hours(backup,'2026-11-21')[0]
+    assert hour['start_at']=='2026-11-21T12:00:00+02:00'
+    assert hour['source']=='fcst' and hour['local_observation_credit'] is False

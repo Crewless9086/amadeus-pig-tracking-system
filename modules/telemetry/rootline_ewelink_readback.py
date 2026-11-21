@@ -89,13 +89,13 @@ def _read_bound_device(*, expected, token_store, source, http_request, now,
     request_source = dict(source)
     if not request_source.get("DATABASE_URL"):
         request_source["DATABASE_URL"] = getattr(token_store, "database_url", "")
-    from modules.telemetry.rootline_ewelink_request_budget import _optional_observation
-    optional = _optional_observation.get() or {}
-    routine_read = routine_read or optional.get("purpose") in {"irrigation_routine", "borehole_routine"}
-    if routine_read:
-        contracts = [row for row in rootline_device_registry().values() if row.get("device_id") == expected]
-        if not contracts or any(row.get("provider_account_binding") != "ewelink_owner_account" for row in contracts):
-            raise OAuthFailure("ewelink_registered_device_rejected")
+    # Every ordinary read is one exact registered, owned-device snapshot.
+    # The budget signals due quota recovery before this request is charged.
+    routine_read = True
+    contracts = [row for row in rootline_device_registry().values() if row.get("device_id") == expected]
+    if not contracts or any(row.get("provider_account_binding") != "ewelink_owner_account" for row in contracts):
+        raise OAuthFailure("ewelink_registered_device_rejected")
+    request_source["EWELINK_EXPECTED_DEVICE_ID"] = expected
     with snapshot_group(expected_device=expected, environ=request_source, region=record["region"]) as group:
         group["routine_read"] = bool(routine_read)
         result = _read_snapshot(expected=expected, token_store=token_store,
@@ -144,17 +144,20 @@ def _read_snapshot(*, expected, token_store, source, http_request, now, record,
 def _read_device_status(*, expected, source, request, now, record, access, family,
                         commissioned_baseline, registered_discovery_only,
                         token_refreshed, fresh_receipt):
-    """Both output-bearing requests stay together in the caller's read phase."""
+    """Read a complete owned device; recovery retains the full discovery sequence."""
     host = REGION_HOSTS[record["region"]]
-    things = request("GET", host + "/v2/device/thing?num=0", mode="bearer", token=access, environ=source)
+    request_source = dict(source)
+    request_source["EWELINK_EXPECTED_DEVICE_ID"] = expected
     if family is None:
-        rows = things.get("thingList") if isinstance(things.get("thingList"), list) else []
-        matches = [row.get("itemData") for row in rows if isinstance(row, dict) and row.get("itemType") == 1
-            and isinstance(row.get("itemData"), dict)
-            and str(row["itemData"].get("deviceid")) == expected]
-        if len(matches) != 1:
+        things = request("POST", host + "/v2/device/thing", mode="bearer", token=access,
+            body={"thingList": [{"itemType": 1, "id": expected}]}, environ=request_source)
+        rows = things.get("thingList") if isinstance(things, dict) else None
+        if (not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict)
+                or type(rows[0].get("itemType")) is not int or rows[0]["itemType"] != 1
+                or not isinstance(rows[0].get("itemData"), dict)
+                or rows[0]["itemData"].get("deviceid") != expected):
             raise OAuthFailure("ewelink_expected_owned_device_not_found")
-        device = matches[0]
+        device = rows[0]["itemData"]
         # Exact commissioned controller identities: both 4CH Pro R3 devices
         # report UIID4; the registered MINI R4 reports UIID138. The protocol
         # profile name UIID9 is not the provider's observed device class.
@@ -169,14 +172,15 @@ def _read_device_status(*, expected, source, request, now, record, access, famil
         if not account or (expected_account and not __import__("hmac").compare_digest(account, expected_account)):
             raise OAuthFailure("ewelink_account_identity_mismatch")
     else:
+        things = request("GET", host + "/v2/device/thing?num=0", mode="bearer", token=access, environ=source)
         account, device = _bind_account_device(family, things, expected, source)
     if not __import__("hmac").compare_digest(_digest(account), record["provider_account_digest"]):
         raise OAuthFailure("ewelink_account_binding_changed")
-    request_source = dict(source)
-    request_source["EWELINK_EXPECTED_DEVICE_ID"] = expected
-    status = request("GET", host + "/v2/device/thing/status?" +
-        urllib.parse.urlencode({"type": 1, "id": expected}),
-        mode="bearer", token=access, environ=request_source)
+    status = None
+    if family is not None:
+        status = request("GET", host + "/v2/device/thing/status?" +
+            urllib.parse.urlencode({"type": 1, "id": expected}),
+            mode="bearer", token=access, environ=request_source)
     # Production receipts use the clock AFTER all provider I/O.  An explicitly
     # supplied synthetic requester retains its deterministic fixture clock.
     retrieved_at = datetime.now(timezone.utc) if fresh_receipt else now
@@ -184,10 +188,11 @@ def _read_device_status(*, expected, source, request, now, record, access, famil
         commissioned_baseline=commissioned_baseline)
     if result["device_id"] != expected:
         raise OAuthFailure("ewelink_readback_device_mismatch")
+    result["snapshot_source"] = ("complete_owned_device" if family is None else "full_account_device_status")
     safe_material = {key: value for key, value in result.items() if key != "response_digest"}
     result["response_digest"] = sha256(json.dumps(safe_material, sort_keys=True,
         separators=(",", ":"), default=str).encode()).hexdigest()
-    result["provider_calls"] = (2 if family is None else 3) + int(token_refreshed)
+    result["provider_calls"] = (1 if family is None else 3) + int(token_refreshed)
     result["provider_control_calls"] = 0
     result["token_refreshed"] = token_refreshed
     result["autonomous_control_enabled"] = False

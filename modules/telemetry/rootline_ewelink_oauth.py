@@ -183,7 +183,7 @@ def _exchange_authorization(*, code, region, source, token_store, http_request, 
                      urllib.parse.urlencode({"type": 1, "id": expected_device}),
                      mode="bearer", token=access, environ=source)
     device_params = device.get("params") if isinstance(device.get("params"), dict) else {}
-    status_params = status.get("params") if isinstance(status.get("params"), dict) else {}
+    status_params = status.get("params") if isinstance(status, dict) and isinstance(status.get("params"), dict) else {}
     # CoolKit distributes one authenticated device snapshot across the thing
     # record and the status response.  Status may contain only fields changed
     # or selected for the device; validate the composed snapshot rather than
@@ -273,7 +273,7 @@ def _current_output_status(params):
     if not isinstance(switches, list) or len(switches) != 4:
         return False
     if any(not isinstance(item, dict) or item.get("switch") not in {"on", "off"}
-           or not isinstance(item.get("outlet"), int) for item in switches):
+           or type(item.get("outlet")) is not int for item in switches):
         return False
     outlets = {item["outlet"] for item in switches}
     return outlets == {0, 1, 2, 3}
@@ -297,10 +297,10 @@ def _missing_safety_status(params, outlets=(0, 1, 2, 3)):
     return sorted(missing)
 
 
-def normalize_device_readback(*, device, status, retrieved_at, commissioned_baseline=None):
-    """Return a secret-free, fail-closed projection of one authenticated GET snapshot."""
+def normalize_device_readback(*, device, status=None, retrieved_at, commissioned_baseline=None):
+    """Return a secret-free, fail-closed projection of one authenticated device snapshot."""
     device_params = device.get("params") if isinstance(device.get("params"), dict) else {}
-    status_params = status.get("params") if isinstance(status.get("params"), dict) else {}
+    status_params = status.get("params") if isinstance(status, dict) and isinstance(status.get("params"), dict) else {}
     params = {**device_params, **status_params}
     # The exact registered MINI R4/UIID138 reports four switch placeholders,
     # but only outlet zero exists physically. Never infer this device class
@@ -321,19 +321,17 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
     pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"}, outlets)
     configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"}, outlets)
     retrieved_at = _aware(retrieved_at)
-    provider_timestamp_supplied = False
-    observed_at = None
-    for packet, field in ((status, "updatedAt"), (status, "updateTime"),
-                          (device, "updatedAt")):
-        if field in packet:
-            observed_at = packet[field]
-            provider_timestamp_supplied = True
-            break
-    observed_time = _provider_timestamp(observed_at)
-    timestamp_fresh = (observed_time is not None and
-        timedelta(seconds=-30) <= retrieved_at - observed_time <= timedelta(minutes=5))
+    supplied_times = [_provider_timestamp(packet[field])
+        for packet, field in ((status, "updatedAt"), (status, "updateTime"),
+                              (device, "updatedAt"), (device, "updateTime"))
+        if isinstance(packet, dict) and field in packet]
+    provider_timestamp_supplied = bool(supplied_times)
+    observed_time = supplied_times[0] if supplied_times else None
+    timestamp_fresh = bool(supplied_times) and all(value is not None and
+        timedelta(seconds=-30) <= retrieved_at - value <= timedelta(minutes=5)
+        for value in supplied_times)
     # The official CoolKit UIID9 profile does not promise a provider timestamp
-    # in either GET response.  A completed authenticated, non-redirected GET is
+    # in the device response. A completed authenticated, non-redirected read is
     # nevertheless a current observation receipt.  Keep that clock distinct
     # from a provider/device observation time instead of manufacturing one.
     freshness_clock_source = (
@@ -457,7 +455,7 @@ def _outlet_records(value, field, allowed, outlets=(0, 1, 2, 3)):
         return {}
     result = {}
     for item in value:
-        if (not isinstance(item, dict) or not isinstance(item.get("outlet"), int)
+        if (not isinstance(item, dict) or type(item.get("outlet")) is not int
                 or item.get("outlet") in result or item.get(field) not in allowed):
             return {}
         result[item["outlet"]] = item
@@ -580,6 +578,19 @@ def _enforce_provider_operation(method, parsed, body, mode, environ):
         method == "POST" and mode == "signed" and parsed.path == "/v2/user/refresh"
         and not query and isinstance(body, dict) and set(body) == {"rt"}
         and bool(str(body.get("rt") or ""))
+    ) or (
+        method == "POST" and mode == "bearer" and parsed.path == "/v2/device/thing"
+        and not parsed.query and not parsed.fragment and isinstance(body, dict)
+        and set(body) == {"thingList"} and isinstance(body["thingList"], list)
+        and len(body["thingList"]) == 1 and isinstance(body["thingList"][0], dict)
+        and set(body["thingList"][0]) == {"itemType", "id"}
+        and type(body["thingList"][0]["itemType"]) is int
+        and body["thingList"][0]["itemType"] == 1
+        and body["thingList"][0]["id"] == expected_device
+        and expected_device in {row.get("device_id") for row in
+            __import__("modules.telemetry.rootline_device_registry", fromlist=["rootline_device_registry"])
+            .rootline_device_registry().values()
+            if row.get("provider_account_binding") == "ewelink_owner_account"}
     ) or (
         method == "GET" and mode == "bearer" and body is None
         and parsed.path == "/v2/family" and not query

@@ -344,6 +344,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "success": True,
             "overall_status": "Recommend",
             "current_power": {
+                "observed_at": "2026-07-29T18:00:00+02:00",
                 "battery_soc_pct": 74,
                 "solar_power_w": 3200,
                 "load_power_w": 850,

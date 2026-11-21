@@ -30,7 +30,7 @@ AUTHORITY = {
 }
 
 
-def build_adaptive_irrigation_decisions(evidence, *, now=None):
+def build_adaptive_irrigation_decisions(evidence, *, now=None, operating_date=None):
     """Rank independent A/B/C needs using only supplied, provenance-ready facts."""
     evidence = deepcopy(evidence if isinstance(evidence, dict) else {})
     now = _za(now or datetime.now(timezone.utc))
@@ -46,7 +46,7 @@ def build_adaptive_irrigation_decisions(evidence, *, now=None):
         if zone_id in {"A12345", "E12345"} and zone_id not in zones:
             continue
         results.append(_zone_decision(zone_id, zones.get(zone_id, {}), policy,
-                                      weather, forecast, water, power, now))
+                                      weather, forecast, water, power, now, operating_date=operating_date))
     _rank(results)
     # Deliberately exclude the calculation clock. An unchanged material result
     # must retain its identity so Oom Sakkie can suppress duplicate notices.
@@ -70,7 +70,7 @@ def build_adaptive_irrigation_decisions(evidence, *, now=None):
 
 
 def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4,
-                                       additional_outcomes=None):
+                                       additional_outcomes=None, operating_date=None):
     """Project zone-specific weekly debt from verified completions only.
 
     The projection is deterministic and can be rebuilt from the durable outcome
@@ -79,7 +79,9 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
     now = _za(now or datetime.now(timezone.utc))
     zone = _dict(zone)
     target = max(1, min(7, int(target_days_per_week or 4)))
-    week_start = (now - timedelta(days=now.weekday())).replace(
+    calendar = (datetime.fromisoformat(str(operating_date)).replace(tzinfo=ZA_TZ)
+        if operating_date is not None else now)
+    week_start = (calendar - timedelta(days=calendar.weekday())).replace(
         hour=0, minute=0, second=0, microsecond=0)
     epoch_start = _timestamp(zone.get("planning_epoch_start"))
     obligation_start = max(week_start, epoch_start.astimezone(ZA_TZ)) if epoch_start else week_start
@@ -96,7 +98,7 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
             continue
         identity = str(row.get("outcome_id"))
         canonical = _digest({key: row.get(key) for key in (
-            "outcome_id", "completed_at", "verified_runtime_minutes", "state",
+            "outcome_id", "completed_at", "operating_date", "verified_runtime_minutes", "state",
             "shutdown_verified", "source", "objective_satisfied")})
         if identity in seen:
             conflict = conflict or seen[identity] != canonical
@@ -105,13 +107,15 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
         if _verified_completion_time(row) is None:
             continue
         completed = _verified_completion_time(row).astimezone(ZA_TZ)
-        if obligation_start <= completed <= now:
+        credited_date = str(row.get("operating_date") or completed.date().isoformat())
+        if (completed <= now and obligation_start.date().isoformat() <= credited_date <= now.date().isoformat()
+                and (epoch_start is None or completed >= epoch_start)):
             verified_minutes += int(_number(row.get("verified_runtime_minutes")) or 0)
             outcomes.append(identity)
             if row.get("objective_satisfied") is True:
-                verified_days.add(completed.date().isoformat())
-    elapsed_days = max(0, (now.date() - obligation_start.date()).days + 1) if obligation_start <= now else 0
-    available_days = max(0, 7 - obligation_start.weekday()) if obligation_start <= now else 0
+                verified_days.add(credited_date)
+    elapsed_days = max(0, (calendar.date() - obligation_start.date()).days + 1) if obligation_start.date() <= calendar.date() else 0
+    available_days = max(0, 7 - obligation_start.weekday()) if obligation_start.date() <= calendar.date() else 0
     epoch_target = min(target, (available_days * target + 6) // 7)
     expected_by_now = min(epoch_target, (elapsed_days * target + 6) // 7)
     completed_days = len(verified_days)
@@ -212,7 +216,7 @@ def notification_projection(result, previous_decision_sha256=None):
     }
 
 
-def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
+def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now, operating_date=None):
     correction = _dict(zone.get("owner_correction"))
     need = _current_need(zone, correction, now)
     completions = [row for row in zone.get("completion_events", []) if isinstance(row, dict)]
@@ -237,15 +241,18 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     zone_policy = _dict(zone.get("operating_policy"))
     timed = (zone_policy.get("contract_version") == "rootline_operating_policy_abce.v3"
              and zone_policy.get("stop_mode") == "scheduled")
+    target_date = str(operating_date or now.date().isoformat())
     target = zone_policy.get("target_days_per_week") if zone_id in {"A12345", "E12345"} else policy["target_days_per_week"]
     obligation = (project_weekly_delivery_obligation(
-        zone, now=now, target_days_per_week=target, additional_outcomes=correction_outcomes)
+        zone, now=now, target_days_per_week=target, additional_outcomes=correction_outcomes, operating_date=operating_date)
         if type(target) is int and 1 <= target <= 7 else
         _need_based_obligation(zone, target, need, now))
     water_balance=_dict(zone.get("water_balance"))
     sufficient_latest = _latest_completion(completions, require_objective_satisfied=True)
-    completed_today = (sufficient_latest is not None
-                       and sufficient_latest.astimezone(ZA_TZ).date() == now.date())
+    completed_today = any(_verified_completion_time(row) is not None
+        and row.get("objective_satisfied") is True
+        and str(row.get("operating_date") or _verified_completion_time(row).astimezone(ZA_TZ).date().isoformat()) == target_date
+        for row in completions)
     segment = _dict(zone.get("latest_segment"))
     parent = _dict(zone.get("incomplete_parent_job"))
     parent_projection = _dict(parent.get("projection"))
@@ -271,7 +278,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     elif (completed_today and not parent_job
           and correction.get("another_segment_needed") is not True):
         decision, reason, score = "Completed", "A completed irrigation is recorded for this zone today.", 0
-    elif (latest is not None and latest.astimezone(ZA_TZ).date() == now.date()
+    elif (latest is not None and latest.astimezone(ZA_TZ).date().isoformat() == target_date
           and sufficient_latest is None):
         decision = "Reassess after segment one"
         reason = "A bounded segment stopped safely, but sufficient irrigation was not established; fresh evidence must decide further work."

@@ -1,5 +1,89 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed provider economy and visible input failures — 20 November 2026
+
+ROOTLINE must minimize avoidable provider requests while retaining fresh evidence
+at command and verification boundaries. Reuse one complete authenticated device
+observation when it supplies the required facts; coordinate routine discovery
+across workers and restart. Reduced polling must not delay owned shutdown,
+conceal manual isolation, reuse stale evidence as fresh, or weaken identity,
+authority, duplicate-command or verification checks. Measured test savings do
+not prove a provider quota, remaining allowance or restored access.
+
+Provider limits and unavailable weather, forecast or power inputs must not fail
+silently. Through the existing owner channel, identify the affected capability,
+what remains possible, and the next automatic recovery check. Preserve a stable
+incident identity, suppress confirmed duplicates, contain ambiguous delivery,
+and report verified recovery truthfully. A retry time is not a provider reset
+time. A dated recovery is not proof that equipment resumed or is currently OFF.
+
+Use the existing sensor, forecast, execution and notification records. Missing
+evidence remains unavailable; stale numerical readings must not appear current.
+An accepted backup forecast is distinct from complete forecast failure. Input
+recovery and useful warnings belong to the deployed runtime, without recurring
+owner monitoring or confirmations. Coordinate ownership with existing health
+alerts before enabling replacement notices, preserving unrelated alerts and
+rollback. This instruction does not authorize purchasing provider capacity,
+changing account permissions, bypassing limits or manufacturing recovery.
+
+## Owner-directed daily plan and live-condition adjustment — 20 November 2026
+
+The owner's direct clarification supersedes contrary recurring forecast and
+intraday forecast-deferral requirements below. The operating target is one
+simple daily plan that ROOTLINE executes and adjusts autonomously. This policy
+records the required behaviour; it does not claim the current runtime implements it.
+
+At 23:30 Africa/Johannesburg, refresh the forecast once for the nightly planning
+cycle and prepare the next local operating day's 24-hour plan. Use the correct
+forecast dates, recent weeks' plans, actual completed irrigation and outstanding
+work, together with the existing limits and guidance. Save one canonical plan
+with intended work, timing and linked irrigation, mixer, injector and power
+decisions. Reuse the existing scheduler, plan, execution and history records.
+
+Execute the saved plan during the day. If actual weather, power or equipment
+conditions block planned work, adjust the remaining plan using live observations,
+completed work, available time and existing limits, without another forecast
+fetch or reconsideration of forecast predictions. Preserve original owned OFF
+duties, current safety/isolation controls and duplicate-command protection.
+Condition-based borehole AC backup and Eskom decisions remain subordinate to
+actual solar, battery and equipment evidence; a planned window cannot force ON
+against the governing energy rules.
+
+Record unfinished work and its reason for the next nightly plan. Catch-up must
+remain within daily/weekly limits and must not duplicate already completed work,
+override weather/energy constraints or manufacture delivery credit. Maintain
+useful plan and material-change notices through the existing owner channel.
+Repeated forecast refreshes or full-plan rebuilds are not substitutes for
+executing and supervising the saved day's work.
+
+The once-daily forecast cycle may use its existing backup source if the primary
+fails. Failed acquisition must be reported honestly and cannot silently replace
+actual completed work or turn yesterday's forecast into a fresh one. Retain the
+approved operating rules and safe execution while resolving missing planning
+evidence. Do not create another scheduler, queue or parallel plan system.
+
+Unfinished irrigation retains its original obligation identity and verified
+completion accounting, including work blocked before its first start. Allocate
+recovery within the next day's normal allowance; never add that allowance again
+as catch-up. Retain unresolved older work even when recent-plan context is
+bounded. Attribute completion to the owning operating date across midnight.
+A consumed single-segment daily run does not gain another start through a plan
+revision. Existing unused legacy segments retain only their original authority.
+
+A saved programme is intended work, never command authority. New starts still
+require fresh live eligibility and the existing locked claim. Missing planning
+evidence must not suppress owned OFF duties or independently supported borehole
+AC backup and Eskom decisions. One deployment transition may adopt the existing
+valid current-day inert plan without re-fetching forecasts or replacing its task
+material; later days require their matching nightly programme evidence.
+
+Auxiliary starts must leave the existing start window available before capacity
+reservation and again before the durable claim. A contained claim that never
+sent ON may retire only through the existing runtime recovery with complete
+canonical history, command locks and fresh exact OFF evidence. Record zero
+ON attempts distinctly from an unknown dispatched outcome, preserve reservations
+and unfinished work, and never label safe retirement as completed mixing.
+
 ## Owner correction: borehole switch is AC backup — 20 November 2026
 
 This direct owner correction supersedes any contrary interpretation below.

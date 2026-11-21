@@ -12,6 +12,8 @@ import uuid
 
 import pytest
 
+from tests.rootline_postgres_teardown import wait_for_closed_fixture_clients
+
 from tests.test_rootline_a_commissioning_admission import (
     digest, grant, journal_rows, runtime, snapshot, transport)
 from modules.telemetry import rootline_irrigation_execution_store as store
@@ -24,7 +26,12 @@ MIGRATION = "202607070001_create_sam_live_stock_conversation_review_events.sql"
 
 
 @pytest.fixture(scope="module")
-def database():
+def owned_clients():
+    return {}
+
+
+@pytest.fixture(scope="module")
+def database(owned_clients):
     import psycopg
     from psycopg.conninfo import conninfo_to_dict
     info = conninfo_to_dict(URL)
@@ -32,7 +39,9 @@ def database():
     assert info.get("port", "5432") in {"5432", "65437"}
     assert re.fullmatch(r"rootline_a_commissioning_test(?:_[a-f0-9]{12})?", info.get("dbname", ""))
     # Root/CI creates this dedicated DB. Never create/drop/reset any database.
-    with psycopg.connect(URL) as db:
+    application_name = "a-fixture-" + uuid.uuid4().hex
+    with psycopg.connect(URL, application_name=application_name) as db:
+        owned_clients[(db.info.backend_pid, application_name)] = db
         assert db.execute("select current_database()").fetchone()[0] == info["dbname"]
         if db.execute("select to_regclass('public.sam_live_stock_conversation_review_events')").fetchone()[0] is None:
             db.execute((Path(__file__).resolve().parents[1] / "supabase/migrations" / MIGRATION).read_text())
@@ -43,14 +52,16 @@ def database():
                 db.execute((Path(__file__).resolve().parents[1] / "supabase/migrations" / name).read_text())
         assert db.execute("select count(*) from public.irrigation_events").fetchone()[0] == 0
     yield URL
-    with psycopg.connect(URL) as db:
-        assert db.execute("select count(*) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()").fetchone()[0] == 0
+    with psycopg.connect(URL, autocommit=True, connect_timeout=3,
+            options="-c statement_timeout=1000",
+            application_name="a-cleanup-" + uuid.uuid4().hex) as db:
+        assert len(wait_for_closed_fixture_clients(db, owned_clients)) == 0
         assert db.execute("select count(*) from public.irrigation_events").fetchone()[0] == 0
         db.rollback()
 
 
 @pytest.fixture
-def rail(database, runtime, monkeypatch):
+def rail(database, runtime, monkeypatch, owned_clients):
     import psycopg
     prefix = "synthetic-a-commissioning-" + uuid.uuid4().hex
     monkeypatch.setenv("DATABASE_URL", database)
@@ -60,8 +71,11 @@ def rail(database, runtime, monkeypatch):
     monkeypatch.setattr(budget, "LEDGER_ID", prefix + "-ledger")
     connections = []
     def connect(**kwargs):
+        application_name = "a-fixture-" + uuid.uuid4().hex
         db = psycopg.connect(database, connect_timeout=3,
+            application_name=application_name,
             options="-c statement_timeout=5000 -c lock_timeout=3000")
+        owned_clients[(db.info.backend_pid, application_name)] = db
         connections.append(db)
         return db
     monkeypatch.setattr(native, "connect_bounded_rootline_postgres", connect)

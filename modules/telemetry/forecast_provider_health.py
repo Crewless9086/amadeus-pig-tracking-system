@@ -6,6 +6,7 @@ claim that a provider's unseen quota reset or Retry-After has elapsed.
 """
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import json
 import os
 from secrets import compare_digest
@@ -126,6 +127,8 @@ def validate_ingest_claim(cursor, payload):
     if claim["provider"] != provider or type(claim["generation"]) is not int or claim["generation"] < 1:
         raise ValueError("forecast_ingest_claim_invalid")
     attempt = _identity(claim["attempt_id"])
+    cycle = (payload.get("provenance") or {}).get("nightly_cycle")
+    owner_state = _locked_cycle(cursor, cycle)
     cursor.execute("""select metadata,provider,source_type,active from public.telemetry_sources
         where source_id=%s for update""", (SOURCES[provider],))
     row = cursor.fetchone()
@@ -142,9 +145,112 @@ def validate_ingest_claim(cursor, payload):
         raise ValueError("forecast_ingest_claim_expired")
     if state.get("retry_not_before") and now < _utc(state["retry_not_before"]):
         raise ValueError("forecast_ingest_provider_cooldown")
+    if state.get("nightly_cycle") != cycle:
+        raise ValueError("nightly_ingest_cycle_conflict")
+    run_at = _utc(payload.get("forecast_run_at"))
+    if not _utc(owner_state["claimed_at"]) <= run_at <= now:
+        raise ValueError("nightly_ingest_time_invalid")
+    admitted = next((a for a in owner_state.get("attempts", []) if
+        a["provider"] == provider and a["attempt_id"] == attempt and a["generation"] == claim["generation"]), None)
+    if not admitted or admitted.get("status") != "pending":
+        raise ValueError("nightly_ingest_attempt_conflict")
+    receipt = {"provider": provider, "source_id": SOURCES[provider],
+        "attempt_id": attempt, "generation": claim["generation"],
+        "forecast_run_at": run_at.isoformat()}
+    if owner_state.get("ingest") not in (None, receipt):
+        raise ValueError("nightly_ingest_already_bound")
+    owner_state["ingest"] = receipt
+    # This marker commits with the snapshots, or rolls back with them.
+    _save_cycle(cursor, owner_state)
     return {"provider": provider, "source_id": SOURCES[provider], "generation": claim["generation"]}
 
+
+NIGHTLY_CYCLE_PROVIDER = "visual_crossing"
+
+def nightly_transition(current, payload, now):
+    """One acquisition cycle per SAST night, including its bounded fallback."""
+    state = deepcopy(current or {})
+    attempt = _identity(payload.get("attempt_id"))
+    local = now.astimezone(ZoneInfo("Africa/Johannesburg"))
+    action = payload.get("action")
+    if action == "nightly_claim":
+        if set(payload) != {"action", "provider", "attempt_id"}:
+            raise ValueError("nightly_cycle_fields_invalid")
+        if (local.hour, local.minute) < (23, 30):
+            return state, {"success": True, "allowed": False, "status": "nightly_not_due"}, 200, False
+        cycle_date = local.date().isoformat()
+        if state and str(state.get("cycle_date") or "") >= cycle_date:
+            return state, {"success": True, "allowed": False, "status": "nightly_cycle_already_claimed"}, 200, False
+        state = {"version": 1, "cycle_date": cycle_date,
+            "operating_date": (local.date()+timedelta(days=1)).isoformat(),
+            "attempt_id": attempt, "claimed_at": now.isoformat(), "status": "pending"}
+        return state, {"success": True, "allowed": True, "status": "nightly_cycle_claimed",
+            "cycle": deepcopy(state)}, 200, True
+    if action != "nightly_result" or set(payload)-{
+            "action", "provider", "attempt_id", "status", "source_id", "forecast_run_at"}:
+        raise ValueError("nightly_cycle_fields_invalid")
+    if state.get("attempt_id") != attempt:
+        return state, {"success": False, "status": "nightly_cycle_conflict"}, 409, False
+    status = payload.get("status")
+    if status not in {"ingested", "failed"}:
+        raise ValueError("nightly_cycle_status_invalid")
+    result = {"status": status, "source_id": payload.get("source_id"),
+        "forecast_run_at": payload.get("forecast_run_at")}
+    if status == "ingested":
+        stamp = _utc(result["forecast_run_at"])
+        if result["source_id"] not in SOURCES.values() or not _utc(state["claimed_at"]) <= stamp <= now:
+            raise ValueError("nightly_cycle_result_invalid")
+        ingest = state.get("ingest") or {}
+        if (ingest.get("source_id") != result["source_id"] or ingest.get("forecast_run_at") != stamp.isoformat()
+                or not any(a.get("attempt_id") == ingest.get("attempt_id") and
+                    a.get("generation") == ingest.get("generation") and a.get("status") == "ingested"
+                    for a in state.get("attempts", []))):
+            raise ValueError("nightly_cycle_ingest_unproven")
+    if state.get("status") != "pending":
+        same = state.get("result") == result
+        return state, {"success": same, "status": "nightly_result_replayed" if same else "nightly_cycle_conflict"}, 200 if same else 409, False
+    state.update(status=status, result=result, completed_at=now.isoformat())
+    return state, {"success": True, "status": "nightly_result_recorded"}, 200, True
+
+
+def _locked_cycle(cursor, cycle):
+    if not isinstance(cycle, dict) or set(cycle) != {"attempt_id", "cycle_date", "operating_date"}:
+        raise ValueError("nightly_cycle_required")
+    cursor.execute("""select metadata,provider,source_type,active from public.telemetry_sources
+        where source_id=%s for update""", (SOURCES[NIGHTLY_CYCLE_PROVIDER],))
+    owner = cursor.fetchone()
+    if not owner or owner[1:] != (NIGHTLY_CYCLE_PROVIDER, "forecast", True):
+        raise ValueError("nightly_cycle_owner_unregistered")
+    saved = (owner[0] or {}).get("forecast_nightly_cycle", {})
+    if saved.get("status") != "pending" or any(saved.get(k) != cycle[k] for k in cycle):
+        raise ValueError("nightly_cycle_conflict")
+    return deepcopy(saved)
+
+
+def _save_cycle(cursor, state):
+    cursor.execute("""update public.telemetry_sources set metadata=jsonb_set(
+        coalesce(metadata,'{}'::jsonb),'{forecast_nightly_cycle}',%s::jsonb,true),
+        updated_at=clock_timestamp() where source_id=%s""", (json.dumps(state), SOURCES[NIGHTLY_CYCLE_PROVIDER]))
+
+
 def provider_health(payload, provided_api_key="", database_url=None, *, connect_factory=None):
+    from modules.telemetry.rootline_cycle_budget import cycle_budget
+    from modules.oom_sakkie.bounded_postgres_read import OWNER_REQUEST_DEADLINE_SECONDS
+    import time
+    remaining = float(OWNER_REQUEST_DEADLINE_SECONDS)
+    if isinstance(payload, dict) and "request_expires_at" in payload:
+        try:
+            remaining = min(remaining, (_utc(payload["request_expires_at"]) - datetime.now(timezone.utc)).total_seconds())
+        except ValueError:
+            return {"success": False, "status": "forecast_health_request_deadline_invalid"}, 400
+        if remaining <= 0:
+            return {"success": False, "status": "forecast_health_request_expired"}, 408
+        payload = {key: value for key, value in payload.items() if key != "request_expires_at"}
+    with cycle_budget(time.monotonic() + remaining):
+        return _provider_health_locked(payload, provided_api_key, database_url, connect_factory=connect_factory)
+
+
+def _provider_health_locked(payload, provided_api_key="", database_url=None, *, connect_factory=None):
     configured = os.getenv(INGEST_API_KEY_ENV, "").strip()
     if not configured:
         return {"success": False, "status": "ingest_key_not_configured"}, 503
@@ -154,6 +260,9 @@ def provider_health(payload, provided_api_key="", database_url=None, *, connect_
             or payload["provider"] not in SOURCES):
         return {"success": False, "status": "forecast_provider_not_allowed"}, 400
     provider = payload["provider"]; source = SOURCES[provider]
+    nightly = str(payload.get("action") or "").startswith("nightly_")
+    if nightly and provider != NIGHTLY_CYCLE_PROVIDER:
+        return {"success": False, "status": "nightly_cycle_owner_invalid"}, 400
     if connect_factory is None:
         from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
         url = database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")
@@ -161,6 +270,8 @@ def provider_health(payload, provided_api_key="", database_url=None, *, connect_
             read_only=False, enforce_transaction_local=True, connect_deadline_seconds=3)
     try:
         with connect_factory() as connection, connection.cursor() as cursor:
+            cycle = payload.get("nightly_cycle")
+            owner_state = None if nightly else _locked_cycle(cursor, cycle)
             cursor.execute("""select metadata,provider,source_type,active from public.telemetry_sources
                 where source_id=%s for update""", (source,))
             row = cursor.fetchone()
@@ -171,11 +282,46 @@ def provider_health(payload, provided_api_key="", database_url=None, *, connect_
                 raise ValueError("provider_health_metadata_invalid")
             cursor.execute("select clock_timestamp()")
             now = cursor.fetchone()[0].astimezone(timezone.utc)
-            state, result, code, changed = transition(metadata.get("forecast_provider_health", {}), payload, now)
+            key = "forecast_nightly_cycle" if nightly else "forecast_provider_health"
+            transition_payload = {k: v for k, v in payload.items() if k != "nightly_cycle"}
+            previous = metadata.get(key, {})
+            if not nightly:
+                if payload.get("action") == "claim" and any(a.get("provider") == provider
+                        for a in owner_state.get("attempts", [])):
+                    return {"success": True, "allowed": False, "status": "nightly_provider_already_attempted",
+                        "provider": provider, "source_id": source}, 200
+                if payload.get("action") == "result" and previous.get("nightly_cycle") != cycle:
+                    raise ValueError("nightly_provider_result_conflict")
+            state, result, code, changed = (nightly_transition if nightly else transition)(previous, transition_payload, now)
+            if not nightly and changed:
+                state["nightly_cycle"] = deepcopy(cycle)
+                attempts = owner_state.setdefault("attempts", [])
+                if payload.get("action") == "claim":
+                    attempts.append({"provider": provider, "attempt_id": state["attempt_id"],
+                        "generation": state["generation"], "status": "pending"})
+                else:
+                    admitted = next((a for a in attempts if a["provider"] == provider
+                        and a["attempt_id"] == state["attempt_id"] and a["generation"] == state["generation"]), None)
+                    if admitted is None:
+                        raise ValueError("nightly_provider_attempt_unproven")
+                    if state["status"] == "ingested":
+                        ingest = owner_state.get("ingest") or {}
+                        if (ingest.get("attempt_id") != state["attempt_id"] or
+                                ingest.get("forecast_run_at") != state["result"]["forecast_run_at"]):
+                            raise ValueError("nightly_provider_ingest_unproven")
+                    admitted["status"] = state["status"]
+                _save_cycle(cursor, owner_state)
             if changed:
                 cursor.execute("""update public.telemetry_sources set metadata=jsonb_set(
                     coalesce(metadata,'{}'::jsonb),'{forecast_provider_health}',%s::jsonb,true),
-                    updated_at=clock_timestamp() where source_id=%s""", (json.dumps(state), source))
+                    updated_at=clock_timestamp() where source_id=%s""".replace(
+                        "{forecast_provider_health}", "{"+key+"}"), (json.dumps(state), source))
+            if changed:
+                # Keep the existing connect-sized margin for commit and response;
+                # expiry before commit raises inside the owning transaction.
+                from modules.telemetry.rootline_cycle_budget import remaining_seconds
+                from modules.oom_sakkie.bounded_postgres_read import CONNECT_TIMEOUT_SECONDS
+                remaining_seconds(minimum=CONNECT_TIMEOUT_SECONDS)
             return {**result, "provider": provider, "source_id": source}, code
     except ValueError as exc:
         return {"success": False, "status": str(exc)}, 400

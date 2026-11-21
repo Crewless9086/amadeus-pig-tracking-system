@@ -153,6 +153,14 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
                        if isinstance(row, Mapping)}
     lines = ["<b>ROOTLINE — VANDAG SE WATERPLAN</b>" if af else
              "<b>ROOTLINE — TODAY’S WATER PLAN</b>", ""]
+    from modules.oom_sakkie.rootline_transition_notifications import provider_availability_text
+    availability = provider_availability_text(result.get("provider_availability"), language=language)
+    if availability:
+        lines.extend([html.escape(availability), ""])
+    from modules.oom_sakkie.rootline_transition_notifications import input_health_text
+    input_summary = input_health_text(result.get("input_health"), language=language)
+    if input_summary:
+        lines.extend([html.escape(input_summary), ""])
     if result.get("control_observation") == "deadline_deferred":
         lines.extend([("Die jongste outomatiese toerustingkontrole het sy tydsperk bereik. "
             "Die plan hieronder is nog voorneme; ROOTLINE probeer weer op die volgende minuut."
@@ -243,7 +251,10 @@ def manager_brief_facts(result: Mapping[str, Any]) -> dict[str, Any]:
     """Display-only facts; the existing textual/material projection is intact."""
     recommendations = {str(row.get("subject") or ""): row
         for row in result.get("recommendations") or () if isinstance(row, Mapping)}
-    return {"kind": "irrigation_status", "zones": [{"zone": zone,
+    return {"kind": "irrigation_status",
+        **({"provider_availability": result["provider_availability"]}
+           if isinstance(result.get("provider_availability"), Mapping) else {}),
+        "zones": [{"zone": zone,
         "status": owner_zone_decision(result, recommendations.get(zone, {}), zone=zone, language="en"),
         "recommendation": str(recommendations.get(zone, {}).get("status") or
                               recommendations.get(zone, {}).get("recommendation") or ""),

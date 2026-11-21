@@ -254,6 +254,15 @@ class ManagedConnection:
 
 
 def patch_default_sources(monkeypatch, connection, *, solar_power_w=2000):
+    # Persisted intent is an input to the live-only reader. Build it once using
+    # the real programme builder, retaining the original observation timestamps.
+    from modules.telemetry import rootline_water_energy_plan as planning
+    selected = planning._as_za(NOW).date().isoformat()
+    saved = planning.build_daily_program({'forecast': {'observed_at': NOW.isoformat(),
+        'days': [{'forecast_date': selected, 'rain_sum_mm': 0,
+                  'rain_probability_max_pct': 0}]}}, selected, now=NOW)
+    monkeypatch.setattr(planning, 'get_current_water_energy_plan',
+        lambda *_args, **_kwargs: (deepcopy(saved), 200))
     monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
         lambda **_kwargs: connection)
     monkeypatch.setattr("modules.telemetry.power_service.get_current_power_state",
@@ -335,15 +344,15 @@ def _default_injector_clock_case(monkeypatch, *, channel=1, canonical_delay=0,
     from modules.telemetry import rootline_execution_runtime as runtime
     from modules.telemetry.rootline_ifttt_transport import output_evidence_from_snapshot
     from tests.test_rootline_ifttt_transport import irrigation_snapshot
-    planner = runtime.build_water_energy_plan
-    def observed_planner(evidence, selected, *, now):
-        plan = planner(evidence, selected, now=now)
+    planner = runtime.project_saved_program_for_execution
+    def observed_planner(saved, evidence, *, now):
+        plan = planner(saved, evidence, now=now)
         if borehole_delay:
             plan["candidate_tasks"] = [row for row in plan.get("candidate_tasks",[]) if row.get("task_id") != "borehole"]
             plan["candidate_tasks"].append({"task_id":"borehole", "recommendation":"Recommend"})
         plans.append({"evidence":deepcopy(evidence), "at":now, "plan":plan})
         return plan
-    monkeypatch.setattr(runtime,"build_water_energy_plan",observed_planner)
+    monkeypatch.setattr(runtime,"project_saved_program_for_execution",observed_planner)
     if borehole_delay:
         from tests.test_rootline_borehole_commissioning import canonical as borehole_baseline
         baseline = {**borehole_baseline(), "registry_generation": 2}
@@ -581,6 +590,9 @@ def test_borehole_eligibility_assesses_power_after_baseline_and_provider_reads(m
         "grid_power_w":0,"observed_at":(NOW+timedelta(seconds=power_offset)).isoformat()},
         "borehole_interlocks":{key:True for key in
             ("dry_run_safe","low_water_clear","supply_pressure_safe","full_tank_not_blocking")}}
+    from modules.telemetry import rootline_water_energy_plan as planning
+    legacy = planning.build_water_energy_plan(evidence, NOW.date().isoformat(), now=NOW)
+    evidence['saved_daily_plan'] = planning._adopt_current_day_program(legacy, planning._as_za(NOW))
     def load_baseline(**_):
         current[0]+=timedelta(seconds=5)
         return {**baseline(),"registry_generation":2}

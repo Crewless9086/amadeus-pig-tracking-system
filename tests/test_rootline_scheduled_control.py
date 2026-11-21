@@ -294,7 +294,7 @@ def test_borehole_timed_cap_and_claim():
      for changed in [{"stop_mode":None},{"channel":2},{"primary_stop_deadline":(NOW+timedelta(seconds=1)).isoformat()},{"native_fail_stop_deadline":NOW.isoformat()}]:
       assert not es._claim_borehole_material_load({**body,**changed})["created"]
     clock[0]=NOW; t.state="OFF"
-    with patch.object(managed,"run_rootline_managed_device_cycle",lambda **kwargs:kwargs["evidence_factory"](pending_devices=frozenset({"BOREHOLE-1-MINI-R4-CH1"}))),patch.object(runtime,"build_water_energy_plan",lambda *args,**kwargs:{"candidate_tasks":[{"task_id":"borehole","recommendation":"Recommend"}]}),patch.object(b,"load_registered_borehole_baseline",lambda **kwargs:base),patch.object(energy,"managed_energy_decision",lambda *args,**kwargs:{"borehole_eligible":True,"mixing_eligible":True}):
+    with patch.object(managed,"run_rootline_managed_device_cycle",lambda **kwargs:kwargs["evidence_factory"](pending_devices=frozenset({"BOREHOLE-1-MINI-R4-CH1"}))),patch.object(runtime,"project_saved_program_for_execution",lambda *args,**kwargs:{"candidate_tasks":[{"task_id":"borehole","recommendation":"Recommend"}]}),patch.object(b,"load_registered_borehole_baseline",lambda **kwargs:base),patch.object(energy,"managed_energy_decision",lambda *args,**kwargs:{"borehole_eligible":True,"mixing_eligible":True}):
      packet=runtime.run_rootline_managed_device_reassessment(environ={"ROOTLINE_TIMED_CONTROL_ENABLED":"true","ROOTLINE_BOREHOLE_ENABLED":"true"},now=NOW,clock=lambda:NOW,transport=t,token_store=object(),evidence_loader=lambda **kwargs:({},NOW.astimezone(runtime.ZA_TZ).date().isoformat(),NOW))
      assert packet["borehole_execution"]["requested_seconds"]==14400
 
@@ -339,10 +339,17 @@ def test_normal_owner_policy_runtime_and_disabled_start_shutdown():
     for zone in ["B12345","C12345","A12345","E12345"]:
      _,advisor=fixture.payload(NOW)
      evidence={"weather":{"observed_at":NOW.isoformat(),"status":"fresh","rain_rate_mm_h":0,"rain_today_mm":10},"irrigation":{"source":"rootline_daily_advisor","advisor_generated_at":NOW.isoformat(),"advisor_operating_date":NOW.date().isoformat(),"zones":advisor["zones"],"adaptive_management":{"enabled":True,"zones":[{"zone_id":z["zone_id"]} for z in advisor["zones"]]}},"irrigation_history":{"status":"Available","zones":{z["zone_id"]:{"planning_epoch_start":NOW.isoformat(),"epoch_complete_through":NOW.isoformat(),"complete_through":NOW.isoformat(),"events":[]} for z in advisor["zones"]}}}
+     evidence['weather']['stale_after_minutes']=30  # canonical local-weather freshness metadata
      # Select each exact zone through its genuine owner enabled flags; B/C share one flag, so mark sibling current need false.
      for z in evidence["irrigation"]["zones"]:
       if z["zone_id"]!=zone:z.update(visible_need="none",visible_need_observed_at=NOW.isoformat(),visible_need_source="owner")
+     # Supply the exact current owner-policy material through the real one-time
+     # saved-programme transition; live execution still uses actual projection.
+     from modules.telemetry import rootline_water_energy_plan as planning
      source={"ROOTLINE_TIMED_CONTROL_ENABLED":"true",get_device_contract(zone)["authority_flag"]:"true"}
+     with runtime.timed_control_scope(source):
+      legacy=planning.build_water_energy_plan(evidence,NOW.date().isoformat(),now=NOW)
+      evidence['saved_daily_plan']=planning._adopt_current_day_program(legacy,planning._as_za(NOW))
      proof=controller();proof.update(trusted_receipt_at=NOW.isoformat(),retrieved_at=NOW.isoformat(),current_outputs_authoritative=True,actuation_configuration_safe=False,timers_enabled=True)
      proof.pop("firmware")
      for row in proof["channels"]:row.update(native_auto_off_enabled=False,native_auto_off_seconds=0)

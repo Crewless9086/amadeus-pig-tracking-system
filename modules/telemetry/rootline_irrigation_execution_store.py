@@ -3203,11 +3203,12 @@ def _assess_borehole_conditions(body):
 
 
 _AUXILIARY_STARTUP_ABORT = "rootline_auxiliary_startup_abort.v1"
+_AUXILIARY_UNSTARTED_ABORT = "rootline_auxiliary_startup_abort.v2"
 _AUXILIARY_STARTUP_ABORT_ACTION = "record_auxiliary_startup_aborted"
 
 
 def _auxiliary_startup_abort_preimage(rows, containment_event_id):
-    """A consumed dispatch with no durable ON result is unknown, never no-send."""
+    """Read the complete history: absent dispatch and unknown dispatch stay distinct."""
     from modules.telemetry.rootline_device_registry import get_device_contract
     if not rows or any(not isinstance(row, dict) for row in rows):
         return None
@@ -3215,9 +3216,9 @@ def _auxiliary_startup_abort_preimage(rows, containment_event_id):
     dispatches = [row for row in rows if row.get("action") == "claim_auxiliary_dispatch"]
     holds = [row for row in rows if row.get("action") == "contain_auxiliary_device"]
     barriers = [row for row in rows if row.get("action") == "claim_auxiliary_off_attempt"]
-    if len(claims) != 1 or len(dispatches) != 1 or len(holds) != 1 or not barriers:
+    if len(claims) != 1 or len(dispatches) not in {0, 1} or len(holds) != 1 or not barriers:
         return None
-    claim, dispatch, held = claims[0], dispatches[0], holds[0]
+    claim, dispatch, held = claims[0], (dispatches[0] if dispatches else None), holds[0]
     identity = claim.get("auxiliary_device_id")
     contract = get_device_contract(identity) or {}
     allowed = {"record_auxiliary_eligibility", "claim_auxiliary_before_on",
@@ -3231,9 +3232,10 @@ def _auxiliary_startup_abort_preimage(rows, containment_event_id):
             or type(claim.get("channel")) is not int or claim.get("state") != "claimed"
             or type(claim.get("on_attempts")) is not int or claim["on_attempts"] != 0
             or claim.get("event_id") != _event_id("claim_auxiliary_before_on", claim)
-            or dispatch.get("event_id") != _event_id("claim_auxiliary_dispatch", claim)
-            or any(dispatch.get(key) != value for key, value in claim.items()
-                   if key not in {"action", "event_id", "state", "on_attempts", "off_attempts"})
+            or (dispatch is not None and (
+                dispatch.get("event_id") != _event_id("claim_auxiliary_dispatch", claim)
+                or any(dispatch.get(key) != value for key, value in claim.items()
+                       if key not in {"action", "event_id", "state", "on_attempts", "off_attempts"})))
             or held.get("event_id") != containment_event_id
             or held.get("reason") != "restart_or_deadline_ambiguous"
             or held.get("state") != "claimed_recovery_required"
@@ -3264,18 +3266,19 @@ def _auxiliary_abort_binding(preimage):
     return {"execution_id": claim["execution_id"], "auxiliary_device_id": claim["auxiliary_device_id"],
         "device_id": claim["device_id"], "channel": claim["channel"],
         "claim_event_id": claim["event_id"], "claim_sha256": _event_digest(claim),
-        "dispatch_event_id": dispatch["event_id"], "dispatch_sha256": _event_digest(dispatch),
+        **({"startup_preimage": "never_dispatched", "dispatch_count": 0} if dispatch is None else
+            {"dispatch_event_id": dispatch["event_id"], "dispatch_sha256": _event_digest(dispatch)}),
         "containment_event_id": held["event_id"], "containment_sha256": _event_digest(held)}
 
 
 def _verified_auxiliary_startup_abort(item, rows):
     if (not isinstance(item, dict) or item.get("action") != _AUXILIARY_STARTUP_ABORT_ACTION
-            or item.get("terminal_contract") != _AUXILIARY_STARTUP_ABORT
+            or item.get("terminal_contract") not in (_AUXILIARY_STARTUP_ABORT, _AUXILIARY_UNSTARTED_ABORT)
             or item.get("event_id") != _event_id(_AUXILIARY_STARTUP_ABORT_ACTION, item)
             or item.get("state") != "Aborted" or item.get("startup_aborted_verified") is not True
             or item.get("reservation_preserved") is not True or item.get("on_authority") is not False
             or item.get("objective_satisfied") is not False or item.get("control_completed") is not False
-            or item.get("shutdown_verified") is not True or item.get("provider_on_outcome") != "Unknown"):
+            or item.get("shutdown_verified") is not True):
         return False
     preimage = _auxiliary_startup_abort_preimage(rows, item.get("containment_event_id"))
     if preimage is None:
@@ -3283,7 +3286,19 @@ def _verified_auxiliary_startup_abort(item, rows):
     binding = _auxiliary_abort_binding(preimage)
     if any(item.get(key) != value for key, value in binding.items()):
         return False
-    claim, _, held = preimage
+    claim, dispatch, held = preimage
+    if dispatch is None:
+        if (item.get("terminal_contract") != _AUXILIARY_UNSTARTED_ABORT
+                or item.get("startup_unstarted_verified") is not True
+                or item.get("provider_on_outcome") != "Not dispatched"
+                or type(item.get("on_attempts")) is not int or item["on_attempts"] != 0
+                or type(item.get("dispatch_count")) is not int or item["dispatch_count"] != 0
+                or "dispatch_event_id" in item or "dispatch_sha256" in item):
+            return False
+    elif (item.get("terminal_contract") != _AUXILIARY_STARTUP_ABORT
+            or item.get("provider_on_outcome") != "Unknown"
+            or any(key in item for key in ("startup_preimage", "dispatch_count", "startup_unstarted_verified"))):
+        return False
     if any(item.get(key) != value for key, value in claim.items()
             if key not in {"action", "event_id", "state", "on_attempts", "off_attempts"}):
         return False
@@ -3331,12 +3346,12 @@ def _auxiliary_abort_current(cursor, body):
             or evidence.get("event_id") != body["containment_event_id"]
             or evidence.get("execution_id") != body["execution_id"]
             or preimage[0].get("auxiliary_device_id") != body["auxiliary_device_id"]):
-        return None, None, _auxiliary_abort_pending("preimage", "startup_dispatch_unknown_unproven")
+        return None, None, _auxiliary_abort_pending("preimage", "startup_preimage_unproven")
     return rows, preimage, None
 
 
 def _recover_auxiliary_startup_containment(body):
-    """Runtime-owned recovery of one consumed but unobserved startup, never ON.
+    """Runtime-owned recovery of an unstarted or unobserved startup, never ON.
 
     Native metadata preparation remains outside hardware locks. The final fresh
     OFF and exact canonical terminal share both existing command locks.
@@ -3432,10 +3447,14 @@ def _recover_auxiliary_startup_locked(body, *, prepared=None, expected=None):
                 if failure or isinstance(check, dict) or _auxiliary_abort_binding(check) != binding:
                     return _auxiliary_abort_pending("preimage", "changed_during_final_read")
                 finished = datetime.now(timezone.utc)
-                aborted = {**claim, **binding, "state": "Aborted", "terminal_contract": _AUXILIARY_STARTUP_ABORT,
-                    "startup_aborted_verified": True, "reason": "startup_dispatch_outcome_unknown",
-                    "provider_on_outcome": "Unknown", "shutdown_verified": True,
-                    "on_attempts": 1, "off_attempts": len({row["attempt"] for row in rows
+                unstarted = check[1] is None
+                aborted = {**claim, **binding, "state": "Aborted",
+                    "terminal_contract": _AUXILIARY_UNSTARTED_ABORT if unstarted else _AUXILIARY_STARTUP_ABORT,
+                    "startup_aborted_verified": True,
+                    **({"startup_unstarted_verified": True} if unstarted else {}),
+                    "reason": "startup_never_dispatched" if unstarted else "startup_dispatch_outcome_unknown",
+                    "provider_on_outcome": "Not dispatched" if unstarted else "Unknown", "shutdown_verified": True,
+                    "on_attempts": 0 if unstarted else 1, "off_attempts": len({row["attempt"] for row in rows
                         if row.get("action") == "claim_auxiliary_off_attempt"}),
                     "shutdown_evidence": proof, "read_started_at": started.isoformat(), "aborted_at": finished.isoformat(),
                     "read_elapsed_seconds": time.monotonic()-started_monotonic,

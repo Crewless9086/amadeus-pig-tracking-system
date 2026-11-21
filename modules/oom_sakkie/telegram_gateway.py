@@ -1189,7 +1189,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                                          state_store=None, family_delivery=None, schedule_store=None,
                                          scheduler_now=None, execution_cycle=None,
                                          managed_device_cycle=None, daily_plan_generator=None,
-                                         active_supervision_cycle=None, equipment_notification_cycle=None):
+                                         active_supervision_cycle=None, equipment_notification_cycle=None,
+                                         provider_notification_cycle=None, input_notification_cycle=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -1379,10 +1380,19 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "mark_borehole_active", "record_borehole_completed", "record_eskom_completed"}:
                 from modules.oom_sakkie.rootline_transition_notifications import compose_transition_notice
                 answer = compose_transition_notice(state, execution, language=scheduled_principal.language)
+            if state in {"ProviderUnavailable", "ProviderSafety", "ProviderRestored"}:
+                from modules.oom_sakkie.rootline_transition_notifications import compose_provider_notice
+                answer = compose_provider_notice(state, execution, language=scheduled_principal.language)
+            if state in {"InputUnavailable", "InputRestored"}:
+                from modules.oom_sakkie.rootline_transition_notifications import compose_input_notice
+                answer = compose_input_notice(state, execution, language=scheduled_principal.language)
             base_identity = str(execution.get("notification_identity")
                                 or execution.get("execution_id") or "")
             event_identity = f"{base_identity}:{str(state).upper()}"
             visible = {"success": True, "status": state.lower(), "answer": answer}
+            if state in {"ProviderUnavailable", "ProviderSafety", "ProviderRestored", "InputUnavailable", "InputRestored"}:
+                visible.update(recipient_render_contract="specialist_structured_recipient_v1",
+                    recipient_language=scheduled_principal.language)
             retry_authority = None
             if retry_proof_identity:
                 from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
@@ -1441,8 +1451,44 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "daily_plan_created": receipt.get("created") is True,
                 "daily_plan_id": str((receipt.get("daily_plan") or {}).get("daily_plan_id") or "")}
 
-        def equipment_reports(supervision):
-            if not production_persistence and equipment_notification_cycle is None:
+        provider_reported = False
+        input_reported = False
+        def equipment_reports(supervision, *, provider_only=False):
+            nonlocal provider_reported, input_reported
+            from modules.telemetry.rootline_input_health import input_health_enabled
+            visibility_enabled = input_health_enabled(source)
+            # Readback outages remain visible even when plan refresh fails.
+            if visibility_enabled and not provider_reported and (production_persistence or provider_notification_cycle is not None):
+                provider_reported = True
+                try:
+                    from modules.oom_sakkie.rootline_transition_notifications import recover_provider_notifications
+                    provider_reporter = provider_notification_cycle or recover_provider_notifications
+                    provider_outcome = provider_reporter(notify=notify, now=scheduler_now, environ=source)
+                except Exception as exc:
+                    provider_outcome = {"success": False, "status": "rootline_provider_notifications_deferred",
+                        "error_type": type(exc).__name__, "telegram_sends": 0}
+                supervision = {**supervision,
+                    "provider_notification_status": str(provider_outcome.get("status") or ""),
+                    "provider_notifications_confirmed": provider_outcome.get("success") is True,
+                    "telegram_sends": int(supervision.get("telegram_sends") or 0)
+                        + int(provider_outcome.get("telegram_sends") or 0)}
+            if visibility_enabled and not input_reported and (production_persistence or input_notification_cycle is not None):
+                input_reported = True
+                try:
+                    from modules.oom_sakkie.rootline_transition_notifications import recover_input_notifications
+                    input_reporter = input_notification_cycle or recover_input_notifications
+                    input_outcome = input_reporter(notify=notify, now=scheduler_now, environ=source,
+                        recipient={"owner_user_id": parsed["telegram_user_id"],
+                            "chat_id": parsed["telegram_chat_id"], "language": scheduled_principal.language})
+                except Exception as exc:
+                    input_outcome = {"success": False, "status": "rootline_input_notifications_deferred",
+                        "error_type": type(exc).__name__, "telegram_sends": 0}
+                supervision = {**supervision,
+                    "input_notification_status": str(input_outcome.get("status") or ""),
+                    "input_notifications_confirmed": input_outcome.get("success") is True,
+                    "telegram_sends": int(supervision.get("telegram_sends") or 0)
+                        + int(input_outcome.get("telegram_sends") or 0)}
+            if provider_only or (not production_persistence and equipment_notification_cycle is None):
                 return supervision
             try:
                 from modules.oom_sakkie.rootline_transition_notifications import recover_transition_notifications
@@ -1810,8 +1856,25 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 supervision["execution_status"] = str(managed_result.get("status") or "")
             return supervision
 
+        def ensure_due_program_after_safety():
+            if not production_persistence:
+                return {}
+            try:
+                remaining_seconds()
+                from modules.telemetry.rootline_water_energy_plan import ensure_due_daily_program
+                program, code = ensure_due_daily_program(
+                    database_url=str(source.get("DATABASE_URL") or "") or None,
+                    now=scheduler_now or datetime.now(timezone.utc))
+                return {"daily_program_status": program.get("status"),
+                    "daily_program_ready": code < 400 and program.get("success") is True}
+            except Exception as exc:
+                return {"daily_program_status": "planning_unavailable_safety_preserved",
+                    "daily_program_ready": False, "daily_program_error_type": type(exc).__name__}
+
         def invoke_safety_only():
-            supervision = equipment_reports(supervise())
+            supervision = supervise()
+            supervision.update(ensure_due_program_after_safety())
+            supervision = equipment_reports(supervision)
             return {**supervision,
                 "status": ("scheduled_rootline_active_supervised" if supervision.get("success") is True
                     else "scheduled_rootline_active_supervision_unproven"),
@@ -1822,6 +1885,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         def invoke():
             nonlocal current_plan_result
             supervision = supervise()
+            supervision.update(ensure_due_program_after_safety())
             try:
                 remaining_seconds(minimum=REPORT_MINIMUM_SECONDS)
             except RootlineCycleDeadlineExceeded:
@@ -1830,6 +1894,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "report_effects_unknown": False, "report_work_due": True,
                     "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
             try:
+                supervision = equipment_reports(supervision, provider_only=True)
                 current_plan_result = current_plan_report(supervision)
                 supervision = equipment_reports(supervision)
                 if supervision.get("success") is True and current_plan_result.get("success") is True:

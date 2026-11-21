@@ -35,7 +35,8 @@ def native_journey(monkeypatch,extra_seconds=0,change=None):
     j.store=es.rootline_irrigation_execution_store
     j.source.update(env(DATABASE_URL=URL))
     if change=='authority_revoked':j.revoke=True
-    thing_count=[0];status_count=[0]
+    thing_count=[0]
+    j.provider_requests=[];j.provider_snapshots=[];j.fault_hits=[]
     record=Store(j.source).record
     record['access_expires_at']=j.now+datetime.timedelta(hours=1)
     def latest():
@@ -54,17 +55,26 @@ def native_journey(monkeypatch,extra_seconds=0,change=None):
     class Opener:
         def open(self,req,timeout):
             path=urlparse(req.full_url).path
-            packet=deepcopy(request(req.method,req.full_url))
-            j.spend('provider GET '+path,1)
+            body=json.loads(req.data) if req.data else None
+            assert req.method=='POST' and req.full_url=='https://eu-apia.coolkit.cc/v2/device/thing'
+            assert body=={'thingList':[{'itemType':1,'id':'100204e9bc'}]}
+            j.provider_requests.append((req.method,path,deepcopy(body)))
+            packet=deepcopy(request(req.method,req.full_url,body=body))
+            assert len(packet['thingList'])==1
+            assert packet['thingList'][0]['itemType']==1
+            assert packet['thingList'][0]['itemData']['deviceid']=='100204e9bc'
+            j.spend('provider '+req.method+' '+path,1)
             if path=='/v2/device/thing':
                 thing_count[0]+=1
                 d=packet['thingList'][0]['itemData'];d['extra']={'uiid':4};d['updatedAt']=j.now.isoformat()
-                if thing_count[0]==2 and change=='account':d['apikey']='wrong-account'
-                if thing_count[0]==2 and change=='class':d['extra']['uiid']=138
-            if path=='/v2/device/thing/status':
-                status_count[0]+=1
-                on=(j.output=='ON' or (status_count[0]==2 and change=='final_ON'))
-                packet={'params':{'switches':[{'outlet':i,'switch':('on' if i==0 and on else 'off')} for i in range(4)]}}
+                if thing_count[0]==2 and change=='account':
+                    d['apikey']='wrong-account';j.fault_hits.append(change)
+                if thing_count[0]==2 and change=='class':
+                    d['extra']['uiid']=138;j.fault_hits.append(change)
+                on=(j.output=='ON' or (thing_count[0]==2 and change=='final_ON'))
+                if thing_count[0]==2 and change=='final_ON':j.fault_hits.append(change)
+                d['params']['switches']=[{'outlet':i,'switch':('on' if i==0 and on else 'off')} for i in range(4)]
+                j.provider_snapshots.append(deepcopy(d))
             return Response(req.full_url,packet)
     monkeypatch.setattr(oauth.urllib.request,'build_opener',lambda *a:Opener())
     value,status=j.gateway()
@@ -76,25 +86,37 @@ def test_full_native_start_keeps_original_deadline_with_latency_margin(monkeypat
     assert j.controls and j.controls[0]['status']=='segment_started',value
     assert [c['state'] for c in j.calls]==['ON']
     on_at=next(t for kind,t,_ in j.events if kind=='HTTP ON')
-    assert on_at==pytest.approx(107.9+extra_seconds) and on_at<140
+    assert on_at==pytest.approx(95.6+extra_seconds) and on_at<140
     assert j.borehole_checks==1
-    assert sum(kind=='provider GET /v2/device/thing/status' for kind,_,_ in j.events)==3
-    assert not any(kind=='provider GET /v2/family' for kind,_,_ in j.events)
-    assert len(j.sql_trace)==105
+    assert j.provider_requests==[('POST','/v2/device/thing',{'thingList':[{'itemType':1,'id':'100204e9bc'}]})]*3
+    assert sum(kind=='provider POST /v2/device/thing' for kind,_,_ in j.events)==3
+    assert not any('/v2/device/thing/status' in kind for kind,_,_ in j.events)
+    assert [d['params']['switches'][0]['switch'] for d in j.provider_snapshots]==['off','off','on']
+    assert all(len(d['params']['switches'])==4 for d in j.provider_snapshots)
+    assert not any('/v2/family' in kind for kind,_,_ in j.events)
+    assert len(j.sql_trace)==77
     with psycopg.connect(URL) as c:
         ledger=[r[0] for r in c.execute("select review_json->'ewelink_request_budget' from public.sam_live_stock_conversation_review_events where event_source='rootline_provider_availability'")]
         execution=[r[0] for r in c.execute("select review_json->'rootline_execution' from public.sam_live_stock_conversation_review_events where event_source=%s",(es.EVENT_SOURCE,))]
     assert sum(r['action']=='claim_before_on' for r in execution)==1
     assert sum(r['action']=='mark_active' for r in execution)==1
+    claim=next(r for r in execution if r['action']=='claim_before_on')
+    active=next(r for r in execution if r['action']=='mark_active')
+    assert active['primary_stop_deadline']==claim['primary_stop_deadline']
+    assert (datetime.fromisoformat(claim['primary_stop_deadline'])-datetime.fromisoformat(claim['claimed_at'])).total_seconds()==claim['planned_runtime_seconds']==7200
+    assert active['stop_mode']==claim['stop_mode']=='scheduled'
+    assert active.get('native_fail_stop_deadline') is None
     reserve=next(r for r in ledger if r['action']=='active_duty_reserved')['state']['reserves']
     entry=next(iter(reserve.values()))
     assert (datetime.fromisoformat(entry['admit_until'])-datetime.fromisoformat(entry['reserved_at'])).total_seconds()==30
 
 
 def test_slower_native_start_defers_without_on_or_deadline_extension(monkeypatch):
-    j,value,status=native_journey(monkeypatch,40)
+    # Single complete snapshots save time: +40 now starts at 135.6 (<140).
+    # +55 places the same admission path beyond the unchanged 140s ON boundary.
+    j,value,status=native_journey(monkeypatch,55)
     assert not any(c['state']=='ON' for c in j.calls),value
-    assert j.controls[0]['status']=='execution_cycle_deadline_deferred'
+    assert j.controls and j.controls[0]['status']=='execution_cycle_deadline_deferred',value
 
 from tests import test_rootline_no_send_preparation_postgres as prepared_fixture
 from modules.telemetry import rootline_execution_runtime as runtime
@@ -317,6 +339,17 @@ def test_conflicting_audit_identity_cannot_masquerade_as_a_durable_receipt(monke
 @pytest.mark.parametrize('change',['account','class','final_ON','authority_revoked'])
 def test_fresh_native_final_snapshot_and_authority_still_refuse_changed_inputs(monkeypatch,change):
     j,value,status=native_journey(monkeypatch,change=change)
+    assert j.controls,value
+    if change=='authority_revoked':
+        assert j.revoke and j.authority_calls==2
+        assert j.provider_requests
+    else:
+        assert j.fault_hits==[change]
+        assert len(j.provider_snapshots)==2
+        final=j.provider_snapshots[-1]
+        if change=='account':assert final['apikey']=='wrong-account'
+        elif change=='class':assert final['extra']['uiid']==138
+        else:assert final['params']['switches'][0]['switch']=='on'
     assert not any(c['state']=='ON' for c in j.calls),value
     with psycopg.connect(URL) as c:
         assert c.execute("select count(*) from public.sam_live_stock_conversation_review_events where review_json->'rootline_execution'->>'action'='claim_before_on'").fetchone()[0]==0

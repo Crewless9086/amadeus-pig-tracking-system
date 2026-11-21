@@ -1,5 +1,40 @@
 # Vault Brain Changelog
 
+## 2026-11-20 - Minimize provider requests and expose unavailable inputs
+
+Reconcile the owner's request for fewer eWeLink calls and useful warnings when
+provider, weather, forecast or power evidence is unavailable. Reuse complete
+authenticated observations and coordinate idle discovery while preserving owned
+shutdown and fresh verification. Stable incidents and recipient delivery receipts
+prevent duplicate or falsely confirmed notices; dated recovery cannot imply
+current equipment state. Backend health ownership remains default-disabled until
+paired with the two existing legacy health notices, preserving unrelated alerts.
+The same switch guards new provider and input visibility before database access,
+so source deployment can precede index preparation. Enable it only after exact
+index verification, then verify its loaded value on the replacement workers.
+Existing safety supervision continues throughout this staged release.
+
+The source uses existing telemetry, forecast, execution and delivery records.
+Two additive outage-query indexes use the existing reviewed concurrent migration
+route. No provider quota reset, purchase, new scheduler or operating success is
+implied. Deployment, genuine warning delivery, input recovery and independent farm
+cycles remain separate acceptance requirements.
+
+## 2026-11-20 - One nightly ROOTLINE programme with live-only adjustment
+
+Reconcile the owner's simplified operating model: one 23:30 SAST forecast cycle,
+one saved next-day programme, and daytime execution/adjustment using current
+observations and verified progress. Reuse existing provider metadata, dated plan
+generations, scheduler, claims and reporting. Preserve task identity, original
+shutdown obligations and unresolved work without adding daily watering budget.
+Condition-based AC backup and Eskom remain independent of plan availability.
+
+The same repair checks available start time before an auxiliary claim and lets
+the deployed runtime retire a never-dispatched contained start after locked fresh
+OFF proof. Reserved mixing remains accounted and its objective remains unfinished.
+This entry describes owner direction and source intent, not deployment, delivered
+notifications or completed irrigation/mixing/injection.
+
 ## 2026-11-20 - Correct borehole AC backup actuator meaning
 
 The owner clarified that the controlled borehole outlet supplies AC backup;
