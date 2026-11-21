@@ -63,5 +63,36 @@ model call, and revocation. The selected first repair concerns order-dependent
 duplicate mortality evidence; it must use synthetic records and does not close
 unresolved historical mortality lineage or establish physical farm facts.
 
-The current implementation is under qualification. No engineering trial has
-yet run and no autonomous coding outcome is claimed.
+Prior engineering trials ran but have not proved autonomous repair. This
+contract correction still requires exact deployment and a fresh authorized
+trial; no autonomous coding outcome is claimed.
+
+
+## Builder edit and correction contract
+
+The no-tool builder returns all five native response fields in exactly one state.
+`PATCH_READY` has an empty `context_paths` list and a nonempty standard unified
+diff. Each existing admitted file uses `--- a/<path>`, `+++ b/<path>` and accurate
+`@@` hunks against the current packet source. `*** Begin Patch` / `*** Update File`
+is not this contract and is rejected without conversion. Synthetic prompt
+examples explain syntax; their paths must never be copied into a real patch.
+`NEEDS_CONTEXT` has nonempty context paths and an empty diff; `BLOCKED` has empty
+context paths and diff plus a nonblank reason. Both valid nonready states remain
+terminal for the bounded cloud run. Test proposals are advisory and grant no
+command authority.
+
+Each allowlisted semantic or pre-apply patch rejection retains a bounded private
+`builder-failure-<attempt>.json` containing its actual fixed reason, stage, attempt
+and reservation-linked response hash. The next existing builder iteration receives
+that reason and a fixed field/format correction. Raw rejected content stays in the
+private per-reservation response evidence and is not copied into logs or correction
+feedback. Unknown, identity, audit, transport and apply failures do not gain retries.
+No format conversion or contradictory-field normalization is performed. The same
+three builder iterations, canonical grant budget/deadline, immutable tests and
+independent SECURITY/FUNCTIONAL review gates remain authoritative.
+
+Portable contract regressions use only synthetic files and mocked SDK transport;
+the complete correction case runs actual fixture pytest from failing baseline to
+passing repair. Its receipt is explicitly synthetic and does not prove Linux
+isolation or deployed autonomy. The separately required real Linux sandbox and
+fresh authorized cloud acceptance remain release/operational gates.

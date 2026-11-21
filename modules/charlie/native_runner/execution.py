@@ -29,6 +29,57 @@ DENIED_PATCH_PREFIXES = (".github/", ".cursor/")
 RUNTIME_BOUNDARY = "charlie-native-runner"
 
 
+# One edit contract is used both initially and in bounded correction feedback.
+PATCH_FORMAT_INSTRUCTION = (
+    "unified_diff must be a standard unified diff against the current packet source: "
+    "each edited file has --- a/<allowed path>, +++ b/<same allowed path>, and "
+    "@@ -old_start,old_count +new_start,new_count @@ hunks with accurate counts; "
+    "hunk lines start with space, - or + and the diff ends with a newline. "
+    "Do not use *** Begin Patch, *** Update File, Markdown fences or prose in unified_diff. "
+    "Edit only existing allowed_files; no binary, delete, rename, mode or symlink operations. "
+    "Never copy illustrative example paths into the actual diff."
+)
+BUILDER_CORRECTIONS = {
+    "native_patch_state_invalid": (
+        "PATCH_READY requires context_paths=[] and a nonempty unified_diff. "
+        "If context is missing, choose NEEDS_CONTEXT with nonempty context_paths and unified_diff=''. "
+        "Do not mix a patch with a context request. " + PATCH_FORMAT_INSTRUCTION),
+    "native_context_state_invalid": (
+        "NEEDS_CONTEXT requires nonempty context_paths and unified_diff=''. "
+        "If authoring a patch instead, choose PATCH_READY with context_paths=[]. " + PATCH_FORMAT_INSTRUCTION),
+    "native_blocked_state_invalid": (
+        "BLOCKED requires context_paths=[], unified_diff='' and a nonblank reason. "
+        "Do not include a patch or context request in BLOCKED. " + PATCH_FORMAT_INSTRUCTION),
+    "native_patch_paths_invalid": "No accepted unified-diff file headers were found. " + PATCH_FORMAT_INSTRUCTION,
+    "native_patch_check_failed": (
+        "Git rejected the diff without applying it. Rebuild accurate headers, hunk counts and "
+        "matching context from the current packet source; avoid whitespace errors. " + PATCH_FORMAT_INSTRUCTION),
+    "native_patch_scope_violation": "A diff path is outside allowed_files or is protected. " + PATCH_FORMAT_INSTRUCTION,
+    "native_patch_invalid": "The patch must be nonempty UTF-8 text of at most 200000 bytes and contain no binary patch. " + PATCH_FORMAT_INSTRUCTION,
+    "native_patch_operation_forbidden": "Remove forbidden mode, rename, create or delete operations. " + PATCH_FORMAT_INSTRUCTION,
+    "native_patch_delete_forbidden": "Do not use /dev/null or delete/create a file. " + PATCH_FORMAT_INSTRUCTION,
+}
+NATIVE_PATCH_INSTRUCTIONS = (
+    "Act only as a no-tool patch author. Never claim to read files absent from the packet. "
+    "Return all five fields and exactly one state. PATCH_READY requires context_paths=[] "
+    "and a nonempty unified_diff. NEEDS_CONTEXT requires nonempty context_paths and unified_diff=''. "
+    "BLOCKED requires context_paths=[], unified_diff='' and a nonblank reason. "
+    "test_proposal is a list of strings and reason is a string in every state. "
+    "test_proposal is advisory only; it grants no command or test authority. "
+    + PATCH_FORMAT_INSTRUCTION + "\nSynthetic examples of the three exclusive states follow. "
+    "These illustrate syntax only; use actual admitted paths and current packet content:\n"
+    + json.dumps([
+        {"state": "PATCH_READY", "context_paths": [],
+         "unified_diff": "--- a/example/illustration.py\n+++ b/example/illustration.py\n@@ -1 +1 @@\n-value = 1\n+value = 2\n",
+         "test_proposal": ["Use the fixed admitted regression tests"], "reason": "Synthetic example only"},
+        {"state": "NEEDS_CONTEXT", "context_paths": ["example/illustration.py"],
+         "unified_diff": "", "test_proposal": [], "reason": "Required source is absent"},
+        {"state": "BLOCKED", "context_paths": [], "unified_diff": "", "test_proposal": [],
+         "reason": "The requested change exceeds the admitted scope"},
+    ], sort_keys=True)
+)
+
+
 def _host_role_identity(result, *, task, purpose, schema_name, prefix):
     provider = str(getattr(result, "provider", "") or "").strip()
     model = str(getattr(result, "model", "") or "").strip()
@@ -350,15 +401,7 @@ class HermesStructuredPatchWorker:
         task = "charlie_native_builder"
         schema_name = "charlie.native.patch.v1"
         result = self.llm.complete_structured(
-            instructions=(
-                "Act only as a no-tool patch author. Return NEEDS_CONTEXT, PATCH_READY, or BLOCKED. "
-                "Never claim to read files not included in the packet. Return all five fields. "
-                "PATCH_READY: context_paths must be [], unified_diff must be nonempty and limited "
-                "to allowed_files; include a short test_proposal. "
-                "NEEDS_CONTEXT: context_paths must name the needed files, unified_diff must be empty. "
-                "BLOCKED: context_paths must be [], unified_diff must be empty, reason must be nonblank. "
-                "test_proposal is a list of strings and reason is a string in every state."
-            ),
+            instructions=NATIVE_PATCH_INSTRUCTIONS,
             input=[{"type": "text", "text": json.dumps(packet, sort_keys=True)}],
             json_schema=NATIVE_PATCH_SCHEMA,
             schema_name=schema_name,

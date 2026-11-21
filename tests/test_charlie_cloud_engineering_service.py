@@ -331,7 +331,7 @@ def test_untrusted_or_mutated_exception_diagnostics_cannot_escape(variant):
 
 
 @pytest.fixture
-def response_pipeline(tmp_path, monkeypatch):
+def response_pipeline(tmp_path_factory, monkeypatch):
     """Actual worker, adapter, SDK, Git and canonical transitions; no network.
 
     The test receipt is synthetic: Linux isolation remains separately qualified.
@@ -352,8 +352,10 @@ def response_pipeline(tmp_path, monkeypatch):
         DEFAULT_MODEL, STRICT_BASE_URL, HermesAuxiliaryModel,
     )
 
+    # Keep reservation/audit filenames within Windows path limits.
+    tmp_path = tmp_path_factory.mktemp("p")
     state = SimpleNamespace(calls=[], outputs=[], responses=[], reports=[], runs=[],
-        mutate=None, error=None, revoke=False, send_back=False, builders=0)
+        mutate=None, error=None, revoke=False, send_back=False, builders=0, real_tests=False)
     private = "synthetic-private-response-91827"
     state.private = private
     def reject_network(*args, **kwargs):
@@ -367,7 +369,7 @@ def response_pipeline(tmp_path, monkeypatch):
     origin = tmp_path / "origin"
     origin.mkdir()
     initial = {"modules/pig_weights/synthetic.py": "def total(values):\n    return values[0]\n",
-               "tests/test_synthetic.py": "def test_one():\n    assert True\n",
+               "tests/test_synthetic.py": "from modules.pig_weights.synthetic import total\n\ndef test_one():\n    assert total([2]) == 2\n",
                "docs/09-vault-brain/synthetic.md": "Synthetic governance.\n"}
     for name, content in initial.items():
         path = origin / name
@@ -378,7 +380,8 @@ def response_pipeline(tmp_path, monkeypatch):
     svc.checked_git(["-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
                      "commit", "-m", "fixture"], origin)
     revision = svc.checked_git(["rev-parse", "HEAD"], origin)
-    acceptance = "def test_conflicting_duplicate_order():\n    assert True\n"
+    acceptance = ("from modules.pig_weights.synthetic import total\n\n"
+                  "def test_conflicting_duplicate_order():\n    assert total([2, 3]) == 5\n")
     allowed = sorted(name for name in initial if not name.startswith("docs/"))
     grant = {"contract": store.CONTRACT, "state": "issued", "mission_id": "CORE-SYNTHETIC",
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
@@ -467,8 +470,50 @@ def response_pipeline(tmp_path, monkeypatch):
             super().__init__(*args, **kwargs, root=tmp_path / "private", model_factory=Model)
             state.runs.append(self)
         def tests(self, label, *, baseline=False):
-            # Deliberately synthetic receipt, not evidence of a Linux sandbox run.
+            # Portable fixtures never claim Linux sandbox isolation. One contract
+            # journey runs real pytest on fixed synthetic files; others use receipts.
             self.check()
+            if state.real_tests:
+                import os
+                import subprocess
+                from pathlib import Path
+                from modules.charlie.native_runner import test_sandbox
+                source = svc.stage_tree(self.worktree, self.directory / (label + "-source"),
+                                        self.manifest["acceptance_source"])
+                tests = [svc.ACCEPTANCE_PATH] if baseline else [*self.manifest["test_paths"], svc.ACCEPTANCE_PATH]
+                completion_path = self.directory / (label + "-completion.json")
+                # Trusted test-only launcher: real pytest and the existing completion
+                # observer, no external plugins/network/credentials or target repair.
+                code = """
+import importlib.util,json,socket,sys
+from pathlib import Path
+def deny_network(*args, **kwargs):
+    raise AssertionError('synthetic fixture forbids network')
+socket.create_connection=socket.socket.connect=deny_network
+spec=importlib.util.spec_from_file_location('trusted_sandbox',sys.argv[1])
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+import pytest
+observer=module._CompletionRecorder()
+status=pytest.main(['-q','--capture=no','-p','no:cacheprovider','--confcutdir=.',*json.loads(sys.argv[3])],plugins=[observer])
+with Path(sys.argv[2]).open('x',encoding='utf-8') as output:
+    json.dump(observer.receipt('synthetic-contract',int(status)),output)
+raise SystemExit(status)
+"""
+                env = {key: os.environ[key] for key in ("PATH", "SystemRoot", "WINDIR") if key in os.environ}
+                env.update(PYTHONDONTWRITEBYTECODE="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+                           PYTHONPATH=str(source), TEMP=str(source), TMP=str(source))
+                result = subprocess.run([sys.executable, "-B", "-c", code, test_sandbox.__file__,
+                    str(completion_path), json.dumps(tests)], cwd=source, env=env,
+                    text=True, capture_output=True, timeout=60, check=False)
+                completion = test_sandbox._verified_completion(completion_path.read_bytes(),
+                    "synthetic-contract", tests, self.expected_tests, result.returncode)
+                assert completion, result.stdout + result.stderr
+                receipt = {"returncode": result.returncode, "stdout": result.stdout,
+                    "stderr": result.stderr, "completion": completion,
+                    "containment": {"verified": True, "scope": "fixed_synthetic_fixture_only"},
+                    "linux_isolation_qualified": False, "real_pytest": True}
+                svc.write_once(self.directory / (label + "-tests.json"), receipt)
+                return receipt
             expected = self.expected_tests
             code = 1 if baseline else 0
             phases = {"setup": "passed", "call": "failed" if baseline else "passed",
@@ -540,7 +585,7 @@ def test_real_sdk_semantic_recovery_retains_response_and_completes(response_pipe
     artifact = p.grant["artifact"]
     assert artifact["iterations"][0]["feedback"] == [{"source": "builder_semantic_validator",
         "reason": reason, "attempt": 1,
-        "instruction": "Return fields consistent with exactly one response state."}]
+        "instruction": svc.BUILDER_CORRECTIONS[reason]}]
     assert [r["role"] for r in artifact["reviews"]] == ["SECURITY", "FUNCTIONAL"]
     assert len({call["provider_request_id"] for call in artifact["model_calls"]}) == 4
     assert p.reports[-1]["status"] == "engineering_worker_inactive"
@@ -691,3 +736,110 @@ def test_real_sdk_valid_first_response_preserves_three_call_path(response_pipeli
     assert p.grant["state"] == "artifact_ready", p.reports
     assert len(p.calls) == len(p.grant["reservations"]) == 3
     assert not list(p.directory.glob("builder-failure-*.json"))
+
+
+def _begin_patch_response():
+    # Production-shaped format, wholly synthetic content and path.
+    return _semantic_response(context_paths=[], unified_diff=(
+        "*** Begin Patch\n*** Update File: modules/pig_weights/synthetic.py\n"
+        "@@\n-    return values[0]\n+    return sum(values)\n*** End Patch\n"))
+
+
+def _request_feedback(call):
+    return json.loads(call["messages"][1]["content"])["feedback"]
+
+
+def test_contract_corrections_reach_real_sdk_and_real_fail_to_pass_private_artifact(response_pipeline):
+    import difflib
+    import hashlib
+    p = response_pipeline
+    p.real_tests = True
+    malformed = _begin_patch_response()
+    contradictory = {**malformed, "context_paths": ["modules/pig_weights/synthetic.py"]}
+    def repaired():
+        patch = ""
+        replacements = {
+            "modules/pig_weights/synthetic.py": "def total(values):\n    return sum(values)\n",
+            "tests/test_synthetic.py": ("from modules.pig_weights.synthetic import total\n\n"
+                "def test_one():\n    assert total([2]) == 2\n\n"
+                "def test_many():\n    assert total([2, 3]) == 5\n"),
+        }
+        for name, new in replacements.items():
+            old = (p.runs[0].worktree / name).read_text()
+            patch += "".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
+                fromfile="a/" + name, tofile="b/" + name))
+        return {**malformed, "unified_diff": patch}
+    p.outputs = [malformed, contradictory, repaired]
+    p.execute()
+    assert p.grant["state"] == "artifact_ready", p.reports
+    assert len(p.calls) == len(p.grant["reservations"]) == 5
+    assert p.builders == 3 and p.grant["reserved_micro_usd"] == 500000
+    assert len({r["request_sha256"] for r in p.grant["reservations"]}) == 5
+    for attempt, reason, stage in [(1, "native_patch_paths_invalid", "patch_validation"),
+                                  (2, "native_patch_state_invalid", "builder_semantic_validation")]:
+        path = p.directory / f"builder-failure-{attempt}.json"
+        failure = json.loads(path.read_text())
+        assert failure["reason"] == reason and failure["stage"] == stage
+        assert failure["attempt"] == attempt and len(path.read_bytes()) <= 4096
+        evidence = failure["response_evidence"]
+        response = p.directory / evidence["file"]
+        assert hashlib.sha256(response.read_bytes()).hexdigest() == evidence["sha256"]
+        assert json.loads(response.read_text())["request_id"] == p.grant["reservations"][attempt-1]["request_id"]
+        feedback = _request_feedback(p.calls[attempt])
+        assert feedback[0]["reason"] == reason and feedback[0]["attempt"] == attempt
+        assert feedback[0]["instruction"] == svc.BUILDER_CORRECTIONS[reason]
+        assert "--- a/" in feedback[0]["instruction"] and "*** Begin Patch" in feedback[0]["instruction"]
+        assert malformed["unified_diff"] not in json.dumps(feedback)
+    assert "context_paths=[]" in _request_feedback(p.calls[2])[0]["instruction"]
+    artifact = p.grant["artifact"]
+    assert artifact["baseline"]["real_pytest"] and artifact["baseline"]["returncode"] == 1
+    assert "AssertionError" in artifact["baseline"]["stdout"]
+    assert artifact["tests"]["real_pytest"] and artifact["tests"]["returncode"] == 0
+    assert artifact["tests"]["completion"]["all_passed"]
+    assert len(artifact["tests"]["completion"]["collected"]) == 3
+    assert [r["role"] for r in artifact["reviews"]] == ["SECURITY", "FUNCTIONAL"]
+    assert all(r["verdict"] == "APPROVE" for r in artifact["reviews"])
+    assert all(r["candidate_binding"] == artifact["candidate_binding"] for r in artifact["reviews"])
+    assert "return sum(values)" in artifact["candidate_diff"]
+    assert json.loads((p.directory / "final-artifact.json").read_text()) == artifact
+    stages = [body["stage"] for op, body in p.client.calls if op == "progress"]
+    assert stages == ["baseline_verified", "candidate_prepared", "tests_passed", "reviews_passed"]
+    assert sum(op == "complete" for op, _ in p.client.calls) == 1
+    assert p.reports[-1]["status"] == "engineering_worker_inactive"
+    assert p.reports[-1]["new_model_calls"] == 0
+    assert not (p.directory / "candidate-1-tests.json").exists()
+    assert not (p.directory / "candidate-2-tests.json").exists()
+
+
+def test_repeated_begin_patch_rejections_are_durable_without_application_or_fourth_call(response_pipeline):
+    p = response_pipeline
+    p.outputs = [_begin_patch_response()] * 3
+    p.execute()
+    assert p.reason == "engineering_revision_limit" and p.grant["state"] == "blocked"
+    assert len(p.calls) == len(p.grant["reservations"]) == 3
+    assert p.grant["reserved_micro_usd"] == 300000
+    assert len({r["request_sha256"] for r in p.grant["reservations"]}) == 3
+    for attempt in range(1, 4):
+        failure = json.loads((p.directory / f"builder-failure-{attempt}.json").read_text())
+        assert failure["stage"] == "patch_validation" and failure["reason"] == "native_patch_paths_invalid"
+        assert failure["attempt"] == attempt
+        assert p.private not in json.dumps(failure)
+    assert svc.checked_git(["diff", "--name-only"], p.runs[0].worktree) == ""
+    assert not list(p.directory.glob("candidate-*-tests.json"))
+    assert not list(p.directory.glob("*-review-*.json"))
+    assert not (p.directory / "final-artifact.json").exists()
+
+
+def test_apply_failure_never_becomes_another_builder_request(response_pipeline, monkeypatch):
+    p = response_pipeline
+    real = svc.run_argv
+    def fail_apply(argv, **kwargs):
+        if argv[:2] == ["git", "apply"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="private detail")
+        return real(argv, **kwargs)
+    monkeypatch.setattr(svc, "run_argv", fail_apply)
+    p.execute()
+    assert p.reason == "native_patch_apply_failed" and len(p.calls) == 1
+    assert len(p.grant["reservations"]) == 1
+    assert not list(p.directory.glob("builder-failure-*.json"))
+    assert svc.checked_git(["diff", "--name-only"], p.runs[0].worktree) == ""
