@@ -604,3 +604,43 @@ def test_actual_gateway_callbacks_ensure_due_program_after_safety_even_without_r
     assert ('report_evidence' in calls) is report_due
     assert result['daily_program_ready'] is True
     assert result['hardware_commands'] == 0
+
+
+@pytest.mark.parametrize("shutdown", [{}, {"shutdown_verified": True}, {
+    "shutdown_verified": True,
+    "shutdown_evidence": {"authoritative": True, "state": "OFF",
+        "observed_at": "2026-09-13T23:32:17Z"},
+}])
+def test_delayed_start_notice_keeps_historical_on_separate_from_shutdown(shutdown):
+    # A recovered Started notice may be delivered after its run has ended.
+    # Historical ON remains an observation; it is never a live-state claim.
+    execution = {"planned_runtime_seconds": 3599,
+        "start_evidence": {"authoritative": True, "state": "ON",
+            "observed_at": "2026-09-13T22:03:15Z"}, **shutdown}
+    text = _rootline_irrigation_start_summary("B12345", execution)
+    assert "controller ON observed at 2026-09-14 00:03:15 SAST" in text
+    assert "Configured segment limit: 59m 59s" in text
+    assert "does not establish the current controller state" in text
+    assert "Shutdown requires a separate verified OFF reading" in text
+    assert "ROOTLINE will check shutdown" not in text
+    assert "controller OFF verified" not in text
+    assert "Water flow and elapsed watering time are not measured" in text
+    if "shutdown_evidence" in shutdown:
+        completion = _rootline_irrigation_completion_summary("B12345", execution)
+        assert "controller OFF verified at 2026-09-14 01:32:17 SAST" in completion
+        assert "ON was observed at 2026-09-14 00:03:15 SAST" in completion
+
+
+@pytest.mark.parametrize("evidence", [
+    {},
+    {"authoritative": False, "state": "ON", "observed_at": "2026-09-13T22:03:15Z"},
+    {"authoritative": True, "state": "ON", "observed_at": "2026-09-13T22:03:15"},
+    {"authoritative": True, "state": "OFF", "observed_at": "2026-09-13T22:03:15Z"},
+])
+def test_start_notice_without_verified_readback_does_not_invent_current_state(evidence):
+    text = _rootline_irrigation_start_summary("B12345", {"start_evidence": evidence})
+    assert "timestamped controller ON reading is unavailable" in text
+    assert "controller ON observed at" not in text
+    assert "does not establish the current controller state" in text
+    assert "separate verified OFF reading" in text
+    assert "will check shutdown" not in text and "Configured segment limit" not in text
