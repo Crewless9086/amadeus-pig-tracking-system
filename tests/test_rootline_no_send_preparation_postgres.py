@@ -141,6 +141,8 @@ class Subject:
         }
         self.calls, self.lock_observations, self.hooks = [], [], {}
         self.status_packets, self.status_reads = None, []
+        self.snapshot_device_id = None
+        self.snapshot_reads, self.provider_snapshots = [], []
         self.status_device_id = "1002851416"
         subject = self
         class Response:
@@ -153,7 +155,20 @@ class Subject:
             def open(self, request, timeout):
                 path = urlparse(request.full_url).path
                 assert path in subject.packets
-                assert request.method == ("POST" if path == "/v2/user/refresh" else "GET")
+                owned_snapshot = path == "/v2/device/thing" and request.method == "POST"
+                if owned_snapshot:
+                    parsed = urlparse(request.full_url)
+                    assert not parsed.query and not parsed.fragment
+                    body = json.loads(request.data)
+                    assert isinstance(body, dict) and set(body) == {"thingList"}
+                    assert isinstance(body["thingList"], list) and len(body["thingList"]) == 1
+                    requested = body["thingList"][0]
+                    assert isinstance(requested, dict) and set(requested) == {"itemType", "id"}
+                    assert type(requested["itemType"]) is int and requested["itemType"] == 1
+                    assert subject.snapshot_device_id == "1002851416"
+                    assert requested["id"] == subject.snapshot_device_id
+                else:
+                    assert request.method == ("POST" if path == "/v2/user/refresh" else "GET")
                 with connect() as observer:
                     free = observer.execute("select pg_try_advisory_xact_lock(1874320911),"
                         "pg_try_advisory_xact_lock(1874320912)").fetchone()
@@ -162,6 +177,14 @@ class Subject:
                 if path in subject.hooks:
                     subject.hooks[path]()
                 packet = subject.packets[path]
+                if owned_snapshot:
+                    selected = [row for row in packet["thingList"]
+                        if row["itemData"]["deviceid"] == requested["id"]]
+                    assert len(selected) == 1
+                    assert type(selected[0]["itemType"]) is int and selected[0]["itemType"] == 1
+                    assert selected[0]["itemData"]["apikey"] == "account"
+                    packet = {"thingList": deepcopy(selected)}
+                    subject.snapshot_reads.append((requested["id"], deepcopy(packet)))
                 if path == "/v2/device/thing/status":
                     query = parse_qs(urlparse(request.full_url).query)
                     assert query.get("type") == ["1"] and len(query.get("id", [])) == 1
@@ -804,8 +827,10 @@ def native_borehole_start(subject, monkeypatch, *, before_http=None, outcome="ac
         item = deepcopy(items[0]["itemData"])
         item.update(deviceid="1002851416", productModel="MINIR4", extra={"uiid": 138})
         items.append({"itemType": 1, "itemData": item})
-    # Independent raw STATUS for each device; metadata is never a live-output
-    # fallback. A native borehole command cannot change irrigation's packet.
+    # Native reads return the complete owned-device POST snapshot. No-send
+    # preparation still obtains a separate locked GET STATUS for its target.
+    # A borehole command cannot change irrigation's independent response.
+    subject.snapshot_device_id = "1002851416"
     subject.status_packets = {row["itemData"]["deviceid"]:
         deepcopy(subject.packets["/v2/device/thing/status"]) for row in items}
     item["params"]["pulses"] = [{"outlet": 0, "pulse": "on", "width": 3599000}]
@@ -818,7 +843,13 @@ def native_borehole_start(subject, monkeypatch, *, before_http=None, outcome="ac
     def with_configuration_reference(device_id, **kwargs):
         if device_id == "1002851416":
             kwargs["commissioning_connect_factory"] = configuration_database
-        return registered(device_id, **kwargs)
+        result = registered(device_id, **kwargs)
+        subject.provider_snapshots.append(deepcopy(result))
+        assert result["device_id"] == device_id
+        assert result["snapshot_source"] == "complete_owned_device"
+        assert result["provider_calls"] == 1 and result["provider_control_calls"] == 0
+        assert result["retrieved_at"] and result["response_digest"]
+        return result
     monkeypatch.setattr(readback, "read_registered_device", with_configuration_reference)
     artifact = build_borehole_runtime_eligibility(need={"eligible": True},
         baseline={**canonical(native_fail_stop_seconds=3599), "registry_generation": 2},
@@ -987,13 +1018,44 @@ def test_different_native_duty_outcome_survives_read_locks_and_old_cleanup_canno
         worker.join(15)
     assert not worker.is_alive() and not errors and results
     assert retired["status"] == "execution_not_dispatched", retired
+    # The unrelated locked GET can exhaust the native post-ON snapshot's
+    # dispatch wait. Preserve that result; observe the same owned duty once
+    # after the lock is released, without retrying ON or marking it Active.
+    first = results[0]
+    assert first["status"] in {"borehole_start_observation_pending", "borehole_started"}, first
+    assert first["hardware_commands"] == 1 and first["automatic_on_retry"] is False
+    if first["status"] == "borehole_start_observation_pending":
+        assert first["effects_unknown"] is True and first["success"] is False
+        assert first["current_failure"] == {"error_type": "OAuthFailure", "reason": "ewelink_dispatch_busy"}
+    owned = deepcopy(first["execution"])
+    before_observation = list(calls)
+    reserve_before = deepcopy(subject.ledger()["reserves"][artifact["execution_id"]])
+    observed = budget.bind_execution_transport(subject.transport, owned).read_output_state(
+        device_id="1002851416", channel=1)
+    assert observed["authoritative"] is True and observed["state"] == "ON", observed
+    assert observed["device_id"] == "1002851416" and observed["channel"] == 1
+    assert observed["evidence_id"] and observed["retrieved_at"]
+    assert calls == before_observation and [state for state, _ in calls] == ["ON"]
+    assert first["execution"] == owned
+    reserve_after = subject.ledger()["reserves"][artifact["execution_id"]]
+    for field in ("permit", "admit_until", "phase"):
+        assert reserve_after[field] == reserve_before[field]
+    assert reserve_after["permit"] == owned["provider_capacity_permit"]
     assert subject.claim["device_id"] == "100204e9bc"
-    assert {target for target, _ in subject.status_reads} == {"100204e9bc", "1002851416"}
+    assert {target for target, _ in subject.status_reads} == {"100204e9bc"}
+    assert {target for target, _ in subject.snapshot_reads} == {"1002851416"}
+    assert subject.provider_snapshots
+    assert all(snapshot["device_id"] == "1002851416"
+        and snapshot["snapshot_source"] == "complete_owned_device"
+        and snapshot["provider_calls"] == 1 for snapshot in subject.provider_snapshots)
     irrigation_status = [packet for target, packet in subject.status_reads if target == "100204e9bc"]
-    borehole_status = [packet for target, packet in subject.status_reads if target == "1002851416"]
+    borehole_status = [packet["thingList"][0]["itemData"]
+        for target, packet in subject.snapshot_reads if target == "1002851416"]
     assert irrigation_status and all(all(row["switch"] == "off" for row in packet["params"]["switches"])
         for packet in irrigation_status)
     assert borehole_status  # Includes the legitimate pre-ON OFF observation.
+    assert borehole_status[0]["params"]["switches"][0]["switch"] == "off"
+    assert any(packet["params"]["switches"][0]["switch"] == "on" for packet in borehole_status)
     # Concurrent fixture state is distinct from a returned post-ON observation.
     assert concurrent_status
     for statuses in concurrent_status:
