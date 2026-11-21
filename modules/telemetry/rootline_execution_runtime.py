@@ -208,7 +208,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                         binding = _borehole_discovery_binding(baseline, conditions, interlocks,
                             borehole_energy(evidence.get("power"), decision_at, continuous=True))
                         try:
-                            with optional_observation("borehole_unowned_discovery", binding=binding):
+                            from modules.telemetry.rootline_command_acceptance import enabled
+                            with (nullcontext() if enabled(source) else optional_observation("borehole_unowned_discovery", binding=binding)):
                                 provider = transport.read_output_state(
                                     device_id="1002851416", channel=1, routine_read=True)
                         except OptionalObservationDeferred as deferred:
@@ -217,7 +218,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                             packet["borehole_conditions"] = conditions
                             current_decision_time(selected)
                             return packet
-                    adopting = continuous and isinstance(provider, dict) and provider.get("state") == "ON"
+                    adopting = continuous and isinstance(provider, dict) and (provider.get("state") == "ON"
+                        or (provider.get("command_route") or {}).get("reported_output_state") == "ON")
                     if continuous and not adopting and (not isinstance(conditions, dict)
                             or conditions.get("start_eligible") is not True):
                         packet["borehole_readiness"] = (conditions or {}).get("reason", "borehole_conditions_unavailable")
@@ -314,6 +316,20 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
     context = evidence.get("active_irrigation_context")
     if not isinstance(context, dict):
         return evidence
+    from modules.telemetry.rootline_command_acceptance import command_parent_ready, route_valid, MODE
+    if context.get("acceptance_mode") == MODE:
+        refreshed = dict(evidence); updated = dict(context); updated["zone_output_evidence"] = {}
+        refreshed["active_irrigation_context"] = updated
+        if not command_parent_ready(context, now=now, require_route=False):
+            return refreshed
+        try:
+            current = transport.read_output_state(device_id=context["zone_device_id"], channel=context["zone_channel"])
+            checked = _aware((clock or (lambda: datetime.now(timezone.utc)))())
+            if route_valid(current, device_id=context["zone_device_id"], channel=context["zone_channel"], now=checked):
+                updated["zone_output_evidence"] = current
+        except Exception:
+            pass
+        return refreshed
     # A failed fresh read must not leave historical ON evidence eligible.
     refreshed = dict(evidence); updated = dict(context)
     updated["zone_output_evidence"] = {}
@@ -627,6 +643,7 @@ def supervise_rootline_active_execution(*, notify, environ=None, now=None,
     return {**result, "active_execution_found": active_found,
         "success": result.get("success") is True and result.get("status") in {
             "no_active_irrigation", "active_segment_owned", "segment_completed",
+            "irrigation_command_duty_active", "irrigation_off_command_accepted",
             "segment_stopped_outcome_unconfirmed", "segment_stopped_for_weather",
             "active_execution_already_terminal", "interrupted_start_contained"},
         "hardware_commands": max(int(result.get("hardware_commands") or 0), effects["hardware_commands"]),
@@ -918,7 +935,7 @@ def _native_bc_final_transport(transport, zone, readback, token_store, source, *
 
 def _same_delegated_execution(expected, current):
     """Bind a delegated caller to the exact freshly rebuilt segment authority."""
-    keys = ("contract_version", "authority_source", "job_id", "job_sha256",
+    keys = ("acceptance_mode", "contract_version", "authority_source", "job_id", "job_sha256",
         "zone_id", "channel", "segment_identity", "current_segment",
         "segment_requested_seconds", "requested_total_duration_seconds",
         "governed_executable_duration_seconds", "expected_segment_count",
@@ -1093,8 +1110,13 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         now=now, _provider_preflight=True)
     controller = {}
     if artifact.get("provider_read_required") is True:
-        controller = readback(token_store=token_store, environ=source, now=now,
-            **({"routine_read": True} if persist_resolutions or (scheduled and readback is _NATIVE_CONTROLLER_READBACK) else {}))
+        from modules.telemetry.rootline_command_acceptance import enabled
+        if enabled(source) and readback is _NATIVE_CONTROLLER_READBACK:
+            from modules.telemetry.rootline_home_assistant import read_registered_device
+            controller = read_registered_device("100204e9bc", environ=source)
+        else:
+            controller = readback(token_store=token_store, environ=source, now=now,
+                **({"routine_read": True} if persist_resolutions or (scheduled and readback is _NATIVE_CONTROLLER_READBACK) else {}))
         # Evaluate original evidence at the independent post-I/O clock. Never
         # refresh a weather/history timestamp merely because a request finished.
         checked_at = _aware((clock or (lambda: datetime.now(timezone.utc)))())

@@ -531,7 +531,7 @@ def _reconcile_carry_origins(history, evidence, selected, *, include_unstarted=T
         accounted_days = {str(_dict(d.get("job")).get("operating_date") or "")
             for d in parents + list(ledger.get("contained_parent_jobs", []))}
         completed_days = {str(e.get("operating_date") or e.get("event_at_sast") or "")[:10]
-            for e in ledger.get("events", []) if e.get("qualifies_as_completed_watering") is True}
+            for e in ledger.get("events", []) if e.get("qualifies_as_completed_watering") is True or e.get("command_job_completed") is True}
         for prior in (history.get("origin_candidate_plans", []) + history.get("plans", [])) if include_unstarted else []:
             day = str(prior.get("operating_date") or "")
             if not day or day >= selected or day in accounted_days or day in completed_days:
@@ -553,9 +553,9 @@ def _reconcile_carry_origins(history, evidence, selected, *, include_unstarted=T
         for event in ledger.get("events", []):
             identity = event.get("execution_id")
             day = str(event.get("operating_date") or event.get("event_at_sast") or "")[:10]
-            if not identity or event.get("qualifies_as_completed_watering") is not True:
+            if not identity or not (event.get("qualifies_as_completed_watering") is True or event.get("command_job_completed") is True):
                 continue
-            amount = max(0, float(event.get("verified_runtime_minutes") or 0))
+            amount = max(0, float(event.get("commanded_runtime_seconds") or 0)/60 if event.get("command_job_completed") is True else float(event.get("verified_runtime_minutes") or 0))
             # A parent may finish after the next programme was pinned at
             # 23:30. Its canonical operating day settles its own obligation;
             # the completion timestamp must not turn it into recovery work.
@@ -1584,7 +1584,7 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
                                'record_completed', 'record_ambiguous_shutdown',
                                'record_claim_recovery', 'contain_zone',
                                'record_fertilizer_sequence_completed',
-                               'record_execution_not_dispatched','record_auxiliary_on_outcome',
+                               'record_execution_not_dispatched','record_auxiliary_on_outcome','record_auxiliary_off_outcome',
                                'record_on_outcome'))
                     """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
                     " order by created_at,review_event_id",
@@ -1607,8 +1607,9 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
         if _verified_not_dispatched(row, executions)}
     executions = [row for row in executions if row.get("execution_id") not in not_dispatched]
     outcomes = [row for row in outcomes if isinstance(row, dict)]
-    auxiliary = [row for row in executions if row.get("auxiliary_device_id") in {
-        "FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}]
+    auxiliary_ids = {row.get("execution_id") for row in executions if row.get("auxiliary_device_id") in {
+        "FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}}
+    auxiliary = [row for row in executions if row.get("execution_id") in auxiliary_ids]
     active = _latest_open_irrigation_execution(executions)
     batch_observations = []
     # The standing programme applies to eligible B/C runs. A fresh explicit
@@ -1631,7 +1632,7 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
     batch = build_fertilizer_batch_lifecycle(observations=batch_observations,
         executions=auxiliary, now=_as_za(now))
     context = _active_irrigation_context(active, auxiliary, fertilizer_needed,
-        batch.get("batch_generation"))
+        batch.get("batch_generation"), now=_as_za(now))
     history_complete_through = _as_za(now).isoformat()
     if context:
         context["controller_sequence_completed"] = any(
@@ -1648,6 +1649,7 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
         batch_allowed=(batch.get("state")=="batch_reported_prepared" or
             (timed_control_enabled() and batch.get("state")=="monday_batch_due"))
         context["explicit_owner_time_programme"]=timed_control_enabled()
+        context["premix_command_accepted"] = batch_allowed and mix.get("premix_command_accepted") is True
         context["premix_verified"] = (batch_allowed
             and mix["premix_verified"])
         context["fertilizer_needed"] = (fertilizer_needed
@@ -1676,7 +1678,11 @@ def _latest_open_irrigation_execution(events):
         if identity not in terminal), None)
 
 
-def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_generation):
+def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_generation, now=None):
+    from modules.telemetry.rootline_command_acceptance import command_execution, irrigation_context
+    if command_execution(active):
+        return irrigation_context(active, auxiliary, fertilizer_needed=fertilizer_needed,
+            batch_generation=batch_generation, now=now or datetime.now(timezone.utc))
     if not isinstance(active, dict):
         return None
     start = active.get("start_evidence") if isinstance(active.get("start_evidence"), dict) else {}
@@ -2126,13 +2132,15 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             zone["completion_events"] = [{
                 "completed_at": event.get("event_at_sast"), "operating_date": event.get("operating_date"),
                 "state": "Completed",
+                "command_execution": event.get("command_execution"),
+                "command_job_completed": event.get("command_job_completed") is True,
                 "shutdown_verified": event.get("shutdown_verified") is True,
                 "objective_satisfied": event.get("objective_satisfied") is True,
                 "verified_runtime_minutes": event.get("verified_runtime_minutes"),
                 "outcome_id": event.get("execution_id"),
                 "source": event.get("provenance"),
             } for event in canonical.get("events", [])
-                if event.get("qualifies_as_completed_watering") is True]
+                if event.get("qualifies_as_completed_watering") is True or event.get("command_job_completed") is True]
             zone["completion_ledger_complete_through"] = canonical.get("complete_through")
             from modules.telemetry.rootline_timed_control import timed_control_enabled
             if (zone.get("zone_id") in {"A12345","E12345"} and (

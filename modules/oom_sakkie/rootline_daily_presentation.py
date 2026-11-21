@@ -296,6 +296,8 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
         # state once shutdown is verified, rather than repeating an old alarm.
     state = str(lifecycle.get("state") or "Held")
     if state == "Started":
+        if lifecycle.get("acceptance_mode") == "command_accepted":
+            return "AAN-opdrag aanvaar; fisiese toestand onbevestig" if af else "ON command accepted; physical state unverified"
         return "Loop tans" if af else "Currently running"
     if state == "Authorized":
         return "Gereed — begin veilig" if af else "Ready — starting safely"
@@ -324,6 +326,8 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
         return ("Lopie se uitkoms onbevestig — ROOTLINE ondersoek dit" if af else
                 "Run outcome unconfirmed — ROOTLINE is reviewing")
     if state == "Completed":
+        if (lifecycle.get("completion_evidence") or {}).get("command_job_completed") is True:
+            return "Opdragprogram voltooi; waterlewering onbevestig" if af else "Command programme completed; water delivery unverified"
         if _verified_completion(lifecycle, zone):
             return "Beheerder AF geverifieer" if af else "Controller OFF verified"
         return "Loop nie" if af else "Not running"

@@ -212,6 +212,17 @@ def _attach_parent_jobs(history, rows, *, canonical_ordered=False):
             projection = project_next_segment(job, events, rearm_readback_off=True)
         except Exception:
             projection = {"status": "canonical_job_history_invalid", "command_authority": False}
+        if projection.get("status") == "command_job_completed":
+            continue
+        if projection.get("status") == "job_deferred" and projection.get("command_duty_closed") is True:
+            zone = str(job.get("zone_id") or "")
+            candidate = {"job": job, "projection": projection, "remaining_seconds": projection["remaining_seconds"],
+                "next_action_owner": "ROOTLINE", "next_trigger": "next_permitted_normal_irrigation_plan"}
+            if zone in ZONES:
+                deferred_by_zone[zone].append(candidate)
+                if job.get("operating_date") == current_date:
+                    by_zone[zone] = candidate
+            continue
         if projection.get("status") == "job_completed":
             completed_execution_ids.update(str(row.get("execution_id") or "") for row in events
                 if row.get("action") == "record_completed" and row.get("shutdown_verified") is True
@@ -339,10 +350,10 @@ def _attribute_parent_operating_dates(history, rows, *, completed_execution_ids=
             operating_date = completion.get("operating_date")
             # Reconcile older typed history from its canonical execution without
             # rewriting it. A successful segment never closes a partial parent.
-            if completion.get("job_id") and str(completion.get("execution_id") or "") not in completed_execution_ids:
+            if completion.get("job_id") and not event.get("command_job_completed") and str(completion.get("execution_id") or "") not in completed_execution_ids:
                 event["qualifies_as_completed_watering"] = False
                 event["classification"] = "verified_segment_parent_incomplete"
-            if operating_date and event.get("qualifies_as_completed_watering") is True:
+            if operating_date and (event.get("qualifies_as_completed_watering") is True or event.get("command_job_completed") is True):
                 event["operating_date"] = operating_date
         zone["verified_completed_days"] = sorted({
             str(event.get("operating_date") or event.get("event_at_sast") or "")[:10]
@@ -420,6 +431,13 @@ def _qualifies(row, cutoff):
         return False, _legacy_class(row)
     if not _trusted_typed_row(row):
         return False, "typed_writer_or_digest_untrusted"
+    from modules.telemetry.rootline_command_acceptance import duty_closed, job_completed, moment
+    if details.get("acceptance_mode") == "command_accepted" and row["event_type"] in {"COMPLETED", "PARTIAL"}:
+        execution = details.get("command_execution") or {}
+        at = moment(details.get("evidence_cutoff"))
+        closed = duty_closed(execution) and at is not None and at <= cutoff and row["event_at"] <= cutoff
+        complete = closed and row["event_type"] == "COMPLETED" and job_completed(execution)
+        return False, "accepted_command_programme_completed" if complete else "command_duty_closed" if closed else "command_completion_unproven"
     if row["event_type"] != "COMPLETED":
         return False, str(details.get("classification") or row["event_type"]).lower()
     if any(not str(details.get(field) or "").strip() for field in QUALIFYING_FIELDS):
@@ -513,6 +531,10 @@ def _classified(row, classification, qualifies):
             "event_at_sast": row["event_at"].astimezone(SAST).isoformat(),
             "event_type": row["event_type"], "execution_id": row["details"].get("execution_id"),
             "classification": classification,
+            "operating_date": row["details"].get("operating_date"),
+            "command_job_completed": classification == "accepted_command_programme_completed",
+            "commanded_runtime_seconds": row["details"].get("commanded_runtime_seconds"),
+            "command_execution": row["details"].get("command_execution"),
             "qualifies_as_completed_watering": qualifies,
             "shutdown_verified": row["details"].get("shutdown_verified") is True,
             "objective_satisfied": row["details"].get("objective_satisfied") is True,

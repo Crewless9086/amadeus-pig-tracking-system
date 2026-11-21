@@ -53,8 +53,8 @@ def rootline_irrigation_execution_store(action, payload):
         return _record_borehole_aborted(body)
     if action == "retire_not_dispatched_execution":
         return _retire_not_dispatched_execution(body)
-    if action in {"dispatch_auxiliary_on_edge", "dispatch_borehole_on_edge"}:
-        return _dispatch_managed_on_edge(body, borehole=action == "dispatch_borehole_on_edge")
+    if action in {"dispatch_auxiliary_on_edge", "dispatch_borehole_on_edge", "dispatch_irrigation_on_edge"}:
+        return _dispatch_managed_on_edge(body, borehole=action == "dispatch_borehole_on_edge", irrigation=action == "dispatch_irrigation_on_edge")
     # Historical outcomes must remain appendable while command locks are held.
     # Fresh retirement proofs re-read them; they do not authorize a new command.
     if action in {"claim_auxiliary_off_attempt", "claim_borehole_off_attempt",
@@ -169,7 +169,8 @@ def _mark_parent_stopping(body):
             if any(_terminal_closes_active(row) for row in rows):
                 return {"success": True, "created": False, "status": "parent_already_terminal"}
             active = next((row for row in reversed(rows) if row.get("action") == "mark_active"), None)
-            if (active is None and body.get("reason") == "restart_after_pre_on_claim"
+            from modules.telemetry.rootline_command_acceptance import command_execution
+            if (active is None and (body.get("reason") == "restart_after_pre_on_claim" or command_execution(body))
                     and body.get("weather_stop_evidence") is None):
                 active = next((row for row in reversed(rows) if row.get("action") == "claim_before_on"), None)
             if active is None or not _same_parent(active, body):
@@ -299,6 +300,14 @@ def _record_parent_terminal_atomic(action, body):
                 raise ValueError("cancelled_parent_completion_refused")
             barrier = next((row for row in events if row.get("action") == "mark_stopping"
                 and row.get("execution_id") == body.get("execution_id")), None)
+            from modules.telemetry.rootline_command_acceptance import command_execution, terminal_matches_rows
+            if command_execution(body):
+                if not terminal_matches_rows(body, events):
+                    raise ValueError("command_terminal_receipt_unproven")
+                if not _append_history(action, body, connection=connection):
+                    raise _AtomicTerminalWriteFailed("canonical_history_completion_unproven")
+                result = _write_terminal_review(connection, action, body)
+                return {**result, "history_event_created": True, "physical_state": "Unverified"}
             weather_stop = body.get("state") == "Stopped" or body.get("weather_stop_evidence") is not None
             if weather_stop:
                 from modules.telemetry.rootline_irrigation_job_contract import validate_weather_stopped_execution
@@ -784,9 +793,12 @@ def _load(action, payload):
                       and review_json->'rootline_execution'->>'action' in (
                           'record_auxiliary_completed','claim_auxiliary_before_on',
                           'mark_auxiliary_active','contain_auxiliary_device','record_auxiliary_startup_aborted',
-                          'record_execution_not_dispatched','record_auxiliary_on_outcome')
-                      and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
-                    order by created_at,review_event_id""", (EVENT_SOURCE, str(payload or "")))
+                          'record_execution_not_dispatched','record_auxiliary_on_outcome','record_auxiliary_off_outcome')
+                      and review_json->'rootline_execution'->>'execution_id' in (
+                        select review_json->'rootline_execution'->>'execution_id'
+                        from public.sam_live_stock_conversation_review_events
+                        where event_source=%s and review_json->'rootline_execution'->>'auxiliary_device_id'=%s)
+                    order by created_at,review_event_id""", (EVENT_SOURCE, EVENT_SOURCE, str(payload or "")))
                 return [row[0] if isinstance(row[0], dict) else json.loads(row[0])
                         for row in cursor.fetchall()]
             if action == "load_auxiliary_physical_outcome":
@@ -840,6 +852,11 @@ def _verified_terminal_containment_resolution(containment, terminal):
     """Accept only later canonical OFF proof for the exact contained execution."""
     if not isinstance(containment, dict) or not isinstance(terminal, dict):
         return False
+    from modules.telemetry.rootline_command_acceptance import duty_closed
+    if (terminal.get("action") == "record_completed" and duty_closed(terminal)
+            and terminal.get("execution_id") == containment.get("execution_id")
+            and terminal.get("zone_id") == containment.get("zone_id")):
+        return True
     if (terminal.get("action") not in {"record_completed", "record_claim_recovery"}
             or terminal.get("execution_id") != containment.get("execution_id")
             or terminal.get("zone_id") != containment.get("zone_id")
@@ -852,6 +869,9 @@ def _verified_terminal_containment_resolution(containment, terminal):
 
 
 def _terminal_closes_active(item, *, auxiliary=False, borehole=False):
+    from modules.telemetry.rootline_command_acceptance import command_execution, duty_closed
+    if command_execution(item):
+        return item.get("action") in {"record_completed", "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped", "record_borehole_completed"} and duty_closed(item)
     action = str(item.get("action") or "") if isinstance(item, dict) else ""
     if borehole:
         # Aborts additionally require the original canonical claim and OFF
@@ -892,6 +912,9 @@ def _verified_borehole_completion(item):
     """Require execution-bound canonical and authoritative provider final OFF."""
     if not isinstance(item, dict) or item.get("action") != "record_borehole_completed":
         return False
+    from modules.telemetry.rootline_command_acceptance import command_execution, duty_closed
+    if command_execution(item):
+        return duty_closed(item)
     execution_id = str(item.get("execution_id") or "")
     canonical = item.get("canonical_completion_evidence") or {}
     provider = item.get("provider_final_off_evidence") or {}
@@ -1769,7 +1792,7 @@ def _claim_borehole_material_load(body, *, adopt=False):
           "requested_seconds","assessed_at","gates","blockers","contract_version",
           "native_fail_stop_seconds","provider_evidence","operation",
           "commissioned_native_fail_stop_seconds","stop_mode","device_id","channel","auxiliary_device_id",
-          "condition_evidence", "energy_context", "start_gates", "adoption_interlocks")
+          "condition_evidence", "energy_context", "start_gates", "adoption_interlocks", "acceptance_mode")
         if (not _valid_borehole_eligibility(canonical)
                 or not _valid_borehole_eligibility(body)
                 or any(body.get(field)!=canonical.get(field) for field in immutable)):
@@ -1798,8 +1821,13 @@ def _claim_borehole_material_load(body, *, adopt=False):
             proof = body.get("claim_provider_evidence") or {}
             observed = _time(proof.get("retrieved_at") or proof.get("observed_at"))
             observed_state = _continuous_borehole_on if adopt else _continuous_borehole_off
-            if (body.get("operation") != ("adopt_observed_on" if adopt else "command_off_to_on")
-                    or not observed_state(proof, now=now)
+            from modules.telemetry.rootline_command_acceptance import command_execution, route_valid
+            command_mode = command_execution(body)
+            expected_operation = ("adopt_reported_on" if adopt else "command_on") if command_mode else ("adopt_observed_on" if adopt else "command_off_to_on")
+            route_ready = (route_valid(proof, device_id="1002851416", channel=1, now=now)
+                and (not adopt or (proof.get("command_route") or {}).get("reported_output_state") == "ON")) if command_mode else False
+            if (body.get("operation") != expected_operation
+                    or not (route_ready if command_mode else observed_state(proof, now=now))
                     or proof.get("execution_id") != execution_id
                     or claimed is None or assessed is None or observed is None
                     or not assessed <= observed <= claimed
@@ -1857,7 +1885,14 @@ def _claim_borehole_material_load(body, *, adopt=False):
                 return {"success":False,"created":False,"status":"borehole_current_observation_unproven"}
         elif adopt:
             return {"success":False,"created":False,"status":"borehole_adoption_contract_required"}
-        if adopt and (body.get("state") != "Active" or body.get("on_attempts") != 0
+        from modules.telemetry.rootline_command_acceptance import command_execution
+        command_adopt = adopt and command_execution(body)
+        if command_adopt and (body.get("state") != "Active" or body.get("on_attempts") != 0
+                or body.get("execution_origin") != "ha_reported_external_on" or body.get("original_start_at") is not None
+                or body.get("provider_start_evidence") is not None or body.get("command_on_receipt") is not None
+                or body.get("command_adoption_evidence") != {key:value for key,value in (body.get("claim_provider_evidence") or {}).items() if key != "execution_id"}):
+            return {"success":False,"created":False,"status":"borehole_command_adoption_invalid"}
+        if adopt and not command_adopt and (body.get("state") != "Active" or body.get("on_attempts") != 0
                 or body.get("execution_origin") != "observed_external_on"
                 or body.get("original_start_at") is not None
                 or body.get("provider_start_evidence") != (
@@ -1929,17 +1964,23 @@ def _valid_borehole_eligibility(value):
         from modules.telemetry.rootline_borehole_commissioning import _continuous_borehole_off, _continuous_borehole_on
         assessed = _time(value.get("assessed_at"))
         condition = value.get("condition_evidence") or {}
-        adopting = value.get("operation") == "adopt_observed_on"
+        from modules.telemetry.rootline_command_acceptance import command_execution, route_valid, enabled
+        command_mode = command_execution(value)
+        adopting = value.get("operation") in {"adopt_observed_on", "adopt_reported_on"}
         expected = _continuous_borehole_on if adopting else _continuous_borehole_off
+        route_ready = (enabled() and route_valid(value.get("provider_evidence"), device_id="1002851416", channel=1, now=assessed)
+            and (not adopting or ((value.get("provider_evidence") or {}).get("command_route") or {}).get("reported_output_state") == "ON")) if command_mode and assessed is not None else False
         if (not continuous_borehole(value) or assessed is None
-                or value.get("operation") not in {"command_off_to_on", "adopt_observed_on"}
-                or not expected(value.get("provider_evidence"), now=assessed)
+                or value.get("operation") not in ({"command_on", "adopt_reported_on"} if command_mode else {"command_off_to_on", "adopt_observed_on"})
+                or not (route_ready if command_mode else expected(value.get("provider_evidence"), now=assessed))
                 or (type(condition.get("stop_required")) is not bool if adopting
                     else condition.get("start_eligible") is not True)
                 or not re.fullmatch(r"ROOTLINE-EXEC-[0-9A-F]{32}", str(condition.get("event_id") or ""))):
             return False
         material.update({key: value.get(key) for key in ("stop_mode", "native_fail_stop_seconds",
             "device_id", "channel", "auxiliary_device_id", "provider_evidence", "operation", "condition_evidence", "energy_context")})
+        if command_mode:
+            material["acceptance_mode"] = value["acceptance_mode"]
         if adopting:
             if not isinstance(value.get("start_gates"), dict) or not isinstance(value.get("adoption_interlocks"), dict):
                 return False
@@ -1951,11 +1992,13 @@ def _valid_borehole_eligibility(value):
       "energy","concurrency","bounded_runtime"}
     if version == "rootline_borehole_runtime_eligibility.v5":
         required_gates = required_gates - {"bounded_runtime"} | {"condition_supervision", "weather"}
-        if value.get("operation") == "adopt_observed_on":
+        if value.get("operation") in {"adopt_observed_on", "adopt_reported_on"}:
             required_gates = {"commissioned_baseline", "standing_authority", "concurrency",
                 "condition_supervision", "provider_on", "current_conditions"}
     if version == "rootline_borehole_runtime_eligibility.v3":
         required_gates = required_gates - {"provider_off"} | {"provider_state_safe"}
+    if version == "rootline_borehole_runtime_eligibility.v5" and value.get("acceptance_mode") == "command_accepted":
+        required_gates = required_gates - {"provider_off", "provider_on"} | {"command_route_ready"}
     return (version in {"rootline_borehole_runtime_eligibility.v1","rootline_borehole_runtime_eligibility.v2",
             "rootline_borehole_runtime_eligibility.v3","rootline_borehole_runtime_eligibility.v4",
             "rootline_borehole_runtime_eligibility.v5"}
@@ -2170,6 +2213,11 @@ def _guarded_managed_transition(action, body):
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             rows=_managed_edge_rows(cursor,body["execution_id"])
+            from modules.telemetry.rootline_command_acceptance import terminal_matches_rows
+            if not borehole and action == family["off"] and any(
+                    row.get("action") in {"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped"}
+                    and terminal_matches_rows(row, rows) for row in rows):
+                return {"success": False, "created": False, "status": "auxiliary_execution_retired"}
             if not borehole and any(row.get("action") == "record_auxiliary_startup_aborted" for row in rows):
                 return {"success": False, "created": False, "status": "auxiliary_execution_retired"}
             if borehole and action in {family["off"], "record_borehole_completed"}:
@@ -2186,6 +2234,15 @@ def _guarded_managed_transition(action, body):
                 if first_trigger is not None and any(body.get(key) != first_trigger.get(key)
                         for key in ("stop_reason", "stop_trigger")):
                     return {"success":False,"created":False,"status":"borehole_stop_trigger_changed"}
+            from modules.telemetry.rootline_command_acceptance import command_execution, terminal_matches_rows, accepted
+            if command_execution(body) and action in {"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped", "record_borehole_completed"}:
+                if not terminal_matches_rows(body, rows):
+                    return {"success": False, "created": False, "status": "command_terminal_receipt_unproven"}
+            if command_execution(body) and action == family["active"]:
+                receipt = body.get("command_on_receipt")
+                if not accepted(receipt, body, "ON") or not any(row.get("action") == family["outcome"]
+                        and row.get("on_outcome") == receipt for row in rows):
+                    return {"success": False, "created": False, "status": "command_activation_receipt_unproven"}
             if action==family["active"]:
                 if (not _managed_claim_matches(rows,body,family)
                         or _managed_edge_retired(rows,family)
@@ -2317,7 +2374,7 @@ def _dispatch_auxiliary_on_edge(body):
     return _dispatch_managed_on_edge(body,borehole=False)
 
 
-def _dispatch_managed_on_edge(body, *, borehole):
+def _dispatch_managed_on_edge(body, *, borehole, irrigation=False):
     """Commit one attempt before I/O; serialize final ON against all OFF claims.
 
     A crash between the two transactions consumes the attempt without sending.
@@ -2327,14 +2384,18 @@ def _dispatch_managed_on_edge(body, *, borehole):
     from modules.telemetry.rootline_device_registry import get_device_contract
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     body=dict(body);dispatch=body.pop("dispatch",None);family=_managed_family(borehole=borehole)
-    identity="BOREHOLE-1-MINI-R4-CH1" if borehole else body.get("auxiliary_device_id")
+    if irrigation:
+        family={"claim":"claim_before_on", "dispatch":"claim_irrigation_dispatch", "active":"mark_active",
+            "off":"claim_off_attempt", "outcome":"record_on_outcome",
+            "terminals":{"mark_stopping","record_completed","contain_zone","record_ambiguous_shutdown","record_claim_recovery","record_execution_not_dispatched"}}
+    identity=body.get("zone_id") if irrigation else "BOREHOLE-1-MINI-R4-CH1" if borehole else body.get("auxiliary_device_id")
     contract=get_device_contract(identity) or {}
     if (not callable(dispatch) or identity not in ({"BOREHOLE-1-MINI-R4-CH1"} if borehole
-            else {"FERTILIZER-MIXER-CH2","FERTILIZER-INJECTION-CH1"})
+            else {"A12345","B12345","C12345","E12345"} if irrigation else {"FERTILIZER-MIXER-CH2","FERTILIZER-INJECTION-CH1"})
             or (borehole and body.get("device_key")!="ewelink:ewelink_owner_account:1002851416:1")
             or (not borehole and (body.get("device_id")!=contract.get("device_id")
                 or body.get("channel")!=contract.get("channel")
-                or body.get("device_type")!=contract.get("device_type")))):
+                or (not irrigation and body.get("device_type")!=contract.get("device_type"))))) :
         return {"accepted_unambiguous":False,"status":"atomic_on_edge_invalid"}
     def permitted(rows):
         now=datetime.now(timezone.utc);claimed=_time(body.get("claimed_at"));deadline=_time(body.get("primary_stop_deadline"))
@@ -2349,7 +2410,7 @@ def _dispatch_managed_on_edge(body, *, borehole):
             and not any(row.get("action") in {family["active"],family["outcome"]} for row in rows))
     # Unique review_event_id is the existing database-backed at-most-once fence.
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False,
-            read_committed=borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5") as connection:
+            read_committed=irrigation or body.get("acceptance_mode") == "command_accepted" or (borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5")) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
@@ -2360,7 +2421,7 @@ def _dispatch_managed_on_edge(body, *, borehole):
             if not _insert_managed_event(cursor,family["dispatch"],body)["created"]:
                 return {"accepted_unambiguous":False,"status":"managed_dispatch_already_consumed"}
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False,
-            read_committed=borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5") as connection:
+            read_committed=irrigation or body.get("acceptance_mode") == "command_accepted" or (borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5")) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
@@ -2368,7 +2429,7 @@ def _dispatch_managed_on_edge(body, *, borehole):
             if (not permitted(rows) or (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5"
                     and not _current_borehole_conditions_match(cursor, body, datetime.now(timezone.utc)))):
                 return {"accepted_unambiguous":False,"status":"managed_start_ownership_retired"}
-            if not borehole and body["device_type"]=="fertilizer_injection_valve":
+            if not borehole and not irrigation and body["device_type"]=="fertilizer_injection_valve":
                 cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
                     where claim.event_source=%s
                       and claim.review_json->'rootline_execution'->>'action'='claim_before_on'
@@ -2390,14 +2451,17 @@ def _dispatch_managed_on_edge(body, *, borehole):
                     return {"accepted_unambiguous":False,
                         "status":"parent_edge_authority_revoked"}
             try:
-                return dispatch()
+                from modules.telemetry.rootline_command_acceptance import command_execution
+                with _command_on_sender_scope(body) if command_execution(body) else nullcontext():
+                    return dispatch()
             except Exception:
                 return {"accepted_unambiguous":False,"status":"managed_sender_outcome_unknown"}
 
 
 def _append_history(action, body, *, connection=None, append=True):
+    from modules.telemetry.rootline_command_acceptance import job_completed
     event_type = {"mark_active": "STARTED", "contain_zone": "AMBIGUOUS",
-                  "record_completed": ("COMPLETED" if body.get("objective_satisfied") is True
+                  "record_completed": ("COMPLETED" if body.get("objective_satisfied") is True or job_completed(body)
                                        else "PARTIAL")}.get(action)
     if not event_type:
         return False
@@ -2422,6 +2486,15 @@ def _append_history(action, body, *, connection=None, append=True):
         "shutdown_observed_at": body.get("completed_at"),
         "provenance": "rootline_execution_coordinator",
         "classification": event_type.lower()}
+    from modules.telemetry.rootline_command_acceptance import command_execution, duty_closed
+    if command_execution(body):
+        details.update(acceptance_mode=body["acceptance_mode"], command_duty_closed=duty_closed(body),
+            command_program_completed=body.get("command_program_completed") is True,
+            command_job_completed=body.get("command_job_completed") is True,
+            commanded_runtime_seconds=body.get("commanded_runtime_seconds"),
+            command_on_receipt=body.get("command_on_receipt"), command_off_receipt=body.get("command_off_receipt"),
+            command_execution={key: body.get(key) for key in ("execution_id", "device_id", "channel", "claimed_at", "primary_stop_deadline", "acceptance_mode", "shutdown_verified", "command_duty_closed", "command_on_receipt", "command_off_receipt", "command_program_completed", "command_job_completed", "expected_segment_count", "segment_number", "planned_runtime_seconds", "governed_executable_duration_seconds", "reason", "stop_mode") },
+            physical_state="Unverified")
     if body.get("stop_mode") == "scheduled":
         details["stop_mode"] = "scheduled"
     if body.get("state") == "Stopped":
@@ -3494,7 +3567,10 @@ def _dispatch_auxiliary_off_edge(body):
         cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
         cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
         rows = _managed_edge_rows(cursor, slot["execution_id"])
-        if any(row.get("action") == _AUXILIARY_STARTUP_ABORT_ACTION for row in rows):
+        from modules.telemetry.rootline_command_acceptance import terminal_matches_rows
+        if any(row.get("action") == _AUXILIARY_STARTUP_ABORT_ACTION or (
+                row.get("action") in {"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped"}
+                and terminal_matches_rows(row, rows)) for row in rows):
             return {"accepted_unambiguous": False, "provider_command_attempted": False,
                 "status": "auxiliary_execution_retired"}
         dispatch_failure = None
@@ -3513,3 +3589,25 @@ def _dispatch_auxiliary_off_edge(body):
     if dispatch_failure is not None:
         raise dispatch_failure
     return {**outcome, "provider_command_attempted": True}
+
+
+_COMMAND_ON_SENDER = ContextVar("rootline_command_on_sender", default=None)
+
+
+@contextmanager
+def _command_on_sender_scope(claim):
+    token = _COMMAND_ON_SENDER.set({"claim": dict(claim), "used": False})
+    try:
+        yield
+    finally:
+        _COMMAND_ON_SENDER.reset(token)
+
+
+def authorize_command_on_sender(duty):
+    """One HA sender inside the existing locked, durably consumed ON edge."""
+    context = _COMMAND_ON_SENDER.get()
+    if not isinstance(context, dict) or context["used"] or not all(
+            duty.get(key) == value for key, value in context["claim"].items()
+            if key not in {"action", "event_id"}):
+        raise ValueError("home_assistant_locked_sender_required")
+    context["used"] = True

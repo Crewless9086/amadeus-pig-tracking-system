@@ -1123,6 +1123,11 @@ def _controller_reading(execution, key, state):
 
 
 def _rootline_irrigation_start_summary(zone, execution):
+    from modules.telemetry.rootline_command_acceptance import command_execution, accepted
+    if command_execution(execution) and accepted(execution.get("command_on_receipt"), execution, "ON"):
+        return (f"<b>IRRIGATION COMMAND</b>\n\n{zone}: ON command accepted. "
+            f"Planned programme: {int(execution.get('planned_runtime_seconds') or 0)//60} minutes. "
+            "ROOTLINE owns the scheduled OFF command. Physical switch state and water delivery are unverified.")
     observed = _controller_reading(execution, "start_evidence", "ON")
     lines = ["<b>IRRIGATION CONTROLLER</b>", "",
              f"{zone}: controller ON observed at {observed}." if observed else
@@ -1137,6 +1142,11 @@ def _rootline_irrigation_start_summary(zone, execution):
 
 def _rootline_irrigation_completion_summary(zone, execution):
     """Describe observed controller state without promoting a planned limit to flow evidence."""
+    from modules.telemetry.rootline_command_acceptance import duty_closed
+    if duty_closed(execution):
+        status = "The command programme completed." if execution.get("command_job_completed") is True else "The command programme remains incomplete; ROOTLINE owns the follow-up."
+        return (f"<b>IRRIGATION COMMAND</b>\n\n{zone}: OFF command accepted. {status} "
+            "Physical switch state, water flow and delivered volume are unverified.")
     stopped = _controller_reading(execution, "shutdown_evidence", "OFF")
     started = _controller_reading(execution, "start_evidence", "ON")
     lines = ["<b>IRRIGATION CONTROLLER</b>", "",
@@ -1765,7 +1775,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         and any(str(source.get(flag) or "").lower() == "true"
                                 for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED", "ROOTLINE_E_ENABLED"))
                         and supervision.get("active_supervision_status") in {
-                            "no_active_irrigation", "segment_completed", "segment_stopped_outcome_unconfirmed"}):
+                            "no_active_irrigation", "segment_completed", "segment_stopped_outcome_unconfirmed", "irrigation_off_command_accepted"}):
                     cycle = execution_cycle
                     if cycle is None:
                         from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
@@ -1829,10 +1839,11 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         after_safety=admit_irrigation,
                         # Active ownership makes admission inert. Keep callback
                         # sequencing for deferred proof, without a redundant pass.
-                        refresh_after_safety=supervision["active_supervision_status"] != "active_segment_owned",
+                        refresh_after_safety=supervision["active_supervision_status"] not in {"active_segment_owned", "irrigation_command_duty_active"},
                         allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
                         allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
                             "no_active_irrigation", "active_segment_owned", "segment_completed",
+                            "irrigation_command_duty_active", "irrigation_off_command_accepted",
                             "segment_stopped_outcome_unconfirmed"}) or {})
                     if not managed_result:
                         raise ValueError("managed_supervision_result_missing")

@@ -295,6 +295,13 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
         gates["weather"] = conditions.get("start_eligible") is True
         gates["provider_off"] = _continuous_borehole_off(provider, now=now)
         blockers = [key for key, passed in gates.items() if not passed]
+    from modules.telemetry.rootline_command_acceptance import enabled, route_valid, MODE
+    command_mode = (enabled() and (continuous or scheduled)
+        and route_valid(provider, device_id="1002851416", channel=1, now=now))
+    if command_mode:
+        gates.pop("provider_off", None)
+        gates["command_route_ready"] = True
+        blockers = [key for key, passed in gates.items() if not passed]
     material = {"contract_version": "rootline_borehole_runtime_eligibility.v5" if continuous else "rootline_borehole_runtime_eligibility.v4" if scheduled else "rootline_borehole_runtime_eligibility.v3" if configuration
             else "rootline_borehole_runtime_eligibility.v2",
         "device_key": DEVICE_KEY, "baseline_sha256": baseline.get("baseline_sha256"),
@@ -313,7 +320,10 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
     if continuous:
         material["condition_evidence"] = dict(conditions)
         material["energy_context"] = dict(energy or {})
-    if continuous and isinstance(provider, dict) and provider.get("state") == "ON":
+    if command_mode:
+        material.update(acceptance_mode=MODE, operation="command_on")
+    reported_on = command_mode and (provider.get("command_route") or {}).get("reported_output_state") == "ON"
+    if continuous and isinstance(provider, dict) and (provider.get("state") == "ON" or reported_on):
         # Taking responsibility for an observed run is not permission to start.
         # Keep failed start/protection evidence intact for immediate owned OFF.
         material.update(operation="adopt_observed_on", start_gates=dict(gates),
@@ -324,6 +334,11 @@ def build_borehole_runtime_eligibility(*, need, baseline, authority, provider,
             current_conditions=bool(conditions.get("event_id"))
                 and type(conditions.get("stop_required")) is bool)
         blockers = [key for key, passed in gates.items() if not passed]
+        if reported_on:
+            gates.pop("provider_on", None)
+            gates["command_route_ready"] = True
+            material.update(operation="adopt_reported_on", acceptance_mode=MODE)
+            blockers = [key for key, passed in gates.items() if not passed]
         material.update(gates=gates, blockers=blockers)
     digest = _digest(material)
     execution_id = "ROOTLINE-BOREHOLE-" + digest[:24].upper()
@@ -384,6 +399,13 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             active = {**active, **({"stop_reason": stop_reason} if stop_reason else {}),
                 **({"stop_trigger": stop_trigger} if isinstance(stop_trigger, dict) else {})}
         transport = bind_execution_transport(transport, active)
+        from modules.telemetry.rootline_command_acceptance import command_execution
+        if command_execution(active):
+            if active.get("state") == "Active" and not stop_for_energy and not active.get("stop_requested"):
+                deadline = _time(active.get("primary_stop_deadline"))
+                if continuous or deadline is not None and now < deadline:
+                    return _borehole_result("borehole_command_duty_active", execution=active, physical_state="Unverified")
+            return _finish_command_borehole(active, store, transport, now=now)
         if active.get("on_not_dispatched") is True:
             from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
             return _retire_unsent_execution(active, store, transport, defer_proof=defer_no_send_proof)
@@ -444,12 +466,15 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     continuous = continuous_borehole(eligibility)
     scheduled=eligibility.get("stop_mode")=="scheduled" or continuous
     native=eligibility.get("native_fail_stop_seconds",14400)
-    adopting = continuous and eligibility.get("operation") == "adopt_observed_on"
+    from modules.telemetry.rootline_command_acceptance import command_execution, route_valid
+    command_mode = command_execution(eligibility)
+    adopting = continuous and eligibility.get("operation") in {"adopt_observed_on", "adopt_reported_on"}
     if scheduled:
         current=_read_borehole(transport, routine_read=True)
         expected = _continuous_borehole_on if adopting else _continuous_borehole_off
-        if not (expected(current, now=_aware(clock())) if continuous
-                else _scheduled_borehole_off(current,now=_aware(clock()))):
+        route_ready = command_mode and route_valid(current, device_id="1002851416", channel=1, now=_aware(clock()))
+        if not (route_ready or (expected(current, now=_aware(clock())) if continuous
+                else _scheduled_borehole_off(current,now=_aware(clock())))):
             return _borehole_result("borehole_current_on_unproven" if adopting else "borehole_current_off_unproven",success=False,
                 current_failure=current.get("current_failure", {}))
     if eligibility.get("contract_version") == "rootline_borehole_runtime_eligibility.v3":
@@ -482,12 +507,15 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         # observation already obtained above to this exact claim or adoption.
         execution["claim_provider_evidence"] = {**current,
             "execution_id": execution["execution_id"]}
-    if eligibility.get("operation") == "adopt_observed_on":
+    if eligibility.get("operation") in {"adopt_observed_on", "adopt_reported_on"}:
         # No ON edge, invented original start time, or claim of delivered water.
         # Legacy v3 retains its conservative native stop bound. Continuous v5
         # creates no deadline and takes only condition-based stop ownership.
         execution.update(state="Active", execution_origin="observed_external_on",
             original_start_at=None, provider_start_evidence=(current if adopting else eligibility["provider_evidence"]))
+        if command_mode:
+            execution.update(execution_origin="ha_reported_external_on", provider_start_evidence=None,
+                command_adoption_evidence=current, physical_state="Unverified")
         adopted = store("adopt_borehole_observed_on", execution)
         if not isinstance(adopted, dict) or adopted.get("success") is not True:
             return _borehole_result("borehole_observed_on_adoption_unproven", success=False)
@@ -521,6 +549,15 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         transport.set_state(device_id="1002851416", channel=1, state="ON",
             idempotency_key=execution["execution_id"] + ":ON")})
     store("record_borehole_on_outcome", {**execution, "on_attempts": 1, "on_outcome": on})
+    if command_mode:
+        from modules.telemetry.rootline_command_acceptance import accepted
+        if accepted(on, execution, "ON"):
+            active = {**execution, "state": "Active", "on_attempts": 1,
+                "command_on_receipt": on, "physical_state": "Unverified"}
+            marked = store("mark_borehole_active", active)
+            if isinstance(marked, dict) and marked.get("success") is True:
+                return _borehole_result("borehole_on_command_accepted", commands=1, execution=active)
+        return _finish_command_borehole(execution, store, transport, now=_aware(clock()))
     if execution.get("provider_capacity_permit") and on.get("provider_command_attempted") is False:
         from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
         return _retire_unsent_execution(execution, store, transport)
@@ -540,6 +577,26 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         return _contain_failed_borehole_start(
             {**active,"reason":"active_persistence_unproven"},store,transport)
     return _borehole_result("borehole_started", commands=1, execution=active)
+
+
+def _finish_command_borehole(active, store, transport, *, now):
+    from modules.telemetry.rootline_command_acceptance import accepted, terminal
+    prior = store("load_borehole_off_attempts", active["execution_id"]) or []
+    off = next((row.get("outcome") for row in prior if accepted(row.get("outcome"), active, "OFF")), None)
+    commands = 0 if off else _stop_borehole(active, store, transport)
+    if off is None:
+        rows = store("load_borehole_off_attempts", active["execution_id"]) or []
+        off = next((row.get("outcome") for row in rows if accepted(row.get("outcome"), active, "OFF")), None)
+    if off is None:
+        store("contain_borehole", {**active, "shutdown_verified": False, "command_duty_closed": False})
+        return _borehole_result("borehole_off_command_unknown", commands=commands, success=False,
+            execution=active, effects_unknown=True)
+    completed = terminal(active, off, now=max(now, _time(off["accepted_at"])))
+    result = store("record_borehole_completed", completed)
+    if not isinstance(result, dict) or result.get("success") is not True:
+        return _borehole_result("borehole_command_completion_persistence_unproven", commands=commands, success=False, execution=active)
+    return _borehole_result("borehole_off_command_accepted", commands=commands, execution=completed,
+        command_duty_closed=True, physical_state="Unverified")
 
 
 def _finish_borehole(active, store, transport, now, *, clock=None, observed_off=None):

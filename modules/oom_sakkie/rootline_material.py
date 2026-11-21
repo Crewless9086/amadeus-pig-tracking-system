@@ -30,6 +30,8 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
                  "planned_duration_minutes")}
         item["lifecycle_state"] = _normal(lifecycle.get("state"))
         item["verified_completion"] = _verified_completion(lifecycle, subject)
+        if lifecycle.get("acceptance_mode") == "command_accepted" or (lifecycle.get("completion_evidence") or {}).get("command_job_completed") is True:
+            item["command_programme_completed"] = (lifecycle.get("completion_evidence") or {}).get("command_job_completed") is True
         item["owner_reason"] = owner_reason_material(row.get("reason"))
         recommendations.append(item)
     recommendations.sort(key=lambda row: (str(row.get("subject") or ""),

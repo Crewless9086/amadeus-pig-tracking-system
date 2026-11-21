@@ -69,7 +69,8 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
             parent_next_action if unresolved_parent else
             "ROOTLINE must reconcile and retry only the safe failed manager step.")
     elif started:
-        state, reason, next_action = "Started", _reason(execution, recommendation), "ROOTLINE must verify the scheduled shutdown and controller state."
+        from modules.telemetry.rootline_command_acceptance import command_execution
+        state, reason, next_action = "Started", _reason(execution, recommendation), ("ON command accepted; ROOTLINE owns the scheduled OFF command. Physical state is unverified." if command_execution(dict(execution)) else "ROOTLINE must verify the scheduled shutdown and controller state.")
     elif authorized:
         state, reason, next_action = "Authorized", _reason(execution, recommendation), "ROOTLINE must continue through the existing claimed execution."
     elif unresolved_parent:
@@ -100,6 +101,10 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
             "state": state, "reason": reason or "Unknown",
             "next_action_owner": "ROOTLINE", "next_action": next_action,
             "supported_states": list(STATES)}
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(dict(execution)):
+        result["acceptance_mode"] = "command_accepted"
+        result["physical_state"] = "Unverified"
     # History owns the complete per-run projection. The selected display row
     # remains raw; it must not overwrite reconciled same-run context.
     if "execution_exceptions" in history:
@@ -115,6 +120,8 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
             "zone_id": zone_id,
             "shutdown_verified": completed.get("shutdown_verified") is True,
             "objective_satisfied": completed.get("objective_satisfied") is True,
+            "command_job_completed": completed.get("command_job_completed") is True,
+            "physical_state": "Unverified" if completed.get("command_job_completed") is True else None,
             "qualifies_as_completed_watering": completed.get(
                 "qualifies_as_completed_watering") is True,
             "shutdown_evidence": completed.get("shutdown_evidence") or
@@ -177,7 +184,14 @@ def project_execution_shutdown_exceptions(rows, *, evidence_cutoff=None, canonic
         for row in rows)
     if not involved:
         return []
+    from modules.telemetry.rootline_command_acceptance import command_execution, duty_closed, moment
+    command_terminals = [row for row in rows if row.get("action") == "record_completed" and duty_closed(dict(row))]
     cutoff = _aware_timestamp(evidence_cutoff)
+    if command_terminals and cutoff is not None:
+        terminal = command_terminals[-1]
+        accepted_at = moment(terminal["command_off_receipt"]["accepted_at"])
+        if accepted_at <= cutoff:
+            return []
     cutoff_invalid = evidence_cutoff is not None and cutoff is None
     primary, primary_invalid = _consistent_time(rows, "primary_stop_deadline")
     native, native_invalid = _consistent_time(rows, "native_fail_stop_deadline")
@@ -305,6 +319,14 @@ def _aware_timestamp(value):
 
 
 def _completed(events, execution, *, allow_historical):
+    from modules.telemetry.rootline_command_acceptance import job_completed
+    if execution.get("action") == "record_completed" and job_completed(dict(execution)):
+        return execution
+    if allow_historical:
+        command = next((row for row in reversed(events) if row.get("command_job_completed") is True
+            and job_completed(row.get("command_execution") or {})), None)
+        if command:
+            return command
     if (execution.get("action") == "record_completed"
             and execution.get("state") == "Completed"
             and execution.get("shutdown_verified") is True
@@ -328,6 +350,8 @@ def validate_zone_lifecycle(value, *, zone_id):
 
 
 def _completion_reason(row):
+    if row.get("command_job_completed") is True:
+        return "The planned ON/OFF command programme completed. Physical switch state and water delivery are unverified."
     minutes = row.get("verified_runtime_minutes")
     return (f"Verified shutdown and {minutes} minutes of supported runtime are canonical."
             if minutes is not None else "Verified completion and shutdown are canonical.")

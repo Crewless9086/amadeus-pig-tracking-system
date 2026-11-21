@@ -88,6 +88,8 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
     coverage = _timestamp(zone.get("completion_ledger_complete_through"))
     coverage_current = coverage is not None and coverage <= now and (now - coverage).total_seconds() <= 15 * 60
     verified_days = set()
+    command_days = set()
+    command_outcomes = []
     verified_minutes = 0
     outcomes = []
     seen = {}
@@ -99,11 +101,17 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
         identity = str(row.get("outcome_id"))
         canonical = _digest({key: row.get(key) for key in (
             "outcome_id", "completed_at", "operating_date", "verified_runtime_minutes", "state",
-            "shutdown_verified", "source", "objective_satisfied")})
+            "shutdown_verified", "source", "objective_satisfied", "command_execution", "command_job_completed")})
         if identity in seen:
             conflict = conflict or seen[identity] != canonical
             continue
         seen[identity] = canonical
+        command_at = _command_completion_time(row)
+        if command_at is not None:
+            credited = str(row.get("operating_date") or command_at.astimezone(ZA_TZ).date().isoformat())
+            if command_at <= now and obligation_start.date().isoformat() <= credited <= now.date().isoformat() and (epoch_start is None or command_at >= epoch_start):
+                command_days.add(credited); command_outcomes.append(identity)
+            continue
         if _verified_completion_time(row) is None:
             continue
         completed = _verified_completion_time(row).astimezone(ZA_TZ)
@@ -118,7 +126,7 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
     available_days = max(0, 7 - obligation_start.weekday()) if obligation_start.date() <= calendar.date() else 0
     epoch_target = min(target, (available_days * target + 6) // 7)
     expected_by_now = min(epoch_target, (elapsed_days * target + 6) // 7)
-    completed_days = len(verified_days)
+    completed_days = len(verified_days | command_days)
     status = "conflicting" if conflict else "available" if coverage_current else "Unavailable"
     return {
         "status": status,
@@ -127,6 +135,8 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
         "week_start": week_start.date().isoformat(),
         "completed_days": completed_days,
         "verified_runtime_minutes": verified_minutes,
+        "command_completed_days": sorted(command_days),
+        "command_outcome_ids": sorted(command_outcomes),
         "expected_days_by_now": expected_by_now,
         "delivery_debt_days": max(0, expected_by_now - completed_days) if status == "available" else None,
         "remaining_weekly_obligation_days": max(0, epoch_target - completed_days) if status == "available" else None,
@@ -601,6 +611,9 @@ def _freshness(value, now, minutes):
 def _latest_completion(rows, require_objective_satisfied=False):
     verified = []
     for row in rows:
+        if _command_completion_time(row) is not None:
+            verified.append(row)
+            continue
         runtime = _number(row.get("verified_runtime_minutes"))
         if (row.get("state") == "Completed" and row.get("shutdown_verified") is True
                 and 0 < (runtime or 0) <= 120
@@ -652,3 +665,12 @@ def _dict(value):
 
 def _digest(value):
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _command_completion_time(row):
+    from modules.telemetry.rootline_command_acceptance import job_completed
+    if (row.get("state") != "Completed" or row.get("command_job_completed") is not True
+            or not row.get("outcome_id") or not row.get("source")
+            or not job_completed(row.get("command_execution") or {})):
+        return None
+    return _timestamp(row.get("completed_at"))

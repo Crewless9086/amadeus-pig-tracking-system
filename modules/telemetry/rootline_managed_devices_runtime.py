@@ -53,7 +53,7 @@ def run_rootline_managed_device_cycle(*, deadline_wait=None, **kwargs):
     # Only a just-started injector can introduce a new near deadline after the
     # inventory safety pass. Empty/mixer-only cycles retain zero extra reads.
     def started(value):
-        if (value.get("status") == "auxiliary_started"
+        if (value.get("status") in {"auxiliary_started", "auxiliary_on_command_accepted"}
                 and (value.get("execution") or {}).get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"):
             return value["execution"]
         return next((row for child in value.get("outcomes", [])
@@ -143,10 +143,10 @@ def _finish_injector_deadline(*, store, transport, clock, wait, horizon_seconds=
                     transport=observed_transport, now=now, clock=clock,
                     auxiliary_device_id=identity, expected_execution_id=active["execution_id"],
                     expected_stop_deadline=active["primary_stop_deadline"])
-            if current.get("status") != "auxiliary_active":
+            if current.get("status") not in {"auxiliary_active", "auxiliary_command_duty_active"}:
                 return {**current, "managed_device": identity, "managed_device_recovery": True,
                     "blocks_bc": current.get("status") not in {
-                        "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified",
+                        "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified", "auxiliary_off_command_accepted",
                         "auxiliary_recovery_already_terminal", "auxiliary_emergency_off_verified"}}
             delay = (_aware(deadline)-_aware(clock())).total_seconds()
         if delay > 0 and reason is None:
@@ -172,7 +172,7 @@ def _finish_injector_deadline(*, store, transport, clock, wait, horizon_seconds=
                 stop_for_deadline=reason, expected_stop_deadline=active["primary_stop_deadline"])
         return {**result, "managed_device": identity, "managed_device_recovery": True,
             "blocks_bc": result.get("status") not in {
-                "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified",
+                "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified", "auxiliary_off_command_accepted",
                 "auxiliary_recovery_already_terminal", "auxiliary_emergency_off_verified"}}
     except Exception as exc:
         return {**_safe("injector_deadline_supervision_unproven", blocks_bc=True),
@@ -388,9 +388,9 @@ def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
                     identity=selected,requested_seconds=_artifact["maximum_duration_seconds"]) else {}),
             now=now, auxiliary_device_id=identity, clock=clock)
         outcomes.append({**result, "managed_device": identity,
-            "blocks_bc": identity == "FERTILIZER-INJECTION-CH1" and result.get("status") == "auxiliary_started"})
+            "blocks_bc": identity == "FERTILIZER-INJECTION-CH1" and result.get("status") in {"auxiliary_started", "auxiliary_on_command_accepted"}})
         if (identity == "FERTILIZER-INJECTION-CH1"
-                and result.get("status") == "auxiliary_started"
+                and result.get("status") in {"auxiliary_started", "auxiliary_on_command_accepted"}
                 and (result.get("execution") or {}).get("stop_mode") == "scheduled"):
             # The public wrapper now owns this pulse through OFF. Do not spend
             # its remaining window on another optional start or provider read.
@@ -510,7 +510,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                 "hardware_commands": observed_transport.commands}
         injector_open = (identity not in DEVICE_KEYS or
             identity == "FERTILIZER-INJECTION-CH1" and result.get("status") not in {
-            "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified",
+            "auxiliary_injection_control_completed", "auxiliary_control_pulse_off_verified", "auxiliary_off_command_accepted",
             "auxiliary_recovery_already_terminal", "auxiliary_emergency_off_verified"})
         outcomes.append({**result, "managed_device": identity,
             "managed_device_recovery": True, "blocks_bc": injector_open})
@@ -599,7 +599,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                     **({"defer_no_send_proof": defer_no_send_proof} if callable(defer_no_send_proof) else {}))
                 if evidence_pending:
                     result = {**result, "supervision_evidence_pending": True}
-                if (result.get("status") == "borehole_active"
+                if (result.get("status") in {"borehole_active", "borehole_command_duty_active"}
                         and result.get("success") is True
                         and result.get("supervision_evidence_pending") is not True):
                     observed_borehole = deepcopy(active_borehole)
