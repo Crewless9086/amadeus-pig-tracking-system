@@ -31,8 +31,9 @@ def _load(action, identity):
             if action == "load_identity":
                 cursor.execute("""select review_json->'rootline_reassessment'
                     from public.sam_live_stock_conversation_review_events
-                    where event_source=%s and review_json->'rootline_reassessment'->>'identity'=%s
-                    order by created_at desc,review_event_id desc limit 10""", (EVENT_SOURCE, identity))
+                    where event_source=%s and chatwoot_conversation_id=%s
+                      and review_json->'rootline_reassessment'->>'identity'=%s
+                    order by created_at desc,review_event_id desc limit 10""", (EVENT_SOURCE, identity, identity))
                 rows = cursor.fetchall()
                 if not rows:
                     return None

@@ -385,7 +385,12 @@ def test_store_reconstructs_date_from_append_only_pending_history(monkeypatch):
     class Cursor:
         def __enter__(self): return self
         def __exit__(self,*_): pass
-        def execute(self,*_): pass
+        def execute(self,sql,params):
+            assert params==(rootline_reassessment_store.EVENT_SOURCE,"LEGACY","LEGACY")
+            compact=" ".join(sql.split())
+            assert "where event_source=%s and chatwoot_conversation_id=%s" in compact
+            assert "and review_json->'rootline_reassessment'->>'identity'=%s" in compact
+            assert compact.endswith("order by created_at desc,review_event_id desc limit 10")
         def fetchall(self):
             return [({"identity":"LEGACY","delivery_state":"delivered"},),
                     ({"identity":"LEGACY","delivery_state":"pending",
@@ -427,3 +432,36 @@ def test_store_load_delivered_enriches_only_exact_predecessor_pending_packet(mon
     assert loaded["answer"] == "exact prior plan"
     assert loaded["operating_date"] == "2026-08-24"
     assert loaded["zones"] == [{"zone_id":"B12345"}]
+
+
+def test_store_indexed_identity_keeps_literal_binding_and_latest_date(monkeypatch):
+    # Both selectors must bind the same literal identity; no owner-wide fallback.
+    identity="EXACT' OR 1=1 --"
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def execute(self,sql,params):
+            assert identity not in sql and params==(rootline_reassessment_store.EVENT_SOURCE,identity,identity)
+            assert "chatwoot_conversation_id=%s" in sql and "->>'identity'=%s" in sql
+            assert "owner_user_id" not in sql and "limit 10" in sql
+        def fetchall(self):return [({"identity":identity,"delivery_state":"delivered","operating_date":"2026-11-22"},),
+            ({"identity":identity,"delivery_state":"pending","operating_date":"2026-11-21"},)]
+    class Connection(Cursor):
+        def cursor(self):return Cursor()
+    monkeypatch.setattr(rootline_reassessment_store,"connect_bounded_read",lambda:Connection())
+    loaded=rootline_reassessment_store._load("load_identity",identity)
+    assert loaded=={"identity":identity,"delivery_state":"delivered","operating_date":"2026-11-22"}
+
+
+def test_store_indexed_identity_absent_does_not_invent_delivery(monkeypatch):
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def execute(self,sql,params):
+            assert params==(rootline_reassessment_store.EVENT_SOURCE,"ABSENT","ABSENT")
+            assert "chatwoot_conversation_id=%s" in sql
+        def fetchall(self):return []
+    class Connection(Cursor):
+        def cursor(self):return Cursor()
+    monkeypatch.setattr(rootline_reassessment_store,"connect_bounded_read",lambda:Connection())
+    assert rootline_reassessment_store._load("load_identity","ABSENT") is None

@@ -180,11 +180,23 @@ def compose_transition_notice(state, execution, *, language="en"):
 
 # Provider notices share the existing minute and family-delivery rails. They
 # never enter transition(), which still requires an authoritative switch edge.
-def provider_availability_text(availability, *, language="en"):
+def provider_availability_text(availability, *, language="en", command_mode=None):
     from modules.telemetry.rootline_provider_availability import CONTRACT
     af = str(language).casefold().startswith("af")
     if not isinstance(availability, dict) or availability.get("contract") != CONTRACT:
         return ""
+    if command_mode is None:
+        from modules.telemetry.rootline_command_acceptance import enabled
+        command_mode = enabled()
+    if command_mode and availability.get("status") == "unavailable":
+        return ("Die eWeLink-statuslesingsdiens is onbeskikbaar. Dit is apart van Home Assistant se "
+            "opdraggebaseerde werking. Daardie pligte gebruik aanvaarde AAN/AF-opdragte binne die bestaande "
+            "perke; geen afsonderlike skakelaarlesing word daarvoor vereis nie. Fisiese toestand en "
+            "waterlewering bly onbevestig. Werklike opdragmislukkings word apart gemeld." if af else
+            "The eWeLink status-reading service is unavailable. This is separate from Home Assistant "
+            "command-based operation. Those duties use accepted ON/OFF commands within the existing limits; "
+            "separate switch readback is not required for them. Physical state and water delivery remain "
+            "unverified. Actual command failures are reported separately.")
     if availability.get("status") in {"unknown", "unobserved"}:
         return ("Die jongste skakelaarstatusdiens kon nie uit die rekords bevestig word nie."
             if af else "The latest switch-status service availability could not be verified from the records.")
@@ -196,6 +208,11 @@ def provider_availability_text(availability, *, language="en"):
         if not times:
             return ("Huidige skakelaarstatus is onbevestig." if af else "Current switch-status availability is unverified.")
         stamp = max(times).astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%d %b %H:%M SAST")
+        if command_mode:
+            return (f"Die laaste volledige eWeLink-herstelkontrole het op {stamp} geslaag. Home Assistant se "
+                "opdragpligte bly apart; dit bewys nie fisiese toestand of waterlewering nie." if af else
+                f"The last complete eWeLink recovery check succeeded at {stamp}. Home Assistant command "
+                "duties remain separate; this does not prove physical state or water delivery.")
         return (f"Die laaste volledige herstelkontrole het op {stamp} geslaag. Nuwe werk vereis steeds "
                 "vars statusbevestiging; dié rekord bewys nie die huidige toesteltoestand nie." if af else
                 f"The last complete recovery check succeeded at {stamp}. New work still requires fresh "
@@ -227,7 +244,24 @@ def compose_provider_notice(state, payload, *, language="en"):
              f"A complete switch-status check succeeded at {stamp}. This confirms access to status "
              "readings at that time, not the current state, resumed irrigation, delivered water or safe OFF for every device. "
              "ROOTLINE reassesses the work automatically."))
-    text = provider_availability_text({"contract": CONTRACT, "status": "unavailable"}, language=language)
+    if state == "ProviderSafety" and payload.get("provider") == "home_assistant":
+        label = str(payload.get("duty_label") or "Equipment duty")
+        if af:
+            label = {"Fertilizer mixer": "Kunsmismenger", "Fertilizer injector": "Kunsmisinspuiter",
+                "Borehole AC backup": "Boorgat se AC-rugsteun", "Equipment duty": "Toerustingplig"}.get(label, label.replace(" Camp", " Kamp"))
+        label = html.escape(label)
+        off = payload.get("severity") == "off_command_unaccepted"
+        detail = ((f"{label}: aanvaarding van die AF-opdrag is onbevestig." if af else
+            f"{label}: acceptance of the OFF command is unconfirmed.") if off else
+            (f"{label}: die opdraguitkoms is onbevestig." if af else f"{label}: the command outcome is unconfirmed."))
+        return (("<b>ROOTLINE — OPDRAG BENODIG AANDAG</b>" if af else
+            "<b>ROOTLINE — COMMAND NEEDS ATTENTION</b>") + "\n\n" + detail + " " +
+            ("Die AF-opdragplig bly oop en outomatiese hergebruik is teruggehou. Fisiese toestand bly "
+             "onbevestig. Hierdie waarskuwing gaan oor die opdraguitkoms, nie die eWeLink-statuslesingsdiens nie." if af else
+             "The OFF-command duty remains open and automatic reuse is contained. Physical state remains "
+             "unverified. This alert concerns the command outcome, not the eWeLink status-reading service."))
+    text = provider_availability_text({"contract": CONTRACT, "status": "unavailable"}, language=language,
+        command_mode=payload.get("home_assistant_command_mode") is True)
     if state == "ProviderSafety":
         label = str(payload.get("duty_label") or "Equipment duty")
         if af:
@@ -270,11 +304,52 @@ def _provider_duties(store, now):
             "FERTILIZER-MIXER-CH2": "Fertilizer mixer",
             "FERTILIZER-INJECTION-CH1": "Fertilizer injector"}.get(row.get("auxiliary_device_id"), "Borehole AC backup" if
                 "borehole" in str(row.get("action") or "") else "Equipment duty")
+        from modules.telemetry.rootline_command_acceptance import MODE, command_execution, active_command, accepted, duty_closed
+        if row.get("acceptance_mode") == MODE:
+            identity = zone or row.get("auxiliary_device_id") or "BOREHOLE-1-MINI-R4-CH1"
+            contract = get_device_contract(identity)
+            if (not command_execution(row) or not contract or not row.get("event_id")
+                    or any(row.get(k) != contract.get(k) for k in ("device_id", "channel"))):
+                raise ValueError("command_notice_duty_binding_invalid")
+            # Irrigation already has its own canonical Intervention notice.
+            # Never duplicate that alert or attach its duty to eWeLink outages.
+            if zone in set(IRRIGATION_ZONE_IDS):
+                continue
+            action = ("load_borehole_off_attempts" if row["device_id"] == "1002851416" else
+                "load_auxiliary_off_attempts" if row.get("auxiliary_device_id") else "load_off_attempts")
+            outcomes = store(action, row["execution_id"])
+            if not isinstance(outcomes, list) or any(not isinstance(item, dict) or
+                    item.get("execution_id") != row["execution_id"] for item in outcomes):
+                raise ValueError("command_notice_off_evidence_unavailable")
+            # Accepted OFF may be awaiting its terminal write. Do not turn that
+            # persistence delay or unknown physical state into a command alarm.
+            if (duty_closed(row) and _time(row["command_off_receipt"]["accepted_at"]) <= now) or any(accepted(item.get("outcome"), row, "OFF")
+                    and _time(item["outcome"]["accepted_at"]) <= now for item in outcomes):
+                continue
+            deadline = _time(row.get("primary_stop_deadline"))
+            off_due = (bool(outcomes) or row.get("stop_requested") is True
+                or str(row.get("state") or "").casefold() in {"stopping", "shutdownuncertain", "ambiguous"}
+                or (deadline is not None and deadline <= now))
+            started = _time((row.get("command_on_receipt") or {}).get("accepted_at") or row.get("claimed_at"))
+            severity = ("off_command_unaccepted" if off_due else
+                "active_duty" if started is not None and started <= now and active_command(row, now=now)
+                else "command_outcome_unconfirmed")
+            duties.append({"duty_id": str(row["execution_id"]), "duty_label": label, "severity": severity,
+                "provider": "home_assistant", "failure_event_id": row["event_id"],
+                "claimed_at": row.get("claimed_at"), "primary_stop_deadline": row.get("primary_stop_deadline")})
+            continue
         deadline = _time(row.get("primary_stop_deadline"))
         severity = "off_unverified" if ((deadline and deadline <= now) or
             row.get("state") in {"Stopping", "ShutdownUncertain", "Ambiguous"}) else "active_duty"
         duties.append({"duty_id": str(row["execution_id"]), "duty_label": label, "severity": severity})
     return sorted(duties, key=lambda row: (row["duty_id"], row["severity"]))
+
+
+def _command_notice_scope(duty):
+    """A command-duty alert, never an invented provider-outage ledger event."""
+    key = sha256(("home_assistant|" + duty["duty_id"]).encode()).hexdigest()
+    return {**duty, "contract": "rootline_command_duty_notice.v1", "scope": key,
+        "incident_id": "ROOTLINE-PROVIDER-" + key[:32].upper(), "state": "command_attention"}
 
 
 def _provider_receipt(identity, incident, receipt):
@@ -311,22 +386,36 @@ def recover_provider_notifications(*, notify, now=None, store=rootline_irrigatio
     result = {"success": True, "status": "rootline_provider_notifications_observed",
         "telegram_sends": 0, "notification_count": 0, "hardware_commands": 0}
     remaining_seconds(minimum=5)
-    availability = loader(now=now)
-    if not isinstance(availability, dict) or availability.get("contract") != CONTRACT:
-        raise ValueError("provider_availability_contract_invalid")
     try:
-        duties = _provider_duties(store, now) if availability.get("status") == "unavailable" else []
+        availability = loader(now=now)
+        if not isinstance(availability, dict) or availability.get("contract") != CONTRACT:
+            raise ValueError("provider_availability_contract_invalid")
+    except Exception:
+        # A legacy ledger read failure cannot hide a separately recorded HA duty.
+        availability = {"contract": CONTRACT, "status": "unknown", "scopes": []}
+        result.update(success=False, status="rootline_provider_availability_unavailable")
+    try:
+        duties = _provider_duties(store, now)
     except Exception:
         # Failure to read duties must not suppress the known provider outage.
         duties = []
         result.update(success=False, status="rootline_provider_safety_evidence_unavailable")
-    for scope in availability.get("scopes") or []:
+    from modules.telemetry.rootline_command_acceptance import enabled
+    scopes = list(availability.get("scopes") or []) + [_command_notice_scope(duty) for duty in duties
+        if duty.get("provider") == "home_assistant" and duty["severity"] != "active_duty"]
+    for scope in scopes:
         incident = scope["incident_id"]
         outage_identity = incident + ":unavailable"
         candidates = []
-        if scope["state"] == "unavailable":
-            candidates.append(("ProviderUnavailable", {**scope, "notification_identity": outage_identity}))
+        if scope["state"] == "command_attention":
+            suffix = sha256((scope["duty_id"] + "|" + scope["severity"]).encode()).hexdigest()[:24]
+            candidates.append(("ProviderSafety", {**scope, "notification_identity": incident + ":safety:" + suffix}))
+        elif scope["state"] == "unavailable":
+            candidates.append(("ProviderUnavailable", {**scope, "notification_identity": outage_identity,
+                "home_assistant_command_mode": enabled(environ)}))
             for duty in duties:
+                if duty.get("provider") == "home_assistant":
+                    continue
                 suffix = sha256((duty["duty_id"] + "|" + duty["severity"]).encode()).hexdigest()[:24]
                 candidates.append(("ProviderSafety", {**scope, **duty,
                     "notification_identity": incident + ":safety:" + suffix}))
@@ -348,9 +437,18 @@ def recover_provider_notifications(*, notify, now=None, store=rootline_irrigatio
                 continue
             # Recheck current canonical state immediately before notification;
             # a later failure invalidates an earlier restoration candidate.
-            fresh = loader(now=clock())
-            current = next((item for item in fresh.get("scopes", [])
-                if item.get("scope") == scope["scope"]), None)
+            try:
+                if scope.get("provider") == "home_assistant":
+                    current = next((_command_notice_scope(duty) for duty in _provider_duties(store, _time(clock()))
+                        if duty.get("provider") == "home_assistant" and duty["duty_id"] == scope["duty_id"]
+                        and duty["severity"] == scope["severity"]), None)
+                else:
+                    fresh = loader(now=clock())
+                    current = next((item for item in fresh.get("scopes", [])
+                        if item.get("scope") == scope["scope"]), None)
+            except Exception:
+                result.update(success=False, status="rootline_provider_notice_evidence_unavailable")
+                continue
             if (not current or current.get("incident_id") != incident
                     or current.get("state") != scope["state"]
                     or (state == "ProviderRestored" and
