@@ -432,7 +432,8 @@ def test_actual_scheduled_gateway_keeps_first_specialist_history_read_but_skips_
                 "recommendations": [], "owner_brief": {"family_fact_needed": ""}}
         schedules, lifecycle = {}, {}
         def schedule(action, identity, payload):
-            if action in {"load_latest_outcome", "load_schedule"}: return None
+            if action == "load_latest_outcome": return None
+            if action == "load_schedule": return schedules.get(identity + "-OUTCOME") or schedules.get(identity)
             key = identity if action == "claim_schedule" else identity + "-OUTCOME"
             created = key not in schedules; schedules.setdefault(key, dict(payload))
             return {"success": True, "created": created}

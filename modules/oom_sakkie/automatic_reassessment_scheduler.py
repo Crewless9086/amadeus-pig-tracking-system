@@ -69,7 +69,8 @@ def safe_reporting_diagnostics(result):
 def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Mapping[str, Any]],
                          store: Callable[[str, str, Any], Any], now: datetime | None = None,
                          recover_delivery: Callable[[], Mapping[str, Any]] | None = None,
-                         invoke_not_due: Callable[[], Mapping[str, Any]] | None = None):
+                         invoke_not_due: Callable[[], Mapping[str, Any]] | None = None,
+                         invoke_owned_duties: Callable[[], Mapping[str, Any]] | None = None):
     """Claim and run one due bucket. This contract grants no operational authority."""
     now = _aware(now or datetime.now(timezone.utc))
     specialist = str(payload.get("specialist") or "").upper()
@@ -96,11 +97,23 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                 "invocation_receipt": digest, "terminal_outcome": prior_identity["status"]}
         return {**_safe("scheduled_reassessment_replayed_noop"), "schedule_identity": identity,
                 "invocation_receipt": digest, "terminal_outcome": prior_identity["status"]}
-    latest = store("load_latest_outcome", specialist, None) or {}
-    owned_due = _parse(latest.get("next_due_at"))
-    reports_due = not (owned_due and now < owned_due
+    cadence_error = ""
+    try:
+        latest = store("load_latest_outcome", specialist, None) or {}
+    except Exception as exc:
+        # Only this optional reporting read may degrade to owned-duty work.
+        # Claim, binding and readback failures must never authorize a callback.
+        latest = None
+        cadence_error = safe_reporting_diagnostics({"error_type": type(exc).__name__})["error_type"]
+    cadence_unavailable = latest is None
+    owned_due = _parse(latest.get("next_due_at")) if latest is not None else None
+    reports_due = not cadence_unavailable and not (owned_due and now < owned_due
         and not _current_bucket_second_offset(now, owned_due))
-    if not reports_due and invoke_not_due is None:
+    if cadence_unavailable and invoke_owned_duties is None:
+        return {**_contained("scheduled_reassessment_cadence_unavailable"),
+            "cadence_unavailable": True, "cadence_error_type": cadence_error,
+            "report_work_due": False}
+    if not cadence_unavailable and not reports_due and invoke_not_due is None:
         return {**_safe("scheduled_reassessment_not_yet_due"),
                 "next_due_at": owned_due.astimezone(SAST).isoformat()}
     record = {"contract_version": CONTRACT_VERSION, "schedule_identity": identity,
@@ -109,11 +122,13 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
               "invoked_at": now.isoformat(), "invocation_receipt": digest,
               "status": "claimed", "terminal_outcome": "",
               "report_work_due": bool(reports_due)}
+    if cadence_unavailable:
+        record.update(cadence_unavailable=True, cadence_error_type=cadence_error)
     claimed = store("claim_schedule", identity, record)
     if not isinstance(claimed, Mapping) or claimed.get("success") is not True:
         return _contained("scheduled_reassessment_claim_unproven")
-    existing = store("load_schedule", identity, None) or record
-    if existing.get("invocation_receipt") != digest:
+    existing = store("load_schedule", identity, None)
+    if not isinstance(existing, Mapping) or existing.get("invocation_receipt") != digest:
         return _contained("scheduled_reassessment_binding_conflict")
     if claimed.get("created") is False:
         if existing.get("status") in {"completed", "contained"}:
@@ -130,7 +145,8 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
     try:
         # The optional callback advances control under the same minute claim,
         # including eligible starts and device planning, without running reports.
-        result = dict((invoke if reports_due else invoke_not_due)() or {})
+        callback = invoke_owned_duties if cadence_unavailable else (invoke if reports_due else invoke_not_due)
+        result = dict(callback() or {})
     except Exception:
         result = _contained("scheduled_reassessment_specialist_failure")
     # Managed control uses effects_unknown; keep that uncertainty in the
@@ -142,10 +158,14 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
     # A control-only outcome preserves the reporting due time exactly. The
     # existing minute scheduler can claim the next control pass without
     # accelerating reports or adding another timer/queue.
-    next_due = _next_due(now, result) if reports_due else owned_due.astimezone(SAST)
+    next_due = (_next_due(now, result) if reports_due else
+        owned_due.astimezone(SAST) if owned_due is not None else None)
     safety_next = (_bucket(now.astimezone(SAST)) + timedelta(minutes=CADENCE_MINUTES)).isoformat()
-    if invoke_not_due is not None:
+    if invoke_not_due is not None or invoke_owned_duties is not None:
         result["supervision_next_due_at"] = safety_next
+    if cadence_unavailable:
+        result.update(cadence_unavailable=True, cadence_error_type=cadence_error,
+            report_work_due=False)
     outcome = {**record, "status": terminal, "terminal_outcome": str(result.get("status") or terminal),
                "material_digest": str(result.get("material_digest") or ""),
                "execution_status": str(result.get("execution_status") or ""),
@@ -161,7 +181,7 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                "equipment_notification_status": str(result.get("equipment_notification_status") or ""),
                "fertilizer_commissioning_status": str(
                    result.get("fertilizer_commissioning_status") or ""),
-               "next_due_at": next_due.isoformat(), "telegram_sends": int(result.get("telegram_sends") or 0),
+               "next_due_at": next_due.isoformat() if next_due is not None else None, "telegram_sends": int(result.get("telegram_sends") or 0),
                "telegram_edits": int(result.get("telegram_edits") or 0),
                "hardware_commands": int(result.get("hardware_commands") or 0),
                "writes_farm_data": result.get("writes_farm_data", False)}
@@ -184,7 +204,7 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
             "schedule_identity": identity, "invocation_receipt": digest,
             "terminal_outcome": "claimed", "outcome_recorded": False}
     return {**result, "schedule_identity": identity, "invocation_receipt": digest,
-            "terminal_outcome": terminal, "next_due_at": next_due.isoformat()}
+            "terminal_outcome": terminal, "next_due_at": next_due.isoformat() if next_due is not None else None}
 
 
 def _managed_outcomes(value):
@@ -197,6 +217,9 @@ def _managed_outcomes(value):
             continue
         rows.append({key: str(item.get(key) or "")[:100]
             for key in ("managed_device", "status", "error_type")})
+        for key in ("recovery_stage", "recovery_reason"):
+            if key in item:
+                rows[-1][key] = str(item.get(key) or "")[:100]
         from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
         failure = sanitize_failure(item.get("current_failure"))
         if failure:

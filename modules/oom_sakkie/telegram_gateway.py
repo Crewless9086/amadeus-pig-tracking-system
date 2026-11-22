@@ -1766,7 +1766,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "plan_delivery_status": plan_delivery_status,
                     "plan_reassessment_status": plan_reassessment_status,
                     "execution_status": "not_enabled"}
-        def supervise():
+        def supervise(*, defer_new_work=False):
             # Only a newly claimed authenticated minute reaches this path.
             # Replay recovery above remains delivery-only.
             short_result = {}
@@ -1783,7 +1783,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 except Exception as exc:
                     short_result = {"success": False, "status": "injector_priority_supervision_unproven",
                         "hardware_commands": 0, "effects_unknown": True, "error_type": type(exc).__name__}
-            defer_optional = (short_result.get("short_auxiliary_handled") is True
+            defer_optional = (defer_new_work or short_result.get("short_auxiliary_handled") is True
                 or short_result.get("success") is False)
             supervisor = active_supervision_cycle
             if supervisor is None:
@@ -1912,7 +1912,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     supervision["effects_unknown"] = True
                 if managed_result.get("success") is not True:
                     supervision["success"] = False
-            if not admission_checked:
+            if not defer_new_work and not admission_checked:
                 admit_irrigation(managed_result)
             if "execution_status" not in supervision and managed_result.get("managed_device_recovery") is True:
                 supervision["execution_status"] = str(managed_result.get("status") or "")
@@ -1932,6 +1932,17 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             except Exception as exc:
                 return {"daily_program_status": "planning_unavailable_safety_preserved",
                     "daily_program_ready": False, "daily_program_error_type": type(exc).__name__}
+
+        def invoke_owned_duties():
+            # Report cadence is unknown. Keep only existing owned shutdown and
+            # recovery, without planning, admissions, new starts or report scans.
+            supervision = supervise(defer_new_work=True)
+            return {**supervision,
+                "status": ("scheduled_rootline_owned_duties_supervised" if supervision.get("success") is True
+                    else "scheduled_rootline_owned_duties_unproven"),
+                "report_work_due": False, "report_effects_unknown": False,
+                "plan_delivery_status": "report_cadence_unavailable_deferred",
+                "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
 
         def invoke_safety_only():
             supervision = supervise()
@@ -2030,7 +2041,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             return schedule_store(action, identity, value)
         with cycle_budget(cycle_deadline):
             scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=bounded_schedule_store,
-                now=scheduler_now, invoke_not_due=invoke_safety_only, recover_delivery=(recover_delivery_after_plan
+                now=scheduler_now, invoke_not_due=invoke_safety_only,
+                invoke_owned_duties=invoke_owned_duties, recover_delivery=(recover_delivery_after_plan
                     if production_persistence else None))
         return scheduled, 200 if scheduled.get("success") else 202
     owner = str((payload or {}).get("owner_user_id") or "").strip()

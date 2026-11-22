@@ -2224,11 +2224,26 @@ def _guarded_managed_transition(action, body):
     if not str(body.get("execution_id") or ""):
         return {"success":False,"created":False,"status":"execution_identity_missing"}
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-                                           read_only=False, read_committed=(body.get("injector_timing_contract") is not None or borehole and (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5" or isinstance(body.get("stop_trigger"), dict)))) as connection:
+                                           read_only=False, read_committed=(action == "claim_auxiliary_off_attempt" or body.get("injector_timing_contract") is not None or borehole and (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5" or isinstance(body.get("stop_trigger"), dict)))) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             rows=_managed_edge_rows(cursor,body["execution_id"])
+            if not borehole and action == family["off"] and _auxiliary_startup_off_fenced(rows):
+                return {"success": False, "created": False, "status": "startup_recovery_off_fenced"}
+            if not borehole and action == family["off"] and body.get("startup_recovery") is not None:
+                binding = body["startup_recovery"]
+                if not isinstance(binding, dict):
+                    return {"success": False, "created": False, "status": "startup_recovery_binding_invalid"}
+                rows, current, failure = _auxiliary_command_recovery_current(cursor, binding, expected=binding)
+                if failure or isinstance(current, dict):
+                    return {"success": False, "created": False, "status": "startup_recovery_preimage_changed"}
+                if _auxiliary_command_off_row(rows, current[0]) is not None:
+                    return {"success": False, "created": False, "status": "startup_recovery_off_already_accepted"}
+                slots = {row["attempt"] for row in rows if row.get("action") == "claim_auxiliary_off_attempt"}
+                outcomes = {row["attempt"] for row in rows if row.get("action") == "record_auxiliary_off_outcome"}
+                if slots - outcomes:
+                    return {"success": False, "created": False, "status": "startup_recovery_off_outcome_pending"}
             from modules.telemetry.rootline_command_acceptance import terminal_matches_rows
             if not borehole and action == family["off"] and any(
                     row.get("action") in {"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped"}
@@ -3335,6 +3350,7 @@ def _assess_borehole_conditions(body):
 
 _AUXILIARY_STARTUP_ABORT = "rootline_auxiliary_startup_abort.v1"
 _AUXILIARY_UNSTARTED_ABORT = "rootline_auxiliary_startup_abort.v2"
+_AUXILIARY_COMMAND_ABORT = "rootline_auxiliary_startup_abort.v3"
 _AUXILIARY_STARTUP_ABORT_ACTION = "record_auxiliary_startup_aborted"
 
 
@@ -3402,7 +3418,110 @@ def _auxiliary_abort_binding(preimage):
         "containment_event_id": held["event_id"], "containment_sha256": _event_digest(held)}
 
 
+def _auxiliary_command_abort_preimage(rows, containment_event_id):
+    """The command-only exception is narrower than physical startup recovery."""
+    from modules.telemetry.rootline_command_acceptance import accepted, moment, RECEIPT
+    preimage = _auxiliary_startup_abort_preimage(rows, containment_event_id)
+    if preimage is None or preimage[1] is not None:
+        return None
+    claim, _, held = preimage
+    if any(row.get("manual_isolation_active") is True or row.get("manual_off_active") is True
+            or row.get("command_on_receipt") is not None or row.get("on_outcome") is not None
+            or ("on_attempts" in row and (type(row["on_attempts"]) is not int or row["on_attempts"] != 0))
+            for row in rows):
+        return None
+    slots = [row for row in rows if row.get("action") == "claim_auxiliary_off_attempt"]
+    outcomes = [row for row in rows if row.get("action") == "record_auxiliary_off_outcome"]
+    attempts = {row["attempt"] for row in slots}
+    if len(attempts) != len(slots) or len({row.get("event_id") for row in rows}) != len(rows):
+        return None
+    seen = set()
+    receipts = []
+    for row in outcomes:
+        attempt = row.get("attempt")
+        outcome = row.get("outcome")
+        material = {key: value for key, value in row.items() if key not in {"action", "event_id"}}
+        if (type(attempt) is not int or attempt not in attempts or attempt in seen
+                or not isinstance(outcome, dict)
+                or row.get("event_id") != _event_id("record_auxiliary_off_outcome", material)):
+            return None
+        seen.add(attempt)
+        if outcome.get("provider") == "home_assistant" or outcome.get("contract_version") == RECEIPT:
+            if outcome.get("accepted_unambiguous") is True:
+                if (not accepted(outcome, claim, "OFF")
+                        or outcome["idempotency_key"] != f"{claim['execution_id']}:OFF:{attempt}"
+                        or not _time(held["shutdown_evidence"]["retrieved_at"]) <= moment(
+                            outcome["command_attempted_at"]) <= moment(outcome["accepted_at"]) <= datetime.now(timezone.utc)):
+                    return None
+                receipts.append(row)
+            elif outcome.get("accepted_unambiguous") is not False:
+                return None
+    if len(receipts) > 1:
+        return None
+    return preimage
+
+
+def _auxiliary_command_off_row(rows, claim):
+    from modules.telemetry.rootline_command_acceptance import accepted
+    return next((row for row in rows if row.get("action") == "record_auxiliary_off_outcome"
+        and accepted(row.get("outcome"), claim, "OFF")), None)
+
+
+def _auxiliary_startup_off_fenced(rows, *, sender_attempt=None):
+    """Also fence an older ordinary OFF worker, without requiring a new payload."""
+    holds = [row for row in rows if row.get("action") == "contain_auxiliary_device"]
+    if len(holds) == 1:
+        preimage = _auxiliary_command_abort_preimage(rows, holds[0].get("event_id"))
+        if preimage is not None and _auxiliary_command_off_row(rows, preimage[0]) is not None:
+            return True
+    outcomes = {row.get("attempt") for row in rows if row.get("action") == "record_auxiliary_off_outcome"}
+    return any(row.get("action") == "claim_auxiliary_off_attempt"
+        and isinstance(row.get("startup_recovery"), dict)
+        and row.get("attempt") != sender_attempt and row.get("attempt") not in outcomes for row in rows)
+
+
+def _verified_auxiliary_command_abort(item, rows):
+    preimage = _auxiliary_command_abort_preimage(rows, item.get("containment_event_id"))
+    if preimage is None:
+        return False
+    claim = preimage[0]
+    binding = _auxiliary_abort_binding(preimage)
+    receipt_row = _auxiliary_command_off_row(rows, claim)
+    slots = [row for row in rows if row.get("action") == "claim_auxiliary_off_attempt"]
+    outcomes = [row for row in rows if row.get("action") == "record_auxiliary_off_outcome"]
+    finished = _time(item.get("aborted_at"))
+    return (receipt_row is not None and len(slots) == len(outcomes)
+        and item.get("action") == _AUXILIARY_STARTUP_ABORT_ACTION
+        and item.get("event_id") == _event_id(_AUXILIARY_STARTUP_ABORT_ACTION, item)
+        and item.get("state") == "Aborted" and item.get("startup_aborted_verified") is True
+        and item.get("startup_unstarted_verified") is True
+        and item.get("provider_on_outcome") == "Not dispatched"
+        and type(item.get("on_attempts")) is int and item["on_attempts"] == 0
+        and type(item.get("dispatch_count")) is int and item["dispatch_count"] == 0
+        and type(item.get("off_attempts")) is int and item["off_attempts"] == len(slots)
+        and "dispatch_event_id" not in item and "dispatch_sha256" not in item
+        and all(item.get(key) == value for key, value in binding.items())
+        and all(item.get(key) == value for key, value in claim.items()
+            if key not in {"action", "event_id", "state", "on_attempts", "off_attempts"})
+        and item.get("acceptance_mode") == claim.get("acceptance_mode")
+        and item.get("command_on_receipt") is None and item.get("on_outcome") is None
+        and item.get("command_off_receipt") == receipt_row["outcome"]
+        and item.get("off_outcome_event_id") == receipt_row["event_id"]
+        and item.get("off_outcome_sha256") == _event_digest(receipt_row)
+        and item.get("command_duty_closed") is True and item.get("shutdown_verified") is False
+        and item.get("shutdown_evidence") is None and item.get("physical_state") == "Unknown"
+        and item.get("physical_delivery") == "Unknown" and item.get("physical_outcome_verified") is False
+        and item.get("objective_satisfied") is False and item.get("control_completed") is False
+        and item.get("command_program_completed") is False and item.get("mixing_credit") is False
+        and item.get("verified_runtime_seconds") == 0 and item.get("command_accounted_mixing_seconds") == 0
+        and item.get("reservation_preserved") is True and item.get("on_authority") is False
+        and finished is not None and finished.tzinfo is not None
+        and _time(receipt_row["outcome"]["accepted_at"]) <= finished <= datetime.now(timezone.utc))
+
+
 def _verified_auxiliary_startup_abort(item, rows):
+    if isinstance(item, dict) and item.get("terminal_contract") == _AUXILIARY_COMMAND_ABORT:
+        return _verified_auxiliary_command_abort(item, rows)
     if (not isinstance(item, dict) or item.get("action") != _AUXILIARY_STARTUP_ABORT_ACTION
             or item.get("terminal_contract") not in (_AUXILIARY_STARTUP_ABORT, _AUXILIARY_UNSTARTED_ABORT)
             or item.get("event_id") != _event_id(_AUXILIARY_STARTUP_ABORT_ACTION, item)
@@ -3491,7 +3610,7 @@ def _recover_auxiliary_startup_containment(body):
     from modules.telemetry.rootline_cycle_budget import cycle_budget, work_deadline, on_deadline
     from modules.telemetry.rootline_ewelink_request_budget import execution_duty
     required = {"execution_id", "auxiliary_device_id", "containment_event_id", "read_final_off"}
-    if (not required <= set(body) or set(body) - required - {"prepare_final_off"}
+    if (not required <= set(body) or set(body) - required - {"prepare_final_off", "recover_command_off"}
             or not callable(body.get("read_final_off"))
             or body.get("auxiliary_device_id") not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
             or not str(body.get("execution_id") or "") or not str(body.get("containment_event_id") or "")):
@@ -3506,6 +3625,10 @@ def _recover_auxiliary_startup_containment(body):
                 _, current, failure = _auxiliary_abort_current(cursor, body)
             if failure:
                 return failure
+            from modules.telemetry.rootline_command_acceptance import enabled
+            if (not isinstance(current, dict) and enabled()
+                    and callable(body.get("recover_command_off"))):
+                return _recover_auxiliary_command_startup(body)
             if isinstance(current, dict) or not callable(prepare):
                 return _recover_auxiliary_startup_locked(body)
             binding = _auxiliary_abort_binding(current)
@@ -3522,6 +3645,104 @@ def _recover_auxiliary_startup_containment(body):
                 return result
     except Exception:
         return _auxiliary_abort_pending(stage, "unavailable")
+
+
+def _auxiliary_recovery_owner_active(cursor):
+    cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events candidate
+        where candidate.event_source=%s
+          and candidate.review_json->'rootline_execution'->>'action'
+              in ('claim_auxiliary_before_on','mark_auxiliary_active')
+          and not exists (select 1 from public.sam_live_stock_conversation_review_events terminal
+            where terminal.event_source=%s
+              and terminal.review_json->'rootline_execution'->>'execution_id'=
+                  candidate.review_json->'rootline_execution'->>'execution_id'
+              and (terminal.review_json->'rootline_execution'->>'action'
+                   in ('record_auxiliary_completed','record_auxiliary_control_pulse_stopped')
+                   or (terminal.review_json->'rootline_execution'->>'action'='contain_auxiliary_device'
+                       and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true')))
+        limit 1""", (EVENT_SOURCE, EVENT_SOURCE))
+    return bool(cursor.fetchone())
+
+
+def _auxiliary_command_recovery_current(cursor, body, *, expected=None):
+    from modules.telemetry.rootline_command_acceptance import enabled
+    rows, current, failure = _auxiliary_abort_current(cursor, body)
+    if failure or isinstance(current, dict):
+        return rows, current, failure
+    if not enabled() or _auxiliary_command_abort_preimage(rows, body["containment_event_id"]) is None:
+        return None, None, _auxiliary_abort_pending("preimage", "zero_on_command_recovery_unproven")
+    if expected is not None and _auxiliary_abort_binding(current) != expected:
+        return None, None, _auxiliary_abort_pending("preimage", "changed_during_command_recovery")
+    if _auxiliary_recovery_owner_active(cursor):
+        return None, None, _auxiliary_abort_pending("preimage", "auxiliary_owner_still_active")
+    return rows, current, None
+
+
+def _recover_auxiliary_command_startup(body):
+    """Existing bounded OFF owns its locks; retirement rereads canonical evidence."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    stage = "command_preimage"
+    commands = 0
+    try:
+        with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                read_only=True) as connection, connection.cursor() as cursor:
+            rows, current, failure = _auxiliary_command_recovery_current(cursor, body)
+        if failure:
+            return failure
+        if isinstance(current, dict):
+            return _recover_auxiliary_startup_locked(body)
+        binding = _auxiliary_abort_binding(current)
+        if _auxiliary_command_off_row(rows, current[0]) is None:
+            stage = "bounded_command_off"
+            recovery = body["recover_command_off"](current[0], binding)
+            if isinstance(recovery, dict):
+                commands = recovery.get("commands", 0)
+        stage = "command_terminal_lock"
+        with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                read_only=False, read_committed=True) as connection, connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            rows, current, failure = _auxiliary_command_recovery_current(cursor, body, expected=binding)
+            if failure:
+                return {**failure, "hardware_commands": commands}
+            if isinstance(current, dict):
+                return {"success": True, "created": False, "status": "auxiliary_startup_aborted_reassess",
+                    "execution": current, "hardware_commands": commands,
+                    "auxiliary_contained": _auxiliary_containment_state(cursor, body["auxiliary_device_id"])["contained"]}
+            claim = current[0]
+            receipt_row = _auxiliary_command_off_row(rows, claim)
+            if receipt_row is None:
+                return {**_auxiliary_abort_pending("command_proof", "canonical_ha_off_acceptance_unproven"),
+                    "hardware_commands": commands}
+            aborted = {**claim, **binding, "state": "Aborted", "terminal_contract": _AUXILIARY_COMMAND_ABORT,
+                "startup_aborted_verified": True, "startup_unstarted_verified": True,
+                "reason": "startup_never_dispatched_off_command_accepted", "provider_on_outcome": "Not dispatched",
+                "on_attempts": 0, "off_attempts": len([r for r in rows if r.get("action") == "claim_auxiliary_off_attempt"]),
+                "command_off_receipt": receipt_row["outcome"], "off_outcome_event_id": receipt_row["event_id"],
+                "off_outcome_sha256": _event_digest(receipt_row), "command_duty_closed": True,
+                "shutdown_verified": False, "shutdown_evidence": None,
+                "physical_state": "Unknown", "physical_delivery": "Unknown", "physical_outcome_verified": False,
+                "aborted_at": datetime.now(timezone.utc).isoformat(), "objective_satisfied": False,
+                "control_completed": False, "command_program_completed": False, "mixing_credit": False,
+                "verified_runtime_seconds": 0, "command_accounted_mixing_seconds": 0,
+                "reservation_preserved": True, "on_authority": False}
+            aborted = _stored_event_body(_AUXILIARY_STARTUP_ABORT_ACTION, aborted,
+                _event_id(_AUXILIARY_STARTUP_ABORT_ACTION, aborted))
+            if not _verified_auxiliary_startup_abort(aborted, rows):
+                return {**_auxiliary_abort_pending("command_proof", "canonical_ha_off_acceptance_unproven"),
+                    "hardware_commands": commands}
+            stage = "command_terminal_insert"
+            result = _insert_managed_event(cursor, _AUXILIARY_STARTUP_ABORT_ACTION, aborted)
+            stored = _managed_edge_rows(cursor, body["execution_id"])
+            if result.get("created") is not True or _auxiliary_startup_terminal(stored) != aborted:
+                raise RuntimeError("auxiliary_command_abort_readback_conflict")
+            contained = _auxiliary_containment_state(cursor, body["auxiliary_device_id"])["contained"]
+            stage = "command_terminal_commit"
+            return {**result, "status": "auxiliary_startup_aborted_reassess", "execution": aborted,
+                "auxiliary_contained": contained, "hardware_commands": commands}
+    except Exception:
+        return {**_auxiliary_abort_pending(stage, "unavailable",
+            unknown=stage in {"bounded_command_off", "command_terminal_commit"}), "hardware_commands": commands}
 
 
 def _recover_auxiliary_startup_locked(body, *, prepared=None, expected=None):
@@ -3546,20 +3767,7 @@ def _recover_auxiliary_startup_locked(body, *, prepared=None, expected=None):
             if expected is not None and binding != expected:
                 return _auxiliary_abort_pending("preimage", "changed_during_preparation")
             # Do not interfere with another owned auxiliary, including the sibling.
-            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events candidate
-                where candidate.event_source=%s
-                  and candidate.review_json->'rootline_execution'->>'action'
-                      in ('claim_auxiliary_before_on','mark_auxiliary_active')
-                  and not exists (select 1 from public.sam_live_stock_conversation_review_events terminal
-                    where terminal.event_source=%s
-                      and terminal.review_json->'rootline_execution'->>'execution_id'=
-                          candidate.review_json->'rootline_execution'->>'execution_id'
-                      and (terminal.review_json->'rootline_execution'->>'action'
-                           in ('record_auxiliary_completed','record_auxiliary_control_pulse_stopped')
-                           or (terminal.review_json->'rootline_execution'->>'action'='contain_auxiliary_device'
-                               and terminal.review_json->'rootline_execution'->>'shutdown_verified'='true')))
-                limit 1""", (EVENT_SOURCE, EVENT_SOURCE))
-            if cursor.fetchone():
+            if _auxiliary_recovery_owner_active(cursor):
                 return _auxiliary_abort_pending("preimage", "auxiliary_owner_still_active")
             claim = current[0]
             # Provider retrieval timestamps use the runtime clock. Bracket that
@@ -3616,6 +3824,8 @@ def _dispatch_auxiliary_off_edge(body):
         return {"accepted_unambiguous": False, "provider_command_attempted": False,
             "status": "auxiliary_off_dispatch_invalid"}
     slot = {"execution_id": body.get("execution_id"), "attempt": body.get("attempt")}
+    if body.get("startup_recovery") is not None:
+        slot["startup_recovery"] = body["startup_recovery"]
     claimed = _guarded_managed_transition("claim_auxiliary_off_attempt", slot)
     if claimed.get("created") is not True:
         return {"accepted_unambiguous": False, "provider_command_attempted": False,
@@ -3625,6 +3835,17 @@ def _dispatch_auxiliary_off_edge(body):
         cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
         cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
         rows = _managed_edge_rows(cursor, slot["execution_id"])
+        if _auxiliary_startup_off_fenced(rows, sender_attempt=slot["attempt"]):
+            outcome = {"accepted_unambiguous": False, "provider_command_attempted": False,
+                "status": "startup_recovery_off_fenced"}
+            _insert_managed_event(cursor, "record_auxiliary_off_outcome", {**slot, "outcome": outcome})
+            return outcome
+        if slot.get("startup_recovery") is not None:
+            binding = slot["startup_recovery"]
+            rows, current, failure = _auxiliary_command_recovery_current(cursor, binding, expected=binding)
+            if failure or isinstance(current, dict) or _auxiliary_command_off_row(rows, current[0]) is not None:
+                return {"accepted_unambiguous": False, "provider_command_attempted": False,
+                    "status": "startup_recovery_sender_retired"}
         from modules.telemetry.rootline_command_acceptance import terminal_matches_rows
         if any(row.get("action") == _AUXILIARY_STARTUP_ABORT_ACTION or (
                 row.get("action") in {"record_auxiliary_completed", "record_auxiliary_control_pulse_stopped"}

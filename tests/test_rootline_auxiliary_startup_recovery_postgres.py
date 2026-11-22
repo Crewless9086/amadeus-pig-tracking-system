@@ -22,8 +22,9 @@ def db(monkeypatch):
     import psycopg
     from psycopg.conninfo import conninfo_to_dict
     target = conninfo_to_dict(TEST_URL)
-    assert target.get('host') == '127.0.0.1' and target.get('dbname') in {
+    assert target.get('host') == '127.0.0.1' and (target.get('dbname') in {
         'auxiliary_containment_20261120', 'rootline_managed', 'rootline_no_send_test'}
+        or (target.get('dbname') == 'rootline_ha_command_mode_test' and target.get('port') == '55485'))
     root = Path(os.getenv('ROOTLINE_TEST_SOURCE_ROOT') or Path(__file__).resolve().parents[1])
     with psycopg.connect(TEST_URL) as connection:
         connection.execute((root/'supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql').read_text())
