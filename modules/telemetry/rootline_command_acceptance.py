@@ -165,6 +165,71 @@ def terminal_matches_rows(value, rows):
         and row.get("on_outcome") == on for row in rows))
 
 
+def active_irrigation_duty(rows, *, now):
+    """Read-only proof of one current, canonically recorded ON command duty.
+
+    A mode flag is not a receipt. Sparse notification rows may omit context,
+    but no supplied conflicting claim, command or deadline may be repaired by
+    borrowing fields from another row. This grants no physical-state proof.
+    """
+    from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract, IRRIGATION_ZONE_IDS
+    rows = [row for row in rows if isinstance(row, dict)]
+    if (not rows or any(not isinstance(row.get("execution_id"), str) for row in rows)
+            or len({row.get("execution_id") for row in rows}) != 1):
+        return None
+    candidates = [row for row in rows if row.get("action") == "mark_active"]
+    if not candidates:
+        return None
+    active = candidates[-1]
+    if (active.get("zone_id") not in IRRIGATION_ZONE_IDS or active.get("stop_mode") != "scheduled"
+            or not active_command(active, now=now)):
+        return None
+    try:
+        binding = commissioned_irrigation_contract(active["zone_id"])
+    except ValueError:
+        return None
+    if (active.get("device_id") != binding["device_id"]
+            or active.get("channel") != binding["channel"]):
+        return None
+    primary = moment(active.get("primary_stop_deadline"))
+    claimed = moment(active.get("claimed_at"))
+    on = active.get("command_on_receipt")
+    accepted_at = moment((on or {}).get("accepted_at"))
+    duration = active.get("planned_runtime_seconds")
+    if (primary is None or claimed is None or accepted_at is None
+            or not claimed <= accepted_at <= now < primary
+            or type(duration) is not int or duration <= 0
+            or primary != claimed + timedelta(seconds=duration)):
+        return None
+    immutable = ("zone_id", "device_id", "channel", "claimed_at", "primary_stop_deadline",
+        "acceptance_mode", "job_id", "job_sha256", "segment_identity", "stop_mode",
+        "planned_runtime_seconds")
+    if not any(row.get("action") == "claim_before_on"
+            and all(row.get(key) == active.get(key) for key in immutable) for row in rows):
+        return None
+    if not any(row.get("action") == "record_on_outcome" and row.get("on_outcome") == on
+            for row in rows):
+        return None
+    for row in rows:
+        if any(row.get(key) is not None and row[key] != active.get(key) for key in immutable):
+            return None
+        if row.get("command_on_receipt") is not None and row["command_on_receipt"] != on:
+            return None
+        if row.get("action") == "record_on_outcome" and row.get("on_outcome") != on:
+            return None
+        native = row.get("native_fail_stop_deadline")
+        if native is not None and (moment(native) is None or moment(native) < primary):
+            return None
+        if (row.get("action") in {"mark_stopping", "contain_zone", "record_completed",
+                "record_claim_recovery", "record_ambiguous_shutdown", "claim_off_attempt", "record_off_outcome"}
+                or str(row.get("state") or "").casefold() in {
+                    "failed", "ambiguous", "contained", "stopping", "completed", "claimed_recovery_required"}
+                or row.get("command_off_receipt") is not None):
+            return None
+    natives = {row["native_fail_stop_deadline"] for row in rows if row.get("native_fail_stop_deadline") is not None}
+    return active if len(natives) <= 1 else None
+
+
 def irrigation_context(active, auxiliary, *, fertilizer_needed, batch_generation, now):
     """Project canonical accepted-command timing without relay/flow assertions."""
     if not active_command(active, now=now) or active.get("zone_id") not in {"B12345", "C12345"}:

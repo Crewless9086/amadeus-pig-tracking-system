@@ -192,6 +192,12 @@ def project_execution_shutdown_exceptions(rows, *, evidence_cutoff=None, canonic
         accepted_at = moment(terminal["command_off_receipt"]["accepted_at"])
         if accepted_at <= cutoff:
             return []
+    # Command-owned duties have an original primary OFF deadline and no native
+    # fail-stop timer. Only exact canonical claim/ON proof can establish this
+    # pre-deadline exception; legacy and unresolved histories remain below.
+    from modules.telemetry.rootline_command_acceptance import active_irrigation_duty
+    if cutoff is not None and active_irrigation_duty(rows, now=cutoff) is not None:
+        return []
     cutoff_invalid = evidence_cutoff is not None and cutoff is None
     primary, primary_invalid = _consistent_time(rows, "primary_stop_deadline")
     native, native_invalid = _consistent_time(rows, "native_fail_stop_deadline")
