@@ -442,8 +442,20 @@ def _adjust_live_slots(plan, evidence, now):
         return
     end = datetime.fromisoformat(plan["daily_program"]["end_at"])
     active = _dict(evidence.get("active_irrigation_context"))
-    active_zones = active.get("active_zone_ids", [])
-    deadline = _managed_time(active.get("irrigation_stop_deadline"))
+    occupancy = _dict(evidence.get("irrigation_schedule_context"))
+    if occupancy.get("status") == "Unknown":
+        for task in plan["candidate_tasks"]:
+            if (str(task.get("task_id") or "").startswith("irrigation_")
+                    and task.get("zone_decision") in {"Run now", "Run later"}):
+                task.update(zone_decision="Hold", recommendation="Hold",
+                    live_adjustment_reason="active_command_duty_unresolved")
+        return
+    active_zones = ([occupancy["zone_id"]] if occupancy.get("status") == "Active"
+        else active.get("active_zone_ids", []))
+    deadline = _managed_time(occupancy.get("primary_stop_deadline")
+        or active.get("irrigation_stop_deadline"))
+    if deadline is not None and occupancy.get("status") == "Active":
+        deadline = _as_za(deadline)
     cursor = max(now, deadline) if deadline else now
     for task in plan["candidate_tasks"]:
         if (str(task.get("task_id") or "").startswith("irrigation_")
@@ -454,6 +466,11 @@ def _adjust_live_slots(plan, evidence, now):
     for task in sorted((t for t in plan["candidate_tasks"] if t.get("scheduled_order")),
             key=lambda t: t["scheduled_order"]):
         if task["task_id"].removeprefix("irrigation_") in active_zones:
+            if occupancy.get("status") == "Active":
+                start = occupancy["accepted_start_at"]
+                finish = occupancy["primary_stop_deadline"]
+                task.update(planned_start_at=start, planned_end_at=finish,
+                    due_window={"start": start, "end": finish}, preferred_window=start)
             continue
         if task.get("zone_decision") not in {"Run now", "Run later"}:
             continue
@@ -998,6 +1015,7 @@ def _read_managed_live_evidence(operating_date, database_url, now, *, pending_de
         "fertilizer_executions": managed.get("fertilizer_executions") or [],
         "fertilizer_history_complete_through": managed.get("fertilizer_history_complete_through"),
         "active_irrigation_context": managed.get("active_irrigation_context"),
+        "irrigation_schedule_context": managed.get("irrigation_schedule_context"),
         "borehole_interlocks": managed.get("borehole_interlocks")}
     return evidence, selected, now
 
@@ -1201,6 +1219,7 @@ def read_current_water_energy_evidence(
         "fertilizer_history_complete_through": managed.get(
             "fertilizer_history_complete_through"),
         "active_irrigation_context": managed.get("active_irrigation_context"),
+        "irrigation_schedule_context": managed.get("irrigation_schedule_context"),
         "borehole_interlocks": managed.get("borehole_interlocks"),
     }
     if forecast_mode == "live_only":
@@ -1565,7 +1584,7 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
     """Compose managed-device facts from existing append-only ROOTLINE rails."""
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
-        return {"status": UNAVAILABLE}
+        return {"status": UNAVAILABLE, "irrigation_schedule_context": {"status": "Unknown"}}
     try:
         from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
         with connect_bounded_read(database_url=database_url) as connection:
@@ -1585,7 +1604,8 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
                                'record_claim_recovery', 'contain_zone',
                                'record_fertilizer_sequence_completed',
                                'record_execution_not_dispatched','record_auxiliary_on_outcome','record_auxiliary_off_outcome',
-                               'record_on_outcome'))
+                               'record_on_outcome', 'claim_before_on', 'claim_irrigation_dispatch',
+                               'mark_stopping', 'claim_off_attempt', 'record_off_outcome'))
                     """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
                     " order by created_at,review_event_id",
                     (evidence_cutoff,) if evidence_cutoff is not None else None)
@@ -1600,7 +1620,8 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
                     (evidence_cutoff,) if evidence_cutoff is not None else None)
                 outcomes = [_json_object(row[0]) for row in cursor.fetchall()]
     except Exception as exc:
-        return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
+        return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__,
+            "irrigation_schedule_context": {"status": "Unknown"}}
     executions = [row for row in executions if isinstance(row, dict)]
     from modules.telemetry.rootline_irrigation_execution_store import _verified_not_dispatched
     not_dispatched = {row.get("execution_id") for row in executions
@@ -1658,7 +1679,59 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
         "fertilizer_executions": auxiliary,
         "fertilizer_history_complete_through": history_complete_through,
         "active_irrigation_context": context,
+        "irrigation_schedule_context": _irrigation_schedule_context(executions, now=_as_za(now)),
         "borehole_interlocks": _project_borehole_interlocks(interlock_observations, now)}
+
+
+def _irrigation_schedule_context(events, *, now):
+    """Project scheduling occupancy separately from B/C fertilizer eligibility."""
+    from modules.telemetry.rootline_command_acceptance import (
+        MODE, active_irrigation_duty, duty_closed, terminal_matches_rows, moment)
+    from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+    groups = {}
+    for row in events:
+        if not isinstance(row, dict) or not isinstance(row.get("execution_id"), str):
+            return {"status": "Unknown"}
+        if row.get("execution_id"):
+            groups.setdefault(row["execution_id"], []).append(row)
+    pending = []
+    for rows in groups.values():
+        if not any(row.get("acceptance_mode") == MODE and row.get("zone_id") in IRRIGATION_ZONE_IDS
+                and row.get("action") in {"claim_before_on", "mark_active"} for row in rows):
+            continue
+        closed = [row for row in rows if row.get("action") == "record_completed"
+            and duty_closed(row) and terminal_matches_rows(row, rows)
+            and moment(row["command_off_receipt"]["accepted_at"]) <= now]
+        if closed:
+            terminal = closed[-1]
+            off_at = moment(terminal["command_off_receipt"]["accepted_at"])
+            on_at = moment((terminal.get("command_on_receipt") or {}).get("accepted_at"))
+            immutable = ("zone_id", "device_id", "channel", "claimed_at", "primary_stop_deadline",
+                "acceptance_mode", "job_id", "job_sha256", "segment_identity", "stop_mode",
+                "planned_runtime_seconds")
+            conflicting = any(any(row.get(key) is not None and row[key] != terminal.get(key)
+                for key in immutable) for row in rows)
+            terminal_order = max(i for i, row in enumerate(rows) if row == terminal)
+            later_unresolved = any(row.get("action") in {"claim_before_on", "mark_active",
+                "mark_stopping", "contain_zone", "record_ambiguous_shutdown", "record_claim_recovery",
+                "claim_off_attempt", "record_off_outcome"} for row in rows[terminal_order+1:])
+            malformed_terminal = any(row.get("action") == "record_completed" and row not in closed
+                for row in rows)
+            if (not conflicting and not later_unresolved and not malformed_terminal
+                    and (on_at is None or on_at <= off_at)):
+                continue
+        pending.append(rows)
+    if not pending:
+        return None
+    if len(pending) != 1:
+        return {"status": "Unknown"}
+    active = active_irrigation_duty(pending[0], now=now)
+    if active is None:
+        return {"status": "Unknown"}
+    return {"status": "Active", "zone_id": active["zone_id"],
+        "execution_id": active["execution_id"],
+        "accepted_start_at": _as_za(moment(active["command_on_receipt"]["accepted_at"])).isoformat(),
+        "primary_stop_deadline": _as_za(moment(active["primary_stop_deadline"])).isoformat()}
 
 
 def _latest_open_irrigation_execution(events):
