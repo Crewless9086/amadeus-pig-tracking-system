@@ -34,12 +34,30 @@ def _load(action, identity):
                     where event_source=%s and review_json->'automatic_reassessment'->>'identity'=%s
                     order by created_at desc, review_event_id desc limit 1""", (EVENT_SOURCE, identity))
             else:
-                cursor.execute("""select review_json->'automatic_reassessment'
+                # Find the newest eligible timestamp with the existing source/time
+                # index, then resolve every eligible ID tie in the same snapshot.
+                # OFFSET 0 keeps report filters outside the ordered source scan;
+                # it skips no rows and imposes no cutoff on eligible history.
+                cursor.execute("""with latest_time as materialized (
+                    select created_at
+                    from (
+                        select created_at, review_json
+                        from public.sam_live_stock_conversation_review_events
+                        where event_source=%s
+                        order by created_at desc offset 0
+                    ) as source_history
+                    where review_json->'automatic_reassessment'->>'specialist'=%s
+                      and review_json->'automatic_reassessment'->>'status' in ('completed','contained')
+                      and coalesce(review_json->'automatic_reassessment'->>'report_work_due','true') <> 'false'
+                    order by created_at desc limit 1
+                    )
+                    select review_json->'automatic_reassessment'
                     from public.sam_live_stock_conversation_review_events
                     where event_source=%s
                       and review_json->'automatic_reassessment'->>'specialist'=%s
                       and review_json->'automatic_reassessment'->>'status' in ('completed','contained')
                       and coalesce(review_json->'automatic_reassessment'->>'report_work_due','true') <> 'false'
-                    order by created_at desc, review_event_id desc limit 1""", (EVENT_SOURCE, identity))
+                      and created_at = (select created_at from latest_time)
+                    order by review_event_id desc limit 1""", (EVENT_SOURCE, identity, EVENT_SOURCE, identity))
             row = cursor.fetchone()
             return row[0] if row else None
