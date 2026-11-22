@@ -50,8 +50,16 @@ class Store:
                 "claim_off_attempt", "record_off_outcome", "claim_auxiliary_off_attempt", "record_auxiliary_off_outcome"}]
         if action.startswith("load_"): return None
         if action == "record_completed" and self.fail_terminal: raise RuntimeError("offline terminal failure")
+        if action == "mark_auxiliary_active" and ca.injector_target_claim(body):
+            body = ca.build_injector_target_active(body, body["command_on_receipt"], self.active,
+                now=ca.moment(body["command_on_receipt"]["accepted_at"]))
+            self.auxiliary[body["auxiliary_device_id"]] = deepcopy(body)
+            self.rows.append({**deepcopy(body), "action": action})
+            return {"success": True, "created": True, "execution": body}
         if action in {"dispatch_auxiliary_on_edge", "dispatch_irrigation_on_edge"}:
-            result=body["dispatch"](); self.rows.append({**{k:v for k,v in body.items() if k != "dispatch"}, "action":action}); return result
+            self.rows.append({**{k:v for k,v in body.items() if k != "dispatch"},
+                "action": "claim_auxiliary_dispatch" if action == "dispatch_auxiliary_on_edge" else action})
+            return body["dispatch"]()
         if action == "dispatch_auxiliary_off_edge":
             result=body["dispatch"]()
             self.rows.append({"execution_id":body["execution_id"],"attempt":body["attempt"],"action":"record_auxiliary_off_outcome","outcome":result})

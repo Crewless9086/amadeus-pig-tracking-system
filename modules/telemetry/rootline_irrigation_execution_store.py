@@ -714,6 +714,9 @@ def _load(action, payload):
                         "record_ambiguous_shutdown","record_claim_recovery"})
                 relevant_actions = terminal_actions | {claim_action, active_action,
                     "record_execution_not_dispatched", "record_on_outcome", "record_auxiliary_on_outcome"}
+                if auxiliary:
+                    relevant_actions.update({"claim_auxiliary_dispatch", "claim_auxiliary_off_attempt",
+                        "record_auxiliary_off_outcome", "record_auxiliary_startup_aborted"})
                 if not auxiliary and not borehole:
                     relevant_actions.add("mark_stopping")
                 # Keep malformed and legacy JSON-string envelopes for the existing
@@ -726,7 +729,7 @@ def _load(action, payload):
                            or jsonb_typeof(review_json->'rootline_execution'->'action')
                                is distinct from 'string'
                            or review_json->'rootline_execution'->>'action'=any(%s))
-                    order by created_at desc""", (EVENT_SOURCE, sorted(relevant_actions)))
+                    order by created_at desc,review_event_id desc""", (EVENT_SOURCE, sorted(relevant_actions)))
                 loaded = [row[0] if isinstance(row[0], dict) else json.loads(row[0])
                     for row in cursor.fetchall()]
                 terminal = {row.get("execution_id") for row in loaded
@@ -736,7 +739,9 @@ def _load(action, payload):
                     identity = str(item.get("execution_id") or "")
                     if item.get("action") in terminal_actions:
                         if _terminal_closes_active(item, auxiliary=auxiliary, borehole=borehole):
-                            terminal.add(identity)
+                            from modules.telemetry.rootline_command_acceptance import terminal_matches_rows
+                            if not item.get("injector_timing_contract") or terminal_matches_rows(item, list(reversed(loaded))):
+                                terminal.add(identity)
                     elif _recoverable_stopping_candidate(item, auxiliary=auxiliary,
                                                           borehole=borehole):
                         candidates.setdefault(identity,item)
@@ -751,6 +756,17 @@ def _load(action, payload):
                             item = {**item, "state": "claimed_recovery_required"}
                         if _no_send_preimage(loaded, identity) is not None:
                             item = {**item, "on_not_dispatched": True}
+                        if auxiliary and item.get("injector_timing_contract") is not None and item.get("state") == "Active":
+                            from modules.telemetry.rootline_command_acceptance import injector_target_matches_rows
+                            interrupted = any(row.get("execution_id") == identity and (
+                                row.get("action") in {"claim_auxiliary_off_attempt", "record_auxiliary_off_outcome", "contain_auxiliary_device"}
+                                or row.get("manual_isolation_active") is True or row.get("manual_off_active") is True)
+                                for row in loaded)
+                            target_proven = injector_target_matches_rows(item, list(reversed(loaded)))
+                            if interrupted or not target_proven:
+                                item = {**item, "state": "claimed_recovery_required", "target_activation_unproven": not target_proven}
+                                if not target_proven:
+                                    item.pop("injector_target", None)
                         active.append(item)
                 if action == "load_active_auxiliaries":
                     return active
@@ -2208,7 +2224,7 @@ def _guarded_managed_transition(action, body):
     if not str(body.get("execution_id") or ""):
         return {"success":False,"created":False,"status":"execution_identity_missing"}
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-                                           read_only=False, read_committed=borehole and (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5" or isinstance(body.get("stop_trigger"), dict))) as connection:
+                                           read_only=False, read_committed=(body.get("injector_timing_contract") is not None or borehole and (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5" or isinstance(body.get("stop_trigger"), dict)))) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
@@ -2266,7 +2282,49 @@ def _guarded_managed_transition(action, body):
                 if (not any(row.get("action")==family["claim"] or exact_active(row) for row in rows)
                         or type(body.get("attempt")) is not int or not 1<=body["attempt"]<=3):
                     return {"success":False,"created":False,"status":"managed_off_claim_invalid"}
+            if action == "mark_auxiliary_active" and body.get("injector_timing_contract") is not None:
+                return _activate_injector_target(cursor, body, rows, family)
             return _insert_managed_event(cursor,action,body)
+
+
+def _activate_injector_target(cursor, body, rows, family):
+    """One derived target on the existing Active event, under both OFF locks."""
+    from modules.telemetry.rootline_command_acceptance import (
+        injector_target_claim, injector_target_matches_rows, build_injector_target_active,
+        active_irrigation_duty)
+    if (not injector_target_claim(body) or _managed_edge_retired(rows, family)
+            or not _managed_claim_matches(rows, body, family)
+            or any(r.get("manual_isolation_active") is True or r.get("manual_off_active") is True for r in rows)):
+        return {"success": False, "created": False, "status": "injector_target_ownership_retired"}
+    previous = [r for r in rows if r.get("action") == "mark_auxiliary_active"]
+    if previous:
+        if (len(previous) == 1 and injector_target_matches_rows(previous[0], rows)
+                and previous[0].get("command_on_receipt") == body.get("command_on_receipt")
+                and (body.get("injector_target") is None or body["injector_target"] == previous[0]["injector_target"])):
+            return {"success": True, "created": False, "execution": previous[0]}
+        return {"success": False, "created": False, "status": "injector_target_activation_conflict"}
+    if body.get("injector_target") is not None:
+        return {"success": False, "created": False, "status": "injector_target_must_be_canonically_derived"}
+    claims = [r for r in rows if r.get("action") == "claim_auxiliary_before_on"]
+    cursor.execute("select clock_timestamp()")
+    now = cursor.fetchone()[0]
+    parent_rows = _managed_edge_rows(cursor, body.get("zone_execution_id"))
+    parent = active_irrigation_duty(parent_rows, now=now)
+    if any(r.get("manual_isolation_active") is True or r.get("manual_off_active") is True for r in parent_rows):
+        parent = None
+    try:
+        active = build_injector_target_active(claims[0], body["command_on_receipt"], parent or {}, now=now)
+        # Query/lock latency cannot extend the provisional activation window.
+        cursor.execute("select clock_timestamp()")
+        checked = cursor.fetchone()[0]
+        if not now <= checked < _time(active["primary_stop_deadline"]):
+            raise ValueError("injector_target_activation_expired")
+        if not injector_target_matches_rows(active, rows + [{**active, "action": "mark_auxiliary_active"}]):
+            raise ValueError("injector_target_canonical_chain_unproven")
+    except (ValueError, TypeError, KeyError, IndexError):
+        return {"success": False, "created": False, "status": "injector_target_activation_unproven"}
+    saved = _insert_managed_event(cursor, "mark_auxiliary_active", active)
+    return {**saved, "execution": _stored_event_body("mark_auxiliary_active", active, saved["event_id"])}
 
 
 def _dispatch_borehole_off_edge(body):

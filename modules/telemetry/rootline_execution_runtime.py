@@ -40,6 +40,19 @@ _NATIVE_BC_METHODS = {name: getattr(RootlineIFTTTTransport, name) for name in (
 
 
 @timed_control_call
+def supervise_rootline_owned_injector(*, environ=None, store=rootline_irrigation_execution_store,
+        transport=None, clock=None, deadline_wait=None):
+    """Use the existing transport and execution rail for the earliest short duty."""
+    source = os.environ if environ is None else environ
+    if transport is None:
+        transport = RootlineIFTTTTransport(token_store=PostgresOAuthTokenStore(
+            str(source.get("DATABASE_URL") or "").strip()), environ=source)
+    from modules.telemetry.rootline_managed_devices_runtime import supervise_owned_injector
+    return supervise_owned_injector(store=store, transport=transport, clock=clock,
+        deadline_wait=deadline_wait)
+
+
+@timed_control_call
 def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
@@ -276,6 +289,10 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock,
         borehole_conditions_reader=current_borehole_conditions,
         after_safety=after_safety, refresh_after_safety=refresh_after_safety)
+    if result.get("short_auxiliary_duty_owned") is True:
+        # Leave the next minute free to inherit the pulse before optional grid
+        # reads/reporting. Existing owned OFF supervision has already run.
+        return result
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
         return result
     from modules.telemetry.rootline_device_spine import load_device_record

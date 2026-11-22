@@ -1,5 +1,19 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed injector timing target — 22 November 2026
+
+The owner selected a120-second injector target and explicitly directed reporting
+of any command-delivery delay, with continuation through deployment and live
+verification. For new accepted-ON pulses, measure the target from accepted ON
+and request OFF at that target through the existing durable supervision path.
+Report actual command-attempt and acceptance timing and any delay truthfully;
+do not claim an exact physical duration or measured dose from command receipts.
+This supersedes a strict120-second ceiling where it conflicts with this target.
+Native countdown remains optional. Existing and uncertain shutdown duties must
+not be extended. Preserve immediate shutdown for parent loss, manual isolation
+or other existing stop conditions, and retain bounded uncertain-command recovery
+without repeating an uncertain ON. Early interruption is not a completed pulse.
+
 ## Owner-directed command-based Home Assistant operation — 22 November 2026
 
 The owner explicitly approved continuing through live activation and directed
