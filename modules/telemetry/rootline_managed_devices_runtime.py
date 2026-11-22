@@ -14,6 +14,7 @@ from time import sleep, monotonic
 from modules.telemetry.rootline_cycle_budget import (
     mandatory_safety, remaining_seconds, on_deadline, RootlineCycleDeadlineExceeded,
 )
+from modules.telemetry.rootline_command_acceptance import command_stop_deadline
 from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
 from modules.telemetry.rootline_borehole_commissioning import advance_borehole_execution
 from modules.telemetry.rootline_device_spine import load_device_record
@@ -59,12 +60,66 @@ def run_rootline_managed_device_cycle(*, deadline_wait=None, **kwargs):
         return next((row for child in value.get("outcomes", [])
             if isinstance(child, dict) for row in [started(child)] if row), None)
     active = started(result)
+    from modules.telemetry.rootline_command_acceptance import command_execution, active_command
+    if active and command_execution(active):
+        # The existing minute scheduler inherits this canonical duty. Spending
+        # the remainder of a planning cycle here systematically truncates a
+        # 120-second pulse admitted after its first twenty seconds.
+        try:
+            owned = kwargs.get("store", rootline_irrigation_execution_store)(
+                "load_active_auxiliary", "FERTILIZER-INJECTION-CH1")
+            if (isinstance(owned, dict) and active_command(owned, now=_aware(clock()))
+                    and all(owned.get(key) == active.get(key) for key in (
+                        "execution_id", "device_id", "channel", "primary_stop_deadline", "command_on_receipt", "injector_target"))):
+                return {**result, "short_auxiliary_duty_owned": True,
+                    "short_auxiliary_stop_deadline": command_stop_deadline(owned).isoformat(),
+                    "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
+        except Exception:
+            pass
+        # Failed canonical readback never hands an unproved duty to a future
+        # invocation. Existing exact-identity recovery retains bounded OFF.
     continuation = (_finish_injector_deadline(
         store=kwargs.get("store", rootline_irrigation_execution_store),
         transport=kwargs["transport"], clock=clock, wait=deadline_wait or sleep,
         active=active, horizon_seconds=120, require_stop=True) if active else None)
     return (_combined([result, continuation], "no_active_managed_device")
         if continuation is not None else result)
+
+
+def supervise_owned_injector(*, store, transport, clock=None, deadline_wait=None):
+    """First mandatory work on an authenticated minute, before slow planning.
+
+    There is no new timer or worker: the existing canonical Active row is the
+    handoff. Inventory all earlier OFF obligations before waiting on its deadline.
+    """
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    with mandatory_safety():
+        try:
+            auxiliaries = store("load_active_auxiliaries", None)
+            if not isinstance(auxiliaries, list) or any(not isinstance(row, dict) for row in auxiliaries):
+                raise RootlineExecutionStoreUnavailable("active_auxiliary_inventory_unproven")
+            owned = [row for row in auxiliaries if row.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"]
+            if not owned:
+                return _safe("no_owned_short_injector", blocks_bc=False)
+            if len(owned) != 1:
+                raise RootlineExecutionStoreUnavailable("injector_ownership_conflict")
+            active = owned[0]
+            borehole = store("load_active_borehole", None)
+            parent = store("load_active", None)
+            if any(row is not None and not isinstance(row, dict) for row in (borehole, parent)):
+                raise RootlineExecutionStoreUnavailable("deadline_inventory_unproven")
+            result = _finish_injector_deadline(store=store, transport=transport,
+                clock=clock, wait=deadline_wait or sleep, horizon_seconds=120,
+                verify_parent=True, active=active,
+                inventory={"aux": auxiliaries, "borehole": borehole, "parent": parent, "proven": True})
+            if result is None:
+                result = advance_auxiliary_execution(eligibility={}, store=store, transport=transport,
+                    now=_aware(clock()), clock=clock, auxiliary_device_id="FERTILIZER-INJECTION-CH1",
+                    expected_execution_id=active.get("execution_id"))
+            return {**result, "short_auxiliary_handled": True}
+        except Exception as exc:
+            return {**_safe("injector_priority_supervision_unproven", blocks_bc=True),
+                "success": False, "effects_unknown": True, "error_type": type(exc).__name__}
 
 
 def _admit_injector_wait(delay):
@@ -96,7 +151,9 @@ def _finish_injector_deadline(*, store, transport, clock, wait, horizon_seconds=
         if active.get("state") != "Active":
             return None  # Existing claim/restart recovery owns these states.
         try:
-            deadline = _aware(datetime.fromisoformat(str(active.get("primary_stop_deadline") or "").replace("Z", "+00:00")))
+            deadline = command_stop_deadline(active)
+            if deadline is None:
+                return None
         except (ValueError, TypeError):
             return None  # Existing ambiguous-deadline recovery must still run.
         now = _aware(clock())
@@ -117,7 +174,7 @@ def _finish_injector_deadline(*, store, transport, clock, wait, horizon_seconds=
                 # that must already stop early to preserve that duty.
                 _admit_injector_wait(delay)
                 others = inventory["aux"] if inventory is not None else store("load_active_auxiliaries", None)
-                parent = store("load_active", None)
+                parent = inventory["parent"] if inventory is not None and "parent" in inventory else store("load_active", None)
                 borehole = inventory["borehole"] if inventory is not None else store("load_active_borehole", None)
                 if inventory is not None and inventory.get("proven") is not True:
                     raise RootlineExecutionStoreUnavailable("deadline_inventory_unproven")
@@ -634,7 +691,9 @@ def _before_deadline(active, now):
     if continuous_borehole(active):
         return True
     try:
-        deadline = datetime.fromisoformat(str(active.get("primary_stop_deadline") or "").replace("Z", "+00:00"))
+        deadline = command_stop_deadline(active)
+        if deadline is None:
+            return False
         return now < _aware(deadline)
     except (ValueError, TypeError):
         return False

@@ -314,6 +314,10 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         return _aux_result("auxiliary_edge_revalidation_failed")
     execution.update(claimed_at=now.isoformat(), primary_stop_deadline=(
         now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat())
+    from modules.telemetry.rootline_command_acceptance import INJECTOR_TARGET_V1, injector_target_claim
+    proposed = {**execution, "injector_timing_contract": INJECTOR_TARGET_V1}
+    if injector_target_claim(proposed):
+        execution = proposed
     if not on_start_window_available():
         return _aux_result("auxiliary_start_budget_unavailable")
     if not prepare_execution_capacity(transport, execution):
@@ -352,16 +356,34 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
             channel=execution["channel"], state="ON",
             idempotency_key=execution["execution_id"]+":ON")
     accepted=store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
-    store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
-    from modules.telemetry.rootline_command_acceptance import command_execution, accepted as command_accepted
+    from modules.telemetry.rootline_command_acceptance import (
+        command_execution, accepted as command_accepted, injector_target_binding)
+    target_claim = injector_target_claim(execution)
+    try:
+        recorded = store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
+    except Exception:
+        if not target_claim:
+            raise
+        recorded = None
     if command_execution(execution):
+        active = execution
         if command_accepted(accepted, execution, "ON"):
             active = {**execution, "state": "Active", "on_attempts": 1,
                 "command_on_receipt": accepted, "physical_state": "Unverified"}
-            marked = store("mark_auxiliary_active", active)
+            try:
+                marked = (store("mark_auxiliary_active", active) if not target_claim or
+                    isinstance(recorded, dict) and recorded.get("success") is True else None)
+            except Exception:
+                if not target_claim:
+                    raise
+                marked = None
             if isinstance(marked, dict) and marked.get("success") is True:
-                return _aux_result("auxiliary_on_command_accepted", commands=1, state="Started", execution=active)
-        return _finish_command_auxiliary(execution, store, transport, now=_aware(clock()),
+                canonical = marked.get("execution") if target_claim else active
+                if (isinstance(canonical, dict) and (not target_claim or
+                        injector_target_binding(canonical) is not None
+                        and _aware(clock()) < _timestamp(execution["primary_stop_deadline"]))):
+                    return _aux_result("auxiliary_on_command_accepted", commands=1, state="Started", execution=canonical)
+        return _finish_command_auxiliary(active, store, transport, now=_aware(clock()),
             reason="on_command_failed_or_unknown")
     if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
         return _retire_unsent_execution(execution, store, transport)
@@ -446,14 +468,22 @@ def emergency_off_auxiliary_execution(*, store, transport,
 
 
 def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=None,stop_for_deadline=None):
-    from modules.telemetry.rootline_command_acceptance import command_execution
+    from modules.telemetry.rootline_command_acceptance import command_execution, command_stop_deadline
     if command_execution(active):
-        deadline = _timestamp(active.get("primary_stop_deadline"))
-        if active.get("state") == "Active" and deadline is not None and now < deadline and not stop_for_energy and not stop_for_deadline:
-            if active.get("device_type") != "fertilizer_injection_valve" or _injection_parent_still_on(active, store, transport, now, clock=clock):
+        deadline = command_stop_deadline(active)
+        reason = stop_for_deadline or ("energy_stop" if stop_for_energy else None)
+        if active.get("manual_isolation_active") is True or active.get("manual_off_active") is True:
+            reason = "manual_isolation"
+        if active.get("state") == "Active" and reason is None:
+            if (active.get("device_type") == "fertilizer_injection_valve"
+                    and not _injection_parent_still_on(active, store, transport, now,
+                        clock=clock, allow_deadline_stop=True)):
+                reason = "irrigation_parent_lost"
+            elif deadline is not None and now < deadline:
                 return _aux_result("auxiliary_command_duty_active", execution=active)
         return _finish_command_auxiliary(active, store, transport, now=now,
-            reason=str(stop_for_deadline or ("energy_stop" if stop_for_energy else "primary_deadline_reached")))
+            reason=str(reason or ("primary_deadline_reached" if active.get("state") == "Active"
+                and deadline is not None and now >= deadline else "interrupted_start_or_invalid_deadline")))
     if active.get("on_not_dispatched") is True:
         return _retire_unsent_execution(active, store, transport)
     deadline=_timestamp(active.get("primary_stop_deadline"))
@@ -582,10 +612,11 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
 
 
 
-def _injection_parent_still_on(active, store, transport, now, *, clock=None, routine_read=False):
+def _injection_parent_still_on(active, store, transport, now, *, clock=None, routine_read=False, allow_deadline_stop=False):
     try:
         parent = store("load_active", None)
         if (not isinstance(parent, dict) or parent.get("state") != "Active"
+                or parent.get("manual_isolation_active") is True or parent.get("manual_off_active") is True
                 or parent.get("execution_id") != active.get("zone_execution_id")
                 or any(parent.get(key) != active.get(key)
                        for key in ("job_id", "job_sha256", "segment_identity", "zone_id"))):
@@ -598,13 +629,16 @@ def _injection_parent_still_on(active, store, transport, now, *, clock=None, rou
                 or type(parent.get("channel")) is not int
                 or parent["channel"] != binding["channel"]):
             return False
-        own_deadline = _timestamp(active.get("primary_stop_deadline"))
+        from modules.telemetry.rootline_command_acceptance import command_stop_deadline
+        own_deadline = command_stop_deadline(active)
         claimed = _timestamp(active.get("claimed_at"))
         read_deadline = min(deadline, own_deadline) if own_deadline else deadline
         if active.get("state") == "claimed" and claimed:
             read_deadline = min(read_deadline, claimed+timedelta(seconds=ON_START_WINDOW_SECONDS))
         from modules.telemetry.rootline_command_acceptance import command_execution, active_command
         if command_execution(active):
+            if allow_deadline_stop:
+                read_deadline = deadline
             return read_deadline > (_aware(clock()) if clock else now) and active_command(parent, now=now)
         bounded_transport = bind_execution_transport(transport, active, read_deadline=read_deadline)
         output = bounded_transport.read_output_state(device_id=binding["device_id"],
@@ -1164,9 +1198,16 @@ def _finish_command_auxiliary(active, store, transport, *, now, reason):
         return _aux_result("auxiliary_off_command_unknown", commands=recovery["commands"],
             state="Intervention", execution=active, effects_unknown=True)
     completed = terminal(active, off, now=now, reason=reason)
-    deadline = _timestamp(active.get("primary_stop_deadline"))
+    from modules.telemetry.rootline_command_acceptance import injector_target_binding, injector_target_timing
+    target = injector_target_binding(active)
+    deadline = _timestamp(target["target_off_at"] if target else active.get("primary_stop_deadline"))
     complete = (accepted(active.get("command_on_receipt"), active, "ON")
-        and deadline is not None and _timestamp(off.get("accepted_at")) >= deadline and reason == "primary_deadline_reached")
+        and deadline is not None and reason == "primary_deadline_reached"
+        and (target is not None if active.get("injector_timing_contract") else True)
+        and _timestamp(off.get("command_attempted_at") if target else off.get("accepted_at")) >= deadline)
+    timing = injector_target_timing(active, off)
+    if timing is not None:
+        completed["injector_command_timing"] = timing
     completed.update(command_program_completed=complete, control_completed=False,
         physical_outcome="Unknown", fertilizer_delivery_verified=False,
         accounted_mixing_seconds=0, command_accounted_mixing_seconds=(

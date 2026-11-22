@@ -1200,7 +1200,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                                          scheduler_now=None, execution_cycle=None,
                                          managed_device_cycle=None, daily_plan_generator=None,
                                          active_supervision_cycle=None, equipment_notification_cycle=None,
-                                         provider_notification_cycle=None, input_notification_cycle=None):
+                                         provider_notification_cycle=None, input_notification_cycle=None,
+                                         short_auxiliary_supervision_cycle=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -1222,6 +1223,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             remaining_seconds, RootlineCycleDeadlineExceeded,
         )
         from modules.oom_sakkie.family_message_lifecycle import PROVIDER_DELIVERY_RESERVE_SECONDS
+        from contextlib import nullcontext
         import time
         # Bound this actual request from entry, including elapsed safety work.
         # The existing shutdown obligations themselves retain their own bounds.
@@ -1767,6 +1769,22 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         def supervise():
             # Only a newly claimed authenticated minute reaches this path.
             # Replay recovery above remains delivery-only.
+            short_result = {}
+            short_supervisor = short_auxiliary_supervision_cycle
+            if short_supervisor is None and production_persistence and managed_device_cycle is None:
+                from modules.telemetry.rootline_execution_runtime import supervise_rootline_owned_injector
+                short_supervisor = supervise_rootline_owned_injector
+            if short_supervisor is not None:
+                try:
+                    with mandatory_safety():
+                        short_result = dict(short_supervisor(environ=source) or {})
+                    if not short_result:
+                        raise ValueError("injector_priority_result_missing")
+                except Exception as exc:
+                    short_result = {"success": False, "status": "injector_priority_supervision_unproven",
+                        "hardware_commands": 0, "effects_unknown": True, "error_type": type(exc).__name__}
+            defer_optional = (short_result.get("short_auxiliary_handled") is True
+                or short_result.get("success") is False)
             supervisor = active_supervision_cycle
             if supervisor is None:
                 from modules.telemetry.rootline_execution_runtime import supervise_rootline_active_execution
@@ -1775,6 +1793,16 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 supervision = dict(supervisor(notify=notify, environ=source, now=scheduler_now,
                     owner_user_id=scheduled_owner, chat_id=scheduled_chat) or {})
             supervision["active_supervision_status"] = str(supervision.get("status") or "unknown")
+            if short_result:
+                supervision["short_auxiliary_result"] = short_result
+                supervision["short_auxiliary_optional_deferred"] = defer_optional
+                supervision["hardware_commands"] = int(supervision.get("hardware_commands") or 0) + int(short_result.get("hardware_commands") or 0)
+                if short_result.get("writes_farm_data") is True:
+                    supervision["writes_farm_data"] = True
+                if short_result.get("effects_unknown") is True:
+                    supervision["effects_unknown"] = True
+                if short_result.get("success") is not True:
+                    supervision["success"] = False
             irrigation_safe = (supervision.get("success") is True
                 and supervision.get("active_execution_found") in (True, False))
             if not irrigation_safe:
@@ -1787,7 +1815,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 if admission_checked:
                     return
                 admission_checked = True
-                if (irrigation_safe and managed_result.get("blocks_bc") is not True
+                if (not defer_optional and irrigation_safe and managed_result.get("blocks_bc") is not True
                         and any(str(source.get(flag) or "").lower() == "true"
                                 for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED", "ROOTLINE_E_ENABLED"))
                         and supervision.get("active_supervision_status") in {
@@ -1851,16 +1879,20 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
                     managed = run_rootline_managed_device_reassessment
                 try:
-                    managed_result = dict(managed(environ=source, now=scheduler_now,
-                        after_safety=admit_irrigation,
-                        # Active ownership makes admission inert. Keep callback
-                        # sequencing for deferred proof, without a redundant pass.
-                        refresh_after_safety=supervision["active_supervision_status"] not in {"active_segment_owned", "irrigation_command_duty_active"},
-                        allow_borehole_starts=str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
-                        allow_new_starts=managed_enabled and irrigation_safe and supervision.get("status") in {
-                            "no_active_irrigation", "active_segment_owned", "segment_completed",
-                            "irrigation_command_duty_active", "irrigation_off_command_accepted",
-                            "segment_stopped_outcome_unconfirmed"}) or {})
+                    # A short-duty pass may already have spent most of this
+                    # minute. Keep owned auxiliary/borehole/grid recovery, but
+                    # leave new starts and planning to the next durable tick.
+                    with mandatory_safety() if defer_optional else nullcontext():
+                        managed_result = dict(managed(environ=source, now=scheduler_now,
+                            after_safety=None if defer_optional else admit_irrigation,
+                            # Active ownership makes admission inert. Keep callback
+                            # sequencing for deferred proof, without a redundant pass.
+                            refresh_after_safety=supervision["active_supervision_status"] not in {"active_segment_owned", "irrigation_command_duty_active"},
+                            allow_borehole_starts=not defer_optional and str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
+                            allow_new_starts=not defer_optional and managed_enabled and irrigation_safe and supervision.get("status") in {
+                                "no_active_irrigation", "active_segment_owned", "segment_completed",
+                                "irrigation_command_duty_active", "irrigation_off_command_accepted",
+                                "segment_stopped_outcome_unconfirmed"}) or {})
                     if not managed_result:
                         raise ValueError("managed_supervision_result_missing")
                 except Exception as exc:
@@ -1868,6 +1900,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "error_type": type(exc).__name__, "hardware_commands": 0,
                         "effects_unknown": True, "blocks_bc": True}
                 supervision["managed_device_result"] = managed_result
+                if managed_result.get("short_auxiliary_duty_owned") is True:
+                    supervision["short_auxiliary_duty_owned"] = True
+                    supervision["short_auxiliary_stop_deadline"] = managed_result.get("short_auxiliary_stop_deadline")
                 supervision["managed_device_status"] = str(managed_result.get("status") or "unknown")
                 supervision["hardware_commands"] = int(supervision.get("hardware_commands") or 0) + int(
                     managed_result.get("hardware_commands") or 0)
@@ -1900,6 +1935,15 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
 
         def invoke_safety_only():
             supervision = supervise()
+            if supervision.get("short_auxiliary_duty_owned") is True:
+                return {**supervision, "status": "scheduled_rootline_short_duty_owned",
+                    "report_work_due": False, "next_action_owner": "ROOTLINE",
+                    "next_trigger": "next_authenticated_minute"}
+            if supervision.get("short_auxiliary_optional_deferred") is True:
+                return {**supervision, "status": "scheduled_rootline_short_duty_supervised",
+                    "report_work_due": False, "plan_delivery_status": "short_duty_reporting_deferred",
+                    "report_effects_unknown": False, "next_action_owner": "ROOTLINE",
+                    "next_trigger": "next_authenticated_minute"}
             supervision.update(ensure_due_program_after_safety())
             supervision = equipment_reports(supervision)
             return {**supervision,
@@ -1912,6 +1956,16 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         def invoke():
             nonlocal current_plan_result
             supervision = supervise()
+            if supervision.get("short_auxiliary_duty_owned") is True:
+                return {**supervision, "status": "scheduled_rootline_short_duty_owned",
+                    "report_work_due": True, "plan_delivery_status": "owned_short_duty_reporting_deferred",
+                    "report_effects_unknown": False, "next_action_owner": "ROOTLINE",
+                    "next_trigger": "next_authenticated_minute"}
+            if supervision.get("short_auxiliary_optional_deferred") is True:
+                return {**supervision, "status": "scheduled_rootline_short_duty_supervised",
+                    "report_work_due": True, "plan_delivery_status": "short_duty_reporting_deferred",
+                    "report_effects_unknown": False, "next_action_owner": "ROOTLINE",
+                    "next_trigger": "next_authenticated_minute"}
             supervision.update(ensure_due_program_after_safety())
             try:
                 remaining_seconds(minimum=PROVIDER_DELIVERY_RESERVE_SECONDS)

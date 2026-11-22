@@ -115,7 +115,7 @@ def active_command(value, *, now=None):
     if not adopted and (value.get("on_attempts") != 1
             or not accepted(value.get("command_on_receipt"), value, "ON")):
         return False
-    deadline = moment(value.get("primary_stop_deadline"))
+    deadline = command_stop_deadline(value)
     return value.get("stop_mode") == "conditions" or (deadline is not None and (now or datetime.now(timezone.utc)) < deadline)
 
 
@@ -149,9 +149,14 @@ def terminal_matches_rows(value, rows):
     if not duty_closed(value):
         return False
     identity = value["execution_id"]
+    if value.get("injector_target") is not None and not injector_target_matches_rows(value, rows):
+        return False
     rows = [row for row in rows if isinstance(row, dict) and row.get("execution_id") == identity]
     claims = [row for row in rows if row.get("action") in {
         "claim_before_on", "claim_auxiliary_before_on", "claim_borehole_before_on", "mark_borehole_active", "adopt_borehole_observed_on"}]
+    if any(row.get("injector_timing_contract") is not None
+            and row["injector_timing_contract"] != value.get("injector_timing_contract") for row in claims):
+        return False  # A new target claim cannot be relabelled as a legacy pulse.
     immutable = ("device_id", "channel", "claimed_at", "primary_stop_deadline", "job_id", "job_sha256",
         "segment_identity", "zone_id", "auxiliary_device_id")
     if not any(all(row.get(key) == value.get(key) for key in immutable) for row in claims):
@@ -289,9 +294,159 @@ def prior_pulse_closed(context):
         and prior.get("observed_at") == execution["command_off_receipt"]["accepted_at"])
 
 
+INJECTOR_TARGET_V1 = "rootline_injector_accepted_on_target.v1"
+_INJECTOR_CLAIM_FIELDS = ("execution_id", "eligibility_id", "eligibility_sha256", "consumption_key",
+    "auxiliary_device_id", "device_type", "device_id", "channel", "zone_id", "job_id", "job_sha256",
+    "segment_identity", "zone_execution_id", "pulse_number", "phase_number", "batch_generation",
+    "maximum_duration_seconds", "claimed_at", "primary_stop_deadline", "stop_mode", "acceptance_mode",
+    "injector_timing_contract")
+
+
+def injector_target_claim(value):
+    """Future claims opt into the owner's target policy; old claims never do."""
+    claimed = moment(value.get("claimed_at")); provisional = moment(value.get("primary_stop_deadline"))
+    return (command_execution(value) and value.get("injector_timing_contract") == INJECTOR_TARGET_V1
+        and value.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
+        and value.get("device_type") == "fertilizer_injection_valve"
+        and value.get("device_id") == "100204d497" and type(value.get("channel")) is int
+        and value["channel"] == 1 and value.get("stop_mode") == "scheduled"
+        and type(value.get("maximum_duration_seconds")) is int and value["maximum_duration_seconds"] == 120
+        and claimed is not None and provisional == claimed + timedelta(seconds=120)
+        and all(isinstance(value.get(key), str) and value[key] for key in (
+            "zone_execution_id", "job_id", "job_sha256", "segment_identity", "consumption_key")))
+
+
+def injector_claim_digest(value):
+    return digest({key: value.get(key) for key in _INJECTOR_CLAIM_FIELDS})
+
+
+def injector_target_binding(value):
+    """Validate derived timing without turning a receipt into physical proof.
+
+    Canonical consumers must additionally use injector_target_matches_rows;
+    this structural check cannot establish that activation was committed.
+    """
+    target = value.get("injector_target")
+    if not injector_target_claim(value) or not isinstance(target, dict):
+        return None
+    on = value.get("command_on_receipt")
+    if not accepted(on, value, "ON"):
+        return None
+    claim = moment(value["claimed_at"]); provisional = moment(value["primary_stop_deadline"])
+    attempted = moment(on["command_attempted_at"]); anchor = moment(on["accepted_at"])
+    activated = moment(target.get("activated_at")); stop = moment(target.get("target_off_at"))
+    parent_stop = moment(target.get("parent_stop_deadline"))
+    if (target.get("contract_version") != INJECTOR_TARGET_V1
+            or target.get("claim_sha256") != injector_claim_digest(value)
+            or target.get("execution_id") != value["execution_id"]
+            or target.get("on_receipt_sha256") != on["receipt_sha256"]
+            or target.get("accepted_on_at") != on["accepted_at"]
+            or target.get("provisional_stop_deadline") != value["primary_stop_deadline"]
+            or type(target.get("target_seconds")) is not int or target["target_seconds"] != 120
+            or not timedelta(0) <= attempted-claim <= timedelta(seconds=30)
+            or activated is None or not attempted <= anchor <= activated < provisional
+            or stop != anchor + timedelta(seconds=120)
+            or target.get("parent_execution_id") != value["zone_execution_id"]
+            or parent_stop is None or parent_stop < stop + timedelta(seconds=600)
+            or not isinstance(target.get("parent_on_receipt_sha256"), str)
+            or len(target["parent_on_receipt_sha256"]) != 64
+            or target.get("binding_sha256") != digest({k:v for k,v in target.items() if k != "binding_sha256"})):
+        return None
+    return target
+
+
+def build_injector_target_active(claim, receipt, parent, *, now):
+    """Derive once inside the existing locked canonical activation transition."""
+    if (not injector_target_claim(claim) or not accepted(receipt, claim, "ON")
+            or moment(now) is None or not active_command(parent, now=now)
+            or parent.get("execution_id") != claim.get("zone_execution_id")
+            or not all(parent.get(key) == claim.get(key) for key in (
+                "job_id", "job_sha256", "segment_identity", "zone_id"))):
+        raise ValueError("injector_target_activation_unproven")
+    target = {"contract_version": INJECTOR_TARGET_V1, "execution_id": claim["execution_id"],
+        "claim_sha256": injector_claim_digest(claim), "on_receipt_sha256": receipt["receipt_sha256"],
+        "provisional_stop_deadline": claim["primary_stop_deadline"],
+        "accepted_on_at": receipt["accepted_at"], "target_seconds": 120,
+        "target_off_at": (moment(receipt["accepted_at"])+timedelta(seconds=120)).isoformat(),
+        "activated_at": now.isoformat(), "parent_execution_id": parent["execution_id"],
+        "parent_stop_deadline": parent["primary_stop_deadline"],
+        "parent_on_receipt_sha256": parent["command_on_receipt"]["receipt_sha256"]}
+    target["binding_sha256"] = digest(target)
+    active = {**claim, "state": "Active", "on_attempts": 1,
+        "command_on_receipt": receipt, "physical_state": "Unverified", "injector_target": target}
+    if injector_target_binding(active) is None:
+        raise ValueError("injector_target_activation_expired_or_invalid")
+    return active
+
+
+def injector_target_matches_rows(value, rows):
+    """A target is authority only through its immutable canonical activation."""
+    target = injector_target_binding(value)
+    if target is None:
+        return False
+    rows = [r for r in rows if isinstance(r, dict) and r.get("execution_id") == value.get("execution_id")]
+    claims = [r for r in rows if r.get("action") == "claim_auxiliary_before_on"]
+    activations = [r for r in rows if r.get("action") == "mark_auxiliary_active"]
+    dispatches = [r for r in rows if r.get("action") == "claim_auxiliary_dispatch"]
+    if (len(claims) != 1 or len(activations) != 1 or len(dispatches) != 1
+            or any(injector_claim_digest(r) != target["claim_sha256"] for r in claims+activations+dispatches)
+            or injector_target_binding(activations[0]) != target
+            or activations[0].get("state") != "Active"
+            or activations[0].get("command_on_receipt") != value.get("command_on_receipt")):
+        return False
+    outcomes = [r for r in rows if r.get("action") == "record_auxiliary_on_outcome"]
+    if not outcomes or any(r.get("on_outcome") != value["command_on_receipt"] for r in outcomes):
+        return False
+    # A consumed OFF slot, isolation/containment or recovery precedes activation
+    # only on an invalid/replayed history; it cannot acquire a new target.
+    activated = rows.index(activations[0])
+    if any(r.get("action") in {"claim_auxiliary_off_attempt", "record_auxiliary_off_outcome",
+            "contain_auxiliary_device", "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped",
+            "record_auxiliary_startup_aborted", "record_execution_not_dispatched"}
+            or r.get("manual_isolation_active") is True or r.get("manual_off_active") is True
+            for r in rows[:activated]):
+        return False
+    return (rows.index(claims[0]) < rows.index(dispatches[0]) < activated
+        and all(rows.index(dispatches[0]) < rows.index(r) < activated for r in outcomes))
+
+
+def command_stop_deadline(value):
+    """Use only an activated future target; retain every provisional/old duty."""
+    target = injector_target_binding(value) if value.get("state") == "Active" else None
+    return moment(target["target_off_at"] if target else value.get("primary_stop_deadline"))
+
+
+def injector_target_timing(value, off=None):
+    target = injector_target_binding(value)
+    if target is None:
+        return None
+    on = value["command_on_receipt"]
+    result = {"target_seconds": 120, "accepted_on_at": on["accepted_at"],
+        "on_attempted_at": on["command_attempted_at"], "target_off_at": target["target_off_at"],
+        "on_delivery_delay_seconds": (moment(on["accepted_at"])-moment(on["command_attempted_at"])).total_seconds(),
+        "physical_runtime_verified": False, "physical_runtime_seconds": None}
+    off = off or value.get("command_off_receipt")
+    if accepted(off, value, "OFF"):
+        at = moment(target["target_off_at"]); attempted = moment(off["command_attempted_at"]); accepted_at = moment(off["accepted_at"])
+        result.update(off_attempted_at=off["command_attempted_at"], off_accepted_at=off["accepted_at"],
+            off_request_offset_seconds=(attempted-at).total_seconds(),
+            off_acceptance_offset_seconds=(accepted_at-at).total_seconds(),
+            off_request_delay_seconds=max(0.0, (attempted-at).total_seconds()),
+            off_acceptance_delay_seconds=max(0.0, (accepted_at-at).total_seconds()),
+            off_delivery_delay_seconds=(accepted_at-attempted).total_seconds(),
+            accepted_command_interval_seconds=(accepted_at-moment(on["accepted_at"])).total_seconds(),
+            interrupted_before_target=attempted < at)
+    return result
+
+
 def program_completed(value):
     if not duty_closed(value) or not accepted(value.get("command_on_receipt"), value, "ON"):
         return False
+    if value.get("injector_timing_contract") is not None:
+        target = injector_target_binding(value)
+        return (target is not None and value.get("command_program_completed") is True
+            and value.get("reason") == "primary_deadline_reached"
+            and moment(value["command_off_receipt"]["command_attempted_at"]) >= moment(target["target_off_at"]))
     seconds = value.get("planned_runtime_seconds", value.get("maximum_duration_seconds"))
     claimed = moment(value.get("claimed_at")); deadline = moment(value.get("primary_stop_deadline"))
     off = moment(value["command_off_receipt"]["accepted_at"])

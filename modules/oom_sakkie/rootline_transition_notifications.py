@@ -169,6 +169,19 @@ def compose_transition_notice(state, execution, *, language="en"):
                 f"{label}: ROOTLINE assumed the OFF-command duty at {stamp} SAST. No new ON command was sent.")
         else:
             body = (f"{label}: {edge}-opdrag aanvaar op {stamp} SAST." if af else f"{label}: {edge} command accepted at {stamp} SAST.")
+        from modules.telemetry.rootline_command_acceptance import injector_target_timing
+        timing = injector_target_timing(execution)
+        if timing:
+            delay = timing["on_delivery_delay_seconds"]
+            body += (f" Teiken: 120 s vanaf aanvaarde AAN; AAN-afleweringsvertraging: {delay:g} s." if af else
+                f" Target: 120 s from accepted ON; ON delivery delay: {delay:g} s.")
+            if "off_request_offset_seconds" in timing:
+                request = timing["off_request_offset_seconds"]; acceptance = timing["off_acceptance_offset_seconds"]
+                delivery = timing["off_delivery_delay_seconds"]
+                body += (f" AF-versoek teenoor teiken: {request:+g} s; AF-aanvaarding teenoor teiken: {acceptance:+g} s; AF-afleweringsvertraging: {delivery:g} s." if af else
+                    f" OFF request relative to target: {request:+g} s; OFF acceptance relative to target: {acceptance:+g} s; OFF delivery delay: {delivery:g} s.")
+                if timing["interrupted_before_target"]:
+                    body += " Vroeg onderbreek; program gedeeltelik." if af else " Interrupted early; programme partial."
         body += " Fisiese toestand en lewering is onbevestig." if af else " Physical state and delivery are unverified."
         return f"<b>{header}</b>\n\n{body}"
     body = f"{label}: {edge} bevestig op {stamp} SAST." if af else f"{label}: {edge} verified at {stamp} SAST."
