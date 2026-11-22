@@ -31,7 +31,7 @@ def weather_packet(*, now=NOW, rain=0.0, observed=None):
         "Synthetic station", "synthetic", 30, observed, 20, 60, 5, 7, 180, rain, 0,
         1000, {}, "ok", "Current conditions", []), now=now)
     release = weather.build_weather_dry_release_evidence(
-        [(observed - timedelta(minutes=30), 0.0), (observed, rain)],
+        [(observed - timedelta(minutes=m), 0.0) for m in range(30, 0, -5)] + [(observed, rain)],
         evaluated_at=now, stale_after_minutes=30)
     return {"weather_snapshot": {"success": True, "snapshot_cutoff": now.isoformat(),
         "weather_current": current, "rain_release": release},

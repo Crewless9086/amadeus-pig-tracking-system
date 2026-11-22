@@ -29,7 +29,7 @@ def weather_db(db,monkeypatch):
             c.execute((migrations/name).read_text(encoding="utf-8"))
         c.execute("insert into public.telemetry_sources (source_id,source_type,display_name,provider,stale_after_minutes) values (%s,'weather','synthetic station','synthetic',30)",(source,))
         c.execute("insert into public.weather_latest_state (source_id,reading_at,flags,summary_status,summary_headline,summary_notes) values (%s,%s,'{}','ok','dry','[]')",(source,NOW-timedelta(minutes=1)))
-        for minutes in (35,20,1):
+        for minutes in (35,30,25,20,15,10,5,1):
             c.execute("insert into public.weather_readings (reading_id,source_id,reading_at,rain_rate_mm_h,rain_today_mm) values (%s,%s,%s,0,0)",(uuid.uuid4().hex,source,NOW-timedelta(minutes=minutes)))
     return db,source
 

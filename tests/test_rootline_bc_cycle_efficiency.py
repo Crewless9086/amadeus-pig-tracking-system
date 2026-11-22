@@ -437,7 +437,7 @@ def report_inputs(path, *, plan_seconds=1):
 def test_healthy_report_due_path_preserves_on_and_clamps_read_only_wait(monkeypatch, reports):
     import concurrent.futures
     from threading import current_thread
-    path = Path(monkeypatch)
+    path = Path(monkeypatch, managed_seconds=0, provider_seconds=1)
     loader, generator = report_inputs(path, plan_seconds=20)
     waits, contexts, stages = [], [], []
     original_wait = concurrent.futures.wait
@@ -459,7 +459,7 @@ def test_healthy_report_due_path_preserves_on_and_clamps_read_only_wait(monkeypa
     assert path.controls[0]["status"] == "segment_started"
     assert value["hardware_commands"] == 1 and [r["state"] for r in path.transport.calls] == ["ON"]
     assert len(path.controls) == 1 and path.clock.elapsed < 140
-    assert waits and all(0 < timeout <= remaining < 12 for timeout, remaining in waits)
+    assert waits and all(0 < timeout <= 12 and timeout <= remaining for timeout, remaining in waits)
     assert contexts == [140]
     assert stages == [current_thread().name]
     saved = path.schedules.rows[value["schedule_identity"]+":outcome"]
@@ -469,12 +469,12 @@ def test_healthy_report_due_path_preserves_on_and_clamps_read_only_wait(monkeypa
 
 def test_expiry_during_synchronous_reporting_preserves_prior_control_and_known_delivery(monkeypatch, reports):
     from threading import current_thread
-    path = Path(monkeypatch)
+    path = Path(monkeypatch, managed_seconds=0, provider_seconds=1)
     loader, generator = report_inputs(path)
     calls = []
     def daily(**kwargs):
         calls.append(current_thread().name)
-        path.clock.spend("synchronous known report delivery", 50)
+        path.clock.spend("synchronous known report delivery", 100)
         return {"success": True, "status": "daily_farm_manager_delivered", "telegram_sends": 1}
     monkeypatch.setattr("modules.oom_sakkie.daily_farm_manager.run_daily_farm_manager", daily)
     value, status = path.gateway(reports_due=True, report_loader=loader, plan_generator=generator)
@@ -487,3 +487,13 @@ def test_expiry_during_synchronous_reporting_preserves_prior_control_and_known_d
     saved = path.schedules.rows[value["schedule_identity"]+":outcome"]
     assert saved["hardware_commands"] == 1 and saved["telegram_sends"] == 2
     assert saved["report_effects_unknown"] is True and saved["status"] == "contained"
+
+
+def test_late_control_preserves_on_but_defers_report_without_family_reserve(monkeypatch, reports):
+    path = Path(monkeypatch)
+    loader, generator = report_inputs(path)
+    value, status = path.gateway(reports_due=True, report_loader=loader, plan_generator=generator)
+    assert status == 202 and value["status"] == "scheduled_rootline_reporting_deadline_deferred"
+    assert value["hardware_commands"] == 1 and path.controls[0]["status"] == "segment_started"
+    assert [row["state"] for row in path.transport.calls] == ["ON"]
+    assert not any(label == "report evidence" for label, _ in path.clock.events)

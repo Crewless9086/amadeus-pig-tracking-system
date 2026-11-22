@@ -37,6 +37,21 @@ def safe_daily_plan_diagnostics(result):
         for key, labels in allowed.items() if (value := result.get(key)) not in (None, "")}
 
 
+def safe_plan_delivery_diagnostics(result):
+    """Keep the actual family refusal instead of only a generic plan failure."""
+    value = result.get("plan_delivery_underlying_status")
+    if not value:
+        return {}
+    allowed = {"family_message_cycle_deadline_deferred", "family_message_delivered",
+        "family_message_delivery_contained", "family_message_delivery_ambiguous",
+        "family_message_provider_confirmed_receipt_unavailable", "family_message_card_updated",
+        "family_message_visible_text_required", "recipient_language_render_unrecognized",
+        "rootline_reassessment_unchanged", "rootline_reassessment_replayed_noop",
+        "rootline_reassessment_delivery_ambiguous", "rootline_reassessment_persistence_unproven"}
+    return {"plan_delivery_underlying_status": value if isinstance(value, str)
+        and value in allowed else "other"}
+
+
 def safe_reporting_diagnostics(result):
     """Retain a finite exception class label, never provider text or messages."""
     value = result.get("error_type")
@@ -154,6 +169,7 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
     outcome.update(sanitize_no_send(result))
     outcome.update(safe_daily_plan_diagnostics(result))
     outcome.update(safe_reporting_diagnostics(result))
+    outcome.update(safe_plan_delivery_diagnostics(result))
     if result.get("irrigation_failure"):
         from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
         outcome["irrigation_failure"] = sanitize_failure(result["irrigation_failure"])
