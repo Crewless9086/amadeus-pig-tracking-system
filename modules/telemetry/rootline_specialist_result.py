@@ -405,7 +405,8 @@ def _project_existing_plan(plan, now):
         "operating_date": plan.get("operating_date"),
         "operating_timezone": "Africa/Johannesburg",
         "generated_at": now.isoformat(),
-        "evidence_cutoff": plan.get("evidence_observed_at") or UNAVAILABLE,
+        "evidence_cutoff": _evidence_cutoff(plan, now),
+        "plan_creation_evidence_cutoff": plan.get("evidence_observed_at") or UNAVAILABLE,
         "overall_status": _overall_status(recommendations),
         "evidence": {
             "provenance": "canonical_rootline_water_energy_plan",
@@ -941,6 +942,8 @@ def _packet_from_plan_tanks(value):
 
 
 def _evidence_cutoff(plan, now):
+    if isinstance(plan.get("daily_program"), dict):
+        return plan.get("live_evidence_cutoff") or UNAVAILABLE
     return plan.get("evidence_observed_at") or now.isoformat()
 
 

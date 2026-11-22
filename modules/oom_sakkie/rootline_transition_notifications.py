@@ -13,6 +13,25 @@ def transition(row):
     if not isinstance(row, dict):
         return None
     action = row.get("action")
+    from modules.telemetry.rootline_command_acceptance import command_execution, accepted, duty_closed, active_command, moment
+    if command_execution(row):
+        identity = ("BOREHOLE-1-MINI-R4-CH1" if "borehole" in str(action) else
+            row.get("auxiliary_device_id") or row.get("zone_id"))
+        contract = get_device_contract(identity)
+        if not row.get("event_id") or not contract or any(row.get(k) != contract.get(k) for k in ("device_id", "channel")):
+            return None
+        if action in {"mark_active", "mark_auxiliary_active", "mark_borehole_active"}:
+            if accepted(row.get("command_on_receipt"), row, "ON"):
+                state, at = "Started", row["command_on_receipt"]["accepted_at"]
+            elif action == "mark_borehole_active" and active_command(row):
+                state, at = "Adopted", row["claimed_at"]
+            else:
+                return None
+        elif action in {"record_completed", "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped", "record_borehole_completed"} and duty_closed(row):
+            state, at = ("Stopped" if action == "record_borehole_completed" else "Completed"), row["command_off_receipt"]["accepted_at"]
+        else:
+            return None
+        return state, {**row, "notification_identity": f"{row['execution_id']}:{state}", "notification_observed_at": at}
     if action in {"mark_active", "mark_auxiliary_active"}:
         proof, state = row.get("start_evidence"), "Started"
     elif action == "mark_borehole_active":
@@ -143,6 +162,15 @@ def compose_transition_notice(state, execution, *, language="en"):
     on = state == "Started"
     edge = ("AAN" if on else "AF") if af else ("ON" if on else "OFF")
     header = "ROOTLINE — TOERUSTING" if af else "ROOTLINE — EQUIPMENT"
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(execution):
+        if state == "Adopted":
+            body = (f"{label}: ROOTLINE besit nou die AF-opdragplig vanaf {stamp} SAST. Geen nuwe AAN-opdrag is gestuur nie." if af else
+                f"{label}: ROOTLINE assumed the OFF-command duty at {stamp} SAST. No new ON command was sent.")
+        else:
+            body = (f"{label}: {edge}-opdrag aanvaar op {stamp} SAST." if af else f"{label}: {edge} command accepted at {stamp} SAST.")
+        body += " Fisiese toestand en lewering is onbevestig." if af else " Physical state and delivery are unverified."
+        return f"<b>{header}</b>\n\n{body}"
     body = f"{label}: {edge} bevestig op {stamp} SAST." if af else f"{label}: {edge} verified at {stamp} SAST."
     if execution.get("action") in {"mark_borehole_active", "record_borehole_completed"}:
         body += (" Die pomp se eie sonkragwerking is nie hierdeur bevestig nie." if af else

@@ -43,6 +43,8 @@ def output_evidence_from_snapshot(snapshot, *, device_id, channel):
         "channel": rows[0].get("channel") if matched else None,
         "evidence_id": snapshot.get("response_digest"),
         "retrieved_at": snapshot.get("retrieved_at")}
+    if snapshot.get("command_route_ready") is True:
+        result["command_route"] = deepcopy(snapshot)
     if snapshot.get("metadata_received_at") is not None:
         # Only the invocation-local no-send reader supplies this provenance.
         # Keep the older online/configuration clock in the durable OFF receipt.
@@ -151,6 +153,11 @@ class RootlineIFTTTTransport:
         self.auxiliary_on_authorizer = auxiliary_on_authorizer
         self.commissioning_connect_factory = commissioning_connect_factory
         self.auxiliary_active_reader = auxiliary_active_reader
+        self._ha_last_command = {}
+
+    def _home_assistant(self):
+        from modules.telemetry.rootline_home_assistant import selected
+        return selected(self.environ)
 
     def read_safety_configuration(self, *, device_id, channel, routine_read=False):
         contract = self._binding(device_id, channel)
@@ -198,6 +205,7 @@ class RootlineIFTTTTransport:
             authoritative = self._auxiliary_commissioning_boundary_safe(
                 snapshot, contract, row)
         return {
+            "command_route": deepcopy(snapshot) if snapshot.get("command_route_ready") is True else None,
             "authoritative": authoritative,
             "scheduled_authoritative": (timed_control_enabled(self.environ)
                 and timed_snapshot_safe(snapshot, device_id=device_id, channel=channel)),
@@ -342,6 +350,15 @@ class RootlineIFTTTTransport:
     def configuration_status(self, *, device_id, channel):
         """Return non-secret transport readiness without a provider call."""
         contract = self._binding(device_id, channel)
+        if self._home_assistant():
+            from modules.telemetry.rootline_home_assistant import configuration, HomeAssistantUnavailable
+            try:
+                configuration(self.environ)
+                configured = True
+            except HomeAssistantUnavailable:
+                configured = False
+            return {"configured": configured, "provider": "home_assistant",
+                "hardware_verification_ready": False, "device_id": device_id, "channel": channel}
         return {"configured": bool(contract.get("on_event") and contract.get("off_event")
                                     and str(self.environ.get(
                                         "ROOTLINE_IFTTT_MAKER_KEY") or "").strip()),
@@ -349,6 +366,8 @@ class RootlineIFTTTTransport:
 
     @property
     def prepare_no_send_off(self):
+        if self._home_assistant():
+            return None
         # Injected adapters retain ownership of their full readback contract.
         return (self._prepare_no_send_off if self.readback is None
                 or self.readback is _NATIVE_CONTROLLER_READBACK else None)
@@ -376,7 +395,7 @@ class RootlineIFTTTTransport:
         from modules.telemetry.rootline_ewelink_request_budget import current_duty, RequestBudget
         duty = current_duty()
         from modules.telemetry.rootline_irrigation_execution_store import is_a_commissioning_duty
-        if (duty.get("execution_id") and not is_a_commissioning_duty(duty)
+        if (not self._home_assistant() and duty.get("execution_id") and not is_a_commissioning_duty(duty)
                 and output.get("authoritative") is True and output.get("state") == "OFF"):
             try:
                 RequestBudget(self._request_environment()).release_after_off(
@@ -395,6 +414,10 @@ class RootlineIFTTTTransport:
         return source
 
     def prepare_execution_capacity(self, execution):
+        if self._home_assistant():
+            # No eWeLink quota is consumed. Hardware freshness is still required
+            # by the existing final eligibility and output verification gates.
+            return "home_assistant:" + sha256(json.dumps(execution, sort_keys=True, default=str).encode()).hexdigest()
         from modules.telemetry.rootline_ewelink_request_budget import RequestBudget
         device_id = execution.get("device_id") or "1002851416"
         channel = execution.get("channel") or 1
@@ -449,6 +472,32 @@ class RootlineIFTTTTransport:
     def _send_bound_state(self, *, contract, device_id, channel, state,
                           idempotency_key, before_send=None, known_no_send=None,
                           network_attempt=None):
+        if self._home_assistant():
+            on_guard = None
+            if state == "ON":
+                try:
+                    from modules.telemetry.rootline_command_acceptance import enabled
+                    guard = (self._home_assistant_command_on_guard if enabled(self.environ)
+                        else self._home_assistant_borehole_on_guard)
+                    on_guard = guard(contract, device_id, channel, idempotency_key)
+                except Exception:
+                    if known_no_send is not None:
+                        known_no_send("home_assistant_hardware_freshness_unproven")
+                    return {"accepted_unambiguous": False,
+                        "status": "home_assistant_hardware_freshness_unproven", "provider_command_attempted": False}
+            if state not in {"ON", "OFF"} or not str(idempotency_key or "").strip():
+                return {"accepted_unambiguous": False, "status": "transport_not_configured", "provider_command_attempted": False}
+            from modules.telemetry.rootline_home_assistant import send_state
+            result = send_state(environ=self.environ, device_id=device_id, channel=channel,
+                state=state, idempotency_key=idempotency_key, before_send=before_send, network_attempt=network_attempt,
+                **({"on_guard": on_guard} if state == "ON" else {}))
+            if result.get("provider_command_attempted") is True:
+                # Invocation-local post-command fence, not observation evidence
+                # or a new durable store. Canonical outcomes retain this receipt.
+                self._ha_last_command[(device_id, channel)] = result.get("command_attempted_at")
+            if result.get("provider_command_attempted") is False and known_no_send is not None:
+                known_no_send(result["status"])
+            return result
         event = contract.get("on_event" if state == "ON" else "off_event" if state == "OFF" else "")
         secret = str(self.environ.get("ROOTLINE_IFTTT_MAKER_KEY") or "").strip()
         if not event or not secret or not str(idempotency_key or "").strip():
@@ -592,9 +641,121 @@ class RootlineIFTTTTransport:
                 raise ValueError("a_commissioning_reserve_release_unproven")
         return True
 
+    def _home_assistant_command_on_guard(self, contract, device_id, channel, idempotency_key):
+        """Final edge of an already claimed duty; feedback is not ON authority."""
+        from modules.telemetry.rootline_command_acceptance import MODE
+        from modules.telemetry.rootline_irrigation_execution_store import authorize_command_on_sender
+        from modules.telemetry.rootline_ewelink_request_budget import current_duty
+        from modules.telemetry.rootline_cycle_budget import on_deadline, CYCLE_WORK_SECONDS
+        from modules.telemetry.rootline_energy_policy import managed_energy_decision
+        duty = deepcopy(current_duty())
+        claimed = datetime.fromisoformat(str(duty.get("claimed_at") or ""))
+        deadline = (datetime.fromisoformat(duty["primary_stop_deadline"])
+            if duty.get("primary_stop_deadline") else None)
+        continuous = duty.get("stop_mode") == "conditions" and device_id == "1002851416"
+        identity = duty.get("zone_id") if contract["collection"] == "irrigation_zones" else duty.get("auxiliary_device_id")
+        if (duty.get("acceptance_mode") != MODE or identity != contract["identity"]
+                or duty.get("device_id") != device_id or duty.get("channel") != channel
+                or duty.get("state") != "claimed" or duty.get("on_attempts") != 0
+                or idempotency_key != str(duty.get("execution_id") or "") + ":ON"
+                or not str(duty.get("provider_capacity_permit") or "").startswith("home_assistant:")
+                or claimed.tzinfo is None or (not continuous and (duty.get("stop_mode") != "scheduled" or deadline is None))):
+            raise ValueError("home_assistant_command_claim_missing")
+        authorize_command_on_sender(duty)
+        first = datetime.now(timezone.utc)
+        bound = time.monotonic() + max(0, (claimed+timedelta(seconds=30)-first).total_seconds())
+        def final_guard():
+            now = datetime.now(timezone.utc)
+            if (not timedelta(0) <= now-claimed < timedelta(seconds=30)
+                    or (deadline is not None and now >= deadline)
+                    or str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"):
+                raise ValueError("home_assistant_command_edge_expired")
+            if continuous:
+                conditions = duty.get("condition_evidence") or {}
+                assessed = datetime.fromisoformat(str(conditions.get("assessed_at") or ""))
+                energy = managed_energy_decision(duty.get("energy_context"), now=now)
+                if (assessed.tzinfo is None or not timedelta(0) <= now-assessed <= timedelta(seconds=CYCLE_WORK_SECONDS)
+                        or conditions.get("start_eligible") is not True or conditions.get("stop_required") is not False
+                        or conditions.get("protection_safe") is not True
+                        or energy.get("continuous_borehole_eligible") is not True
+                        or energy.get("continuous_borehole_fresh") is not True):
+                    raise ValueError("home_assistant_command_conditions_changed")
+            cycle = on_deadline()
+            return min(bound, cycle) if cycle is not None else bound
+        final_guard()
+        return final_guard
+
+    def _home_assistant_borehole_on_guard(self, contract, device_id, channel, idempotency_key):
+        """Prepare the existing claimed continuous borehole edge, never claim it.
+
+        Other HA ON families stay refused until their own readback/stop contract
+        is qualified. Canonical claim/conditions and at-most-once dispatch remain
+        in the existing locked execution store, which invokes this transport.
+        """
+        from modules.telemetry.rootline_borehole_conditions import continuous_borehole
+        from modules.telemetry.rootline_borehole_commissioning import _continuous_borehole_off
+        from modules.telemetry.rootline_ewelink_request_budget import current_duty
+        from modules.telemetry.rootline_cycle_budget import on_deadline, CYCLE_WORK_SECONDS
+        from modules.telemetry.rootline_energy_policy import managed_energy_decision
+        duty = deepcopy(current_duty())
+        now = datetime.now(timezone.utc)
+        claimed = datetime.fromisoformat(str(duty.get("claimed_at") or ""))
+        conditions = duty.get("condition_evidence") or {}
+        assessed = datetime.fromisoformat(str(conditions.get("assessed_at") or ""))
+        permit = str(duty.get("provider_capacity_permit") or "")
+        if (not continuous_borehole(duty) or contract.get("identity") != "BOREHOLE-1-MINI-R4-CH1"
+                or device_id != "1002851416" or type(channel) is not int or channel != 1
+                or str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"
+                or duty.get("state") != "claimed" or duty.get("on_attempts") != 0
+                or not duty.get("execution_id") or idempotency_key != duty["execution_id"] + ":ON"
+                or duty.get("operation") != "command_off_to_on"
+                or duty.get("primary_stop_deadline") is not None
+                or duty.get("native_fail_stop_deadline") is not None
+                or not permit.startswith("home_assistant:") or len(permit) != 79
+                or any(char not in "0123456789abcdef" for char in permit[15:])
+                or claimed.tzinfo is None or not timedelta(0) <= now-claimed < timedelta(seconds=30)
+                or assessed.tzinfo is None or not timedelta(0) <= now-assessed <= timedelta(seconds=CYCLE_WORK_SECONDS)
+                or not conditions.get("event_id") or conditions.get("start_eligible") is not True
+                or conditions.get("stop_required") is not False or conditions.get("protection_safe") is not True):
+            raise ValueError("home_assistant_borehole_owned_edge_unproven")
+        original_deadline = time.monotonic() + (claimed+timedelta(seconds=30)-now).total_seconds()
+        cycle = on_deadline()
+        if cycle is not None:
+            original_deadline = min(original_deadline, cycle)
+        snapshot = self._snapshot(device_id, channel)
+        output = output_evidence_from_snapshot(snapshot, device_id=device_id, channel=channel)
+        if (snapshot.get("observer_qualified") is not True
+                or snapshot.get("freshness_clock_source") != "sonoff_original_observation"
+                or not _continuous_borehole_off(output, now=datetime.now(timezone.utc))):
+            raise ValueError("home_assistant_borehole_feedback_unproven")
+
+        def final_guard():
+            current = datetime.now(timezone.utc)
+            energy = managed_energy_decision(duty.get("energy_context"), now=current)
+            if (not timedelta(0) <= current-claimed < timedelta(seconds=30)
+                    or not timedelta(0) <= current-assessed <= timedelta(seconds=CYCLE_WORK_SECONDS)
+                    or energy.get("continuous_borehole_fresh") is not True
+                    or energy.get("continuous_borehole_eligible") is not True
+                    or not _continuous_borehole_off(output, now=current)
+                    or str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"):
+                raise ValueError("home_assistant_borehole_final_edge_unproven")
+            cycle_now = on_deadline()
+            return min(original_deadline, cycle_now) if cycle_now is not None else original_deadline
+        final_guard()
+        return final_guard
+
     def _snapshot(self, device_id, channel, *, routine_read=False):
         contract = self._binding(device_id, channel)
-        if self.readback is None:
+        if self._home_assistant():
+            from modules.telemetry.rootline_home_assistant import read_registered_device
+            barrier = self._ha_last_command.get((device_id, channel))
+            if (device_id, channel) in self._ha_last_command and not barrier:
+                raise RuntimeError("home_assistant_command_clock_unproven")
+            value = read_registered_device(device_id, environ=self.environ,
+                **({"commissioning_connect_factory": self.commissioning_connect_factory}
+                   if self.commissioning_connect_factory is not None else {}),
+                **({"not_before": barrier} if barrier is not None else {}))
+        elif self.readback is None:
             from modules.telemetry.rootline_ewelink_readback import read_registered_device
             value = read_registered_device(device_id, token_store=self.token_store,
                                            environ=self.environ, **({"routine_read": True} if routine_read else {}))

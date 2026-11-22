@@ -211,8 +211,10 @@ def mixing_daily_accounting(executions, *, now, batch=None):
     end = day + timedelta(days=1)
     groups = {}
     valid = True
+    mixer_ids = {row.get("execution_id") for row in executions or []
+        if isinstance(row, dict) and row.get("device_type") == "fertilizer_mixer"}
     for row in executions or []:
-        if not isinstance(row, dict) or row.get("device_type") != "fertilizer_mixer":
+        if not isinstance(row, dict) or row.get("execution_id") not in mixer_ids:
             continue
         identity = str(row.get("execution_id") or "")
         if not identity:
@@ -221,6 +223,7 @@ def mixing_daily_accounting(executions, *, now, batch=None):
         groups.setdefault(identity, []).append(row)
     reserved = completed = sessions = 0
     premix = None
+    command_premix = None
     for rows in groups.values():
         from modules.telemetry.rootline_irrigation_execution_store import _verified_not_dispatched
         if any(_verified_not_dispatched(item, rows) for item in rows):
@@ -243,6 +246,18 @@ def mixing_daily_accounting(executions, *, now, batch=None):
             if item.get("control_completed") is True
             and item.get("shutdown_verified") is True
             and item.get("accounted_mixing_seconds") == seconds), None)
+        from modules.telemetry.rootline_command_acceptance import terminal_matches_rows, program_completed
+        commanded = next((item for item in reversed(rows)
+            if program_completed(item)
+            and item.get("command_accounted_mixing_seconds") == seconds
+            and terminal_matches_rows(item, rows)), None)
+        if commanded:
+            stopped = _time(commanded["command_off_receipt"]["accepted_at"])
+            disturbed = _time(batch.get("mixed_after"))
+            if (overlap > 0 and stopped and disturbed and day <= stopped < end
+                    and disturbed <= stopped <= now and commanded.get("batch_generation") == batch.get("batch_generation")):
+                if command_premix is None or stopped > _time(command_premix["command_off_receipt"]["accepted_at"]):
+                    command_premix = commanded
         if done:
             completed += overlap
             stopped = _time(done.get("completed_at"))
@@ -254,7 +269,8 @@ def mixing_daily_accounting(executions, *, now, batch=None):
                     premix = done
     return {"reserved_seconds": reserved, "controller_completed_seconds": completed,
         "sessions": sessions, "history_valid": valid,
-        "premix_verified": premix is not None, "premix_execution": premix}
+        "premix_verified": premix is not None, "premix_execution": premix,
+        "premix_command_accepted": command_premix is not None, "command_premix_execution": command_premix}
 
 
 def fertilizer_control_progress(context, *, now):
@@ -264,6 +280,20 @@ def fertilizer_control_progress(context, *, now):
     It never delays the parent shutdown or grants another injection pulse.
     """
     context = context if isinstance(context, dict) else {}
+    from modules.telemetry.rootline_command_acceptance import MODE, command_parent_ready, prior_pulse_closed
+    if context.get("acceptance_mode") == MODE:
+        prior = context.get("prior_pulse_shutdown_evidence") or {}
+        stopped = _time(prior.get("observed_at"))
+        if (context.get("completed_pulses") != _pulse_limit(context)
+                or not command_parent_ready(context, now=now) or not prior_pulse_closed(context)
+                or stopped is None or now-stopped < timedelta(seconds=MIN_FLUSH_SECONDS)):
+            return {"completed": False, "status": "await_command_postflow"}
+        material = {key: context.get(key) for key in ("zone_execution_id", "job_id", "job_sha256", "segment_identity", "batch_generation")}
+        return {**material, "execution_id": "ROOTLINE-FERTILIZER-SEQUENCE-"+_digest(material)[:24].upper(),
+            "completed": True, "status": "command_sequence_completed", "acceptance_mode": MODE,
+            "pulse_count": _pulse_limit(context), "command_parent_execution": context["command_parent_execution"],
+            "final_injector_off_evidence": deepcopy(prior), "physical_flow_verified": False,
+            "delivered_volume": "Unavailable", "nutrient_dose": "Unknown"}
     output = context.get("zone_output_evidence") or {}
     prior = context.get("prior_pulse_shutdown_evidence") or {}
     observed = _time(output.get("observed_at")); stopped = _time(prior.get("observed_at"))
@@ -343,6 +373,14 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
             material["physical_commissioning_generation"] = safety["physical_commissioning_generation"]
         start_evidence=context["zone_start_evidence"]
         output_evidence=context["zone_output_evidence"]
+        from modules.telemetry.rootline_command_acceptance import MODE
+        command_context = context.get("acceptance_mode") == MODE
+        if command_context:
+            parent = context["command_parent_execution"]
+            start_evidence = {"evidence_id": parent["command_on_receipt"]["receipt_sha256"],
+                "observed_at": parent["command_on_receipt"]["accepted_at"]}
+            route = output_evidence.get("command_route") or output_evidence
+            output_evidence = {"evidence_id": route["response_digest"], "observed_at": route["route_checked_at"]}
         material.update({"zone_id":context["active_zone_ids"][0],
             "job_id":context["job_id"],"job_sha256":context["job_sha256"],
             "segment_identity":context["segment_identity"],
@@ -357,11 +395,14 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
             "zone_output_observed_at":_time(output_evidence["observed_at"]).isoformat(),
             "irrigation_stop_deadline":_time(context["irrigation_stop_deadline"]).isoformat(),
             "prior_pulse_shutdown_evidence_id":(context.get(
-                "prior_pulse_shutdown_evidence") or {}).get("evidence_id"),
+                "prior_pulse_shutdown_evidence") or {}).get("evidence_id") if not command_context else (((context.get("prior_pulse_shutdown_evidence") or {}).get("command_execution") or {}).get("command_off_receipt") or {}).get("receipt_sha256"),
             "prior_pulse_shutdown_observed_at":(_time((context.get(
                 "prior_pulse_shutdown_evidence") or {}).get("observed_at")).isoformat()
                 if _time((context.get("prior_pulse_shutdown_evidence") or {}).get(
                     "observed_at")) else None)})
+    from modules.telemetry.rootline_command_acceptance import enabled, MODE
+    if enabled() and (safety.get("command_route") or {}).get("acceptance_mode") == MODE:
+        material["acceptance_mode"] = MODE
     digest=_digest(material)
     return {"eligible":True,"status":"auxiliary_execution_eligible",
         "eligibility_id":"ROOTLINE-AUX-ELIGIBILITY-"+digest[:24].upper(),
@@ -446,13 +487,20 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
         if scheduled and (value.get("pulse_number")!=_next_pulse_index(current_context,now)+1
                 or value.get("phase_number")!=_next_pulse_index(current_context,now)//2+1):
             return False
+        from modules.telemetry.rootline_command_acceptance import MODE, command_parent_ready, prior_pulse_closed
+        command_mode = value.get("acceptance_mode") == MODE
         output=current_context.get("zone_output_evidence") or {}
-        if (output.get("zone_execution_id")!=value.get("zone_execution_id")
-                or output.get("state")!="ON"):
+        if command_mode:
+            if not command_parent_ready(current_context, now=now):
+                return False
+        elif (output.get("zone_execution_id")!=value.get("zone_execution_id") or output.get("state")!="ON"):
             return False
         if int(value.get("pulse_number") or 0)>1:
             prior=current_context.get("prior_pulse_shutdown_evidence") or {}
-            if prior.get("evidence_id")!=value.get("prior_pulse_shutdown_evidence_id"):
+            prior_id = (((prior.get("command_execution") or {}).get("command_off_receipt") or {}).get("receipt_sha256")
+                if command_mode else prior.get("evidence_id"))
+            if (prior_id!=value.get("prior_pulse_shutdown_evidence_id")
+                    or (command_mode and not prior_pulse_closed(current_context))):
                 return False
         return _injection_gate(current_context,now) is None
     return _mixing_gate(current_context,now,
@@ -460,6 +508,10 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
 
 
 def _injection_gate(context,now,*,require_output=True):
+    from modules.telemetry.rootline_command_acceptance import MODE, command_parent_ready, prior_pulse_closed
+    command_mode = context.get("acceptance_mode") == MODE
+    if command_mode and not command_parent_ready(context, now=now, require_route=require_output):
+        return "active_parent_command_unproven"
     zones=context.get("active_zone_ids") if isinstance(context.get("active_zone_ids"),list) else []
     pulse=_next_pulse_index(context,now)
     if (not str(context.get("job_id") or "").startswith("ROOTLINE-IRRIGATION-JOB-")
@@ -473,10 +525,10 @@ def _injection_gate(context,now,*,require_output=True):
     output=context.get("zone_output_evidence") if isinstance(
         context.get("zone_output_evidence"),dict) else {}
     start_at=_time(start.get("observed_at"));output_at=_time(output.get("observed_at"))
-    if (not start.get("evidence_id") or start.get("zone_execution_id")!=
+    if ((not command_mode and not start.get("evidence_id")) or start.get("zone_execution_id")!=
             context.get("zone_execution_id") or start_at is None):
         return "clean_water_preflow_incomplete"
-    if require_output and (not output.get("evidence_id") or output.get("zone_execution_id")!=
+    if require_output and not command_mode and (not output.get("evidence_id") or output.get("zone_execution_id")!=
             context.get("zone_execution_id") or output.get("state")!="ON"
             or output_at is None or not timedelta(0)<=now-output_at<=timedelta(minutes=5)):
         return "active_zone_unverified"
@@ -485,7 +537,7 @@ def _injection_gate(context,now,*,require_output=True):
     if (context.get("zone_device_id") != binding["device_id"]
             or type(context.get("zone_channel")) is not int
             or context["zone_channel"] != binding["channel"]
-            or (require_output and not irrigation_dependency_verified(output,
+            or (require_output and not command_mode and not irrigation_dependency_verified(output,
                 device_id=binding["device_id"], channel=binding["channel"], now=now))):
         return "active_irrigation_outputs_unverified"
     phase_start=start_at + timedelta(seconds=(pulse//2)*3600 if context.get("stop_mode")=="scheduled" else 0)
@@ -495,12 +547,12 @@ def _injection_gate(context,now,*,require_output=True):
     if (complete_at is None or not timedelta(0) <= now-complete_at <= timedelta(minutes=5)
             or complete_at.astimezone(SAST).date() != now.astimezone(SAST).date()):
         return "current_day_fertilizer_history_incomplete"
-    if context.get("premix_verified") is not True: return "current_batch_premix_unproven"
+    if context.get("premix_verified") is not True and not (command_mode and context.get("premix_command_accepted") is True): return "current_batch_premix_unproven"
     if not 0 <= pulse < _pulse_limit(context): return ("pulse_limit_reached" if context.get("stop_mode")=="scheduled" else "two_pulse_limit_reached")
     prior=context.get("prior_pulse_shutdown_evidence") if isinstance(
         context.get("prior_pulse_shutdown_evidence"),dict) else {}
     prior_at=_time(prior.get("observed_at"))
-    if (pulse%2==1 or bool(prior)) and (not prior.get("evidence_id") or prior.get("shutdown_verified") is not True
+    if (pulse%2==1 or bool(prior)) and ((not prior_pulse_closed(context) if command_mode else (not prior.get("evidence_id") or prior.get("shutdown_verified") is not True))
             or prior.get("zone_execution_id")!=context.get("zone_execution_id")
             or prior_at is None or now-prior_at<timedelta(seconds=MIN_PULSE_SPACING_SECONDS)):
         return "pulse_spacing_incomplete"
@@ -537,6 +589,7 @@ def _mixing_gate(context,now,*,runtime):
 
 
 def injection_parent_read_due(context, *, now):
+    from modules.telemetry.rootline_command_acceptance import MODE, prior_pulse_closed
     """Existing pulse prerequisites or the due final flush require fresh ON."""
     if not isinstance(context, dict) or context.get("controller_sequence_completed") is True:
         return False
@@ -548,7 +601,7 @@ def injection_parent_read_due(context, *, now):
     return (context.get("completed_pulses") == _pulse_limit(context)
         and bool(context.get("zone_execution_id"))
         and prior.get("zone_execution_id") == context["zone_execution_id"]
-        and prior.get("shutdown_verified") is True and stopped is not None
+        and (prior.get("shutdown_verified") is True or (context.get("acceptance_mode") == MODE and prior_pulse_closed(context))) and stopped is not None
         and now-stopped >= timedelta(seconds=MIN_FLUSH_SECONDS)
         and deadline is not None and now < deadline)
 
@@ -594,6 +647,9 @@ def _pulse_limit(context):
 
 
 def _safe(contract,safety,now,*,scheduled=False):
+    from modules.telemetry.rootline_command_acceptance import enabled, route_valid
+    if scheduled and enabled() and route_valid(safety, device_id=contract["device_id"], channel=contract["channel"], now=now):
+        return True
     observed=_time(safety.get("observed_at"))
     if scheduled:
         return (safety.get("scheduled_authoritative") is True

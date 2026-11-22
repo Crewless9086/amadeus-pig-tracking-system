@@ -120,6 +120,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                 or revalidated.get("zone_id") != decision.get("zone_id")):
             return _result("execution_eligibility_changed", commands=0, messages=0)
     execution = {
+        **({"acceptance_mode": decision["execution_eligibility"]["acceptance_mode"]} if decision["execution_eligibility"].get("acceptance_mode") else {}),
         "execution_id": decision["execution_id"], "eligibility_id": decision["eligibility_id"],
         "eligibility_sha256": decision["execution_eligibility"]["eligibility_sha256"],
         "consumption_key": decision["execution_eligibility"]["consumption_key"],
@@ -172,8 +173,11 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     )
     try:
         remaining_seconds()
-        accepted = transport.set_state(device_id=execution["device_id"], channel=execution["channel"], state="ON",
-                                       idempotency_key=execution["execution_id"] + ":ON")
+        from modules.telemetry.rootline_command_acceptance import command_execution
+        def dispatch():
+            return transport.set_state(device_id=execution["device_id"], channel=execution["channel"], state="ON",
+                idempotency_key=execution["execution_id"] + ":ON")
+        accepted = store("dispatch_irrigation_on_edge", {**execution, "dispatch": dispatch}) if command_execution(execution) else dispatch()
     except RootlineCycleDeadlineExceeded:
         accepted = {"accepted_unambiguous": False, "provider_command_attempted": False,
             "status": "execution_cycle_deadline_deferred"}
@@ -187,6 +191,20 @@ def _finish_irrigation_start(execution, accepted, store, transport, notify):
     recorded = store("record_on_outcome", {**execution, "on_attempts": 1, "on_outcome": accepted})
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         raise RootlineExecutionStoreUnavailable("record_on_outcome")
+    from modules.telemetry.rootline_command_acceptance import command_execution, accepted as command_accepted
+    if command_execution(execution):
+        if command_accepted(accepted, execution, "ON"):
+            active = {**execution, "state": "Active", "on_attempts": 1,
+                "command_on_receipt": accepted, "physical_state": "Unverified"}
+            marked = store("mark_active", active)
+            if not isinstance(marked, dict) or marked.get("success") is not True:
+                return _recover_command_irrigation(execution, store, transport, notify,
+                    datetime.now(timezone.utc), reason="active_persistence_unproven")
+            delivery = _notify(notify, store, "Started", active)
+            return _result("irrigation_on_command_accepted", commands=1,
+                messages=delivery["confirmed"], execution=active, notification=delivery)
+        return _recover_command_irrigation(execution, store, transport, notify,
+            datetime.now(timezone.utc), reason="on_command_failed_or_unknown")
     if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
         return _retire_unsent_execution(execution, store, transport)
     if accepted.get("accepted_unambiguous") is not True:
@@ -270,7 +288,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
     if not revalidate_auxiliary_execution_edge(artifact,current_context=current_context,
             current_safety=current_safety,now=now):
         return _aux_result("auxiliary_edge_revalidation_failed")
-    execution = {"execution_id":artifact["execution_id"],
+    execution = {**({"acceptance_mode": artifact["acceptance_mode"]} if artifact.get("acceptance_mode") else {}), "execution_id":artifact["execution_id"],
         "eligibility_id":artifact["eligibility_id"],
         "consumption_key":artifact["consumption_key"],
         "auxiliary_device_id":artifact["auxiliary_device_id"],
@@ -335,6 +353,16 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
             idempotency_key=execution["execution_id"]+":ON")
     accepted=store("dispatch_auxiliary_on_edge",{**execution,"dispatch":dispatch})
     store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
+    from modules.telemetry.rootline_command_acceptance import command_execution, accepted as command_accepted
+    if command_execution(execution):
+        if command_accepted(accepted, execution, "ON"):
+            active = {**execution, "state": "Active", "on_attempts": 1,
+                "command_on_receipt": accepted, "physical_state": "Unverified"}
+            marked = store("mark_auxiliary_active", active)
+            if isinstance(marked, dict) and marked.get("success") is True:
+                return _aux_result("auxiliary_on_command_accepted", commands=1, state="Started", execution=active)
+        return _finish_command_auxiliary(execution, store, transport, now=_aware(clock()),
+            reason="on_command_failed_or_unknown")
     if execution.get("provider_capacity_permit") and accepted.get("provider_command_attempted") is False:
         return _retire_unsent_execution(execution, store, transport)
     if accepted.get("accepted_unambiguous") is not True:
@@ -392,6 +420,10 @@ def emergency_off_auxiliary_execution(*, store, transport,
             or active.get("channel") != expected.get("channel")):
         return _aux_result("auxiliary_emergency_off_binding_mismatch",
             state="Intervention", fertilizer_debt=True)
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(active):
+        return _finish_command_auxiliary(active, store, bind_execution_transport(transport, active),
+            now=datetime.now(timezone.utc), reason=reason)
     # Parent shutdown may arrive through a parent-bound transport. Attribute
     # the injector's proof to its own unresolved reserve, never the parent's.
     transport = bind_execution_transport(transport, active)
@@ -414,6 +446,14 @@ def emergency_off_auxiliary_execution(*, store, transport,
 
 
 def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=None,stop_for_deadline=None):
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(active):
+        deadline = _timestamp(active.get("primary_stop_deadline"))
+        if active.get("state") == "Active" and deadline is not None and now < deadline and not stop_for_energy and not stop_for_deadline:
+            if active.get("device_type") != "fertilizer_injection_valve" or _injection_parent_still_on(active, store, transport, now, clock=clock):
+                return _aux_result("auxiliary_command_duty_active", execution=active)
+        return _finish_command_auxiliary(active, store, transport, now=now,
+            reason=str(stop_for_deadline or ("energy_stop" if stop_for_energy else "primary_deadline_reached")))
     if active.get("on_not_dispatched") is True:
         return _retire_unsent_execution(active, store, transport)
     deadline=_timestamp(active.get("primary_stop_deadline"))
@@ -563,6 +603,9 @@ def _injection_parent_still_on(active, store, transport, now, *, clock=None, rou
         read_deadline = min(deadline, own_deadline) if own_deadline else deadline
         if active.get("state") == "claimed" and claimed:
             read_deadline = min(read_deadline, claimed+timedelta(seconds=ON_START_WINDOW_SECONDS))
+        from modules.telemetry.rootline_command_acceptance import command_execution, active_command
+        if command_execution(active):
+            return read_deadline > (_aware(clock()) if clock else now) and active_command(parent, now=now)
         bounded_transport = bind_execution_transport(transport, active, read_deadline=read_deadline)
         output = bounded_transport.read_output_state(device_id=binding["device_id"],
             channel=binding["channel"], **({"routine_read": True} if routine_read else {}))
@@ -634,6 +677,12 @@ def _recover_auxiliary_startup_hold(containment, artifact, store, transport):
 def _bounded_auxiliary_off(execution,store,transport):
     commands=0; outcomes=[]
     prior=store("load_auxiliary_off_attempts",execution["execution_id"]) or []
+    from modules.telemetry.rootline_command_acceptance import command_execution, accepted
+    if command_execution(execution):
+        receipts = [row.get("outcome") for row in prior if isinstance(row, dict)
+            and accepted(row.get("outcome"), execution, "OFF")]
+        if receipts:
+            return {"commands": 0, "outcomes": receipts}
     used={int(row.get("attempt") or 0) for row in prior if isinstance(row,dict)}
     for attempt in range(1,MAX_OFF_ATTEMPTS+1):
         if attempt in used: continue
@@ -667,6 +716,10 @@ def _aux_result(status,*,commands=0,state=None,fertilizer_debt=False,
 def _recover_or_observe(active, store, transport, notify, outcome_reader, now, *,
                         clock=None, active_weather_revalidator=None):
     clock = clock or (lambda: datetime.now(timezone.utc))
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(active):
+        return _recover_command_irrigation(active, store, transport, notify, now,
+            clock=clock, weather_reader=active_weather_revalidator)
     if active.get("on_not_dispatched") is True:
         return _retire_unsent_execution(active, store, transport)
     if (active.get("state") in {"claimed", "claimed_recovery_required"}
@@ -1075,6 +1128,12 @@ def _prove_unsent_execution(execution, store, transport, *, commands=0):
 def _bounded_off(execution, store, transport):
     commands = 0; outcomes = []
     prior = store("load_off_attempts", execution["execution_id"]) or []
+    from modules.telemetry.rootline_command_acceptance import command_execution, accepted
+    if command_execution(execution):
+        receipts = [row.get("outcome") for row in prior if isinstance(row, dict)
+            and accepted(row.get("outcome"), execution, "OFF")]
+        if receipts:
+            return {"commands": 0, "outcomes": receipts}
     used = {int(item.get("attempt")) for item in prior if isinstance(item, dict)
             and str(item.get("attempt") or "").isdigit()}
     for attempt in range(1, MAX_OFF_ATTEMPTS + 1):
@@ -1093,6 +1152,87 @@ def _bounded_off(execution, store, transport):
         if outcome.get("accepted_unambiguous") is True:
             break
     return {"commands": commands, "outcomes": outcomes}
+
+
+def _finish_command_auxiliary(active, store, transport, *, now, reason):
+    from modules.telemetry.rootline_command_acceptance import accepted, terminal
+    recovery = _bounded_auxiliary_off(active, store, transport)
+    off = next((row for row in recovery["outcomes"] if accepted(row, active, "OFF")), None)
+    if off is None:
+        store("contain_auxiliary_device", {**active, "reason": "off_command_failed_or_unknown",
+            "shutdown_verified": False, "command_duty_closed": False})
+        return _aux_result("auxiliary_off_command_unknown", commands=recovery["commands"],
+            state="Intervention", execution=active, effects_unknown=True)
+    completed = terminal(active, off, now=now, reason=reason)
+    deadline = _timestamp(active.get("primary_stop_deadline"))
+    complete = (accepted(active.get("command_on_receipt"), active, "ON")
+        and deadline is not None and _timestamp(off.get("accepted_at")) >= deadline and reason == "primary_deadline_reached")
+    completed.update(command_program_completed=complete, control_completed=False,
+        physical_outcome="Unknown", fertilizer_delivery_verified=False,
+        accounted_mixing_seconds=0, command_accounted_mixing_seconds=(
+            int(active.get("maximum_duration_seconds") or 0) if complete else completed["commanded_runtime_seconds"]))
+    recorded = store("record_auxiliary_completed", completed)
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        return _aux_result("auxiliary_command_completion_persistence_unproven", commands=recovery["commands"],
+            state="Intervention", execution=active)
+    return _aux_result("auxiliary_off_command_accepted", commands=recovery["commands"],
+        state="Completed", execution=completed, command_duty_closed=True, shutdown_verified=False)
+
+
+def _recover_command_irrigation(active, store, transport, notify, now, *, clock=None, weather_reader=None, reason=None):
+    from modules.telemetry.rootline_command_acceptance import accepted, terminal
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    deadline = _timestamp(active.get("primary_stop_deadline"))
+    claimed = _timestamp(active.get("claimed_at"))
+    duration = active.get("planned_runtime_seconds")
+    valid_deadline = (claimed is not None and type(duration) is int and 0 < duration <= MAX_IRRIGATION_SECONDS
+        and deadline == claimed + timedelta(seconds=duration))
+    reason = reason or (active.get("reason") if active.get("state") == "stopping" else None)
+    if reason is None and active.get("state") == "Active" and valid_deadline and now < deadline:
+        weather = None
+        if callable(weather_reader):
+            try:
+                weather = weather_reader(active)
+            except Exception:
+                pass
+        now = _aware(clock())
+        if (isinstance(weather, dict) and weather.get("contract_version") == "rootline_active_weather.v1"
+                and weather.get("evidence_sha256") == _digest({k:v for k,v in weather.items() if k != "evidence_sha256"})
+                and weather.get("stop_required") is True):
+            reason = weather.get("reason") or "weather_stop"
+            active = {**active, "command_stop_weather_evidence": weather}
+        elif now < deadline:
+            return _result("irrigation_command_duty_active", commands=0, messages=0, execution=active)
+    reason = reason or ("primary_deadline_reached" if valid_deadline and now >= deadline else "interrupted_start_or_invalid_deadline")
+    stopping = {**active, "state": "stopping", "reason": reason}
+    barrier = store("mark_stopping", stopping)
+    if isinstance(barrier, dict) and barrier.get("status") == "parent_already_terminal":
+        return _result("active_execution_already_terminal", commands=0, messages=0)
+    if not isinstance(barrier, dict) or barrier.get("success") is not True:
+        return _stopping_barrier_hold(active, store, notify)
+    auxiliary = _stop_bound_injection(active, store, transport)
+    recovery = _bounded_off(active, store, transport)
+    off = next((row for row in recovery["outcomes"] if accepted(row, active, "OFF")), None)
+    commands = recovery["commands"] + auxiliary.get("hardware_commands", 0)
+    if off is None:
+        store("contain_zone", {**stopping, "shutdown_verified": False, "command_duty_closed": False,
+            "reason": "off_command_failed_or_unknown"})
+        delivery = _notify(notify, store, "Intervention", {**stopping, "reason": "off_command_failed_or_unknown"})
+        return _result("irrigation_off_command_unknown", commands=commands, messages=delivery["confirmed"],
+            execution=stopping, effects_unknown=True, notification=delivery)
+    completed = terminal(active, off, now=_aware(clock()), reason=reason)
+    completed.update(command_program_completed=bool(valid_deadline and _timestamp(off.get("accepted_at")) >= deadline
+        and reason == "primary_deadline_reached" and accepted(active.get("command_on_receipt"), active, "ON")),
+        job_completed=False, cumulative_verified_runtime_seconds=int(active.get("cumulative_verified_runtime_seconds") or 0))
+    completed["command_job_completed"] = (completed["command_program_completed"]
+        and active.get("expected_segment_count") == active.get("segment_number") == 1
+        and active.get("governed_executable_duration_seconds") == duration)
+    recorded = store("record_completed", completed)
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        return _result("command_completion_persistence_unproven", commands=commands, messages=0, execution=active)
+    delivery = _notify(notify, store, "Completed", completed)
+    return _result("irrigation_off_command_accepted", commands=commands, messages=delivery["confirmed"],
+        execution=completed, notification=delivery, command_duty_closed=True, shutdown_verified=False)
 
 
 def _degraded_hold(*, consumption_unknown=False):
@@ -1296,6 +1436,9 @@ def _valid_native_final_check(final, decision, output, now):
             and safety.get("controller_safety_generation") == generation
             and artifact.get("controller_safety_generation") == generation)
     outputs = {str(row["channel"]): row.get("output_state") for row in snapshot["channels"]}
+    from modules.telemetry.rootline_command_acceptance import enabled, route_valid, MODE
+    command_ready = (enabled() and artifact.get("acceptance_mode") == MODE
+        and route_valid(snapshot, device_id=output["device_id"], channel=output["channel"], now=now))
     return (artifact.get("zone_id") == decision["zone_id"]
         and type(artifact.get("channel")) is int and artifact["channel"] == output["channel"]
         and safety.get("device_id") == output["device_id"]
@@ -1304,8 +1447,8 @@ def _valid_native_final_check(final, decision, output, now):
         and safety.get("response_digest") == snapshot["response_digest"]
         and artifact.get("controller_response_digest") == snapshot["response_digest"]
         and generation_matches
-        and safety.get("relevant_outputs_off") is True
-        and outputs == {str(channel): "OFF" for channel in range(1, 5)}
+        and (command_ready or (safety.get("relevant_outputs_off") is True
+            and outputs == {str(channel): "OFF" for channel in range(1, 5)}))
         and artifact.get("provider_output_state") == outputs
         and _safe_configuration(safety, decision["zone_id"],
             stop_mode="scheduled" if scheduled else None, now=now))
@@ -1317,6 +1460,9 @@ def _safe_configuration(value, zone, *, stop_mode=None, now=None):
     except ValueError:
         return False
     if stop_mode == "scheduled":
+        from modules.telemetry.rootline_command_acceptance import enabled, route_valid
+        if enabled() and route_valid(value, device_id=output["device_id"], channel=output["channel"], now=now):
+            return value.get("zone_id") == zone
         observed = _timestamp(value.get("observed_at")) if isinstance(value, dict) else None
         checked = _aware(now or datetime.now(timezone.utc))
         return (isinstance(value, dict) and value.get("scheduled_authoritative") is True

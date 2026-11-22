@@ -7,3 +7,4 @@ psycopg[binary]>=3.2,<4
 reportlab==4.2.5
 chardet==5.2.0
 cryptography>=43,<46
+aiohttp==3.14.5

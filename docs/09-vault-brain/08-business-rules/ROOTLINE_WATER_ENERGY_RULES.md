@@ -1,5 +1,35 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed command-based Home Assistant operation — 22 November 2026
+
+The owner explicitly approved continuing through live activation and directed
+ROOTLINE to send ON and OFF commands without waiting for separate controller
+feedback. This supersedes contrary requirements below that make independent
+switch readback a prerequisite for routine Home Assistant execution or normal
+command-based lifecycle progression. Feedback improvement is deferred; it must
+not keep this approved operating mode inactive.
+
+Use the existing authenticated Home Assistant connection, exact device/channel
+bindings and ROOTLINE execution/scheduler rails. A successfully accepted ON/OFF
+service call is the operational result accepted by the owner for this mode.
+Record and report it as command acceptance, not independently verified relay
+state, pumping, water flow or measured delivery. Do not manufacture authoritative
+readback or overwrite historical verified evidence with a weaker claim.
+
+Preserve the agreed irrigation durations, weather and energy rules, explicit
+manual isolation, single execution ownership, durable OFF duties across restart,
+and protection against duplicate ON commands. A rejected request or network
+timeout is failed or uncertain, not accepted. Do not repeat an uncertain ON;
+retain its shutdown duty and use the existing bounded OFF recovery. An accepted
+OFF may close the command-based duty while retaining unverified physical state.
+
+This approval covers implementation, review, release and activation of this
+bounded mode through the existing system. No new feedback account login or
+cloud-observer installation is required for it. Keep the working independent
+Eskom control and its existing30% ON /35% with solar recovery OFF policy intact.
+Optional stronger observation can be added later without changing the ordinary
+owner-approved command operation into a recurring approval or attendance gate.
+
 ## Owner-directed provider economy and visible input failures — 20 November 2026
 
 ROOTLINE must minimize avoidable provider requests while retaining fresh evidence

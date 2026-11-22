@@ -21,6 +21,8 @@ def build_irrigation_job(*,zone_id,operating_date,requested_total_seconds,maximu
  return {**material,"job_id":"ROOTLINE-IRRIGATION-JOB-"+digest[:24].upper(),"job_sha256":digest,"current_segment":0,"cumulative_verified_runtime_seconds":0,"state":"planned"}
 def project_next_segment(job,events,rearm_readback_off=False):
  job=_validate(job); completed={}; stopped={}; active_by_segment={}
+ command_projection=_project_command_terminal(job, events)
+ if command_projection is not None: return command_projection
  for row in [dict(x) for x in (events or ()) if isinstance(x,dict) and x.get("job_id")==job["job_id"]]:
   if row.get("action")=="record_job_resolution" and row.get("resolution")=="Cancelled":
    if (row.get("job_sha256")!=job["job_sha256"] or row.get("zone_id")!=job["zone_id"]
@@ -242,3 +244,35 @@ def _stop_time(value):
         return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else None
     except (ValueError, TypeError, OverflowError):
         return None
+
+
+def _project_command_terminal(job, events):
+ from modules.telemetry.rootline_command_acceptance import command_execution, duty_closed, accepted, moment
+ rows=[row for row in events or () if isinstance(row,dict) and row.get("job_id")==job["job_id"]]
+ terminal=[row for row in rows if row.get("action")=="record_completed" and command_execution(row)]
+ if not terminal: return None
+ if len({_digest(row) for row in terminal}) != 1: raise IrrigationJobError("conflicting_command_terminals")
+ row=terminal[0]; duration=job["governed_executable_seconds"]
+ identity="ROOTLINE-JOB-SEGMENT-"+_digest({"job_id":job["job_id"],"segment_number":1,"duration_seconds":duration})[:24].upper()
+ if (job["contract_version"]!=TIMED_JOB_VERSION or job["expected_segment_count"]!=1
+     or row.get("segment_number")!=1 or row.get("expected_segment_count")!=1
+     or row.get("job_sha256")!=job["job_sha256"] or row.get("zone_id")!=job["zone_id"]
+     or row.get("segment_identity")!=identity or row.get("planned_runtime_seconds")!=duration
+     or row.get("governed_executable_duration_seconds")!=duration or not duty_closed(row)):
+  raise IrrigationJobError("command_segment_authority_mismatch")
+ if any(other.get("execution_id")!=row.get("execution_id") for other in rows
+        if other.get("action") in {"claim_before_on","mark_active","record_completed"}):
+  raise IrrigationJobError("conflicting_command_executions")
+ claimed=moment(row.get("claimed_at")); deadline=moment(row.get("primary_stop_deadline"))
+ off=moment(row["command_off_receipt"]["accepted_at"])
+ complete=(claimed is not None and deadline==claimed+timedelta(seconds=duration)
+     and off>=deadline and row.get("reason")=="primary_deadline_reached"
+     and accepted(row.get("command_on_receipt"),row,"ON")
+     and row.get("command_program_completed") is True and row.get("command_job_completed") is True)
+ return {"status":"command_job_completed" if complete else "job_deferred", "command_authority":False,
+     "job_id":job["job_id"], "current_segment":1, "expected_segment_count":1,
+     "cumulative_verified_runtime_seconds":0, "remaining_seconds":0 if complete else duration,
+     "command_job_completed":complete, "command_duty_closed":True, "shutdown_verified":False,
+     "consumed_segment_count":1,"unused_segment_count":0,
+     "reason":"accepted_command_programme_completed" if complete else "command_programme_interrupted",
+     "next_action_owner":"ROOTLINE","next_trigger":"next_permitted_normal_irrigation_plan"}

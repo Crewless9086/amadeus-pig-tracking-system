@@ -25,8 +25,10 @@ def timed_control_enabled(environ=None):
 @contextmanager
 def timed_control_scope(environ):
     token = _policy.set(timed_control_enabled(environ))
+    from modules.telemetry.rootline_command_acceptance import scope
     try:
-        yield
+        with scope(environ):
+            yield
     finally:
         _policy.reset(token)
 
@@ -39,6 +41,9 @@ def timed_snapshot_safe(snapshot, *, device_id, channel, now=None):
     from datetime import datetime, timezone, timedelta
     if not isinstance(snapshot, dict):
         return False
+    from modules.telemetry.rootline_command_acceptance import enabled, route_valid
+    if enabled() and route_valid(snapshot, device_id=device_id, channel=channel, now=now):
+        return True
     rows = [row for row in snapshot.get("channels") or [] if isinstance(row, dict) and row.get("channel") == channel]
     try:
         observed = datetime.fromisoformat(str(snapshot.get("trusted_receipt_at") or snapshot.get("retrieved_at")).replace("Z", "+00:00"))

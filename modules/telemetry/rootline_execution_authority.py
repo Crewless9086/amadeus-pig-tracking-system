@@ -245,6 +245,9 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "single_use": True, "simultaneous_irrigation": False,
         "automatic_second_segment": False,
     }
+    from modules.telemetry.rootline_command_acceptance import enabled, MODE
+    if enabled() and controller.get("acceptance_mode") == MODE:
+        material["acceptance_mode"] = MODE
     digest = _digest(material)
     identity = "ROOTLINE-ELIGIBILITY-" + digest[:24].upper()
     execution = "ROOTLINE-EXECUTION-" + digest[:24].upper()
@@ -283,6 +286,9 @@ def _candidate_exclusion(*, task, zone, zones, contained, durable_containment,
 def validate_execution_eligibility(value, *, now=None):
     now = _aware(now or datetime.now(timezone.utc))
     if not isinstance(value, dict) or value.get("eligible") is not True:
+        return None
+    from modules.telemetry.rootline_command_acceptance import enabled, MODE
+    if value.get("acceptance_mode") is not None and (value["acceptance_mode"] != MODE or not enabled() or not scheduled_execution(value)):
         return None
     material = {key: item for key, item in value.items() if key not in {
         "success", "status", "eligible", "eligibility_id", "eligibility_sha256",
@@ -341,7 +347,7 @@ def equivalent_fresh_eligibility(original, fresh, *, now=None):
     # Fresh request/receipt timestamps necessarily produce a new source generation
     # and evidence digest. Equivalence binds the governed decision material while
     # the freshly rebuilt artifact independently re-proves weather, water and controller safety.
-    keys = ("plan_generation", "operating_date", "zone_id", "channel",
+    keys = ("acceptance_mode", "plan_generation", "operating_date", "zone_id", "channel",
             "maximum_duration_seconds", "command_mapping", "job_id",
             "requested_total_duration_seconds", "expected_segment_count",
             "current_segment", "segment_identity",
