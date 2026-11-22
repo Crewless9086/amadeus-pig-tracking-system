@@ -161,6 +161,99 @@ def controller_readback_time(execution, key, state):
     return retrieved if "retrieved_at" in evidence else observed
 
 
+def auxiliary_shutdown_unverified(rows, *, evidence_cutoff):
+    """Reconcile contained auxiliary duties from canonically ordered events.
+
+    Physical and accepted-command closures retain their own evidence contracts.
+    Compact historical readbacks remain attributed to their enclosing execution;
+    they never supply a missing claim, device binding or OFF outcome.
+    """
+    from modules.telemetry.rootline_command_acceptance import command_execution, terminal_matches_rows
+    from modules.telemetry.rootline_device_registry import get_device_contract
+
+    cutoff = _aware_timestamp(evidence_cutoff)
+    contained = [row for row in rows if isinstance(row, Mapping)
+        and row.get("action") == "contain_auxiliary_device"]
+    if not contained:
+        return False
+    if cutoff is None:
+        return True
+    immutable = ("execution_id", "auxiliary_device_id", "device_id", "channel", "device_type",
+        "claimed_at", "primary_stop_deadline", "maximum_duration_seconds", "consumption_key",
+        "job_id", "job_sha256", "segment_identity", "zone_execution_id", "acceptance_mode")
+    terminal_actions = {"contain_auxiliary_device", "record_auxiliary_completed",
+        "record_auxiliary_control_pulse_stopped"}
+    duty_actions = terminal_actions | {"claim_auxiliary_before_on", "claim_auxiliary_dispatch",
+        "record_auxiliary_on_outcome", "mark_auxiliary_active", "claim_auxiliary_off_attempt",
+        "record_auxiliary_off_outcome"}
+    for held in contained:
+        identity = held.get("execution_id")
+        if not isinstance(identity, str) or not identity.strip():
+            return True
+        history = [row for row in rows if isinstance(row, Mapping)
+            and row.get("execution_id") == identity]
+        claims = [row for row in history if row.get("action") == "claim_auxiliary_before_on"]
+        if not claims:
+            return True
+        claim = claims[0]
+        contract = get_device_contract(claim.get("auxiliary_device_id")) or {}
+        if (contract.get("collection") != "irrigation_auxiliary_devices"
+                or claim.get("auxiliary_device_id") not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
+                or type(claim.get("channel")) is not int
+                or any(claim.get(key) != contract.get(key) for key in ("device_id", "channel", "device_type"))
+                or not str(claim.get("consumption_key") or "").strip()
+                or any(any(key in row and row[key] != claim.get(key) for key in immutable)
+                    for row in history)):
+            return True
+        claimed = _aware_timestamp(claim.get("claimed_at"))
+        if claimed is None or claimed > cutoff:
+            return True
+        # Only the last duty event can discharge an earlier hold. A later
+        # reopened claim, ON, OFF attempt or unresolved containment stays open.
+        duties = [row for row in history if row.get("action") in duty_actions]
+        terminal = duties[-1]
+        if terminal.get("action") not in terminal_actions:
+            return True
+        if command_execution(claim):
+            if (terminal.get("action") == "contain_auxiliary_device"
+                    or not terminal_matches_rows(dict(terminal), history)
+                    or _aware_timestamp(terminal["command_off_receipt"]["accepted_at"]) > cutoff):
+                return True
+            continue
+        if terminal.get("acceptance_mode") is not None:
+            return True
+        proof = terminal.get("shutdown_evidence")
+        if not isinstance(proof, Mapping):
+            return True
+        observed = controller_readback_time(terminal, "shutdown_evidence", "OFF")
+        evidence_id = proof.get("evidence_id")
+        # The old compact shape omits both fields; partial binding is malformed.
+        if (terminal.get("shutdown_verified") is not True or observed is None
+                or not claimed <= observed <= cutoff
+                or ("device_id" in proof) != ("channel" in proof)
+                or ("channel" in proof and type(proof["channel"]) is not int)
+                or not isinstance(evidence_id, str) or len(evidence_id) != 64
+                or any(char not in "0123456789abcdef" for char in evidence_id)
+                or any(terminal.get(key) != claim.get(key) for key in immutable)):
+            return True
+        off_rows = [row for row in history if row.get("action") == "record_auxiliary_off_outcome"]
+        if not any(isinstance(row.get("outcome"), Mapping)
+                and row["outcome"].get("event") == contract["off_event"]
+                and row["outcome"].get("status") == "accepted"
+                and row["outcome"].get("accepted_unambiguous") is True
+                and type(row["outcome"].get("provider_status")) is int
+                and row["outcome"]["provider_status"] == 200 for row in off_rows):
+            return True
+        # A digest cannot identify contradictory observations or another duty.
+        for row in rows:
+            other = row.get("shutdown_evidence") if isinstance(row, Mapping) else None
+            if isinstance(other, Mapping) and other.get("evidence_id") == evidence_id:
+                if (row.get("execution_id") != identity or other != proof
+                        or row.get("shutdown_verified") is not True):
+                    return True
+    return False
+
+
 def project_execution_shutdown_exceptions(rows, *, evidence_cutoff=None, canonical_ordered=False):
     """Preserve shutdown uncertainty for one exact run, independent of row order.
 

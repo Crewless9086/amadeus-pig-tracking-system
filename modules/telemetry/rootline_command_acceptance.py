@@ -235,6 +235,7 @@ def irrigation_context(active, auxiliary, *, fertilizer_needed, batch_generation
     if not active_command(active, now=now) or active.get("zone_id") not in {"B12345", "C12345"}:
         return None
     from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
+    from modules.telemetry.rootline_irrigation_lifecycle import auxiliary_shutdown_unverified
     binding = commissioned_irrigation_contract(active["zone_id"])
     if active.get("device_id") != binding["device_id"] or active.get("channel") != binding["channel"]:
         return None
@@ -261,10 +262,8 @@ def irrigation_context(active, auxiliary, *, fertilizer_needed, batch_generation
         "completed_pulses": len(pulses), "completed_pulse_numbers": [int(row.get("pulse_number") or 0) for row in pulses],
         "prior_pulse_shutdown_evidence": ({"observed_at": prior["command_off_receipt"]["accepted_at"],
             "zone_execution_id": identity, "command_execution": prior, "shutdown_verified": False} if prior else None),
-        "mixer_active": False, "prior_shutdown_unverified": any(
-            row.get("action") == "contain_auxiliary_device" and not any(
-                end.get("execution_id") == row.get("execution_id") and terminal_matches_rows(end, auxiliary)
-                for end in auxiliary) for row in auxiliary)}
+        "mixer_active": False, "prior_shutdown_unverified": auxiliary_shutdown_unverified(
+            auxiliary, evidence_cutoff=now)}
 
 
 def command_parent_ready(context, *, now, require_route=True):

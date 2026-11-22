@@ -1604,6 +1604,7 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
                                is distinct from 'string'
                            or review_json->'rootline_execution'->>'action' in (
                                'record_auxiliary_completed', 'claim_auxiliary_before_on',
+                               'claim_auxiliary_dispatch', 'claim_auxiliary_off_attempt',
                                'record_auxiliary_control_pulse_stopped', 'contain_auxiliary_device',
                                'mark_auxiliary_active', 'mark_active',
                                'record_completed', 'record_ambiguous_shutdown',
@@ -1787,7 +1788,7 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
         and row.get("action") == "record_auxiliary_completed"
         and row.get("control_completed") is True and row.get("shutdown_verified") is True}
     pulses = sorted(pulses.values(), key=lambda row: int(row.get("pulse_number") or 0))
-    from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time
+    from modules.telemetry.rootline_irrigation_lifecycle import controller_readback_time, auxiliary_shutdown_unverified
     start_at = controller_readback_time(active, "start_evidence", "ON")
     if start_at is None:
         return None
@@ -1815,9 +1816,8 @@ def _active_irrigation_context(active, auxiliary, fertilizer_needed, batch_gener
         "completed_pulses": len(pulses),
         "completed_pulse_numbers":[int(row.get("pulse_number") or 0) for row in pulses],
         "prior_pulse_shutdown_evidence": prior,
-        "mixer_active": False, "prior_shutdown_unverified": any(
-            row.get("action") == "contain_auxiliary_device"
-            and row.get("shutdown_verified") is not True for row in auxiliary)}
+        "mixer_active": False, "prior_shutdown_unverified": auxiliary_shutdown_unverified(
+            auxiliary, evidence_cutoff=now or datetime.now(timezone.utc))}
 
 
 def _valid_fertilizer_batch_observation(value):
