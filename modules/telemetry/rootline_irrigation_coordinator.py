@@ -689,6 +689,10 @@ def _recover_auxiliary_startup_hold(containment, artifact, store, transport):
             "containment_event_id": held["event_id"],
             "read_final_off": lambda: bound.read_output_state(
                 device_id=held["device_id"], channel=held["channel"])}
+        from modules.telemetry.rootline_command_acceptance import enabled
+        if enabled():
+            payload["recover_command_off"] = lambda claim, binding: _bounded_auxiliary_off(
+                claim, store, bind_execution_transport(transport, claim), startup_recovery=binding)
         prepare = getattr(bound, "prepare_no_send_off", None)
         if callable(prepare):
             payload["prepare_final_off"] = lambda binding: prepare(
@@ -699,6 +703,7 @@ def _recover_auxiliary_startup_hold(containment, artifact, store, transport):
     proven = (isinstance(result, dict) and result.get("success") is True
         and (result.get("execution") or {}).get("startup_aborted_verified") is True)
     return _aux_result("auxiliary_startup_aborted_reassess" if proven else "auxiliary_device_contained",
+        commands=(result.get("hardware_commands", 0) if isinstance(result, dict) else 0),
         fertilizer_debt=True, auxiliary_contained=(result.get("auxiliary_contained") is not False
             if proven else True), writes_farm_data=(bool(result.get("created")) if proven else
             None if isinstance(result, dict) and result.get("effects_unknown") else False),
@@ -708,11 +713,11 @@ def _recover_auxiliary_startup_hold(containment, artifact, store, transport):
             if key in result} if isinstance(result, dict) else {}))
 
 
-def _bounded_auxiliary_off(execution,store,transport):
+def _bounded_auxiliary_off(execution,store,transport, *, startup_recovery=None):
     commands=0; outcomes=[]
     prior=store("load_auxiliary_off_attempts",execution["execution_id"]) or []
     from modules.telemetry.rootline_command_acceptance import command_execution, accepted
-    if command_execution(execution):
+    if command_execution(execution) or startup_recovery is not None:
         receipts = [row.get("outcome") for row in prior if isinstance(row, dict)
             and accepted(row.get("outcome"), execution, "OFF")]
         if receipts:
@@ -724,10 +729,16 @@ def _bounded_auxiliary_off(execution,store,transport):
             return transport.set_state(device_id=execution["device_id"],channel=execution["channel"],
                 state="OFF",idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")
         outcome=store("dispatch_auxiliary_off_edge",{"execution_id":execution["execution_id"],
-            "attempt":attempt,"dispatch":dispatch})
+            "attempt":attempt,"dispatch":dispatch,
+            **({"startup_recovery": startup_recovery} if startup_recovery is not None else {})})
         if not isinstance(outcome,dict): continue
         commands+=int(outcome.get("provider_command_attempted") is True);outcomes.append(outcome)
         if outcome.get("accepted_unambiguous") is True: break
+        if startup_recovery is not None:
+            # One recovery invocation never races ahead to another worker's slot.
+            # A later normal cycle may use the remaining slot after a durable
+            # uncertain outcome; an absent outcome remains held.
+            break
     return {"commands":commands,"outcomes":outcomes}
 
 
