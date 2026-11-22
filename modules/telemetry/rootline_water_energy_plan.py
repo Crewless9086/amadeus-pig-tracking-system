@@ -474,7 +474,13 @@ def _adjust_live_slots(plan, evidence, now):
             continue
         if task.get("zone_decision") not in {"Run now", "Run later"}:
             continue
-        original = datetime.fromisoformat(task["planned_start_at"])
+        # A delayed projection is not a new not-before authority. Rebuild the
+        # remainder from the immutable intended slot, so completed predecessors
+        # cannot strand the next camp behind their previously projected runtime.
+        base = next((item for item in plan["daily_program"].get("base_tasks", [])
+            if item.get("task_id") == task["task_id"]
+            and item.get("scheduled_order") == task.get("scheduled_order")), task)
+        original = datetime.fromisoformat(base["planned_start_at"])
         proposed = max(original, cursor)
         finish = proposed + timedelta(minutes=task["requested_total_duration_minutes"])
         if finish > end:
@@ -2214,6 +2220,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                 "source": event.get("provenance"),
             } for event in canonical.get("events", [])
                 if event.get("qualifies_as_completed_watering") is True or event.get("command_job_completed") is True]
+            zone["completion_ledger_conflicting"] = bool(canonical.get("conflicts"))
             zone["completion_ledger_complete_through"] = canonical.get("complete_through")
             from modules.telemetry.rootline_timed_control import timed_control_enabled
             if (zone.get("zone_id") in {"A12345","E12345"} and (

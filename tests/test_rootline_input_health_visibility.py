@@ -385,7 +385,7 @@ def test_real_family_retry_and_execution_receipt_failure_replay():
 
 
 @pytest.mark.parametrize("report_due", [False, True])
-def test_actual_minute_gateway_runs_health_after_off_before_failed_plan(report_due, monkeypatch):
+def test_actual_minute_gateway_retains_health_after_off_and_failed_plan(report_due, monkeypatch):
     from modules.oom_sakkie import automatic_reassessment_scheduler as scheduler
     from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_trigger
     from modules.telemetry import rootline_water_energy_plan as planning
@@ -417,7 +417,7 @@ def test_actual_minute_gateway_runs_health_after_off_before_failed_plan(report_d
         family_delivery=delivery)
     assert calls[:2] == ["off_duties", "off_duties"] and calls.count("input_notice") == 1
     assert result["telegram_sends"] == 1 and len(delivered) == 1
-    if report_due: assert calls.index("input_notice") < calls.index("plan")
+    if report_due: assert calls.index("plan") < calls.index("input_notice")
     else: assert "plan" not in calls
     assert delivered[0]["recipient_render_contract"] == "specialist_structured_recipient_v1"
     assert ("weather" in delivered[0]["answer"].lower() or "weer" in delivered[0]["answer"].lower())

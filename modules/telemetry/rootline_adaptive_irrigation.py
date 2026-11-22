@@ -93,7 +93,7 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
     verified_minutes = 0
     outcomes = []
     seen = {}
-    conflict = False
+    conflict = zone.get("completion_ledger_conflicting") is True
     rows = list(zone.get("completion_events", [])) + list(additional_outcomes or [])
     for row in rows:
         if not isinstance(row, dict) or not str(row.get("outcome_id") or "").strip():
@@ -106,7 +106,7 @@ def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4
             conflict = conflict or seen[identity] != canonical
             continue
         seen[identity] = canonical
-        command_at = _command_completion_time(row)
+        command_at = _command_completion_time(row, zone_id=zone.get("zone_id"))
         if command_at is not None:
             credited = str(row.get("operating_date") or command_at.astimezone(ZA_TZ).date().isoformat())
             if command_at <= now and obligation_start.date().isoformat() <= credited <= now.date().isoformat() and (epoch_start is None or command_at >= epoch_start):
@@ -259,7 +259,12 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now, 
         _need_based_obligation(zone, target, need, now))
     water_balance=_dict(zone.get("water_balance"))
     sufficient_latest = _latest_completion(completions, require_objective_satisfied=True)
+    command_completed_today = not zone.get("completion_ledger_conflicting") and any(
+        (completed := _command_completion_time(row, zone_id=zone_id)) is not None
+        and completed <= now and row.get("operating_date") == target_date
+        for row in completions)
     completed_today = any(_verified_completion_time(row) is not None
+        and _verified_completion_time(row) <= now
         and row.get("objective_satisfied") is True
         and str(row.get("operating_date") or _verified_completion_time(row).astimezone(ZA_TZ).date().isoformat()) == target_date
         for row in completions)
@@ -285,9 +290,11 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now, 
         decision = "Reassess after segment one"
         reason = "Segment one completed and shutdown is verified; a new evidence generation must decide segment two."
         score = _need_score(need, latest, zone, now, obligation)
-    elif (completed_today and not parent_job
-          and correction.get("another_segment_needed") is not True):
-        decision, reason, score = "Completed", "A completed irrigation is recorded for this zone today.", 0
+    elif ((completed_today or command_completed_today) and not parent_job
+          and (command_completed_today or correction.get("another_segment_needed") is not True)):
+        decision, score = "Completed", 0
+        reason = ("The command programme for this operating day completed; physical state and water delivery remain unverified."
+            if command_completed_today else "A completed irrigation is recorded for this zone today.")
     elif (latest is not None and latest.astimezone(ZA_TZ).date().isoformat() == target_date
           and sufficient_latest is None):
         decision = "Reassess after segment one"
@@ -667,10 +674,27 @@ def _digest(value):
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
 
 
-def _command_completion_time(row):
-    from modules.telemetry.rootline_command_acceptance import job_completed
+def _command_completion_time(row, *, zone_id=None):
+    from modules.telemetry.rootline_command_acceptance import job_completed, moment
+    execution = _dict(row.get("command_execution"))
     if (row.get("state") != "Completed" or row.get("command_job_completed") is not True
             or not row.get("outcome_id") or not row.get("source")
-            or not job_completed(row.get("command_execution") or {})):
+            or row.get("outcome_id") != execution.get("execution_id")
+            or any(type(execution.get(key)) is not int for key in ("segment_number", "expected_segment_count"))
+            or not job_completed(execution)):
         return None
-    return _timestamp(row.get("completed_at"))
+    completed = moment(row.get("completed_at"))
+    off = moment(execution["command_off_receipt"].get("accepted_at"))
+    claimed = moment(execution.get("claimed_at"))
+    operating_date = row.get("operating_date")
+    if (completed is None or off is None or claimed is None or completed < off
+            or operating_date != claimed.astimezone(ZA_TZ).date().isoformat()
+            or execution.get("operating_date", operating_date) != operating_date):
+        return None
+    if zone_id is not None:
+        binding = ZONES.get(zone_id, {})
+        if (execution.get("device_id") != binding.get("device_id")
+                or execution.get("channel") != binding.get("channel")
+                or execution.get("zone_id", zone_id) != zone_id):
+            return None
+    return completed

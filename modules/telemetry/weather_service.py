@@ -324,7 +324,13 @@ def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_mi
                                             order by h.reading_at)
                               from public.weather_readings h
                              where h.source_id=ts.source_id
-                               and h.reading_at between wr.reading_at - interval '35 minutes'
+                               and h.reading_at between (
+                                   select max(anchor.reading_at)
+                                     from public.weather_readings anchor
+                                    where anchor.source_id=ts.source_id
+                                      and anchor.reading_at between
+                                          wr.reading_at - interval '40 minutes'
+                                          and wr.reading_at - interval '30 minutes')
                                                     and wr.reading_at)
                       from public.telemetry_sources ts
                       left join public.weather_latest_state wls using(source_id)
@@ -332,8 +338,9 @@ def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_mi
                           where r.source_id=ts.source_id and r.reading_at <= %s
                           order by r.reading_at desc limit 1) wr on true
                      where ts.source_id=%s
-                """.replace("interval '35 minutes'", "interval '65 minutes'" if dry_interval_minutes == 60
-                    else "interval '35 minutes'"), (cutoff, DEFAULT_WEATHER_SOURCE_ID))
+                """.replace("interval '40 minutes'", f"interval '{dry_interval_minutes + 10} minutes'")
+                    .replace("interval '30 minutes'", f"interval '{dry_interval_minutes} minutes'"),
+                    (cutoff, DEFAULT_WEATHER_SOURCE_ID))
                 row = cursor.fetchone()
     except Exception as exc:
         return _service_failed("weather_control_snapshot_failed",
@@ -349,75 +356,53 @@ def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_mi
     rows = [(datetime.fromisoformat(str(value[0]).replace("Z", "+00:00")), value[1])
             for value in row[17] or []]
     release = build_weather_dry_release_evidence(rows, evaluated_at=cutoff,
-        stale_after_minutes=int(row[3]), provider_healthy=healthy)
+        stale_after_minutes=int(row[3]), provider_healthy=healthy,
+        dry_interval_minutes=dry_interval_minutes)
     return {"success": True, "snapshot_cutoff": cutoff.isoformat(),
         "weather_current": weather, "rain_release": release}, 200
 
 
 def get_weather_dry_release_evidence(database_url=None, *, now=None):
-    """Prove the governed dry interval from durable local-station readings."""
-    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
-    database_url = _database_url(database_url)
-    if not database_url:
-        return _not_configured()
-    evaluated_at = now or datetime.now(timezone.utc)
-    try:
-        with connect_bounded_read(database_url=database_url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    select ts.stale_after_minutes, wls.flags, wls.summary_status
-                      from public.telemetry_sources ts
-                      left join public.weather_latest_state wls using (source_id)
-                     where ts.source_id = %s
-                    """,
-                    (DEFAULT_WEATHER_SOURCE_ID,),
-                )
-                source = cursor.fetchone()
-                cursor.execute(
-                    """
-                    with latest as (
-                        select max(reading_at) as reading_at
-                          from public.weather_readings where source_id = %s
-                    )
-                    select wr.reading_at, wr.rain_rate_mm_h
-                      from public.weather_readings wr, latest
-                     where wr.source_id = %s
-                       and wr.reading_at between latest.reading_at - interval '35 minutes'
-                                             and latest.reading_at
-                     order by wr.reading_at
-                    """,
-                    (DEFAULT_WEATHER_SOURCE_ID, DEFAULT_WEATHER_SOURCE_ID),
-                )
-                rows = cursor.fetchall()
-    except Exception as exc:
-        return _service_failed("weather_dry_release_read_failed",
-            "Local weather dry-interval evidence read failed.", exc)
-    stale_after = int(source[0]) if source and source[0] is not None else ALERT_STALE_MINUTES
-    flags = dict(source[1] or {}) if source else {}
-    status = str(source[2] or "").lower() if source else "unavailable"
-    provider_healthy = status not in {"offline", "error", "critical", "unavailable"}
-    provider_healthy = provider_healthy and not any(flags.get(key) is True for key in (
-        "station_stale", "telemetry_conflict", "provider_error", "source_unhealthy"))
-    return build_weather_dry_release_evidence(
-        rows, evaluated_at=evaluated_at, stale_after_minutes=stale_after,
-        provider_healthy=provider_healthy), 200
+    """Use the same cutoff, bounded anchor and health read as control weather."""
+    snapshot, status = get_weather_control_snapshot(database_url, now=now)
+    return (snapshot["rain_release"] if snapshot.get("success") is True else snapshot), status
 
 
 def build_weather_dry_release_evidence(rows, *, evaluated_at, stale_after_minutes,
-                                       provider_healthy=True):
-    readings = [{"observed_at": row[0].isoformat(),
-        "rain_rate_mm_h": _json_value(row[1]), "freshness": "fresh"}
-        for row in rows or () if row and row[0] is not None]
-    start = rows[0][0] if rows else None
-    end = rows[-1][0] if rows else None
+                                       provider_healthy=True, dry_interval_minutes=30):
+    if dry_interval_minutes not in (30, 60):
+        raise ValueError("weather_control_interval_invalid")
+    readings, times, rates = [], [], []
+    conflicting = False
+    for row in rows or ():
+        if (not isinstance(row, (tuple, list)) or len(row) < 2
+                or not isinstance(row[0], datetime) or row[0].tzinfo is None):
+            conflicting = True
+            continue
+        try:
+            rate = None if isinstance(row[1], bool) else _number_or_none(row[1])
+        except (TypeError, ValueError, OverflowError):
+            rate = None
+        if rate is None or not math.isfinite(rate) or rate < 0:
+            rate = None
+            conflicting = True
+        times.append(row[0]); rates.append(rate)
+        readings.append({"observed_at": row[0].isoformat(),
+            "rain_rate_mm_h": rate, "freshness": "fresh"})
+    start = times[0] if times else None
+    end = times[-1] if times else None
     source_fresh = bool(provider_healthy and end is not None and end <= evaluated_at
         and evaluated_at - end <= timedelta(minutes=stale_after_minutes))
-    rates = [_number_or_none(row[1]) for row in rows or ()]
-    conflicting = any(rate is None for rate in rates)
+    # Reuse the borehole's existing two nominal five-minute sampling slots.
+    # A distant anchor, duplicate timestamp or missing interior interval cannot
+    # establish continuous dry coverage for either control consumer.
+    contiguous = bool(len(times) >= 2 and all(
+        timedelta(0) < later-earlier <= timedelta(seconds=600)
+        for earlier, later in zip(times, times[1:])))
+    conflicting = conflicting or (len(times) >= 2 and not contiguous)
     interval_complete = bool(source_fresh and start is not None
-        and end - start >= timedelta(minutes=30) and len(readings) >= 2
-        and not conflicting and all(rate == 0 for rate in rates))
+        and end - start >= timedelta(minutes=dry_interval_minutes)
+        and contiguous and not conflicting and all(rate == 0 for rate in rates))
     return {"success": True,
         "availability": "Available" if source_fresh else "Unavailable",
         "source": "governed_local_weather_station",

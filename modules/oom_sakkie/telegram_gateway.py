@@ -1221,6 +1221,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             CYCLE_WORK_SECONDS, REPORT_MINIMUM_SECONDS, cycle_budget, mandatory_safety,
             remaining_seconds, RootlineCycleDeadlineExceeded,
         )
+        from modules.oom_sakkie.family_message_lifecycle import PROVIDER_DELIVERY_RESERVE_SECONDS
         import time
         # Bound this actual request from entry, including elapsed safety work.
         # The existing shutdown obligations themselves retain their own bounds.
@@ -1291,7 +1292,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 **safe_daily_plan_diagnostics({"daily_plan_stage": stage,
                     "daily_plan_status": plan_context["evidence_status"],
                     "daily_plan_error_type": type(exc).__name__})}
-        def ensure_daily_plan():
+        def _ensure_daily_plan():
             if plan_context["receipt"] is not None:
                 return plan_context["current"], plan_context["receipt"]
             if plan_context["error"] is not None:
@@ -1325,6 +1326,15 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             except Exception as exc:
                 plan_context["error"] = exc
                 raise
+        def ensure_daily_plan():
+            if plan_context["receipt"] is not None:
+                return plan_context["current"], plan_context["receipt"]
+            # Plan reads must leave the existing family provider reserve plus
+            # bounded durable reassessment preparation. A deferred refresh is
+            # never replaced with stale evidence or an extended request limit.
+            with cycle_budget(cycle_deadline - PROVIDER_DELIVERY_RESERVE_SECONDS
+                    - REPORT_MINIMUM_SECONDS):
+                return _ensure_daily_plan()
         def deliver_report(*args, **kwargs):
             remaining_seconds()
             kwargs.setdefault("deadline_monotonic", cycle_deadline)
@@ -1431,7 +1441,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     return {**daily_plan_failure(exc),
                         "plan_delivery_status": "current_irrigation_plan_delivery_unconfirmed"}
             else:
-                current, receipt = scheduled_loader(), {"created": False, "daily_plan": {}}
+                try:
+                    plan_context["stage"] = "evidence_load"
+                    current, receipt = scheduled_loader(), {"created": False, "daily_plan": {}}
+                except Exception as exc:
+                    return {**daily_plan_failure(exc),
+                        "plan_delivery_status": "current_irrigation_plan_delivery_unconfirmed"}
             from modules.oom_sakkie.rootline_daily_presentation import _fresh_result
             if not _fresh_result(current, scheduler_now or datetime.now(timezone.utc)):
                 return {"success": False, "status": "scheduled_rootline_plan_evidence_stale",
@@ -1456,6 +1471,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "status": value.get("status") if status == 200 else "scheduled_reassessment_delivery_contained",
                 "plan_delivery_status": delivery_status,
                 "plan_reassessment_status": str(value.get("status") or ""),
+                "plan_delivery_underlying_status": str(proof.get("status") or value.get("status") or ""),
                 "scheduled_underlying_status": str(value.get("status") or ""),
                 "plan_delivery_recorded": confirmed and recorded.get("success") is True,
                 "daily_plan_created": receipt.get("created") is True,
@@ -1898,14 +1914,17 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             supervision = supervise()
             supervision.update(ensure_due_program_after_safety())
             try:
-                remaining_seconds(minimum=REPORT_MINIMUM_SECONDS)
+                remaining_seconds(minimum=PROVIDER_DELIVERY_RESERVE_SECONDS)
             except RootlineCycleDeadlineExceeded:
                 return {**supervision, "success": False,
                     "status": "scheduled_rootline_reporting_deadline_deferred",
                     "report_effects_unknown": False, "report_work_due": True,
                     "next_action_owner": "ROOTLINE", "next_trigger": "next_authenticated_minute"}
             try:
-                supervision = equipment_reports(supervision, provider_only=True)
+                # Mandatory control already ran. Deliver the fresh current plan
+                # before optional incident scans consume its provider reserve.
+                # Scans still run on this pass (also when the plan is unchanged)
+                # and retain their existing durable pending/deduplication rail.
                 current_plan_result = current_plan_report(supervision)
                 supervision = equipment_reports(supervision)
                 if supervision.get("success") is True and current_plan_result.get("success") is True:
@@ -1916,8 +1935,6 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         result["status"] = str(supervision.get("status") or "scheduled_rootline_active_supervision_unproven")
                 for field in ("telegram_sends", "telegram_edits"):
                     result[field] = int(result.get(field) or 0) + int(current_plan_result.get(field) or 0)
-                for field in ("plan_delivery_status", "plan_reassessment_status", "plan_delivery_recorded"):
-                    result[field] = current_plan_result.get(field)
                 result["success"] = result.get("success") is True and current_plan_result.get("success") is True
             except Exception as exc:
                 result = {**report_progress, "success": False,
@@ -1926,6 +1943,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "status": "scheduled_rootline_reporting_unproven",
                     "error_type": type(exc).__name__, "writes_farm_data": None,
                     "write_state": "unknown", "report_effects_unknown": True}
+            for field in ("plan_delivery_status", "plan_reassessment_status", "plan_delivery_recorded", "plan_delivery_underlying_status"):
+                if field in current_plan_result:
+                    result[field] = current_plan_result[field]
             # Reporting must not erase the exact control failure or its evidence.
             for key, value in supervision.items():
                 if key not in {"hardware_commands", "telegram_sends", "telegram_edits", "writes_farm_data"}:
