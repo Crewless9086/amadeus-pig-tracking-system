@@ -49,7 +49,7 @@ def isolate():
     kept = {key: value for key, value in os.environ.items() if key.upper() in {
         'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATH', 'PATHEXT', 'SYSTEMDRIVE',
         'PROCESSOR_ARCHITECTURE', 'NUMBER_OF_PROCESSORS', 'LOCALAPPDATA', 'APPDATA',
-        'LANG', 'LC_ALL', 'TMP', 'TEMP', 'TMPDIR',
+        'LANG', 'LC_ALL', 'TMP', 'TEMP', 'TMPDIR', 'ROOTLINE_OWNER_BROWSER_SEED',
     }}
     os.environ.clear()
     os.environ.update(kept)
@@ -108,6 +108,9 @@ def isolate():
         if (not hosts or any(host not in {'127.0.0.1', 'localhost', '::1'} for host in hosts)
                 or info.get('dbname') != DATABASE_NAME):
             raise RuntimeError('External or non-fixture libpq connection blocked')
+        # Canonical fixture timestamps must match hosted PostgreSQL UTC even
+        # when the developer's local server defaults to another timezone.
+        kwargs['options'] = (str(kwargs.get('options') or '') + ' -c timezone=UTC').strip()
         return original_pg_connect(conninfo, *args, **kwargs)
 
     psycopg.connect = local_pg_connect

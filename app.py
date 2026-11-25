@@ -50,6 +50,8 @@ from modules.orders.order_routes import orders_bp
 from modules.reports.report_routes import reports_bp
 from modules.sales.sales_transaction_routes import sales_bp
 from modules.telemetry.telemetry_routes import telemetry_bp
+from modules.telemetry.rootline_owner_control_routes import rootline_owner_controls_bp
+from modules.auth.rootline_access import rootline_csrf_token
 from modules.oom_sakkie.routes import oom_sakkie_bp
 from modules.charlie.routes import charlie_bp
 from modules.documents.green_print_api import green_print_api_bp
@@ -75,6 +77,7 @@ app.register_blueprint(orders_bp, url_prefix="/api")
 app.register_blueprint(reports_bp, url_prefix="/api")
 app.register_blueprint(sales_bp, url_prefix="/api")
 app.register_blueprint(telemetry_bp, url_prefix="/api")
+app.register_blueprint(rootline_owner_controls_bp, url_prefix="/api")
 app.register_blueprint(oom_sakkie_bp, url_prefix="/api")
 app.register_blueprint(charlie_bp, url_prefix="/api")
 app.register_blueprint(green_print_api_bp, url_prefix="/api")
@@ -367,7 +370,10 @@ def power_operations_page():
 
 @app.route("/irrigation")
 def irrigation_operations_page():
-    return render_template("irrigation.html")
+    guard = require_owner_page_access()
+    if guard is not None:
+        return guard
+    return render_template("irrigation.html", rootline_csrf_token=rootline_csrf_token())
 
 
 @app.route("/charlie")

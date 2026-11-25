@@ -234,6 +234,15 @@ def test_scheduler_recovers_active_borehole_to_final_off_without_on_retry():
     assert result["automatic_on_retry"] is False
 
 
+@pytest.fixture(autouse=True)
+def empty_owner_controls_for_existing_runtime_cases(monkeypatch):
+    # These pre-existing cases model standing defaults with no owner overrides.
+    # Owner changes and their database reads are exercised in the dedicated suite.
+    from modules.telemetry.rootline_owner_controls import project_owner_controls
+    monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls",
+        lambda *_args, **kwargs: project_owner_controls([], now=kwargs.get("now") or NOW))
+
+
 class ManagedCursor:
     def __init__(self, outcomes, executions=None):
         self.outcomes = outcomes; self.executions = executions or []; self.kind = ""

@@ -24,6 +24,9 @@ FLAGS = ("ROOTLINE_FERTILIZER_MIXING_ENABLED", "ROOTLINE_FERTILIZER_INJECTION_EN
 
 @pytest.fixture(autouse=True)
 def fresh_synthetic_power(monkeypatch):
+    from modules.telemetry.rootline_owner_controls import project_owner_controls
+    monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls",
+        lambda *_args, **kwargs: project_owner_controls([], now=kwargs.get("now") or NOW))
     # Keep backup eligible until the scenario introduces its intended stop duty.
     monkeypatch.setattr(plan_module,"read_current_borehole_faults",lambda *_,**__:True)
     monkeypatch.setattr("modules.telemetry.power_service.get_current_power_state",

@@ -1,15 +1,77 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Farm Irrigation</title><link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}?v=20260912-irrigation"></head>
-<body data-operations-page="irrigation"><div class="farm-app-shell">{% include '_farm_nav.html' %}<main class="operations-page">
-  <header class="operations-hero"><div><span class="farm-eyebrow">ROOTLINE operations</span><h1>Irrigation</h1><p>The useful operating view: what is running, what is next, why a zone is held, and when ROOTLINE will reassess.</p></div><a class="manager-link" href="/">← Dashboard</a></header>
-  <section class="detail-grid">
-    <article class="detail-card detail-wide" id="detail_irrigation_access" hidden></article>
-    <article class="detail-card"><span class="farm-eyebrow">Current state</span><p class="detail-value" id="detail_irrigation_status">Loading</p><p class="detail-muted" id="detail_irrigation_note">Reading canonical irrigation status…</p></article>
-    <article class="detail-card"><span class="farm-eyebrow">Current zone</span><p class="detail-value" id="detail_irrigation_current">--</p><p class="detail-muted">Only one zone may run at a time</p></article>
-    <article class="detail-card"><span class="farm-eyebrow">Next</span><p class="detail-value" id="detail_irrigation_next">--</p><p class="detail-muted" id="detail_irrigation_next_note">Awaiting current plan</p></article>
-    <article class="detail-card detail-wide"><h2>B &amp; C plan</h2><div class="detail-list" id="detail_irrigation_plan"><p class="detail-muted">Loading today’s plan…</p></div></article>
-    <article class="detail-card"><h2>Owner action</h2><p class="detail-muted" id="detail_irrigation_owner">No owner action is currently supported.</p></article>
-    <article class="detail-card detail-wide"><h2>Rain, water and execution evidence</h2><div class="detail-list" id="detail_irrigation_evidence"><p class="detail-muted">Loading canonical evidence…</p></div></article>
-  </section>
-  <details class="technical-evidence"><summary><strong>Technical ROOTLINE evidence</strong> · open only when diagnosing or commissioning</summary><div class="detail-list" id="detail_irrigation_technical"><p class="detail-muted">Loading evidence independently…</p></div></details>
-</main></div><script src="{{ url_for('static', filename='js/operationsDetail.js') }}?v=20260912-irrigation"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ rootline_csrf_token|default('', true) }}">
+  <title>Irrigation · Amadeus Farm</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/rootlineOwnerControls.css') }}?v=20261125-owner-controls">
+</head>
+<body data-operations-page="irrigation">
+<div class="farm-app-shell">
+  {% include '_farm_nav.html' %}
+  <main class="operations-page" id="rootline-controls" data-api="/api/telemetry/rootline/owner-controls">
+    <header class="rl-row rl-hero">
+      <div><span class="farm-eyebrow">ROOTLINE · Water &amp; power</span><h1>Your irrigation day</h1><p class="rl-muted">One place to see, adjust and manage every input.</p></div>
+      <div class="rl-stack rl-head-status"><p id="rl-date"></p><button id="rl-refresh" type="button">Refresh current state</button></div>
+    </header>
+    <p id="rl-access" class="rl-note" role="status" hidden></p>
+    <section class="rl-stack" aria-labelledby="rl-weather-heading">
+      <div class="rl-row"><h2 id="rl-weather-heading">Weather ahead</h2><span id="rl-weather-source" class="rl-small rl-muted">Three-day forecast · SAST</span></div>
+      <div id="rl-forecast" class="rl-forecast"><p class="rl-muted">Reading the forecast…</p></div>
+    </section>
+    <section class="rl-stack" aria-labelledby="rl-input-heading">
+      <div class="rl-row"><h2 id="rl-input-heading">All inputs</h2><span class="rl-small rl-muted">Open a tile for controls, settings and history</span></div>
+      <p id="rl-input-state" class="rl-small rl-muted" role="status">Reading current inputs…</p>
+      <div id="rl-tiles" class="rl-tiles"></div>
+      <section id="rl-detail" class="rl-detail" aria-labelledby="rl-detail-title" hidden>
+        <div class="rl-row"><div><span class="farm-eyebrow">Input details</span><h2 id="rl-detail-title" tabindex="-1"></h2></div><button id="rl-close" type="button">Close details</button></div>
+        <div class="rl-detail-grid">
+          <div class="rl-facts" id="rl-facts"></div>
+          <form id="rl-settings-form" class="rl-stack">
+            <div class="rl-fields">
+              <label>Operating mode<select id="rl-mode"><option value="automatic">Automatic</option><option value="paused">Paused</option><option value="manual_today">Manual for today</option></select></label>
+              <label>Apply these settings<select id="rl-scope"><option value="ongoing">Ongoing</option><option value="today">Today only</option></select></label>
+            </div>
+            <div id="rl-settings" class="rl-fields"></div>
+            <p class="rl-note" id="rl-dependency"></p>
+            <label>Reason for the change<input id="rl-settings-reason" maxlength="500" placeholder="What would you like ROOTLINE to do differently?" required></label>
+            <div class="rl-pills"><button id="rl-review-settings" class="rl-primary" type="submit">Review setting changes</button><button id="rl-reset-settings" type="button">Discard changes</button></div>
+          </form>
+        </div>
+        <div class="rl-pills"><button id="rl-run" type="button">Request one run</button><button id="rl-stop" type="button">Request stop</button><button id="rl-history-input" type="button">View history</button></div>
+        <p id="rl-action-reasons" class="rl-small rl-muted"></p>
+        <form id="rl-manual" class="rl-review" hidden><h3 id="rl-manual-title"></h3><label>Reason<input id="rl-manual-reason" maxlength="500" required placeholder="Why is this request needed?"></label><p class="rl-small" id="rl-manual-note"></p><div class="rl-pills"><button id="rl-manual-confirm" type="submit">Review request</button><button id="rl-manual-cancel" type="button">Cancel request</button></div></form>
+        <div id="rl-setting-review" class="rl-review" hidden></div>
+        <p id="rl-detail-status" class="rl-status" role="status" aria-live="polite"></p>
+      </section>
+    </section>
+    <div class="rl-pills" role="tablist" aria-label="Irrigation views"><button type="button" class="rl-tab" id="rl-day-tab" role="tab" aria-controls="rl-day" aria-selected="true">Day plan &amp; camps</button><button type="button" class="rl-tab" id="rl-history-tab" role="tab" aria-controls="rl-history" aria-selected="false" tabindex="-1">Run &amp; change history</button></div>
+    <section id="rl-day" role="tabpanel" aria-labelledby="rl-day-tab" class="rl-stack">
+      <div class="rl-row"><div><h2>The full day’s plan</h2><p class="rl-small rl-muted">Move a camp, adjust its time, reason or priority, or skip it for today. High priority runs first, then normal, then low; your order applies within each priority.</p></div><span id="rl-plan-badge" class="rl-tag">Reading plan…</span></div>
+      <p id="rl-plan-explanation" class="rl-small rl-muted"></p>
+      <div id="rl-support" class="rl-support"></div>
+      <p class="rl-small rl-muted rl-scroll-help">On a small screen, swipe the plan sideways to see priority, reason and Skip.</p>
+      <div class="rl-table-wrap" tabindex="0" role="region" aria-label="Day plan table; scroll horizontally on small screens"><table aria-label="Editable day plan"><thead><tr><th>Order</th><th>Camp</th><th>Planned window</th><th>Minutes</th><th>Priority</th><th>Reason</th><th>Today</th></tr></thead><tbody id="rl-plan-rows"><tr><td colspan="7">Reading today’s plan…</td></tr></tbody></table></div>
+      <div class="rl-row"><p id="rl-plan-total" class="rl-small rl-muted"></p><div class="rl-pills"><button id="rl-reset-plan" type="button" disabled>Discard changes</button><button id="rl-review-plan" class="rl-primary" type="button" disabled>Review day plan</button></div></div>
+      <div id="rl-plan-review" class="rl-detail" hidden></div>
+      <p id="rl-plan-status" class="rl-status" role="status" aria-live="polite"></p>
+      <div class="rl-row"><h2>Camp overview</h2><span class="rl-small rl-muted">Current plan and recorded activity</span></div><div id="rl-camps" class="rl-camps"></div>
+    </section>
+    <section id="rl-history" role="tabpanel" aria-labelledby="rl-history-tab" class="rl-stack" hidden>
+      <h2>Runs, stops and setting changes</h2>
+      <div class="rl-history-controls"><label>Input<select id="rl-history-filter"><option value="">All inputs</option></select></label><label>Show<select id="rl-history-kind"><option value="">Everything</option><option value="runs">Runs &amp; stops</option><option value="changes">Setting &amp; plan changes</option></select></label></div>
+      <p id="rl-history-state" class="rl-small rl-muted" role="status">Reading recorded history…</p>
+      <div class="rl-table-wrap" tabindex="0" role="region" aria-label="History table; scroll horizontally on small screens"><table aria-label="Run and change history"><thead><tr><th>When · SAST</th><th>Input</th><th>Event</th><th>Result / reason</th><th>By</th></tr></thead><tbody id="rl-history-rows"></tbody></table></div>
+      <p class="rl-small rl-muted">Run time is based on recorded command acceptance. No water volume or fertilizer dose is inferred.</p>
+    </section>
+    <details class="rl-detail"><summary>Operating information</summary><p class="rl-small rl-muted">Settings are reviewed before saving. ROOTLINE checks current availability and the existing limits. Today-only changes expire at the returned effective boundary. Active shutdown duties remain in place.</p><ul id="rl-constraints"></ul><p id="rl-observed" class="rl-small rl-muted">Current state has not been loaded.</p></details>
+    <footer class="rl-footer">All times Africa/Johannesburg (SAST). Saved operating mode and command state are shown separately.</footer>
+    <noscript><p class="rl-note">Enable JavaScript to load current ROOTLINE information and controls.</p></noscript>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/rootlineOwnerControls.js') }}?v=20261125-owner-controls" defer></script>
+</body>
+</html>

@@ -161,7 +161,8 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     rain = _rain_effect(weather, weather_state, forecast, forecast_state)
 
     tasks = [
-        _borehole_task(tanks, tank_state, water_demand, rain, reserve, power=power, now=now),
+        _borehole_task(tanks, tank_state, water_demand, rain, reserve, power=power, now=now,
+            owner_controls=evidence.get("owner_controls")),
         _transfer_task(tanks, tank_state, water_demand, reserve),
         *_irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                            weather, forecast, tanks,
@@ -172,10 +173,11 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         verified_mixing=evidence.get("fertilizer_executions"),
         mixing_history_complete_through=evidence.get(
             "fertilizer_history_complete_through"),
-        active_irrigation_context=evidence.get("active_irrigation_context"), now=now)
+        active_irrigation_context=evidence.get("active_irrigation_context"), now=now,
+        owner_controls=evidence.get("owner_controls"))
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
     energy = managed_energy_decision(power, now=now,
-        reserve_pct=reserve["governing_reserve_soc_pct"])
+        reserve_pct=reserve["governing_reserve_soc_pct"], owner_controls=evidence.get("owner_controls"))
     for task in auxiliary["irrigation_auxiliary_tasks"]:
         if task.get("device_type") != "fertilizer_mixer" or task.get("decision") != "Run now":
             continue
@@ -305,7 +307,8 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         ),
         "authority": deepcopy(AUTHORITY),
     }
-    return plan
+    from modules.telemetry.rootline_owner_controls import apply_controls_to_plan
+    return apply_controls_to_plan(plan, evidence.get("owner_controls"), now=now)
 
 
 
@@ -823,7 +826,7 @@ def project_saved_program_for_execution(saved, evidence, *, now=None):
     # The saved reserve is provenance only. Current managed energy uses the
     # standing policy and real observations, never forecast-derived reserves.
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
-    energy = managed_energy_decision(power, now=now)
+    energy = managed_energy_decision(power, now=now, owner_controls=evidence.get("owner_controls"))
     reserve = {"governing_reserve_soc_pct": OPERATING_KNOWLEDGE["energy"]["learned_reserve_candidates_pct"]["uncertain"],
         "absolute_floor_soc_pct": OPERATING_KNOWLEDGE["energy"]["absolute_discretionary_floor_soc_pct"],
         "governing_reason": "standing_discretionary_policy_current_observations",
@@ -841,7 +844,8 @@ def project_saved_program_for_execution(saved, evidence, *, now=None):
         if live is None:
             if task["task_id"] == "borehole":
                 live = _borehole_task(tanks, _tank_freshness(tanks, now),
-                    _dict(evidence.get("water_demand")), rain, reserve, power=power, now=now)
+                    _dict(evidence.get("water_demand")), rain, reserve, power=power, now=now,
+                    owner_controls=evidence.get("owner_controls"))
             elif task["task_id"] == "solar_transfer":
                 live = _transfer_task(tanks, _tank_freshness(tanks, now),
                     _dict(evidence.get("water_demand")), reserve)
@@ -874,7 +878,8 @@ def project_saved_program_for_execution(saved, evidence, *, now=None):
     auxiliary = build_auxiliary_tasks(batch=batch, power=power,
         verified_mixing=evidence.get("fertilizer_executions"),
         mixing_history_complete_through=evidence.get("fertilizer_history_complete_through"),
-        active_irrigation_context=evidence.get("active_irrigation_context"), now=now)
+        active_irrigation_context=evidence.get("active_irrigation_context"), now=now,
+        owner_controls=evidence.get("owner_controls"))
     plan["current_power"] = {"status": _freshness(power, now),
         "age_minutes": _age_minutes(power, now), **deepcopy(power)}
     plan.update(recent_irrigation_history=deepcopy(history), managed_energy_decision=energy,
@@ -887,6 +892,8 @@ def project_saved_program_for_execution(saved, evidence, *, now=None):
         "plans": [{"plan_id": plan["plan_id"], "operating_date": plan["operating_date"],
             "tasks": plan["daily_program"]["base_tasks"]}]}, evidence,
         (now.date()+timedelta(days=1)).isoformat(), include_unstarted=False)
+    from modules.telemetry.rootline_owner_controls import apply_controls_to_plan
+    apply_controls_to_plan(plan, evidence.get("owner_controls"), now=now)
     _adjust_live_slots(plan, evidence, now)
     plan["status"] = _overall_status(plan["candidate_tasks"])
     plan["authority"] = deepcopy(AUTHORITY)
@@ -1005,7 +1012,9 @@ def _read_managed_live_evidence(operating_date, database_url, now, *, pending_de
         raise ValueError("reporting_cutoff_epoch_mismatch")
     as_of = {"as_of": evidence_cutoff} if evidence_cutoff is not None else {}
     bounded = {"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}
-    readers = {"power": lambda: get_current_power_state(database_url=database_url, **as_of)}
+    from modules.telemetry.rootline_owner_controls import load_runtime_owner_controls
+    readers = {"power": lambda: get_current_power_state(database_url=database_url, **as_of),
+        "owner_controls": lambda: load_runtime_owner_controls(database_url, now=now)}
     needs_program = bool(pending & {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1", "BOREHOLE-1-MINI-R4-CH1"})
     if needs_program:
         readers["saved_daily_plan"] = lambda: get_current_water_energy_plan(selected, database_url)
@@ -1014,6 +1023,7 @@ def _read_managed_live_evidence(operating_date, database_url, now, *, pending_de
     managed = loaded.get("managed_devices") or {}
     power, power_status = loaded["power"]
     evidence = {"power": _normalize_power(power) if power_status < 400 else {},
+        "owner_controls": loaded["owner_controls"],
         "forecast": {}, "forecast_mode": "live_only", "evidence_purpose": "managed",
         "pending_devices": sorted(pending),
         "saved_daily_plan": loaded.get("saved_daily_plan", ({}, 200))[0],
@@ -1034,14 +1044,16 @@ def _project_managed_live_fields(plan, evidence, now):
     auxiliary = build_auxiliary_tasks(batch=batch, power=power,
         verified_mixing=evidence.get("fertilizer_executions"),
         mixing_history_complete_through=evidence.get("fertilizer_history_complete_through"),
-        active_irrigation_context=evidence.get("active_irrigation_context"), now=now)
-    plan.update(managed_energy_decision=managed_energy_decision(power, now=now),
+        active_irrigation_context=evidence.get("active_irrigation_context"), now=now,
+        owner_controls=evidence.get("owner_controls"))
+    plan.update(managed_energy_decision=managed_energy_decision(power, now=now, owner_controls=evidence.get("owner_controls")),
         irrigation_auxiliary_devices=auxiliary["irrigation_auxiliary_devices"],
         irrigation_auxiliary_tasks=auxiliary["irrigation_auxiliary_tasks"],
         fertilizer_batch_lifecycle=batch, live_evidence_cutoff=now.isoformat())
     plan["current_power"] = {"status": _freshness(power, now),
         "age_minutes": _age_minutes(power, now), **deepcopy(power)}
-    return plan
+    from modules.telemetry.rootline_owner_controls import apply_controls_to_plan
+    return apply_controls_to_plan(plan, evidence.get("owner_controls"), now=now)
 
 
 def read_current_water_energy_evidence(
@@ -1123,7 +1135,9 @@ def read_current_water_energy_evidence(
     # Keep each source's own timeout/fail-closed contract while bounding the
     # aggregate latency to the slowest source instead of their sum.
     from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
+    from modules.telemetry.rootline_owner_controls import load_runtime_owner_controls
     readers = {
+        "owner_controls": lambda: load_runtime_owner_controls(database_url, now=now),
         "power": read_power_once,
         "forecast": lambda: get_weather_forecast(days=3, database_url=database_url, **as_of),
         "advisor": read_advisor,
@@ -1184,6 +1198,7 @@ def read_current_water_energy_evidence(
         power_packet, weather_packet, forecast_packet, history, tanks, balances)
         if isinstance(packet, dict) and packet.get("error_type")]
     evidence = {
+        "owner_controls": loaded["owner_controls"],
         "power": _normalize_power(power_packet),
         "weather": _normalize_weather(weather_packet),
         "forecast": _normalize_forecast(forecast_packet),
@@ -2136,9 +2151,9 @@ def _rain_effect(weather, weather_state, forecast, forecast_state):
     }
 
 
-def _borehole_task(tanks, tank_state, demand, rain, reserve, *, power, now):
+def _borehole_task(tanks, tank_state, demand, rain, reserve, *, power, now, owner_controls=None):
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
-    energy = managed_energy_decision(power, now=now)
+    energy = managed_energy_decision(power, now=now, owner_controls=owner_controls)
     sunshine = energy["borehole_sunshine_proxy"]
     return _task("borehole", "Do Not Run" if sunshine else "Recommend",
         "Keep borehole AC backup OFF while the sunshine proxy is sufficient; actual pumping on the separate solar supply is unverified." if sunshine else
