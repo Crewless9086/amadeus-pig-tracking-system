@@ -15,7 +15,7 @@ _MONTHS = {
     "en": ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
     "af": ("Januarie", "Februarie", "Maart", "April", "Mei", "Junie", "Julie", "Augustus", "September", "Oktober", "November", "Desember"),
 }
-_HEADING_ICONS = ("🌿", "🐷", "💧", "⚠️", "⚠", "✅", "❓", "📋", "🌱", "🔔", "⏸️", "📥")
+_HEADING_ICONS = ("🌿", "🐷", "💧", "⚠️", "⚠", "✅", "❓", "📋", "🌱", "🔔", "⏸️", "📥", "▶️", "⏹️", "🔄")
 
 
 def date_label(value, *, language="en"):

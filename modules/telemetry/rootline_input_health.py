@@ -39,11 +39,14 @@ def apply_legacy_ownership(evaluation, kind):
     """A paired cutover, not retirement of weather/power threshold alerts."""
     if not input_health_enabled() or kind not in LEGACY_TYPES:
         return evaluation
+    quiet_types = {LEGACY_TYPES[kind]}
+    if kind == "power":
+        quiet_types.add("POWER_BATTERY_HIGH")
     owned = [row for row in evaluation["sendable_alerts"]
-             if row.get("alert_type") == LEGACY_TYPES[kind]]
+             if row.get("alert_type") in quiet_types]
     return {**evaluation,
         "sendable_alerts": [row for row in evaluation["sendable_alerts"]
-                           if row.get("alert_type") != LEGACY_TYPES[kind]],
+                           if row.get("alert_type") not in quiet_types],
         "suppressed_alerts": [*evaluation["suppressed_alerts"], *[
             {**row, "suppressed_reason": "rootline_input_health_owns_delivery"} for row in owned]]}
 

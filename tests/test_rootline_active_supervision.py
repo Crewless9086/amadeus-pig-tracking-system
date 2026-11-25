@@ -94,7 +94,8 @@ class Transport:
     def read_output_state(self, **kwargs):
         if self.fail_read:
             raise RuntimeError("synthetic provider timeout")
-        return {"authoritative": self.state != "Unknown", "state": self.state,
+        return {"device_id": kwargs["device_id"], "channel": kwargs["channel"],
+            "authoritative": self.state != "Unknown", "state": self.state,
             "evidence_id": "SYNTHETIC-OFF", "retrieved_at": NOW.isoformat()}
 
 
@@ -192,7 +193,7 @@ def test_overdue_active_stops_before_actual_daily_report_timeout(reports, monkey
     assert value["writes_farm_data"] is True and len(starts) == 1
     assert store.active is None and len(messages) == 2
     assert value["plan_delivery_status"] == "delivered_current_irrigation_plan"
-    assert "controller OFF" in messages[0][0][1]["answer"]
+    assert "Controller OFF confirmed." in messages[0][0][1]["answer"]
     outcome = next(row for key, row in schedules.rows.items() if key.endswith(":outcome"))
     assert outcome["status"] == "contained" and outcome["hardware_commands"] == 1
     assert outcome["active_supervision_status"] == "segment_completed"
@@ -257,7 +258,7 @@ def test_store_failure_preserves_new_start_hold_but_reports_current_plan(reports
         specialist_loader=current)
     assert status == 202 and value["execution_status"] == "execution_store_degraded_hold"
     assert starts == [] and len(messages) == 1 and value["hardware_commands"] == 0
-    assert "could not be verified" in messages[0][0][1]["answer"]
+    assert "The latest equipment check is unconfirmed" in messages[0][0][1]["answer"]
 
 
 def test_unknown_irrigation_state_does_not_block_independent_borehole_or_hide_its_outcome(reports):
@@ -271,7 +272,7 @@ def test_unknown_irrigation_state_does_not_block_independent_borehole_or_hide_it
         managed_device_cycle=managed,
         specialist_loader=current)
     assert status == 202 and starts == [] and len(messages) == 1
-    assert "could not be verified" in messages[0][0][1]["answer"]
+    assert "The latest equipment check is unconfirmed" in messages[0][0][1]["answer"]
     assert len(calls) == 1 and calls[0]["allow_borehole_starts"] is True
     assert calls[0]["allow_new_starts"] is False
     assert value["managed_device_status"] == "borehole_started" and value["hardware_commands"] == 1

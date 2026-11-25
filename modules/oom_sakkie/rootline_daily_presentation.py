@@ -110,7 +110,8 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
     parsed = {"telegram_user_id": owner_user_id, "telegram_chat_id": chat_id,
         "provider_message_id": f"scheduled:{identity}", "provider_timestamp": now.isoformat(),
         "semantic": {"domain": "water_energy", "intent": "rootline_daily_plan", "language": language}}
-    visible_result = {"success": True, "status": "rootline_daily_plan", "answer": packet["answer"]}
+    visible_result = {"success": True, "status": "rootline_daily_plan", "answer": packet["answer"],
+        "recipient_render_contract": "specialist_structured_recipient_v1", "recipient_language": language}
     retry_authority = None
     if existing.get("delivery_state") == "failed":
         from modules.oom_sakkie.family_message_lifecycle import localize_recipient_result
@@ -148,55 +149,72 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
 
 
 def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> str:
+    """Compact daily plan/result using the same typed lifecycle and delivery identity."""
+    from modules.oom_sakkie.rootline_activity_presentation import IRRIGATION_URL
+    from modules.oom_sakkie.rootline_transition_notifications import input_health_text, provider_availability_text
+    from modules.telemetry.rootline_command_acceptance import enabled
     af = str(language).casefold().startswith("af")
     recommendations = {str(row.get("subject") or ""): row for row in result.get("recommendations") or ()
                        if isinstance(row, Mapping)}
-    lines = ["<b>ROOTLINE — VANDAG SE WATERPLAN</b>" if af else
-             "<b>ROOTLINE — TODAY’S WATER PLAN</b>", ""]
-    from modules.oom_sakkie.rootline_transition_notifications import provider_availability_text
-    availability = provider_availability_text(result.get("provider_availability"), language=language)
-    if availability:
-        lines.extend([html.escape(availability), ""])
-    from modules.oom_sakkie.rootline_transition_notifications import input_health_text
-    input_summary = input_health_text(result.get("input_health"), language=language)
-    if input_summary:
-        lines.extend([html.escape(input_summary), ""])
-    if result.get("control_observation") == "deadline_deferred":
-        lines.extend([("Die jongste outomatiese toerustingkontrole het sy tydsperk bereik. "
-            "Die plan hieronder is nog voorneme; ROOTLINE probeer weer op die volgende minuut."
-            if af else "The latest automatic equipment check reached its time limit. "
-            "The plan below remains intended work; ROOTLINE will check again next minute."), ""])
-    elif result.get("control_observation") == "unverified":
-        lines.extend([("Die jongste outomatiese toerustingkontrole kon nie bevestig word nie. "
-            "Die plan hieronder is nog voorneme; ROOTLINE kontroleer weer op die volgende minuut."
-            if af else "The latest automatic equipment check could not be verified. "
-            "The plan below remains intended work; ROOTLINE will check again next minute."), ""])
-    reasons = []
+    decisions = {zone: owner_zone_decision(result, recommendations.get(zone, {}), zone=zone, language=language)
+                 for zone in IRRIGATION_ZONE_IDS}
+    complete = all(value == ("Program voltooi" if af else "Programme completed") for value in decisions.values())
+    heading = ("Vandag se kampresultate" if af else "Today's camp results") if complete else ("Vandag se plan" if af else "Today's plan")
+    lines = [f"<b>🌿 ROOTLINE · {heading}</b>"]
+    day = str(result.get("operating_date") or "")
+    if day: lines.append(html.escape(day))
+    lines.append("")
+    if not enabled():
+        availability = provider_availability_text(result.get("provider_availability"), language=language)
+        if availability: lines.extend([html.escape(availability), ""])
+    summary = input_health_text(result.get("input_health"), language=language)
+    if summary: lines.extend([html.escape(summary), ""])
+    if result.get("control_observation") in {"deadline_deferred", "unverified"}:
+        lines.extend(["⏳ Die jongste toerustingkontrole is nog onbevestig; ROOTLINE kontroleer weer outomaties." if af else
+            "⏳ The latest equipment check is unconfirmed; ROOTLINE will check again automatically.", ""])
+    # Only publish an order when every scheduled camp has a canonical start time.
+    planned = [row for row in recommendations.values() if row.get("subject") in IRRIGATION_ZONE_IDS
+        and row.get("planned_duration_minutes")]
+    def planned_time(row):
+        try:
+            value = datetime.fromisoformat(str(row.get("planned_start_at")).replace("Z", "+00:00"))
+            return value if value.tzinfo is not None else None
+        except (ValueError, TypeError):
+            return None
+    if planned and all(planned_time(row) is not None for row in planned):
+        planned.sort(key=planned_time)
+        lines.append(("Volgorde: " if af else "Order: ")+" → ".join(html.escape(row["subject"][0]) for row in planned))
     for zone in IRRIGATION_ZONE_IDS:
-        label = zone[0] + (" Kamp" if af else " Camp")
         row = recommendations.get(zone, {})
-        decision = owner_zone_decision(result, row, zone=zone, language=language)
+        label = zone[0]+(" Kamp" if af else " Camp")
+        decision = decisions[zone]
+        icon = "✅" if decision in {"Programme completed", "Program voltooi"} else "•"
         window = _human_window(row.get("preferred_window"))
-        suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
-        lines.append(f"• <b>{label}:</b> {decision}{suffix}")
-        reason = str(row.get("reason") or "").strip()
-        if reason and reason not in reasons:
-            reasons.append(reason)
-    why = _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af)
+        suffix = f" · {html.escape(window)}" if window else ""
+        minutes = row.get("planned_duration_minutes")
+        if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) and minutes > 0:
+            suffix += f" · {minutes:g} min"
+        lines.append(f"{icon} <b>{label}:</b> {html.escape(decision)}{suffix}")
+    for identity, label in (("fertilizer_mixing", "Menger" if af else "Mixer"),
+            ("fertilizer_injection", "Inspuiting" if af else "Injection"), ("borehole", "Borehole")):
+        row = recommendations.get(identity)
+        if row:
+            lines.append(f"• <b>{label}:</b> {html.escape(_decision(row.get('status'), af))}")
+    reasons = [str(row.get("reason") or "") for row in recommendations.values() if row.get("subject") in IRRIGATION_ZONE_IDS]
+    why = _short_reason(next((reason for reason in reasons if reason), str(result.get("reason") or "")), af)
+    if why: lines.extend(["", html.escape(why)])
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     question = _localized_owner_question(result, brief, af)
-    next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result), now_hint=result.get("evidence_cutoff"))
-    lines.extend(["",
-        f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
-        f"<b>{'Wat ek van jou nodig het' if af else 'What I need from you'}:</b> " +
-        (html.escape(question) if question else ("Niks" if af else "Nothing")),
-        f"<b>{'Volgende outomatiese herbeoordeling' if af else 'Next automatic reassessment'}:</b> " +
-        html.escape(next_check or ("Op die volgende 15-minuut siklus" if af else "On the next 15-minute cycle"))])
+    next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result))
+    if next_check.startswith("around "):
+        lines.append(("Volgende kontrole: " if af else "Next check: ")+(next_check.replace("around ", "omtrent ") if af else next_check)+" SAST")
+    if question: lines.extend(["", "❓ "+html.escape(question)])
+    elif not rootline_exception_material(result) and result.get("control_observation") not in {"deadline_deferred", "unverified"}:
+        lines.extend(["", "Geen aksie nodig nie. ROOTLINE hou jou op hoogte van veranderinge." if af else
+            "No action needed. ROOTLINE will keep you updated on changes."])
+    lines.extend(["", f'<a href="{IRRIGATION_URL}">'+("Volledige plan, instellings en geskiedenis" if af else "Full plan, settings and history")+"</a>"])
     credit = _forecast_credit(result, language=language, html_link=True)
-    if credit:
-        lines.extend(["", credit])
-    if not question:
-        lines.extend(["", "Geen aksie word van jou vereis nie." if af else "No action required from you."])
+    if credit: lines.extend(["", credit])
     return "\n".join(lines)
 
 
@@ -297,7 +315,7 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
     state = str(lifecycle.get("state") or "Held")
     if state == "Started":
         if lifecycle.get("acceptance_mode") == "command_accepted":
-            return "AAN-opdrag aanvaar; fisiese toestand onbevestig" if af else "ON command accepted; physical state unverified"
+            return "Program loop — AAN-opdrag aanvaar" if af else "Programme running — ON accepted"
         return "Loop tans" if af else "Currently running"
     if state == "Authorized":
         return "Gereed — begin veilig" if af else "Ready — starting safely"
@@ -327,7 +345,7 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
                 "Run outcome unconfirmed — ROOTLINE is reviewing")
     if state == "Completed":
         if (lifecycle.get("completion_evidence") or {}).get("command_job_completed") is True:
-            return "Opdragprogram voltooi; waterlewering onbevestig" if af else "Command programme completed; water delivery unverified"
+            return "Program voltooi" if af else "Programme completed"
         if _verified_completion(lifecycle, zone):
             return "Beheerder AF geverifieer" if af else "Controller OFF verified"
         return "Loop nie" if af else "Not running"
@@ -415,6 +433,8 @@ def _short_reason(value: str, af: bool) -> str:
 
 def _owner_question(value: Any) -> str:
     text = " ".join(str(value or "").split())
+    if text == "If convenient, are the tanks LOW, OK or FULL, and when was that observed?":
+        return ""
     if text.casefold().rstrip(".") in {
             "no owner fact is required now", "no owner action is required now",
             "none", "nothing", "n/a"}:
@@ -454,7 +474,7 @@ def _human_reassessment(value, now_hint=None):
             return f"around {parsed:%H:%M}"
         except ValueError:
             pass
-    if text in {"refresh_missing_or_stale_evidence", "on_material_evidence_change"}:
+    if "_" in text or text in {"refresh_missing_or_stale_evidence", "on_material_evidence_change"}:
         return "when conditions change"
     return text or "on the next automatic check"
 

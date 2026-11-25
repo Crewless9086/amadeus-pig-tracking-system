@@ -234,7 +234,8 @@ def _stable_owner_plan(value):
         line = " ".join(raw.split())
         folded = line.casefold()
         if (folded.startswith("<b>next automatic reassessment")
-                or folded.startswith("<b>volgende outomatiese herbeoordeling")):
+                or folded.startswith("<b>volgende outomatiese herbeoordeling")
+                or folded.startswith("next check:") or folded.startswith("volgende kontrole:")):
             # Only an explicitly approximate HH:MM clock token is volatile.
             # Keep the line, language, reassessment mode, conditions and any
             # fixed/deadline wording in the semantic identity.
