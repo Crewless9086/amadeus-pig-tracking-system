@@ -301,6 +301,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         **({"stop_mode":"scheduled","phase_number":artifact.get("phase_number"),
             "eligibility_sha256":artifact["eligibility_sha256"]} if artifact.get("stop_mode")=="scheduled" else {}),
         "batch_generation":artifact.get("batch_generation"),
+        **({"mixer_session":artifact["mixer_session"]} if artifact.get("mixer_session") is not None else {}),
         "maximum_duration_seconds":artifact["maximum_duration_seconds"],
         "claimed_at":now.isoformat(),"primary_stop_deadline":(
             now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat(),
@@ -329,7 +330,11 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         return _aux_result("auxiliary_start_budget_unavailable")
     claim=store("claim_auxiliary_before_on",execution)
     if not isinstance(claim,dict) or claim.get("created") is not True:
-        return _aux_result("auxiliary_claim_conflict")
+        reason = claim.get("status") if isinstance(claim,dict) else None
+        return _aux_result("auxiliary_claim_conflict", claim_status=reason if reason in {
+            "eligibility_already_consumed", "mixer_session_history_changed", "daily_mixing_budget_unavailable",
+            "auxiliary_active", "auxiliary_contained", "canonical_auxiliary_claim_unproven",
+            "eligible_irrigation_segment_not_active", "pulse_already_claimed"} else "claim_not_created")
     def dispatch():
         # The snapshot may change after claim; recheck inside the existing
         # atomic command fence immediately before the provider ON request.

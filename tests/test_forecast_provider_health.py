@@ -22,7 +22,8 @@ def outcome(request, generation=1, **overrides):
 def test_pending_admission_and_bounded_unknown_outcome_recovery():
     first=claim(); state,result,code,changed=health.transition({},first,NOW)
     assert changed and code==200 and result["allowed"] and state["generation"]==1
-    assert health.transition(state,first,NOW)[1]["allowed"] is False
+    resumed=health.transition(state,first,NOW)
+    assert resumed[1]["allowed"] is True and resumed[1]["generation"]==1 and resumed[3] is False
     other=claim()
     assert health.transition(state,other,NOW+timedelta(minutes=14))[1]["status"]=="probe_pending"
     later,admitted,_,_=health.transition(state,other,NOW+timedelta(minutes=16))

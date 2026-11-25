@@ -1645,7 +1645,8 @@ def _claim_single_auxiliary(body):
         return {"success":False,"created":False,"status":"auxiliary_claim_incomplete"}
     event_id=_event_id("claim_auxiliary_before_on",body)
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-                                           read_only=False) as connection:
+                                           read_only=False,
+                                           read_committed=body.get("device_type") == "fertilizer_mixer") as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
@@ -1726,19 +1727,37 @@ def _claim_single_auxiliary(body):
                 if cursor.fetchone():
                     return {"success":True,"created":False,"status":"pulse_already_claimed"}
             elif body.get("device_type") == "fertilizer_mixer":
-                cursor.execute("""select review_json->'rootline_execution'
-                    from public.sam_live_stock_conversation_review_events
-                    where event_source=%s
-                      and review_json->'rootline_execution'->>'device_type'='fertilizer_mixer'
-                      and review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
-                    order by created_at,review_event_id""", (EVENT_SOURCE,))
+                history = _mixer_reservation_rows(cursor)
                 from modules.telemetry.rootline_auxiliary_management import mixing_daily_accounting
-                from datetime import datetime
-                at = datetime.fromisoformat(str(body.get("claimed_at") or ""))
-                account = mixing_daily_accounting([row[0] for row in cursor.fetchall()
-                    if row[0].get("execution_id") not in retired_no_send]
-                    + [{**body, "action":"claim_auxiliary_before_on"}], now=at)
-                if not account["history_valid"] or account["reserved_seconds"] > 1800:
+                from modules.telemetry.rootline_command_acceptance import MODE, moment
+                cursor.execute("select clock_timestamp()")
+                at = cursor.fetchone()[0]
+                account = mixing_daily_accounting(history, now=at)
+                if body.get("acceptance_mode") == MODE or body.get("mixer_session") is not None:
+                    from modules.telemetry.rootline_mixer_reservations import session_shape
+                    current = account
+                    session = body.get("mixer_session")
+                    claimed = moment(body.get("claimed_at"))
+                    from zoneinfo import ZoneInfo
+                    midnight = at.astimezone(ZoneInfo("Africa/Johannesburg")).replace(
+                        hour=0, minute=0, second=0, microsecond=0)+timedelta(days=1)
+                    if (body.get("acceptance_mode") != MODE or claimed is None
+                            or not current["session_history_valid"]
+                            or not session_shape(session, now=at, duration=body.get("maximum_duration_seconds"))
+                            or session != current["mixer_session"]
+                            or claimed+timedelta(seconds=body["maximum_duration_seconds"]) > midnight):
+                        return {"success":True,"created":False,"status":"mixer_session_history_changed"}
+                    addition = 0 if session["kind"] == "continuation" else body["maximum_duration_seconds"]
+                    if current["session_reserved_microseconds"] + addition*1_000_000 > 1800*1_000_000:
+                        return {"success":True,"created":False,"status":"daily_mixing_budget_unavailable"}
+                else:
+                    # Legacy physical-mode callers retain conservative full
+                    # reservations; they cannot spend a command-mode remainder.
+                    addition = body.get("maximum_duration_seconds")
+                    if type(addition) is not int or not 0 < addition <= 1800:
+                        return {"success":False,"created":False,"status":"daily_mixing_budget_unavailable"}
+                if (not account["history_valid"] or account["reserved_seconds"] + addition > 1800
+                        or account["sessions"] >= 6):
                     return {"success":True,"created":False,"status":"daily_mixing_budget_unavailable"}
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
@@ -1772,6 +1791,32 @@ def _claim_single_auxiliary(body):
                     "event_id":event_id,**body}},sort_keys=True,separators=(",",":"),default=str)))
             return {"success":True,"created":cursor.rowcount==1,
                 "status":"claimed" if cursor.rowcount==1 else "execution_replay"}
+
+
+def _mixer_reservation_rows(cursor):
+    """Complete mixer histories through the caller's existing locked snapshot.
+
+    Select by any canonical mixer binding, then include sparse dispatch/OFF
+    rows by execution identity. No date, action or row limit can hide a claim,
+    an ambiguous attempt, or a child from another planning generation.
+    """
+    cursor.execute("""with source_events as materialized (
+            select review_json->'rootline_execution' as body, created_at, review_event_id
+            from public.sam_live_stock_conversation_review_events
+            where event_source=%s
+        ), classified as (
+            select body, created_at, review_event_id,
+                body->>'execution_id' as execution_id,
+                bool_or(body->>'auxiliary_device_id'='FERTILIZER-MIXER-CH2'
+                    or body->>'device_type'='fertilizer_mixer'
+                    or (body->>'device_id'='100204d497' and body->>'channel'='2'))
+                    over (partition by body->>'execution_id') as mixer_execution
+            from source_events
+        )
+        select body from classified
+        where execution_id is not null and mixer_execution
+        order by created_at,review_event_id""", (EVENT_SOURCE,))
+    return [row[0] if isinstance(row[0], dict) else json.loads(row[0]) for row in cursor.fetchall()]
 
 
 def _claim_borehole_material_load(body, *, adopt=False):
@@ -2047,6 +2092,22 @@ def _sha256_text(value):
     return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
+def _verified_unstarted_auxiliary_reconciliation(row, history):
+    """Reuse the existing owner reconciliation without refunding its reservation."""
+    held = next((item for item in history if item.get("action") == "contain_auxiliary_device"
+        and item.get("event_id") == row.get("containment_event_id")), None)
+    return (held is not None and row.get("action") == "reconcile_unstarted_auxiliary"
+        and row.get("contract_version") == _UNSTARTED_RECONCILIATION
+        and row.get("resolution") == "never_dispatched_verified_off"
+        and row.get("execution_id") == held.get("execution_id")
+        and row.get("containment_sha256") == _event_digest(held)
+        and row.get("reservation_preserved") is True and row.get("on_authority") is False
+        and _owner_reconciliation_reference(row.get("owner_instruction"))
+        and _sha256_text(row.get("root_review_sha256"))
+        and not any(item.get("action") in {"claim_auxiliary_dispatch", "record_auxiliary_on_outcome",
+            "mark_auxiliary_active"} for item in history))
+
+
 def _auxiliary_containment_state(cursor, auxiliary_id):
     """Only exact verified reconciliation or runtime abort supersedes its own hold."""
     cursor.execute("""select review_json->'rootline_execution'
@@ -2069,16 +2130,9 @@ def _auxiliary_containment_state(cursor, auxiliary_id):
                 del pending[row["containment_event_id"]]
                 resolved = row
             continue
-        if (held is not None and row.get("contract_version") == _UNSTARTED_RECONCILIATION
-                and row.get("resolution") == "never_dispatched_verified_off"
-                and row.get("execution_id") == held.get("execution_id")
-                and row.get("containment_sha256") == _event_digest(held)
-                and row.get("reservation_preserved") is True and row.get("on_authority") is False
-                and _owner_reconciliation_reference(row.get("owner_instruction"))
-                and _sha256_text(row.get("root_review_sha256"))):
+        if held is not None:
             history = _managed_edge_rows(cursor, held["execution_id"])
-            if not any(item.get("action") in {"claim_auxiliary_dispatch",
-                    "record_auxiliary_on_outcome", "mark_auxiliary_active"} for item in history):
+            if _verified_unstarted_auxiliary_reconciliation(row, history):
                 del pending[row["containment_event_id"]]
                 resolved = row
     if pending:
@@ -3263,7 +3317,7 @@ def _scheduled_auxiliary_claim_valid(body, stored, now):
     immutable=("execution_id","eligibility_id","eligibility_sha256","consumption_key",
         "auxiliary_device_id","device_type","device_id","channel","zone_id","job_id",
         "job_sha256","segment_identity","zone_execution_id","pulse_number","phase_number",
-        "batch_generation","maximum_duration_seconds","stop_mode")
+        "batch_generation","maximum_duration_seconds","stop_mode","acceptance_mode","mixer_session")
     if any(body.get(k)!=artifact.get(k) for k in immutable): return False
     try:
         claimed=datetime.fromisoformat(body["claimed_at"])

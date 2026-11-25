@@ -168,6 +168,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             "reserved_mixing_seconds_today": mixing["reserved_seconds"],
             "mixing_history_valid": mixing["history_valid"],
             "verified_mixing_sessions_today": mixing["sessions"],
+            "mixer_session": mixing["mixer_session"],
             "mixing_history_complete_through": evidence.get("fertilizer_history_complete_through"),
             "power_suitable": managed_energy_decision(evidence.get("power"), now=decision_at)["mixing_eligible"],
         }

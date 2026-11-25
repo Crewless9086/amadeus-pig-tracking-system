@@ -62,6 +62,10 @@ def transition(current, payload, now):
             return state, {"success": True, "allowed": False, "status": "provider_cooldown",
                 "retry_not_before": prior_retry.isoformat()}, 200, False
         if state.get("attempt_id") == attempt:
+            if state.get("status") == "pending" and _utc(state["claimed_at"]) <= now < _utc(state["lease_until"]):
+                return state, {"success": True, "allowed": True, "status": "probe_resumed",
+                    "attempt_id": attempt, "generation": state["generation"],
+                    "lease_until": state["lease_until"]}, 200, False
             return state, {"success": True, "allowed": False, "status": "attempt_already_claimed"}, 200, False
         if state.get("status") == "pending" and now < _utc(state["lease_until"]):
             return state, {"success": True, "allowed": False, "status": "probe_pending",
@@ -176,6 +180,12 @@ def nightly_transition(current, payload, now):
     if action == "nightly_claim":
         if set(payload) != {"action", "provider", "attempt_id"}:
             raise ValueError("nightly_cycle_fields_invalid")
+        if (state.get("attempt_id") == attempt and state.get("status") == "pending"
+                and timedelta(0) <= now - _utc(state["claimed_at"]) < timedelta(seconds=LEASE_SECONDS)):
+            return state, {"success": True, "allowed": True, "status": "nightly_cycle_resumed",
+                "cycle": deepcopy(state)}, 200, False
+        if state.get("attempt_id") == attempt:
+            return state, {"success": True, "allowed": False, "status": "nightly_cycle_already_claimed"}, 200, False
         if (local.hour, local.minute) < (23, 30):
             return state, {"success": True, "allowed": False, "status": "nightly_not_due"}, 200, False
         cycle_date = local.date().isoformat()
@@ -194,6 +204,8 @@ def nightly_transition(current, payload, now):
     status = payload.get("status")
     if status not in {"ingested", "failed"}:
         raise ValueError("nightly_cycle_status_invalid")
+    if status == "failed" and state.get("ingest"):
+        raise ValueError("nightly_cycle_ingest_requires_reconciliation")
     result = {"status": status, "source_id": payload.get("source_id"),
         "forecast_run_at": payload.get("forecast_run_at")}
     if status == "ingested":
@@ -231,6 +243,60 @@ def _save_cycle(cursor, state):
     cursor.execute("""update public.telemetry_sources set metadata=jsonb_set(
         coalesce(metadata,'{}'::jsonb),'{forecast_nightly_cycle}',%s::jsonb,true),
         updated_at=clock_timestamp() where source_id=%s""", (json.dumps(state), SOURCES[NIGHTLY_CYCLE_PROVIDER]))
+
+
+def _reconcile_ingest(cursor, state, payload, now):
+    """Complete only this pending cycle's exact committed snapshot receipt.
+
+    The owner row is already locked. Lock the receipt's provider next, in the
+    same order as ingest/admission, and commit both results together. Failed
+    historical cycles never enter this path.
+    """
+    if (state.get("status") != "pending" or payload.get("action") != "nightly_result"
+            or payload.get("status") != "ingested"):
+        return state
+    if (state.get("attempt_id") != _identity(payload.get("attempt_id"))
+            or set(payload) - {"action", "provider", "attempt_id", "status", "source_id", "forecast_run_at"}):
+        raise ValueError("nightly_cycle_conflict")
+    receipt = state.get("ingest") or {}
+    if not receipt:
+        raise ValueError("nightly_cycle_ingest_unproven")
+    provider = receipt.get("provider")
+    stamp = _utc(payload.get("forecast_run_at")).isoformat()
+    if (provider not in SOURCES or receipt.get("source_id") != SOURCES[provider]
+            or payload.get("source_id") != receipt["source_id"]
+            or stamp != receipt.get("forecast_run_at")
+            or type(receipt.get("generation")) is not int or receipt["generation"] < 1):
+        raise ValueError("nightly_cycle_ingest_conflict")
+    attempt = _identity(receipt.get("attempt_id"))
+    admitted = next((a for a in state.get("attempts", []) if a.get("provider") == provider
+        and a.get("attempt_id") == attempt and a.get("generation") == receipt["generation"]), None)
+    if not admitted or admitted.get("status") not in {"pending", "ingested"}:
+        raise ValueError("nightly_provider_attempt_unproven")
+    cursor.execute("""select metadata,provider,source_type,active from public.telemetry_sources
+        where source_id=%s for update""", (SOURCES[provider],))
+    row = cursor.fetchone()
+    if not row or row[1:] != (provider, "forecast", True):
+        raise ValueError("forecast_source_not_registered")
+    previous = (row[0] or {}).get("forecast_provider_health") or {}
+    cycle = {k: state[k] for k in ("attempt_id", "cycle_date", "operating_date")}
+    if (previous.get("nightly_cycle") != cycle or previous.get("attempt_id") != attempt
+            or previous.get("generation") != receipt["generation"]
+            or previous.get("status") not in {"pending", "ingested"}):
+        raise ValueError("nightly_provider_result_conflict")
+    report = {"action": "result", "provider": provider, "attempt_id": attempt,
+        "generation": receipt["generation"], "status": "ingested", "failure_kind": None,
+        "retry_not_before": None, "forecast_run_at": stamp}
+    completed, result, code, changed = transition(previous, report, now)
+    if code != 200 or result.get("success") is not True:
+        raise ValueError("nightly_provider_result_conflict")
+    if changed:
+        cursor.execute("""update public.telemetry_sources set metadata=jsonb_set(
+            coalesce(metadata,'{}'::jsonb),'{forecast_provider_health}',%s::jsonb,true),
+            updated_at=clock_timestamp() where source_id=%s""", (json.dumps(completed), SOURCES[provider]))
+    state = deepcopy(state)
+    next(a for a in state["attempts"] if a == admitted)["status"] = "ingested"
+    return state
 
 
 def provider_health(payload, provided_api_key="", database_url=None, *, connect_factory=None):
@@ -286,12 +352,20 @@ def _provider_health_locked(payload, provided_api_key="", database_url=None, *, 
             transition_payload = {k: v for k, v in payload.items() if k != "nightly_cycle"}
             previous = metadata.get(key, {})
             if not nightly:
-                if payload.get("action") == "claim" and any(a.get("provider") == provider
-                        for a in owner_state.get("attempts", [])):
+                prior_attempt = next((a for a in owner_state.get("attempts", [])
+                    if a.get("provider") == provider), None)
+                same_claim = (prior_attempt and prior_attempt.get("attempt_id") == payload.get("attempt_id")
+                    and previous.get("attempt_id") == payload.get("attempt_id")
+                    and prior_attempt.get("generation") == previous.get("generation")
+                    and prior_attempt.get("status") == previous.get("status") == "pending"
+                    and previous.get("nightly_cycle") == cycle)
+                if payload.get("action") == "claim" and prior_attempt and not same_claim:
                     return {"success": True, "allowed": False, "status": "nightly_provider_already_attempted",
                         "provider": provider, "source_id": source}, 200
                 if payload.get("action") == "result" and previous.get("nightly_cycle") != cycle:
                     raise ValueError("nightly_provider_result_conflict")
+            if nightly:
+                previous = _reconcile_ingest(cursor, previous, transition_payload, now)
             state, result, code, changed = (nightly_transition if nightly else transition)(previous, transition_payload, now)
             if not nightly and changed:
                 state["nightly_cycle"] = deepcopy(cycle)
@@ -306,8 +380,9 @@ def _provider_health_locked(payload, provided_api_key="", database_url=None, *, 
                         raise ValueError("nightly_provider_attempt_unproven")
                     if state["status"] == "ingested":
                         ingest = owner_state.get("ingest") or {}
-                        if (ingest.get("attempt_id") != state["attempt_id"] or
-                                ingest.get("forecast_run_at") != state["result"]["forecast_run_at"]):
+                        if ingest != {"provider": provider, "source_id": source,
+                                "attempt_id": state["attempt_id"], "generation": state["generation"],
+                                "forecast_run_at": state["result"]["forecast_run_at"]}:
                             raise ValueError("nightly_provider_ingest_unproven")
                     admitted["status"] = state["status"]
                 _save_cycle(cursor, owner_state)

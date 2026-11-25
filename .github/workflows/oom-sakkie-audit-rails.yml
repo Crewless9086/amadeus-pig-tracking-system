@@ -403,7 +403,7 @@ jobs:
           FORECAST_HEALTH_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/forecast_health_20261120
           FORECAST_CONSUMER_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/forecast_consumer_20261120
           PYTHON_DOTENV_DISABLED: "1"
-        run: python -B -m pytest -q -p no:cacheprovider tests/test_forecast_logger.py tests/test_forecast_provider_health.py tests/test_forecast_consumers.py
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_forecast_logger.py tests/test_forecast_provider_health.py tests/test_forecast_consumers.py tests/test_forecast_recovery.py
 
       - name: Run ROOTLINE Water and Energy Plan permission gates
         run: ROOTLINE_WATER_ENERGY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -B -m pytest -q -p no:cacheprovider tests/test_rootline_water_energy_plan_postgres.py
@@ -441,6 +441,7 @@ jobs:
           tests/test_rootline_borehole_commissioning.py
           tests/test_rootline_commissioning_bridges.py
           tests/test_rootline_active_supervision.py
+          tests/test_rootline_report_query.py
           tests/test_rootline_active_pass.py
           tests/test_rootline_borehole_fault_read_reuse.py
           tests/test_report_diagnostics.py
@@ -452,6 +453,7 @@ jobs:
           tests/test_rootline_visible_operation.py
           tests/test_rootline_managed_devices_runtime.py
           tests/test_rootline_fertilizer_auxiliary.py
+          tests/test_rootline_mixer_reservations.py
           tests/test_rootline_integrated_operation.py
           tests/test_rootline_auxiliary_startup_recovery_postgres.py
           tests/test_rootline_injector_deadline.py
