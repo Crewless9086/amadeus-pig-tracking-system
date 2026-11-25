@@ -614,7 +614,8 @@ def sql_schedule_store(monkeypatch):
     """Execute the real store SELECTs with synthetic rows and no network.
 
     SQLite provides the relational selection/order, while this adapter only
-    translates parameter syntax and PostgreSQL JSON ->> boolean text. Native
+    translates parameter syntax, PostgreSQL JSON ->> boolean text and the
+    unlimited OFFSET 0 spelling (SQLite requires LIMIT -1). Native
     PostgreSQL qualification remains a separate release gate.
     """
     import json
@@ -634,7 +635,10 @@ def sql_schedule_store(monkeypatch):
         def __init__(self): self.cursor = connection.cursor()
         def __enter__(self): return self
         def __exit__(self, *args): self.cursor.close()
-        def execute(self, sql, params): self.cursor.execute(sql.replace("%s", "?"), params)
+        def execute(self, sql, params):
+            translated = sql.replace("%s", "?").replace(
+                "order by created_at desc offset 0", "order by created_at desc limit -1 offset 0")
+            self.cursor.execute(translated, params)
         def fetchone(self):
             row = self.cursor.fetchone()
             return (json.loads(row[0]),) if row else None

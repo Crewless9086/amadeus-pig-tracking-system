@@ -40,6 +40,9 @@ OPEN_METEO_MAX_RETRIES = 1
 WEATHERAPI_URL = "https://api.weatherapi.com/v1/forecast.json"
 PROVIDER_BUDGET_SECONDS = 60
 MAX_RETRY_WAIT_SECONDS = 15
+HEALTH_REQUEST_SECONDS = 45
+HEALTH_OPERATION_SECONDS = 150
+HEALTH_MAX_ATTEMPTS = 3
 PROVIDERS = {
     "visual_crossing": ("visual-crossing-forecast-main", "Visual Crossing Weather", "https://www.visualcrossing.com/"),
     "weatherapi": ("weatherapi-forecast-main", "WeatherAPI.com", "https://www.weatherapi.com/"),
@@ -313,22 +316,48 @@ def build_rows(data, lat, lon, tz, *, provider="open_meteo", fetched_at=None):
     return rows
 
 
+class ForecastHealthError(RuntimeError):
+    def __init__(self, message, *, status=None):
+        super().__init__(message)
+        self.status = status
+
+
 def _health_request(payload):
     if not AMADEUS_BACKEND_URL or not TELEMETRY_INGEST_API_KEY:
         raise RuntimeError("forecast_health_not_configured")
-    try:
+    # Queue allowance belongs to transport, not the server's 12-second DB budget.
+    # Every retry preserves the logical claim/result; only its expiry changes.
+    deadline = time.monotonic() + HEALTH_OPERATION_SECONDS
+    for attempt in range(HEALTH_MAX_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 6:
+            break
+        lifetime = min(HEALTH_REQUEST_SECONDS, remaining - 6)
         request_payload = {**payload, "request_expires_at":
-            (datetime.now(timezone.utc) + timedelta(seconds=15)).isoformat()}
-        response = requests.post(AMADEUS_BACKEND_URL+"/api/telemetry/weather/forecast/provider-health",
-            json=request_payload, headers={"X-Amadeus-Telemetry-Key": TELEMETRY_INGEST_API_KEY}, timeout=(3, 15))
-        result = response.json()
-    except (requests.RequestException, ValueError):
-        raise RuntimeError("forecast_health_unavailable") from None
-    if (not 200 <= response.status_code < 300 or not isinstance(result, dict)
-            or result.get("success") is not True or result.get("provider") != payload["provider"]
-            or result.get("source_id") != PROVIDERS[payload["provider"]][0]):
-        raise RuntimeError("forecast_health_unconfirmed")
-    return result
+            (datetime.now(timezone.utc) + timedelta(seconds=lifetime)).isoformat()}
+        try:
+            response = requests.post(AMADEUS_BACKEND_URL+"/api/telemetry/weather/forecast/provider-health",
+                json=request_payload, headers={"X-Amadeus-Telemetry-Key": TELEMETRY_INGEST_API_KEY},
+                timeout=(3, lifetime + 3))
+            result = response.json()
+        except (requests.RequestException, ValueError):
+            result = None
+        else:
+            if time.monotonic() >= deadline:
+                break
+            if (200 <= response.status_code < 300 and isinstance(result, dict)
+                    and result.get("success") is True and result.get("provider") == payload["provider"]
+                    and result.get("source_id") == PROVIDERS[payload["provider"]][0]):
+                return result
+            if response.status_code not in {408, 502, 503, 504}:
+                # Only expose the one protocol status used for no-ingest recovery.
+                status = ("nightly_cycle_ingest_unproven" if isinstance(result, dict)
+                    and response.status_code == 400 and result.get("status") == "nightly_cycle_ingest_unproven"
+                    else None)
+                raise ForecastHealthError("forecast_health_unconfirmed", status=status)
+        if attempt + 1 < HEALTH_MAX_ATTEMPTS and deadline - time.monotonic() > 7:
+            time.sleep(1)
+    raise ForecastHealthError("forecast_health_unavailable")
 
 
 def _finish_provider(claim, status, *, failure_kind=None, retry_not_before=None, forecast_run_at=None, nightly_cycle=None):
@@ -571,16 +600,33 @@ def main(*, nightly=True):
         backend_ingest_error = type(exc).__name__
 
     required_ingest = BACKEND_INGEST_ENABLED and backend_ingest_success
-    health_saved = _finish_provider(data["health_claim"], "ingested" if required_ingest else "ingest_failed",
-        failure_kind=None if required_ingest else "backend_ingest", forecast_run_at=rows[0][0],
-        nightly_cycle={k: cycle[k] for k in ("attempt_id", "cycle_date", "operating_date")} if cycle else None)
+    # An unacknowledged nightly ingest may have committed. Do not write a
+    # contradictory provider failure before reconciling its durable receipt.
+    health_saved = False
+    if required_ingest or cycle is None:
+        health_saved = _finish_provider(data["health_claim"], "ingested" if required_ingest else "ingest_failed",
+            failure_kind=None if required_ingest else "backend_ingest", forecast_run_at=rows[0][0],
+            nightly_cycle={k: cycle[k] for k in ("attempt_id", "cycle_date", "operating_date")} if cycle else None)
     success = required_ingest and health_saved and all(item.get("health_persisted", True) for item in failures)
+    nightly_result_confirmed = False
     if cycle is not None:
-        recorded = _health_request({"action": "nightly_result", "provider": "visual_crossing",
-            "attempt_id": cycle["attempt_id"], "status": "ingested" if success else "failed",
-            "source_id": data["provenance"]["source_id"] if success else None,
-            "forecast_run_at": rows[0][0] if success else None})
-        success = success and recorded.get("success") is True
+        try:
+            recorded = _health_request({"action": "nightly_result", "provider": "visual_crossing",
+                "attempt_id": cycle["attempt_id"], "status": "ingested",
+                "source_id": data["provenance"]["source_id"], "forecast_run_at": rows[0][0]})
+            success = nightly_result_confirmed = recorded.get("success") is True
+            health_saved = success
+        except RuntimeError as exc:
+            success = False
+            if getattr(exc, "status", None) == "nightly_cycle_ingest_unproven":
+                try:
+                    recorded = _health_request({"action": "nightly_result", "provider": "visual_crossing",
+                        "attempt_id": cycle["attempt_id"], "status": "failed"})
+                    nightly_result_confirmed = recorded.get("success") is True
+                except RuntimeError:
+                    pass
+            # A lost response is unknown, not permission to close a committed
+            # ingest as failed. Leave the original identity pending for recovery.
     print(json.dumps({
         "success": success,
         "provider": data["provenance"]["provider"],
@@ -591,6 +637,7 @@ def main(*, nightly=True):
         "backend_ingest_enabled": BACKEND_INGEST_ENABLED,
         "backend_ingest_success": backend_ingest_success,
         "backend_ingest_error": backend_ingest_error,
+        "nightly_result_confirmed": nightly_result_confirmed,
         "google_sheets_enabled": GOOGLE_SHEETS_ENABLED,
         "google_sheets_written": google_sheets_written,
         "google_sheets_error": google_sheets_error,

@@ -1605,6 +1605,7 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
                            or review_json->'rootline_execution'->>'action' in (
                                'record_auxiliary_completed', 'claim_auxiliary_before_on',
                                'claim_auxiliary_dispatch', 'claim_auxiliary_off_attempt',
+                               'record_auxiliary_startup_aborted', 'reconcile_unstarted_auxiliary',
                                'record_auxiliary_control_pulse_stopped', 'contain_auxiliary_device',
                                'mark_auxiliary_active', 'mark_active',
                                'record_completed', 'record_ambiguous_shutdown',

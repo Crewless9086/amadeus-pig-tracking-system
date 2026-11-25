@@ -149,10 +149,17 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
     now=_aware(now or datetime.now(timezone.utc)); power=power if isinstance(power,dict) else {}
     today=now.astimezone(SAST).date().isoformat()
     accounting = mixing_daily_accounting(verified_mixing, now=now, batch=batch)
+    from modules.telemetry.rootline_command_acceptance import enabled as command_mode_enabled
+    command_sessions = command_mode_enabled() and timed_control_enabled()
+    session = accounting.get("mixer_session") if command_sessions else None
     used = accounting["reserved_seconds"] / 60
     remaining=max(0,MAX_DAILY_MIX_MINUTES-used)
+    available_seconds = (session["maximum_duration_seconds"] if session else 0) if command_sessions else min(MIX_SESSION_SECONDS,int(remaining*60))
+    if command_sessions:
+        midnight = now.astimezone(SAST).replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(days=1)
+        available_seconds = min(available_seconds, max(0, int((midnight-now).total_seconds())))
     complete_at=_time(mixing_history_complete_through)
-    history_complete=(accounting["history_valid"] and complete_at is not None
+    history_complete=(accounting["history_valid"] and (not command_sessions or accounting["session_history_valid"]) and complete_at is not None
         and timedelta(0)<=now-complete_at<=timedelta(minutes=5))
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
     energy = managed_energy_decision(power, now=now)
@@ -164,20 +171,24 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
     mixer_status=("Await batch" if not mixer_ready
                   else "Needs Data" if not history_complete else (
                       "Completed" if accounting["controller_completed_seconds"] >= 1800
-                      else "Budget reserved") if remaining==0
+                      else "Budget reserved") if available_seconds==0
                   else "Needs Data" if not has_power
                   else "Run later" if low_power else "Run now")
     mixer={"contract_version":TASK_CONTRACT,"auxiliary_task_id":
         f"ROOTLINE-MIX-{today}","collection":"irrigation_auxiliary_tasks",
         "auxiliary_device_id":"FERTILIZER-MIXER-CH2","device_type":"fertilizer_mixer",
-        "decision":mixer_status,"planned_seconds":min(MIX_SESSION_SECONDS,int(remaining*60))
+        "decision":mixer_status,"planned_seconds":available_seconds
             if history_complete else 0,
         "reserved_minutes_today":used if history_complete else "Unknown",
         "controller_completed_minutes_today":accounting["controller_completed_seconds"]/60,
         "remaining_verified_minutes_today":remaining if history_complete else "Unknown",
+        **({"known_reserved_remainder_seconds":accounting["known_residual_microseconds"]/1_000_000,
+            "command_accounted_seconds_today":accounting["command_accounted_microseconds"]/1_000_000,
+            "command_shortfall_seconds_today":accounting["command_shortfall_microseconds"]/1_000_000,
+            "physical_mixing_outcome":"Unknown"} if command_sessions else {}),
         "reason":("fertilizer_batch_not_reported_prepared" if not mixer_ready
                   else "mixing_history_incomplete" if not history_complete
-                  else "daily_mixing_budget_reserved" if remaining==0
+                  else "daily_mixing_budget_reserved" if available_seconds==0
                   else "power_evidence_unavailable" if not has_power
                   else "prefer_solar_or_soc_window" if low_power
                   else "batch_support_mixing"),
@@ -207,6 +218,8 @@ def mixing_daily_accounting(executions, *, now, batch=None):
     The same projection is used by planning and the transaction-locked claim.
     """
     now = _aware(now); batch = batch or {}
+    from modules.telemetry.rootline_mixer_reservations import project_mixer_sessions
+    session_accounting = project_mixer_sessions(executions, now=now)
     day = now.astimezone(SAST).replace(hour=0, minute=0, second=0, microsecond=0)
     end = day + timedelta(days=1)
     groups = {}
@@ -229,6 +242,10 @@ def mixing_daily_accounting(executions, *, now, batch=None):
         if any(_verified_not_dispatched(item, rows) for item in rows):
             continue
         claims = [row for row in rows if row.get("action") == "claim_auxiliary_before_on"]
+        # Persisted proposals have no reservation or command duty yet. The
+        # complete locked history also includes the candidate being admitted.
+        if not claims and all(row.get("action") == "record_auxiliary_eligibility" for row in rows):
+            continue
         row = claims[0] if claims else rows[-1]
         at = _time(row.get("claimed_at"))
         seconds = row.get("maximum_duration_seconds")
@@ -240,7 +257,7 @@ def mixing_daily_accounting(executions, *, now, batch=None):
             continue
         overlap = max(0, int((min(at + timedelta(seconds=seconds), end)
             - max(at, day)).total_seconds()))
-        reserved += overlap
+        reserved += 0 if row.get("execution_id") in session_accounting["child_execution_ids"] else overlap
         sessions += int(overlap > 0)
         done = next((item for item in reversed(rows)
             if item.get("control_completed") is True
@@ -267,7 +284,9 @@ def mixing_daily_accounting(executions, *, now, batch=None):
                     and done.get("batch_generation") == batch.get("batch_generation")):
                 if premix is None or stopped > _time(premix["completed_at"]):
                     premix = done
-    return {"reserved_seconds": reserved, "controller_completed_seconds": completed,
+    reserved = max(reserved, session_accounting["session_reserved_microseconds"]/1_000_000)
+    sessions = max(sessions, session_accounting["session_count"])
+    return {**session_accounting, "reserved_seconds": reserved, "controller_completed_seconds": completed,
         "sessions": sessions, "history_valid": valid,
         "premix_verified": premix is not None, "premix_execution": premix,
         "premix_command_accepted": command_premix is not None, "command_premix_execution": command_premix}
@@ -368,6 +387,10 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
         "single_use":True,"simultaneous_with_other_auxiliary":True}
     if device_type == "fertilizer_mixer":
         material["batch_generation"] = context.get("batch_generation")
+        from modules.telemetry.rootline_command_acceptance import enabled as command_mode_enabled
+        if scheduled and command_mode_enabled():
+            from modules.telemetry.rootline_mixer_reservations import session_for_context
+            material["mixer_session"] = deepcopy(session_for_context(context, now=now))
     if device_type=="fertilizer_injection_valve":
         if not scheduled:
             material["physical_commissioning_generation"] = safety["physical_commissioning_generation"]
@@ -407,11 +430,11 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
     return {"eligible":True,"status":"auxiliary_execution_eligible",
         "eligibility_id":"ROOTLINE-AUX-ELIGIBILITY-"+digest[:24].upper(),
         "execution_id":"ROOTLINE-AUX-EXECUTION-"+digest[:24].upper(),
-        "consumption_key":"ROOTLINE-AUX-CONSUME-"+_digest({
+        "consumption_key":(_mixer_consumption_key(material) if material.get("mixer_session") else "ROOTLINE-AUX-CONSUME-"+_digest({
             "plan":generation,"job":material.get("job_id"),
             "job_sha256":material.get("job_sha256"),
             "segment":material.get("segment_identity"),"device":identity,
-            "pulse":material.get("pulse_number",1)})[:24].upper(),
+            "pulse":material.get("pulse_number",1)})[:24].upper()),
         "eligibility_sha256":digest,"command_authority":True,"hardware_control":True,
         **material}
 
@@ -424,11 +447,18 @@ def validate_auxiliary_eligibility(value, *, now=None):
     material={key:item for key,item in value.items() if key not in excluded}
     digest=_digest(material)
     contract=get_device_contract(value.get("auxiliary_device_id"))
-    expected_consumption="ROOTLINE-AUX-CONSUME-"+_digest({
+    expected_consumption=(_mixer_consumption_key(value) if value.get("mixer_session") else "ROOTLINE-AUX-CONSUME-"+_digest({
         "plan":value.get("plan_generation"),"job":value.get("job_id"),
         "job_sha256":value.get("job_sha256"),
         "segment":value.get("segment_identity"),"device":value.get("auxiliary_device_id"),
-        "pulse":value.get("pulse_number",1)})[:24].upper()
+        "pulse":value.get("pulse_number",1)})[:24].upper())
+    if value.get("mixer_session") is not None:
+        from modules.telemetry.rootline_mixer_reservations import session_shape
+        from modules.telemetry.rootline_command_acceptance import MODE
+        if (value.get("device_type") != "fertilizer_mixer" or value.get("stop_mode") != "scheduled"
+                or value.get("acceptance_mode") != MODE
+                or not session_shape(value["mixer_session"], now=now, duration=value.get("maximum_duration_seconds"))):
+            return None
     expected_runtime=(INJECTION_SECONDS if value.get("device_type")==
                       "fertilizer_injection_valve" else int(value.get(
                           "maximum_duration_seconds") or 0))
@@ -503,6 +533,10 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
                     or (command_mode and not prior_pulse_closed(current_context))):
                 return False
         return _injection_gate(current_context,now) is None
+    if value.get("mixer_session") is not None:
+        from modules.telemetry.rootline_mixer_reservations import session_for_context
+        if value["mixer_session"] != session_for_context(current_context, now=now):
+            return False
     return _mixing_gate(current_context,now,
         runtime=int(value.get("maximum_duration_seconds") or 0)) is None
 
@@ -582,7 +616,18 @@ def _mixing_gate(context,now,*,runtime):
     used=float(context.get("reserved_mixing_seconds_today") or 0) / 60
     if int(context.get("verified_mixing_sessions_today") or 0)>=6:
         return "daily_mixing_session_cap_reached"
-    if used+int(runtime)/60>MAX_DAILY_MIX_MINUTES: return "daily_mixing_cap_reached"
+    from modules.telemetry.rootline_command_acceptance import enabled as command_mode_enabled
+    if command_mode_enabled() and timed_control_enabled():
+        from modules.telemetry.rootline_mixer_reservations import session_for_context, session_shape
+        session = session_for_context(context, now=now)
+        if not session_shape(session, now=now, duration=runtime):
+            return "mixing_session_unavailable"
+        midnight = now.astimezone(SAST).replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(days=1)
+        if now+timedelta(seconds=runtime) > midnight:
+            return "mixing_session_operating_day_exceeded"
+        if session["kind"] != "continuation" and used+int(runtime)/60>MAX_DAILY_MIX_MINUTES:
+            return "daily_mixing_cap_reached"
+    elif used+int(runtime)/60>MAX_DAILY_MIX_MINUTES: return "daily_mixing_cap_reached"
     if context.get("power_suitable") is not True and context.get("mixing_urgent") is not True:
         return "low_power_mix_deferred"
     return None
@@ -692,3 +737,8 @@ def _aware(value):
 
 def _digest(value):
     return sha256(json.dumps(value,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
+
+
+def _mixer_consumption_key(value):
+    from modules.telemetry.rootline_mixer_reservations import session_key
+    return session_key(value["mixer_session"])
