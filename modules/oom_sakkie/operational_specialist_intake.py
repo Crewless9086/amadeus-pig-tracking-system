@@ -861,16 +861,18 @@ def _apply_write_truth(result, observation_result, write_truth):
     result["canonical_observation"] = observation_result
 
 
-def _operation_event_store(action, identity, payload):
-    if not str(os.environ.get("DATABASE_URL") or "").strip():
+def _operation_event_store(action, identity, payload, *, connection=None, database_url=None):
+    database_url = database_url or os.environ.get("DATABASE_URL")
+    if not str(database_url or "").strip():
         raise RuntimeError("durable_rootline_operational_store_required")
     from modules.oom_sakkie.bounded_postgres_read import (
         connect_bounded_rootline_postgres,
     )
     event_source = "oom_sakkie_rootline_operational_intake"
     if action == "load":
-        with connect_bounded_rootline_postgres(
-                read_only=True, connect_deadline_seconds=3) as connection:
+        from contextlib import nullcontext
+        with (nullcontext(connection) if connection is not None else connect_bounded_rootline_postgres(
+                database_url=database_url, read_only=True, connect_deadline_seconds=3)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'rootline_operational_intake'
                     from public.sam_live_stock_conversation_review_events
@@ -887,20 +889,24 @@ def _operation_event_store(action, identity, payload):
     event["decision_json"] = {}; event["facts_json"] = {}
     event["customer_message_excerpt"] = ""; event["sam_reply_excerpt"] = ""
     def connect_for_operation():
+        if connection is not None:
+            from contextlib import nullcontext
+            return nullcontext(connection)
         instruction = (payload.get("context") or {}).get("event_type") == "borehole_owner_instruction"
-        connection = connect_bounded_rootline_postgres(read_only=False, connect_deadline_seconds=3,
+        operation_connection = connect_bounded_rootline_postgres(database_url=database_url, read_only=False, connect_deadline_seconds=3,
             read_committed=instruction)
         try:
             if instruction:
                 # The same transaction inserts the durable instruction below.
                 # A later ON edge takes this lock and rereads canonical holds.
-                connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
-            return connection
+                operation_connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            return operation_connection
         except BaseException:
-            connection.close()
+            operation_connection.close()
             raise
-    result, status = record_sam_live_stock_review_event(event,
-        connect_factory=connect_for_operation)
+    result, status = record_sam_live_stock_review_event(event, database_url=database_url,
+        connect_factory=connect_for_operation,
+        durable_receipt=(payload.get("context") or {}).get("contract_version") == "rootline_owner_control.v1")
     return {**result, "success": status < 400 and result.get("success") is True,
             "created": result.get("created", result.get("success") is True)}
 

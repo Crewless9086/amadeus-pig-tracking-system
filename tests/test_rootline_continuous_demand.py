@@ -129,6 +129,7 @@ def test_scheduler_retains_eskom_result_inside_existing_finite_projection(status
 class MinuteJourney:
     """Existing entry points, canonical store fixture and real provider normalizer."""
     def __init__(self, monkeypatch, *, borehole_seconds=14400):
+        monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls", lambda *a, **k: {})
         from tests.test_rootline_ewelink_readback import Store as Tokens, env
         from tests.test_rootline_execution_runtime import Store as IrrigationStore
         from tests.test_rootline_managed_devices_runtime import canonical
@@ -248,6 +249,7 @@ class MinuteJourney:
             "grid_power_w":0,"observed_at":self.now().isoformat()}
 
     def canonical(self,action,payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         if action=="load_active_auxiliaries":return deepcopy(list(self.aux.values()))
         if action=="load_active_auxiliary":return deepcopy(self.aux.get(payload))
         if action=="load_active_borehole":return deepcopy(self.borehole)
@@ -643,6 +645,7 @@ def test_realistic_cycle_budget_reuses_program_and_narrows_managed_reads(monkeyp
     monkeypatch.setattr(plan,'_read_latest_tank_observation',lambda *a,**k:read('tanks',3,{}))
     monkeypatch.setattr(plan,'_read_latest_owner_zone_need',lambda *a,**k:read('owner_need',3,{}))
     monkeypatch.setattr(plan,'_read_managed_device_evidence',lambda *a,**k:read('managed_history',6,managed_packet))
+    monkeypatch.setattr('modules.telemetry.rootline_owner_controls.load_runtime_owner_controls',lambda *a,**k:{})
     monkeypatch.setattr(plan,'get_current_water_energy_plan',lambda *a,**k:read('saved_program',3,lambda:(deepcopy(journey.saved_program),200)))
     monkeypatch.setattr(plan,'build_water_energy_plan',lambda *a,**k:(_ for _ in ()).throw(AssertionError('minute rebuild')))
     monkeypatch.setattr('modules.telemetry.weather_service.get_weather_forecast',lambda *a,**k:(_ for _ in ()).throw(AssertionError('forecast read')))
@@ -776,6 +779,7 @@ def test_realistic_cycle_budget_reuses_program_and_narrows_managed_reads(monkeyp
 
 
 def test_missing_saved_program_allows_independent_continuous_ac_and_owned_sunshine_off(monkeypatch):
+    monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls", lambda *a, **k: {})
     from tests.test_rootline_borehole_ac_backup import Store, power
     from tests.test_rootline_continuous_borehole import NOW, Transport, snapshot
     from tests.test_rootline_managed_devices_runtime import canonical
@@ -795,6 +799,7 @@ def test_missing_saved_program_allows_independent_continuous_ac_and_owned_sunshi
     monkeypatch.setattr('modules.telemetry.weather_service.get_weather_control_snapshot',lambda *a,**k:(snapshot(),200))
     monkeypatch.setattr(planning,'read_current_borehole_faults',lambda *a,**k:{'safe':True})
     def canonical_store(action,body):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         if action=='assess_borehole_conditions':
             assert body['forecast'] is None
             return {'success':True,'start_eligible':True,'stop_required':False,

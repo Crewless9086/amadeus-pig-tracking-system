@@ -73,12 +73,35 @@ Path(__file__).resolve().parents[2].joinpath('BROWSER_APPLICATION_FIXTURE.json')
     'owner':owner,'execution':execution,'stop_response':stop,'canonical':canonical,
     'observations':observations(fixture),'provider_calls':fixture['provider']},default=str,indent=2),encoding='utf-8')
 
+# Optional owner-controls journey seed: canonical planning only, no scheduler or transport.
+if os.environ.get('ROOTLINE_OWNER_BROWSER_SEED') == '1':
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from tests.test_rootline_water_energy_plan import daily_program_facts
+    from tests.test_rootline_command_mode import ENV
+    from modules.telemetry.rootline_timed_control import timed_control_scope
+    from modules.telemetry.rootline_water_energy_plan import build_daily_program, append_water_energy_plan
+    seed_now = datetime.now(ZoneInfo('Africa/Johannesburg')).replace(hour=9)
+    # One advancing daytime clock drives canonical owner reads, preview and apply.
+    # This avoids time-of-day capacity failures while retaining all validation.
+    from modules.telemetry import rootline_owner_controls as owner_controls
+    seed_monotonic = time.monotonic()
+    def owner_fixture_clock(connection, supplied=None):
+        return owner_controls._time(supplied or seed_now + timedelta(seconds=time.monotonic()-seed_monotonic))
+    patcher.setattr(owner_controls, '_now', owner_fixture_clock)
+    with timed_control_scope(ENV):
+        seeded_plan = build_daily_program(daily_program_facts(seed_now), seed_now.date().isoformat(), now=seed_now)
+    seeded_result, seeded_status = append_water_energy_plan(seeded_plan,
+        'synthetic-owner-browser-qualification', database_url=os.environ['DATABASE_URL'])
+    assert seeded_status < 300, seeded_result
+
 from flask import jsonify, render_template_string
 from app import app
 
 @app.get('/__irrigation_dialogue_ready')
 def ready():
-    return jsonify(ready=True,classification='synthetic_disposable_irrigation',execution=execution)
+    return jsonify(ready=True,classification='synthetic_disposable_irrigation',execution=execution,
+        owner_fixture_now=owner_fixture_clock(None).isoformat() if os.environ.get('ROOTLINE_OWNER_BROWSER_SEED') == '1' else None)
 
 @app.get('/__irrigation_dialogue_start')
 def entry():

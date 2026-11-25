@@ -2082,7 +2082,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertNotIn("addAttention", js)
         self.assertNotIn("removeAttention", js)
 
-    def test_dashboard_v2_detail_pages_are_read_only_and_consistently_navigable(self):
+    def test_dashboard_v2_detail_pages_keep_navigation_and_irrigation_owner_controls(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
         nav = Path("templates/_farm_nav.html").read_text(encoding="utf-8")
         script = Path("static/js/operationsDetail.js").read_text(encoding="utf-8")
@@ -2091,11 +2091,24 @@ class FrontendRouteContractTests(unittest.TestCase):
             self.assertIn(f'@app.route("/{page}")', app_source)
             template = Path(f"templates/{page}.html").read_text(encoding="utf-8")
             self.assertIn("{% include '_farm_nav.html' %}", template)
-            self.assertIn("operationsDetail.js", template)
+            if page != "irrigation":
+                self.assertIn("operationsDetail.js", template)
             self.assertIn(f'href="/{page}"', nav)
         self.assertNotIn('method: "POST"', script)
         self.assertIn("AbortController", script)
-        self.assertIn("Technical ROOTLINE evidence", Path("templates/irrigation.html").read_text(encoding="utf-8"))
+        irrigation = Path("templates/irrigation.html").read_text(encoding="utf-8")
+        controls = Path("static/js/rootlineOwnerControls.js").read_text(encoding="utf-8")
+        self.assertIn("rootlineOwnerControls.js", irrigation)
+        self.assertIn("rootlineOwnerControls.css", irrigation)
+        self.assertNotIn("operationsDetail.js", irrigation)
+        self.assertIn('id="rl-settings-form"', irrigation)
+        self.assertIn('name="csrf-token"', irrigation)
+        self.assertIn("rootline_csrf_token", irrigation)
+        self.assertIn("Operating information", irrigation)
+        self.assertIn("X-ROOTLINE-CSRF", controls)
+        self.assertIn("request('/preview'", controls)
+        self.assertIn("request('/apply'", controls)
+        self.assertIn("readback_bound", controls)
 
     def test_dashboard_v2_keeps_the_essential_herd_and_breeding_counts(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")

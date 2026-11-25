@@ -79,6 +79,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         ManagedDevicePlanningUnavailable, run_rootline_managed_device_cycle,
     )
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    from modules.telemetry.rootline_owner_controls import load_runtime_owner_controls, energy_policy_digest
     power_cache = {}
     def current_energy():
         from modules.telemetry.power_service import get_current_power_state
@@ -86,7 +87,10 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         if "value" not in power_cache:
             packet, status = get_current_power_state(database_url=database_url)
             power_cache["value"] = _normalize_power(packet) if status < 400 else {}
-        return managed_energy_decision(power_cache["value"], now=_aware(clock()))
+        decision_at = _aware(clock())
+        power_cache["owner_controls"] = load_runtime_owner_controls(database_url, now=decision_at)
+        return managed_energy_decision(power_cache["value"], now=decision_at,
+            owner_controls=power_cache["owner_controls"])
     def connect_factory():
         return connect_bounded_rootline_postgres(
             database_url=database_url, read_only=True)
@@ -95,10 +99,13 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         return read_current_borehole_faults(database_url, now=_aware(clock()),
             clock=clock, include_evidence=True)
     def borehole_energy(power, decision_at, *, continuous):
-        decision = managed_energy_decision(power, now=decision_at)
+        owner_controls = load_runtime_owner_controls(database_url, now=decision_at)
+        decision = managed_energy_decision(power, now=decision_at,
+            owner_controls=owner_controls)
         if not continuous:
             return {"eligible": decision["borehole_eligible"]}
         return {**decision["borehole_energy_context"], "eligible": decision["continuous_borehole_eligible"],
+            "owner_energy_policy_sha256": energy_policy_digest("borehole", owner_controls, decision_at),
             "fresh": decision["continuous_borehole_fresh"], "reason": decision["continuous_borehole_reason"]}
     def current_borehole_conditions(forecast=None, *, protection=None):
         from modules.telemetry.weather_service import get_weather_control_snapshot
@@ -163,6 +170,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             executions=executions, now=decision_at)
         mixing = mixing_daily_accounting(executions, now=decision_at, batch=batch)
         packet["auxiliary_contexts"]["FERTILIZER-MIXER-CH2"] = {
+            "owner_energy_policy_sha256": energy_policy_digest("mixer", evidence.get("owner_controls"), decision_at),
             "plan_generation": str(plan.get("generation") or plan.get("evidence_generation") or ""),
             "batch_generation": batch["batch_generation"],
             "reserved_mixing_seconds_today": mixing["reserved_seconds"],
@@ -170,10 +178,15 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             "verified_mixing_sessions_today": mixing["sessions"],
             "mixer_session": mixing["mixer_session"],
             "mixing_history_complete_through": evidence.get("fertilizer_history_complete_through"),
-            "power_suitable": managed_energy_decision(evidence.get("power"), now=decision_at)["mixing_eligible"],
+            "power_suitable": managed_energy_decision(evidence.get("power"), now=decision_at,
+                owner_controls=evidence.get("owner_controls"))["mixing_eligible"],
         }
         active_irrigation = evidence.get("active_irrigation_context")
         if isinstance(active_irrigation, dict):
+            from modules.telemetry.rootline_owner_auxiliary_policy import owner_injection_pulse_limit
+            active_irrigation = {**active_irrigation, "owner_injection_pulse_limit": owner_injection_pulse_limit(
+                evidence.get("owner_controls"), now=decision_at,
+                existing_limit=4 if active_irrigation.get("stop_mode") == "scheduled" else 2)}
             packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"] = active_irrigation
             from modules.telemetry.rootline_auxiliary_management import fertilizer_control_progress
             packet["fertilizer_control_progress"] = fertilizer_control_progress(active_irrigation, now=decision_at)
@@ -308,7 +321,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
             +str(source.get("ROOTLINE_ESKOM_DEVICE_ID") or "")+":1", connect_factory=connect_factory)
         grid = run_eskom_cycle(power=power_cache["value"],configuration=source,
             canonical=canonical,store=store,now=_aware(clock()),clock=clock,
-            allow_new_commands=allow_new_starts)
+            allow_new_commands=allow_new_starts, owner_controls=power_cache.get("owner_controls"))
     except RootlineCycleDeadlineExceeded:
         grid = {"success":False,"status":"eskom_cycle_deadline_deferred","hardware_commands":0}
     except Exception:
@@ -320,9 +333,9 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         "effects_unknown":result.get("effects_unknown") is True or grid.get("effects_unknown") is True}
 
 
-def _managed_power_suitable(power, now=None):
+def _managed_power_suitable(power, now=None, *, owner_controls=None):
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
-    return managed_energy_decision(power, now=now or datetime.now(timezone.utc))["mixing_eligible"]
+    return managed_energy_decision(power, now=now or datetime.now(timezone.utc), owner_controls=owner_controls)["mixing_eligible"]
 
 
 def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,

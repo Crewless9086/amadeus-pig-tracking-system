@@ -49,6 +49,7 @@ class Scenario:
         monkeypatch.setattr(managed, "advance_auxiliary_execution", auxiliary)
 
     def store(self, action, payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         self.events.append((action, self.clock.elapsed))
         if action == "load_active_auxiliaries":
             if self.fail_inventory: raise RootlineExecutionStoreUnavailable(action)

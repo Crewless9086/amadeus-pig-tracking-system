@@ -25,6 +25,12 @@ class RootlineExecutionStoreUnavailable(RuntimeError):
 
 
 def rootline_irrigation_execution_store(action, payload):
+    if action == "satisfy_owner_eskom_request":
+        from modules.telemetry.rootline_owner_controls import satisfy_owner_eskom_request
+        return satisfy_owner_eskom_request(dict(payload or {}))
+    if action == "load_owner_control_stop":
+        from modules.telemetry.rootline_owner_controls import owner_stop_for_execution
+        return owner_stop_for_execution(dict(payload or {}))
     if action in _A_COMMISSIONING_ACTIONS:
         return _a_commissioning_store(action, payload)
     if action == "record_auxiliary_startup_aborted":
@@ -650,12 +656,12 @@ def _load_connection(action):
     return connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"))
 
 
-def _load(action, payload):
+def _load(action, payload, *, connection=None):
     from modules.oom_sakkie.bounded_postgres_read import (
         connect_bounded_rootline_postgres, is_database_unavailable,
     )
     try:
-      with _load_connection(action) as connection:
+      with (nullcontext(connection) if connection is not None else _load_connection(action)) as connection:
         with connection.cursor() as cursor:
             if action == "load_notification_transitions":
                 # The initial server-day boundary persists across midnight/redeploy.
@@ -1298,7 +1304,7 @@ def _claim_eskom_command(body):
             or previous.get("state") == body.get("desired_state")):
         return {"success":False,"created":False,"status":"eskom_claim_invalid"}
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-            read_only=False) as connection, connection.cursor() as cursor:
+            read_only=False, read_committed=True) as connection, connection.cursor() as cursor:
         cursor.execute("select pg_advisory_xact_lock(%s)",(1874320914,))
         cursor.execute("""select 1 from app_private.rootline_device_registry r
             where r.device_key=%s and r.evidence_digest=%s
@@ -1329,6 +1335,9 @@ def _claim_eskom_command(body):
         if (latest[0] if latest else None)!=body.get("expected_transition_id"):
             return {"success":True,"created":False,"status":"eskom_observation_version_changed"}
         event_id=_event_id("claim_eskom_before_command",body)
+        from modules.telemetry.rootline_owner_controls import bind_owner_start
+        if not bind_owner_start(cursor, "ESKOM-GRID", body):
+            return {"success":True,"created":False,"status":"owner_eskom_command_held"}
         cursor.execute("""insert into public.sam_live_stock_conversation_review_events
             (review_event_id,chatwoot_conversation_id,source_agent,event_source,recommended_action,review_json)
             values(%s,%s,'rootline_backend',%s,'claim_eskom_before_command',%s::jsonb)
@@ -1354,6 +1363,7 @@ def _dispatch_eskom_command_edge(body):
     """
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
+    from modules.telemetry.rootline_owner_controls import owner_start_allowed
     from datetime import datetime, timedelta
     body=dict(body); dispatch=body.pop("dispatch",None)
     if not callable(dispatch):
@@ -1361,8 +1371,10 @@ def _dispatch_eskom_command_edge(body):
     # Commit a single-use dispatch reservation before entering the provider
     # transaction. An interrupted sender cannot reopen its edge on rollback.
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-            read_only=False) as connection:
+            read_only=False, read_committed=True) as connection:
         rows=_eskom_locked_events(connection,body)
+        if not owner_start_allowed(connection, "ESKOM-GRID", execution=body):
+            return {"success":False,"dispatched":False,"status":"owner_eskom_automation_paused"}
         matching=[row for row in rows if row.get("execution_id")==body.get("execution_id")]
         if (not any(row.get("action")=="claim_eskom_before_command" for row in matching)
                 or any(row.get("action") in {"claim_eskom_dispatch","record_eskom_command_outcome",
@@ -1371,8 +1383,10 @@ def _dispatch_eskom_command_edge(body):
         _write_terminal_review(connection,"claim_eskom_dispatch",{
             "execution_id":body.get("execution_id"),"device_key":body.get("device_key")})
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-            read_only=False) as connection:
+            read_only=False, read_committed=True) as connection:
         rows=_eskom_locked_events(connection,body)
+        if not owner_start_allowed(connection, "ESKOM-GRID", execution=body):
+            return {"success":False,"dispatched":False,"status":"owner_eskom_automation_paused"}
         matching=[row for row in rows if row.get("execution_id")==body.get("execution_id")]
         claim=next((row for row in matching if row.get("action")=="claim_eskom_before_command"),None)
         if (claim is None or any(row.get("action") in {"record_eskom_command_outcome",
@@ -1380,7 +1394,11 @@ def _dispatch_eskom_command_edge(body):
                 or any(claim.get(key)!=value for key,value in body.items())):
             return {"success":False,"dispatched":False,"status":"eskom_edge_claim_changed"}
         current=connection.execute("select clock_timestamp()").fetchone()[0]
-        decision=managed_energy_decision(body.get("power_evidence"),now=current)
+        from modules.telemetry.rootline_owner_controls import read_owner_controls, owner_request_for_execution
+        controls = read_owner_controls(connection, now=current)
+        owner_request = owner_request_for_execution(controls, "eskom", body.get("execution_id"), current)
+        decision=managed_energy_decision(body.get("power_evidence"),now=current,
+            owner_controls=controls, owner_request=owner_request)
         try:
             observed=datetime.fromisoformat(body["previous_readback"]["retrieved_at"].replace("Z","+00:00"))
             fresh=timedelta(0)<=current-observed<=timedelta(minutes=2)
@@ -1451,7 +1469,7 @@ def _claim_irrigation_output(body):
                 "status": "daily_dispatch_identity_incomplete"}
     event_id = _event_id("claim_before_on", body)
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
-                                           read_only=False) as connection:
+                                           read_only=False, read_committed=True) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
             if _a_commissioning_unresolved(connection):
@@ -1534,6 +1552,9 @@ def _claim_irrigation_output(body):
                 limit 1""", (EVENT_SOURCE, retired_no_send, EVENT_SOURCE))
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "controller_active"}
+            from modules.telemetry.rootline_owner_controls import bind_owner_start
+            if not bind_owner_start(cursor, zone_id, body):
+                return {"success":True,"created":False,"status":"owner_irrigation_start_held"}
             cursor.execute("""insert into public.sam_live_stock_conversation_review_events
                 (review_event_id, chatwoot_conversation_id, source_agent, event_source,
                  recommended_action, review_json)
@@ -1646,7 +1667,7 @@ def _claim_single_auxiliary(body):
     event_id=_event_id("claim_auxiliary_before_on",body)
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
                                            read_only=False,
-                                           read_committed=body.get("device_type") == "fertilizer_mixer") as connection:
+                                           read_committed=True) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
@@ -1782,6 +1803,9 @@ def _claim_single_auxiliary(body):
                 return {"success":True,"created":False,"status":"auxiliary_active"}
             if _auxiliary_containment_state(cursor, auxiliary_id)["contained"]:
                 return {"success":True,"created":False,"status":"auxiliary_contained"}
+            from modules.telemetry.rootline_owner_controls import bind_owner_start
+            if not bind_owner_start(cursor, auxiliary_id, body):
+                return {"success":True,"created":False,"status":"owner_auxiliary_start_held"}
             cursor.execute("""insert into public.sam_live_stock_conversation_review_events
                 (review_event_id,chatwoot_conversation_id,source_agent,event_source,
                  recommended_action,review_json)
@@ -1832,7 +1856,7 @@ def _claim_borehole_material_load(body, *, adopt=False):
     event_id=_event_id(action,body)
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
                                            read_only=False,
-                                           read_committed=body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5") as connection:
+                                           read_committed=True) as connection:
       with connection.cursor() as cursor:
         # The common output lock serializes admission, not operating duration.
         # Only a prior borehole claim conflicts; other devices own their outputs.
@@ -1969,6 +1993,9 @@ def _claim_borehole_material_load(body, *, adopt=False):
             # Observed external activity is not a manufactured ON claim/dispatch.
             # Existing active/OFF rails own v3 deadlines or v5 condition stops.
             return {**_insert_managed_event(cursor, action, body), "execution": body}
+        from modules.telemetry.rootline_owner_controls import bind_owner_start
+        if not bind_owner_start(cursor, "BOREHOLE-1-MINI-R4-CH1", body):
+            return {"success":True,"created":False,"status":"owner_borehole_start_held"}
         cursor.execute("""insert into public.sam_live_stock_conversation_review_events
           (review_event_id,chatwoot_conversation_id,source_agent,event_source,recommended_action,review_json)
           values (%s,%s,'rootline_backend',%s,'claim_borehole_before_on',%s::jsonb)
@@ -2509,6 +2536,7 @@ def _dispatch_managed_on_edge(body, *, borehole, irrigation=False):
     """
     from datetime import datetime, timedelta, timezone
     from modules.telemetry.rootline_device_registry import get_device_contract
+    from modules.telemetry.rootline_owner_controls import owner_start_allowed
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     body=dict(body);dispatch=body.pop("dispatch",None);family=_managed_family(borehole=borehole)
     if irrigation:
@@ -2537,10 +2565,12 @@ def _dispatch_managed_on_edge(body, *, borehole, irrigation=False):
             and not any(row.get("action") in {family["active"],family["outcome"]} for row in rows))
     # Unique review_event_id is the existing database-backed at-most-once fence.
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False,
-            read_committed=irrigation or body.get("acceptance_mode") == "command_accepted" or (borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5")) as connection:
+            read_committed=True) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            if not owner_start_allowed(cursor, identity, execution=body):
+                return {"accepted_unambiguous":False,"status":"owner_automatic_start_paused"}
             rows=_managed_edge_rows(cursor,body.get("execution_id"))
             if (not permitted(rows) or (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5"
                     and not _current_borehole_conditions_match(cursor, body, datetime.now(timezone.utc)))):
@@ -2548,10 +2578,12 @@ def _dispatch_managed_on_edge(body, *, borehole, irrigation=False):
             if not _insert_managed_event(cursor,family["dispatch"],body)["created"]:
                 return {"accepted_unambiguous":False,"status":"managed_dispatch_already_consumed"}
     with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),read_only=False,
-            read_committed=irrigation or body.get("acceptance_mode") == "command_accepted" or (borehole and body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5")) as connection:
+            read_committed=True) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320911,))
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            if not owner_start_allowed(cursor, identity, execution=body):
+                return {"accepted_unambiguous":False,"status":"owner_automatic_start_paused"}
             rows=_managed_edge_rows(cursor,body["execution_id"])
             if (not permitted(rows) or (body.get("contract_version") == "rootline_borehole_runtime_eligibility.v5"
                     and not _current_borehole_conditions_match(cursor, body, datetime.now(timezone.utc)))):

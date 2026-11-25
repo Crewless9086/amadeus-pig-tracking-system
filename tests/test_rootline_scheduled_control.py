@@ -19,6 +19,7 @@ def test_irrigation_stop_and_restart():
     class Store:
         def __init__(self, active=None): self.active=deepcopy(active); self.rows=[]; self.fail_terminal=False
         def __call__(self, action, body):
+            if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
             if action == "load_active": return deepcopy(self.active)
             if action == "load_off_attempts": return [b for a,b in self.rows if a == "claim_off_attempt"]
             if action == "load_zone_containment": return {}
@@ -129,6 +130,7 @@ def test_irrigation_stop_and_restart():
     original_store=store.__call__
     class RaceStore:
         def __call__(self,action,body):
+            if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
             if action=="mark_stopping":
                 when=clock[0]-timedelta(seconds=1)
                 weather=runtime.assess_active_irrigation_weather(weather_packet(now=when,rain=1),now=when,stop_mode="scheduled")
@@ -229,6 +231,8 @@ def test_auxiliary_hourly_phases_and_claim():
      def execute(self,sql,args=None):
       assert "insert into" not in sql.lower()
       self.sql=sql
+      return self
+     def fetchall(self): return []  # No saved owner controls in this baseline.
      def fetchone(self):
       if "clock_timestamp" in self.sql: return (claim_time,)
       if "record_auxiliary_eligibility" in self.sql: return (stored_artifact,)
@@ -237,6 +241,8 @@ def test_auxiliary_hourly_phases_and_claim():
      def __enter__(self): return self
      def __exit__(self,*args): pass
      def cursor(self): return Cursor()
+     def execute(self,sql,args=None):
+      cursor=self.cursor();cursor.execute(sql,args);return cursor
     claim_time=__import__("datetime").datetime.fromisoformat(claim["claimed_at"]); stored_artifact=a
     assert store._scheduled_auxiliary_claim_valid(claim,stored_artifact,claim_time)
     stripped={k:v for k,v in claim.items() if k not in {"stop_mode","eligibility_sha256"}}
@@ -244,7 +250,8 @@ def test_auxiliary_hourly_phases_and_claim():
      assert store._claim_single_auxiliary(stripped)["status"]=="canonical_auxiliary_claim_unproven"
 
 
-def test_borehole_timed_cap_and_claim():
+def test_borehole_timed_cap_and_claim(monkeypatch):
+    monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls", lambda *a, **k: {})
     from modules.telemetry import rootline_borehole_commissioning as b
     from modules.telemetry.rootline_irrigation_execution_store import _valid_borehole_eligibility
     from tests.test_rootline_borehole_commissioning import BoreholeStore,BoreholeTransport
@@ -279,7 +286,8 @@ def test_borehole_timed_cap_and_claim():
      rowcount=1
      def __enter__(self): return self
      def __exit__(self,*args): pass
-     def execute(self,sql,args=None): self.sql=sql
+     def execute(self,sql,args=None): self.sql=sql; return self
+     def fetchall(self): return []  # No saved owner controls in this baseline.
      def fetchone(self):
       if "clock_timestamp" in self.sql:return (NOW,)
       if "record_borehole_eligibility" in self.sql:return (a,)
@@ -288,6 +296,8 @@ def test_borehole_timed_cap_and_claim():
      def __enter__(self):return self
      def __exit__(self,*args):pass
      def cursor(self):return Cursor()
+     def execute(self,sql,args=None):
+      cursor=self.cursor();cursor.execute(sql,args);return cursor
     body=first["execution"]
     with patch.object(db,"connect_bounded_rootline_postgres",lambda **kwargs:Connection()),patch.object(es,"_borehole_state_rows",lambda cursor:[]):
      assert es._claim_borehole_material_load(body)["created"]

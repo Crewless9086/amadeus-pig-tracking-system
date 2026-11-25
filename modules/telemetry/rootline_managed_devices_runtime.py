@@ -605,6 +605,10 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                 evidence_pending = evidence_pending or protection is None
             except Exception:
                 evidence_pending = True
+            from modules.telemetry.rootline_irrigation_coordinator import _owner_stop_context
+            owner_stop = _owner_stop_context(store, active_borehole)
+            if owner_stop:
+                stop_for_protection = True
             from modules.telemetry.rootline_borehole_conditions import continuous_borehole
             condition_result = {}
             if continuous_borehole(active_borehole):
@@ -642,9 +646,10 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                     stop_for_energy=stop_for_energy or stop_for_protection, clock=clock,
                     **({"stop_reason": (condition_result.get("reason") if condition_result.get("stop_required") is True
                         else energy_reason if stop_for_energy
-                        else "explicit_protection_or_manual_stop"),
+                        else "owner_requested_stop" if owner_stop else "explicit_protection_or_manual_stop"),
                         "stop_trigger": {"assessed_at": _aware(clock()).isoformat(),
                             "condition_event_id": condition_result.get("event_id"),
+                            "owner_request_id": owner_stop.get("request_id") if owner_stop else None,
                             "condition_reason": condition_result.get("reason"),
                             "condition_assessed_at": condition_result.get("assessed_at"),
                             "energy_stop": stop_for_energy,

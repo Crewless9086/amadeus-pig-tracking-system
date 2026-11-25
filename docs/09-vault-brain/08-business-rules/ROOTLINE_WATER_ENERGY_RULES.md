@@ -1,6 +1,6 @@
 # ROOTLINE Water And Energy Rules
 
-## Owner-directed injector timing target — 22 November 2026
+## Owner-directed injector timing target â€” 22 November 2026
 
 The owner selected a120-second injector target and explicitly directed reporting
 of any command-delivery delay, with continuation through deployment and live
@@ -14,7 +14,7 @@ not be extended. Preserve immediate shutdown for parent loss, manual isolation
 or other existing stop conditions, and retain bounded uncertain-command recovery
 without repeating an uncertain ON. Early interruption is not a completed pulse.
 
-## Owner-directed command-based Home Assistant operation — 22 November 2026
+## Owner-directed command-based Home Assistant operation â€” 22 November 2026
 
 The owner explicitly approved continuing through live activation and directed
 ROOTLINE to send ON and OFF commands without waiting for separate controller
@@ -44,7 +44,7 @@ Eskom control and its existing30% ON /35% with solar recovery OFF policy intact.
 Optional stronger observation can be added later without changing the ordinary
 owner-approved command operation into a recurring approval or attendance gate.
 
-## Owner-directed provider economy and visible input failures — 20 November 2026
+## Owner-directed provider economy and visible input failures â€” 20 November 2026
 
 ROOTLINE must minimize avoidable provider requests while retaining fresh evidence
 at command and verification boundaries. Reuse one complete authenticated device
@@ -70,7 +70,7 @@ alerts before enabling replacement notices, preserving unrelated alerts and
 rollback. This instruction does not authorize purchasing provider capacity,
 changing account permissions, bypassing limits or manufacturing recovery.
 
-## Owner-directed daily plan and live-condition adjustment — 20 November 2026
+## Owner-directed daily plan and live-condition adjustment â€” 20 November 2026
 
 The owner's direct clarification supersedes contrary recurring forecast and
 intraday forecast-deferral requirements below. The operating target is one
@@ -128,7 +128,7 @@ canonical history, command locks and fresh exact OFF evidence. Record zero
 ON attempts distinctly from an unknown dispatched outcome, preserve reservations
 and unfinished work, and never label safe retirement as completed mixing.
 
-## Owner correction: borehole switch is AC backup — 20 November 2026
+## Owner correction: borehole switch is AC backup â€” 20 November 2026
 
 This direct owner correction supersedes any contrary interpretation below.
 The controlled borehole switch (eWeLink device 1002851416, channel 1) supplies
@@ -152,7 +152,7 @@ Existing weather rules cannot establish that disabling AC also stops solar
 pumping. This correction is authority for repair, not proof of deployment or
 of a verified AC OFF outcome.
 
-## Owner-directed plan and equipment visibility — 16 November 2026
+## Owner-directed plan and equipment visibility â€” 16 November 2026
 
 This instruction supersedes routine-plan silence below. Through the existing
 Oom Sakkie Telegram delivery path, show the first fresh current daily irrigation
@@ -181,7 +181,7 @@ historical evidence and are not relabelled delivered. Invalid transition
 projections retain an explicit verification-required reason and ROOTLINE owner;
 they cannot block later valid notices or masquerade as provider success.
 
-## Owner-approved continuous borehole policy — 16 November 2026
+## Owner-approved continuous borehole policy â€” 16 November 2026
 
 This section supersedes contrary borehole duration and weather rules below.
 The owner explicitly approved the corrected policy in the current conversation.
@@ -221,7 +221,7 @@ Implement and verify this through the existing ROOTLINE control path. Coordinate
 the controller change only when replacement continuous supervision is ready;
 do not claim timer removal or new weather behaviour from this policy update.
 
-## Owner-directed simplified operation — 15 November 2026
+## Owner-directed simplified operation â€” 15 November 2026
 
 This latest owner instruction supersedes contrary requirements below for
 mandatory native inching, artificial run segmentation, repeated commissioning,
@@ -915,3 +915,42 @@ an explicitly enabled and proven standing envelope. Voice transcription,
 Telegram delivery, UI clicks and semantic interpretation are intent evidence,
 not actuation authority. Completion requires the device-specific verification
 defined above; control completion and physical delivery remain distinct.
+
+
+## Owner irrigation controls approved 25 November 2026
+
+Charl approved the irrigation-page concept and its full implementation and release.
+The authenticated owner may inspect the three-day forecast, all eight registered
+inputs, the saved daily programme, camp summaries and recorded run/change history.
+The page is a channel into the existing ROOTLINE operational intake, planner and
+executor. It does not introduce a second scheduler or browser-to-device transport.
+
+A reviewed Save records the authenticated owner, exact settings or plan revision,
+reason, scope and idempotent request identity. Ongoing settings remain effective
+until replaced. Today-only settings expire at the next Africa/Johannesburg midnight.
+Confirmed settings are consumed by the automatic controller without requiring chat.
+Editable limits must be populated from the actual runtime policy and validated by
+the same consumer; unsupported limits remain explicitly read-only.
+
+The owner may adjust future camp durations, unstarted daily-plan order, duration,
+priority, reason and skip choices, and supported energy thresholds. A day-plan edit
+must reach the actual scheduled order and eligibility checks. Already accepted ON
+claims retain their original OFF obligations; editing a plan cannot extend or erase
+a current duty, count unperformed work as complete, or reset consumed daily work.
+
+One-off run and stop requests enter the same durable claims, locks, device identity
+and shutdown supervision as unattended operation. A request is not itself command
+acceptance. A request that is already satisfied must close without a later duplicate
+effect. Newer owner restrictions and request expiry are rechecked at the command
+edge. Resume clears the owner's pause only, never a separate isolation/fault hold.
+
+Eskom pause retains the current supply state. Explicit one-off grid ON requires
+fresh power evidence; grid OFF retains the existing battery and solar-recovery
+conditions. Confirmed owner threshold changes supplement the registered baseline
+policy without changing the commissioned device identity or protections. Existing
+thresholds remain the defaults until the owner saves a change.
+
+These controls preserve command-accepted operation and truthful controller-time
+accounting. They add no water-volume or physical-mixing measurement prerequisite.
+Publishing the page does not prove the pending nightly forecast, injection or
+repeated unattended cycles; those outcomes require their genuine runtime evidence.

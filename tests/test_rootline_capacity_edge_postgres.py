@@ -29,6 +29,9 @@ def isolated():
         "202607070001_create_sam_live_stock_conversation_review_events.sql")
     with psycopg.connect(URL) as c:
         c.execute(migration.read_text(encoding="utf-8"))
+        if c.execute("select to_regclass('public.rootline_water_energy_plan_identities')").fetchone()[0] is None:
+            for name in ("202605210001_foundation_migration_log.sql", "202607280001_create_rootline_water_energy_plans.sql"):
+                c.execute((migration.parent / name).read_text(encoding="utf-8"))
         c.execute("truncate public.sam_live_stock_conversation_review_events")
 
 class RealReserveJourney(ScheduledJourney):
@@ -59,6 +62,7 @@ class RealReserveJourney(ScheduledJourney):
             from modules.telemetry.rootline_cycle_budget import mandatory_safety
             with mandatory_safety():journey.spend("owned safety",22)
             def store(action,item):
+                if action=="load_owner_control_stop":return None
                 if action=="load_active_auxiliaries":return []
                 if action=="load_active_borehole":return deepcopy(active_borehole)
                 pytest.fail("unexpected borehole mutation: "+action)

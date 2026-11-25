@@ -477,6 +477,10 @@ def _recover_auxiliary(active,store,transport,now,*,stop_for_energy=False,clock=
     if command_execution(active):
         deadline = command_stop_deadline(active)
         reason = stop_for_deadline or ("energy_stop" if stop_for_energy else None)
+        owner_stop = _owner_stop_context(store, active) if deadline and now + timedelta(seconds=5) < deadline else None
+        if owner_stop:
+            reason = "owner_requested_stop"
+            active = {**active, "owner_stop_request_id": owner_stop["request_id"]}
         if active.get("manual_isolation_active") is True or active.get("manual_off_active") is True:
             reason = "manual_isolation"
         if active.get("state") == "Active" and reason is None:
@@ -1245,6 +1249,10 @@ def _recover_command_irrigation(active, store, transport, notify, now, *, clock=
     valid_deadline = (claimed is not None and type(duration) is int and 0 < duration <= MAX_IRRIGATION_SECONDS
         and deadline == claimed + timedelta(seconds=duration))
     reason = reason or (active.get("reason") if active.get("state") == "stopping" else None)
+    owner_stop = _owner_stop_context(store, active) if deadline and now + timedelta(seconds=5) < deadline else None
+    if owner_stop:
+        reason = "owner_requested_stop"
+        active = {**active, "owner_stop_request_id": owner_stop["request_id"]}
     if reason is None and active.get("state") == "Active" and valid_deadline and now < deadline:
         weather = None
         if callable(weather_reader):
@@ -1297,6 +1305,17 @@ def _degraded_hold(*, consumption_unknown=False):
         autonomous_on_enabled=False, durable_execution_truth_loaded=False,
         current_segment_consumed=None if consumption_unknown else False,
         segment_consumption_proven=not consumption_unknown, degraded=True)
+
+
+def _owner_stop_context(store, active):
+    # Failure of this optional intake read never abandons a known OFF deadline.
+    try:
+        request = store("load_owner_control_stop", active)
+        return request if (isinstance(request, dict) and request.get("request_id")
+            and (request.get("change") or {}).get("kind") == "stop"
+            and ((request.get("change") or {}).get("changes") or {}).get("execution_id") == active.get("execution_id")) else None
+    except Exception:
+        return None
 
 
 def _eligible(decision, decision_id, commissioning, now):

@@ -145,7 +145,7 @@ def build_fertilized_irrigation_sequence(*, zone_id, irrigation_runtime_seconds=
 
 def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
                           mixing_history_complete_through=None,
-                          active_irrigation_context=None, now=None):
+                          active_irrigation_context=None, now=None, owner_controls=None):
     now=_aware(now or datetime.now(timezone.utc)); power=power if isinstance(power,dict) else {}
     today=now.astimezone(SAST).date().isoformat()
     accounting = mixing_daily_accounting(verified_mixing, now=now, batch=batch)
@@ -155,6 +155,8 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
     used = accounting["reserved_seconds"] / 60
     remaining=max(0,MAX_DAILY_MIX_MINUTES-used)
     available_seconds = (session["maximum_duration_seconds"] if session else 0) if command_sessions else min(MIX_SESSION_SECONDS,int(remaining*60))
+    from modules.telemetry.rootline_owner_auxiliary_policy import mixer_owner_capacity_seconds, owner_injection_pulse_limit
+    available_seconds = min(available_seconds, mixer_owner_capacity_seconds(accounting, owner_controls, now=now))
     if command_sessions:
         midnight = now.astimezone(SAST).replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(days=1)
         available_seconds = min(available_seconds, max(0, int((midnight-now).total_seconds())))
@@ -162,7 +164,7 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
     history_complete=(accounting["history_valid"] and (not command_sessions or accounting["session_history_valid"]) and complete_at is not None
         and timedelta(0)<=now-complete_at<=timedelta(minutes=5))
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
-    energy = managed_energy_decision(power, now=now)
+    energy = managed_energy_decision(power, now=now, owner_controls=owner_controls)
     has_power = energy["fresh"]
     low_power = not energy["mixing_eligible"]
     batch_ready=(batch.get("state")=="batch_reported_prepared" or
@@ -195,6 +197,8 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
         "does_not_block_bc_irrigation":True,"command_authority":False}
     injection_context=(active_irrigation_context
         if isinstance(active_irrigation_context,dict) else {})
+    injection_context = {**injection_context, "owner_injection_pulse_limit": owner_injection_pulse_limit(
+        owner_controls, now=now, existing_limit=4 if injection_context.get("stop_mode") == "scheduled" else 2)}
     injection_ready=(batch_ready and injection_context.get("fertilizer_needed") is True
         and _injection_gate(injection_context,now) is None)
     injection={"contract_version":TASK_CONTRACT,"auxiliary_task_id":
@@ -387,6 +391,8 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
         "single_use":True,"simultaneous_with_other_auxiliary":True}
     if device_type == "fertilizer_mixer":
         material["batch_generation"] = context.get("batch_generation")
+        if context.get("owner_energy_policy_sha256") is not None:
+            material["owner_energy_policy_sha256"] = context["owner_energy_policy_sha256"]
         from modules.telemetry.rootline_command_acceptance import enabled as command_mode_enabled
         if scheduled and command_mode_enabled():
             from modules.telemetry.rootline_mixer_reservations import session_for_context
@@ -688,7 +694,9 @@ def _next_pulse_index(context,now):
 
 
 def _pulse_limit(context):
-    return 4 if context.get("stop_mode")=="scheduled" and int(context.get("planned_runtime_seconds") or 0)>3600 else 2
+    existing = 4 if context.get("stop_mode")=="scheduled" and int(context.get("planned_runtime_seconds") or 0)>3600 else 2
+    owner = context.get("owner_injection_pulse_limit", existing)
+    return min(existing, owner) if type(owner) is int and 1 <= owner <= 4 else 0
 
 
 def _safe(contract,safety,now,*,scheduled=False):

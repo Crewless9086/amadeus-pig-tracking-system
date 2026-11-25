@@ -26,6 +26,9 @@ def db(monkeypatch):
         'rootline_managed', 'rootline_borehole_bc_restoration_test_20261102'}
     with psycopg.connect(url) as c:
         c.execute((Path(__file__).resolve().parents[1]/'supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql').read_text())
+        if c.execute("select to_regclass('public.rootline_water_energy_plan_identities')").fetchone()[0] is None:
+            for name in ("202605210001_foundation_migration_log.sql", "202607280001_create_rootline_water_energy_plans.sql"):
+                c.execute((Path(__file__).resolve().parents[1] / "supabase/migrations" / name).read_text(encoding="utf-8"))
     monkeypatch.setenv('DATABASE_URL',url)
     monkeypatch.setattr(store,'EVENT_SOURCE','startup-test-'+uuid.uuid4().hex)
     return url

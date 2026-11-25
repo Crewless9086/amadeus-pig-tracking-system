@@ -242,6 +242,9 @@ def test_normal_recovered_cadence_uses_previous_reporting_due_without_fallback_a
 
 @pytest.mark.parametrize("pending", [False, True])
 def test_actual_managed_wrapper_retains_only_existing_grid_reconciliation(monkeypatch, pending):
+    from modules.telemetry.rootline_owner_controls import project_owner_controls
+    monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls",
+        lambda *_args, **kwargs: project_owner_controls([], now=kwargs.get("now") or NOW))
     from modules.telemetry import rootline_execution_runtime as runtime
     from modules.telemetry import rootline_eskom_runtime as grid
     from tests.test_rootline_eskom_runtime import CONFIG, canonical, power, Store as GridStore

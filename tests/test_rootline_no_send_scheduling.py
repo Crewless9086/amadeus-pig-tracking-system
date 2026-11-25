@@ -35,6 +35,7 @@ class Scenario:
         self.events.append("AUX_OFF:"+kwargs["expected_execution_id"])
         return {"success": True, "status": "auxiliary_completed", "hardware_commands": 1}
     def store(self, action, payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         self.events.append(action)
         if action == "load_active_auxiliaries": return deepcopy(self.aux)
         if action == "load_active_borehole": return deepcopy(self.active)
@@ -123,6 +124,7 @@ def test_optional_proof_crossing_deadline_still_gets_final_mandatory_stop(monkey
     s = Scenario(monkeypatch)
     original = s.store
     def store(action, payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         result = original(action, payload)
         if action == "retire_not_dispatched_execution": s.now = NOW+timedelta(minutes=3)
         return result
@@ -139,6 +141,7 @@ def test_optional_canonical_reload_elapsed_time_still_gets_final_safety(monkeypa
     original = s.store
     count = 0
     def store(action, payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         nonlocal count
         if action == "load_active_borehole":
             count += 1
@@ -177,6 +180,7 @@ def test_gateway_preserves_known_bc_result_when_only_optional_precheck_expires(m
     s = Scenario(monkeypatch)
     original_store = s.store
     def store(action, payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         if fault == "inventory" and action == "load_active_auxiliaries":
             raise RuntimeError("synthetic inventory failure")
         return original_store(action, payload)
@@ -212,6 +216,7 @@ def test_optional_deadline_after_canonical_work_started_remains_failure(monkeypa
     original_store = s.store
     count = 0
     def store(action, payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         nonlocal count
         if action == "load_active_borehole":
             count += 1

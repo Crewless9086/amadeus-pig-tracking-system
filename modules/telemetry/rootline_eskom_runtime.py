@@ -47,11 +47,19 @@ _OBSERVATIONS = EskomObservationCache()
 
 def run_eskom_cycle(*, power, configuration, canonical, store, now=None,
         readback=None, dispatch=None, allow_new_commands=True, clock=None,
-        observation_cache=None):
+        observation_cache=None, owner_controls=None):
     now=now or datetime.now(timezone.utc); config=configuration or {}
     clock=clock or ((lambda:now) if readback is not None else lambda:datetime.now(timezone.utc))
+    # A confirmed owner restriction pauses new transitions; pending outcomes
+    # still reconcile on the existing command rail. Grid supply is retained.
+    owner_mode = ((owner_controls or {}).get("devices", {}).get("eskom") or {}).get("mode", "automatic")
+    owner_request = None
+    if owner_controls:
+        from modules.telemetry.rootline_owner_controls import pending_owner_request
+        owner_request = pending_owner_request(owner_controls, "eskom", now)
+    allow_new_commands = allow_new_commands and (owner_mode == "automatic" or owner_request is not None)
     device=str(config.get("ROOTLINE_ESKOM_DEVICE_ID") or "")
-    decision=managed_energy_decision(power,now=now)
+    decision=managed_energy_decision(power,now=now,owner_controls=owner_controls,owner_request=owner_request)
     def result(status, **extra):
         return {"success":True,"status":status,"hardware_commands":0,
             "writes_farm_data":False,"blocks_bc":False,"decision":decision,**extra}
@@ -143,11 +151,19 @@ def run_eskom_cycle(*, power, configuration, canonical, store, now=None,
             saved=store("record_eskom_completed",{**pending[0],"readback":observed})
             return result("eskom_command_reconciled" if saved.get("success") else "eskom_completion_persistence_unproven",
                 success=saved.get("success") is True,writes_farm_data=saved.get("created") is True)
-        decision=managed_energy_decision(power,now=clock())
+        decision=managed_energy_decision(power,now=clock(),owner_controls=owner_controls,owner_request=owner_request)
         desired=decision["eskom_requested_state"]
+        if owner_request and desired == observed["state"] and allow_new_commands:
+            satisfied = store("satisfy_owner_eskom_request", {
+                "owner_request_id": owner_request["request_id"], "device_key": key,
+                "desired_state": desired, "previous_readback": observed})
+            return result("eskom_owner_request_satisfied" if satisfied.get("success") else
+                "eskom_owner_request_reconciliation_required", success=satisfied.get("success") is True,
+                writes_farm_data=satisfied.get("created") is True)
         if desired=="UNCHANGED" or desired==observed["state"] or not allow_new_commands:
             return result("eskom_current_state_retained")
         material={"device_key":key,"device_id":device,"desired_state":desired,
+            "owner_request_id": owner_request.get("request_id") if owner_request else None,
             "decision":decision,"power_evidence":power,"previous_readback":observed,
             "expected_transition_id":prior_transition,"baseline_sha256":canonical.get("evidence_digest")}
         identity="ROOTLINE-ESKOM-"+hashlib.sha256(json.dumps(material,sort_keys=True).encode()).hexdigest()[:24].upper()
@@ -160,7 +176,7 @@ def run_eskom_cycle(*, power, configuration, canonical, store, now=None,
             nonlocal commands
             # Recheck after provider latency and lock acquisition, not against
             # the clock captured at the beginning of this worker cycle.
-            edge=managed_energy_decision(power,now=clock())
+            edge=managed_energy_decision(power,now=clock(),owner_controls=owner_controls,owner_request=owner_request)
             if not edge["fresh"] or edge["eskom_requested_state"]!=desired:
                 return {"accepted_unambiguous":False,"command_not_sent":True}
             commands=1

@@ -170,6 +170,7 @@ def database(monkeypatch, record_property):
                 "202605210005_create_telemetry_power_tables.sql",
                 "202605230001_create_irrigation_tables.sql",
                 "202607070001_create_sam_live_stock_conversation_review_events.sql",
+                "202607280001_create_rootline_water_energy_plans.sql",
                 "202608050001_harden_irrigation_events_history.sql",
             ):
                 connection.execute((migrations / filename).read_text(encoding="utf-8"))

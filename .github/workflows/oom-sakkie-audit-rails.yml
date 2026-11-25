@@ -575,6 +575,33 @@ jobs:
           IRRIGATION_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/irrigation_dialogue_test
         run: npx playwright test --config=tests/irrigation_dialogue_playwright.config.js
 
+      - name: Verify ROOTLINE owner controls and session binding
+        env:
+          PYTHON_DOTENV_DISABLED: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_owner_controls.py tests/test_rootline_owner_control_routes.py tests/test_rootline_owner_control_projection.py tests/test_rootline_owner_energy_controls.py tests/test_rootline_owner_auxiliary_policy.py
+
+      - name: Prepare isolated ROOTLINE owner-control database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --username=postgres rootline_owner_controls_test
+
+      - name: Verify ROOTLINE owner-control transactions and command races
+        env:
+          ROOTLINE_OWNER_CONTROL_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_owner_controls_test
+          PYTHON_DOTENV_DISABLED: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_owner_controls_postgres.py tests/test_rootline_owner_eskom_postgres.py
+
+      - name: Use ROOTLINE owner controls on desktop and mobile
+        env:
+          IRRIGATION_DIALOGUE_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/irrigation_dialogue_test
+          ROOTLINE_OWNER_BROWSER_SEED: "1"
+          ROOTLINE_UI_BASE_URL: http://127.0.0.1:18036
+          ROOTLINE_UI_SERVER_COMMAND: python tests/irrigation_dialogue_qualification.py serve
+          ROOTLINE_UI_OUTPUT: ${{ runner.temp }}/rootline-owner-controls-browser
+        run: npx playwright test --config=tests/rootline_owner_controls_playwright.config.js
+
       - name: Check out exact event head for ROOTLINE driver qualification
         uses: actions/checkout@v5
         with:

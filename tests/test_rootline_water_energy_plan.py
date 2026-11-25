@@ -378,6 +378,7 @@ class WaterEnergyPlanTests(unittest.TestCase):
                 return_value=({}, 200))
     @mock.patch("modules.telemetry.power_service.get_current_power_state",
                 return_value=({}, 200))
+    @mock.patch("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls", return_value={})
     def test_canonical_reader_supplies_deployed_adaptive_bc_management(self, *_mocks):
         current, _, _ = read_current_water_energy_evidence(now=NOW)
         adaptive=current["irrigation"]["adaptive_management"]
@@ -393,7 +394,7 @@ class WaterEnergyPlanTests(unittest.TestCase):
         bounded.return_value = {
             "power": ({}, 200), "weather": ({}, 200), "forecast": ({}, 200),
             "advisor": ({"zones": []}, 200), "balances": {}, "history": {},
-            "irrigation_history": {}, "tanks": {}, "owner_zone_need": {},
+            "irrigation_history": {}, "tanks": {}, "owner_zone_need": {}, "owner_controls": {},
         }
         read_current_water_energy_evidence(now=NOW)
         self.assertEqual(bounded.call_args.kwargs["max_workers"], 4)
