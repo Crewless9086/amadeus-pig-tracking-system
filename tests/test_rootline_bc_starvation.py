@@ -25,6 +25,7 @@ from tests.test_rootline_active_weather_stop import dry_weather_reader
 class ComposedPath(Path):
     def __init__(self, monkeypatch, *, optional_seconds=65, **kwargs):
         super().__init__(monkeypatch, **kwargs)
+        monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls", lambda *a, **k: {})
         # This path deliberately exercises the existing two-segment legacy
         # obligation. Adopt its inert task once, then run the real saved-plan
         # projection with complete canonical live facts on every read.
@@ -100,6 +101,7 @@ class ComposedPath(Path):
         return self.fault()
 
     def store(self, action, item):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         if action == "load_active_auxiliaries":
             self.clock.spend("managed inventory", .7)
             return deepcopy(self.auxiliaries)
@@ -357,6 +359,7 @@ class FinalFlushPath(ComposedPath):
         return {"active_irrigation_context": deepcopy(self.context)}, NOW.date().isoformat(), self.clock.now()
 
     def store(self, action, item):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         if action == "record_fertilizer_sequence_completed":
             self.completions.append(deepcopy(item))
             return {"success": True, "created": True}

@@ -437,7 +437,7 @@ def test_real_advisor_reader_planner_and_authority_preserve_own_a_policy(maximum
         "balances": {}, "history": {}, "irrigation_history": history, "tanks": {},
         "owner_zone_need": {"status": "Available", "zone_id": "A12345",
             "observed_at": NOW.isoformat(), "source": "oom_sakkie_authenticated_operational_intake"},
-        "managed_devices": {}}
+        "managed_devices": {}, "owner_controls": {}}
     with mock.patch("modules.telemetry.rootline_bounded_read_group.run_bounded_read_group", return_value=loaded):
         evidence, selected, clock = read_current_water_energy_evidence(now=NOW)
     plan = build_water_energy_plan(evidence, selected, now=clock)

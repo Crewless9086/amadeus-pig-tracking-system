@@ -61,6 +61,8 @@ def preserve_existing_registry():
         c.execute("create table if not exists app_private.migration_log(migration_id text primary key,description text not null)")
         c.execute((migrations/"202607070001_create_sam_live_stock_conversation_review_events.sql").read_text(encoding="utf-8"))
         c.execute((migrations/"202608170001_add_rootline_device_registry.sql").read_text(encoding="utf-8"))
+        if c.execute("select to_regclass('public.rootline_water_energy_plan_identities')").fetchone()[0] is None:
+            c.execute((migrations/"202607280001_create_rootline_water_energy_plans.sql").read_text(encoding="utf-8"))
     with preserved_registry():yield
 
 @pytest.fixture(autouse=True)

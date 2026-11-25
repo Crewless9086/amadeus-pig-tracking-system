@@ -198,7 +198,7 @@ def test_real_locked_claim_branch_requires_current_condition_and_no_deadline(mon
         rowcount=1
         def __enter__(self):return self
         def __exit__(self,*args):pass
-        def execute(self,sql,params=None):self.sql,self.params=sql,params
+        def execute(self,sql,params=None):self.sql,self.params=sql,params;return self
         def fetchone(self):
             if 'clock_timestamp' in self.sql:return (NOW,)
             if 'record_borehole_eligibility' in self.sql:return (art,)
@@ -536,12 +536,17 @@ def test_committed_owner_off_ordering_uses_actual_locked_on_edge(monkeypatch,ord
         def __enter__(self):return self
         def __exit__(self,*args):pass
         def execute(self,sql,params=None):
-            self.sql=sql
+            self.sql,self.params=sql,params
             if 'pg_advisory_xact_lock' in sql:locks.append(params[0])
             return self
+        def fetchone(self):
+            assert 'clock_timestamp' in self.sql
+            return (now,)
         def fetchall(self):
             assert 'rootline_operational_intake' in self.sql
             assert 1874320911 in locks
+            from modules.telemetry.rootline_owner_controls import SOURCE
+            if self.params and self.params[0] == SOURCE:return []
             return [(value,) for value in manual]
     class Connection:
         def __init__(self):self.sequence=len(connections)+1;connections.append(self)
@@ -593,7 +598,8 @@ def test_instruction_insert_holds_existing_output_lock_on_same_read_committed_co
     def connect(**kw):
         assert kw['read_only'] is False and kw['read_committed'] is True
         return connection
-    def record(event,*,connect_factory):
+    def record(event,*,database_url,connect_factory,durable_receipt):
+        assert database_url == 'postgresql://offline-test-boundary'
         actual=connect_factory()
         assert actual is connection and calls[-1][2]==(1874320911,)
         calls.append(('insert',event['review_event_id']))

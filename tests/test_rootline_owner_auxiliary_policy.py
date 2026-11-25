@@ -50,3 +50,18 @@ def test_invalid_mixer_limits_rejected(fields):
 def test_malformed_accounting_never_grants_new_time():
     for value in ({}, {"reserved_seconds":float("nan")}, {"reserved_seconds":0,"known_residual_microseconds":1}):
         assert mixer_owner_capacity_seconds(value, now=NOW) == 0
+
+
+@pytest.mark.parametrize("setting", [{}, controls("injection", max_pulses_per_run=4)])
+def test_default_injector_overlay_preserves_legacy_claim_without_pulse_number(setting):
+    from modules.telemetry.rootline_owner_controls import _owner_auxiliary_gate
+    assert _owner_auxiliary_gate(None, "injection", {}, NOW, setting)
+
+
+@pytest.mark.parametrize("limit", [1, 2, 3])
+@pytest.mark.parametrize("pulse", [None, True, "1", 0, 4])
+def test_lowered_injector_overlay_requires_proven_pulse_within_owner_cap(limit, pulse):
+    from modules.telemetry.rootline_owner_controls import _owner_auxiliary_gate
+    setting = controls("injection", max_pulses_per_run=limit)
+    assert not _owner_auxiliary_gate(None, "injection", {"pulse_number": pulse}, NOW, setting)
+    assert _owner_auxiliary_gate(None, "injection", {"pulse_number": limit}, NOW, setting)

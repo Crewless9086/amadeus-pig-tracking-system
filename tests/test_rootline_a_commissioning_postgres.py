@@ -36,7 +36,7 @@ def database(owned_clients):
     from psycopg.conninfo import conninfo_to_dict
     info = conninfo_to_dict(URL)
     assert info.get("host") in {"127.0.0.1", "localhost"}
-    assert info.get("port", "5432") in {"5432", "65437"}
+    assert info.get("port", "5432") in {"5432", "55485", "65437"}
     assert re.fullmatch(r"rootline_a_commissioning_test(?:_[a-f0-9]{12})?", info.get("dbname", ""))
     # Root/CI creates this dedicated DB. Never create/drop/reset any database.
     application_name = "a-fixture-" + uuid.uuid4().hex
@@ -50,6 +50,9 @@ def database(owned_clients):
                          "202605210005_create_telemetry_power_tables.sql",
                          "202605230001_create_irrigation_tables.sql"):
                 db.execute((Path(__file__).resolve().parents[1] / "supabase/migrations" / name).read_text())
+        if db.execute("select to_regclass('public.rootline_water_energy_plan_identities')").fetchone()[0] is None:
+            db.execute((Path(__file__).resolve().parents[1] / "supabase/migrations" /
+                        "202607280001_create_rootline_water_energy_plans.sql").read_text())
         assert db.execute("select count(*) from public.irrigation_events").fetchone()[0] == 0
     yield URL
     with psycopg.connect(URL, autocommit=True, connect_timeout=3,

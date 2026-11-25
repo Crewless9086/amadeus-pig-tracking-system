@@ -111,6 +111,7 @@ def test_initial_safety_time_cannot_hide_owned_deadline_without_optional_work(mo
     if kind=="unknown_auxiliary":auxiliary["primary_stop_deadline"]="unknown"
     if kind=="borehole":auxiliary=None
     def store(action,item):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         if action=="load_active_auxiliaries":
             events.append("inventory")
             return [dict(auxiliary)] if auxiliary else []

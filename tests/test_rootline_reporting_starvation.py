@@ -83,6 +83,7 @@ def test_false_callback_cannot_skip_incomplete_inventory(monkeypatch, unknown):
     from modules.telemetry import rootline_managed_devices_runtime as managed
     calls = []
     def store(action, payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         calls.append(action)
         if action == 'load_active_auxiliaries':
             return None if unknown == 'auxiliary' else []
@@ -138,6 +139,7 @@ def test_callback_opt_out_requires_exact_false(monkeypatch, callback_value, expe
     from modules.telemetry import rootline_managed_devices_runtime as managed
     calls=[]
     def store(action,payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         calls.append(action)
         if action=='load_active_auxiliaries': return []
         if action=='load_active_borehole': return None
@@ -155,6 +157,7 @@ def test_initial_safety_uncertainty_keeps_refresh_with_complete_inventory(monkey
     owned={'execution_id':'KNOWN-BOREHOLE','device_id':'1002851416','channel':1,
         'state':'Active','primary_stop_deadline':(NOW+timedelta(hours=1)).isoformat()}
     def store(action,payload):
+        if action == "load_owner_control_stop": return None  # No saved owner stop in this baseline fixture.
         calls.append(action)
         if action=='load_active_auxiliaries': return []
         if action=='load_active_borehole': return deepcopy(owned)

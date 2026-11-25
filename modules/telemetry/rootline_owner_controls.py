@@ -299,6 +299,10 @@ def _owner_auxiliary_gate(connection, device, body, now, controls):
     from modules.telemetry.rootline_owner_auxiliary_policy import effective_auxiliary_settings, mixer_owner_capacity_seconds
     settings = effective_auxiliary_settings(controls, now=now)
     if device == "injection":
+        # The canonical injector gate already enforces the unchanged default.
+        # Only an owner-lowered cap adds a pulse-number prerequisite here.
+        if settings["injection"]["max_pulses_per_run"] == 4:
+            return True
         pulse = body.get("pulse_number")
         return type(pulse) is int and 1 <= pulse <= settings["injection"]["max_pulses_per_run"]
     if device != "mixer":

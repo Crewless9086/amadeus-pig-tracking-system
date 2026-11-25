@@ -86,7 +86,16 @@ def test_full_native_start_keeps_original_deadline_with_latency_margin(monkeypat
     assert j.controls and j.controls[0]['status']=='segment_started',value
     assert [c['state'] for c in j.calls]==['ON']
     on_at=next(t for kind,t,_ in j.events if kind=='HTTP ON')
-    assert on_at==pytest.approx(95.6+extra_seconds) and on_at<140
+    # The owner settings boundary adds exactly three measured SQL reads:
+    # the database clock, typed control history, and the current saved plan.
+    owner_history = [i for i, row in enumerate(j.sql_trace)
+        if "rootline_operational_intake" in row['sql'] and "->'context'->>'contract_version'" in row['sql']]
+    assert len(owner_history) == 1
+    index = owner_history[0]
+    assert j.sql_trace[index - 1]['sql'].strip() == "select clock_timestamp()"
+    assert "rootline_water_energy_plan_identities" in j.sql_trace[index + 1]['sql']
+    owner_policy_read_count = 3
+    assert on_at==pytest.approx(95.6+owner_policy_read_count*.35+extra_seconds) and on_at<140
     assert j.borehole_checks==1
     assert j.provider_requests==[('POST','/v2/device/thing',{'thingList':[{'itemType':1,'id':'100204e9bc'}]})]*3
     assert sum(kind=='provider POST /v2/device/thing' for kind,_,_ in j.events)==3
@@ -94,7 +103,7 @@ def test_full_native_start_keeps_original_deadline_with_latency_margin(monkeypat
     assert [d['params']['switches'][0]['switch'] for d in j.provider_snapshots]==['off','off','on']
     assert all(len(d['params']['switches'])==4 for d in j.provider_snapshots)
     assert not any('/v2/family' in kind for kind,_,_ in j.events)
-    assert len(j.sql_trace)==77
+    assert len(j.sql_trace)==77+owner_policy_read_count
     with psycopg.connect(URL) as c:
         ledger=[r[0] for r in c.execute("select review_json->'ewelink_request_budget' from public.sam_live_stock_conversation_review_events where event_source='rootline_provider_availability'")]
         execution=[r[0] for r in c.execute("select review_json->'rootline_execution' from public.sam_live_stock_conversation_review_events where event_source=%s",(es.EVENT_SOURCE,))]

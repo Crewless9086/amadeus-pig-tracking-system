@@ -126,6 +126,7 @@ def test_live_reader_closes_nested_forecast_and_historical_power_reads(monkeypat
     for name in ('read_latest_zone_water_balances','_read_recent_irrigation_history',
         '_read_latest_tank_observation','_read_latest_owner_zone_need','_read_managed_device_evidence'):
         monkeypatch.setattr(plan,name,lambda *a,**k:{})
+    monkeypatch.setattr('modules.telemetry.rootline_owner_controls.load_runtime_owner_controls',lambda *a,**k:{})
     monkeypatch.setattr(plan,'get_current_water_energy_plan',lambda *a,**k:({'success':False,'status':'missing'},200))
     facts,_,_=plan.read_current_water_energy_evidence(now=NOW,forecast_mode='live_only')
     assert facts['forecast']=={} and facts['forecast_mode']=='live_only'
