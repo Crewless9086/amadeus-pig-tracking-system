@@ -89,7 +89,7 @@ def test_verified_all_device_edges_recover_after_restart_without_duplicate(kind)
     assert http==202 and first['success'] is False # Failed control stays failed despite successful notices.
     assert first['plan_delivery_status']=='delivered_current_irrigation_plan'
     assert len(sends)==3 and all(r['delivery_confirmed'] for r in events.notifications)
-    assert 'plan below remains intended work' in sends[0]
+    assert 'latest equipment check is unconfirmed' in sends[0]
     assert 'ON' in sends[1] and 'OFF' in sends[2]
     assert first['hardware_commands']==0
     again,_=gateway(events,send,now=NOW+timedelta(minutes=1),plans=plans,schedules=schedules)
@@ -139,7 +139,7 @@ def test_definitely_unsent_device_attempt_has_only_one_existing_retry():
         sends.append(text)
         return {'success':False,'delivery_definitely_not_sent':True}
     for i in range(4):gateway(events,send,now=NOW+timedelta(minutes=i))
-    device=[x for x in sends if 'Fertilizer mixer' in x]
+    device=[x for x in sends if 'ROOTLINE · Mixer' in x]
     assert len(device)==2
 
 
@@ -160,7 +160,7 @@ def test_expired_optional_budget_never_delivers_or_loads_notifications():
 
 def test_continuous_borehole_message_has_no_fabricated_stop_or_volume():
     state,row=transition(edges('borehole')[0]);text=compose_transition_notice(state,row)
-    assert 'ON verified' in text and 'SAST' in text
+    assert 'ON confirmed' in text and 'SAST' in text
     assert not any(word in text.lower() for word in ('litre','water delivered','hour','stop at','completed'))
     assert 'AAN bevestig' in compose_transition_notice(state,row,language='af')
 

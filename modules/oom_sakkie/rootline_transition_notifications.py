@@ -148,47 +148,8 @@ def recover_transition_notifications(*, notify, now=None, store=rootline_irrigat
 
 
 def compose_transition_notice(state, execution, *, language="en"):
-    """Describe the proven switch edge, never water delivery or a whole parent job."""
-    af = str(language).casefold().startswith("af")
-    kind = execution.get("auxiliary_device_id")
-    labels = {"FERTILIZER-MIXER-CH2": "Kunsmismenger" if af else "Fertilizer mixer",
-              "FERTILIZER-INJECTION-CH1": "Kunsmisinspuiter" if af else "Fertilizer injector"}
-    if execution.get("action") == "record_eskom_completed":
-        label = "Eskom-toevoer" if af else "Eskom supply"
-    else:
-        label = labels.get(kind, "Boorgat se AC-rugsteun" if af else "Borehole AC backup")
-    observed = datetime.fromisoformat(execution["notification_observed_at"])
-    stamp = observed.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%d %b %H:%M")
-    on = state == "Started"
-    edge = ("AAN" if on else "AF") if af else ("ON" if on else "OFF")
-    header = "ROOTLINE — TOERUSTING" if af else "ROOTLINE — EQUIPMENT"
-    from modules.telemetry.rootline_command_acceptance import command_execution
-    if command_execution(execution):
-        if state == "Adopted":
-            body = (f"{label}: ROOTLINE besit nou die AF-opdragplig vanaf {stamp} SAST. Geen nuwe AAN-opdrag is gestuur nie." if af else
-                f"{label}: ROOTLINE assumed the OFF-command duty at {stamp} SAST. No new ON command was sent.")
-        else:
-            body = (f"{label}: {edge}-opdrag aanvaar op {stamp} SAST." if af else f"{label}: {edge} command accepted at {stamp} SAST.")
-        from modules.telemetry.rootline_command_acceptance import injector_target_timing
-        timing = injector_target_timing(execution)
-        if timing:
-            delay = timing["on_delivery_delay_seconds"]
-            body += (f" Teiken: 120 s vanaf aanvaarde AAN; AAN-afleweringsvertraging: {delay:g} s." if af else
-                f" Target: 120 s from accepted ON; ON delivery delay: {delay:g} s.")
-            if "off_request_offset_seconds" in timing:
-                request = timing["off_request_offset_seconds"]; acceptance = timing["off_acceptance_offset_seconds"]
-                delivery = timing["off_delivery_delay_seconds"]
-                body += (f" AF-versoek teenoor teiken: {request:+g} s; AF-aanvaarding teenoor teiken: {acceptance:+g} s; AF-afleweringsvertraging: {delivery:g} s." if af else
-                    f" OFF request relative to target: {request:+g} s; OFF acceptance relative to target: {acceptance:+g} s; OFF delivery delay: {delivery:g} s.")
-                if timing["interrupted_before_target"]:
-                    body += " Vroeg onderbreek; program gedeeltelik." if af else " Interrupted early; programme partial."
-        body += " Fisiese toestand en lewering is onbevestig." if af else " Physical state and delivery are unverified."
-        return f"<b>{header}</b>\n\n{body}"
-    body = f"{label}: {edge} bevestig op {stamp} SAST." if af else f"{label}: {edge} verified at {stamp} SAST."
-    if execution.get("action") in {"mark_borehole_active", "record_borehole_completed"}:
-        body += (" Die pomp se eie sonkragwerking is nie hierdeur bevestig nie." if af else
-            " This does not verify whether the pump is operating on its own solar supply.")
-    return f"<b>{header}</b>\n\n{body}"
+    from modules.oom_sakkie.rootline_activity_presentation import activity_notice
+    return activity_notice(state, execution, language=language)
 
 
 # Provider notices share the existing minute and family-delivery rails. They
@@ -537,37 +498,34 @@ def input_health_text(health, *, language="en"):
 
 def compose_input_notice(state, payload, *, language="en"):
     from modules.telemetry.rootline_input_health import _time
+    from modules.oom_sakkie.rootline_activity_presentation import IRRIGATION_URL
     af = str(language).casefold().startswith("af")
     kind = payload["kind"]
-    label = ({"weather": "Plaasweerlesings", "power": "Kraglesings", "forecast": "Nagtelike voorspelling"} if af else
-        {"weather": "Local weather readings", "power": "Power readings", "forecast": "Nightly forecast"})[kind]
+    label = ({"weather": "Weerlesings", "power": "Kraglesings", "forecast": "Weervoorspelling"} if af else
+        {"weather": "Weather readings", "power": "Power readings", "forecast": "Weather forecast"})[kind]
     recovered = state == "InputRestored"
     proof = payload.get("recovery") if recovered else payload.get("outage")
     observed = _time((proof or {}).get("observed_at") if recovered else payload.get("outage_started_at"))
-    if observed is None:
-        raise ValueError("input_notice_time_unproven")
+    if observed is None: raise ValueError("input_notice_time_unproven")
     stamp = observed.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%d %b %H:%M SAST")
+    title = ("herstel" if af else "restored") if recovered else ("vertraag" if af else "delayed")
+    lines = [f"<b>{'✅' if recovered else '⚠️'} ROOTLINE · {label} {title}</b>", stamp, ""]
     if recovered:
-        message = (f"{label} is weer bevestig op {stamp}. ROOTLINE herbeoordeel die betrokke werk outomaties."
-            if af else f"{label} were verified again at {stamp}. ROOTLINE reassesses the affected work automatically.")
-        if kind == "forecast":
-            from datetime import date
-            day = date.fromisoformat(proof["operating_date"]).strftime("%d %b")
-            message += (f" Dit is die voorspelling vir {day}." if af else f" This is the forecast for {day}.")
-        return ("<b>ROOTLINE — LESINGS HERSTEL</b>" if af else "<b>ROOTLINE — INPUTS RESTORED</b>") + "\n\n" + message
-    from modules.telemetry.rootline_input_health import CONTRACT
-    body = input_health_text({"contract": CONTRACT, "inputs": {kind: proof}}, language=language)
-    message = (f"Aangeteken op {stamp}. " if af else f"Recorded at {stamp}. ") + body
-    if kind == "power":
-        message += (" Dit bevestig nie 'n kragonderbreking nie; onafhanklike besproeiing en bestaande stoppligte bly apart."
-            if af else " This does not prove a power outage; independent irrigation and existing stop duties remain separate.")
-    elif kind == "weather":
-        message += (" ROOTLINE behou bestaande stoppligte en kontroleer weer outomaties." if af else
-            " ROOTLINE retains existing stop duties and checks again automatically.")
+        lines.append("Vars lesings is weer beskikbaar. ROOTLINE heroorweeg die betrokke werk outomaties." if af else
+            "Fresh readings are available again. ROOTLINE will reassess the affected work automatically.")
+    elif kind == "forecast":
+        from datetime import date
+        day = date.fromisoformat(payload["operating_date"]).strftime("%d %b")
+        lines.append((f"Die voorspelling vir {day} is nog nie gereed nie." if af else f"The forecast for {day} is not ready."))
+        lines.append("Nuwe werk wat hierdie voorspelling benodig, wag." if af else "New work that needs this forecast is waiting.")
+        lines.append("Volgende geskeduleerde voorspelling: 23:30 SAST." if af else "Next scheduled forecast update: 23:30 SAST.")
     else:
-        message += (" ROOTLINE behou bestaande stoppligte. Die volgende voorspelling volg die nagtelike siklus." if af else
-            " ROOTLINE retains existing stop duties. The next forecast follows the nightly cycle.")
-    return ("<b>ROOTLINE — LESINGS ONBESKIKBAAR</b>" if af else "<b>ROOTLINE — INPUTS UNAVAILABLE</b>") + "\n\n" + message
+        lines.append("Vars lesings is tans nie beskikbaar nie." if af else "Fresh readings are currently unavailable.")
+        if kind == "power": lines.append("Dit beteken nie noodwendig dat die krag af is nie." if af else "This does not necessarily mean the power is off.")
+        lines.append("ROOTLINE kontroleer weer outomaties en behou bestaande afskakelings." if af else
+            "ROOTLINE checks again automatically and retains existing scheduled stops.")
+    lines += ["", f'<a href="{IRRIGATION_URL}">'+("Plan en status" if af else "Plan and status")+"</a>"]
+    return "\n".join(lines)
 
 
 def _input_receipt(identity, incident, recipient_key, receipt):
@@ -584,9 +542,29 @@ def _input_receipt(identity, incident, recipient_key, receipt):
     return receipt
 
 
+def _input_gap_has_pending_work(*, now, environ=None):
+    """Unknown or pending plans stay visible immediately; no planning writes."""
+    from modules.telemetry.rootline_water_energy_plan import get_current_water_energy_plan
+    import os
+    source = os.environ if environ is None else environ
+    day = now.astimezone(ZoneInfo("Africa/Johannesburg")).date().isoformat()
+    plan, status = get_current_water_energy_plan(day, database_url=source.get("DATABASE_URL"))
+    if status >= 400 or plan.get("success") is not True:
+        return True
+    candidates, auxiliary = plan.get("candidate_tasks"), plan.get("irrigation_auxiliary_tasks")
+    from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
+    if (not isinstance(candidates, list) or not isinstance(auxiliary, list)
+            or any(not isinstance(task, dict) for task in candidates + auxiliary)
+            or not {"irrigation_"+zone for zone in IRRIGATION_ZONE_IDS}.issubset(
+                {task.get("task_id") for task in candidates})):
+        return True
+    return any(str(task.get("recommendation") or task.get("status") or task.get("zone_decision") or "").casefold() not in {
+        "do not run", "do_not_run", "completed", "skipped"} for task in candidates + auxiliary)
+
+
 def recover_input_notifications(*, notify, recipient, now=None, environ=None,
         reconcile=None, state_loader=None, receipt_loader=None,
-        store=rootline_irrigation_execution_store, clock=None):
+        store=rootline_irrigation_execution_store, clock=None, pending_work_loader=None):
     """No independent sender: family delivery owns atomic claims and retries."""
     from modules.telemetry.rootline_input_health import (
         input_health_enabled, reconcile_input_health, read_input_notice_state,
@@ -629,6 +607,21 @@ def recover_input_notifications(*, notify, recipient, now=None, environ=None,
         if prior.get("delivery_ambiguous") is True:
             result.update(success=False, status="rootline_input_delivery_ambiguous")
             continue
+        if state == "InputUnavailable" and episode["kind"] in {"power", "weather"} and not prior:
+            started = _time(episode.get("outage_started_at"))
+            current_time = _time(clock())
+            if started is not None and current_time is not None and 0 <= (current_time-started).total_seconds() < 300:
+                # Active/unknown work is reported immediately; only idle gaps are quiet.
+                try:
+                    active = [store("load_active", None), store("load_active_borehole", None)]
+                    auxiliaries = store("load_active_auxiliaries", None)
+                    idle = all(row is None for row in active) and auxiliaries == []
+                    if idle:
+                        idle = not (pending_work_loader or _input_gap_has_pending_work)(now=current_time, environ=environ)
+                except Exception:
+                    idle = False
+                if idle:
+                    continue
         latest = state_loader(episode["kind"], now=clock())
         current, latest_episode = latest.get("input") or {}, latest.get("episode") or {}
         healthy = current.get("state") in {"available", "available_primary", "available_fallback"}

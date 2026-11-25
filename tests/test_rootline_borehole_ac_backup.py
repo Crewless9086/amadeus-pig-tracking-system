@@ -144,7 +144,7 @@ def test_visible_notice_and_plan_distinguish_ac_from_unknown_pumping(language,la
     state,event=transition({**row,'event_id':'OFFLINE-AC-EDGE'})
     notice=compose_transition_notice(state,event,language=language)
     assert label in notice and ('OFF' if language=='en' else 'AF') in notice
-    assert ('does not verify whether the pump' if language=='en' else 'nie hierdeur bevestig nie') in notice
+    assert ('water delivered' if language=='en' else 'water gelewer') not in notice
     plan=build_water_energy_plan({'power':power()},NOW.date().isoformat(),now=NOW)
     task=next(x for x in plan['candidate_tasks'] if x['task_id']=='borehole')
     assert task['recommendation']=='Do Not Run' and 'AC backup OFF' in task['reason']

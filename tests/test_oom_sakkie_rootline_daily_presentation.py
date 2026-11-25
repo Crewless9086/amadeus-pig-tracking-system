@@ -91,7 +91,7 @@ def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     assert "Started: no" not in text and "Completed: no" not in text
     assert "Observed rain supports Hold" in text
     assert "SOC" not in text and "solar" not in text.casefold() and "grid" not in text.casefold()
-    assert "No action required from you" in text and "<b>What I need from you:</b> Nothing" in text
+    assert "No action needed" in text and "What I need from you" not in text
 
 
 def test_recommendation_never_claims_irrigation_executed():
@@ -209,7 +209,7 @@ def test_known_zero_retry_executes_through_real_family_delivery_lifecycle_once(l
     assert replay["status"] == "rootline_daily_replayed_noop"
     assert len(sender_calls) == 2
     assert sender_calls[0] == sender_calls[1]
-    assert ("VANDAG SE WATERPLAN" if language == "af" else "TODAY’S WATER PLAN") in sender_calls[1]
+    assert ("Vandag se plan" if language == "af" else "Today's plan") in sender_calls[1]
     assert next(iter(daily_rows.values()))["answer"] == original_packet["answer"]
     assert next(iter(daily_rows.values()))["material_digest"] == original_packet["material_digest"]
     assert any(key.endswith("-DELIVERY-ATTEMPT") for key in lifecycle_rows)
@@ -394,8 +394,8 @@ def test_no_owner_fact_sentinel_is_not_rendered_as_a_question():
     value["owner_brief"]["family_fact_needed"] = "No owner fact is required now."
     text = compose_daily_rootline_plan(value)
     assert "No owner fact is required now" not in text
-    assert "What I need from you:</b> Nothing" in text
-    assert "No action required from you." in text
+    assert "No action needed" in text and "What I need from you" not in text
+    assert "No action needed." in text
 
 
 def test_manager_item_uses_same_completed_projection_without_internal_tokens():
@@ -425,7 +425,7 @@ def test_all_typed_classifier_reasons_localize_before_actual_daily_family_guard(
                 "If convenient, are the tanks LOW, OK or FULL, and when was that observed?"}]}
         work = runtime._project_rootline_snapshot({"raw": raw}, NOW, "af")
         assert work.work_items[0].why == afrikaans
-        assert "tenks LAAG, REG of VOL" in work.work_items[0].genuine_question
+        assert work.work_items[0].genuine_question == ""
         outcome = daily.run_daily_farm_manager(owner_user_id=str(900+index), chat_id=str(900+index),
             specialist_results=[work], litter_rows=[], now=NOW, language="af",
             deliver=memory.deliver, replace_brief=memory.replace)

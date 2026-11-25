@@ -954,3 +954,26 @@ These controls preserve command-accepted operation and truthful controller-time
 accounting. They add no water-volume or physical-mixing measurement prerequisite.
 Publishing the page does not prove the pending nightly forecast, injection or
 repeated unattended cycles; those outcomes require their genuine runtime evidence.
+
+
+## Owner-approved balanced Telegram reporting — 25 November 2026
+
+ROOTLINE uses the existing Oom Sakkie delivery rail for a concise daily plan,
+material run changes, camp results and actionable exceptions. Use clear emojis,
+local event times, the affected input, a plain reason and the next automatic step.
+Link to the irrigation page for settings, full plan, receipts and history.
+A completed segment or accepted OFF must never label an unfinished programme
+complete. Command-mode notices describe accepted commands without repeating
+physical-water/mixing disclaimers; they do not claim measured water or dose.
+Borehole AC-backup switching remains distinct from independent solar pumping.
+
+Keep brief sensor-reading gaps in history. The first notice may wait five minutes
+only when canonical evidence proves no active or pending work is affected;
+unknown impact, command failures and shutdown uncertainty remain immediate.
+A recovery notice requires a previously delivered outage notice. Preserve stable
+identities, replay silence, immutable attempted content and ambiguous-send holds.
+Routine high-battery notices are quiet under ROOTLINE input-health ownership;
+low-battery, grid and other operational warnings retain their existing policy.
+Remove routine optional tank questions from summaries while preserving genuinely
+required owner decisions. These presentation changes do not alter control limits,
+forecast schedules, command authority, original OFF duties or operating policy.

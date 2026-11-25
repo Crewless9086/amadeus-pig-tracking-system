@@ -164,7 +164,10 @@ def test_elapsed_target_and_delay_reports_preserve_receipt_truth(monkeypatch,off
     terminal["notification_observed_at"]=off["accepted_at"]
     for language in ("en","af"):
         text=compose_transition_notice("Stopped",terminal,language=language)
-        assert "120 s" in text and f"{offset:+g} s" in text and f"{offset+delivery:+g} s" in text
+        assert "120 s" in text
+        assert (("Programme completed" if language == "en" else "Program voltooi") in text) is complete
+        if offset+delivery > 0:
+            assert f"{offset+delivery:g} s" in text and "⚠️" in text
 
 
 def test_registry_target_compatibility_and_old_claims_unchanged():

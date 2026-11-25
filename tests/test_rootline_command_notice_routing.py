@@ -203,7 +203,8 @@ def test_direct_plan_uses_mode_aware_provider_explanation(monkeypatch):
     from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_plan
     for key,value in ENV.items():monkeypatch.setenv(key,value)
     text=compose_daily_rootline_plan({"success":True,"provider_availability":snapshot(),"recommendations":[]})
-    assert "separate switch readback is not required" in text
+    assert "eWeLink" not in text and "separate switch readback" not in text
+    assert "Full plan, settings and history" in text
     assert "Check the local situation" not in text
 
 

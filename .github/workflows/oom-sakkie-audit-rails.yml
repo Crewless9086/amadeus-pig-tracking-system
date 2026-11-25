@@ -451,6 +451,7 @@ jobs:
           tests/test_rootline_water_energy_plan.py
           tests/test_rootline_specialist_result.py
           tests/test_rootline_visible_operation.py
+          tests/test_rootline_balanced_notifications.py
           tests/test_rootline_managed_devices_runtime.py
           tests/test_rootline_fertilizer_auxiliary.py
           tests/test_rootline_mixer_reservations.py
