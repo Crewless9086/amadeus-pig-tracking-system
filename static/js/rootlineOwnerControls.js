@@ -18,7 +18,7 @@
   function at(value, timeOnly=false) {
     if (!known(value)) return 'Unavailable';
     const d=new Date(value); if(Number.isNaN(d.getTime()))return display(value);
-    return new Intl.DateTimeFormat('en-ZA',{timeZone:'Africa/Johannesburg',...(timeOnly?{}:{day:'numeric',month:'short'}),hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(d)+' SAST';
+    return new Intl.DateTimeFormat('en-ZA',{timeZone:'Africa/Johannesburg',...(timeOnly?{}:{day:'numeric',month:'short'}),hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(d);
   }
   function emptyRow(target, messageText, columns) { const td=node('td',messageText);td.colSpan=columns;const tr=document.createElement('tr');tr.append(td);target.replaceChildren(tr); }
   function current() { return state.devices.find(d=>d.id===state.selected); }
@@ -60,7 +60,7 @@
       if(generation!==state.generations[panel])return;state.failures[panel]=error.message;
       if(panel==='forecast'){el('forecast').replaceChildren(node('p',error.message,'rl-note rl-warning'));el('weather-source').textContent='Forecast unavailable';}
       if(panel==='devices'){state.canWrite=false;message('input-state',error.message,true);renderTiles();if(state.selected)renderDetail(false);}
-      if(panel==='plan'){message('plan-status',error.message,true);el('plan-badge').textContent='Plan unavailable';el('review-plan').disabled=true;if(!state.rows.length)emptyRow(el('plan-rows'),'Today’s plan could not be read.',7);}
+      if(panel==='plan'){renderPlan();message('plan-status',error.message,true);el('plan-badge').textContent='Plan unavailable';el('review-plan').disabled=true;if(!state.rows.length)emptyRow(el('plan-rows'),'Today’s plan could not be read.',7);}
       if(panel==='history'){message('history-state',error.message,true);if(!state.history.length)emptyRow(el('history-rows'),'History could not be read.',5);}
     }
   }
@@ -81,9 +81,9 @@
   function renderTiles() {
     const devices=state.devices.length?state.devices:names.map(([id,name])=>({id,name,state:'Unavailable',summary:'Current input details have not been read.'}));
     el('tiles').replaceChildren(...devices.map(d=>{
-      const b=button('',()=>openDevice(d.id),'rl-tile');b.setAttribute('aria-expanded',String(state.selected===d.id));b.setAttribute('aria-controls','rl-detail');b.dataset.device=d.id;b.dataset.family=/eskom|mixer/i.test(d.id)?'power':'water';
+      const b=button('',()=>openDevice(d.id),'rl-tile');b.setAttribute('aria-expanded',String(state.selected===d.id));b.setAttribute('aria-controls','rl-detail');b.dataset.device=d.id;b.dataset.on=String(!state.failures.devices&&d.stale!==true&&known(d.observed_at)&&['on_command_accepted','observed_on'].includes(d.state));b.dataset.family=/eskom|mixer/i.test(d.id)?'power':'water';
       const title=node('span',d.name,'rl-tile-name');const symbol=node('span',/mixer/i.test(d.id)?'↻':/eskom/i.test(d.id)?'ϟ':/borehole/i.test(d.id)?'≋':'♧','rl-tile-symbol');symbol.setAttribute('aria-hidden','true');title.prepend(symbol);
-      b.append(title,node('span',state.failures.devices?'Current state unavailable':human(d.state),'rl-small'),node('span',d.summary||'Summary unavailable','rl-summary'),node('span',(modeNames[d.settings?.mode]||'Mode unavailable')+' · Open details →','rl-summary'));return b;
+      b.append(title,node('span',state.failures.devices?'Current state unavailable':human(d.state),'rl-small'),node('span',d.summary||'Summary unavailable','rl-summary'),node('span','Last recorded '+at(d.observed_at),'rl-small rl-muted'),node('span',(modeNames[d.settings?.mode]||'Mode unavailable')+' · Open details →','rl-summary'));return b;
     }));
   }
   function openDevice(id) { if(state.busy)return;if(state.pending.settings?.uncertain){message('detail-status','Check the existing request for '+(state.devices.find(d=>d.id===state.pending.settings.device_id)?.name||'this input')+' before changing input.',true);return;}state.selected=id;invalidate('settings');el('manual').hidden=true;renderDetail(true);renderTiles();el('detail-title').focus({preventScroll:true});el('detail').scrollIntoView({behavior:'smooth',block:'nearest'}); }
@@ -111,10 +111,30 @@
     if(reset)message('detail-status',draft?'Your unsaved draft is retained.':'');
   }
   function renderSupport() { el('support').replaceChildren(...state.devices.filter(d=>!/camp/i.test(d.name)).map(d=>node('span',d.name+' · '+(typeof d.next_action==='string'?d.next_action:d.summary||'Next action unavailable')))); }
-  function markPlanDirty() {if(!state.planDirty)state.planDraftRevision=state.plan?.revision;state.planDirty=true;invalidate('plan');el('plan-badge').textContent='Unsaved changes · today only';message('plan-status','');}
+  function markPlanDirty() {if(!state.planDirty)state.planDraftRevision=state.plan?.revision;state.planDirty=true;invalidate('plan');el('plan-badge').textContent='Unsaved changes · today only';message('plan-status','');renderPlanOverview();}
+  function runEvidence(row) { return state.plan?.rows?.find(current=>current.id===row.id)||{}; }
+  function renderPlanOverview() {
+    const rows=state.rows;const unavailable=!!state.failures.plan;
+    const labels={running:'Running · ON accepted',completed:'Done',stopped:'Stopped',pending:'Waiting',unknown:'Status unknown',unavailable:'Status unavailable'};
+    const counts={running:0,completed:0,pending:0,stopped:0,unknown:0,unavailable:0,skipped:0};
+    el('plan-journey').replaceChildren(...rows.map((row,index)=>{
+      const evidence=runEvidence(row);const status=unavailable?'unavailable':Object.hasOwn(labels,evidence.run_status)?evidence.run_status:'unknown';
+      if(row.skip)counts.skipped++;if(Object.hasOwn(counts,status)&&!(row.skip&&status==='pending'))counts[status]++;
+      const card=button('',()=>openDevice(row.device_id),'rl-run-card');card.dataset.status=status;
+      card.setAttribute('aria-label','Open '+row.name+' run details');
+      const top=node('span',undefined,'rl-run-top');top.append(node('span',String(index+1).padStart(2,'0'),'rl-run-number'),node('span',row.name,'rl-run-name'));
+      const badge=node('span',evidence.run_status_label&&!unavailable?evidence.run_status_label:labels[status],'rl-run-status');
+      card.append(top,badge,node('span',row.skip?'Skipped in today’s plan':display(row.duration_minutes)+' minutes planned','rl-small'));
+      card.append(node('span',state.planDirty?'Draft · timing checked on review':row.start_at&&row.end_at?at(row.start_at,true)+' – '+at(row.end_at,true):'Window unavailable','rl-small rl-muted'));
+      card.append(node('span',unavailable?'Refresh to read current run evidence':evidence.run_observed_at?'Recorded '+at(evidence.run_observed_at):evidence.run_reason||'Current run evidence unavailable','rl-small rl-muted'),node('span','Details →','rl-run-link'));
+      return card;
+    }));
+    el('plan-progress').textContent=!rows.length?'Today’s run status is not available.':unavailable?'Current plan could not be refreshed.':counts.completed+' done · '+counts.running+' running · '+counts.pending+' waiting'+(counts.skipped?' · '+counts.skipped+' skipped in plan':'')+(counts.stopped?' · '+counts.stopped+' stopped':'')+((counts.unknown+counts.unavailable)?' · '+(counts.unknown+counts.unavailable)+' unknown':'');
+  }
   function renderPlan() {
+    renderPlanOverview();
     const plan=state.plan||{};el('plan-badge').textContent=state.planDirty?'Unsaved changes · today only':human(plan.status);
-    el('plan-explanation').textContent=[plan.operating_date?'Operating day '+plan.operating_date+' · SAST':'',plan.reason].filter(known).join(' · ');
+    el('plan-explanation').textContent=[plan.operating_date?'Operating day '+plan.operating_date:'',plan.reason].filter(known).join(' · ');
     const canEdit=state.canWrite&&!!plan.revision&&!state.failures.plan;
     el('review-plan').disabled=!canEdit||!state.rows.some(r=>r.editable===true);el('reset-plan').disabled=!state.planDirty;
     if(!state.rows.length){emptyRow(el('plan-rows'),plan.reason||'No saved plan is available for today.',7);el('plan-total').textContent='';return;}
@@ -126,7 +146,7 @@
       const duration=document.createElement('td');const number=document.createElement('input');number.type='number';number.min='1';number.step='1';if(known(row.maximum_duration_minutes))number.max=row.maximum_duration_minutes;number.value=known(row.duration_minutes)?row.duration_minutes:'';number.disabled=!editable;number.required=true;number.className='rl-duration';number.setAttribute('aria-label',row.name+' duration in minutes');number.oninput=()=>{row.duration_minutes=number.value===''?null:Number(number.value);markPlanDirty();};duration.append(number);
       const priority=document.createElement('td');const select=document.createElement('select');select.disabled=!editable;select.setAttribute('aria-label',row.name+' priority');if(!known(row.priority)){const option=node('option','Unavailable');option.value='';option.disabled=true;select.append(option);}['high','normal','low'].forEach(value=>{const option=node('option',human(value));option.value=value;select.append(option);});select.value=row.priority||'';select.onchange=()=>{row.priority=select.value;markPlanDirty();};priority.append(select);
       const reason=document.createElement('td');const input=document.createElement('input');input.className='rl-reason';input.maxLength=500;input.value=row.reason||'';input.disabled=!editable;input.required=true;input.setAttribute('aria-label',row.name+' reason');input.oninput=()=>{row.reason=input.value;markPlanDirty();};reason.append(input);
-      const today=document.createElement('td');const skip=button(row.skip?'Include':'Skip',()=>{row.skip=!row.skip;markPlanDirty();renderPlan();});skip.disabled=!editable;skip.setAttribute('aria-label',(row.skip?'Include ':'Skip ')+row.name+' today');today.append(skip);tr.append(order,node('td',row.name),window,duration,priority,reason,today);return tr;
+      const today=document.createElement('td');const skip=button(row.skip?'Include':'Skip',()=>{row.skip=!row.skip;markPlanDirty();renderPlan();});skip.disabled=!editable;skip.setAttribute('aria-label',(row.skip?'Include ':'Skip ')+row.name+' today');today.append(skip);const camp=node('td',undefined,'rl-plan-camp');camp.append(node('span',row.name));const evidence=runEvidence(row);const status=state.failures.plan?'unavailable':evidence.run_status||'unknown';const badge=node('span',state.failures.plan?'Status unavailable':evidence.run_status_label||'Status unknown','rl-run-status');badge.dataset.status=status;camp.append(badge);tr.append(order,camp,window,duration,priority,reason,today);return tr;
     }));
     const included=state.rows.filter(r=>!r.skip);el('plan-total').textContent=(included.every(r=>Number.isFinite(r.duration_minutes))?included.reduce((sum,r)=>sum+r.duration_minutes,0)+' planned camp minutes':'Planned duration unavailable')+' · actual starts depend on availability';
   }

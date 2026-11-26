@@ -453,7 +453,7 @@ def _plan_revision(plan):
     return _digest([plan.get("plan_id"), plan.get("generation"), plan.get("evidence_sha256")])
 
 
-def get_owner_plan(connection, now):
+def get_owner_plan(connection, now, *, include_activity=False, database_url=None):
     from modules.telemetry.rootline_water_energy_plan import get_current_water_energy_plan
     from modules.telemetry.rootline_timed_control import MAX_IRRIGATION_SECONDS
     plan, status = get_current_water_energy_plan(now.astimezone(ZA).date().isoformat(), connection=connection)
@@ -461,6 +461,10 @@ def get_owner_plan(connection, now):
         return {"status": "unavailable", "revision": None, "operating_date": now.astimezone(ZA).date().isoformat(),
             "reason": "No saved programme is available for today.", "rows": []}
     started = _started_tasks(connection, plan)
+    activity = {}
+    if include_activity:
+        from modules.telemetry.rootline_owner_control_projection import read_plan_run_projection
+        activity = read_plan_run_projection(plan, now, database_url=database_url)
     rows = []
     for task in plan["daily_program"].get("base_tasks", []):
         key = next((k for k, v in DEVICES.items() if task.get("task_id") == "irrigation_" + v), None)
@@ -471,7 +475,8 @@ def get_owner_plan(connection, now):
             "maximum_duration_minutes": min(task.get("max_execution_minutes") or MAX_IRRIGATION_SECONDS // 60, MAX_IRRIGATION_SECONDS // 60),
             "priority": task.get("owner_priority", "normal"), "reason": task.get("reason") or "Saved daily programme",
             "skip": task.get("owner_skip") is True, "start_at": task.get("planned_start_at"),
-            "end_at": task.get("planned_end_at"), "editable": task["task_id"] not in started})
+            "end_at": task.get("planned_end_at"), "editable": task["task_id"] not in started,
+            **activity.get(task["task_id"], {})})
     return {"status": plan.get("status"), "revision": _plan_revision(plan),
         "operating_date": plan["operating_date"], "reason": "Changes apply to unstarted work today only.", "rows": rows}
 
@@ -496,7 +501,7 @@ def get_owner_controls(*, panel=None, database_url=None, now=None):
                 "Current commands do not prove physical water delivery.",
                 "Pausing prevents new automatic starts; accepted shutdown duties remain supervised."]}
             if panel in {None, "plan"}:
-                result["plan"] = get_owner_plan(connection, observed)
+                result["plan"] = get_owner_plan(connection, observed, include_activity=True, database_url=database_url)
         from modules.telemetry.rootline_owner_control_projection import build_owner_control_projection
         for selected in (("forecast", "devices", "history") if panel is None else (panel,)):
             if selected != "plan":
