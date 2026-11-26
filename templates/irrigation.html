@@ -7,7 +7,7 @@
   <title>Irrigation · Amadeus Farm</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/rootlineOwnerControls.css') }}?v=20261125-owner-controls">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/rootlineOwnerControls.css') }}?v=20261126-live-irrigation">
 </head>
 <body data-operations-page="irrigation">
 <div class="farm-app-shell">
@@ -19,7 +19,7 @@
     </header>
     <p id="rl-access" class="rl-note" role="status" hidden></p>
     <section class="rl-stack" aria-labelledby="rl-weather-heading">
-      <div class="rl-row"><h2 id="rl-weather-heading">Weather ahead</h2><span id="rl-weather-source" class="rl-small rl-muted">Three-day forecast · SAST</span></div>
+      <div class="rl-row"><h2 id="rl-weather-heading">Weather ahead</h2><span id="rl-weather-source" class="rl-small rl-muted">Three-day forecast</span></div>
       <div id="rl-forecast" class="rl-forecast"><p class="rl-muted">Reading the forecast…</p></div>
     </section>
     <section class="rl-stack" aria-labelledby="rl-input-heading">
@@ -52,6 +52,8 @@
     <section id="rl-day" role="tabpanel" aria-labelledby="rl-day-tab" class="rl-stack">
       <div class="rl-row"><div><h2>The full day’s plan</h2><p class="rl-small rl-muted">Move a camp, adjust its time, reason or priority, or skip it for today. High priority runs first, then normal, then low; your order applies within each priority.</p></div><span id="rl-plan-badge" class="rl-tag">Reading plan…</span></div>
       <p id="rl-plan-explanation" class="rl-small rl-muted"></p>
+      <p id="rl-plan-progress" class="rl-plan-progress" role="status"></p>
+      <div id="rl-plan-journey" class="rl-plan-journey" aria-label="Today’s irrigation run progress"></div>
       <div id="rl-support" class="rl-support"></div>
       <p class="rl-small rl-muted rl-scroll-help">On a small screen, swipe the plan sideways to see priority, reason and Skip.</p>
       <div class="rl-table-wrap" tabindex="0" role="region" aria-label="Day plan table; scroll horizontally on small screens"><table aria-label="Editable day plan"><thead><tr><th>Order</th><th>Camp</th><th>Planned window</th><th>Minutes</th><th>Priority</th><th>Reason</th><th>Today</th></tr></thead><tbody id="rl-plan-rows"><tr><td colspan="7">Reading today’s plan…</td></tr></tbody></table></div>
@@ -64,14 +66,14 @@
       <h2>Runs, stops and setting changes</h2>
       <div class="rl-history-controls"><label>Input<select id="rl-history-filter"><option value="">All inputs</option></select></label><label>Show<select id="rl-history-kind"><option value="">Everything</option><option value="runs">Runs &amp; stops</option><option value="changes">Setting &amp; plan changes</option></select></label></div>
       <p id="rl-history-state" class="rl-small rl-muted" role="status">Reading recorded history…</p>
-      <div class="rl-table-wrap" tabindex="0" role="region" aria-label="History table; scroll horizontally on small screens"><table aria-label="Run and change history"><thead><tr><th>When · SAST</th><th>Input</th><th>Event</th><th>Result / reason</th><th>By</th></tr></thead><tbody id="rl-history-rows"></tbody></table></div>
+      <div class="rl-table-wrap" tabindex="0" role="region" aria-label="History table; scroll horizontally on small screens"><table aria-label="Run and change history"><thead><tr><th>When</th><th>Input</th><th>Event</th><th>Result / reason</th><th>By</th></tr></thead><tbody id="rl-history-rows"></tbody></table></div>
       <p class="rl-small rl-muted">Run time is based on recorded command acceptance. No water volume or fertilizer dose is inferred.</p>
     </section>
     <details class="rl-detail"><summary>Operating information</summary><p class="rl-small rl-muted">Settings are reviewed before saving. ROOTLINE checks current availability and the existing limits. Today-only changes expire at the returned effective boundary. Active shutdown duties remain in place.</p><ul id="rl-constraints"></ul><p id="rl-observed" class="rl-small rl-muted">Current state has not been loaded.</p></details>
-    <footer class="rl-footer">All times Africa/Johannesburg (SAST). Saved operating mode and command state are shown separately.</footer>
+    <footer class="rl-footer">Saved operating mode and command state are shown separately.</footer>
     <noscript><p class="rl-note">Enable JavaScript to load current ROOTLINE information and controls.</p></noscript>
   </main>
 </div>
-<script src="{{ url_for('static', filename='js/rootlineOwnerControls.js') }}?v=20261126-injector-controls" defer></script>
+<script src="{{ url_for('static', filename='js/rootlineOwnerControls.js') }}?v=20261126-live-irrigation" defer></script>
 </body>
 </html>

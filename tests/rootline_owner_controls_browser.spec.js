@@ -213,3 +213,63 @@ test('actual injector programme saves two ten-minute injections for all register
  const restored=await read();expect(values(restored)).toEqual(original);
  await info.attach('actual-injector-canonical-readback',{body:JSON.stringify({classification:'actual authenticated Flask and disposable PostgreSQL; no scheduler/provider/device calls',before,applied,updated,restored}),contentType:'application/json'});
 });
+
+
+test('recorded ON emphasis and canonical day progress are accessible on desktop and mobile',async({page},info)=>{
+ const {requests}=await setup(page,{data:data=>{
+  data.devices.find(d=>d.id==='camp_b').state='on_command_accepted';
+  data.devices.find(d=>d.id==='borehole').state='on_command_accepted';
+  data.devices.find(d=>d.id==='eskom').state='observed_on';
+  data.devices.find(d=>d.id==='mixer').state='stop_pending';
+  data.history.find(r=>r.device_id==='camp_b').summary='ON command accepted';data.history.find(r=>r.device_id==='camp_b').kind='run_started';
+  data.observed_at='2026-11-26T09:20:00Z';data.plan.operating_date='2026-11-26';data.devices.forEach(d=>d.observed_at=data.observed_at);
+  data.history.forEach(r=>r.at=data.observed_at);const injection=data.devices.find(d=>d.id==='injection');injection.next_action='During an eligible camp run';injection.settings.fields.forEach(f=>{if(f.key==='pulse_minutes')f.value=10;if(f.key.startsWith('inject_camp_'))f.value=true;});
+  data.forecast.days.forEach((d,i)=>{d.date='2026-11-'+(26+i);d.forecast_run_at=data.observed_at;});data.forecast.forecast_run_at=data.observed_at;
+  const states=['completed','running','pending','unknown'];
+  data.plan.rows.forEach((r,i)=>Object.assign(r,{run_status:states[i],run_status_label:['Done','Running','Waiting','Status unknown'][i],editable:i>=2,duration_minutes:60,start_at:'2026-11-26T'+(10+i)+':00:00+02:00',end_at:'2026-11-26T'+(11+i)+':00:00+02:00',run_observed_at:i<2?data.observed_at:null,run_reason:'Canonical run evidence fixture'}));
+ }});
+ await expect(page.locator('.rl-tile[data-on="true"]')).toHaveCount(3);
+ await expect(page.locator('[data-device="borehole"]')).toContainText('Last recorded');
+ await expect(page.locator('[data-device="mixer"]')).toHaveAttribute('data-on','false');
+ await expect(page.locator('#rl-plan-progress')).toHaveText('1 done · 1 running · 1 waiting · 1 unknown');
+ await expect(page.locator('#rl-plan-journey [data-status="completed"]')).toContainText('Done');
+ await expect(page.locator('body')).not.toContainText('SAST');
+ await noOverflow(page);await page.screenshot({path:info.outputPath('ui54-desktop.png'),fullPage:true});
+ await page.getByRole('button',{name:'Open Camp B run details',exact:true}).click();await expect(page.locator('#rl-detail-title')).toHaveText('Camp B');
+ await page.getByRole('button',{name:'Close details'}).click();
+ await page.emulateMedia({reducedMotion:'reduce'});
+ expect(await page.locator('[data-device="borehole"]').evaluate(n=>getComputedStyle(n).animationName)).toBe('none');
+ await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);await noOverflow(page);await page.screenshot({path:info.outputPath('ui54-mobile.png'),fullPage:true});
+ await page.getByRole('button',{name:'Open Camp A run details',exact:true}).focus();await page.keyboard.press('Enter');await expect(page.locator('#rl-detail-title')).toHaveText('Camp A');
+ expect(requests.filter(r=>r.method==='POST')).toHaveLength(0);
+});
+
+test('failed refresh and unknown evidence never retain active emphasis',async({page})=>{
+ const {data}=await setup(page,{data:data=>{
+  data.devices[0].state='on_command_accepted';data.devices[0].stale=true;
+  data.devices[1].state='request_claimed';data.devices[2].state='needs_attention';
+  data.plan.rows[0].run_status='stopped';data.plan.rows[0].run_status_label='Stopped';
+ }});
+ await expect(page.locator('.rl-tile[data-on="true"]')).toHaveCount(0);
+ await expect(page.locator('#rl-plan-journey [data-status="stopped"]')).toContainText('Stopped');
+ data.devices[0].stale=false;await page.getByRole('button',{name:'Refresh current state'}).click();await expect(page.locator('.rl-tile[data-on="true"]')).toHaveCount(1);
+ await page.route('**/api/telemetry/rootline/owner-controls?panel=devices',r=>r.fulfill({status:503,json:{success:false,message:'Current command evidence unavailable'}}));
+ await page.route('**/api/telemetry/rootline/owner-controls?panel=plan',r=>r.fulfill({status:503,json:{success:false,message:'Current plan unavailable'}}));
+ await page.getByRole('button',{name:'Refresh current state'}).click();
+ await expect(page.locator('.rl-tile[data-on="true"]')).toHaveCount(0);
+ await expect(page.locator('#rl-plan-journey [data-status="unavailable"]')).toHaveCount(4);
+});
+
+
+test('refresh updates canonical run status while retaining unsaved plan draft',async({page})=>{
+ const {data}=await setup(page,{data:data=>data.plan.rows.forEach(r=>Object.assign(r,{run_status:'pending',run_status_label:'Waiting'}))});
+ await page.getByLabel('Camp A duration in minutes').fill('45');
+ await expect(page.getByRole('button',{name:'Open Camp A run details',exact:true})).toContainText('45 minutes planned');
+ await expect(page.getByRole('button',{name:'Open Camp A run details',exact:true})).toContainText('Draft · timing checked on review');
+ data.plan.rows[0].run_status='running';data.plan.rows[0].run_status_label='Running · ON accepted';data.plan.rows[0].run_observed_at=data.observed_at;
+ await page.getByRole('button',{name:'Refresh current state'}).click();
+ await expect(page.getByLabel('Camp A duration in minutes')).toHaveValue('45');
+ await expect(page.locator('#rl-plan-badge')).toContainText('Unsaved');
+ await expect(page.locator('#rl-plan-journey [data-status="running"]')).toContainText('Camp A');
+ await expect(page.locator('#rl-plan-rows tr').first()).toContainText('Running · ON accepted');
+});

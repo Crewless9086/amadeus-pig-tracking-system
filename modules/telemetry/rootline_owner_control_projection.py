@@ -105,7 +105,7 @@ def project_execution_event(event_id, at, row):
         state, summary, kind = "needs_attention", "Controller recorded an unresolved command outcome", "runtime_hold"
     reason = row.get("reason")
     if isinstance(reason, str) and reason:
-        summary += " ÃƒÆ’Ã¢â‚¬Å¡ -  " + reason.replace("_", " ")[:250]
+        summary += " - " + reason.replace("_", " ")[:250]
     return {"id": str(event_id), "at": _iso(at), "device_id": _identity(row), "kind": kind,
         "summary": summary, "actor": "ROOTLINE", "status": state,
         "execution_id": row.get("execution_id"), "accounted_seconds": seconds,
@@ -152,7 +152,7 @@ def project_next_action(device, identity, control_state, plan, now):
         if start:
             try:
                 local = datetime.fromisoformat(str(start).replace("Z", "+00:00")).astimezone(ZA)
-                return "Planned " + local.strftime("%d %b %H:%M") + " SAST; current conditions still apply"
+                return "Planned " + local.strftime("%d %b %H:%M") + "; current conditions still apply"
             except (TypeError, ValueError):
                 pass
         decision = task.get("decision") or task.get("recommendation")
@@ -224,3 +224,93 @@ def build_owner_control_projection(panel, *, control_state, now=None, database_u
                 "rows": sorted(events + changes, key=lambda row: (str(row.get("at") or ""), str(row.get("id") or "")), reverse=True),
                 "period_days": 7, "partial": data["truncated"]}
     return result
+
+
+def project_plan_run(task, operating_date, records, *, truncated=False, unavailable=False):
+    """Project command evidence for this day's automatic task, never a physical state."""
+    from modules.telemetry.rootline_command_acceptance import job_completed
+    from modules.telemetry.rootline_irrigation_job_contract import build_irrigation_job
+    def result(status, label, at=None, reason=None):
+        return {"run_status": status, "run_status_label": label,
+                "run_observed_at": _iso(at), "run_reason": reason}
+    if unavailable:
+        return result("unavailable", "Status unavailable", reason="Run history could not be read.")
+    if truncated:
+        return result("unknown", "Status unknown", reason="Returned run history is incomplete.")
+    zone = str(task.get("task_id") or "").removeprefix("irrigation_")
+    matching = []
+    unproven = False
+    for event_id, at, row in records:
+        if not isinstance(row, dict):
+            return result("unknown", "Status unknown", reason="Run history contains an unrecognised record.")
+        if row.get("zone_id") != zone or row.get("operating_date") != operating_date or row.get("owner_request_id"):
+            continue
+        # Rebuild the immutable automatic scheduled-job contract, rather than
+        # matching today's latest device OFF or a mutable evidence generation.
+        try:
+            total = row.get("requested_total_duration_seconds")
+            expected_minutes = task.get("requested_total_duration_minutes") or task.get("planned_duration_minutes")
+            if row.get("stop_mode") != "scheduled" or type(total) is not int or total != expected_minutes * 60:
+                unproven = True
+                continue
+            job = build_irrigation_job(zone_id=zone, operating_date=operating_date,
+                requested_total_seconds=total, maximum_segment_seconds=total,
+                plan_identity=row["evidence_generation"], stop_mode="scheduled")
+            if row.get("job_id") != job["job_id"] or row.get("job_sha256") != job["job_sha256"]:
+                unproven = True
+                continue
+        except (KeyError, TypeError, ValueError):
+            unproven = True
+            continue
+        matching.append((event_id, at, row))
+    if unproven:
+        return result("unknown", "Status unknown", reason="Recorded task history could not be bound to its automatic programme.")
+    if not matching:
+        return result("pending", "Not started", reason="No matching automatic run is recorded for this task today.")
+    jobs = {row["job_id"] for _, _, row in matching}
+    if len(jobs) != 1:
+        return result("unknown", "Status unknown", reason="Multiple automatic job records need reconciliation.")
+    # Input order is the canonical created_at DESC, event-id DESC ordering.
+    _, at, row = matching[0]
+    action = str(row.get("action") or "")
+    if job_completed(row):
+        return result("completed", "Completed", at, "The complete controller programme is recorded as closed.")
+    if duty_closed(row):
+        return result("stopped", "Stopped", at, "The command duty closed; full programme completion is not proven.")
+    if accepted(row.get("command_on_receipt"), row, "ON"):
+        if any(word in action for word in ("stopping", "contain", "ambiguous", "completed")):
+            return result("unknown", "Stop pending", at, "A later stop outcome is not yet confirmed.")
+        if action == "mark_active":
+            return result("running", "Running", at, "ON command accepted; this is recorded controller status.")
+    return result("unknown", "Awaiting command evidence", at, "A claim or unresolved controller event is recorded.")
+
+
+def read_plan_run_projection(plan, now, *, database_url=None):
+    """Optional display read: failure never changes plan editing or execution."""
+    tasks = plan.get("daily_program", {}).get("base_tasks", [])
+    selected = plan.get("operating_date")
+    try:
+        start = datetime.fromisoformat(selected).replace(tzinfo=ZA)
+        end = start + timedelta(days=1)
+        with connect_bounded_rootline_postgres(database_url=database_url, read_only=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select review_event_id,created_at,review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='rootline_irrigation_execution'
+                      and created_at >= %s and created_at < %s and created_at <= %s
+                      and review_json->'rootline_execution'->>'operating_date'=%s
+                      and review_json->'rootline_execution'->>'zone_id'=any(%s)
+                      and review_json->'rootline_execution'->>'action'=any(%s)
+                    order by created_at desc,review_event_id desc limit %s""",
+                    (start, end, now, selected,
+                     [str(t.get("task_id") or "").removeprefix("irrigation_") for t in tasks],
+                     ["claim_before_on", "mark_active", "mark_stopping", "record_completed",
+                      "contain_zone", "record_ambiguous_shutdown", "record_execution_not_dispatched",
+                      "record_claim_recovery", "record_job_resolution"],
+                     EVENT_LIMIT + 1))
+                records = cursor.fetchall()
+        return {t["task_id"]: project_plan_run(t, selected, records[:EVENT_LIMIT],
+                    truncated=len(records) > EVENT_LIMIT) for t in tasks if t.get("task_id")}
+    except Exception:
+        return {t["task_id"]: project_plan_run(t, selected, [], unavailable=True)
+                for t in tasks if t.get("task_id")}
