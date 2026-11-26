@@ -133,14 +133,47 @@ def test_crash_after_family_receipt_before_notification_record_recovers_proof_wi
     assert len(sends)==2 and events.notifications[-1]['delivery_confirmed'] is True
 
 
-def test_definitely_unsent_device_attempt_has_only_one_existing_retry():
-    events=Events(edges('mixer')[:1]);sends=[]
+@pytest.mark.parametrize('recovery_outcome',['delivered','ambiguous'])
+def test_definitely_unsent_device_recovery_requires_durable_proof_then_stops(recovery_outcome):
+    events=Events(edges('mixer')[:1]);device=[];attempt_ids=[]
     def send(chat,text,**kwargs):
-        sends.append(text)
-        return {'success':False,'delivery_definitely_not_sent':True}
-    for i in range(4):gateway(events,send,now=NOW+timedelta(minutes=i))
-    device=[x for x in sends if 'ROOTLINE · Mixer' in x]
-    assert len(device)==2
+        if 'ROOTLINE · Mixer' not in text:
+            return {'success':True,'telegram_message_id':'plan-receipt'}
+        attempts=[row for row in events.family.values()
+            if row.get('task_state')=='started' and row.get('state')=='delivery_attempted']
+        # Sender is reachable only after the current unique durable claim.
+        assert len(attempts)==len(device)+1
+        current_attempt=attempts[-1];attempt_ids.append(current_attempt['event_id'])
+        for prior in attempts[:-1]:
+            proof=events.family[prior['event_id']+'-CONTAINED']
+            assert proof['state']=='contained'
+            assert proof['reason']=='telegram_delivery_definitely_not_sent'
+            for key in ('mission_id','card_mission_id','owner_user_id','chat_id','specialist_identity','text_sha256'):
+                assert proof[key]==prior[key]==current_attempt[key]
+        device.append(text)
+        if len(device)<=2:
+            return {'success':False,'delivery_definitely_not_sent':True}
+        assert len(device)==3
+        return ({'success':True,'telegram_message_id':'mixer-recovery-receipt'}
+            if recovery_outcome=='delivered' else {'success':False})
+    _,plans=plan_store();_,schedules=schedule_store()
+    for i in range(3):
+        gateway(events,send,now=NOW+timedelta(minutes=i),plans=plans,schedules=schedules)
+    assert len(device)==3 and len(set(device))==1
+    assert attempt_ids[0].endswith('-DELIVERY-ATTEMPT')
+    assert attempt_ids[1].endswith('-DELIVERY-RETRY-2')
+    assert '-DELIVERY-ZERO-SEND-RECOVERY-' in attempt_ids[2]
+    confirmed=[row for row in events.notifications if row.get('delivery_confirmed')]
+    if recovery_outcome=='delivered':
+        assert len(confirmed)==1 and confirmed[0]['provider_message_id']=='mixer-recovery-receipt'
+    else:
+        assert confirmed==[] and events.notifications[-1]['delivery_ambiguous'] is True
+    # Later independent scheduled cycles may neither duplicate success nor resend ambiguity.
+    family_before=deepcopy(events.family)
+    for i in (3,4):
+        replay,_=gateway(events,send,now=NOW+timedelta(minutes=i),plans=plans,schedules=schedules)
+        assert replay['telegram_sends']==0
+    assert len(device)==3 and events.family==family_before
 
 
 def test_two_concurrent_workers_cannot_duplicate_transition_send():
