@@ -500,10 +500,14 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
         if (not isinstance(active_aux, list)
                 or any(not isinstance(row, dict) for row in active_aux)):
             raise RootlineExecutionStoreUnavailable("active_auxiliary_inventory_unproven")
-    except Exception:
+    except Exception as exc:
+        from modules.telemetry.rootline_failure_diagnostics import exception_failure
         active_aux = []
         auxiliary_inventory_proven = False
-        outcomes.append({**_safe("auxiliary_inventory_unproven", blocks_bc=True), "success": False})
+        failure = {**exception_failure(exc), "store_action": "load_active_auxiliaries"}
+        outcomes.append({**_safe("auxiliary_inventory_unproven", blocks_bc=True),
+            "success": False, "error_type": failure.get("error_type", "UnknownError"),
+            "current_failure": failure})
     try:
         active_borehole = store("load_active_borehole", None)
     except Exception:

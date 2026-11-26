@@ -105,7 +105,7 @@ def project_execution_event(event_id, at, row):
         state, summary, kind = "needs_attention", "Controller recorded an unresolved command outcome", "runtime_hold"
     reason = row.get("reason")
     if isinstance(reason, str) and reason:
-        summary += " Ãƒâ€š -  " + reason.replace("_", " ")[:250]
+        summary += " ÃƒÆ’Ã¢â‚¬Å¡ -  " + reason.replace("_", " ")[:250]
     return {"id": str(event_id), "at": _iso(at), "device_id": _identity(row), "kind": kind,
         "summary": summary, "actor": "ROOTLINE", "status": state,
         "execution_id": row.get("execution_id"), "accounted_seconds": seconds,
@@ -161,7 +161,11 @@ def project_next_action(device, identity, control_state, plan, now):
     if device == "eskom":
         return "Respond to battery level and solar recovery"
     if device == "injection":
-        return "Wait for an eligible B/C run"
+        from modules.telemetry.rootline_owner_auxiliary_policy import owner_injection_policy
+        selected = owner_injection_policy(control_state, now=now)
+        zones = selected["zone_ids"] if selected else ["B12345", "C12345"]
+        return ("Wait for an eligible " + "/".join(zone[0] for zone in zones) + " run"
+            if zones else "No camps selected for injection")
     return "Waiting for current planning evidence"
 
 

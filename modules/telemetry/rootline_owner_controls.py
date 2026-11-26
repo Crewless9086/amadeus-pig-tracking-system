@@ -299,6 +299,16 @@ def _owner_auxiliary_gate(connection, device, body, now, controls):
     from modules.telemetry.rootline_owner_auxiliary_policy import effective_auxiliary_settings, mixer_owner_capacity_seconds
     settings = effective_auxiliary_settings(controls, now=now)
     if device == "injection":
+        from modules.telemetry.rootline_owner_auxiliary_policy import owner_injection_policy, valid_injection_policy
+        selected = owner_injection_policy(controls, now=now)
+        pinned = body.get("injection_policy")
+        if selected is not None or pinned is not None:
+            return (valid_injection_policy(pinned) and pinned == selected
+                and body.get("zone_id") in pinned["zone_ids"]
+                and body.get("maximum_duration_seconds") == pinned["pulse_seconds"]
+                and type(body.get("pulse_number")) is int and 1 <= body["pulse_number"] <= 4
+                and body["pulse_number"] <= pinned["pulses_per_60_minutes"] * 2
+                and body.get("phase_number") == (body["pulse_number"] - 1) // pinned["pulses_per_60_minutes"] + 1)
         # The canonical injector gate already enforces the unchanged default.
         # Only an owner-lowered cap adds a pulse-number prerequisite here.
         if settings["injection"]["max_pulses_per_run"] == 4:
@@ -405,8 +415,6 @@ def owner_device_settings(device_id, control_state, plan, now):
     elif device_id == "mixer":
         fixed("maximum_session_minutes", "Hard device timing ceiling", MAX_MIX_SECONDS / 60, "minutes", "Commissioned device timing ceiling")
         fixed("maximum_daily_minutes", "Hard daily ceiling", MAX_DAILY_MIX_MINUTES, "minutes", "Canonical daily mixing budget")
-    elif device_id == "injection":
-        fixed("pulse_seconds", "Fixed injection pulse target", INJECTION_SECONDS, "seconds", "The commissioned pulse programme uses this fixed target; change the number of future pulses below.")
     elif device_id == "borehole":
         fixed("solar_proxy_w", "Sunshine threshold", energy["borehole_solar_proxy_w"], "W", "Standing backup-supply policy")
     elif device_id == "eskom":
@@ -415,9 +423,15 @@ def owner_device_settings(device_id, control_state, plan, now):
     values = effective_energy_settings(control_state, now=now)
     values.setdefault(device_id, {}).update(effective_auxiliary_settings(control_state, now=now).get(device_id, {}))
     editable = {**ENERGY_CONTROL_FIELDS.get(device_id, {}), **AUXILIARY_CONTROL_FIELDS.get(device_id, {})}
+    if device_id == "injection":
+        from modules.telemetry.rootline_owner_auxiliary_policy import owner_injection_policy
+        if owner_injection_policy(control_state, now=now) is None and values[device_id]["max_pulses_per_run"] < 4:
+            fixed("legacy_pulse_cap", "Current legacy limit per run", values[device_id]["max_pulses_per_run"],
+                "pulses", "Saving the injection settings replaces this legacy limit with the selected injections per 60 minutes.")
     fields = [field for field in fields if field["key"] not in editable]
-    fields.extend({"key": key, "type": "number", "value": values[device_id][key], "editable": True,
-        **{name: spec[name] for name in ("label", "unit", "min", "max")}} for key, spec in editable.items())
+    fields.extend({"key": key, "type": spec.get("type", "number"), "value": values[device_id][key], "editable": True,
+        **{name: spec[name] for name in ("label", "unit", "min", "max") if name in spec}}
+        for key, spec in editable.items() if key != "max_pulses_per_run")
     return {**settings, "fields": fields}
 
 
@@ -617,7 +631,11 @@ def _validate_owner_fields(device, fields, *, require_full=False):
     auxiliary = set(AUXILIARY_CONTROL_FIELDS.get(device, {}))
     if not isinstance(fields, dict) or set(fields) - energy - auxiliary:
         raise ValueError("unsupported_settings_field")
-    if require_full and set(fields) != energy | auxiliary:
+    full_shapes = [energy | auxiliary]
+    if device == "injection":
+        from modules.telemetry.rootline_owner_auxiliary_policy import INJECTION_POLICY_FIELDS
+        full_shapes = [energy | set(INJECTION_POLICY_FIELDS), energy | {"max_pulses_per_run"}]
+    if require_full and set(fields) not in full_shapes:
         raise ValueError("settings_full_snapshot_required")
     return {**validate_energy_control_fields(device, {k: v for k, v in fields.items() if k in energy}),
         **validate_auxiliary_control_fields(device, {k: v for k, v in fields.items() if k in auxiliary})}
@@ -670,8 +688,10 @@ def _preview_changes(change, controls, connection, now):
             if field["key"] in change["changes"]["fields"]:
                 value = change["changes"]["fields"][field["key"]]
                 if value != field["value"]:
-                    result.append({"label": field["label"] + " (" + field["unit"] + ")",
-                        "before": field["value"], "after": value})
+                    checkbox = field.get("type") == "checkbox"
+                    result.append({"label": field["label"] + (" (" + field["unit"] + ")" if field.get("unit") else ""),
+                        "before": ("Enabled" if field["value"] else "Disabled") if checkbox else field["value"],
+                        "after": ("Enabled" if value else "Disabled") if checkbox else value})
         return result
     if change["kind"] in {"run", "stop"}:
         return [{"label": NAMES[change["device_id"]], "before": "Current programme",

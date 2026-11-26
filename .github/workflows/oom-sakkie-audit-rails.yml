@@ -482,6 +482,8 @@ jobs:
           tests/test_rootline_notice46_presentation.py
           tests/test_rootline_notice47_presentation.py
           tests/test_rootline_notice47_delivery.py
+          tests/test_rootline_inventory_diagnostics.py
+          tests/test_rootline_owner_injection_programme.py
           tests/test_oom_sakkie_owner_response_composer.py
 
       - name: Create isolated ROOTLINE notification query database

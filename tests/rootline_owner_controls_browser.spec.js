@@ -8,7 +8,7 @@ function fixtureFields(id){
  if(id.startsWith('camp_'))return [number('duration_minutes','Run duration',30,'minutes',1,120)];
  const fields={
  mixer:[number('maximum_session_minutes','Hard device timing ceiling',10,'minutes',null,null,false),number('maximum_daily_minutes','Hard daily ceiling',30,'minutes',null,null,false),number('reserve_soc_pct','Battery reserve for mixing',70,'%',50,100),number('session_minutes','Maximum new mixing session',10,'minutes',1,10),number('daily_minutes','Maximum mixing time per day',30,'minutes',1,30)],
- injection:[number('pulse_seconds','Fixed injection pulse target',120,'seconds',null,null,false),number('max_pulses_per_run','Maximum injection pulses per irrigation run',4,'pulses',1,4)],
+ injection:[number('pulse_minutes','Injection duration',2,'minutes',1,10),number('pulses_per_60_minutes','Injections per 60 minutes',2,'injections',1,2),...['a','b','c','e'].map(c=>({key:'inject_camp_'+c,label:'Inject during Camp '+c.toUpperCase(),type:'checkbox',value:['b','c'].includes(c),editable:true}))],
  borehole:[number('solar_proxy_w','Solar level to stop AC backup',1500,'W',1,null),number('battery_floor_pct','Battery floor without grid supply',30,'%',0,100)],
  eskom:[number('on_soc_pct','Grid ON at battery level',30,'%',0,99),number('off_soc_pct','Grid OFF after solar recovery',35,'%',1,100)]};
  return fields[id];
@@ -135,4 +135,81 @@ test('actual day plan persists priority and duration and manual request replay s
 test('mode-only camp change omits unavailable optional duration',async({page})=>{
  const {requests}=await setup(page,{data:data=>{const f=data.devices[0].settings.fields[0];f.value=null;f.required=false;f.reason='Current plan unavailable. Leave blank to retain existing policy.';}});
  await page.getByRole('button',{name:/Camp A.*Open details/}).click();await expect(page.locator('#rl-settings [data-key="duration_minutes"]')).toHaveValue('');await page.locator('#rl-mode').selectOption('paused');await page.getByLabel('Reason for the change').fill('Pause until next plan');await page.getByRole('button',{name:'Review setting changes'}).click();await expect(page.locator('#rl-setting-review')).toBeVisible();expect(requests.find(r=>r.path.endsWith('/preview')).body.changes.fields).toEqual({});await page.getByRole('button',{name:'Save reviewed changes'}).click();await expect(page.locator('#rl-detail-status')).toContainText('Saved');
+});
+
+
+test('injector duration and all four camp selections save through the application and survive reload',async({page})=>{
+ const {requests}=await setup(page);
+ await page.getByRole('button',{name:/Injection.*Open details/}).click();
+ await page.locator('#rl-settings [data-key="pulse_minutes"]').fill('10');
+ await page.locator('#rl-settings [data-key="pulses_per_60_minutes"]').fill('2');
+ for(const camp of ['a','b','c','e'])await page.locator('#rl-settings [data-key="inject_camp_'+camp+'"]').check();
+ await page.getByLabel('Reason for the change').fill('Two ten-minute injections per hour for all four camps');
+ await page.getByRole('button',{name:'Review setting changes'}).click();
+ await expect(page.locator('#rl-setting-review')).toBeVisible();
+ const preview=requests.find(r=>r.path.endsWith('/preview'));
+ expect(preview.body.device_id).toBe('injection');
+ expect(preview.body.changes.fields).toEqual({pulse_minutes:10,pulses_per_60_minutes:2,inject_camp_a:true,inject_camp_b:true,inject_camp_c:true,inject_camp_e:true});
+ await page.getByRole('button',{name:'Save reviewed changes'}).click();
+ await expect(page.locator('#rl-detail-status')).toContainText('Saved');
+ await page.reload();
+ await page.getByRole('button',{name:/Injection.*Open details/}).click();
+ await expect(page.locator('#rl-settings [data-key="pulse_minutes"]')).toHaveValue('10');
+ for(const camp of ['a','b','c','e'])await expect(page.locator('#rl-settings [data-key="inject_camp_'+camp+'"]')).toBeChecked();
+ expect(requests.filter(r=>r.method==='POST')).toHaveLength(2);
+});
+
+// Draft insertion for root-owned browser suite after backend freeze. Not executed.
+// Uses existing test/expect/base and beforeEach deterministic server clock.
+test('actual injector programme saves two ten-minute injections for all registered camps',async({page},info)=>{
+ test.skip(!process.env.ROOTLINE_UI_SERVER_COMMAND || process.env.ROOTLINE_OWNER_BROWSER_SEED!=='1','Requires disposable PostgreSQL canonical Flask fixture.');
+ await page.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());
+ await page.goto(base+'/owner/login?next=/irrigation');
+ await page.getByLabel('Owner token').fill('synthetic-admin-only-'+'a'.repeat(40));
+ await page.getByRole('button',{name:'Unlock'}).click();
+ await expect(page.locator('#rl-input-state')).not.toContainText('Reading');
+ const read=async()=>page.evaluate(async()=>{const r=await fetch('/api/telemetry/rootline/owner-controls?panel=devices');if(!r.ok)throw new Error('Canonical devices unavailable');return r.json();});
+ const target={pulse_minutes:10,pulses_per_60_minutes:2,inject_camp_a:true,inject_camp_b:true,inject_camp_c:true,inject_camp_e:true};
+ const values=d=>Object.fromEntries(d.devices.find(x=>x.id==='injection').settings.fields.filter(f=>Object.hasOwn(target,f.key)).map(f=>[f.key,f.value]));
+ let before=await read();let original=values(before);
+ expect(Object.keys(original).sort()).toEqual(Object.keys(target).sort());
+ for(const f of before.devices.find(x=>x.id==='injection').settings.fields.filter(f=>Object.hasOwn(target,f.key)))expect(f.editable).toBe(true);
+ const save=async(fields,reason)=>{
+  await page.getByRole('button',{name:/Injection.*Open details/}).click();
+  for(const [key,value] of Object.entries(fields)){
+   const input=page.locator('#rl-settings [data-key="'+key+'"]');
+   if(typeof value==='boolean')await input.setChecked(value);else await input.fill(String(value));
+  }
+  await page.getByLabel('Reason for the change').fill(reason);
+  const previewResponse=page.waitForResponse(r=>r.url().endsWith('/api/telemetry/rootline/owner-controls/preview') && r.request().method()==='POST');
+  await page.getByRole('button',{name:'Review setting changes'}).click();
+  const preview=await previewResponse;expect(preview.ok()).toBe(true);
+  expect(preview.request().headers()['x-rootline-csrf']).toBeTruthy();
+  const body=await preview.json();expect(body.success).toBe(true);expect(body.preview.id).toBeTruthy();
+  await expect(page.locator('#rl-setting-review')).toBeVisible();
+  const applyResponse=page.waitForResponse(r=>r.url().endsWith('/api/telemetry/rootline/owner-controls/apply') && r.request().method()==='POST');
+  await page.getByRole('button',{name:'Save reviewed changes'}).click();
+  const applied=await applyResponse;expect(applied.ok()).toBe(true);const receipt=await applied.json();
+  expect(receipt.success).toBe(true);expect(receipt.readback_bound).toBe(true);
+  await expect(page.locator('#rl-detail-status')).toContainText('Saved · revision');return receipt;
+ };
+ if(Object.entries(target).every(([key,value])=>original[key]===value)){
+  await save({pulse_minutes:2,pulses_per_60_minutes:2,inject_camp_a:false,inject_camp_b:true,inject_camp_c:true,inject_camp_e:false},'Synthetic injector acceptance: establish distinct starting fixture');
+  before=await read();original=values(before);
+ }
+ const applied=await save(target,'Synthetic injector acceptance: two ten-minute injections, Camps A B C E');
+ await page.reload();await expect(page.locator('#rl-input-state')).not.toContainText('Reading');
+ const updated=await read();expect(values(updated)).toEqual(target);
+ expect(updated.devices.find(x=>x.id==='injection').settings.revision).not.toBe(before.devices.find(x=>x.id==='injection').settings.revision);
+ await page.getByRole('button',{name:/Injection.*Open details/}).click();
+ for(const [key,value] of Object.entries(target)){
+  const input=page.locator('#rl-settings [data-key="'+key+'"]');
+  if(typeof value==='boolean')await expect(input).toBeChecked();else await expect(input).toHaveValue(String(value));
+ }
+ await page.getByRole('button',{name:'View history',exact:true}).click();
+ await expect(page.locator('#rl-history-rows')).toContainText('Synthetic injector acceptance');
+ await page.screenshot({path:info.outputPath('actual-injector-programme-readback.png'),fullPage:true});
+ await save(original,'Synthetic injector acceptance: restore original fixture policy');
+ const restored=await read();expect(values(restored)).toEqual(original);
+ await info.attach('actual-injector-canonical-readback',{body:JSON.stringify({classification:'actual authenticated Flask and disposable PostgreSQL; no scheduler/provider/device calls',before,applied,updated,restored}),contentType:'application/json'});
 });

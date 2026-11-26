@@ -183,10 +183,9 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         }
         active_irrigation = evidence.get("active_irrigation_context")
         if isinstance(active_irrigation, dict):
-            from modules.telemetry.rootline_owner_auxiliary_policy import owner_injection_pulse_limit
-            active_irrigation = {**active_irrigation, "owner_injection_pulse_limit": owner_injection_pulse_limit(
-                evidence.get("owner_controls"), now=decision_at,
-                existing_limit=4 if active_irrigation.get("stop_mode") == "scheduled" else 2)}
+            from modules.telemetry.rootline_owner_auxiliary_policy import injection_policy_context
+            active_irrigation = injection_policy_context(active_irrigation,
+                evidence.get("owner_controls"), now=decision_at)
             packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"] = active_irrigation
             from modules.telemetry.rootline_auxiliary_management import fertilizer_control_progress
             packet["fertilizer_control_progress"] = fertilizer_control_progress(active_irrigation, now=decision_at)

@@ -872,7 +872,11 @@ def _load(action, payload, *, connection=None):
             return {"contained": True, "evidence": evidence}
     except Exception as exc:
       if is_database_unavailable(exc):
-        raise RootlineExecutionStoreUnavailable(action) from exc
+        from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+        unavailable = RootlineExecutionStoreUnavailable(action)
+        unavailable.failure_diagnostics = sanitize_failure({
+            "cause_type": type(exc).__name__, "sqlstate": getattr(exc, "sqlstate", None)})
+        raise unavailable from exc
       raise
 
 
@@ -3355,7 +3359,7 @@ def _scheduled_auxiliary_claim_valid(body, stored, now):
     immutable=("execution_id","eligibility_id","eligibility_sha256","consumption_key",
         "auxiliary_device_id","device_type","device_id","channel","zone_id","job_id",
         "job_sha256","segment_identity","zone_execution_id","pulse_number","phase_number",
-        "batch_generation","maximum_duration_seconds","stop_mode","acceptance_mode","mixer_session")
+        "batch_generation","maximum_duration_seconds","stop_mode","acceptance_mode","mixer_session","injection_policy")
     if any(body.get(k)!=artifact.get(k) for k in immutable): return False
     try:
         claimed=datetime.fromisoformat(body["claimed_at"])

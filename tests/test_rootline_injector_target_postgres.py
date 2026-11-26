@@ -14,25 +14,32 @@ from tests.test_rootline_command_mode_postgres import schema, connect, URL
 pytestmark=pytest.mark.skipif(not URL,reason="explicit dedicated synthetic database required")
 
 
-@pytest.fixture
-def packet(monkeypatch):
+@pytest.fixture(params=[120, 600], ids=["legacy120", "configured600"])
+def packet(monkeypatch, request):
     with connect() as connection:
         assert connection.execute("select host(inet_server_addr()),inet_server_port(),current_database()").fetchone()==(
             "127.0.0.1",55485,"rootline_ha_command_mode_test")
         connection.execute("truncate public.sam_live_stock_conversation_review_events,public.irrigation_events")
     monkeypatch.setenv("DATABASE_URL",URL)
     now=datetime.now(timezone.utc)
+    seconds=request.param
     _,_,memory,_,_=start(at=now-timedelta(seconds=600))
     parent=memory.active
     claim={"execution_id":"OFFLINE-TARGET-"+uuid.uuid4().hex,
         "auxiliary_device_id":"FERTILIZER-INJECTION-CH1","device_type":"fertilizer_injection_valve",
         "device_id":"100204d497","channel":1,"acceptance_mode":ca.MODE,"stop_mode":"scheduled",
-        "state":"claimed","on_attempts":0,"off_attempts":0,"maximum_duration_seconds":120,
+        "state":"claimed","on_attempts":0,"off_attempts":0,"maximum_duration_seconds":seconds,
         "claimed_at":(now-timedelta(seconds=10)).isoformat(),
-        "primary_stop_deadline":(now+timedelta(seconds=110)).isoformat(),
+        "primary_stop_deadline":(now+timedelta(seconds=seconds-10)).isoformat(),
         "injector_timing_contract":ca.INJECTOR_TARGET_V1,"consumption_key":"OFFLINE-CONSUME-"+uuid.uuid4().hex,
         "zone_execution_id":parent["execution_id"],
         **{k:parent[k] for k in ("zone_id","job_id","job_sha256","segment_identity")}}
+    if seconds == 600:
+        from modules.telemetry.rootline_owner_auxiliary_policy import owner_injection_policy
+        claim.update(injector_timing_contract=ca.INJECTOR_TARGET_V2, pulse_number=1, phase_number=1,
+            injection_policy=owner_injection_policy({"devices":{"injection":{"fields":{
+                "pulse_minutes":10,"pulses_per_60_minutes":2,"inject_camp_a":True,
+                "inject_camp_b":True,"inject_camp_c":True,"inject_camp_e":True}}}},now=now))
     on=receipt(claim,"ON",at=now-timedelta(seconds=5))
     on["accepted_at"]=(now-timedelta(seconds=2)).isoformat()
     on["receipt_sha256"]=ca.digest({k:v for k,v in on.items() if k!="receipt_sha256"})
