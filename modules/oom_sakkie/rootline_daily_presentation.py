@@ -23,13 +23,13 @@ ZONES = IRRIGATION_ZONE_IDS
 
 
 def owner_zone_decision(result: Mapping[str, Any], recommendation: Mapping[str, Any],
-                        *, zone: str, language: str = "en") -> str:
+                        *, zone: str, language: str = "en", daily_plan: bool = False) -> str:
     """Project one zone from validated lifecycle truth for any owner surface."""
     af = str(language).casefold().startswith("af")
     lifecycle = (validate_zone_lifecycle(
         (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
         or project_zone_lifecycle(zone_id=zone, recommendation=recommendation))
-    return _lifecycle_decision(lifecycle, recommendation, af, zone=zone)
+    return _lifecycle_decision(lifecycle, recommendation, af, zone=zone, daily_plan=daily_plan)
 
 
 def owner_reason(value: Any, *, language: str = "en") -> str:
@@ -156,7 +156,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     af = str(language).casefold().startswith("af")
     recommendations = {str(row.get("subject") or ""): row for row in result.get("recommendations") or ()
                        if isinstance(row, Mapping)}
-    decisions = {zone: owner_zone_decision(result, recommendations.get(zone, {}), zone=zone, language=language)
+    decisions = {zone: owner_zone_decision(result, recommendations.get(zone, {}), zone=zone, language=language, daily_plan=True)
                  for zone in IRRIGATION_ZONE_IDS}
     complete = all(value == ("Program voltooi" if af else "Programme completed") for value in decisions.values())
     heading = ("Vandag se kampresultate" if af else "Today's camp results") if complete else ("Vandag se plan" if af else "Today's plan")
@@ -307,7 +307,7 @@ def _decision(value: Any, af: bool) -> str:
 
 
 def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[str, Any],
-                        af: bool, *, zone: str) -> str:
+                        af: bool, *, zone: str, daily_plan: bool = False) -> str:
     exceptions = validated_shutdown_exceptions(lifecycle, zone_id=zone)
     if exceptions:
         if any(row["controller_off_verified"] is False for row in exceptions):
@@ -340,6 +340,12 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
     if state == "Recommended":
         return "Moet natgemaak word" if af else "Needs watering"
     if state == "Held":
+        # Shared manager facts retain their established status vocabulary.
+        # Only the daily plan uses advisory wording; evidence rules stay shared.
+        if not daily_plan:
+            if lifecycle.get("watering_need_proven_false") is True:
+                return "Loop nie — het nie water nodig nie" if af else "Not running — does not need watering"
+            return "Loop nie" if af else "Not running"
         if lifecycle.get("watering_need_proven_false") is True:
             return ("Nie beplan nie — het nie water nodig nie" if af else
                     "Not planned — does not need watering")
@@ -352,7 +358,9 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
             return "Program voltooi" if af else "Programme completed"
         if _verified_completion(lifecycle, zone):
             return "Beheerder AF geverifieer" if af else "Controller OFF verified"
-        return "Voltooiing onbevestig" if af else "Completion unconfirmed"
+        if daily_plan:
+            return "Voltooiing onbevestig" if af else "Completion unconfirmed"
+        return "Loop nie" if af else "Not running"
     return "Data nodig" if af else "Needs Data"
 
 
