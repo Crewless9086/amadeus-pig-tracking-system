@@ -192,3 +192,32 @@ def sanitize_no_send(value):
         return {}
     return {"no_send_stage": stage, "no_send_reason": reason,
         "error_type": "no_send_" + stage + "_" + reason}
+_AUXILIARY_ADMISSION_REASONS = frozenset({
+    "task_not_ready", "eligibility_unproven", "canonical_device_not_standing_active",
+    "canonical_timed_authority_unproven", "auxiliary_context_incomplete", "auxiliary_device_not_registered",
+    "auxiliary_authority_disabled", "fertilizer_exception_or_shutdown_unverified", "plan_generation_missing",
+    "provider_read_required", "auxiliary_safety_unproven", "active_parent_command_unproven",
+    "injection_policy_invalid", "injection_count_changed_during_parent", "irrigation_job_binding_incomplete",
+    "exactly_one_bc_zone_required", "clean_water_preflow_incomplete", "active_zone_unverified",
+    "active_irrigation_outputs_unverified", "current_day_fertilizer_history_incomplete",
+    "current_batch_premix_unproven", "pulse_limit_reached", "two_pulse_limit_reached",
+    "pulse_spacing_incomplete", "clean_water_flush_window_incomplete", "batch_or_owner_programme_required",
+    "current_fertilizer_need_unproven", "planned_mixing_runtime_invalid", "mixing_history_incomplete",
+    "daily_mixing_session_cap_reached", "mixing_session_unavailable", "mixing_session_operating_day_exceeded",
+    "daily_mixing_cap_reached", "low_power_mix_deferred"})
+
+
+def sanitize_auxiliary_rejections(value):
+    if not isinstance(value, list):
+        return []
+    result = []
+    for row in value[:2]:
+        if not isinstance(row, Mapping) or not isinstance(row.get("device"), str) or row.get("device") not in {"FERTILIZER-INJECTION-CH1", "FERTILIZER-MIXER-CH2"}:
+            continue
+        reason = row.get("reason")
+        clean = {"device": row["device"], "reason": reason if isinstance(reason, str) and reason in _AUXILIARY_ADMISSION_REASONS else "eligibility_unproven"}
+        failure = sanitize_failure(row.get("current_failure"))
+        if failure:
+            clean["current_failure"] = failure
+        result.append(clean)
+    return result

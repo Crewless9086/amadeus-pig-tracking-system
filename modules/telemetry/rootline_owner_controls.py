@@ -303,12 +303,18 @@ def _owner_auxiliary_gate(connection, device, body, now, controls):
         selected = owner_injection_policy(controls, now=now)
         pinned = body.get("injection_policy")
         if selected is not None or pinned is not None:
-            return (valid_injection_policy(pinned) and pinned == selected
+            compatible = (valid_injection_policy(pinned) and pinned == selected
                 and body.get("zone_id") in pinned["zone_ids"]
                 and body.get("maximum_duration_seconds") == pinned["pulse_seconds"]
                 and type(body.get("pulse_number")) is int and 1 <= body["pulse_number"] <= 4
                 and body["pulse_number"] <= pinned["pulses_per_60_minutes"] * 2
                 and body.get("phase_number") == (body["pulse_number"] - 1) // pinned["pulses_per_60_minutes"] + 1)
+            if not compatible:
+                return False
+            if body["maximum_duration_seconds"] > 120:
+                from modules.telemetry.rootline_timed_control import locked_owner_injector_authority
+                return locked_owner_injector_authority(connection, body)
+            return True
         # The canonical injector gate already enforces the unchanged default.
         # Only an owner-lowered cap adds a pulse-number prerequisite here.
         if settings["injection"]["max_pulses_per_run"] == 4:

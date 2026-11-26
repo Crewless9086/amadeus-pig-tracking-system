@@ -349,6 +349,7 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
     from modules.telemetry.rootline_command_acceptance import command_parent_ready, route_valid, MODE
     if context.get("acceptance_mode") == MODE:
         refreshed = dict(evidence); updated = dict(context); updated["zone_output_evidence"] = {}
+        updated.pop("injection_parent_read_failure", None)
         refreshed["active_irrigation_context"] = updated
         if not command_parent_ready(context, now=now, require_route=False):
             return refreshed
@@ -357,8 +358,9 @@ def _refresh_active_irrigation_readback(evidence, transport, now, *, clock=None,
             checked = _aware((clock or (lambda: datetime.now(timezone.utc)))())
             if route_valid(current, device_id=context["zone_device_id"], channel=context["zone_channel"], now=checked):
                 updated["zone_output_evidence"] = current
-        except Exception:
-            pass
+        except Exception as exc:
+            from modules.telemetry.rootline_failure_diagnostics import exception_failure
+            updated["injection_parent_read_failure"] = exception_failure(exc)
         return refreshed
     # A failed fresh read must not leave historical ON evidence eligible.
     refreshed = dict(evidence); updated = dict(context)
