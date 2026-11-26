@@ -1201,7 +1201,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                                          managed_device_cycle=None, daily_plan_generator=None,
                                          active_supervision_cycle=None, equipment_notification_cycle=None,
                                          provider_notification_cycle=None, input_notification_cycle=None,
-                                         short_auxiliary_supervision_cycle=None, routine_plan=False):
+                                         short_auxiliary_supervision_cycle=None, routine_plan=False,
+                                         supervision_clock=None, parent_deadline_store=None, parent_deadline_wait=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -1337,9 +1338,13 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             with cycle_budget(cycle_deadline - PROVIDER_DELIVERY_RESERVE_SECONDS
                     - REPORT_MINIMUM_SECONDS):
                 return _ensure_daily_plan()
+        def delivery_deadline():
+            from modules.telemetry.rootline_cycle_budget import work_deadline
+            current_bound = work_deadline()
+            return min(cycle_deadline, current_bound) if current_bound is not None else cycle_deadline
         def deliver_report(*args, **kwargs):
             remaining_seconds()
-            kwargs.setdefault("deadline_monotonic", cycle_deadline)
+            kwargs["deadline_monotonic"] = min(kwargs.get("deadline_monotonic") or cycle_deadline, delivery_deadline())
             return (family_delivery or deliver_family_result)(*args, **kwargs)
         def recover_pending_protected_delivery():
             """Delivery-only recovery; never enters ROOTLINE execution."""
@@ -1430,7 +1435,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     proof_identity=retry_proof_identity)
             delivery = deliver(parsed, visible, specialist="ROOTLINE",
                 mission_id=event_identity, card_mission_id=event_identity,
-                deadline_monotonic=cycle_deadline, delivery_retry_authority=retry_authority)
+                deadline_monotonic=delivery_deadline(), delivery_retry_authority=retry_authority)
             return {**delivery,
                 "provider_delivery_confirmed": bool(delivery.get("telegram_message_id"))
                     and (delivery.get("success") is True
@@ -1802,6 +1807,18 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 supervision = dict(supervisor(notify=notify, environ=source, now=scheduler_now,
                     owner_user_id=scheduled_owner, chat_id=scheduled_chat) or {})
             supervision["active_supervision_status"] = str(supervision.get("status") or "unknown")
+            if supervision.get("active_supervision_status") in {"active_segment_owned", "irrigation_command_duty_active"}:
+                active = supervision.get("execution")
+                if isinstance(active, dict) and active.get("execution_id"):
+                    parent_deadline_probe["execution"] = dict(active)
+                    from modules.telemetry.rootline_cycle_budget import on_deadline
+                    parent_deadline_probe["original_bound"] = on_deadline()
+                    from time import monotonic
+                    from modules.telemetry.rootline_command_acceptance import command_stop_deadline
+                    stop = command_stop_deadline(active)
+                    if stop is not None:
+                        parent_deadline_probe["monotonic_stop"] = monotonic()+max(0.0,(stop-parent_clock()).total_seconds())
+
             if short_result:
                 supervision["short_auxiliary_result"] = short_result
                 supervision["short_auxiliary_optional_deferred"] = defer_optional
@@ -1824,7 +1841,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 if admission_checked:
                     return
                 admission_checked = True
-                if (not defer_optional and irrigation_safe and managed_result.get("blocks_bc") is not True
+                if (not parent_deadline_probe.get("execution") and not defer_optional and irrigation_safe and managed_result.get("blocks_bc") is not True
                         and any(str(source.get(flag) or "").lower() == "true"
                                 for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED", "ROOTLINE_E_ENABLED"))
                         and supervision.get("active_supervision_status") in {
@@ -1891,7 +1908,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     # A short-duty pass may already have spent most of this
                     # minute. Keep owned auxiliary/borehole/grid recovery, but
                     # leave new starts and planning to the next durable tick.
-                    with mandatory_safety() if defer_optional else nullcontext():
+                    with parent_optional_budget(), owned_deadline_checkpoint(
+                            lambda **kw: parent_checkpoint(supervision, **kw)), (
+                            mandatory_safety() if defer_optional else nullcontext()):
                         managed_result = dict(managed(environ=source, now=scheduler_now,
                             after_safety=None if defer_optional else admit_irrigation,
                             # Active ownership makes admission inert. Keep callback
@@ -1928,7 +1947,95 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 admit_irrigation(managed_result)
             if "execution_status" not in supervision and managed_result.get("managed_device_recovery") is True:
                 supervision["execution_status"] = str(managed_result.get("status") or "")
+            parent_checkpoint(supervision, safety_complete=(managed_result.get("success") is True
+                and managed_result.get("effects_unknown") is not True and managed_result.get("blocks_bc") is not True))
             return supervision
+
+        parent_deadline_probe = {}
+        parent_clock = supervision_clock or (lambda: datetime.now(timezone.utc))
+        from modules.telemetry.rootline_owned_deadlines import owned_deadline_checkpoint, wait_for_parent_deadline
+        from contextlib import contextmanager
+        @contextmanager
+        def parent_optional_budget():
+            from time import monotonic
+            from modules.telemetry.rootline_command_acceptance import command_stop_deadline
+            from modules.telemetry.rootline_cycle_budget import cycle_budget
+            execution = parent_deadline_probe.get("execution")
+            deadline = command_stop_deadline(execution) if execution else None
+            if deadline is None:
+                yield
+                return
+            current = parent_clock()
+            cap = min(parent_deadline_probe.get("monotonic_stop", float("inf")),
+                monotonic()+max(0.0,(deadline-current).total_seconds()))
+            with cycle_budget(cap):
+                yield
+
+        def parent_checkpoint(supervision, *, safety_complete=False):
+            execution = parent_deadline_probe.get("execution")
+            if (safety_complete and execution and not parent_deadline_probe.get("checked")
+                    and not parent_deadline_probe.get("wait_abandoned")):
+                from time import sleep
+                from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+                with mandatory_safety():
+                    wait_result = wait_for_parent_deadline(execution,
+                        store=parent_deadline_store or rootline_irrigation_execution_store,
+                        clock=parent_clock, wait=parent_deadline_wait or sleep,
+                        original_bound=parent_deadline_probe.get("original_bound"))
+                if wait_result not in {"parent_due", "earlier_owned_deadline"}:
+                    parent_deadline_probe["wait_abandoned"] = True
+            supervision.update(recheck_due_parent(supervision))
+            if execution and not parent_deadline_probe.get("checked") and not parent_deadline_probe.get("wait_abandoned"):
+                return {"execution": execution, "original_bound": parent_deadline_probe.get("original_bound")}
+
+
+        def recheck_due_parent(supervision):
+            execution = parent_deadline_probe.get("execution") or {}
+            if not execution or parent_deadline_probe.get("checked"):
+                return supervision
+            from modules.telemetry.rootline_command_acceptance import command_stop_deadline
+            try:
+                deadline = command_stop_deadline(execution)
+                if deadline is None:
+                    raw = execution.get("primary_stop_deadline")
+                    deadline = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                current = parent_clock()
+                if deadline.tzinfo is None or current < deadline:
+                    return supervision
+            except (TypeError, ValueError):
+                return supervision
+            parent_deadline_probe["checked"] = True
+            supervisor = active_supervision_cycle
+            if supervisor is None:
+                from modules.telemetry.rootline_execution_runtime import supervise_rootline_active_execution
+                supervisor = supervise_rootline_active_execution
+            try:
+                with mandatory_safety():
+                    fresh = dict(supervisor(notify=notify, environ=source, now=current,
+                        owner_user_id=scheduled_owner, chat_id=scheduled_chat) or {})
+                if not fresh:
+                    raise ValueError("active_supervision_result_missing")
+            except Exception as exc:
+                from modules.telemetry.rootline_failure_diagnostics import exception_failure
+                fresh = {"success": False, "status": "active_irrigation_supervision_unproven",
+                    "effects_unknown": True, "irrigation_failure": exception_failure(exc)}
+            combined = dict(supervision)
+            for field in ("hardware_commands", "telegram_sends", "telegram_edits"):
+                combined[field] = int(supervision.get(field) or 0) + int(fresh.get(field) or 0)
+            for field in ("effects_unknown", "provider_effects_unknown", "active_supervision_write_attempted"):
+                combined[field] = supervision.get(field) is True or fresh.get(field) is True
+            if fresh.get("writes_farm_data") is True:
+                combined["writes_farm_data"] = True
+            elif "writes_farm_data" in fresh and fresh["writes_farm_data"] is None and combined.get("writes_farm_data") is not True:
+                combined["writes_farm_data"] = None
+            combined["success"] = supervision.get("success") is True and fresh.get("success") is True
+            combined["active_supervision_status"] = str(fresh.get("status") or "unknown")
+            combined["execution_status"] = combined["active_supervision_status"]
+            combined["status"] = combined["active_supervision_status"]
+            for field in ("execution", "active_execution_found", "irrigation_failure"):
+                if field in fresh:
+                    combined[field] = fresh[field]
+            return combined
 
         def ensure_due_program_after_safety():
             if not production_persistence:
@@ -1967,8 +2074,16 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "report_work_due": False, "plan_delivery_status": "short_duty_reporting_deferred",
                     "report_effects_unknown": False, "next_action_owner": "ROOTLINE",
                     "next_trigger": "next_authenticated_minute"}
-            supervision.update(ensure_due_program_after_safety())
-            supervision = equipment_reports(supervision)
+            try:
+                with parent_optional_budget():
+                    supervision.update(ensure_due_program_after_safety())
+            finally:
+                supervision = recheck_due_parent(supervision)
+            try:
+                with parent_optional_budget():
+                    supervision = equipment_reports(supervision)
+            finally:
+                supervision = recheck_due_parent(supervision)
             return {**supervision,
                 "status": ("scheduled_rootline_active_supervised" if supervision.get("success") is True
                     else "scheduled_rootline_active_supervision_unproven"),
@@ -1989,7 +2104,11 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "report_work_due": True, "plan_delivery_status": "short_duty_reporting_deferred",
                     "report_effects_unknown": False, "next_action_owner": "ROOTLINE",
                     "next_trigger": "next_authenticated_minute"}
-            supervision.update(ensure_due_program_after_safety())
+            try:
+                with parent_optional_budget():
+                    supervision.update(ensure_due_program_after_safety())
+            finally:
+                supervision = recheck_due_parent(supervision)
             try:
                 remaining_seconds(minimum=PROVIDER_DELIVERY_RESERVE_SECONDS)
             except RootlineCycleDeadlineExceeded:
@@ -2002,17 +2121,18 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 # before optional incident scans consume its provider reserve.
                 # Scans still run on this pass (also when the plan is unchanged)
                 # and retain their existing durable pending/deduplication rail.
-                current_plan_result = current_plan_report(supervision)
-                supervision = equipment_reports(supervision)
-                if supervision.get("success") is True and current_plan_result.get("success") is True:
-                    result = dict(invoke_reports(supervision) or {})
-                else:
-                    result = {**current_plan_result, "success": False, "telegram_sends": 0, "telegram_edits": 0}
-                    if supervision.get("success") is not True:
-                        result["status"] = str(supervision.get("status") or "scheduled_rootline_active_supervision_unproven")
-                for field in ("telegram_sends", "telegram_edits"):
-                    result[field] = int(result.get(field) or 0) + int(current_plan_result.get(field) or 0)
-                result["success"] = result.get("success") is True and current_plan_result.get("success") is True
+                with parent_optional_budget():
+                    current_plan_result = current_plan_report(supervision)
+                    supervision = equipment_reports(supervision)
+                    if supervision.get("success") is True and current_plan_result.get("success") is True:
+                        result = dict(invoke_reports(supervision) or {})
+                    else:
+                        result = {**current_plan_result, "success": False, "telegram_sends": 0, "telegram_edits": 0}
+                        if supervision.get("success") is not True:
+                            result["status"] = str(supervision.get("status") or "scheduled_rootline_active_supervision_unproven")
+                    for field in ("telegram_sends", "telegram_edits"):
+                        result[field] = int(result.get(field) or 0) + int(current_plan_result.get(field) or 0)
+                    result["success"] = result.get("success") is True and current_plan_result.get("success") is True
             except Exception as exc:
                 result = {**report_progress, "success": False,
                     "telegram_sends": int(report_progress.get("telegram_sends") or 0) + int(current_plan_result.get("telegram_sends") or 0),
@@ -2020,6 +2140,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "status": "scheduled_rootline_reporting_unproven",
                     "error_type": type(exc).__name__, "writes_farm_data": None,
                     "write_state": "unknown", "report_effects_unknown": True}
+            supervision = recheck_due_parent(supervision)
+            result["success"] = result.get("success") is True and supervision.get("success") is True
             for field in ("plan_delivery_status", "plan_reassessment_status", "plan_delivery_recorded", "plan_delivery_underlying_status"):
                 if field in current_plan_result:
                     result[field] = current_plan_result[field]

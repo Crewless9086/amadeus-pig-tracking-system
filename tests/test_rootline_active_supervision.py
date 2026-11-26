@@ -172,7 +172,7 @@ def gateway(store, transport, *, schedules=None, **kwargs):
         messages.append((args, kw))
         return {"success": True, "telegram_sends": 1, "telegram_message_id": "synthetic-message"}
     options = dict(specialist_loader=current, state_store=state,
-        schedule_store=schedules or ScheduleStore(), scheduler_now=NOW,
+        schedule_store=schedules or ScheduleStore(), scheduler_now=NOW, supervision_clock=lambda: NOW,
         family_delivery=deliver, active_supervision_cycle=supervisor(store, transport),
         execution_cycle=lambda **k: starts.append(k) or {"success": True, "status": "not_eligible"})
     request = kwargs.pop("request_payload", payload())
