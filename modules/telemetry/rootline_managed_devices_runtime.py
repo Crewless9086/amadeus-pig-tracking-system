@@ -123,12 +123,8 @@ def supervise_owned_injector(*, store, transport, clock=None, deadline_wait=None
 
 
 def _admit_injector_wait(delay):
-    remaining_seconds(minimum=delay)
-    # mandatory_safety clears the optional work deadline but deliberately
-    # retains this original cycle bound. Waiting must not spend the OFF tail.
-    deadline = on_deadline()
-    if deadline is not None and deadline-monotonic() <= delay:
-        raise RootlineCycleDeadlineExceeded("injector_wait_exceeds_cycle_budget")
+    from modules.telemetry.rootline_owned_deadlines import admit_owned_wait
+    admit_owned_wait(delay, monotonic_clock=monotonic)
 
 
 def _finish_injector_deadline(*, store, transport, clock, wait, horizon_seconds=None, verify_parent=False, active=None, inventory=None, require_stop=False):
@@ -496,14 +492,47 @@ def _supervise_owned_devices(*, store, transport, energy_reader,
         defer_no_send_proof=None, deferred_no_send=None, deadline_wait=None):
     # Inventory, due OFF, and durable final proof remain mandatory even when
     # the shared optional-work deadline expired. ON keeps its original fence.
+    from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
+    check_owned_deadline()
     with mandatory_safety():
-        return _supervise_owned_devices_unbounded(store=store, transport=transport,
+        result = _supervise_owned_devices_unbounded(store=store, transport=transport,
             energy_reader=energy_reader, borehole_safety_reader=borehole_safety_reader,
             clock=clock, previous_borehole=previous_borehole,
             borehole_conditions_reader=borehole_conditions_reader,
             previous_due_auxiliaries=previous_due_auxiliaries,
             defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send,
             deadline_wait=deadline_wait)
+    def safe_inventory(value):
+        return (value.get("auxiliary_inventory_proven") is True
+            and value.get("borehole_inventory_proven") is True
+            and all(row.get("success") is True and row.get("effects_unknown") is not True
+                    and row.get("supervision_evidence_pending") is not True
+                    for row in value.get("outcomes", [])))
+    pending_parent = check_owned_deadline(safety_complete=safe_inventory(result))
+    while pending_parent and safe_inventory(result):
+        from modules.telemetry.rootline_owned_deadlines import wait_for_earlier_owned_deadline
+        with mandatory_safety():
+            earlier = wait_for_earlier_owned_deadline(pending_parent["execution"], store=store,
+                clock=clock, wait=deadline_wait or sleep, original_bound=pending_parent["original_bound"])
+        if earlier is None:
+            break
+        if earlier is not None:
+            # Reuse the existing safety coordinator, never synthesize a stop.
+            # Its prior slots and this invocation's waited identity prevent a new retry loop.
+            with mandatory_safety():
+                fresh = _supervise_owned_devices_unbounded(store=store, transport=transport,
+                    energy_reader=energy_reader, borehole_safety_reader=borehole_safety_reader,
+                    clock=clock, previous_borehole=result["observed_borehole"],
+                    previous_due_auxiliaries=list(previous_due_auxiliaries)+result["due_auxiliaries"],
+                    borehole_conditions_reader=borehole_conditions_reader,
+                    defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send,
+                    deadline_wait=deadline_wait)
+            fresh["outcomes"] = result["outcomes"]+fresh["outcomes"]
+            fresh["due_auxiliaries"] = result["due_auxiliaries"]+[
+                row for row in fresh["due_auxiliaries"] if row not in result["due_auxiliaries"]]
+            result = fresh
+            pending_parent = check_owned_deadline(safety_complete=safe_inventory(result))
+    return result
 
 
 def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
@@ -525,12 +554,15 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
         outcomes.append({**_safe("auxiliary_inventory_unproven", blocks_bc=True),
             "success": False, "error_type": failure.get("error_type", "UnknownError"),
             "current_failure": failure})
+    from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
+    check_owned_deadline()
     try:
         active_borehole = store("load_active_borehole", None)
     except Exception:
         active_borehole = None
         borehole_inventory_proven = False
         outcomes.append({**_safe("borehole_inventory_unproven", blocks_bc=False), "success": False})
+    check_owned_deadline()
     # Capture every obligation first. Failure of one device never skips another
     # device's deadline or permits a new claim for the failed device.
     due_auxiliaries = []
@@ -579,6 +611,9 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                         energy.get("mixing_eligible")) is not True
                 except Exception:
                     stop_for_energy = True
+            from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
+            check_owned_deadline()
+            now = _aware(clock())
             result = advance_auxiliary_execution(eligibility={}, store=store,
                 transport=observed_transport, now=now, stop_for_energy=stop_for_energy,
                 auxiliary_device_id=identity, expected_execution_id=active.get("execution_id"), clock=clock)
@@ -662,6 +697,8 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             if already_observed or already_deferred:
                 result = None
             else:
+                from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
+                check_owned_deadline()
                 result = advance_borehole_execution(eligibility={}, store=store,
                     transport=observed_transport, now=now,
                     stop_for_energy=stop_for_energy or stop_for_protection, clock=clock,

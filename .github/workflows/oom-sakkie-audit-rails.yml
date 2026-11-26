@@ -441,6 +441,7 @@ jobs:
           tests/test_rootline_borehole_commissioning.py
           tests/test_rootline_commissioning_bridges.py
           tests/test_rootline_active_supervision.py
+          tests/test_rootline_parent_deadline.py
           tests/test_rootline_report_query.py
           tests/test_rootline_active_pass.py
           tests/test_rootline_borehole_fault_read_reuse.py
@@ -611,7 +612,7 @@ jobs:
           ROOTLINE_OWNER_CONTROL_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_owner_controls_test
           PYTHON_DOTENV_DISABLED: "1"
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_owner_controls_postgres.py tests/test_rootline_owner_eskom_postgres.py tests/test_rootline_injector_owner_authority_postgres.py
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_owner_controls_postgres.py tests/test_rootline_owner_eskom_postgres.py tests/test_rootline_injector_owner_authority_postgres.py tests/test_rootline_parent_deadline_postgres.py
 
       - name: Use ROOTLINE owner controls on desktop and mobile
         env:
