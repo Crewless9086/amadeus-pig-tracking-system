@@ -1493,6 +1493,30 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "daily_plan_created": receipt.get("created") is True,
                 "daily_plan_id": str((receipt.get("daily_plan") or {}).get("daily_plan_id") or "")}
 
+        transitions_reported = False
+        def transition_reports(supervision):
+            nonlocal transitions_reported
+            if transitions_reported or (not production_persistence and equipment_notification_cycle is None):
+                return supervision
+            # One recovery turn, after control and before optional report scans.
+            # Mark before invocation so failure cannot cause another attempt here.
+            transitions_reported = True
+            try:
+                from modules.oom_sakkie.rootline_transition_notifications import recover_transition_notifications
+                reporter = equipment_notification_cycle or recover_transition_notifications
+                outcome = stage_timings.call("equipment_notifications", reporter, notify=notify, now=scheduler_now)
+            except RootlineCycleDeadlineExceeded:
+                outcome = {"success": False, "status": "rootline_transition_notifications_deferred",
+                    "telegram_sends": 0}
+            except Exception as exc:
+                from modules.telemetry.rootline_failure_diagnostics import exception_failure
+                outcome = {"success": False, "status": "rootline_transition_notifications_unavailable",
+                    "failure": exception_failure(exc), "telegram_sends": 0}
+            from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+            return {**supervision, "equipment_notification_status": str(outcome.get("status") or ""),
+                "equipment_notification_failure": sanitize_failure(outcome.get("failure")),
+                "telegram_sends": int(supervision.get("telegram_sends") or 0) + int(outcome.get("telegram_sends") or 0)}
+
         provider_reported = False
         input_reported = False
         def equipment_reports(supervision, *, provider_only=False):
@@ -1532,21 +1556,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         + int(input_outcome.get("telegram_sends") or 0)}
             if provider_only or (not production_persistence and equipment_notification_cycle is None):
                 return supervision
-            try:
-                from modules.oom_sakkie.rootline_transition_notifications import recover_transition_notifications
-                reporter = equipment_notification_cycle or recover_transition_notifications
-                outcome = stage_timings.call("equipment_notifications", reporter, notify=notify, now=scheduler_now)
-            except RootlineCycleDeadlineExceeded:
-                outcome = {"success": False, "status": "rootline_transition_notifications_deferred",
-                    "telegram_sends": 0}
-            except Exception as exc:
-                from modules.telemetry.rootline_failure_diagnostics import exception_failure
-                outcome = {"success": False, "status": "rootline_transition_notifications_unavailable",
-                    "failure": exception_failure(exc), "telegram_sends": 0}
-            from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
-            return {**supervision, "equipment_notification_status": str(outcome.get("status") or ""),
-                "equipment_notification_failure": sanitize_failure(outcome.get("failure")),
-                "telegram_sends": int(supervision.get("telegram_sends") or 0) + int(outcome.get("telegram_sends") or 0)}
+            return transition_reports(supervision)
 
         report_progress = {"telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0}
         @stage_timings.stage("manager_reports")
@@ -2084,6 +2094,11 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "next_trigger": "next_authenticated_minute"}
             try:
                 with parent_optional_budget():
+                    supervision = transition_reports(supervision)
+            finally:
+                supervision = recheck_due_parent(supervision)
+            try:
+                with parent_optional_budget():
                     supervision.update(ensure_due_program_after_safety())
             finally:
                 supervision = recheck_due_parent(supervision)
@@ -2112,6 +2127,11 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "report_work_due": True, "plan_delivery_status": "short_duty_reporting_deferred",
                     "report_effects_unknown": False, "next_action_owner": "ROOTLINE",
                     "next_trigger": "next_authenticated_minute"}
+            try:
+                with parent_optional_budget():
+                    supervision = transition_reports(supervision)
+            finally:
+                supervision = recheck_due_parent(supervision)
             try:
                 with parent_optional_budget():
                     supervision.update(ensure_due_program_after_safety())
