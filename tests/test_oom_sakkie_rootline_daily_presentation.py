@@ -85,8 +85,8 @@ def test_delayed_refresh_waits_without_claim_then_sends_when_fresh():
 
 def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     text = compose_daily_rootline_plan(result())
-    assert "<b>B Camp:</b> Not running" in text
-    assert "<b>C Camp:</b> Not running" in text
+    assert "<b>B Camp:</b> Plan on hold" in text
+    assert "<b>C Camp:</b> Plan on hold" in text
     assert "Lifecycle:" not in text and "ROOTLINE must claim" not in text
     assert "Started: no" not in text and "Completed: no" not in text
     assert "Observed rain supports Hold" in text
@@ -120,7 +120,7 @@ def test_completed_canonical_lifecycle_never_maps_to_hold():
     text = compose_daily_rootline_plan(value)
     assert "<b>B Camp:</b> Controller OFF verified" in text
     assert "Lifecycle:" not in text
-    assert "B Camp:</b> Not running" not in text
+    assert "B Camp:</b> Plan on hold" not in text
 
 
 def test_volatile_cutoff_and_formatting_never_change_material_decision_content():
@@ -327,7 +327,7 @@ def test_every_validated_lifecycle_state_has_human_en_af_projection():
         "Authorized": ("Ready — starting safely", "Gereed — begin veilig"),
         "Started": ("Currently running", "Loop tans"),
         "Completed": ("Controller OFF verified", "Beheerder AF geverifieer"),
-        "Held": ("Not running", "Loop nie"),
+        "Held": ("Plan on hold", "Plan wag"),
         "Failed": ("Run outcome unconfirmed — ROOTLINE is reviewing",
                    "Lopie se uitkoms onbevestig — ROOTLINE ondersoek dit"),
     }
@@ -367,7 +367,7 @@ def test_completed_owner_wording_requires_exact_canonical_zone_bound_off_evidenc
             "contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
             "state":"Completed","reason":"spoofed","next_action_owner":"ROOTLINE",
             "next_action":"none","completion_evidence":evidence}}
-        for language, neutral in (("en","B Camp:</b> Not running"),("af","B Kamp:</b> Loop nie")):
+        for language, neutral in (("en","B Camp:</b> Completion unconfirmed"),("af","B Kamp:</b> Voltooiing onbevestig")):
             text=compose_daily_rootline_plan(value,language=language)
             assert neutral in text
             assert "off and verified" not in text and "af en geverifieer" not in text
@@ -386,7 +386,7 @@ def test_held_only_claims_no_watering_need_when_specific_evidence_proves_it():
         "contract_version":"rootline_zone_lifecycle.v1","zone_id":"B12345",
         "state":"Held","reason":"fresh_need_evidence","next_action_owner":"ROOTLINE",
         "next_action":"reassess","watering_need_proven_false":True}}
-    assert "B Camp:</b> Not running — does not need watering" in compose_daily_rootline_plan(value)
+    assert "B Camp:</b> Not planned — does not need watering" in compose_daily_rootline_plan(value)
 
 
 def test_no_owner_fact_sentinel_is_not_rendered_as_a_question():

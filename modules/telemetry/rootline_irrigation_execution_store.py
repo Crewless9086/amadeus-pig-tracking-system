@@ -673,25 +673,31 @@ def _load(action, payload, *, connection=None):
                 if not found:
                     return {"epoch": None, "transitions": []}
                 epoch = found[0]
-                cursor.execute("""select e.review_json->'rootline_execution',
-                        n.review_json->'rootline_execution', e.review_event_id
-                    from public.sam_live_stock_conversation_review_events e
-                    left join lateral (
-                        select r.review_json from public.sam_live_stock_conversation_review_events r
+                # Read delivery history once. A correlated scan per transition
+                # exceeds the normal read deadline as the event ledger grows.
+                # Preserve confirmed-first precedence and the original cutoff.
+                cursor.execute("""with notices as materialized (
+                        select distinct on (r.review_json->'rootline_execution'->>'transition_event_id')
+                            r.review_json->'rootline_execution'->>'transition_event_id' as transition_event_id,
+                            r.review_json->'rootline_execution' as notice
+                        from public.sam_live_stock_conversation_review_events r
                         where r.event_source=%s
                           and r.review_json->'rootline_execution'->>'action'='record_notification_delivery'
-                          and r.review_json->'rootline_execution'->>'transition_event_id'=e.review_event_id
-                        order by (coalesce(r.review_json->'rootline_execution'->>'delivery_confirmed','false')='true') desc,
-                            r.created_at desc,r.review_event_id desc limit 1
-                    ) n on true
+                        order by r.review_json->'rootline_execution'->>'transition_event_id',
+                            (coalesce(r.review_json->'rootline_execution'->>'delivery_confirmed','false')='true') desc,
+                            r.created_at desc,r.review_event_id desc
+                    )
+                    select e.review_json->'rootline_execution', n.notice, e.review_event_id
+                    from public.sam_live_stock_conversation_review_events e
+                    left join notices n on n.transition_event_id=e.review_event_id
                     where e.event_source=%s and e.created_at >= %s and e.created_at <= clock_timestamp()
                       and e.review_json->'rootline_execution'->>'action' in
                         ('mark_active','record_completed','mark_auxiliary_active',
                          'record_auxiliary_completed','record_auxiliary_control_pulse_stopped',
                          'mark_borehole_active','record_borehole_completed','record_eskom_completed')
-                      and coalesce(n.review_json->'rootline_execution'->>'delivery_confirmed','false') != 'true'
-                      and coalesce(n.review_json->'rootline_execution'->>'delivery_ambiguous','false') != 'true'
-                      and coalesce(n.review_json->'rootline_execution'->>'notification_projection_rejected','false') != 'true'
+                      and coalesce(n.notice->>'delivery_confirmed','false') != 'true'
+                      and coalesce(n.notice->>'delivery_ambiguous','false') != 'true'
+                      and coalesce(n.notice->>'notification_projection_rejected','false') != 'true'
                     order by e.created_at,e.review_event_id limit 8""",
                     (EVENT_SOURCE, EVENT_SOURCE, epoch['since']))
                 return {"epoch": epoch, "transitions": [

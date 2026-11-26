@@ -27,7 +27,7 @@ def rootline_material_digest(result: Mapping[str, Any]) -> str:
         lifecycle = lifecycle if isinstance(lifecycle, Mapping) else {}
         item = {key: _normal(row.get(key)) for key in
                 ("subject", "status", "recommendation", "preferred_window",
-                 "planned_duration_minutes")}
+                 "planned_duration_minutes", "planned_start_at", "planned_end_at")}
         item["lifecycle_state"] = _normal(lifecycle.get("state"))
         item["verified_completion"] = _verified_completion(lifecycle, subject)
         if lifecycle.get("acceptance_mode") == "command_accepted" or (lifecycle.get("completion_evidence") or {}).get("command_job_completed") is True:

@@ -17,19 +17,19 @@ from modules.telemetry.rootline_irrigation_lifecycle import (
 )
 
 SAST = ZoneInfo("Africa/Johannesburg")
-DAILY_PLAN_TIME = time(7, 0)
+DAILY_PLAN_TIME = time(6, 30)
 CONTRACT_VERSION = "oom_sakkie_rootline_daily_presentation.v1"
 ZONES = IRRIGATION_ZONE_IDS
 
 
 def owner_zone_decision(result: Mapping[str, Any], recommendation: Mapping[str, Any],
-                        *, zone: str, language: str = "en") -> str:
+                        *, zone: str, language: str = "en", daily_plan: bool = False) -> str:
     """Project one zone from validated lifecycle truth for any owner surface."""
     af = str(language).casefold().startswith("af")
     lifecycle = (validate_zone_lifecycle(
         (result.get("irrigation_lifecycle") or {}).get(zone), zone_id=zone)
         or project_zone_lifecycle(zone_id=zone, recommendation=recommendation))
-    return _lifecycle_decision(lifecycle, recommendation, af, zone=zone)
+    return _lifecycle_decision(lifecycle, recommendation, af, zone=zone, daily_plan=daily_plan)
 
 
 def owner_reason(value: Any, *, language: str = "en") -> str:
@@ -156,13 +156,13 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     af = str(language).casefold().startswith("af")
     recommendations = {str(row.get("subject") or ""): row for row in result.get("recommendations") or ()
                        if isinstance(row, Mapping)}
-    decisions = {zone: owner_zone_decision(result, recommendations.get(zone, {}), zone=zone, language=language)
+    decisions = {zone: owner_zone_decision(result, recommendations.get(zone, {}), zone=zone, language=language, daily_plan=True)
                  for zone in IRRIGATION_ZONE_IDS}
     complete = all(value == ("Program voltooi" if af else "Programme completed") for value in decisions.values())
     heading = ("Vandag se kampresultate" if af else "Today's camp results") if complete else ("Vandag se plan" if af else "Today's plan")
-    lines = [f"<b>🌿 ROOTLINE · {heading}</b>"]
     day = str(result.get("operating_date") or "")
-    if day: lines.append(html.escape(day))
+    dated = f" · {html.escape(day)}" if day else ""
+    lines = [f"<b>🌿 ROOTLINE · {heading}{dated}</b>"]
     lines.append("")
     if not enabled():
         availability = provider_availability_text(result.get("provider_availability"), language=language)
@@ -184,12 +184,14 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     if planned and all(planned_time(row) is not None for row in planned):
         planned.sort(key=planned_time)
         lines.append(("Volgorde: " if af else "Order: ")+" → ".join(html.escape(row["subject"][0]) for row in planned))
-    for zone in IRRIGATION_ZONE_IDS:
+    ordered_zones = [row["subject"] for row in sorted(planned, key=lambda row: (planned_time(row) is None, planned_time(row) or datetime.max.replace(tzinfo=timezone.utc)))]
+    ordered_zones += [zone for zone in IRRIGATION_ZONE_IDS if zone not in ordered_zones]
+    for zone in ordered_zones:
         row = recommendations.get(zone, {})
         label = zone[0]+(" Kamp" if af else " Camp")
         decision = decisions[zone]
         icon = "✅" if decision in {"Programme completed", "Program voltooi"} else "•"
-        window = _human_window(row.get("preferred_window"))
+        window = _planned_window(row)
         suffix = f" · {html.escape(window)}" if window else ""
         minutes = row.get("planned_duration_minutes")
         if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) and minutes > 0:
@@ -198,8 +200,10 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     for identity, label in (("fertilizer_mixing", "Menger" if af else "Mixer"),
             ("fertilizer_injection", "Inspuiting" if af else "Injection"), ("borehole", "Borehole")):
         row = recommendations.get(identity)
-        if row:
-            lines.append(f"• <b>{label}:</b> {html.escape(_decision(row.get('status'), af))}")
+        # Advisory auxiliary eligibility is not an actual device state.
+        # Run/stop results arrive through the canonical activity-notice rail.
+        if row and row.get("status") == "Hold" and row.get("owner_action_required") is True:
+            lines.append(f"⚠️ <b>{label}:</b> {html.escape(_short_reason(str(row.get('reason') or ''), af))}")
     reasons = [str(row.get("reason") or "") for row in recommendations.values() if row.get("subject") in IRRIGATION_ZONE_IDS]
     why = _short_reason(next((reason for reason in reasons if reason), str(result.get("reason") or "")), af)
     if why: lines.extend(["", html.escape(why)])
@@ -303,7 +307,7 @@ def _decision(value: Any, af: bool) -> str:
 
 
 def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[str, Any],
-                        af: bool, *, zone: str) -> str:
+                        af: bool, *, zone: str, daily_plan: bool = False) -> str:
     exceptions = validated_shutdown_exceptions(lifecycle, zone_id=zone)
     if exceptions:
         if any(row["controller_off_verified"] is False for row in exceptions):
@@ -336,10 +340,16 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
     if state == "Recommended":
         return "Moet natgemaak word" if af else "Needs watering"
     if state == "Held":
+        # Shared manager facts retain their established status vocabulary.
+        # Only the daily plan uses advisory wording; evidence rules stay shared.
+        if not daily_plan:
+            if lifecycle.get("watering_need_proven_false") is True:
+                return "Loop nie — het nie water nodig nie" if af else "Not running — does not need watering"
+            return "Loop nie" if af else "Not running"
         if lifecycle.get("watering_need_proven_false") is True:
-            return ("Loop nie — het nie water nodig nie" if af else
-                    "Not running — does not need watering")
-        return "Loop nie" if af else "Not running"
+            return ("Nie beplan nie — het nie water nodig nie" if af else
+                    "Not planned — does not need watering")
+        return "Plan wag" if af else "Plan on hold"
     if state == "Failed":
         return ("Lopie se uitkoms onbevestig — ROOTLINE ondersoek dit" if af else
                 "Run outcome unconfirmed — ROOTLINE is reviewing")
@@ -348,6 +358,8 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
             return "Program voltooi" if af else "Programme completed"
         if _verified_completion(lifecycle, zone):
             return "Beheerder AF geverifieer" if af else "Controller OFF verified"
+        if daily_plan:
+            return "Voltooiing onbevestig" if af else "Completion unconfirmed"
         return "Loop nie" if af else "Not running"
     return "Data nodig" if af else "Needs Data"
 
@@ -449,6 +461,21 @@ def _next_reassessment(result: Mapping[str, Any]) -> str:
     return str(value.get("at") or value.get("reason") or value.get("trigger") or "")
 
 
+def _planned_window(row):
+    """Both local endpoints come from the saved plan, never inferred duration."""
+    try:
+        start = datetime.fromisoformat(str(row.get("planned_start_at")).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(row.get("planned_end_at")).replace("Z", "+00:00"))
+        if start.tzinfo is None or end.tzinfo is None or end <= start:
+            return ""
+        start, end = start.astimezone(SAST), end.astimezone(SAST)
+        if start.date() != end.date():
+            return f"{start:%d %b %Hh%M}–{end:%d %b %Hh%M} SAST"
+        return f"{start:%Hh%M}–{end:%Hh%M} SAST"
+    except (TypeError, ValueError):
+        return ""
+
+
 def _human_window(value):
     text = " ".join(str(value or "").split())
     folded = text.casefold()
@@ -480,7 +507,7 @@ def _human_reassessment(value, now_hint=None):
 
 
 def _daily_due(now: datetime) -> datetime:
-    return now.replace(hour=7, minute=0, second=0, microsecond=0)
+    return now.replace(hour=DAILY_PLAN_TIME.hour, minute=DAILY_PLAN_TIME.minute, second=0, microsecond=0)
 
 
 def _aware(value: datetime) -> datetime:

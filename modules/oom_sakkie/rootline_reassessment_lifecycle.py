@@ -5,9 +5,10 @@ from __future__ import annotations
 from modules.telemetry.rootline_device_registry import IRRIGATION_ZONE_IDS
 import hashlib, json
 import re
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 from modules.oom_sakkie.rootline_daily_presentation import (
-    compose_daily_rootline_plan, owner_notification_required,
+    compose_daily_rootline_plan, owner_notification_required, SAST, DAILY_PLAN_TIME, _daily_due,
 )
 from modules.oom_sakkie.rootline_material import (
     rootline_material_digest, rootline_exception_material,
@@ -20,7 +21,8 @@ OWNER_PLAN_FINGERPRINT_VERSION = "rootline_owner_plan_semantics.v4"
 
 def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
                       specialist_loader: Callable[[], Mapping[str, Any]],
-                      state_store: Callable[[str, str, Any], Any], language="en"):
+                      state_store: Callable[[str, str, Any], Any], language="en",
+                      routine_plan: bool = False, now: datetime | None = None):
     if not owner_user_id or owner_user_id != chat_id or not str(trigger or "").strip():
         return _contained("reassessment_binding_invalid")
     current = specialist_loader()
@@ -45,6 +47,17 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     observed = state_store("record_observation", observation["identity"], observation)
     if not isinstance(observed, Mapping) or observed.get("success") is not True:
         return _contained("rootline_reassessment_observation_unproven")
+    if routine_plan and not rootline_exception_material(current):
+        # Routine morning publication is separate from observation and urgent notices.
+        # Explicit on-demand callers retain the default ungated behaviour.
+        observed_at = now or datetime.now(timezone.utc)
+        if observed_at.tzinfo is None:
+            return _contained("rootline_reassessment_clock_invalid")
+        local_now = observed_at.astimezone(SAST)
+        if local_now.time() < DAILY_PLAN_TIME:
+            return {**_result("rootline_reassessment_not_due", material, notify=False),
+                "operating_date": operating_date, "next_due_at": _daily_due(local_now).isoformat(),
+                "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
     current_identity = state_store("load_identity", identity, None) or {}
     current_answer = compose_daily_rootline_plan(current, language=language)
