@@ -1224,6 +1224,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             remaining_seconds, RootlineCycleDeadlineExceeded,
         )
         from modules.oom_sakkie.family_message_lifecycle import PROVIDER_DELIVERY_RESERVE_SECONDS
+        from modules.telemetry.rootline_stage_timings import StageTimings
+        stage_timings = StageTimings()
         from contextlib import nullcontext
         import time
         # Bound this actual request from entry, including elapsed safety work.
@@ -1443,6 +1445,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
                 "provider_message_id": str(delivery.get("telegram_message_id") or "")}
         current_plan_result = {}
+        @stage_timings.stage("current_plan")
         def current_plan_report(supervision):
             remaining_seconds(minimum=5)
             if production_persistence or daily_plan_generator is not None:
@@ -1502,7 +1505,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 try:
                     from modules.oom_sakkie.rootline_transition_notifications import recover_provider_notifications
                     provider_reporter = provider_notification_cycle or recover_provider_notifications
-                    provider_outcome = provider_reporter(notify=notify, now=scheduler_now, environ=source)
+                    provider_outcome = stage_timings.call("provider_notifications", provider_reporter, notify=notify, now=scheduler_now, environ=source)
                 except Exception as exc:
                     provider_outcome = {"success": False, "status": "rootline_provider_notifications_deferred",
                         "error_type": type(exc).__name__, "telegram_sends": 0}
@@ -1516,7 +1519,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 try:
                     from modules.oom_sakkie.rootline_transition_notifications import recover_input_notifications
                     input_reporter = input_notification_cycle or recover_input_notifications
-                    input_outcome = input_reporter(notify=notify, now=scheduler_now, environ=source,
+                    input_outcome = stage_timings.call("input_notifications", input_reporter, notify=notify, now=scheduler_now, environ=source,
                         recipient={"owner_user_id": parsed["telegram_user_id"],
                             "chat_id": parsed["telegram_chat_id"], "language": scheduled_principal.language})
                 except Exception as exc:
@@ -1532,7 +1535,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             try:
                 from modules.oom_sakkie.rootline_transition_notifications import recover_transition_notifications
                 reporter = equipment_notification_cycle or recover_transition_notifications
-                outcome = reporter(notify=notify, now=scheduler_now)
+                outcome = stage_timings.call("equipment_notifications", reporter, notify=notify, now=scheduler_now)
             except RootlineCycleDeadlineExceeded:
                 outcome = {"success": False, "status": "rootline_transition_notifications_deferred",
                     "telegram_sends": 0}
@@ -1546,6 +1549,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "telegram_sends": int(supervision.get("telegram_sends") or 0) + int(outcome.get("telegram_sends") or 0)}
 
         report_progress = {"telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0}
+        @stage_timings.stage("manager_reports")
         def invoke_reports(supervision):
             remaining_seconds()
             deliver = deliver_report
@@ -1780,6 +1784,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "plan_delivery_status": plan_delivery_status,
                     "plan_reassessment_status": plan_reassessment_status,
                     "execution_status": "not_enabled"}
+        @stage_timings.stage("supervision")
         def supervise(*, defer_new_work=False):
             # Only a newly claimed authenticated minute reaches this path.
             # Replay recovery above remains delivery-only.
@@ -1791,7 +1796,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if short_supervisor is not None:
                 try:
                     with mandatory_safety():
-                        short_result = dict(short_supervisor(environ=source) or {})
+                        short_result = dict(stage_timings.call("short_auxiliary_supervision", short_supervisor, environ=source) or {})
                     if not short_result:
                         raise ValueError("injector_priority_result_missing")
                 except Exception as exc:
@@ -1804,7 +1809,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 from modules.telemetry.rootline_execution_runtime import supervise_rootline_active_execution
                 supervisor = supervise_rootline_active_execution
             with mandatory_safety():
-                supervision = dict(supervisor(notify=notify, environ=source, now=scheduler_now,
+                supervision = dict(stage_timings.call("active_supervision", supervisor, notify=notify, environ=source, now=scheduler_now,
                     owner_user_id=scheduled_owner, chat_id=scheduled_chat) or {})
             supervision["active_supervision_status"] = str(supervision.get("status") or "unknown")
             if supervision.get("active_supervision_status") in {"active_segment_owned", "irrigation_command_duty_active"}:
@@ -1851,7 +1856,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
                         cycle = run_rootline_execution_cycle
                     try:
-                        control = dict(cycle(notify=notify, environ=source, now=scheduler_now,
+                        control = dict(stage_timings.call("irrigation_admission", cycle, notify=notify, environ=source, now=scheduler_now,
                             owner_user_id=scheduled_owner, chat_id=scheduled_chat,
                             next_reassessment_at=str(payload.get("next_due_at") or payload.get("due_at") or ""),
                             observation_store=state_store) or {})
@@ -1903,7 +1908,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 managed = managed_device_cycle
                 if managed is None:
                     from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
-                    managed = run_rootline_managed_device_reassessment
+                    from functools import partial
+                    managed = partial(run_rootline_managed_device_reassessment, stage_timings=stage_timings)
                 try:
                     # A short-duty pass may already have spent most of this
                     # minute. Keep owned auxiliary/borehole/grid recovery, but
@@ -1911,7 +1917,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     with parent_optional_budget(), owned_deadline_checkpoint(
                             lambda **kw: parent_checkpoint(supervision, **kw)), (
                             mandatory_safety() if defer_optional else nullcontext()):
-                        managed_result = dict(managed(environ=source, now=scheduler_now,
+                        managed_result = dict(stage_timings.call("managed_control", managed, environ=source, now=scheduler_now,
                             after_safety=None if defer_optional else admit_irrigation,
                             # Active ownership makes admission inert. Keep callback
                             # sequencing for deferred proof, without a redundant pass.
@@ -1989,6 +1995,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 return {"execution": execution, "original_bound": parent_deadline_probe.get("original_bound")}
 
 
+        @stage_timings.stage("parent_recheck")
         def recheck_due_parent(supervision):
             execution = parent_deadline_probe.get("execution") or {}
             if not execution or parent_deadline_probe.get("checked"):
@@ -2037,6 +2044,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     combined[field] = fresh[field]
             return combined
 
+        @stage_timings.stage("daily_program")
         def ensure_due_program_after_safety():
             if not production_persistence:
                 return {}
@@ -2174,6 +2182,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
 
         def bounded_schedule_store(action, identity, value):
             if action == "record_outcome":
+                try:
+                    value = {**value, "stage_timings": stage_timings.snapshot()}
+                except Exception:
+                    pass  # Observability must not prevent the existing outcome write.
                 # Always try to retain the precise partial result and next owner.
                 with mandatory_safety():
                     return schedule_store(action, identity, value)

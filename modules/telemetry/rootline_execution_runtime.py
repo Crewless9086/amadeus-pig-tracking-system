@@ -57,7 +57,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
         token_store=None, transport=None,
         evidence_loader=read_current_water_energy_evidence, allow_new_starts=True,
-        allow_borehole_starts=None, clock=None, after_safety=None, refresh_after_safety=True):
+        allow_borehole_starts=None, clock=None, after_safety=None, refresh_after_safety=True,
+        stage_timings=None):
     """Supervise owned devices and advance independently eligible managed tasks.
 
     This composes existing planners, canonical device records and coordinators.
@@ -137,6 +138,11 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     # It admits preparation across fresh parent and auxiliary snapshots, not ON.
     import uuid
     preparation_token = uuid.uuid4().hex
+    from modules.telemetry.rootline_stage_timings import StageTimings
+    def observe_evidence(function):
+        return (stage_timings.stage("managed_evidence")(function)
+            if type(stage_timings) is StageTimings else function)
+    @observe_evidence
     def build_evidence(*, pending_devices):
         try:
             read_at = _aware(clock())
