@@ -480,6 +480,8 @@ jobs:
           tests/test_rootline_shutdown_preservation.py
           tests/test_oom_sakkie_rootline_daily_presentation.py
           tests/test_rootline_notice46_presentation.py
+          tests/test_rootline_notice47_presentation.py
+          tests/test_rootline_notice47_delivery.py
           tests/test_oom_sakkie_owner_response_composer.py
 
       - name: Create isolated ROOTLINE notification query database

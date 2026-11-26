@@ -161,14 +161,25 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     complete = all(value == ("Program voltooi" if af else "Programme completed") for value in decisions.values())
     heading = ("Vandag se kampresultate" if af else "Today's camp results") if complete else ("Vandag se plan" if af else "Today's plan")
     day = str(result.get("operating_date") or "")
-    dated = f" · {html.escape(day)}" if day else ""
-    lines = [f"<b>🌿 ROOTLINE · {heading}{dated}</b>"]
+    dated = _daily_date(day, af)
+    lines = [f"<b>🌿 ROOTLINE · {heading}</b>"]
+    if dated: lines.append(html.escape(dated))
     lines.append("")
     if not enabled():
         availability = provider_availability_text(result.get("provider_availability"), language=language)
         if availability: lines.extend([html.escape(availability), ""])
     summary = input_health_text(result.get("input_health"), language=language)
-    if summary: lines.extend([html.escape(summary), ""])
+    credit = _forecast_credit(result, language=language, html_link=True)
+    weather_line = html.escape(summary)
+    fallback_source = "die rugsteunbron" if af else "the backup source"
+    credit_prefix = "Weervoorspelling deur " if af else "Forecast by "
+    if credit and fallback_source in weather_line:
+        linked_provider = credit.removeprefix(credit_prefix).removesuffix(".")
+        weather_line = weather_line.replace(fallback_source,
+            linked_provider + (" (rugsteun)" if af else " (backup)"), 1)
+    elif credit:
+        weather_line = " ".join(part for part in (weather_line, credit) if part)
+    if weather_line: lines.extend([weather_line, ""])
     if result.get("control_observation") in {"deadline_deferred", "unverified"}:
         lines.extend(["⏳ Die jongste toerustingkontrole is nog onbevestig; ROOTLINE kontroleer weer outomaties." if af else
             "⏳ The latest equipment check is unconfirmed; ROOTLINE will check again automatically.", ""])
@@ -205,21 +216,35 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
         if row and row.get("status") == "Hold" and row.get("owner_action_required") is True:
             lines.append(f"⚠️ <b>{label}:</b> {html.escape(_short_reason(str(row.get('reason') or ''), af))}")
     reasons = [str(row.get("reason") or "") for row in recommendations.values() if row.get("subject") in IRRIGATION_ZONE_IDS]
-    why = _short_reason(next((reason for reason in reasons if reason), str(result.get("reason") or "")), af)
+    generic = "Current irrigation need and dry observed weather support the scheduled irrigation run."
+    useful_reasons = [reason for reason in reasons if " ".join(reason.split()) != generic]
+    fallback = str(result.get("reason") or "")
+    raw_reason = next((reason for reason in useful_reasons if reason), fallback if " ".join(fallback.split()) != generic else "")
+    why = _short_reason(raw_reason, af) if raw_reason else ""
     if why: lines.extend(["", html.escape(why)])
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     question = _localized_owner_question(result, brief, af)
     next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result))
     if next_check.startswith("around "):
-        lines.append(("Volgende kontrole: " if af else "Next check: ")+(next_check.replace("around ", "omtrent ") if af else next_check)+" SAST")
+        lines.append(("Volgende kontrole: " if af else "Next check: ")+(next_check.replace("around ", "omtrent ") if af else next_check))
     if question: lines.extend(["", "❓ "+html.escape(question)])
-    elif not rootline_exception_material(result) and result.get("control_observation") not in {"deadline_deferred", "unverified"}:
-        lines.extend(["", "Geen aksie nodig nie. ROOTLINE hou jou op hoogte van veranderinge." if af else
-            "No action needed. ROOTLINE will keep you updated on changes."])
     lines.extend(["", f'<a href="{IRRIGATION_URL}">'+("Volledige plan, instellings en geskiedenis" if af else "Full plan, settings and history")+"</a>"])
-    credit = _forecast_credit(result, language=language, html_link=True)
-    if credit: lines.extend(["", credit])
     return "\n".join(lines)
+
+
+
+def _daily_date(value, af=False):
+    """Render the actual operating date without locale or unsupported HTML tags."""
+    try:
+        from datetime import date
+        day = date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return ""
+    weekdays = ("Ma", "Di", "Wo", "Do", "Vr", "Sa", "So") if af else ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    months = ("Jan", "Feb", "Mrt", "Apr", "Mei", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Des") if af else ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    suffix = ("ˢᵗᵉ" if day.day in {1, 8} or day.day >= 20 else "ᵈᵉ") if af else (
+        "ᵗʰ" if 11 <= day.day % 100 <= 13 else {1: "ˢᵗ", 2: "ⁿᵈ", 3: "ʳᵈ"}.get(day.day % 10, "ᵗʰ"))
+    return f"{weekdays[day.weekday()]} {day.day}{suffix}, {months[day.month-1]} {day.year}"
 
 
 def compose_daily_rootline_manager_item(result: Mapping[str, Any], *, language="en") -> Mapping[str, str]:
@@ -470,8 +495,8 @@ def _planned_window(row):
             return ""
         start, end = start.astimezone(SAST), end.astimezone(SAST)
         if start.date() != end.date():
-            return f"{start:%d %b %Hh%M}–{end:%d %b %Hh%M} SAST"
-        return f"{start:%Hh%M}–{end:%Hh%M} SAST"
+            return f"{start:%d %b %Hh%M}–{end:%d %b %Hh%M}"
+        return f"{start:%Hh%M}–{end:%Hh%M}"
     except (TypeError, ValueError):
         return ""
 
