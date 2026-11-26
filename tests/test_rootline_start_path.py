@@ -39,7 +39,7 @@ def test_recovery_projection_rejects_arbitrary_diagnostics(bad):
     assert sanitize_no_send(bad)=={}
 
 
-def test_active_cycle_delivers_plan_before_slow_notification_backlog(monkeypatch):
+def test_active_cycle_prioritizes_notifications_and_defers_plan_after_deadline(monkeypatch):
     from modules.telemetry import rootline_cycle_budget as budget
     from modules.oom_sakkie.telegram_gateway import handle_rootline_reassessment_trigger
     from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
@@ -64,8 +64,9 @@ def test_active_cycle_delivers_plan_before_slow_notification_backlog(monkeypatch
         'trigger_timestamp':NOW.isoformat()},HEADERS,ENV,scheduler_now=NOW,
         specialist_loader=loader,state_store=plan_store()[1],schedule_store=schedules,
         family_delivery=deliver,equipment_notification_cycle=backlog,active_supervision_cycle=supervise)
-    assert order==['safety','plan_read','plan_send','backlog']
-    assert result['plan_delivery_status']=='delivered_current_irrigation_plan'
+    assert order==['safety','backlog']
+    assert result['status']=='scheduled_rootline_reporting_deadline_deferred'
+    assert result['telegram_sends']==0
     assert result['equipment_notification_status']=='rootline_transition_notifications_deferred'
     assert result['hardware_commands']==0
 
