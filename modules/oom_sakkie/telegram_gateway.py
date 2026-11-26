@@ -1910,6 +1910,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     supervision["short_auxiliary_duty_owned"] = True
                     supervision["short_auxiliary_stop_deadline"] = managed_result.get("short_auxiliary_stop_deadline")
                 supervision["managed_device_status"] = str(managed_result.get("status") or "unknown")
+                from modules.telemetry.rootline_failure_diagnostics import sanitize_auxiliary_rejections
+                supervision["auxiliary_admission_rejections"] = sanitize_auxiliary_rejections(
+                    managed_result.get("auxiliary_admission_rejections"))
                 supervision["hardware_commands"] = int(supervision.get("hardware_commands") or 0) + int(
                     managed_result.get("hardware_commands") or 0)
                 if managed_result.get("writes_farm_data") is True or managed_result.get("hardware_commands"):
@@ -2025,6 +2028,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             result["execution_status"] = str(supervision.get("execution_status") or supervision.get("status") or "")
             result["managed_device_status"] = str(supervision.get("managed_device_status") or "")
             result["managed_device_result"] = supervision.get("managed_device_result") or {}
+            from modules.telemetry.rootline_failure_diagnostics import sanitize_auxiliary_rejections
+            result["auxiliary_admission_rejections"] = sanitize_auxiliary_rejections(
+                supervision.get("auxiliary_admission_rejections"))
             result["effects_unknown"] = (result.get("effects_unknown") is True
                 or supervision.get("effects_unknown") is True)
             if "irrigation_admission_status" in supervision:

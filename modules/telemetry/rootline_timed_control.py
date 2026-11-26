@@ -73,19 +73,27 @@ def timed_control_call(function):
     return wrapped
 
 
-def canonical_timed_authority(loaded, *, connect_factory, identity, requested_seconds):
+def canonical_timed_authority(loaded, *, connect_factory, identity, requested_seconds, execution=None):
     """Check live policy scope in addition to the spine's resolved record evidence."""
     from modules.telemetry.rootline_device_registry import get_device_contract
     from modules.telemetry.rootline_device_spine import scheduled_device_profile
     output = get_device_contract(identity)
     record = (loaded or {}).get("device_record") or {}
+    extension = (identity == "FERTILIZER-INJECTION-CH1"
+        and type(requested_seconds) is int and 120 < requested_seconds <= 600)
+    # The standing registry remains the original120-second identity/profile.
+    # Only a fresh authenticated owner programme can extend a future claim.
+    checked_seconds = 120 if extension else requested_seconds
+    if extension and not _owner_injector_extension_shape(execution, requested_seconds):
+        return False
+
     if (not output or not scheduled_device_profile(record)
             or record.get("standing_authority") is not True
             or record.get("commissioning_stage") != "standing_active"
             or record.get("device_id") != output["device_id"]
             or record.get("channel") != output["channel"]
             or type(requested_seconds) is not int
-            or not 0 < requested_seconds <= record["maximum_runtime_seconds"]):
+            or not 0 < checked_seconds <= record["maximum_runtime_seconds"]):
         return False
     key = f"{output['provider']}:{output['provider_account_binding']}:{output['device_id']}:{output['channel']}"
     if loaded.get("device_key") != key:
@@ -100,24 +108,80 @@ def canonical_timed_authority(loaded, *, connect_factory, identity, requested_se
                 (envelope.get("standing_authority_id"), envelope.get("version"),
                  envelope.get("standing_authority_id"), envelope.get("version")))
             row = cursor.fetchone()
-    if (not row or str(row[0]) != str(envelope.get("issuer") or "")
-            or row[3] is not True or row[4] is True or row[5] is not True
-            or row[2] != envelope.get("policy_sha256")):
+        if (not row or str(row[0]) != str(envelope.get("issuer") or "")
+                or row[3] is not True or row[4] is True or row[5] is not True
+                or row[2] != envelope.get("policy_sha256")):
+            return False
+        policy = row[1] if isinstance(row[1], dict) else {}
+        from hashlib import sha256
+        import json
+        if sha256(json.dumps(policy, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest() != row[2]:
+            return False
+        scoped = (identity in (policy.get("zone_ids") or []) if output["collection"] == "irrigation_zones"
+            else identity in (policy.get("device_identities") or []))
+        base_valid = (policy.get("contract_version") == "rootline_timed_standing_authority.v1"
+            and policy.get("stop_mode") == STOP_MODE and key in (policy.get("device_keys") or [])
+            and scoped and output["channel"] in (policy.get("allowed_channels") or [])
+            and policy.get("device_id") == output["device_id"]
+            and policy.get("provider") == output["provider"]
+            and policy.get("provider_account_binding") == output["provider_account_binding"]
+            and type(policy.get("maximum_runtime_seconds")) is int
+            and checked_seconds <= policy["maximum_runtime_seconds"] <= record["maximum_runtime_seconds"]
+            and policy.get("application_timeout_required") is True
+            and policy.get("automatic_on_retry") is False)
+
+        if not base_valid or not extension:
+            return base_valid
+        if record["maximum_runtime_seconds"] != 120 or policy["maximum_runtime_seconds"] != 120:
+            return False
+        return _fresh_owner_injector_extension(connection, execution, requested_seconds)
+
+
+OWNER_INJECTOR_EXTENSION_V1 = "rootline_authenticated_owner_injector_extension.v1"
+
+
+def _owner_injector_extension_shape(execution, requested_seconds):
+    from modules.telemetry.rootline_owner_auxiliary_policy import valid_injection_policy
+    from modules.telemetry.rootline_command_acceptance import MODE, INJECTOR_TARGET_V2
+    value = execution if isinstance(execution, dict) else {}
+    selected = value.get("injection_policy")
+    return (valid_injection_policy(selected)
+        and value.get("acceptance_mode") == MODE and value.get("stop_mode") == STOP_MODE
+        and value.get("injector_timing_contract") in (None, INJECTOR_TARGET_V2)
+        and value.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
+        and value.get("device_id") == "100204d497" and type(value.get("channel")) is int
+        and value["channel"] == 1 and value.get("zone_id") in selected["zone_ids"]
+        and value.get("maximum_duration_seconds") == requested_seconds == selected["pulse_seconds"]
+        and type(value.get("pulse_number")) is int and 1 <= value["pulse_number"] <= selected["pulses_per_60_minutes"]*2
+        and value.get("phase_number") == (value["pulse_number"]-1)//selected["pulses_per_60_minutes"]+1)
+
+
+def _fresh_owner_injector_extension(connection, execution, requested_seconds):
+    from modules.telemetry.rootline_owner_controls import read_owner_controls, _now, pending_owner_request, owner_request_for_execution
+    from modules.telemetry.rootline_owner_auxiliary_policy import owner_injection_policy
+    if not _owner_injector_extension_shape(execution, requested_seconds):
         return False
-    policy = row[1] if isinstance(row[1], dict) else {}
-    from hashlib import sha256
-    import json
-    if sha256(json.dumps(policy, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest() != row[2]:
+    now = _now(connection)
+    controls = read_owner_controls(connection, now=now)
+    selected = owner_injection_policy(controls, now=now)
+    if selected != execution["injection_policy"]:
         return False
-    scoped = (identity in (policy.get("zone_ids") or []) if output["collection"] == "irrigation_zones"
-        else identity in (policy.get("device_identities") or []))
-    return (policy.get("contract_version") == "rootline_timed_standing_authority.v1"
-        and policy.get("stop_mode") == STOP_MODE and key in (policy.get("device_keys") or [])
-        and scoped and output["channel"] in (policy.get("allowed_channels") or [])
-        and policy.get("device_id") == output["device_id"]
-        and policy.get("provider") == output["provider"]
-        and policy.get("provider_account_binding") == output["provider_account_binding"]
-        and type(policy.get("maximum_runtime_seconds")) is int
-        and requested_seconds <= policy["maximum_runtime_seconds"] <= record["maximum_runtime_seconds"]
-        and policy.get("application_timeout_required") is True
-        and policy.get("automatic_on_retry") is False)
+    mode = controls["devices"]["injection"]["mode"]
+    if mode == "automatic":
+        return True
+    request = (owner_request_for_execution(controls, "injection", execution.get("execution_id"), now)
+        or pending_owner_request(controls, "injection", now, kind="run"))
+    return mode == "manual_today" and request is not None and request["change"]["kind"] == "run"
+
+
+def locked_owner_injector_authority(connection, execution):
+    """Re-read registry, revocation and owner records inside the existing ON lock."""
+    from contextlib import nullcontext
+    from modules.telemetry.rootline_device_spine import load_device_record
+    owned = getattr(connection, "connection", connection)
+    factory = lambda: nullcontext(owned)
+    key = "ifttt_ewelink:ewelink_owner_account:100204d497:1"
+    loaded = load_device_record(key, connect_factory=factory)
+    return canonical_timed_authority(loaded, connect_factory=factory,
+        identity="FERTILIZER-INJECTION-CH1",
+        requested_seconds=execution.get("maximum_duration_seconds"), execution=execution)

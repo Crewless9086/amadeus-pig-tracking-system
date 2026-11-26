@@ -484,6 +484,7 @@ jobs:
           tests/test_rootline_notice47_delivery.py
           tests/test_rootline_inventory_diagnostics.py
           tests/test_rootline_owner_injection_programme.py
+          tests/test_rootline_injector_owner_authority.py
           tests/test_oom_sakkie_owner_response_composer.py
 
       - name: Create isolated ROOTLINE notification query database
@@ -609,7 +610,7 @@ jobs:
           ROOTLINE_OWNER_CONTROL_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_owner_controls_test
           PYTHON_DOTENV_DISABLED: "1"
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_owner_controls_postgres.py tests/test_rootline_owner_eskom_postgres.py
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_owner_controls_postgres.py tests/test_rootline_owner_eskom_postgres.py tests/test_rootline_injector_owner_authority_postgres.py
 
       - name: Use ROOTLINE owner controls on desktop and mobile
         env:

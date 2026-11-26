@@ -3450,7 +3450,7 @@ _AUXILIARY_COMMAND_ABORT = "rootline_auxiliary_startup_abort.v3"
 _AUXILIARY_STARTUP_ABORT_ACTION = "record_auxiliary_startup_aborted"
 
 
-def _auxiliary_startup_abort_preimage(rows, containment_event_id):
+def _auxiliary_startup_abort_preimage(rows, containment_event_id, *, command_only=False):
     """Read the complete history: absent dispatch and unknown dispatch stay distinct."""
     from modules.telemetry.rootline_device_registry import get_device_contract
     if not rows or any(not isinstance(row, dict) for row in rows):
@@ -3469,6 +3469,13 @@ def _auxiliary_startup_abort_preimage(rows, containment_event_id):
         "contain_auxiliary_device", _AUXILIARY_STARTUP_ABORT_ACTION}
     immutable = ("execution_id", "auxiliary_device_id", "device_id", "channel", "device_type",
         "claimed_at", "primary_stop_deadline", "maximum_duration_seconds", "consumption_key")
+    from modules.telemetry.rootline_command_acceptance import INJECTOR_TARGET_V2, injector_target_claim, _INJECTOR_CLAIM_FIELDS
+    configured = (command_only and identity == "FERTILIZER-INJECTION-CH1"
+        and claim.get("injector_timing_contract") == INJECTOR_TARGET_V2
+        and injector_target_claim(claim))
+    if configured:
+        immutable = tuple(set(immutable) | set(_INJECTOR_CLAIM_FIELDS) | {"injection_policy"})
+
     prior = held.get("shutdown_evidence") or {}
     if (identity not in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}
             or any(claim.get(key) != contract.get(key) for key in ("device_id", "channel", "device_type"))
@@ -3498,7 +3505,7 @@ def _auxiliary_startup_abort_preimage(rows, containment_event_id):
             or previous_off.tzinfo is None or previous_off < claimed
             or previous_off > datetime.now(timezone.utc)
             or type(claim.get("maximum_duration_seconds")) is not int
-            or not 0 < claim["maximum_duration_seconds"] <= (600 if identity == "FERTILIZER-MIXER-CH2" else 120)
+            or not 0 < claim["maximum_duration_seconds"] <= (600 if identity == "FERTILIZER-MIXER-CH2" or configured else 120)
             or deadline != claimed + timedelta(seconds=claim["maximum_duration_seconds"])):
         return None
     return claim, dispatch, held
@@ -3517,7 +3524,7 @@ def _auxiliary_abort_binding(preimage):
 def _auxiliary_command_abort_preimage(rows, containment_event_id):
     """The command-only exception is narrower than physical startup recovery."""
     from modules.telemetry.rootline_command_acceptance import accepted, moment, RECEIPT
-    preimage = _auxiliary_startup_abort_preimage(rows, containment_event_id)
+    preimage = _auxiliary_startup_abort_preimage(rows, containment_event_id, command_only=True)
     if preimage is None or preimage[1] is not None:
         return None
     claim, _, held = preimage

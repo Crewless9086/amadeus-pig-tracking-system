@@ -415,12 +415,22 @@ def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
     considered = set(active_ids)
     for task in ordered:
         identity = str(task.get("auxiliary_device_id") or "")
-        if (not allow_new_starts or not auxiliary_inventory_proven or task.get("decision") != "Run now"
+        if (not allow_new_starts or not auxiliary_inventory_proven
                 or identity not in pending or identity not in DEVICE_KEYS or identity in considered):
+            continue
+        if task.get("decision") != "Run now":
+            reason = "task_not_ready"
+            context = contexts.get(identity) if isinstance(contexts, dict) else None
+            if identity == "FERTILIZER-INJECTION-CH1" and isinstance(context, dict):
+                from modules.telemetry.rootline_auxiliary_management import _injection_gate
+                reason = _injection_gate(context, now) or reason
+            outcomes.append(_admission_rejection(identity, reason,
+                failure=context.get("injection_parent_read_failure") if isinstance(context, dict) else None))
             continue
         considered.add(identity)
         canonical = canonical_loader(DEVICE_KEYS[identity])
         if not _standing_active(canonical, identity):
+            outcomes.append(_admission_rejection(identity, "canonical_device_not_standing_active"))
             continue
         context = contexts.get(identity) if isinstance(contexts, dict) else None
         safety = safeties.get(identity) if isinstance(safeties, dict) else None
@@ -429,11 +439,18 @@ def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
                 "ROOTLINE_FERTILIZER_MIXING_ENABLED": _enabled(source, "ROOTLINE_FERTILIZER_MIXING_ENABLED"),
                 "ROOTLINE_FERTILIZER_INJECTION_ENABLED": _enabled(source, "ROOTLINE_FERTILIZER_INJECTION_ENABLED")}, now=now)
         if artifact.get("eligible") is not True:
+            outcomes.append(_admission_rejection(identity, artifact.get("status") or "eligibility_unproven"))
             continue
-        if artifact.get("stop_mode")=="scheduled" and (not callable(connect_factory)
-                or not canonical_timed_authority(canonical,connect_factory=connect_factory,
-                    identity=identity,requested_seconds=artifact["maximum_duration_seconds"])):
-            continue
+        if artifact.get("stop_mode") == "scheduled":
+            try:
+                authority = callable(connect_factory) and canonical_timed_authority(
+                    canonical, connect_factory=connect_factory, identity=identity,
+                    requested_seconds=artifact["maximum_duration_seconds"], execution=artifact)
+            except Exception:
+                authority = False
+            if not authority:
+                outcomes.append(_admission_rejection(identity, "canonical_timed_authority_unproven"))
+                continue
         recorded = store("record_auxiliary_eligibility", artifact)
         if not isinstance(recorded, dict) or recorded.get("success") is not True:
             outcomes.append(_safe("auxiliary_eligibility_persistence_unproven", blocks_bc=False))
@@ -442,7 +459,7 @@ def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
             transport=transport, revalidate=lambda _artifact, value=context, selected=identity: (value
                 if _artifact.get("stop_mode")!="scheduled" or canonical_timed_authority(
                     canonical_loader(DEVICE_KEYS[selected]),connect_factory=connect_factory,
-                    identity=selected,requested_seconds=_artifact["maximum_duration_seconds"]) else {}),
+                    identity=selected,requested_seconds=_artifact["maximum_duration_seconds"], execution=_artifact) else {}),
             now=now, auxiliary_device_id=identity, clock=clock)
         outcomes.append({**result, "managed_device": identity,
             "blocks_bc": identity == "FERTILIZER-INJECTION-CH1" and result.get("status") in {"auxiliary_started", "auxiliary_on_command_accepted"}})
@@ -707,7 +724,17 @@ def _before_deadline(active, now):
     except (ValueError, TypeError):
         return False
 
+def _admission_rejection(identity, reason, *, failure=None):
+    from modules.telemetry.rootline_failure_diagnostics import sanitize_auxiliary_rejections
+    return {"admission_rejection": sanitize_auxiliary_rejections([
+        {"device": identity, "reason": reason, "current_failure": failure}])[0]}
+
+
 def _combined(outcomes, empty_status):
+    rejected = [row["admission_rejection"] for row in outcomes if "admission_rejection" in row][:2]
+    if rejected:
+        result = _combined([row for row in outcomes if "admission_rejection" not in row], empty_status)
+        return {**result, "auxiliary_admission_rejections": rejected}
     if len(outcomes) > 1:
         outcomes = [row for row in outcomes if row.get("status") not in {
             "no_eligible_managed_device_task", "no_active_managed_device"}]

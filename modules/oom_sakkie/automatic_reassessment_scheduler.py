@@ -185,6 +185,10 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
                "telegram_edits": int(result.get("telegram_edits") or 0),
                "hardware_commands": int(result.get("hardware_commands") or 0),
                "writes_farm_data": result.get("writes_farm_data", False)}
+    from modules.telemetry.rootline_failure_diagnostics import sanitize_auxiliary_rejections
+    outcome["auxiliary_admission_rejections"] = sanitize_auxiliary_rejections(
+        result.get("auxiliary_admission_rejections") or
+        (result.get("managed_device_result") or {}).get("auxiliary_admission_rejections"))
     from modules.telemetry.rootline_failure_diagnostics import sanitize_no_send
     outcome.update(sanitize_no_send(result))
     outcome.update(safe_daily_plan_diagnostics(result))
