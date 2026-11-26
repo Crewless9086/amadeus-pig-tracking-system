@@ -194,6 +194,8 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
     outcome.update(safe_daily_plan_diagnostics(result))
     outcome.update(safe_reporting_diagnostics(result))
     outcome.update(safe_plan_delivery_diagnostics(result))
+    from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+    outcome["equipment_notification_failure"] = sanitize_failure(result.get("equipment_notification_failure"))
     if result.get("irrigation_failure"):
         from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
         outcome["irrigation_failure"] = sanitize_failure(result["irrigation_failure"])
