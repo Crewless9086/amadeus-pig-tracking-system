@@ -442,6 +442,7 @@ jobs:
           tests/test_rootline_commissioning_bridges.py
           tests/test_rootline_active_supervision.py
           tests/test_rootline_parent_deadline.py
+          tests/test_rootline_stage_timings.py
           tests/test_rootline_report_query.py
           tests/test_rootline_active_pass.py
           tests/test_rootline_borehole_fault_read_reuse.py
