@@ -1201,7 +1201,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                                          managed_device_cycle=None, daily_plan_generator=None,
                                          active_supervision_cycle=None, equipment_notification_cycle=None,
                                          provider_notification_cycle=None, input_notification_cycle=None,
-                                         short_auxiliary_supervision_cycle=None):
+                                         short_auxiliary_supervision_cycle=None, routine_plan=False):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -1464,12 +1464,14 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "deadline_deferred" if "deadline" in text else "unverified")}
             value, status = handle_rootline_reassessment_trigger(manual_payload,
                 headers=headers, environ=source, specialist_loader=lambda: current,
-                state_store=state_store, family_delivery=deliver_report)
+                state_store=state_store, family_delivery=deliver_report,
+                routine_plan=True, scheduler_now=scheduler_now or datetime.now(timezone.utc))
             proof = value.get("delivery") or {}
             recorded = value.get("delivery_record") or {}
             confirmed = bool(proof.get("telegram_message_id") and (
                 proof.get("success") is True or proof.get("provider_delivery_confirmed") is True))
             delivery_status = ("delivered_current_irrigation_plan" if confirmed else
+                "current_irrigation_plan_waiting_for_morning" if value.get("status") == "rootline_reassessment_not_due" else
                 "current_irrigation_plan_unchanged" if value.get("status") in {
                     "rootline_reassessment_unchanged", "rootline_reassessment_replayed_noop"}
                 else "current_irrigation_plan_delivery_unconfirmed")
@@ -2072,6 +2074,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         state_store = rootline_reassessment_state_store
     result = reassess_rootline(owner_user_id=owner, chat_id=chat, trigger=trigger,
         specialist_loader=specialist_loader, state_store=state_store,
+        routine_plan=routine_plan, now=scheduler_now,
         language="af" if str((payload or {}).get("language") or "").casefold().startswith("af") else "en")
     if not result.get("notify_owner"):
         return result, 200 if result.get("success") else 202

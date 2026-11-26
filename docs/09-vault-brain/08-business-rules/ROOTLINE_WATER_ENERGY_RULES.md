@@ -1,5 +1,23 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed clear notifications - 26 November 2026
+
+Prepare the programme at the existing nightly planning time, but send the
+routine daily Telegram plan at06:30 Africa/Johannesburg, once per local day.
+Later routine notices require a material change; new observations alone do not
+justify repeating the same plan. Explicit owner requests and urgent equipment
+exceptions remain available outside that routine-plan window.
+
+List scheduled camps as separate bullets in actual run order, with local windows
+such as10h00-11h00 and the date once in the heading. Use distinct activity/device
+emojis. Do not label advisory planning recommendations as current equipment state;
+omit unhelpful generic auxiliary Needs Data/Recommend labels. Retain truthful
+partial, completed, uncertain-command and unresolved shutdown distinctions.
+Equipment transitions, delivery recovery and deduplication remain on the existing
+canonical notification rail. This changes presentation and routine-plan delivery
+time only, not forecast timing, equipment authority or operating limits.
+
+
 ## Owner-directed injector timing target â€” 22 November 2026
 
 The owner selected a120-second injector target and explicitly directed reporting

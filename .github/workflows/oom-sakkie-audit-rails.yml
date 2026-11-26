@@ -479,7 +479,20 @@ jobs:
           tests/test_rootline_managed_recovery_planning.py
           tests/test_rootline_shutdown_preservation.py
           tests/test_oom_sakkie_rootline_daily_presentation.py
+          tests/test_rootline_notice46_presentation.py
           tests/test_oom_sakkie_owner_response_composer.py
+
+      - name: Create isolated ROOTLINE notification query database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host=127.0.0.1 --port=5432 --username=postgres rootline_notification_query_test
+
+      - name: Prove ROOTLINE notification query equivalence
+        env:
+          ROOTLINE_NOTIFICATION_QUERY_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/rootline_notification_query_test
+          ROOTLINE_NOTIFICATION_QUERY_TEST_LEASE: notice46
+          PYTHON_DOTENV_DISABLED: "1"
+        run: python -B -m pytest -q -p no:cacheprovider tests/test_rootline_notification_query_postgres.py
 
       - name: Create isolated ROOTLINE reporting cutoff database
         env:

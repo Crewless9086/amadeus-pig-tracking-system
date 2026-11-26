@@ -22,10 +22,13 @@ def activity_notice(state, execution, *, language="en"):
     proof = (execution.get("start_evidence" if on else "shutdown_evidence")
         or execution.get("provider_start_evidence" if on else "provider_final_off_evidence")
         or execution.get("readback") or {})
-    stamp = execution.get("notification_observed_at") or receipt.get("accepted_at") or proof.get("retrieved_at") or proof.get("observed_at")
+    stamp = receipt.get("accepted_at") or proof.get("retrieved_at") or proof.get("observed_at") or execution.get("notification_observed_at")
+    event_day = ""
     try:
         observed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
-        stamp = observed.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%d %b %H:%M SAST") if observed.tzinfo else ""
+        local = observed.astimezone(ZoneInfo("Africa/Johannesburg")) if observed.tzinfo else None
+        event_day = local.strftime("%d %b %Y") if local else ""
+        stamp = local.strftime("%Hh%M SAST") if local else ""
     except (TypeError, ValueError):
         stamp = ""
     edge_proven = (proof.get("authoritative") is True and proof.get("state") == ("ON" if on else "OFF")
@@ -46,7 +49,8 @@ def activity_notice(state, execution, *, language="en"):
     if state == "Adopted":
         title = "Toesig hervat" if af else "Supervision resumed"
         icon = "🔄"
-    lines = [f"<b>{icon} ROOTLINE · {escape(label)} · {title}</b>"]
+    dated = " · " + event_day if event_day else ""
+    lines = [f"<b>{icon} ROOTLINE · {escape(label)} · {title}{dated}</b>"]
     if stamp: lines.append(stamp)
     if state == "Adopted":
         lines += ["", "ROOTLINE hou outomaties toesig oor hierdie bestaande lopie." if af else "ROOTLINE has resumed supervision of this existing run."]
@@ -88,4 +92,5 @@ def activity_notice(state, execution, *, language="en"):
     if on:
         lines.append("ROOTLINE hanteer die afskakeling outomaties." if af else "ROOTLINE manages the stop automatically.")
     lines += ["", f'<a href="{IRRIGATION_URL}">'+("Plan en geskiedenis" if af else "Plan and history")+"</a>"]
-    return "\n".join(lines)
+    return "\n".join("• "+line if index > 1 and line and not line.startswith(("<a ", "⚠️")) else line
+        for index, line in enumerate(lines))
