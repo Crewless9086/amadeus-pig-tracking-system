@@ -159,6 +159,7 @@ class ComposedPath(Path):
             "ROOTLINE_ESKOM_ENABLED": "false", **(environ or {})}
         return handle_rootline_reassessment_trigger(request, HEADERS, source,
             state_store=self.state, schedule_store=self.schedules, scheduler_now=tick,
+            supervision_clock=self.clock.now,
             family_delivery=lambda *a, **k: {"success": True, "telegram_message_id": "synthetic"},
             specialist_loader=lambda **k: pytest.fail("report cadence is not due"),
             active_supervision_cycle=self.supervisor, managed_device_cycle=self.managed,
