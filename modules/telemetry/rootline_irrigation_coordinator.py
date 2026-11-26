@@ -1640,6 +1640,8 @@ def _notify(notify, store, state, payload):
     record = {**payload, "notification_identity": identity,
               "notification_state": state, "delivery_confirmed": confirmed,
               "delivery_ambiguous": ambiguous,
+              "delivery_definitely_not_sent": (delivery.get("delivery_definitely_not_sent") is True
+                  and not confirmed and not ambiguous and not delivery.get("provider_message_id")),
               "provider_message_id": str(delivery.get("provider_message_id") or "")}
     store("record_notification_delivery", record)
     return {"confirmed": int(confirmed), "ambiguous": ambiguous,

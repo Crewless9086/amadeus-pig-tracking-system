@@ -200,3 +200,31 @@ def test_completion_cannot_strip_new_claim_timing_marker(monkeypatch):
     assert ca.terminal_matches_rows(terminal,d.rows)
     terminal.pop("injector_timing_contract");terminal.pop("injector_target")
     assert not ca.terminal_matches_rows(terminal,d.rows)
+
+@pytest.mark.parametrize("language", ["en", "af"])
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("known", [False, True])
+def test_activity_target_uses_immutable_closed_execution(monkeypatch, language, configured, known):
+    from modules.oom_sakkie.rootline_activity_presentation import activity_notice
+    from tests.test_rootline_owner_injection_programme import versioned_database
+    d = versioned_database(monkeypatch, minutes=10) if configured else Database(monkeypatch)
+    active = d.activate()["execution"]
+    deadline = ca.command_stop_deadline(active)
+    off = receipt(active, "OFF", at=deadline)
+    terminal = ca.terminal(active, off, now=deadline, reason="primary_deadline_reached")
+    terminal["command_program_completed"] = True
+    assert ca.duty_closed(terminal) and ca.program_completed(terminal)
+    target = 600 if configured else 120
+    assert ca.injector_target_timing(terminal)["target_seconds"] == target
+    # A later caller setting cannot change the original accepted duty target.
+    terminal["owner_settings"] = {"pulse_minutes": 3}
+    if not known:
+        terminal.pop("injector_target", None)
+        assert ca.injector_target_timing(terminal) is None
+    text = activity_notice("Stopped", terminal, language=language)
+    prefix = "Teiken:" if language == "af" else "Target:"
+    if known:
+        assert f"{prefix} {target} s" in text
+        assert f"{prefix} {120 if configured else 600} s" not in text
+    else:
+        assert prefix not in text

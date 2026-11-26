@@ -1532,9 +1532,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 outcome = {"success": False, "status": "rootline_transition_notifications_deferred",
                     "telegram_sends": 0}
             except Exception as exc:
+                from modules.telemetry.rootline_failure_diagnostics import exception_failure
                 outcome = {"success": False, "status": "rootline_transition_notifications_unavailable",
-                    "error_type": type(exc).__name__, "telegram_sends": 0}
+                    "failure": exception_failure(exc), "telegram_sends": 0}
+            from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
             return {**supervision, "equipment_notification_status": str(outcome.get("status") or ""),
+                "equipment_notification_failure": sanitize_failure(outcome.get("failure")),
                 "telegram_sends": int(supervision.get("telegram_sends") or 0) + int(outcome.get("telegram_sends") or 0)}
 
         report_progress = {"telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0}
@@ -2042,6 +2045,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             elif "writes_farm_data" in supervision and supervision["writes_farm_data"] is None:
                 result["writes_farm_data"] = None
             result["equipment_notification_status"] = supervision.get("equipment_notification_status", "")
+            from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+            result["equipment_notification_failure"] = sanitize_failure(supervision.get("equipment_notification_failure"))
             result["active_supervision_write_attempted"] = supervision.get("active_supervision_write_attempted") is True
             return result
 

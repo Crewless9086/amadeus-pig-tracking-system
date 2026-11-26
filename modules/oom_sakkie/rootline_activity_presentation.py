@@ -78,7 +78,8 @@ def activity_notice(state, execution, *, language="en"):
         from modules.telemetry.rootline_command_acceptance import injector_target_timing
         timing = injector_target_timing(execution)
         if timing:
-            lines.append("Teiken: 120 s vanaf aanvaarde AAN." if af else "Target: 120 s from accepted ON.")
+            target = timing["target_seconds"]
+            lines.append(f"Teiken: {target:g} s vanaf aanvaarde AAN." if af else f"Target: {target:g} s from accepted ON.")
         if timing and timing.get("off_acceptance_offset_seconds", 0) > 0:
             late = timing["off_acceptance_offset_seconds"]
             lines.append((f"⚠️ AF-opdrag {late:g} s na die teiken aanvaar." if af else
