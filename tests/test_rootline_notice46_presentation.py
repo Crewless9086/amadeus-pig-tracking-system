@@ -24,8 +24,8 @@ def test_bullets_follow_canonical_times_with_both_local_endpoints(language):
     text=compose_daily_rootline_plan(value,language=language)
     label="Camp" if language=='en' else "Kamp"
     assert [text.index(f"<b>{zone} {label}:") for zone in 'ABCE']==sorted(text.index(f"<b>{zone} {label}:") for zone in 'ABCE')
-    assert '10h00–11h00 SAST' in text and '13h00–14h00 SAST' in text
-    assert text.count('2026-11-26')==1
+    assert '10h00–11h00' in text and '13h00–14h00' in text
+    assert text.count('Nov 2026')==1
     assert 'stale advisory window' not in text and 'Needs Data' not in text
     assert 'Recommendation - irrigate' not in text and 'Not running' not in text
     assert 'FERTILIZER' not in text

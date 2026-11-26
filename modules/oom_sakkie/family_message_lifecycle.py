@@ -7,6 +7,7 @@ it creates no router, bot, specialist service, or farm-write authority.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import hashlib
 import html
 import json
@@ -24,6 +25,52 @@ def _provider_deadline_available(deadline_monotonic):
     return (deadline_monotonic is None
             or time.monotonic() + PROVIDER_DELIVERY_RESERVE_SECONDS
                 <= deadline_monotonic)
+
+
+ROOTLINE_CLAIM_RESERVE_SECONDS = 10
+
+
+def _rootline_recovery_attempt(events, payload, card_mission_id):
+    """One append-only retry per complete canonical zero-send proof chain."""
+    base = card_mission_id + '-DELIVERY-ATTEMPT'
+    second = card_mission_id + '-DELIVERY-RETRY-2'
+    # This rail is only the initial-card zero-send chain. Any other state,
+    # including a malformed delivered row without a message ID, is not proof.
+    if any(not isinstance(row, Mapping) or row.get('state') not in
+            {'delivery_attempted', 'contained'} for row in events):
+        return None
+    relevant = list(events)
+    by_id = {str(row.get('event_id') or ''): row for row in relevant}
+    if len(by_id) != len(relevant):
+        return None
+    fields = ('mission_id', 'card_mission_id', 'owner_user_id', 'chat_id',
+              'specialist_identity', 'text_sha256')
+    if any(not payload.get(key) for key in fields):
+        return None
+    if any(any(row.get(key) != payload[key] for key in fields) for row in relevant):
+        return None
+    proofs = []
+    expected = base
+    consumed = set()
+    while expected in by_id:
+        attempt = by_id[expected]
+        contained_id = expected + '-CONTAINED'
+        contained = by_id.get(contained_id, {})
+        if (attempt.get('state') != 'delivery_attempted'
+                or contained.get('state') != 'contained'
+                or contained.get('reason') != 'telegram_delivery_definitely_not_sent'
+                or contained.get('telegram_message_id') or attempt.get('telegram_message_id')):
+            return None
+        consumed.update((expected, contained_id))
+        proofs.append(contained_id)
+        if expected == base:
+            expected = second
+        else:
+            digest = hashlib.sha256(json.dumps(proofs,separators=(',', ':')).encode()).hexdigest()
+            expected = card_mission_id + '-DELIVERY-ZERO-SEND-RECOVERY-' + digest.upper()
+    if len(proofs) < 2 or set(by_id) != consumed:
+        return None
+    return expected
 
 
 def _visible_notification_identity(card_mission_id, text_sha, parsed, specialist):
@@ -738,7 +785,16 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     retry_two = validates_delivery_retry_authority(delivery_retry_authority,
         mission_id=mission_id, card_mission_id=card_mission_id, text=text)
     attempt_id = card_mission_id + ("-DELIVERY-RETRY-2" if retry_two else "-DELIVERY-ATTEMPT")
-    if not _provider_deadline_available(deadline_monotonic):
+    if specialist == "ROOTLINE" and retry_two and any(
+            row.get("event_id") == attempt_id for row in events):
+        recovery = _rootline_recovery_attempt(events, payload, card_mission_id)
+        if recovery is None:
+            return {"success": False, "status": "family_message_delivery_ambiguous",
+                    "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
+        attempt_id = recovery
+    claim_reserve = ROOTLINE_CLAIM_RESERVE_SECONDS if specialist == "ROOTLINE" else 0
+    claim_deadline = deadline_monotonic - claim_reserve if deadline_monotonic is not None else None
+    if not _provider_deadline_available(claim_deadline):
         return {"success": False, "status": "family_message_cycle_deadline_deferred",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_sends": 0, "telegram_edits": 0}
@@ -746,7 +802,16 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         denied = _provider_attempt()
         if denied is not None:
             return denied
-    claimed = store("record", attempt_id, {**payload, "event_id": attempt_id, "state": "delivery_attempted"})
+    # Bound the claim itself without reducing the provider's existing reserve.
+    # An unacknowledged claim remains ambiguous and cannot authorize a resend.
+    from modules.telemetry.rootline_cycle_budget import cycle_budget, remaining_seconds
+    claim_scope = (cycle_budget(min(time.monotonic() + claim_reserve,
+                    deadline_monotonic - PROVIDER_DELIVERY_RESERVE_SECONDS))
+        if specialist == "ROOTLINE" and deadline_monotonic is not None else nullcontext())
+    with claim_scope:
+        if specialist == "ROOTLINE" and deadline_monotonic is not None:
+            remaining_seconds(minimum=0)
+        claimed = store("record", attempt_id, {**payload, "event_id": attempt_id, "state": "delivery_attempted"})
     if (not isinstance(claimed, dict) or claimed.get("success") is not True
             or claimed.get("created") is not True):
         return {"success": False, "status": "family_message_delivery_ambiguous",

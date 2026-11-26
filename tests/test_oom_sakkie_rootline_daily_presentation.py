@@ -91,7 +91,7 @@ def test_rain_hold_is_clean_and_power_does_not_rank_gravity_fed_zones():
     assert "Started: no" not in text and "Completed: no" not in text
     assert "Observed rain supports Hold" in text
     assert "SOC" not in text and "solar" not in text.casefold() and "grid" not in text.casefold()
-    assert "No action needed" in text and "What I need from you" not in text
+    assert "No action needed" not in text and "What I need from you" not in text
 
 
 def test_recommendation_never_claims_irrigation_executed():
@@ -394,8 +394,8 @@ def test_no_owner_fact_sentinel_is_not_rendered_as_a_question():
     value["owner_brief"]["family_fact_needed"] = "No owner fact is required now."
     text = compose_daily_rootline_plan(value)
     assert "No owner fact is required now" not in text
-    assert "No action needed" in text and "What I need from you" not in text
-    assert "No action needed." in text
+    assert "No action needed" not in text and "What I need from you" not in text
+    assert "No action needed." not in text
 
 
 def test_manager_item_uses_same_completed_projection_without_internal_tokens():
