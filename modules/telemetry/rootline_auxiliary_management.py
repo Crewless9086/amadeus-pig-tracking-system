@@ -155,7 +155,7 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
     used = accounting["reserved_seconds"] / 60
     remaining=max(0,MAX_DAILY_MIX_MINUTES-used)
     available_seconds = (session["maximum_duration_seconds"] if session else 0) if command_sessions else min(MIX_SESSION_SECONDS,int(remaining*60))
-    from modules.telemetry.rootline_owner_auxiliary_policy import mixer_owner_capacity_seconds, owner_injection_pulse_limit
+    from modules.telemetry.rootline_owner_auxiliary_policy import mixer_owner_capacity_seconds, injection_policy_context
     available_seconds = min(available_seconds, mixer_owner_capacity_seconds(accounting, owner_controls, now=now))
     if command_sessions:
         midnight = now.astimezone(SAST).replace(hour=0, minute=0, second=0, microsecond=0)+timedelta(days=1)
@@ -197,8 +197,7 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
         "does_not_block_bc_irrigation":True,"command_authority":False}
     injection_context=(active_irrigation_context
         if isinstance(active_irrigation_context,dict) else {})
-    injection_context = {**injection_context, "owner_injection_pulse_limit": owner_injection_pulse_limit(
-        owner_controls, now=now, existing_limit=4 if injection_context.get("stop_mode") == "scheduled" else 2)}
+    injection_context = injection_policy_context(injection_context, owner_controls, now=now)
     injection_ready=(batch_ready and injection_context.get("fertilizer_needed") is True
         and _injection_gate(injection_context,now) is None)
     injection={"contract_version":TASK_CONTRACT,"auxiliary_task_id":
@@ -206,7 +205,9 @@ def build_auxiliary_tasks(*, batch, power=None, verified_mixing=None,
         "auxiliary_device_id":"FERTILIZER-INJECTION-CH1",
         "device_type":"fertilizer_injection_valve",
         "decision":"Run now" if injection_ready else "Await eligible irrigation",
-        "pulse_seconds":120,"maximum_pulses_per_segment":_pulse_limit(injection_context),"nutrient_dose":"Unknown",
+        **({"reason": "Injection count changes take effect on the next camp run"}
+            if not _pulse_policy_compatible(injection_context) else {}),
+        "pulse_seconds":_injection_seconds(injection_context),"maximum_pulses_per_segment":_pulse_limit(injection_context),"nutrient_dose":"Unknown",
         "concentration":batch.get("concentration","Unknown"),
         "does_not_block_bc_irrigation":True,"command_authority":False}
     return {"irrigation_auxiliary_devices":["FERTILIZER-INJECTION-CH1",
@@ -308,6 +309,7 @@ def fertilizer_control_progress(context, *, now):
         prior = context.get("prior_pulse_shutdown_evidence") or {}
         stopped = _time(prior.get("observed_at"))
         if (context.get("completed_pulses") != _pulse_limit(context)
+                or not _pulse_policy_compatible(context)
                 or not command_parent_ready(context, now=now) or not prior_pulse_closed(context)
                 or stopped is None or now-stopped < timedelta(seconds=MIN_FLUSH_SECONDS)):
             return {"completed": False, "status": "await_command_postflow"}
@@ -368,7 +370,7 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
     device_type=contract["device_type"]
     if device_type=="fertilizer_injection_valve":
         reason=_injection_gate(context,now)
-        runtime=INJECTION_SECONDS
+        runtime=_injection_seconds(context)
     else:
         runtime=int(task.get("planned_seconds") or 0)
         reason=_mixing_gate(context,now,runtime=runtime)
@@ -400,6 +402,8 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
     if device_type=="fertilizer_injection_valve":
         if not scheduled:
             material["physical_commissioning_generation"] = safety["physical_commissioning_generation"]
+        if context.get("injection_policy") is not None:
+            material["injection_policy"] = deepcopy(context["injection_policy"])
         start_evidence=context["zone_start_evidence"]
         output_evidence=context["zone_output_evidence"]
         from modules.telemetry.rootline_command_acceptance import MODE
@@ -415,7 +419,7 @@ def build_auxiliary_eligibility(*, task, safety, context, flags=None, now=None,
             "segment_identity":context["segment_identity"],
             "zone_execution_id":context["zone_execution_id"],
             "pulse_number":_next_pulse_index(context,now)+1,
-            **({"phase_number":_next_pulse_index(context,now)//2+1} if scheduled else {}),
+            **({"phase_number":_next_pulse_index(context,now)//_per_hour(context)+1} if scheduled else {}),
             "batch_generation":context.get("batch_generation") or
                 "explicit_owner_time_programme",
             "zone_start_evidence_id":start_evidence["evidence_id"],
@@ -465,7 +469,13 @@ def validate_auxiliary_eligibility(value, *, now=None):
                 or value.get("acceptance_mode") != MODE
                 or not session_shape(value["mixer_session"], now=now, duration=value.get("maximum_duration_seconds"))):
             return None
-    expected_runtime=(INJECTION_SECONDS if value.get("device_type")==
+    if value.get("injection_policy") is not None:
+        from modules.telemetry.rootline_owner_auxiliary_policy import valid_injection_policy
+        if (not valid_injection_policy(value["injection_policy"])
+                or value.get("stop_mode") != "scheduled" or value.get("acceptance_mode") != "command_accepted"
+                or value.get("zone_id") not in value["injection_policy"]["zone_ids"]):
+            return None
+    expected_runtime=(_injection_seconds(value) if value.get("device_type")==
                       "fertilizer_injection_valve" else int(value.get(
                           "maximum_duration_seconds") or 0))
     if (not contract or value.get("contract_version")!=("rootline_auxiliary_eligibility.v2"
@@ -483,12 +493,13 @@ def validate_auxiliary_eligibility(value, *, now=None):
             or value.get("channel")!=contract.get("channel")
             or value.get("on_event")!=contract.get("on_event")
             or value.get("off_event")!=contract.get("off_event")
-            or not 1 <= expected_runtime <= (INJECTION_SECONDS if value.get(
+            or not 1 <= expected_runtime <= (600 if value.get(
                 "device_type")=="fertilizer_injection_valve" else MAX_MIX_SECONDS)
             or value.get("maximum_duration_seconds")!=expected_runtime): return None
     if value.get("stop_mode")=="scheduled" and value.get("device_type")=="fertilizer_injection_valve":
         pulse=value.get("pulse_number")
-        if type(pulse) is not int or not 1<=pulse<=4 or value.get("phase_number")!=(pulse-1)//2+1:
+        if (type(pulse) is not int or not 1<=pulse<=_per_hour(value)*2
+                or value.get("phase_number")!=(pulse-1)//_per_hour(value)+1):
             return None
     decision=_time(value.get("decision_at")); expires=_time(value.get("expires_at"))
     return value if decision and expires and decision<=now<=expires else None
@@ -512,6 +523,8 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
                 current_safety.get("physical_commissioning_generation") !=
                 value["physical_commissioning_generation"]):
             return False
+        if current_context.get("injection_policy") != value.get("injection_policy"):
+            return False
         if (current_context.get("job_id")!=value.get("job_id")
                 or current_context.get("job_sha256")!=value.get("job_sha256")
                 or current_context.get("segment_identity")!=value.get("segment_identity")
@@ -521,7 +534,7 @@ def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_sa
                     _time(value.get("irrigation_stop_deadline"))):
             return False
         if scheduled and (value.get("pulse_number")!=_next_pulse_index(current_context,now)+1
-                or value.get("phase_number")!=_next_pulse_index(current_context,now)//2+1):
+                or value.get("phase_number")!=_next_pulse_index(current_context,now)//_per_hour(current_context)+1):
             return False
         from modules.telemetry.rootline_command_acceptance import MODE, command_parent_ready, prior_pulse_closed
         command_mode = value.get("acceptance_mode") == MODE
@@ -553,13 +566,24 @@ def _injection_gate(context,now,*,require_output=True):
     if command_mode and not command_parent_ready(context, now=now, require_route=require_output):
         return "active_parent_command_unproven"
     zones=context.get("active_zone_ids") if isinstance(context.get("active_zone_ids"),list) else []
+    policy = context.get("injection_policy")
+    from modules.telemetry.rootline_owner_auxiliary_policy import valid_injection_policy
+    if policy is not None and not valid_injection_policy(policy):
+        return "injection_policy_invalid"
+    if not _pulse_policy_compatible(context):
+        return "injection_count_changed_during_parent"
     pulse=_next_pulse_index(context,now)
     if (not str(context.get("job_id") or "").startswith("ROOTLINE-IRRIGATION-JOB-")
             or len(str(context.get("job_sha256") or "")) != 64
             or not str(context.get("segment_identity") or "").startswith(
                 "ROOTLINE-JOB-SEGMENT-")):
         return "irrigation_job_binding_incomplete"
-    if len(zones)!=1 or zones[0] not in {"B12345","C12345"}: return "exactly_one_bc_zone_required"
+    from modules.telemetry.rootline_owner_auxiliary_policy import valid_injection_policy
+    policy = context.get("injection_policy")
+    if policy is not None and (not valid_injection_policy(policy) or not command_mode or context.get("stop_mode") != "scheduled"):
+        return "injection_policy_invalid"
+    allowed = policy["zone_ids"] if policy is not None else ("B12345", "C12345")
+    if len(zones)!=1 or zones[0] not in allowed: return "exactly_one_bc_zone_required"
     start=context.get("zone_start_evidence") if isinstance(
         context.get("zone_start_evidence"),dict) else {}
     output=context.get("zone_output_evidence") if isinstance(
@@ -580,7 +604,7 @@ def _injection_gate(context,now,*,require_output=True):
             or (require_output and not command_mode and not irrigation_dependency_verified(output,
                 device_id=binding["device_id"], channel=binding["channel"], now=now))):
         return "active_irrigation_outputs_unverified"
-    phase_start=start_at + timedelta(seconds=(pulse//2)*3600 if context.get("stop_mode")=="scheduled" else 0)
+    phase_start=start_at + timedelta(seconds=(pulse//_per_hour(context))*3600 if context.get("stop_mode")=="scheduled" else 0)
     if now-phase_start<timedelta(seconds=MIN_PREFLOW_SECONDS):
         return "clean_water_preflow_incomplete"
     complete_at = _time(context.get("fertilizer_history_complete_through"), require_aware=True)
@@ -592,12 +616,12 @@ def _injection_gate(context,now,*,require_output=True):
     prior=context.get("prior_pulse_shutdown_evidence") if isinstance(
         context.get("prior_pulse_shutdown_evidence"),dict) else {}
     prior_at=_time(prior.get("observed_at"))
-    if (pulse%2==1 or bool(prior)) and ((not prior_pulse_closed(context) if command_mode else (not prior.get("evidence_id") or prior.get("shutdown_verified") is not True))
+    if (pulse%_per_hour(context)>0 or bool(prior)) and ((not prior_pulse_closed(context) if command_mode else (not prior.get("evidence_id") or prior.get("shutdown_verified") is not True))
             or prior.get("zone_execution_id")!=context.get("zone_execution_id")
             or prior_at is None or now-prior_at<timedelta(seconds=MIN_PULSE_SPACING_SECONDS)):
         return "pulse_spacing_incomplete"
-    required=(INJECTION_SECONDS+MIN_PULSE_SPACING_SECONDS+INJECTION_SECONDS+MIN_FLUSH_SECONDS
-              if pulse%2==0 else INJECTION_SECONDS+MIN_FLUSH_SECONDS)
+    remaining = _per_hour(context) - pulse % _per_hour(context)
+    required = remaining * _injection_seconds(context) + (remaining - 1) * MIN_PULSE_SPACING_SECONDS + MIN_FLUSH_SECONDS
     stop_at=_time(context.get("irrigation_stop_deadline"))
     if stop_at and context.get("stop_mode")=="scheduled":
         stop_at=min(stop_at,phase_start+timedelta(seconds=3600))
@@ -650,6 +674,7 @@ def injection_parent_read_due(context, *, now):
     stopped = _time(prior.get("observed_at"))
     deadline = _time(context.get("irrigation_stop_deadline"))
     return (context.get("completed_pulses") == _pulse_limit(context)
+        and _pulse_policy_compatible(context)
         and bool(context.get("zone_execution_id"))
         and prior.get("zone_execution_id") == context["zone_execution_id"]
         and (prior.get("shutdown_verified") is True or (context.get("acceptance_mode") == MODE and prior_pulse_closed(context))) and stopped is not None
@@ -668,15 +693,15 @@ def injection_preparation_observation(context, *, now, admission_token):
     if not final_flush:
         start = _time((context.get("zone_start_evidence") or {}).get("observed_at"))
         if context.get("stop_mode") == "scheduled":
-            deadline = min(deadline, start+timedelta(seconds=(pulse//2+1)*3600))
-        required = (INJECTION_SECONDS+MIN_PULSE_SPACING_SECONDS+INJECTION_SECONDS+MIN_FLUSH_SECONDS
-            if pulse%2 == 0 else INJECTION_SECONDS+MIN_FLUSH_SECONDS)
+            deadline = min(deadline, start+timedelta(seconds=(pulse//_per_hour(context)+1)*3600))
+        remaining = _per_hour(context) - pulse % _per_hour(context)
+        required = remaining * _injection_seconds(context) + (remaining - 1) * MIN_PULSE_SPACING_SECONDS + MIN_FLUSH_SECONDS
         deadline -= timedelta(seconds=required)
     return optional_observation("final_flush" if final_flush else "pulse_preparation",
         binding={"zone_execution_id": context.get("zone_execution_id"),
             "provider_account_binding": "ewelink_owner_account",
             "device_id": "100204d497", "channel": 1,
-            **({} if final_flush else {"phase_number": pulse//2+1, "pulse_number": pulse+1})},
+            **({} if final_flush else {"phase_number": pulse//_per_hour(context)+1, "pulse_number": pulse+1})},
         last_read_at=deadline.isoformat(), admission_token=admission_token)
 
 
@@ -688,12 +713,35 @@ def _next_pulse_index(context,now):
     phase=max(0,int((now-start).total_seconds())//3600)
     done=context.get("completed_pulse_numbers")
     if not isinstance(done,list): done=list(range(1,int(context.get("completed_pulses") or 0)+1))
-    for index in range(phase*2,min(phase*2+2,_pulse_limit(context))):
+    for index in range(phase*_per_hour(context),min((phase+1)*_per_hour(context),_pulse_limit(context))):
         if index+1 not in done: return index
     return _pulse_limit(context)
 
 
+def _pulse_policy_compatible(context):
+    # Pulse ordinals are immutable canonical ownership keys. Changing their
+    # per-hour interpretation during one parent could admit extra pulses.
+    prior = (context.get("prior_pulse_shutdown_evidence") or {}).get("command_execution") or {}
+    if not prior:
+        return True
+    previous = prior.get("injection_policy")
+    previous_count = previous.get("pulses_per_60_minutes") if isinstance(previous, dict) else 2
+    return previous_count == _per_hour(context)
+
+
+def _injection_seconds(context):
+    policy = context.get("injection_policy")
+    return policy["pulse_seconds"] if isinstance(policy, dict) else INJECTION_SECONDS
+
+
+def _per_hour(context):
+    policy = context.get("injection_policy")
+    return policy["pulses_per_60_minutes"] if isinstance(policy, dict) else 2
+
+
 def _pulse_limit(context):
+    if context.get("injection_policy") is not None:
+        return _per_hour(context) * (2 if int(context.get("planned_runtime_seconds") or 0) > 3600 else 1)
     existing = 4 if context.get("stop_mode")=="scheduled" and int(context.get("planned_runtime_seconds") or 0)>3600 else 2
     owner = context.get("owner_injection_pulse_limit", existing)
     return min(existing, owner) if type(owner) is int and 1 <= owner <= 4 else 0

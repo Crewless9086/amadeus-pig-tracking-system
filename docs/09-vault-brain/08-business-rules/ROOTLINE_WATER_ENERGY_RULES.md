@@ -1,5 +1,34 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed editable injection programme - 26 November 2026
+
+The owner selected two ten-minute injections per sixty minutes of irrigation,
+with Camps A, B, C and E eligible. Expose injection duration, injections per
+sixty minutes and individual camp selection through the existing authenticated
+owner settings page. The owner will save the desired settings there after
+release; a source deployment alone must not change the saved operating policy.
+Absent an explicit effective save, retain the existing two-minute pulse,
+two-per-hour B/C programme and any existing lower legacy pulse cap.
+
+New effective saves govern prospective command-accepted, scheduled pulses:
+duration one to ten minutes and one or two pulses per hour, in the selected
+commissioned camps only. The per-hour selection replaces the former per-run
+cap for this new programme. Preserve ten minutes of clean-water preflow,
+at least ten minutes between accepted pulse shutdown and the next pulse,
+and at least ten minutes of final flush. Admit only pulses that fit the
+remaining parent irrigation window; do not overlap or extend the parent run.
+
+Pin the selected policy and duration to each new canonical claim. Existing
+claims and accepted-ON targets retain their original timing through later
+settings changes, expiry or restart. A changed pulse count after a completed
+pulse takes effect on the next camp run; do not reinterpret existing pulse
+ordinals or interrupt the independent irrigation run. Longer pulses remain durable owned duties
+on the existing minute scheduler, with no wait beyond its existing bounded
+horizon. Parent loss, manual isolation and existing stop conditions retain
+priority; uncertain ON is never repeated. Command acceptance does not establish
+measured flow, physical duration, concentration or dose.
+
+
 ## Owner-directed clear notifications - 26 November 2026
 
 Prepare the programme at the existing nightly planning time, but send the

@@ -237,7 +237,7 @@ def active_irrigation_duty(rows, *, now):
 
 def irrigation_context(active, auxiliary, *, fertilizer_needed, batch_generation, now):
     """Project canonical accepted-command timing without relay/flow assertions."""
-    if not active_command(active, now=now) or active.get("zone_id") not in {"B12345", "C12345"}:
+    if not active_command(active, now=now) or active.get("zone_id") not in {"A12345", "B12345", "C12345", "E12345"}:
         return None
     from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
     from modules.telemetry.rootline_irrigation_lifecycle import auxiliary_shutdown_unverified
@@ -295,6 +295,7 @@ def prior_pulse_closed(context):
 
 
 INJECTOR_TARGET_V1 = "rootline_injector_accepted_on_target.v1"
+INJECTOR_TARGET_V2 = "rootline_injector_accepted_on_target.v2"
 _INJECTOR_CLAIM_FIELDS = ("execution_id", "eligibility_id", "eligibility_sha256", "consumption_key",
     "auxiliary_device_id", "device_type", "device_id", "channel", "zone_id", "job_id", "job_sha256",
     "segment_identity", "zone_execution_id", "pulse_number", "phase_number", "batch_generation",
@@ -305,19 +306,35 @@ _INJECTOR_CLAIM_FIELDS = ("execution_id", "eligibility_id", "eligibility_sha256"
 def injector_target_claim(value):
     """Future claims opt into the owner's target policy; old claims never do."""
     claimed = moment(value.get("claimed_at")); provisional = moment(value.get("primary_stop_deadline"))
-    return (command_execution(value) and value.get("injector_timing_contract") == INJECTOR_TARGET_V1
+    version = value.get("injector_timing_contract")
+    seconds = 120
+    if version == INJECTOR_TARGET_V2:
+        from modules.telemetry.rootline_owner_auxiliary_policy import valid_injection_policy
+        policy = value.get("injection_policy")
+        if not valid_injection_policy(policy) or value.get("zone_id") not in policy["zone_ids"]:
+            return False
+        seconds = policy["pulse_seconds"]
+        pulse = value.get("pulse_number")
+        if type(pulse) is not int or not 1 <= pulse <= policy["pulses_per_60_minutes"] * 2 or value.get("phase_number") != (pulse - 1) // policy["pulses_per_60_minutes"] + 1:
+            return False
+    elif version != INJECTOR_TARGET_V1 or value.get("injection_policy") is not None:
+        return False
+    return (command_execution(value)
         and value.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"
         and value.get("device_type") == "fertilizer_injection_valve"
         and value.get("device_id") == "100204d497" and type(value.get("channel")) is int
         and value["channel"] == 1 and value.get("stop_mode") == "scheduled"
-        and type(value.get("maximum_duration_seconds")) is int and value["maximum_duration_seconds"] == 120
-        and claimed is not None and provisional == claimed + timedelta(seconds=120)
+        and type(value.get("maximum_duration_seconds")) is int and value["maximum_duration_seconds"] == seconds
+        and claimed is not None and provisional == claimed + timedelta(seconds=seconds)
         and all(isinstance(value.get(key), str) and value[key] for key in (
             "zone_execution_id", "job_id", "job_sha256", "segment_identity", "consumption_key")))
 
 
 def injector_claim_digest(value):
-    return digest({key: value.get(key) for key in _INJECTOR_CLAIM_FIELDS})
+    material = {key: value.get(key) for key in _INJECTOR_CLAIM_FIELDS}
+    if value.get("injector_timing_contract") == INJECTOR_TARGET_V2:
+        material["injection_policy"] = value.get("injection_policy")
+    return digest(material)
 
 
 def injector_target_binding(value):
@@ -336,16 +353,16 @@ def injector_target_binding(value):
     attempted = moment(on["command_attempted_at"]); anchor = moment(on["accepted_at"])
     activated = moment(target.get("activated_at")); stop = moment(target.get("target_off_at"))
     parent_stop = moment(target.get("parent_stop_deadline"))
-    if (target.get("contract_version") != INJECTOR_TARGET_V1
+    if (target.get("contract_version") != value.get("injector_timing_contract")
             or target.get("claim_sha256") != injector_claim_digest(value)
             or target.get("execution_id") != value["execution_id"]
             or target.get("on_receipt_sha256") != on["receipt_sha256"]
             or target.get("accepted_on_at") != on["accepted_at"]
             or target.get("provisional_stop_deadline") != value["primary_stop_deadline"]
-            or type(target.get("target_seconds")) is not int or target["target_seconds"] != 120
+            or type(target.get("target_seconds")) is not int or target["target_seconds"] != value["maximum_duration_seconds"]
             or not timedelta(0) <= attempted-claim <= timedelta(seconds=30)
             or activated is None or not attempted <= anchor <= activated < provisional
-            or stop != anchor + timedelta(seconds=120)
+            or stop != anchor + timedelta(seconds=value["maximum_duration_seconds"])
             or target.get("parent_execution_id") != value["zone_execution_id"]
             or parent_stop is None or parent_stop < stop + timedelta(seconds=600)
             or not isinstance(target.get("parent_on_receipt_sha256"), str)
@@ -363,11 +380,11 @@ def build_injector_target_active(claim, receipt, parent, *, now):
             or not all(parent.get(key) == claim.get(key) for key in (
                 "job_id", "job_sha256", "segment_identity", "zone_id"))):
         raise ValueError("injector_target_activation_unproven")
-    target = {"contract_version": INJECTOR_TARGET_V1, "execution_id": claim["execution_id"],
+    target = {"contract_version": claim["injector_timing_contract"], "execution_id": claim["execution_id"],
         "claim_sha256": injector_claim_digest(claim), "on_receipt_sha256": receipt["receipt_sha256"],
         "provisional_stop_deadline": claim["primary_stop_deadline"],
-        "accepted_on_at": receipt["accepted_at"], "target_seconds": 120,
-        "target_off_at": (moment(receipt["accepted_at"])+timedelta(seconds=120)).isoformat(),
+        "accepted_on_at": receipt["accepted_at"], "target_seconds": claim["maximum_duration_seconds"],
+        "target_off_at": (moment(receipt["accepted_at"])+timedelta(seconds=claim["maximum_duration_seconds"])).isoformat(),
         "activated_at": now.isoformat(), "parent_execution_id": parent["execution_id"],
         "parent_stop_deadline": parent["primary_stop_deadline"],
         "parent_on_receipt_sha256": parent["command_on_receipt"]["receipt_sha256"]}
@@ -421,7 +438,7 @@ def injector_target_timing(value, off=None):
     if target is None:
         return None
     on = value["command_on_receipt"]
-    result = {"target_seconds": 120, "accepted_on_at": on["accepted_at"],
+    result = {"target_seconds": target["target_seconds"], "accepted_on_at": on["accepted_at"],
         "on_attempted_at": on["command_attempted_at"], "target_off_at": target["target_off_at"],
         "on_delivery_delay_seconds": (moment(on["accepted_at"])-moment(on["command_attempted_at"])).total_seconds(),
         "physical_runtime_verified": False, "physical_runtime_seconds": None}

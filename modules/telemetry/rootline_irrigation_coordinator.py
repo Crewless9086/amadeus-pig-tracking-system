@@ -302,6 +302,7 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
             "eligibility_sha256":artifact["eligibility_sha256"]} if artifact.get("stop_mode")=="scheduled" else {}),
         "batch_generation":artifact.get("batch_generation"),
         **({"mixer_session":artifact["mixer_session"]} if artifact.get("mixer_session") is not None else {}),
+        **({"injection_policy": artifact["injection_policy"]} if artifact.get("injection_policy") is not None else {}),
         "maximum_duration_seconds":artifact["maximum_duration_seconds"],
         "claimed_at":now.isoformat(),"primary_stop_deadline":(
             now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat(),
@@ -315,8 +316,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         return _aux_result("auxiliary_edge_revalidation_failed")
     execution.update(claimed_at=now.isoformat(), primary_stop_deadline=(
         now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat())
-    from modules.telemetry.rootline_command_acceptance import INJECTOR_TARGET_V1, injector_target_claim
-    proposed = {**execution, "injector_timing_contract": INJECTOR_TARGET_V1}
+    from modules.telemetry.rootline_command_acceptance import INJECTOR_TARGET_V1, INJECTOR_TARGET_V2, injector_target_claim
+    proposed = {**execution, "injector_timing_contract": INJECTOR_TARGET_V2 if execution.get("injection_policy") is not None else INJECTOR_TARGET_V1}
     if injector_target_claim(proposed):
         execution = proposed
     if not on_start_window_available():

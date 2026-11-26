@@ -93,7 +93,7 @@
       if(!known(value)){const unknown=node('option','Unavailable');unknown.value='';unknown.disabled=true;input.append(unknown);}
       (field.options||[]).forEach(option=>{const item=node('option',typeof option==='object'?option.label:human(option));item.value=typeof option==='object'?option.value:option;input.append(item);});input.value=known(value)?String(value):'';
     }else{input.type=['number','time','checkbox','text'].includes(field.type)?field.type:'text';if(input.type==='checkbox')input.checked=value===true;else input.value=known(value)?String(value):'';input.placeholder='Unavailable';if(input.type==='number'){input.step=field.step??'any';if(known(field.min))input.min=field.min;if(known(field.max))input.max=field.max;}}
-    input.disabled=!state.canWrite||field.editable!==true||!!state.failures.devices;input.required=field.editable===true&&field.required!==false;input.oninput=dirtySettings;input.onchange=dirtySettings;return input;
+    input.disabled=!state.canWrite||field.editable!==true||!!state.failures.devices;input.required=input.type!=='checkbox'&&field.editable===true&&field.required!==false;input.oninput=dirtySettings;input.onchange=dirtySettings;return input;
   }
   function collectSettings() { const fields={};el('settings').querySelectorAll('[data-key]').forEach(input=>{if(!input.disabled&&(input.required||input.value!==''||input.type==='checkbox'))fields[input.dataset.key]=input.type==='checkbox'?input.checked:input.type==='number'?(input.value===''?null:Number(input.value)):input.value;});return {revision:state.drafts.get(state.selected)?.revision||current()?.settings?.revision,fields,mode:el('mode').value,scope:el('scope').value,reason:el('settings-reason').value}; }
   function renderDetail(reset=false) {
