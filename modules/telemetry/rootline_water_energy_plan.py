@@ -1911,10 +1911,12 @@ def _project_borehole_interlocks(rows, now):
         "observed_at":max(at for at,_ in facts.values()).isoformat()}
 
 
-def read_current_borehole_faults(database_url, *, now, clock=None, include_evidence=False):
+def read_current_borehole_faults(database_url, *, now, clock=None, include_evidence=False, _connection=None):
     """One bounded safety read, independent of reports and planning history."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
-    with connect_bounded_rootline_postgres(database_url=database_url) as connection:
+    from contextlib import nullcontext
+    with (nullcontext(_connection) if _connection is not None else
+            connect_bounded_rootline_postgres(database_url=database_url)) as connection:
         rows=connection.execute("""select review_json->'rootline_operational_intake'->'outcome'
             from public.sam_live_stock_conversation_review_events
             where event_source='oom_sakkie_rootline_operational_intake'
