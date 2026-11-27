@@ -31,6 +31,12 @@ DEVICE_KEYS = {
 }
 
 
+def _measured(timings, name, function, *args, **kwargs):
+    from modules.telemetry.rootline_stage_timings import StageTimings
+    return (timings.call(name, function, *args, **kwargs) if type(timings) is StageTimings
+        else function(*args, **kwargs))
+
+
 class ManagedDevicePlanningUnavailable(Exception):
     """An optional evidence factory could not assemble its planning packet."""
 
@@ -238,7 +244,7 @@ def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         connect_factory=None, now=None, evidence_factory=None, allow_new_starts=True,
         allow_borehole_starts=None, energy_reader=None, borehole_safety_reader=None,
         clock=None, after_safety=None, borehole_conditions_reader=None, refresh_after_safety=True,
-        deadline_wait=None):
+        deadline_wait=None, stage_timings=None):
     """Supervise every owned device, then admit independent eligible work.
 
     The shared transaction locks serialize command edges. They do not reserve
@@ -258,7 +264,7 @@ def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
         borehole_safety_reader=borehole_safety_reader, clock=clock,
         borehole_conditions_reader=borehole_conditions_reader,
         defer_no_send_proof=defer_no_send if callable(after_safety) else None,
-        deferred_no_send=deferred_no_send, deadline_wait=deadline_wait)
+        deferred_no_send=deferred_no_send, deadline_wait=deadline_wait, stage_timings=stage_timings)
     initial = _supervise_owned_devices(**safety_args)
     outcomes = list(initial["outcomes"])
     active_aux = initial["active_aux"]
@@ -489,7 +495,7 @@ def _run_rootline_managed_device_cycle(*, evidence, transport, environ=None,
 def _supervise_owned_devices(*, store, transport, energy_reader,
         borehole_safety_reader, clock, previous_borehole=None, previous_due_auxiliaries=(),
         borehole_conditions_reader=None,
-        defer_no_send_proof=None, deferred_no_send=None, deadline_wait=None):
+        defer_no_send_proof=None, deferred_no_send=None, deadline_wait=None, stage_timings=None):
     # Inventory, due OFF, and durable final proof remain mandatory even when
     # the shared optional-work deadline expired. ON keeps its original fence.
     from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
@@ -501,7 +507,7 @@ def _supervise_owned_devices(*, store, transport, energy_reader,
             borehole_conditions_reader=borehole_conditions_reader,
             previous_due_auxiliaries=previous_due_auxiliaries,
             defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send,
-            deadline_wait=deadline_wait)
+            deadline_wait=deadline_wait, stage_timings=stage_timings)
     def safe_inventory(value):
         return (value.get("auxiliary_inventory_proven") is True
             and value.get("borehole_inventory_proven") is True
@@ -526,7 +532,7 @@ def _supervise_owned_devices(*, store, transport, energy_reader,
                     previous_due_auxiliaries=list(previous_due_auxiliaries)+result["due_auxiliaries"],
                     borehole_conditions_reader=borehole_conditions_reader,
                     defer_no_send_proof=defer_no_send_proof, deferred_no_send=deferred_no_send,
-                    deadline_wait=deadline_wait)
+                    deadline_wait=deadline_wait, stage_timings=stage_timings)
             fresh["outcomes"] = result["outcomes"]+fresh["outcomes"]
             fresh["due_auxiliaries"] = result["due_auxiliaries"]+[
                 row for row in fresh["due_auxiliaries"] if row not in result["due_auxiliaries"]]
@@ -538,11 +544,11 @@ def _supervise_owned_devices(*, store, transport, energy_reader,
 def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
         borehole_safety_reader, clock, previous_borehole, previous_due_auxiliaries,
         borehole_conditions_reader=None,
-        defer_no_send_proof=None, deferred_no_send=None, deadline_wait=None):
+        defer_no_send_proof=None, deferred_no_send=None, deadline_wait=None, stage_timings=None):
     outcomes = []
     auxiliary_inventory_proven = borehole_inventory_proven = True
     try:
-        active_aux = store("load_active_auxiliaries", None)
+        active_aux = _measured(stage_timings, "managed_owned_inventory", store, "load_active_auxiliaries", None)
         if (not isinstance(active_aux, list)
                 or any(not isinstance(row, dict) for row in active_aux)):
             raise RootlineExecutionStoreUnavailable("active_auxiliary_inventory_unproven")
@@ -557,7 +563,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
     from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
     check_owned_deadline()
     try:
-        active_borehole = store("load_active_borehole", None)
+        active_borehole = _measured(stage_timings, "managed_owned_inventory", store, "load_active_borehole", None)
     except Exception:
         active_borehole = None
         borehole_inventory_proven = False
@@ -629,7 +635,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             "managed_device_recovery": True, "blocks_bc": injector_open})
     observed_borehole = None
     if active_borehole:
-        observed_transport = _AttemptedTransport(transport)
+        observed_transport = _AttemptedTransport(transport, stage_timings=stage_timings)
         now = _aware(clock())
         try:
             continuing = _before_deadline(active_borehole, now)
@@ -640,7 +646,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             energy = {}; protection = None; protection_evidence = None
             evidence_pending = False
             try:
-                energy = energy_reader() if continuing and energy_reader is not None else {}
+                energy = _measured(stage_timings, "managed_borehole_energy", energy_reader) if continuing and energy_reader is not None else {}
                 known = (energy.get("continuous_borehole_fresh", energy.get("borehole_fresh", energy.get("fresh")))
                     if continuous else energy.get("borehole_fresh", energy.get("fresh")))
                 eligible = (energy.get("continuous_borehole_eligible", energy.get("borehole_eligible"))
@@ -652,7 +658,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             except Exception:
                 evidence_pending = True
             try:
-                protection = (borehole_safety_reader()
+                protection = (_measured(stage_timings, "managed_borehole_protection", borehole_safety_reader)
                     if continuing and borehole_safety_reader is not None else True)
                 if isinstance(protection, dict):
                     protection_evidence = protection
@@ -662,7 +668,19 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
             except Exception:
                 evidence_pending = True
             from modules.telemetry.rootline_irrigation_coordinator import _owner_stop_context
-            owner_stop = _owner_stop_context(store, active_borehole)
+            owner_read_failed = False
+            def read_owner_stop(action, payload):
+                nonlocal owner_read_failed
+                try:
+                    return store(action, payload)
+                except Exception:
+                    owner_read_failed = True
+                    raise
+            owner_stop = _measured(stage_timings, "managed_borehole_owner_stop",
+                _owner_stop_context, read_owner_stop, active_borehole)
+            # The shared helper contains lookup failures as no stop request.
+            # That is not proof of a fresh successful read for observation reuse.
+            evidence_pending = evidence_pending or owner_read_failed
             if owner_stop:
                 stop_for_protection = True
             from modules.telemetry.rootline_borehole_conditions import continuous_borehole
@@ -671,7 +689,7 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                 try:
                     # Reuse only this pass's fault packet; callbacks and planning
                     # are followed by a new supervision pass and a fresh read.
-                    condition_result = (borehole_conditions_reader(
+                    condition_result = (_measured(stage_timings, "managed_borehole_conditions", borehole_conditions_reader,
                         **({"protection": protection_evidence} if protection_evidence is not None else {}))
                         if callable(borehole_conditions_reader) else {})
                     stop_for_protection = stop_for_protection or condition_result.get("stop_required") is True
@@ -695,11 +713,16 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
                 and not (_before_deadline(active_borehole, deferred[1])
                     and not _before_deadline(active_borehole, _aware(clock()))))
             if already_observed or already_deferred:
+                # Keep only the same invocation's completed observation marker.
+                # Fresh inventory/owner/energy/protection/conditions above must
+                # qualify it again on every later pass; it grants no authority.
+                if already_observed:
+                    observed_borehole = deepcopy(previous_borehole)
                 result = None
             else:
                 from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
                 check_owned_deadline()
-                result = advance_borehole_execution(eligibility={}, store=store,
+                result = _measured(stage_timings, "managed_borehole_advance", advance_borehole_execution, eligibility={}, store=store,
                     transport=observed_transport, now=now,
                     stop_for_energy=stop_for_energy or stop_for_protection, clock=clock,
                     **({"stop_reason": (condition_result.get("reason") if condition_result.get("stop_required") is True
@@ -737,8 +760,9 @@ def _supervise_owned_devices_unbounded(*, store, transport, energy_reader,
 
 
 class _AttemptedTransport:
-    def __init__(self, transport):
+    def __init__(self, transport, *, stage_timings=None):
         self.transport = transport
+        self.stage_timings = stage_timings
         self.commands = 0
 
     def set_state(self, **kwargs):
@@ -746,7 +770,11 @@ class _AttemptedTransport:
         return self.transport.set_state(**kwargs)
 
     def __getattr__(self, name):
-        return getattr(self.transport, name)
+        value = getattr(self.transport, name)
+        if name == "read_output_state" and self.stage_timings is not None:
+            return lambda *args, **kwargs: _measured(self.stage_timings,
+                "managed_borehole_observation", value, *args, **kwargs)
+        return value
 
 
 def _before_deadline(active, now):

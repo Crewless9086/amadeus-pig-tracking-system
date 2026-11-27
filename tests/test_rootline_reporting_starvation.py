@@ -100,6 +100,18 @@ def test_false_callback_cannot_skip_incomplete_inventory(monkeypatch, unknown):
 def test_reporting_reserve_after_inert_admission_with_real_gateway(monkeypatch, reports, force_old):
     from tests.test_rootline_active_supervision import gateway, payload, ENV, current
     path = ComposedPath(monkeypatch, optional_seconds=20)
+    if force_old:
+        # Preserve the historical comparison: the old three-pass coordinator
+        # also lost its observation marker on a successful skipped read.
+        from modules.telemetry import rootline_managed_devices_runtime as managed_runtime
+        original_pass = managed_runtime._supervise_owned_devices_unbounded
+        def old_bookmark(**kwargs):
+            result = original_pass(**kwargs)
+            if not result["outcomes"]:
+                result["observed_borehole"] = None
+            return result
+        monkeypatch.setattr(managed_runtime, "_supervise_owned_devices_unbounded", old_bookmark)
+
     observed = []
     def callback(**_):
         path.clock.spend('inert eligibility read', 48)

@@ -9,6 +9,9 @@ import time
 
 STAGES = frozenset({
     "supervision", "short_auxiliary_supervision", "active_supervision",
+    "managed_owned_inventory", "managed_borehole_energy", "managed_borehole_protection",
+    "managed_borehole_owner_stop", "managed_borehole_conditions", "managed_borehole_advance",
+    "managed_borehole_observation",
     "irrigation_admission", "managed_control", "managed_evidence", "daily_program",
     "plan_manager_recovery", "plan_evidence", "plan_programme", "plan_revision", "plan_enrichment",
     "current_plan", "provider_notifications", "input_notifications",

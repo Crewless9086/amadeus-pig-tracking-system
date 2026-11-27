@@ -173,7 +173,7 @@ def test_real_composition_starts_bc_before_optional_planning_spends_budget(monke
     assert status == 202  # Optional work is honestly deferred after useful control.
     assert value["execution_status"] == "segment_started"
     assert value["hardware_commands"] == 1 and value.get("effects_unknown", False) is False
-    assert len(path.borehole_reads) == 2
+    assert len(path.borehole_reads) == 1
     assert path.fault_checks == 3
     assert path.managed_calls == 1
     assert [(row["device_id"], row["channel"], row["state"]) for row in path.transport.calls] == [
@@ -186,17 +186,18 @@ def test_real_composition_starts_bc_before_optional_planning_spends_budget(monke
     protections = [i for i, name in enumerate(names) if name == "borehole protection evidence"]
     assert len(inventories) == len(protections) == 3
     # Initial safety, mandatory post-callback safety, and final post-planning
-    # safety all run. Only the middle unchanged observation is deduplicated.
+    # safety all run. Both later unchanged observations are deduplicated.
     assert inventories[0] < protections[0] < observations[0] < names.index("provider ON")
     assert names.index("provider ON") < inventories[1] < protections[1] < names.index("optional managed evidence")
-    assert names.index("optional managed evidence") < inventories[2] < protections[2] < observations[1]
+    assert names.index("optional managed evidence") < inventories[2] < protections[2]
+    assert len(observations) == 1
     saved = path.schedules.rows[value["schedule_identity"] + ":outcome"]
     assert saved["execution_status"] == "segment_started" and saved["hardware_commands"] == 1
     assert saved["provider_effects_unknown"] is False
     assert value["supervision_next_due_at"]
     replay, _ = path.gateway()
     assert replay["status"] == "scheduled_reassessment_replayed_noop"
-    assert len(path.transport.calls) == 1 and len(path.borehole_reads) == 2
+    assert len(path.transport.calls) == 1 and len(path.borehole_reads) == 1
     assert path.managed_calls == 1 and path.fault_checks == 3
 
 
@@ -204,14 +205,14 @@ def test_later_distinct_tick_gets_fresh_borehole_observation_without_duplicate_o
     path = ComposedPath(monkeypatch, optional_seconds=10)
     first, _ = path.gateway()
     first_reads = list(path.borehole_reads)
-    assert len(first_reads) == 2 and path.fault_checks == 3
+    assert len(first_reads) == 1 and path.fault_checks == 3
     path.clock.elapsed = 180
     second, _ = path.gateway(tick=NOW + timedelta(minutes=3))
     assert first["schedule_identity"] != second["schedule_identity"]
     assert second["active_supervision_status"] == "active_segment_owned"
-    assert len(path.borehole_reads) == 3 and path.managed_calls == 2
-    assert path.borehole_reads[:2] == first_reads
-    assert first_reads[0] < first_reads[1] < 180 < path.borehole_reads[2]
+    assert len(path.borehole_reads) == 2 and path.managed_calls == 2
+    assert path.borehole_reads[:1] == first_reads
+    assert first_reads[0] < 180 < path.borehole_reads[1]
     assert path.fault_checks == 5
     assert [row["state"] for row in path.transport.calls] == ["ON"]
 
@@ -288,11 +289,14 @@ def test_concurrent_same_schedule_runs_real_managed_path_once(monkeypatch):
         value, _ = first.result()
     assert duplicate["status"] == "scheduled_reassessment_claim_interrupted"
     assert value["execution_status"] == "segment_started"
-    assert path.managed_calls == 1 and len(path.borehole_reads) == 2
+    assert path.managed_calls == 1 and len(path.borehole_reads) == 1
     assert path.fault_checks == 3
     names = [name for name, _ in path.clock.events]
     observations = [i for i, name in enumerate(names) if name == "borehole provider observation"]
-    assert observations[0] < names.index("provider ON") < names.index("optional managed evidence") < observations[1]
+    assert len(observations) == 1
+    assert observations[0] < names.index("provider ON") < names.index("optional managed evidence")
+    protections = [i for i, name in enumerate(names) if name == "borehole protection evidence"]
+    assert len(protections) == 3 and names.index("optional managed evidence") < protections[-1]
     assert [row["state"] for row in path.transport.calls] == ["ON"]
 
 
