@@ -812,7 +812,7 @@ def _load(action, payload, *, connection=None):
             if action in {"load_active", "load_active_auxiliary", "load_active_auxiliaries", "load_active_borehole"}:
                 borehole=action=="load_active_borehole"
                 if borehole:
-                    return _active_borehole(_borehole_state_rows(cursor))
+                    return _load_active_borehole(cursor)
                 auxiliary=action in {"load_active_auxiliary", "load_active_auxiliaries"}
                 claim_action=("claim_borehole_before_on" if borehole else
                     "claim_auxiliary_before_on" if auxiliary else "claim_before_on")
@@ -1081,6 +1081,44 @@ _BOREHOLE_STATE_ACTIONS = {
     "record_execution_not_dispatched", "record_borehole_on_outcome",
 }
 
+
+# One statement keeps candidate selection and the conservative envelope guard on
+# the same snapshot. Only the first candidate may short-circuit the unchanged
+# reducer; closed/legacy/malformed histories retain the complete original read.
+_BOREHOLE_CANDIDATE_SQL = """with ledger as materialized (
+    select review_json->'rootline_execution' as body, created_at, review_event_id
+    from public.sam_live_stock_conversation_review_events
+    where event_source=%s
+      and (jsonb_typeof(review_json->'rootline_execution') is distinct from 'object'
+        or jsonb_typeof(review_json->'rootline_execution'->'action') is distinct from 'string'
+        or review_json->'rootline_execution'->>'action'=any(%s))
+), envelope_guard as (
+    select coalesce(bool_and(jsonb_typeof(body) is not distinct from 'object'
+        and jsonb_typeof(body->'action') is not distinct from 'string'
+        and jsonb_typeof(body->'execution_id') is not distinct from 'string'),false) as supported
+    from ledger
+), candidate as (
+    select body->>'execution_id' as identity from ledger
+    where body->>'action'='claim_borehole_before_on'
+       or (body->>'action'='mark_borehole_active' and body->>'state'='Active')
+    order by created_at desc,review_event_id limit 1
+)
+select g.supported, l.body
+from envelope_guard g left join candidate c on g.supported
+left join ledger l on g.supported and l.body->>'execution_id'=c.identity
+order by l.created_at desc,l.review_event_id"""
+
+
+def _load_active_borehole(cursor):
+    cursor.execute(_BOREHOLE_CANDIDATE_SQL,
+                   (EVENT_SOURCE, sorted(_BOREHOLE_STATE_ACTIONS)))
+    selected = cursor.fetchall()
+    if (selected and all(len(row) == 2 and row[0] is True
+                         and isinstance(row[1], dict) for row in selected)):
+        active = _active_borehole([row[1] for row in selected])
+        if active is not None:
+            return active
+    return _active_borehole(_borehole_state_rows(cursor))
 
 def _borehole_state_rows(cursor):
     cursor.execute("""select review_json->'rootline_execution'
