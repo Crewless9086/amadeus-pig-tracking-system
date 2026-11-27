@@ -71,12 +71,15 @@ class CanonicalDatabase:
             def __enter__(self): return self
             def __exit__(self, *args): return False
             def cursor(self): return self
-            def execute(self, sql, params):
+            def execute(self, sql, params=None):
                 assert sql.strip().lower().startswith("select ")
                 owner.queries.append((sql, params))
                 self.row = None
                 r = owner.record
-                if "from app_private.rootline_device_registry where" in sql:
+                if "current_setting('transaction_isolation')" in sql:
+                    assert params is None
+                    self.row = ("read committed",)
+                elif "from app_private.rootline_device_registry where" in sql:
                     if params == (owner.key,) and not owner.missing:
                         h = digest(r)
                         self.row = ("rootline_device_spine.v1", deepcopy(r),

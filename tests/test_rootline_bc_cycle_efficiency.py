@@ -331,7 +331,9 @@ def test_authority_uses_one_session_and_rechecks_revocation_without_cache(monkey
         def cursor(self): return self
         def execute(self, sql, params=None):
             queries.append(sql)
-            if "rootline_device_registry where" in sql:
+            if "current_setting('transaction_isolation')" in sql:
+                self.row = ("read committed",)
+            elif "rootline_device_registry where" in sql:
                 row = records[params[0]]
                 self.row = ("rootline_device_spine.v1", row, digest(row), 1, digest(row))
             elif "rootline_device_commissioning_evidence e" in sql:
@@ -354,7 +356,8 @@ def test_authority_uses_one_session_and_rechecks_revocation_without_cache(monkey
     monkeypatch.setattr(runtime, "_bc_authority_policy_proven", lambda p, a, k: p is policy and list(k) == keys)
     artifact = {"zone_id": "C12345", "channel": 2, "maximum_duration_seconds": 3599}
     assert runtime._canonical_standing_authority_proven("synthetic", artifact) is True
-    assert len(calls) == 1 and len(queries) == 7
+    assert len(calls) == 1 and len(queries) == 9
+    assert sum("current_setting('transaction_isolation')" in query for query in queries) == 2
     revoked[0] = True
     assert runtime._canonical_standing_authority_proven("synthetic", artifact) is False
     assert len(calls) == 2

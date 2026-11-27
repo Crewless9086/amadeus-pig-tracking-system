@@ -47,7 +47,9 @@ class Cursor:
     def __exit__(self,*args):return False
     def execute(self,sql,args=()):
         d=self.connection;d.queries.append((sql,args))
-        if "rootline_device_registry" in sql:
+        if "current_setting('transaction_isolation')" in sql:
+            self.rows=[("read committed",)]
+        elif "rootline_device_registry" in sql:
             self.rows=[(spine.CONTRACT_VERSION,deepcopy(d.device),d.digest,2,ca.digest(d.device))]
         elif "rootline_device_commissioning_evidence" in sql:
             self.rows=[(args[0],"a"*64,d.current)]
