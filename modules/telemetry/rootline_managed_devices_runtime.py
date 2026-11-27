@@ -106,7 +106,8 @@ def supervise_owned_injector(*, store, transport, clock=None, deadline_wait=None
                 raise RootlineExecutionStoreUnavailable("active_auxiliary_inventory_unproven")
             owned = [row for row in auxiliaries if row.get("auxiliary_device_id") == "FERTILIZER-INJECTION-CH1"]
             if not owned:
-                return _safe("no_owned_short_injector", blocks_bc=False)
+                return {**_safe("no_owned_short_injector", blocks_bc=False),
+                    "auxiliary_inventory_empty": len(auxiliaries) == 0}
             if len(owned) != 1:
                 raise RootlineExecutionStoreUnavailable("injector_ownership_conflict")
             active = owned[0]
