@@ -3,6 +3,7 @@
 Preview is inert. Apply records a typed, actor-bound decision under the same
 locks used by command edges. It never calls a device transport.
 """
+from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -156,8 +157,9 @@ def read_owner_controls(connection, *, now=None):
     return project_owner_controls(_read_records(connection), now=_now(connection, now))
 
 
-def load_runtime_owner_controls(database_url=None, *, now=None):
-    with _connect(database_url or os.environ.get("DATABASE_URL"), read_only=True) as connection:
+def load_runtime_owner_controls(database_url=None, *, now=None, _connection=None):
+    with (nullcontext(_connection) if _connection is not None else
+            _connect(database_url or os.environ.get("DATABASE_URL"), read_only=True)) as connection:
         return read_owner_controls(connection, now=now)
 
 
@@ -783,9 +785,10 @@ def _active_owner_target(connection, device):
     return None
 
 
-def owner_stop_for_execution(active, *, database_url=None):
+def owner_stop_for_execution(active, *, database_url=None, _connection=None):
     """A saved exact-duty stop stays binding until that duty reaches terminal."""
-    with _connect(database_url or os.environ.get("DATABASE_URL"), read_only=True) as connection:
+    with (nullcontext(_connection) if _connection is not None else
+            _connect(database_url or os.environ.get("DATABASE_URL"), read_only=True)) as connection:
         controls = read_owner_controls(connection)
     return next((r for r in reversed(controls["requests"]) if r["change"]["kind"] == "stop"
         and r["change"]["changes"].get("execution_id") == active.get("execution_id")

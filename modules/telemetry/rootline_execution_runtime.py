@@ -97,6 +97,53 @@ def supervise_rootline_owned_injector(*, environ=None, store=rootline_irrigation
         deadline_wait=deadline_wait)
 
 
+def _read_borehole_facts(readers, *, connect):
+    """One pass owns a read-only connection; values never survive this call.
+
+    Keep sequential SELECTs and READ COMMITTED visibility. A failed query
+    discards its transaction before the next independent fact is attempted.
+    """
+    values, failed = {}, []
+    manager = connection = None
+    def close(error=None):
+        nonlocal manager, connection
+        owned, handle = manager, connection
+        manager = connection = None
+        if owned is not None:
+            try:
+                if handle is not None:
+                    owned.__exit__(type(error) if error is not None else None,
+                        error, error.__traceback__ if error is not None else None)
+            finally:
+                target = handle if handle is not None else owned
+                if callable(getattr(target, "close", None)):
+                    target.close()
+    try:
+        for name, reader in readers:
+            try:
+                if connection is None:
+                    manager = connect()
+                    connection = manager.__enter__()
+                    row = connection.execute("select current_setting('transaction_isolation'),"
+                        "current_setting('transaction_read_only')").fetchone()
+                    if row != ("read committed", "on"):
+                        raise RuntimeError("borehole_fact_transaction_unproven")
+                values[name] = reader(connection)
+            except Exception as exc:
+                from modules.telemetry.rootline_cycle_budget import RootlineCycleDeadlineExceeded
+                if isinstance(exc, RootlineCycleDeadlineExceeded):
+                    raise
+                failed.append(name)
+                values[name] = None
+                close(exc)
+    except BaseException as exc:
+        close(exc)
+        raise
+    finally:
+        close()
+    return {"values": values, "failed": failed}
+
+
 @timed_control_call
 def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         database_url=None, store=rootline_irrigation_execution_store,
@@ -128,23 +175,25 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     from modules.telemetry.rootline_energy_policy import managed_energy_decision
     from modules.telemetry.rootline_owner_controls import load_runtime_owner_controls, energy_policy_digest
     power_cache = {}
-    def current_energy():
+    def current_energy(*, _connection=None):
         from modules.telemetry.power_service import get_current_power_state
         from modules.telemetry.rootline_water_energy_plan import _normalize_power
         if "value" not in power_cache:
             packet, status = get_current_power_state(database_url=database_url)
             power_cache["value"] = _normalize_power(packet) if status < 400 else {}
         decision_at = _aware(clock())
-        power_cache["owner_controls"] = load_runtime_owner_controls(database_url, now=decision_at)
+        power_cache["owner_controls"] = load_runtime_owner_controls(database_url, now=decision_at,
+            **({"_connection": _connection} if _connection is not None else {}))
         return managed_energy_decision(power_cache["value"], now=decision_at,
             owner_controls=power_cache["owner_controls"])
     def connect_factory():
         return connect_bounded_rootline_postgres(
             database_url=database_url, read_only=True)
-    def current_borehole_safety():
+    def current_borehole_safety(*, _connection=None):
         from modules.telemetry.rootline_water_energy_plan import read_current_borehole_faults
         return read_current_borehole_faults(database_url, now=_aware(clock()),
-            clock=clock, include_evidence=True)
+            clock=clock, include_evidence=True,
+            **({"_connection": _connection} if _connection is not None else {}))
     def borehole_energy(power, decision_at, *, continuous):
         owner_controls = load_runtime_owner_controls(database_url, now=decision_at)
         decision = managed_energy_decision(power, now=decision_at,
@@ -154,12 +203,15 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         return {**decision["borehole_energy_context"], "eligible": decision["continuous_borehole_eligible"],
             "owner_energy_policy_sha256": energy_policy_digest("borehole", owner_controls, decision_at),
             "fresh": decision["continuous_borehole_fresh"], "reason": decision["continuous_borehole_reason"]}
-    def current_borehole_conditions(forecast=None, *, protection=None):
+    def current_borehole_conditions(forecast=None, *, protection=None, _weather=None):
         from modules.telemetry.weather_service import get_weather_control_snapshot
         try:
-            weather, status = get_weather_control_snapshot(database_url, now=_aware(clock()), dry_interval_minutes=60)
-            if status >= 400:
-                weather = {}
+            if _weather is None:
+                weather, status = get_weather_control_snapshot(database_url, now=_aware(clock()), dry_interval_minutes=60)
+                if status >= 400:
+                    weather = {}
+            else:
+                weather = _weather
         except Exception:
             weather = {}
         try:
@@ -172,6 +224,30 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         return store("assess_borehole_conditions", {"weather_snapshot": weather,
             "forecast": forecast, "protection_safe": protection.get("safe"),
             "protection_evidence": protection})
+    def current_borehole_facts(active):
+        from modules.telemetry.rootline_owner_controls import owner_stop_for_execution
+        from modules.telemetry.weather_service import get_weather_control_snapshot
+        def weather(connection):
+            packet, status = get_weather_control_snapshot(database_url, now=_aware(clock()),
+                dry_interval_minutes=60, _connection=connection)
+            return packet if status < 400 else {}
+        # Only the existing production store may use this explicit read bundle.
+        # Injected/custom stores retain their own owner-stop and reader contracts.
+        def measured(name, reader):
+            def call(connection):
+                with timing("managed_borehole_"+name):
+                    return reader(connection)
+            return call
+        readers = (
+            ("energy", lambda connection: current_energy(_connection=connection)),
+            ("protection", lambda connection: current_borehole_safety(_connection=connection)),
+            ("owner_stop", lambda connection: owner_stop_for_execution(active,
+                database_url=database_url, _connection=connection)),
+            ("weather", weather))
+        return _read_borehole_facts([(name, measured(name, reader)) for name, reader in readers],
+            connect=lambda: connect_bounded_rootline_postgres(
+                database_url=database_url, read_only=True, read_committed=True))
+
     def current_decision_time(selected):
         current = _aware(clock())
         if current.astimezone(ZA_TZ).date().isoformat() != str(selected):
@@ -362,7 +438,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         allow_borehole_starts=allow_borehole_starts,
         energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock,
         borehole_conditions_reader=current_borehole_conditions,
-        after_safety=after_safety, refresh_after_safety=refresh_after_safety, stage_timings=stage_timings)
+        after_safety=after_safety, refresh_after_safety=refresh_after_safety, stage_timings=stage_timings,
+        borehole_facts_reader=current_borehole_facts if store is rootline_irrigation_execution_store else None)
     if result.get("short_auxiliary_duty_owned") is True:
         # Leave the next minute free to inherit the pulse before optional grid
         # reads/reporting. Existing owned OFF supervision has already run.

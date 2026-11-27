@@ -297,13 +297,14 @@ def get_current_weather_state(database_url=None):
     return _format_current_weather_response(row), 200
 
 
-def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_minutes=30):
+def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_minutes=30, _connection=None):
     """Read current weather and its exact dry interval in one database snapshot.
 
     The selected durable reading is at or before the caller's cutoff. The dry
     interval ends at that same reading, including under concurrent/backdated
     ingestion; current provider health remains an independent fail-closed gate.
     """
+    from contextlib import nullcontext
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     database_url = _database_url(database_url)
     if not database_url:
@@ -312,7 +313,8 @@ def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_mi
         raise ValueError("weather_control_interval_invalid")
     cutoff = now or datetime.now(timezone.utc)
     try:
-        with connect_bounded_read(database_url=database_url) as connection:
+        with (nullcontext(_connection) if _connection is not None else
+                connect_bounded_read(database_url=database_url)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""
                     select ts.source_id, ts.display_name, ts.provider, ts.stale_after_minutes,
@@ -343,6 +345,8 @@ def get_weather_control_snapshot(database_url=None, *, now=None, dry_interval_mi
                     (cutoff, DEFAULT_WEATHER_SOURCE_ID))
                 row = cursor.fetchone()
     except Exception as exc:
+        if _connection is not None:
+            raise  # The owner must discard an aborted borrowed transaction.
         return _service_failed("weather_control_snapshot_failed",
             "Coherent local weather evidence read failed.", exc)
     if not row or not row[4]:
