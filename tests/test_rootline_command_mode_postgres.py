@@ -139,7 +139,7 @@ def test_adopted_borehole_restart_off_uses_no_invented_on_credit(db):
             calls.append(kwargs)
             assert kwargs["state"]=="OFF"
             return receipt(adopted,"OFF",at=datetime.now(timezone.utc),attempt=int(kwargs["idempotency_key"].rsplit(":",1)[1]))
-        def read_output_state(self,**kwargs): pytest.fail("independent feedback is not required")
+        def read_output_state(self,**kwargs): return {"state":"Unknown","authoritative":False}
     active=advance_borehole_execution(eligibility=None,store=db,transport=Transport(),now=datetime.now(timezone.utc))
     assert active["status"]=="borehole_command_duty_active",active
     assert calls==[]
@@ -149,6 +149,42 @@ def test_adopted_borehole_restart_off_uses_no_invented_on_credit(db):
     assert done["execution"].get("command_on_receipt") is None
     assert db("load_active_borehole",None) is None
     replay=db("dispatch_borehole_off_edge",{"execution_id":adopted["execution_id"],"attempt":2,"dispatch":lambda:pytest.fail("retired borehole sender")})
+    assert replay["provider_command_attempted"] is False
+
+
+def test_external_borehole_off_reconciles_once_under_real_store_race(db):
+    from concurrent.futures import ThreadPoolExecutor
+    from modules.telemetry.rootline_borehole_commissioning import advance_borehole_execution
+    from tests.test_rootline_borehole_external_off import active, reported
+    original=active()
+    original.update(execution_id="HA-EXTERNAL-OFF-"+uuid.uuid4().hex,claimed_at=NOW.isoformat())
+    original["command_on_receipt"]=receipt(original,"ON",at=NOW)
+    seed([{**original,"action":"claim_borehole_before_on","state":"claimed"},
+        {**original,"action":"record_borehole_on_outcome","on_outcome":original["command_on_receipt"]},
+        {**original,"action":"mark_borehole_active"}])
+    assert db("load_active_borehole",None)["execution_id"]==original["execution_id"]
+    calls=[]
+    class Transport:
+        def read_output_state(self,**kwargs):
+            return reported(now=datetime.now(timezone.utc),changed=NOW+timedelta(hours=1))
+        def set_state(self,**kwargs):
+            calls.append(kwargs)
+            assert kwargs["state"]=="OFF"
+            return receipt(original,"OFF",at=datetime.now(timezone.utc),
+                attempt=int(kwargs["idempotency_key"].rsplit(":",1)[1]))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda _:advance_borehole_execution(eligibility=None,store=db,
+            transport=Transport(),now=datetime.now(timezone.utc)),range(2)))
+    assert len(calls)==1
+    assert db("load_active_borehole",None) is None
+    with connect() as connection:
+        rows=connection.execute("select review_json->'rootline_execution' from public.sam_live_stock_conversation_review_events where event_source='rootline_irrigation_execution'").fetchall()
+    terminals=[r[0] for r in rows if r[0].get("action")=="record_borehole_completed"]
+    assert len(terminals)==1
+    assert terminals[0]["stop_reason"]=="external_off_reported"
+    assert ca.duty_closed(terminals[0]) and not terminals[0]["shutdown_verified"]
+    replay=db("dispatch_borehole_off_edge",{"execution_id":original["execution_id"],"attempt":2,
+        "dispatch":lambda:pytest.fail("retired external-off duty must not send")})
     assert replay["provider_command_attempted"] is False
 
 

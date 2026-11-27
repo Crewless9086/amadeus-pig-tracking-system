@@ -404,6 +404,27 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
             if active.get("state") == "Active" and not stop_for_energy and not active.get("stop_requested"):
                 deadline = _time(active.get("primary_stop_deadline"))
                 if continuous or deadline is not None and now < deadline:
+                    if continuous:
+                        from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
+                        from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
+                        check_owned_deadline()
+                        try:
+                            with routine_execution_observation({**active, "device_type": "borehole_pump_power"}):
+                                reported = _read_borehole(transport, routine_read=True)
+                        except Exception:
+                            reported = {}
+                        check_owned_deadline()
+                        checked_at = _aware(clock())
+                        if _later_reported_borehole_off(active, reported, now=checked_at):
+                            # A report is not an OFF receipt. Retire the old
+                            # command duty through its existing serialized OFF
+                            # path; only a later normal eligibility cycle may ON.
+                            return _finish_command_borehole({**active,
+                                "stop_reason": "external_off_reported",
+                                "stop_trigger": {"assessed_at": checked_at.isoformat(),
+                                    "reported_off_evidence": reported,
+                                    "physical_state": "Unverified"}},
+                                store, transport, now=checked_at)
                     return _borehole_result("borehole_command_duty_active", execution=active, physical_state="Unverified")
             return _finish_command_borehole(active, store, transport, now=now)
         if active.get("on_not_dispatched") is True:
@@ -577,6 +598,24 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
         return _contain_failed_borehole_start(
             {**active,"reason":"active_persistence_unproven"},store,transport)
     return _borehole_result("borehole_started", commands=1, execution=active)
+
+
+def _later_reported_borehole_off(active, reported, *, now):
+    """A later HA report can contradict a command, never prove physical OFF."""
+    from modules.telemetry.rootline_command_acceptance import active_command, route_valid
+    if not active_command(active, now=now) or not route_valid(
+            reported, device_id="1002851416", channel=1, now=now):
+        return False
+    route = reported.get("command_route", reported)
+    changed = _time(route.get("reported_state_changed_at"))
+    updated = _time(route.get("reported_state_updated_at"))
+    checked = _time(route.get("route_checked_at"))
+    start = _time((active.get("command_on_receipt") or {}).get("accepted_at")
+        or active.get("claimed_at"))
+    return (route.get("reported_output_state") == "OFF"
+        and route.get("reported_state_source") == "home_assistant_entity_report_not_independently_verified"
+        and start is not None and changed is not None and updated is not None
+        and checked is not None and start < changed <= updated <= checked <= now)
 
 
 def _finish_command_borehole(active, store, transport, *, now):

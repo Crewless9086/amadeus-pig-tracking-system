@@ -1,5 +1,19 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed borehole power restoration — 27 November 2026
+
+The owner reported an overnight blackout followed by the borehole AC switch
+returning OFF, then manually restored ON. The owner explicitly requested changing
+the existing borehole controller (1002851416, channel1) to restore its previous
+state after power loss and repairing ROOTLINE's stale command-state handling.
+For this exact borehole controller, Last state supersedes previous restoration-OFF
+requirements. This does not change camp, mixer or injector restoration settings.
+Preserve the current relay state while changing this configuration. ROOTLINE must
+retain its existing weather/energy supervision and explicit manual isolation;
+restoration configuration does not itself prove a later blackout recovery.
+Reconcile supported later external switch reports without presenting cached
+command acceptance as current physical state or repeating an uncertain ON.
+
 ## Owner-directed editable injection programme - 26 November 2026
 
 The owner selected two ten-minute injections per sixty minutes of irrigation,

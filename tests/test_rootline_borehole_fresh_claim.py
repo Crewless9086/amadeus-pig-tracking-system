@@ -52,11 +52,14 @@ class ClaimDatabase:
                     event=json.loads(args[-1])["rootline_execution"]
                     self.rowcount=int(not any(row.get("event_id")==event["event_id"] for row in backend.records))
                     if self.rowcount:backend.records.append(event)
+                return self
             def fetchone(self):
                 if "clock_timestamp" in self.sql:return (backend.now,)
                 if "record_borehole_eligibility" in self.sql:return (deepcopy(backend.artifact),)
                 return None
-            def fetchall(self):return [(deepcopy(row),) for row in backend.records]
+            def fetchall(self):
+                if "rootline_operational_intake" in self.sql:return []
+                return [(deepcopy(row),) for row in backend.records]
         class Connection:
             def __enter__(self):return self
             def __exit__(self,*_):pass
