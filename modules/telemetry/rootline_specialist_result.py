@@ -189,7 +189,7 @@ def _with_provider_availability(result, *, database_url=None, now=None):
 
 def refresh_current_rootline_specialist_result(
     operating_date=None, database_url=None, now=None,
-    actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER", *, evidence_cutoff=None,
+    actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER", *, evidence_cutoff=None, stage_timings=None,
 ):
     """Publish and project one exact canonical evidence snapshot.
 
@@ -197,11 +197,14 @@ def refresh_current_rootline_specialist_result(
     no hardware or Telegram authority; it only prevents the durable current-plan
     endpoint from disagreeing with the scheduler's in-memory recommendation.
     """
+    def measured(name, function, *args, **kwargs):
+        return (stage_timings.call(name, function, *args, **kwargs) if stage_timings is not None
+                else function(*args, **kwargs))
     generated_at = _as_za(now or datetime.now(timezone.utc))
     from modules.telemetry.rootline_water_energy_plan import (
         ensure_saved_daily_program, revise_program_remainder)
     selected_date = str(operating_date or generated_at.date().isoformat())[:10]
-    evidence, _, _ = read_current_water_energy_evidence(
+    evidence, _, _ = measured("plan_evidence", read_current_water_energy_evidence,
         operating_date=selected_date, database_url=database_url, now=generated_at,
         forecast_mode="live_only",
         **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}))
@@ -211,10 +214,10 @@ def refresh_current_rootline_specialist_result(
             return {**_unavailable_result(selected_date, generated_at, error),
                 "status": error}
     # Reject inadmissible reporting evidence before initial programme persistence.
-    saved, status = ensure_saved_daily_program(selected_date, database_url=database_url,
-        now=generated_at, actor_identity=actor_identity)
+    saved, status = measured("plan_programme", ensure_saved_daily_program, selected_date, database_url=database_url,
+        now=generated_at, actor_identity=actor_identity, _replace_history=True)
     if status >= 400 or saved.get("success") is not True:
-        return _with_provider_availability(
+        return measured("plan_enrichment", _with_provider_availability,
             _unavailable_result(selected_date, generated_at, saved.get("status")),
             database_url=database_url, now=generated_at)
     if evidence_cutoff is not None:
@@ -223,16 +226,16 @@ def refresh_current_rootline_specialist_result(
             return {**_unavailable_result(selected_date, generated_at,
                 "scheduled_reassessment_evidence_after_cutoff"),
                 "status": "scheduled_reassessment_evidence_after_cutoff"}
-    current, status = revise_program_remainder(saved, evidence, now=generated_at,
+    current, status = measured("plan_revision", revise_program_remainder, saved, evidence, now=generated_at,
         database_url=database_url, actor_identity=actor_identity)
     if status >= 400 or current.get("success") is not True:
-        return _with_provider_availability(
+        return measured("plan_enrichment", _with_provider_availability,
             _unavailable_result(selected_date, generated_at, current.get("status")),
             database_url=database_url, now=generated_at)
     result = project_water_energy_plan(current, now=generated_at)
     result["canonical_plan"] = {key: current.get(key) for key in (
         "plan_id", "generation", "evidence_sha256", "evidence_observed_at")}
-    return _with_provider_availability(result, database_url=database_url, now=generated_at)
+    return measured("plan_enrichment", _with_provider_availability,result, database_url=database_url, now=generated_at)
 
 
 def _reporting_evidence_error(evidence, cutoff, generated_at):

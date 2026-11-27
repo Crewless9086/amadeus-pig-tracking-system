@@ -10,6 +10,7 @@ import time
 STAGES = frozenset({
     "supervision", "short_auxiliary_supervision", "active_supervision",
     "irrigation_admission", "managed_control", "managed_evidence", "daily_program",
+    "plan_manager_recovery", "plan_evidence", "plan_programme", "plan_revision", "plan_enrichment",
     "current_plan", "provider_notifications", "input_notifications",
     "equipment_notifications", "manager_reports", "parent_recheck",
     "managed_source_reads", "managed_grid", "controller_connectivity", "controller_notifications",
