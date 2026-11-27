@@ -217,3 +217,109 @@ def test_actual_reader_preserves_consumed_slots_and_canonical_closure_order(monk
     assert result["active_irrigation_context"]["prior_shutdown_unverified"] is after_terminal
     assert all("order by created_at,review_event_id" in sql for sql, _ in connection.queries)
     assert all("created_at <= %s" in sql and params == (NOW,) for sql, params in connection.queries)
+
+
+def aborted_startup_history():
+    from tests.test_rootline_startup_command_recovery import terminal_history
+    terminal, rows = terminal_history()
+    return rows+[terminal]
+
+
+def test_valid_never_started_abort_closes_only_its_historical_hold():
+    rows = aborted_startup_history()
+    before = deepcopy(rows)
+    cutoff = datetime.now(timezone.utc)
+    assert not auxiliary_shutdown_unverified(rows, evidence_cutoff=cutoff)
+    assert rows == before
+    assert rows[-1]["mixing_credit"] is False and rows[-1]["shutdown_verified"] is False
+    assert auxiliary_shutdown_unverified(rows, evidence_cutoff=datetime.fromisoformat(rows[-1]["aborted_at"])-timedelta(microseconds=1))
+
+
+@pytest.mark.parametrize("dispatched", [False, True])
+def test_existing_physical_startup_abort_contracts_close_the_same_original_duty(dispatched):
+    from tests.test_rootline_startup_command_recovery import terminal_history, event, store
+    _, rows = terminal_history()
+    claim = next(row for row in rows if row["action"] == "claim_auxiliary_before_on")
+    held = next(row for row in rows if row["action"] == "contain_auxiliary_device")
+    if dispatched:
+        rows.insert(rows.index(claim)+1, event("claim_auxiliary_dispatch", claim))
+    preimage = store._auxiliary_startup_abort_preimage(rows, held["event_id"])
+    assert preimage is not None
+    at = datetime.now(timezone.utc)
+    terminal = event("record_auxiliary_startup_aborted", {**claim, **store._auxiliary_abort_binding(preimage),
+        "state":"Aborted", "terminal_contract":store._AUXILIARY_STARTUP_ABORT if dispatched else store._AUXILIARY_UNSTARTED_ABORT,
+        "startup_aborted_verified":True, "reservation_preserved":True, "on_authority":False,
+        "objective_satisfied":False, "control_completed":False, "shutdown_verified":True,
+        "provider_on_outcome":"Unknown" if dispatched else "Not dispatched", "on_attempts":int(dispatched),
+        **({} if dispatched else {"startup_unstarted_verified":True}),
+        "read_started_at":at.isoformat(), "read_elapsed_seconds":0,
+        "aborted_at":at.isoformat(), "shutdown_evidence":{"authoritative":True,"state":"OFF",
+            "device_id":claim["device_id"],"channel":claim["channel"],"evidence_id":"a"*64,"retrieved_at":at.isoformat()}})
+    rows.append(terminal)
+    assert store._verified_auxiliary_startup_abort(terminal, rows)
+    assert not auxiliary_shutdown_unverified(rows, evidence_cutoff=at)
+
+
+@pytest.mark.parametrize("fault", ["forged", "duplicate", "late_claim", "late_dispatch", "late_on", "late_off", "late_hold"])
+def test_aborted_startup_cannot_hide_forged_or_later_duty(fault):
+    rows = aborted_startup_history()
+    if fault == "forged": rows[-1]["off_outcome_sha256"] = "0"*64
+    elif fault == "duplicate": rows.append(deepcopy(rows[-1]))
+    else:
+        action = {"late_claim":"claim_auxiliary_before_on", "late_dispatch":"claim_auxiliary_dispatch",
+            "late_on":"record_auxiliary_on_outcome", "late_off":"claim_auxiliary_off_attempt",
+            "late_hold":"contain_auxiliary_device"}[fault]
+        rows.append({"execution_id":rows[-1]["execution_id"], "action":action})
+    assert auxiliary_shutdown_unverified(rows, evidence_cutoff=datetime.now(timezone.utc))
+
+
+@pytest.mark.parametrize("closed", [True, False])
+def test_real_reader_and_managed_preparation_preserve_abort_closure_and_refusal(monkeypatch, closed):
+    from tests.test_rootline_command_plan_truth import ReadConnection
+    from tests.test_rootline_command_mode import start
+    from modules.oom_sakkie import bounded_postgres_read
+    from modules.telemetry import rootline_execution_runtime as runtime
+    from modules.telemetry import rootline_managed_devices_runtime as managed
+    from modules.telemetry.rootline_water_energy_plan import _read_managed_device_evidence
+    now = datetime.now(timezone.utc)
+    rows = aborted_startup_history()
+    if not closed: rows.pop()
+    _, _, memory, transport, clock = start("E12345", at=now-timedelta(seconds=660))
+    clock[0] = now
+    connection = ReadConnection(rows+memory.rows)
+    monkeypatch.setattr(bounded_postgres_read, "connect_bounded_read", lambda **k: connection)
+    with timed_control_scope(ENV):
+        evidence = _read_managed_device_evidence("offline://fixture", now, evidence_cutoff=now)
+    context = evidence["active_irrigation_context"]
+    assert context["prior_shutdown_unverified"] is (not closed)
+    # These current premix/route inputs are explicitly hypothetical. The old
+    # abort rows and production reader/preparation paths remain unmodified.
+    context.update(premix_command_accepted=True, fertilizer_needed=True,
+        fertilizer_history_complete_through=now.isoformat(), batch_generation="OFFLINE-BATCH")
+    evidence["owner_controls"] = {"devices":{"injection":{"fields":{"pulse_minutes":10,
+        "pulses_per_60_minutes":2, "inject_camp_a":True, "inject_camp_b":True,
+        "inject_camp_c":True, "inject_camp_e":True}}}}
+    task = {"auxiliary_device_id":"FERTILIZER-INJECTION-CH1", "decision":"Run now"}
+    monkeypatch.setattr(runtime, "project_saved_program_for_execution", lambda *a, **k: {"irrigation_auxiliary_tasks":[task]})
+    reads = []
+    original = transport.read_safety_configuration
+    def read(**kwargs):
+        reads.append(kwargs)
+        return original(device_id=kwargs["device_id"], channel=kwargs["channel"])
+    transport.read_safety_configuration = read
+    def cycle(**kwargs):
+        packet = kwargs["evidence_factory"](pending_devices=frozenset({"FERTILIZER-INJECTION-CH1"}))
+        result = build_auxiliary_eligibility(task=task,
+            safety=packet["auxiliary_safety"].get("FERTILIZER-INJECTION-CH1"),
+            context=packet["auxiliary_contexts"]["FERTILIZER-INJECTION-CH1"],
+            flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True}, now=now)
+        return {**result, "short_auxiliary_duty_owned":True}
+    monkeypatch.setattr(managed, "run_rootline_managed_device_cycle", cycle)
+    result = runtime.run_rootline_managed_device_reassessment(environ={**ENV,"ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true"},
+        now=now, clock=lambda:now, database_url="offline://fixture", token_store=object(),
+        store=memory, transport=transport,
+        evidence_loader=lambda **k:(evidence,now.astimezone(timezone(timedelta(hours=2))).date().isoformat(),now))
+    assert result["eligible"] is closed, result
+    assert len(reads) == int(closed)
+    if closed: assert result["maximum_duration_seconds"] == 600
+    else: assert result["status"] == "fertilizer_exception_or_shutdown_unverified"

@@ -41,6 +41,16 @@ class Store:
         self.active = active() if item is None else item
         self.rows = []
     def __call__(self, action, body):
+        if action == "dispatch_controller_off":
+            previous = [r for r in self.rows if r.get("action") == "record_borehole_off_outcome"]
+            prior = next((r["outcome"] for r in previous if ca.controller_accepted(r.get("outcome"), body["execution"], "OFF")), None)
+            if prior: return {"reused_outcome": prior}
+            if len(previous) >= 3: return {"provider_command_attempted": False}
+            attempt = len(previous)+1
+            result = body["dispatch"](attempt)
+            self.rows.append({"action":"record_borehole_off_outcome", "execution_id":body["execution"]["execution_id"],
+                "attempt":attempt,"outcome":result})
+            return result
         if action == "load_active_borehole": return deepcopy(self.active)
         if action == "load_borehole_off_attempts":
             return [r for r in self.rows if r.get("execution_id")==body and r["action"]=="record_borehole_off_outcome"]

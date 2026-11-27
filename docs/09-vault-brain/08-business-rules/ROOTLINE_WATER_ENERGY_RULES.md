@@ -1,5 +1,44 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed controller recovery and truthful shutdown - 27 November 2026
+
+The owner requested the shared repair after a mixer remained running following
+an OFF notification during intermittent connectivity, and approved implementation
+and release. Home Assistant queue acceptance alone no longer establishes a
+successful Sonoff command. A correlated response from the exact commissioned
+controller accepting the exact channel/state establishes controller acceptance,
+not independently observed relay state or measured flow. Preserve independent
+raw device observations and act on later contradictory OFF reports. MQTT state
+can include a bridge-synthesized command echo and must not alone confirm ON.
+
+Retain each original execution and OFF deadline until the controller accepts
+OFF. After the existing initial three attempts, retry only the still-owned OFF
+at most once per five minutes, with durable serialization and a newer-ownership
+and explicit-isolation fence. Never repeat uncertain ON or reopen an owner-stopped
+or completed programme. A transport-proven failure before any LAN command was
+sent may retire the unused claim without inventing an OFF observation; existing
+eligibility and remaining-window rules govern any subsequent fresh claim.
+
+Availability belongs to the physical controller. Loss of Controller (1) Right
+pauses mixing and injection, not independently eligible irrigation, borehole or
+Eskom. Check connectivity through the existing cycle, preserve the first outage
+time, send one useful outage notice and one recovery notice, and reconcile owned
+OFF duties before admitting remaining eligible work. Unexpected OFF while a
+controller is reachable is an interrupted run, not an offline controller.
+
+A fresh, exactly correlated getState acknowledgement with a device sequence may
+anchor recovery of the existing raw observer after reset. It supplies no switch
+state: outputs remain Unknown until a subsequent decrypted raw device report
+arrives after that anchor with a sequence at least the acknowledged value.
+Anchors expire after sixty seconds and must be reacquired after HA restart.
+Cached discovery data, MQTT echoes and requested state never seed observations.
+The unauthenticated LAN protocol cannot prove a cryptographic boot generation
+or exclude every old-generation replay; report that limitation honestly.
+
+Keep operating durations, native countdown configuration, Eskom policy and
+historical receipts unchanged. No external flow, dose or physical-contact sensor
+is added as an operating prerequisite.
+
 ## Owner-directed borehole power restoration — 27 November 2026
 
 The owner reported an overnight blackout followed by the borehole AC switch

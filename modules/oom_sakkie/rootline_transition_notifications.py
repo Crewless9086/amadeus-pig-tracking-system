@@ -27,7 +27,8 @@ def transition(row):
                 if camp_command(row):
                     state = "Started" if confirmed(row) else "Requested"
                     if state == "Started":
-                        at = row["controller_confirmation"]["report"]["reported_at"]
+                        proof = row["controller_confirmation"]
+                        at = (proof.get("controller_acceptance") or {}).get("responded_at") or proof["report"]["reported_at"]
             elif action == "mark_borehole_active" and active_command(row):
                 state, at = "Adopted", row["claimed_at"]
             else:
@@ -666,3 +667,18 @@ def recover_input_notifications(*, notify, recipient, now=None, environ=None,
         if not isinstance(saved, dict) or saved.get("success") is not True or not confirmed:
             result.update(success=False, status="rootline_input_notification_unconfirmed")
     return result
+
+
+def compose_controller_notice(state, payload, *, language="en"):
+    """Reachability only; recovery does not confirm a relay or resume a run."""
+    import html
+    af = str(language).casefold().startswith("af")
+    label = html.escape(str(payload.get("controller_label") or "Controller"))
+    seconds = max(0, int(payload.get("recovery_duration_seconds") or 0))
+    duration = (f"{seconds // 3600} h {(seconds % 3600) // 60} min" if seconds >= 3600
+        else f"{max(1, seconds // 60)} min")
+    if state == "ControllerRecovered":
+        return (f"🟢 <b>ROOTLINE · Verbinding herstel</b>\n{label}\nVanlyn vir {duration}. ROOTLINE kontroleer die uitsette weer." if af else
+            f"🟢 <b>ROOTLINE · Connection restored</b>\n{label}\nOffline for {duration}. ROOTLINE rechecks the outputs.")
+    return (f"📡 <b>ROOTLINE · Beheerder vanlyn</b>\n{label}\nUitsettoestand onbekend. Nuwe beginaksies op hierdie beheerder wag; AF-pogings gaan voort." if af else
+        f"📡 <b>ROOTLINE · Controller offline</b>\n{label}\nOutput state unknown. New starts on this controller wait; OFF attempts continue.")

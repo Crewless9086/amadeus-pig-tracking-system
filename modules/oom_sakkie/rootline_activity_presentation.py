@@ -26,7 +26,8 @@ def activity_notice(state, execution, *, language="en"):
     from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
     camp = camp_command(execution)
     if camp and on and confirmed(execution):
-        stamp = execution["controller_confirmation"]["report"]["reported_at"]
+        proof = execution["controller_confirmation"]
+        stamp = (proof.get("controller_acceptance") or {}).get("responded_at") or proof["report"]["reported_at"]
     event_day = ""
     try:
         observed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
@@ -55,6 +56,8 @@ def activity_notice(state, execution, *, language="en"):
         icon = "🔄"
     if camp and on and accepted(receipt, execution, "ON"):
         title = ("Loop" if af else "Running") if confirmed(execution) else ("Aangevra" if af else "Requested")
+        if confirmed(execution) and (execution.get("controller_confirmation") or {}).get("confirmation_source") == "controller_command_response":
+            title = "AAN aanvaar" if af else "ON accepted"
         icon = "▶️" if confirmed(execution) else "⏳"
     if camp and state == "Interrupted":
         title, icon = ("Onderbreek" if af else "Interrupted"), "⏸️"
@@ -69,7 +72,10 @@ def activity_notice(state, execution, *, language="en"):
     if state == "Adopted":
         lines += ["", "ROOTLINE hou outomaties toesig oor hierdie bestaande lopie." if af else "ROOTLINE has resumed supervision of this existing run."]
     elif camp and on and accepted(receipt, execution, "ON"):
-        lines += ["", ("Die beheerder het AAN gerapporteer." if af else "Controller reported ON.") if confirmed(execution) else
+        acknowledged = (execution.get("controller_confirmation") or {}).get("confirmation_source") == "controller_command_response"
+        confirmation_text = (("Die beheerder het die AAN-opdrag aanvaar." if af else "Controller accepted the ON command.") if acknowledged else
+            ("Die beheerder het AAN gerapporteer." if af else "Controller reported ON."))
+        lines += ["", confirmation_text if confirmed(execution) else
             ("Begin aangevra; wag vir die beheerder se bevestiging." if af else "Start requested; awaiting the controller report.")]
     elif command:
         proven = accepted(receipt, execution, "ON" if on else "OFF")

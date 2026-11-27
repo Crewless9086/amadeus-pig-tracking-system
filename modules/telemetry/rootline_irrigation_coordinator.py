@@ -193,14 +193,20 @@ def _finish_irrigation_start(execution, accepted, store, transport, notify):
         raise RootlineExecutionStoreUnavailable("record_on_outcome")
     from modules.telemetry.rootline_command_acceptance import command_execution, accepted as command_accepted
     if command_execution(execution):
+        if accepted.get("provider_command_attempted") is False and accepted.get("status") == "controller_not_sent":
+            return _retire_unsent_execution(execution, store, transport)
         if command_accepted(accepted, execution, "ON"):
             active = {**execution, "state": "Active", "on_attempts": 1,
                 "command_on_receipt": accepted, "physical_state": "Unverified"}
+            from modules.telemetry.rootline_camp_confirmation import confirmation
+            proof = confirmation(active, {}, now=_timestamp(accepted["accepted_at"]))
+            if proof is not None:
+                active["controller_confirmation"] = proof
             marked = store("mark_active", active)
             if not isinstance(marked, dict) or marked.get("success") is not True:
                 return _recover_command_irrigation(execution, store, transport, notify,
                     datetime.now(timezone.utc), reason="active_persistence_unproven")
-            delivery = _notify(notify, store, "Requested", active)
+            delivery = _notify(notify, store, "Started" if proof is not None else "Requested", active)
             return _result("irrigation_on_command_accepted", commands=1,
                 messages=delivery["confirmed"], execution=active, notification=delivery)
         return _recover_command_irrigation(execution, store, transport, notify,
@@ -373,6 +379,8 @@ def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=Non
         recorded = None
     if command_execution(execution):
         active = execution
+        if accepted.get("provider_command_attempted") is False and accepted.get("status") == "controller_not_sent":
+            return _retire_unsent_execution(execution, store, transport)
         if command_accepted(accepted, execution, "ON"):
             active = {**execution, "state": "Active", "on_attempts": 1,
                 "command_on_receipt": accepted, "physical_state": "Unverified"}
@@ -724,6 +732,10 @@ def _recover_auxiliary_startup_hold(containment, artifact, store, transport):
 
 
 def _bounded_auxiliary_off(execution,store,transport, *, startup_recovery=None):
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(execution) and startup_recovery is None:
+        from modules.telemetry.rootline_controller_shutdown import bounded_off
+        return bounded_off(execution, store, transport)
     commands=0; outcomes=[]
     prior=store("load_auxiliary_off_attempts",execution["execution_id"]) or []
     from modules.telemetry.rootline_command_acceptance import command_execution, accepted
@@ -1134,6 +1146,13 @@ def _stopping_barrier_hold(active,store,notify):
 
 
 def _retire_unsent_execution(execution, store, transport, *, defer_proof=None):
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(execution):
+        retired = store("retire_controller_not_sent", execution)
+        if isinstance(retired, dict) and retired.get("success") is True:
+            return {"success": True, "status": "execution_not_dispatched", "hardware_commands": 0,
+                "telegram_messages": 0, "execution": retired["execution"], "provider_command_attempted": False,
+                "automatic_on_retry": False, "writes_farm_data": retired.get("created") is True}
     device = execution.get("device_id") or "1002851416"
     channel = execution.get("channel") or 1
     if execution.get("auxiliary_device_id") in {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1"}:
@@ -1181,6 +1200,10 @@ def _prove_unsent_execution(execution, store, transport, *, commands=0):
 
 
 def _bounded_off(execution, store, transport):
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(execution):
+        from modules.telemetry.rootline_controller_shutdown import bounded_off
+        return bounded_off(execution, store, transport)
     commands = 0; outcomes = []
     prior = store("load_off_attempts", execution["execution_id"]) or []
     from modules.telemetry.rootline_command_acceptance import command_execution, accepted
@@ -1222,9 +1245,9 @@ def _bounded_off(execution, store, transport):
 
 
 def _finish_command_auxiliary(active, store, transport, *, now, reason):
-    from modules.telemetry.rootline_command_acceptance import accepted, terminal
+    from modules.telemetry.rootline_command_acceptance import accepted, terminal, controller_accepted
     recovery = _bounded_auxiliary_off(active, store, transport)
-    off = next((row for row in recovery["outcomes"] if accepted(row, active, "OFF")), None)
+    off = next((row for row in recovery["outcomes"] if controller_accepted(row, active, "OFF")), None)
     if off is None:
         store("contain_auxiliary_device", {**active, "reason": "off_command_failed_or_unknown",
             "shutdown_verified": False, "command_duty_closed": False})
@@ -1234,7 +1257,7 @@ def _finish_command_auxiliary(active, store, transport, *, now, reason):
     from modules.telemetry.rootline_command_acceptance import injector_target_binding, injector_target_timing
     target = injector_target_binding(active)
     deadline = _timestamp(target["target_off_at"] if target else active.get("primary_stop_deadline"))
-    complete = (accepted(active.get("command_on_receipt"), active, "ON")
+    complete = (controller_accepted(active.get("command_on_receipt"), active, "ON")
         and deadline is not None and reason == "primary_deadline_reached"
         and (target is not None if active.get("injector_timing_contract") else True)
         and _timestamp(off.get("command_attempted_at") if target else off.get("accepted_at")) >= deadline)
@@ -1282,7 +1305,9 @@ def _recover_command_irrigation(active, store, transport, notify, now, *, clock=
         check_owned_deadline()
         now = _aware(clock())
         report = report_after_command(active, observation, now=now)
-        confirmation_at = _timestamp((active.get("controller_confirmation") or {}).get("report", {}).get("reported_at"))
+        prior_confirmation = active.get("controller_confirmation") or {}
+        confirmation_at = _timestamp(prior_confirmation.get("controller_acceptance", {}).get("responded_at")
+            or prior_confirmation.get("report", {}).get("reported_at"))
         if report and report["state"] == "OFF" and (confirmation_at is None or _timestamp(report["reported_at"]) > confirmation_at):
             active = {**active, "controller_contradiction": report}
             reason = "controller_reported_off"

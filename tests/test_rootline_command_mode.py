@@ -28,18 +28,24 @@ def route(device="100204e9bc", *, now=NOW, reported="OFF"):
     return value
 
 
-def receipt(execution, state, *, at, attempt=1):
+def receipt(execution, state, *, at, attempt=1, controller=True):
     value = {"contract_version": ca.RECEIPT, "provider": "home_assistant", "accepted_unambiguous": True,
         "provider_command_attempted": True, "device_id": execution["device_id"], "channel": execution["channel"],
         "entity_id": f"switch.{execution['device_id']}_{execution['channel']}", "requested_state": state,
         "idempotency_key": execution["execution_id"]+(":ON" if state == "ON" else f":OFF:{attempt}"),
         "command_attempted_at": at.isoformat(), "accepted_at": at.isoformat()}
+    if controller:
+        value["controller_acceptance"] = {"version": "rootline_controller_command.v1", "accepted": True,
+            "status": "controller_accepted", "availability": "online", "device_id": execution["device_id"],
+            "channel": execution["channel"], "state": state, "attempt_id": value["idempotency_key"],
+            "issued_at": at.isoformat(), "expires_at": (at+timedelta(seconds=30)).isoformat(),
+            "responded_at": at.isoformat(), "response_digest": "a"*64}
     value["receipt_sha256"] = ca.digest(value)
     return value
 
 
 def confirm_fixture(execution, *, at):
-    """Explicit synthetic controller report for tests of later lifecycle stages."""
+    """Explicit hypothetical native report; captured on-disk evidence stays unchanged."""
     from modules.telemetry.rootline_camp_confirmation import confirmation
     snap = route(execution["device_id"], now=at)
     row = next(row for row in snap["channels"] if row["channel"] == execution["channel"])
@@ -47,6 +53,11 @@ def confirm_fixture(execution, *, at):
     row["controller_report"] = {"source":"home_assistant_mqtt_subscription", "entity_id":row["entity_id"],
         "topic":f"cube2ha/switch/{execution['device_id']}/toggle_{execution['channel']}/state",
         "reported_at":at.isoformat(), "state":"ON", "retain":False, "qos":0}
+    native = {"device_id": execution["device_id"], "observer_qualified": True, "observer_epoch": "a"*32,
+        "channels": [{"channel": execution["channel"], "entity_id": row["entity_id"], "output_state": "ON",
+            "observation_fresh": True, "observed_at": at.isoformat(), "observation_source": "mdns"}]}
+    native["response_digest"] = ca.digest(native)
+    snap["controller_observation"] = native
     snap["response_digest"] = ca.digest({k:v for k,v in snap.items() if k != "response_digest"})
     proof = confirmation(execution, snap, now=at)
     assert proof is not None
@@ -58,6 +69,21 @@ class Store:
     def __init__(self):
         self.active = None; self.auxiliary = {}; self.rows = []; self.fail_terminal = False
     def __call__(self, action, body):
+        if action == "dispatch_controller_off":
+            execution = body["execution"]
+            prefix = "auxiliary_" if execution.get("auxiliary_device_id") else ""
+            previous = [row for row in self.rows if row.get("execution_id") == execution["execution_id"]
+                and row.get("action") == f"record_{prefix}off_outcome"]
+            accepted = next((row["outcome"] for row in previous if ca.controller_accepted(row.get("outcome"), execution, "OFF")), None)
+            if accepted:
+                return {"reused_outcome": accepted}
+            attempt = len(previous)+1
+            if attempt > 3:
+                return {"accepted_unambiguous": False, "provider_command_attempted": False, "status": "shutdown_retry_not_due"}
+            result = body["dispatch"](attempt)
+            self.rows.append({"execution_id": execution["execution_id"], "attempt": attempt,
+                "action": f"record_{prefix}off_outcome", "outcome": result})
+            return result
         if action == "dispatch_irrigation_off_edge":
             result = body["dispatch"]()
             self.rows.append({"execution_id":body["execution_id"], "attempt":body["attempt"], "action":"record_off_outcome", "outcome":result})
@@ -99,7 +125,7 @@ class Store:
 
 
 class Transport:
-    def __init__(self, store, clock): self.store=store; self.clock=clock; self.calls=[]; self.uncertain_on=False; self.reject_off=False
+    def __init__(self, store, clock): self.store=store; self.clock=clock; self.calls=[]; self.uncertain_on=False; self.reject_off=False; self.controller_on=True
     def read_safety_configuration(self, *, device_id, channel):
         contract = next(get_device_contract(key) for key in ("A12345","B12345","C12345","E12345","FERTILIZER-MIXER-CH2","FERTILIZER-INJECTION-CH1")
             if get_device_contract(key)["device_id"] == device_id and get_device_contract(key)["channel"] == channel)
@@ -124,7 +150,8 @@ class Transport:
         if self.uncertain_on and state == "ON" or self.reject_off and state == "OFF":
             return {"accepted_unambiguous":False,"provider_command_attempted":True,"status":"provider_outcome_ambiguous"}
         execution = next(row for row in reversed(self.store.rows) if row.get("execution_id") == idempotency_key.split(":")[0] and row.get("claimed_at"))
-        return receipt(execution,state,at=self.clock(),attempt=int(idempotency_key.rsplit(":",1)[1]) if state=="OFF" else 1)
+        return receipt(execution,state,at=self.clock(),attempt=int(idempotency_key.rsplit(":",1)[1]) if state=="OFF" else 1,
+            controller=state == "OFF" or self.controller_on)
 
 
 def start(zone="B12345", *, uncertain=False, at=NOW, confirm=True):
@@ -134,6 +161,7 @@ def start(zone="B12345", *, uncertain=False, at=NOW, confirm=True):
     evidence["weather"]["observed_at"]=at.isoformat(); evidence["tanks"]["observed_at"]=at.isoformat()
     evidence["irrigation"].update(advisor_generated_at=at.isoformat(),advisor_operating_date=selected)
     clock=[at]; store=Store(); transport=Transport(store,lambda:clock[0]); transport.uncertain_on=uncertain
+    transport.controller_on = confirm
     with timed_control_scope(ENV):
         artifact=build_execution_eligibility(plan=plan,evidence=evidence,controller=route(now=at),now=at)
         assert artifact["eligible"],artifact

@@ -25,6 +25,11 @@ class RootlineExecutionStoreUnavailable(RuntimeError):
 
 
 def rootline_irrigation_execution_store(action, payload):
+    if action == "dispatch_controller_off":
+        from modules.telemetry.rootline_controller_shutdown import dispatch_owned_off
+        return dispatch_owned_off(dict(payload or {}))
+    if action == "retire_controller_not_sent":
+        return _retire_controller_not_sent(dict(payload or {}))
     if action == "satisfy_owner_eskom_request":
         from modules.telemetry.rootline_owner_controls import satisfy_owner_eskom_request
         return satisfy_owner_eskom_request(dict(payload or {}))
@@ -1211,6 +1216,18 @@ def _no_send_preimage(rows, execution_id):
 
 def _verified_not_dispatched(item, rows):
     from datetime import timedelta
+    if isinstance(item, dict) and item.get("terminal_contract") == "rootline_controller_no_send.v1":
+        proof = _controller_no_send_preimage(rows, item.get("execution_id"))
+        if proof is None:
+            return False
+        claim, outcome = proof
+        return (item.get("action") == "record_execution_not_dispatched"
+            and item.get("event_id") == _event_id("record_execution_not_dispatched", item)
+            and item.get("not_dispatched_verified") is True and item.get("shutdown_verified") is False
+            and item.get("claim_sha256") == _event_digest(claim)
+            and item.get("outcome_sha256") == _event_digest(outcome)
+            and item.get("claim_event_id") == claim.get("event_id")
+            and item.get("outcome_event_id") == outcome.get("event_id"))
     if (not isinstance(item, dict) or item.get("action") != "record_execution_not_dispatched"
             or item.get("terminal_contract") != "rootline_proven_no_send.v1"
             or item.get("not_dispatched_verified") is not True
@@ -1244,6 +1261,54 @@ def _no_send_binding(claim, outcome):
         "channel": claim.get("channel") or (1 if device == "1002851416" else None),
         "claim_event_id": claim["event_id"], "claim_sha256": _event_digest(claim),
         "outcome_event_id": outcome["event_id"], "outcome_sha256": _event_digest(outcome)}
+
+
+def _controller_no_send_preimage(rows, identity):
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    preimage = _no_send_preimage(rows, identity)
+    if preimage is None:
+        return None
+    claim, outcome = preimage
+    result = outcome.get("on_outcome") or {}
+    proof = result.get("controller_response") or {}
+    if (not command_execution(claim) or result.get("status") != "controller_not_sent"
+            or proof.get("version") != "rootline_controller_command.v1"
+            or proof.get("accepted") is not False or proof.get("controller_command_attempted") is not False
+            or proof.get("status") != "controller_not_sent" or proof.get("state") != "ON"
+            or proof.get("device_id") != claim.get("device_id") or proof.get("channel") != claim.get("channel")
+            or proof.get("attempt_id") != identity+":ON"
+            or _time(proof.get("issued_at")) is None or _time(proof.get("consumed_at")) is None
+            or _time(proof.get("expires_at")) is None
+            or not timedelta(0) < _time(proof["expires_at"])-_time(proof["issued_at"]) <= timedelta(seconds=60)
+            or not _time(claim["claimed_at"]) <= _time(proof["issued_at"]) <= _time(proof["consumed_at"]) <= _time(proof["expires_at"])
+            or any(row.get("action") in {"claim_off_attempt", "claim_auxiliary_off_attempt", "claim_borehole_off_attempt"}
+                for row in rows)):
+        return None
+    return preimage
+
+
+def _retire_controller_not_sent(body):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False, read_committed=True) as connection, connection.cursor() as cursor:
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+        rows = _managed_edge_rows(cursor, body.get("execution_id"))
+        existing = next((row for row in rows if _verified_not_dispatched(row, rows)), None)
+        if existing:
+            return {"success": True, "created": False, "execution": existing}
+        preimage = _controller_no_send_preimage(rows, body.get("execution_id"))
+        if preimage is None:
+            return {"success": False, "created": False, "status": "controller_no_send_unproven"}
+        claim, outcome = preimage
+        cursor.execute("select clock_timestamp()")
+        now = cursor.fetchone()[0]
+        retired = {**claim, **_no_send_binding(claim, outcome), "state": "NotDispatched",
+            "terminal_contract": "rootline_controller_no_send.v1", "not_dispatched_verified": True,
+            "shutdown_verified": False, "physical_state": "Unverified", "objective_satisfied": False,
+            "retired_at": now.isoformat()}
+        saved = _insert_managed_event(cursor, "record_execution_not_dispatched", retired)
+        return {**saved, "execution": _stored_event_body("record_execution_not_dispatched", retired, saved["event_id"])}
 
 
 def _no_send_pending(stage, reason, *, status="no_send_off_proof_pending", unknown=False):

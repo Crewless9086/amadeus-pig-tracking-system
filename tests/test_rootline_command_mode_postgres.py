@@ -67,7 +67,10 @@ def test_camp_confirmation_is_single_durable_transition_and_stop_fenced(db):
     from modules.telemetry.rootline_camp_confirmation import confirmation, confirmed
     from tests.test_rootline_camp_confirmation import observation
     at = datetime.now(timezone.utc)-timedelta(seconds=20)
-    _, _, memory, _, _ = start(at=at, confirm=False)
+    _, _, memory, _, _ = start(at=at, confirm=True)
+    for row in memory.rows:
+        if row.get("action") == "mark_active":
+            row.pop("controller_confirmation", None)
     seed(memory.rows)
     pending = db("load_active", None)
     assert pending and not ca.active_command(pending)
@@ -304,8 +307,11 @@ def test_real_locked_ha_transport_sends_exact_entity_once(db,monkeypatch):
             if kind=="config/device_registry/list":return devices
             if kind=="config/entity_registry/list":return entities
             if kind=="mqtt/device/debug_info":return debug
-            assert kind=="call_service"
-            calls.append(fields);return {}
+            assert kind=="rootline_observer/command"
+            calls.append(fields)
+            return {**fields, "version":"rootline_controller_command.v1", "accepted":True,
+                "controller_command_attempted":True,"status":"controller_accepted","availability":"online",
+                "consumed_at":fields["issued_at"],"responded_at":datetime.now(timezone.utc).isoformat(),"response_digest":"a"*64}
     original=ha.send_state
     monkeypatch.setattr(ha,"send_state",lambda **kwargs:original(**kwargs,client_factory=Client))
     def dispatch():
@@ -316,6 +322,7 @@ def test_real_locked_ha_transport_sends_exact_entity_once(db,monkeypatch):
     assert calls==[]
     result=db("dispatch_irrigation_on_edge",{**claim,"dispatch":dispatch})
     assert ca.accepted(result,claim,"ON"),result
-    assert calls==[{"domain":"switch","service":"turn_on","target":{"entity_id":"switch.renamed_1"}}]
+    assert len(calls)==1 and (calls[0]["device_id"],calls[0]["channel"],calls[0]["state"]) == (claim["device_id"],claim["channel"],"ON")
+    assert calls[0]["attempt_id"] == claim["execution_id"]+":ON"
     assert db("dispatch_irrigation_on_edge",{**claim,"dispatch":dispatch})["accepted_unambiguous"] is False
     assert len(calls)==1

@@ -42,8 +42,8 @@ def observation(active, state, at, *, reported_at=None, fault=None):
     return output_evidence_from_snapshot(route, device_id="100204e9bc", channel=active["channel"])
 
 
-def setup():
-    result, artifact, memory, transport, clock = start(confirm=False)
+def setup(*, confirm=False):
+    result, artifact, memory, transport, clock = start(confirm=confirm)
     class Store:
         def __call__(self, action, body):
             if action == "confirm_irrigation_controller":
@@ -68,13 +68,15 @@ def test_old_or_same_time_report_cannot_confirm(offset):
         reported_at=NOW+timedelta(seconds=offset)), now=at) is None
 
 
-def test_report_after_attempt_before_acceptance_is_valid_and_cannot_be_rebound():
+def test_mqtt_cannot_confirm_but_actual_controller_receipt_cannot_be_rebound():
     _, memory, _, _, _ = setup()
     active = deepcopy(memory.active)
     active["command_on_receipt"]["accepted_at"] = (NOW+timedelta(seconds=10)).isoformat()
     active["command_on_receipt"]["receipt_sha256"] = ca.digest({k:v for k,v in active["command_on_receipt"].items() if k != "receipt_sha256"})
     at = NOW+timedelta(seconds=11)
     evidence = observation(active, "ON", at, reported_at=NOW+timedelta(seconds=5))
+    assert confirmation(active, evidence, now=at) is None
+    active["command_on_receipt"] = receipt(active, "ON", at=NOW)
     active["controller_confirmation"] = confirmation(active, evidence, now=at)
     assert confirmed(active)
     active["execution_id"] += "-other"
@@ -93,10 +95,11 @@ def test_requested_and_running_notices_follow_recorded_report():
     assert project_execution_event("event", NOW, active)["status"] == "confirmation_pending"
     assert project_zone_lifecycle(zone_id="B12345",recommendation={},execution=active)["state"] == "Requested"
     at = NOW+timedelta(seconds=10)
+    active["command_on_receipt"] = receipt(active, "ON", at=NOW)
     active["controller_confirmation"] = confirmation(active, observation(active,"ON",at), now=at)
     assert transition(active)[0] == "Started"
-    assert "Running" in activity_notice("Started", active)
-    assert project_execution_event("event", at, active)["status"] == "controller_on_reported"
+    assert "ON accepted" in activity_notice("Started", active)
+    assert project_execution_event("event", at, active)["status"] == "on_command_accepted"
 
 
 def test_pending_legacy_parent_never_authorizes_injection_or_success_credit():
@@ -114,7 +117,7 @@ def test_pending_legacy_parent_never_authorizes_injection_or_success_credit():
 
 
 def test_fresh_confirmation_survives_missing_report_and_restart_then_later_off_contains():
-    _, memory, store, transport, clock = setup()
+    _, memory, store, transport, clock = setup(confirm=True)
     clock[0] += timedelta(seconds=10)
     evidence = observation(memory.active, "ON", clock[0])
     transport.read_output_state = lambda **_: evidence
@@ -147,6 +150,27 @@ def test_repeated_off_with_unchanged_entity_clock_interrupts_pending_command():
     done = recover(store, transport, clock)
     assert done["execution"]["reason"] == "controller_reported_off"
     assert [call[2] for call in transport.calls] == ["ON", "OFF"]
+
+
+def test_actual_ack_then_native_off_revokes_parent_without_calling_controller_offline():
+    from tests.test_rootline_command_mode import route
+    _, memory, store, transport, clock = setup(confirm=True)
+    clock[0] += timedelta(seconds=78)
+    active = memory.active
+    snap = route(active["device_id"], now=clock[0])
+    native = {"device_id": active["device_id"], "observer_qualified": True, "observer_epoch": "a"*32,
+        "channels": [{"channel": active["channel"], "entity_id": active["command_on_receipt"]["entity_id"],
+            "output_state": "OFF", "observation_fresh": True, "observed_at": clock[0].isoformat(), "observation_source": "mdns"}]}
+    native["response_digest"] = ca.digest(native)
+    snap["controller_observation"] = native
+    snap["controller_availability"] = {"state": "online", "source": "correlated_controller_query", "checked_at": clock[0].isoformat()}
+    snap["response_digest"] = ca.digest({k:v for k,v in snap.items() if k != "response_digest"})
+    transport.read_output_state = lambda **_: output_evidence_from_snapshot(snap, device_id=active["device_id"], channel=active["channel"])
+    done = recover(store, transport, clock)
+    assert done["execution"]["reason"] == "controller_reported_off"
+    assert not ca.program_completed(done["execution"])
+    assert ca.active_irrigation_duty(memory.rows, now=clock[0]) is None
+    assert snap["controller_availability"]["state"] == "online"
 
 
 def test_read_crossing_deadline_stops_without_confirmation():

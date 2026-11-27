@@ -497,6 +497,11 @@ class RootlineIFTTTTransport:
                 self._ha_last_command[(device_id, channel)] = result.get("command_attempted_at")
             if result.get("provider_command_attempted") is False and known_no_send is not None:
                 known_no_send(result["status"])
+            if callable(getattr(self, "availability_recorder", None)):
+                proof = result.get("controller_acceptance") or {}
+                if proof.get("accepted") is True:
+                    self.availability_recorder(device_id, {"state": "online", "checked_at": proof.get("responded_at"),
+                        "source": "controller_command_response", "output_state": "Unknown"})
             return result
         event = contract.get("on_event" if state == "ON" else "off_event" if state == "OFF" else "")
         secret = str(self.environ.get("ROOTLINE_IFTTT_MAKER_KEY") or "").strip()
@@ -762,6 +767,8 @@ class RootlineIFTTTTransport:
         else:
             value = self.readback(token_store=self.token_store, environ=self.environ,
                 **({"routine_read": True} if routine_read and self.readback is _NATIVE_CONTROLLER_READBACK else {}))
+        if callable(getattr(self, "availability_recorder", None)) and isinstance(value, dict):
+            self.availability_recorder(device_id, value.get("controller_availability") or {})
         return self._validated_snapshot(value, device_id, channel)
 
     def _validated_snapshot(self, value, device_id, channel):
