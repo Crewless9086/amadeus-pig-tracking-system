@@ -1,6 +1,7 @@
 """Provider-neutral commissioning contracts; descriptive, never authority granting."""
 from __future__ import annotations
 from dataclasses import dataclass
+from contextlib import nullcontext
 from enum import Enum
 import hashlib
 import json
@@ -81,11 +82,17 @@ class Actuator(Protocol):
 
 class CanonicalAuthorityResolver:
     """Resolve standing evidence and policy only from canonical private tables."""
-    def __init__(self, connect_factory):
+    def __init__(self, connect_factory, *, connection=None):
         self._connect_factory = connect_factory
+        self._connection = connection
+
+    def _read_connection(self):
+        # Only load_device_record supplies its verified, call-local connection.
+        # Standalone resolution and record writes retain their original scope.
+        return nullcontext(self._connection) if self._connection is not None else self._connect_factory()
 
     def evidence(self, reference: Mapping) -> Mapping | None:
-        with self._connect_factory() as db, db.cursor() as cur:
+        with self._read_connection() as db, db.cursor() as cur:
             cur.execute("""select e.evidence_id,e.evidence_sha256,
               e.current and not exists(select 1 from app_private.rootline_device_evidence_events x
                 where x.evidence_id=e.evidence_id and x.event_type='invalidated')
@@ -98,7 +105,7 @@ class CanonicalAuthorityResolver:
             "current":row[2] is True}
 
     def authority(self, reference: Mapping) -> Mapping | None:
-        with self._connect_factory() as db, db.cursor() as cur:
+        with self._read_connection() as db, db.cursor() as cur:
             cur.execute("""select a.standing_authority_id,a.version,a.policy_sha256,
               a.active and not a.revoked and not exists(
                 select 1 from app_private.rootline_authority_events x
@@ -163,15 +170,21 @@ def store_device_record(record: Mapping, *, connect_factory) -> dict:
 
 def load_device_record(device_key: str, *, connect_factory) -> dict | None:
     with connect_factory() as db, db.cursor() as cur:
+        # Each SELECT must observe newly committed revocations. Do not change
+        # isolation after a factory may already have queried its timeout setup.
+        cur.execute("select current_setting('transaction_isolation')")
+        if cur.fetchone() != ("read committed",):
+            raise ValueError("rootline_registry_read_isolation_unproven")
         cur.execute("""select contract_version,device_record,evidence_digest,registry_generation,
           encode(digest(convert_to(regexp_replace(regexp_replace(
             device_record::text,': ',':','g'),', ',',','g'),'UTF8'),'sha256'),'hex')
           from app_private.rootline_device_registry where device_key=%s""", (str(device_key),))
         row = cur.fetchone()
-    if not row:
-        return None
-    record = row[1] if isinstance(row[1], Mapping) else {}
-    validate_device(record, resolver=CanonicalAuthorityResolver(connect_factory))
+        if not row:
+            return None
+        record = row[1] if isinstance(row[1], Mapping) else {}
+        validate_device(record, resolver=CanonicalAuthorityResolver(connect_factory, connection=db))
+    # No connection or authority snapshot escapes this load into provider I/O.
     material = json.dumps(dict(record), sort_keys=True, separators=(",", ":"), default=str)
     source_digest = hashlib.sha256(material.encode()).hexdigest()
     # SQL authority migrations seal jsonb in PostgreSQL's deterministic key

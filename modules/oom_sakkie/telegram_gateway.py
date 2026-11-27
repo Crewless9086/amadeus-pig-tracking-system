@@ -1520,12 +1520,50 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "equipment_notification_failure": sanitize_failure(outcome.get("failure")),
                 "telegram_sends": int(supervision.get("telegram_sends") or 0) + int(outcome.get("telegram_sends") or 0)}
 
+        pending_controller_connectivity = []
+        def defer_controller_connectivity(callback):
+            if pending_controller_connectivity:
+                raise ValueError("controller_connectivity_already_pending")
+            pending_controller_connectivity.append(callback)
+
+        def refresh_deferred_connectivity(supervision):
+            if pending_controller_connectivity:
+                # Consume before invocation: failure/cancellation cannot replay
+                # this optional read, and nothing escapes this request scope.
+                refresh_connectivity = pending_controller_connectivity.pop()
+                with parent_optional_budget(), owned_deadline_checkpoint(
+                        lambda **kw: parent_checkpoint(supervision, **kw)):
+                    refresh_connectivity()
+
         provider_reported = False
         input_reported = False
         def equipment_reports(supervision, *, provider_only=False):
             nonlocal provider_reported, input_reported
             from modules.telemetry.rootline_input_health import input_health_enabled
             visibility_enabled = input_health_enabled(source)
+            if not provider_only:
+                refresh_deferred_connectivity(supervision)
+            # Current controller outages precede optional incident scans. Those
+            # scans must not consume the unchanged family-delivery reserve first.
+            if production_persistence and not provider_only:
+                try:
+                    from modules.telemetry.rootline_controller_availability import notify_controller_availability
+                    from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+                    # Reachability may have been recorded during this cycle.
+                    # Judge its original clock at delivery time, not tick start.
+                    controller_outcome = stage_timings.call("controller_notifications", notify_controller_availability,
+                        notify=notify, store=rootline_irrigation_execution_store, now=parent_clock(),
+                        database_url=source.get("DATABASE_URL"))
+                except Exception as exc:
+                    from modules.telemetry.rootline_failure_diagnostics import exception_failure
+                    controller_outcome = {"success": False, "telegram_sends": 0,
+                        "status": "controller_notifications_deferred", "failure": exception_failure(exc)}
+                from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
+                supervision = {**supervision,
+                    "controller_notification_status": controller_outcome.get("status"),
+                    "controller_notifications_confirmed": controller_outcome.get("success") is True,
+                    "controller_notification_failure": sanitize_failure(controller_outcome.get("failure")),
+                    "telegram_sends": int(supervision.get("telegram_sends") or 0)+int(controller_outcome.get("telegram_sends") or 0)}
             # Readback outages remain visible even when plan refresh fails.
             if visibility_enabled and not provider_reported and (production_persistence or provider_notification_cycle is not None):
                 provider_reported = True
@@ -1557,21 +1595,6 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "input_notifications_confirmed": input_outcome.get("success") is True,
                     "telegram_sends": int(supervision.get("telegram_sends") or 0)
                         + int(input_outcome.get("telegram_sends") or 0)}
-            if production_persistence and not provider_only:
-                try:
-                    from modules.telemetry.rootline_controller_availability import notify_controller_availability
-                    from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
-                    # Reachability may have been recorded during this cycle.
-                    # Judge its original clock at delivery time, not tick start.
-                    controller_outcome = stage_timings.call("controller_notifications", notify_controller_availability,
-                        notify=notify, store=rootline_irrigation_execution_store, now=parent_clock(),
-                        database_url=source.get("DATABASE_URL"))
-                except Exception as exc:
-                    controller_outcome = {"success": False, "telegram_sends": 0,
-                        "status": "controller_notifications_deferred", "error_type": type(exc).__name__}
-                supervision = {**supervision,
-                    "controller_notification_status": controller_outcome.get("status"),
-                    "telegram_sends": int(supervision.get("telegram_sends") or 0)+int(controller_outcome.get("telegram_sends") or 0)}
             if provider_only or (not production_persistence and equipment_notification_cycle is None):
                 return supervision
             return transition_reports(supervision)
@@ -1937,7 +1960,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 if managed is None:
                     from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
                     from functools import partial
-                    managed = partial(run_rootline_managed_device_reassessment, stage_timings=stage_timings)
+                    managed = partial(run_rootline_managed_device_reassessment, stage_timings=stage_timings,
+                        defer_controller_connectivity=defer_controller_connectivity)
                 try:
                     # A short-duty pass may already have spent most of this
                     # minute. Keep owned auxiliary/borehole/grid recovery, but
@@ -2158,6 +2182,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             try:
                 remaining_seconds(minimum=PROVIDER_DELIVERY_RESERVE_SECONDS)
             except RootlineCycleDeadlineExceeded:
+                try:
+                    refresh_deferred_connectivity(supervision)
+                finally:
+                    supervision = recheck_due_parent(supervision)
                 return {**supervision, "success": False,
                     "status": "scheduled_rootline_reporting_deadline_deferred",
                     "report_effects_unknown": False, "report_work_due": True,
@@ -2215,6 +2243,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             result["equipment_notification_status"] = supervision.get("equipment_notification_status", "")
             from modules.telemetry.rootline_failure_diagnostics import sanitize_failure
             result["equipment_notification_failure"] = sanitize_failure(supervision.get("equipment_notification_failure"))
+            result["controller_notification_status"] = supervision.get("controller_notification_status", "")
+            result["controller_notifications_confirmed"] = supervision.get("controller_notifications_confirmed") is True
+            result["controller_notification_failure"] = sanitize_failure(supervision.get("controller_notification_failure"))
             result["active_supervision_write_attempted"] = supervision.get("active_supervision_write_attempted") is True
             return result
 

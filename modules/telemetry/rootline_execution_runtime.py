@@ -103,7 +103,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         token_store=None, transport=None,
         evidence_loader=read_current_water_energy_evidence, allow_new_starts=True,
         allow_borehole_starts=None, clock=None, after_safety=None, refresh_after_safety=True,
-        stage_timings=None):
+        stage_timings=None, defer_controller_connectivity=None):
     """Supervise owned devices and advance independently eligible managed tasks.
 
     This composes existing planners, canonical device records and coordinators.
@@ -289,11 +289,14 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                     if continuous:
                         from modules.telemetry.rootline_ewelink_request_budget import (
                             optional_observation, OptionalObservationDeferred)
-                        binding = _borehole_discovery_binding(baseline, conditions, interlocks,
-                            borehole_energy(evidence.get("power"), decision_at, continuous=True))
                         try:
                             from modules.telemetry.rootline_command_acceptance import enabled
-                            with (nullcontext() if enabled(source) else optional_observation("borehole_unowned_discovery", binding=binding)):
+                            observation_scope = nullcontext()
+                            if not enabled(source):
+                                binding = _borehole_discovery_binding(baseline, conditions, interlocks,
+                                    borehole_energy(evidence.get("power"), decision_at, continuous=True))
+                                observation_scope = optional_observation("borehole_unowned_discovery", binding=binding)
+                            with observation_scope:
                                 provider = transport.read_output_state(
                                     device_id="1002851416", channel=1, routine_read=True)
                         except OptionalObservationDeferred as deferred:
@@ -364,9 +367,16 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         # Leave the next minute free to inherit the pulse before optional grid
         # reads/reporting. Existing owned OFF supervision has already run.
         return result
-    if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
+    def refresh_connectivity():
         with timing("controller_connectivity"):
             _refresh_one_controller_availability(transport, store, database_url, clock)
+    def schedule_connectivity():
+        if defer_controller_connectivity is None:
+            refresh_connectivity()
+        else:
+            defer_controller_connectivity(refresh_connectivity)
+    if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
+        schedule_connectivity()
         return result
     from modules.telemetry.rootline_device_spine import load_device_record
     from modules.telemetry.rootline_eskom_runtime import run_eskom_cycle
@@ -387,8 +397,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         except Exception:
             grid = {"success":False,"status":"eskom_readiness_unavailable","hardware_commands":0}
     # Grid exceptions remain local. They do not suppress gravity irrigation.
-    with timing("controller_connectivity"):
-        _refresh_one_controller_availability(transport, store, database_url, clock)
+    schedule_connectivity()
     return {**result,"eskom":grid,
         "hardware_commands":result.get("hardware_commands",0)+grid.get("hardware_commands",0),
         "writes_farm_data":result.get("writes_farm_data") is True or grid.get("writes_farm_data") is True,
