@@ -12,6 +12,7 @@ STAGES = frozenset({
     "irrigation_admission", "managed_control", "managed_evidence", "daily_program",
     "current_plan", "provider_notifications", "input_notifications",
     "equipment_notifications", "manager_reports", "parent_recheck",
+    "managed_source_reads", "managed_grid", "controller_connectivity", "controller_notifications",
 })
 MAX_MS = 86_400_000
 

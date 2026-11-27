@@ -469,6 +469,45 @@ def _command_controller_report(device_id, channel, entity, *, now):
         "retain": False, "qos": message.get("qos")}
 
 
+def read_controller_connection(device_id, *, environ, now=None, client_factory=HomeAssistantClient):
+    """Reachability only: reuse the observer's original bounded query result.
+
+    This optional poll neither reconstructs a command route nor returns relay
+    evidence. Command and shutdown paths still perform their own complete reads.
+    """
+    if device_id not in MODELS:
+        raise HomeAssistantUnavailable("home_assistant_device_binding_invalid")
+    def checked(envelope):
+        at = now or datetime.now(timezone.utc)
+        uiid = 138 if device_id == "1002851416" else 4
+        generated = _time(envelope.get("generated_at")) if isinstance(envelope, dict) else None
+        if (not isinstance(envelope, dict)
+                or envelope.get("contract_version") != "rootline_sonoff_observation.v1"
+                or envelope.get("device_id") != device_id or envelope.get("model") != MODELS[device_id]
+                or type(envelope.get("uiid")) is not int or envelope["uiid"] != uiid
+                or type(envelope.get("control_commands")) is not int or envelope["control_commands"] != 0
+                or envelope.get("source_authentication") != "unauthenticated_sonoff_lan_protocol"
+                or not re.fullmatch(r"[0-9a-f]{32}", str(envelope.get("observer_epoch") or ""))
+                or generated is None or not timedelta(0) <= at-generated <= timedelta(seconds=15)):
+            raise HomeAssistantUnavailable("home_assistant_observer_binding_invalid")
+        observation = envelope.get("controller_availability") or {}
+        from modules.telemetry.rootline_controller_availability import project_availability
+        try:
+            project_availability(device_id, observation, now=at)
+        except (ValueError, TypeError):
+            return None
+        original = _time(observation.get("checked_at"))
+        if original is None or not timedelta(0) <= at-original < timedelta(seconds=60):
+            return None
+        # Deliberately omit channels, cached states and all route/command flags.
+        return {key: observation[key] for key in ("state", "checked_at", "source", "output_state")}
+    with client_factory(environ) as client:
+        value = checked(client.request("rootline_observer/snapshot", device_id=device_id))
+        if value is None:
+            value = checked(client.request("rootline_observer/query", device_id=device_id))
+    return value or {"state": "unknown"}
+
+
 def read_command_route(device_id, *, environ, now=None, client_factory=HomeAssistantClient):
     """Authenticate exact existing MQTT bindings without asserting output state."""
     from modules.telemetry.rootline_command_acceptance import ROUTE, MODE, digest

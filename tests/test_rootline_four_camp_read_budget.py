@@ -88,6 +88,9 @@ def test_all_enabled_scheduler_keeps_managed_safety_and_reports_when_time_remain
  from modules.telemetry import rootline_device_spine as spine
  fixture=OfflineAdmission(monkeypatch,connection_seconds=connection_seconds)
  source={**ENV,**CONFIG,**ALL_FLAGS}
+ from modules.telemetry import rootline_owner_controls as owner_controls
+ monkeypatch.setattr(owner_controls,'load_runtime_owner_controls',
+  lambda *args,now,**kwargs:owner_controls.project_owner_controls([],now=now))
  schedules=ScheduleStore();observations={};controls=[];managed_results=[];report_calls=[];inventory=[]
  def state(action,identity,body):
   if action=='load_identity':return observations.get(identity)
