@@ -78,16 +78,76 @@ def test_revocation_between_queries_is_not_memoized():
 
 URL = os.getenv("ROOTLINE_HA_COMMAND_TEST_URL", "")
 
+def _validate_client_target(url):
+    parsed = urlparse(url)
+    assert parsed.scheme == "postgresql" and parsed.hostname == "127.0.0.1" and parsed.port == 55485
+    assert parsed.path == "/rootline_ha_command_mode_test" and parsed.username == "postgres"
+    assert parsed.password is None and not parsed.query and not parsed.fragment
+
+
+def _validate_server_target(row, *, github_actions=False, github_job=""):
+    from ipaddress import IPv4Address, IPv4Network
+    assert isinstance(row, tuple) and len(row) == 4, row
+    database, user, address, port = row
+    assert database == "rootline_ha_command_mode_test" and user == "postgres", row
+    local = address == "127.0.0.1" and port == 55485
+    # GitHub maps the already-validated loopback55485 client endpoint to its
+    # disposable Docker service's internal address/5432, not server55485.
+    container = (github_actions is True and github_job == "rootline-controller-transport"
+        and isinstance(address, str) and IPv4Address(address) in IPv4Network("172.16.0.0/12")
+        and port == 5432)
+    assert local or container, row
+
+
 def pg_connect():
     import psycopg
-    parsed = urlparse(URL)
-    assert parsed.hostname == "127.0.0.1" and parsed.port == 55485
-    assert parsed.path == "/rootline_ha_command_mode_test" and parsed.username == "postgres"
+    _validate_client_target(URL)
     connection = psycopg.connect(URL, connect_timeout=5)
-    row = connection.execute("select current_database(),host(inet_server_addr()),inet_server_port()").fetchone()
-    assert row == ("rootline_ha_command_mode_test", "127.0.0.1", 55485), row
-    connection.commit()
-    return connection
+    try:
+        row = connection.execute("select current_database(),current_user,host(inet_server_addr()),inet_server_port()").fetchone()
+        _validate_server_target(row, github_actions=os.getenv("GITHUB_ACTIONS") == "true",
+            github_job=os.getenv("GITHUB_JOB", ""))
+        connection.commit()
+        return connection
+    except BaseException:
+        connection.close()
+        raise
+
+
+@pytest.mark.parametrize("address,port,actions,job,accepted", [
+    ("127.0.0.1",55485,False,"",True),
+    ("172.18.0.2",5432,True,"rootline-controller-transport",True),
+    ("172.18.0.2",5432,False,"rootline-controller-transport",False),
+    ("172.18.0.2",5432,True,"another-job",False),
+    ("172.18.0.2",55485,True,"rootline-controller-transport",False),
+    ("127.0.0.1",5432,False,"",False),
+    ("8.8.8.8",5432,True,"rootline-controller-transport",False),
+    ("10.0.0.1",5432,True,"rootline-controller-transport",False),
+    ("172.32.0.1",5432,True,"rootline-controller-transport",False),
+])
+def test_disposable_server_catalog_identity(address,port,actions,job,accepted):
+    row=("rootline_ha_command_mode_test","postgres",address,port)
+    if accepted:_validate_server_target(row,github_actions=actions,github_job=job)
+    else:
+        with pytest.raises(AssertionError):_validate_server_target(row,github_actions=actions,github_job=job)
+
+
+@pytest.mark.parametrize("field,value", [(0,"production"),(1,"another_user")])
+def test_disposable_server_rejects_wrong_database_or_user(field,value):
+    row=["rootline_ha_command_mode_test","postgres","172.18.0.2",5432];row[field]=value
+    with pytest.raises(AssertionError):
+        _validate_server_target(tuple(row),github_actions=True,github_job="rootline-controller-transport")
+
+
+@pytest.mark.parametrize("url", [
+    "postgresql://postgres@db.example.com:55485/rootline_ha_command_mode_test",
+    "postgresql://postgres@127.0.0.1:5432/rootline_ha_command_mode_test",
+    "postgresql://postgres@127.0.0.1:55485/production",
+    "postgresql://other@127.0.0.1:55485/rootline_ha_command_mode_test",
+    "postgresql://postgres@127.0.0.1:55485/rootline_ha_command_mode_test?host=db.example.com",
+])
+def test_client_target_rejects_non_disposable_endpoint(url):
+    with pytest.raises(AssertionError):_validate_client_target(url)
 
 
 @pytest.fixture
@@ -290,3 +350,20 @@ def test_read_cost_model_accounts_for_added_isolation_query_and_timeout_setup():
     # Two loads save11s, plus omitted unused owner read2s=13s model.
     # .5s per SELECT explicitly includes the bounded timeout-setup overhead.
     assert totals==[10,4.5] and 2*(totals[0]-totals[1])+2==13
+
+
+def test_rejected_catalog_identity_closes_before_any_fixture_mutation(monkeypatch):
+    import psycopg
+    import sys
+    calls=[]
+    class Connection:
+        closed=False
+        def execute(self,sql):calls.append(sql);return self
+        def fetchone(self):return ("production","postgres","127.0.0.1",55485)
+        def commit(self):pytest.fail("rejected target committed")
+        def close(self):self.closed=True
+    connection=Connection()
+    monkeypatch.setattr(sys.modules[__name__],"URL","postgresql://postgres@127.0.0.1:55485/rootline_ha_command_mode_test")
+    monkeypatch.setattr(psycopg,"connect",lambda *a,**k:connection)
+    with pytest.raises(AssertionError):pg_connect()
+    assert connection.closed and len(calls)==1 and calls[0].startswith("select current_database()")

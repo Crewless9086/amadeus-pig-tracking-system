@@ -84,10 +84,13 @@ class CanonicalRead:
     def __enter__(self): return self
     def __exit__(self, *args): pass
     def cursor(self): return self
-    def execute(self, sql, params):
+    def execute(self, sql, params=None):
         assert sql.lstrip().lower().startswith("select ")
         self.queries.append((sql, params))
-        if "from app_private.rootline_device_registry where" in sql:
+        if "current_setting('transaction_isolation')" in sql:
+            assert params is None
+            self.row = ("read committed",)
+        elif "from app_private.rootline_device_registry where" in sql:
             assert params == ("ifttt_ewelink:ewelink_owner_account:100204e9bc:4",)
             self.row = ("rootline_device_spine.v1", self.record, digest(self.record), 1, digest(self.record))
         elif "from app_private.rootline_device_commissioning_evidence e" in sql:
