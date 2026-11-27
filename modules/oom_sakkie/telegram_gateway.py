@@ -1283,7 +1283,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             "stage": "not_started", "evidence_status": "", "work_started": False}
         def daily_plan_failure(exc):
             from modules.oom_sakkie.automatic_reassessment_scheduler import safe_daily_plan_diagnostics
-            deadline = isinstance(exc, RootlineCycleDeadlineExceeded)
+            from modules.telemetry.rootline_bounded_read_group import RootlineReadGroupDeadlineExceeded
+            deadline = isinstance(exc, (RootlineCycleDeadlineExceeded, RootlineReadGroupDeadlineExceeded))
             stage = plan_context["stage"]
             status = ("scheduled_rootline_reporting_deadline_deferred" if deadline else
                 "scheduled_rootline_plan_evidence_unavailable" if stage == "evidence_load" else
@@ -1837,7 +1838,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "plan_reassessment_status": plan_reassessment_status,
                     "execution_status": "not_enabled"}
         @stage_timings.stage("supervision")
-        def supervise(*, defer_new_work=False):
+        def supervise(*, defer_new_work=False, report_recovery=False):
             # Only a newly claimed authenticated minute reaches this path.
             # Replay recovery above remains delivery-only.
             short_result = {}
@@ -1892,13 +1893,23 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 supervision.update(success=False,
                     execution_status=str(supervision.get("status") or "unknown"),
                     status="scheduled_rootline_active_supervision_unproven")
+            idle_report_recovery = (report_recovery is True and irrigation_safe
+                and supervision.get("active_execution_found") is False
+                and short_result.get("success") is True
+                and short_result.get("status") == "no_owned_short_injector"
+                and short_result.get("auxiliary_inventory_empty") is True)
+            # Deliberate idle admission deferral is not a short-duty failure.
+            # Active camps/auxiliaries retain ordinary admission and pulses.
+            if report_recovery:
+                supervision["idle_report_recovery_eligible"] = idle_report_recovery
+            defer_admission = defer_optional or idle_report_recovery
             admission_checked = False
             def admit_irrigation(managed_result):
                 nonlocal admission_checked
                 if admission_checked:
                     return
                 admission_checked = True
-                if (not parent_deadline_probe.get("execution") and not defer_optional and irrigation_safe and managed_result.get("blocks_bc") is not True
+                if (not parent_deadline_probe.get("execution") and not defer_admission and irrigation_safe and managed_result.get("blocks_bc") is not True
                         and any(str(source.get(flag) or "").lower() == "true"
                                 for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_A_ENABLED", "ROOTLINE_E_ENABLED"))
                         and supervision.get("active_supervision_status") in {
@@ -1971,12 +1982,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                             lambda **kw: parent_checkpoint(supervision, **kw)), (
                             mandatory_safety() if defer_optional else nullcontext()):
                         managed_result = dict(stage_timings.call("managed_control", managed, environ=source, now=scheduler_now,
-                            after_safety=None if defer_optional else admit_irrigation,
+                            after_safety=None if defer_admission else admit_irrigation,
                             # Active ownership makes admission inert. Keep callback
                             # sequencing for deferred proof, without a redundant pass.
                             refresh_after_safety=supervision["active_supervision_status"] not in {"active_segment_owned", "irrigation_command_duty_active"},
-                            allow_borehole_starts=not defer_optional and str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
-                            allow_new_starts=not defer_optional and managed_enabled and irrigation_safe and supervision.get("status") in {
+                            allow_borehole_starts=not defer_admission and str(source.get("ROOTLINE_BOREHOLE_ENABLED") or "").lower() == "true",
+                            allow_new_starts=not defer_admission and managed_enabled and irrigation_safe and supervision.get("status") in {
                                 "no_active_irrigation", "active_segment_owned", "segment_completed",
                                 "irrigation_command_duty_active", "irrigation_off_command_accepted",
                                 "segment_stopped_outcome_unconfirmed"}) or {})
@@ -2157,9 +2168,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 "active_supervision_status": str(supervision.get("active_supervision_status") or supervision.get("status") or ""),
                 "report_work_due": False}
 
-        def invoke():
+        def invoke(*, report_recovery=False):
             nonlocal current_plan_result
-            supervision = supervise()
+            supervision = supervise(report_recovery=report_recovery)
             if supervision.get("short_auxiliary_duty_owned") is True:
                 return {**supervision, "status": "scheduled_rootline_short_duty_owned",
                     "report_work_due": True, "plan_delivery_status": "owned_short_duty_reporting_deferred",
@@ -2263,7 +2274,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         with cycle_budget(cycle_deadline):
             scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=bounded_schedule_store,
                 now=scheduler_now, invoke_not_due=invoke_safety_only,
-                invoke_owned_duties=invoke_owned_duties, recover_delivery=(recover_delivery_after_plan
+                invoke_owned_duties=invoke_owned_duties,
+                invoke_report_recovery=(lambda: invoke(report_recovery=True)) if production_persistence else None,
+                recover_delivery=(recover_delivery_after_plan
                     if production_persistence else None))
         return scheduled, 200 if scheduled.get("success") else 202
     owner = str((payload or {}).get("owner_user_id") or "").strip()

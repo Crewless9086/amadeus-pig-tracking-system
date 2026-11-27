@@ -30,7 +30,7 @@ def safe_daily_plan_diagnostics(result):
             "scheduled_reassessment_evidence_unavailable",
             "scheduled_reassessment_evidence_cutoff_unproven",
             "scheduled_reassessment_evidence_after_cutoff"},
-        "daily_plan_error_type": {"RootlineCycleDeadlineExceeded", "TimeoutError",
+        "daily_plan_error_type": {"RootlineCycleDeadlineExceeded", "RootlineReadGroupDeadlineExceeded", "TimeoutError",
             "RuntimeError", "ValueError", "TypeError", "ConnectionError", "OperationalError"},
     }
     return {key: (value if isinstance(value, str) and value in labels else "other")
@@ -66,11 +66,50 @@ def safe_reporting_diagnostics(result):
     return {"error_type": value if isinstance(value, str) and value in allowed else "other"}
 
 
+REPORT_RECOVERY_VERSION = "rootline_idle_report_recovery.v1"
+
+
+def report_recovery_source(value, *, now=None, target_due=None):
+    """Only a proven reporting deadline permits one later idle recovery turn."""
+    if (not isinstance(value, Mapping) or value.get("specialist") != "ROOTLINE"
+            or value.get("scheduler_identity") != SCHEDULER_IDENTITY
+            or value.get("status") != "contained" or value.get("report_work_due") is not True
+            or value.get("report_recovery") or value.get("daily_plan_stage") != "evidence_load"
+            or value.get("daily_plan_error_type") not in {
+                "RootlineCycleDeadlineExceeded", "RootlineReadGroupDeadlineExceeded"}
+            or value.get("terminal_outcome") not in {
+                "scheduled_rootline_reporting_deadline_deferred", "scheduled_rootline_plan_evidence_unavailable"}):
+        return None
+    identity, receipt = value.get("schedule_identity"), value.get("invocation_receipt")
+    due = _parse(value.get("due_at"))
+    if not due or not isinstance(identity, str) or not isinstance(receipt, str):
+        return None
+    expected_identity = f"OOM-SCHEDULE-ROOTLINE-{_bucket(due).strftime('%Y%m%dT%H%M%S%z')}"
+    expected_receipt = hashlib.sha256(f"{CONTRACT_VERSION}|{SCHEDULER_IDENTITY}|ROOTLINE|{_bucket(due).isoformat()}".encode()).hexdigest()
+    if identity != expected_identity or receipt != expected_receipt:
+        return None
+    if now is not None or target_due is not None:
+        invoked = _parse(value.get("invoked_at"))
+        if (now is None or target_due is None or invoked is None
+                or not timedelta(0) <= now-invoked <= MAX_MISSED_RUN_AGE
+                or _bucket(due) >= _bucket(target_due)
+                or due.astimezone(SAST).date() != target_due.astimezone(SAST).date()):
+            return None
+    return {"source_identity": identity, "source_receipt": receipt}
+
+
+def report_recovery_binding(source, identity, receipt):
+    return {"version": REPORT_RECOVERY_VERSION, **source,
+        "target_identity": identity, "target_receipt": receipt,
+        "mode": "idle_report_recovery"}
+
+
 def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Mapping[str, Any]],
                          store: Callable[[str, str, Any], Any], now: datetime | None = None,
                          recover_delivery: Callable[[], Mapping[str, Any]] | None = None,
                          invoke_not_due: Callable[[], Mapping[str, Any]] | None = None,
-                         invoke_owned_duties: Callable[[], Mapping[str, Any]] | None = None):
+                         invoke_owned_duties: Callable[[], Mapping[str, Any]] | None = None,
+                         invoke_report_recovery: Callable[[], Mapping[str, Any]] | None = None):
     """Claim and run one due bucket. This contract grants no operational authority."""
     now = _aware(now or datetime.now(timezone.utc))
     specialist = str(payload.get("specialist") or "").upper()
@@ -124,6 +163,9 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
               "report_work_due": bool(reports_due)}
     if cadence_unavailable:
         record.update(cadence_unavailable=True, cadence_error_type=cadence_error)
+    recovery_source = (report_recovery_source(latest, now=now, target_due=bucket) if reports_due and invoke_report_recovery is not None else None)
+    if recovery_source:
+        record["report_recovery_candidate"] = report_recovery_binding(recovery_source, identity, digest)
     claimed = store("claim_schedule", identity, record)
     if not isinstance(claimed, Mapping) or claimed.get("success") is not True:
         return _contained("scheduled_reassessment_claim_unproven")
@@ -142,10 +184,17 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
         return {**_safe("scheduled_reassessment_claim_interrupted"),
             "success": False, "schedule_identity": identity,
             "invocation_receipt": digest, "terminal_outcome": "claimed"}
+    recovery_binding = existing.get("report_recovery")
+    if recovery_binding is not None and (not recovery_source or recovery_binding != report_recovery_binding(recovery_source, identity, digest)):
+        return _contained("scheduled_report_recovery_binding_unproven")
+    record.pop("report_recovery_candidate", None)
+    if recovery_binding is not None:
+        record["report_recovery"] = dict(recovery_binding)
     try:
         # The optional callback advances control under the same minute claim,
         # including eligible starts and device planning, without running reports.
-        callback = invoke_owned_duties if cadence_unavailable else (invoke if reports_due else invoke_not_due)
+        callback = (invoke_report_recovery if recovery_binding is not None else
+            invoke_owned_duties if cadence_unavailable else (invoke if reports_due else invoke_not_due))
         result = dict(callback() or {})
     except Exception:
         result = _contained("scheduled_reassessment_specialist_failure")
