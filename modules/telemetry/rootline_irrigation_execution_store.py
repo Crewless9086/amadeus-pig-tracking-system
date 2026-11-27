@@ -15,6 +15,12 @@ import threading
 
 EVENT_SOURCE = "rootline_irrigation_execution"
 
+# Fixed reviewed camp predicate also matches the partial index under generic plans.
+# Keep every malformed envelope and historical proof; reducers remain unchanged.
+_CAMP_INVENTORY_ACTIONS = frozenset(['claim_before_on', 'contain_zone', 'mark_active', 'mark_stopping', 'record_ambiguous_shutdown', 'record_auxiliary_on_outcome', 'record_claim_recovery', 'record_completed', 'record_execution_not_dispatched', 'record_on_outcome'])
+_CAMP_INVENTORY_SQL = "select review_json->'rootline_execution' from public.sam_live_stock_conversation_review_events where event_source='rootline_irrigation_execution' and (jsonb_typeof(review_json->'rootline_execution') is distinct from 'object' or jsonb_typeof(review_json->'rootline_execution'->'action') is distinct from 'string' or review_json->'rootline_execution'->>'action'=any(ARRAY['claim_before_on','contain_zone','mark_active','mark_stopping','record_ambiguous_shutdown','record_auxiliary_on_outcome','record_claim_recovery','record_completed','record_execution_not_dispatched','record_on_outcome']::text[])) order by created_at desc,review_event_id desc"
+
+
 
 class RootlineExecutionStoreUnavailable(RuntimeError):
     """Durable execution truth could not be loaded within its read deadline."""
@@ -826,15 +832,18 @@ def _load(action, payload, *, connection=None):
                     relevant_actions.add("mark_stopping")
                 # Keep malformed and legacy JSON-string envelopes for the existing
                 # reducer: filtering them out could turn a failed read into idle.
-                cursor.execute("""select review_json->'rootline_execution'
-                    from public.sam_live_stock_conversation_review_events
-                    where event_source=%s
-                      and (jsonb_typeof(review_json->'rootline_execution')
-                               is distinct from 'object'
-                           or jsonb_typeof(review_json->'rootline_execution'->'action')
-                               is distinct from 'string'
-                           or review_json->'rootline_execution'->>'action'=any(%s))
-                    order by created_at desc,review_event_id desc""", (EVENT_SOURCE, sorted(relevant_actions)))
+                if not auxiliary and relevant_actions == _CAMP_INVENTORY_ACTIONS:
+                    cursor.execute(_CAMP_INVENTORY_SQL)
+                else:
+                    cursor.execute("""select review_json->'rootline_execution'
+                        from public.sam_live_stock_conversation_review_events
+                        where event_source=%s
+                          and (jsonb_typeof(review_json->'rootline_execution')
+                                   is distinct from 'object'
+                               or jsonb_typeof(review_json->'rootline_execution'->'action')
+                                   is distinct from 'string'
+                               or review_json->'rootline_execution'->>'action'=any(%s))
+                        order by created_at desc,review_event_id desc""", (EVENT_SOURCE, sorted(relevant_actions)))
                 loaded = [row[0] if isinstance(row[0], dict) else json.loads(row[0])
                     for row in cursor.fetchall()]
                 terminal = {row.get("execution_id") for row in loaded
