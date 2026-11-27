@@ -467,6 +467,11 @@ def read_command_route(device_id, *, environ, now=None, client_factory=HomeAssis
     if device_id == "1002851416":
         matches = [row for row in reports if isinstance(row, dict) and row.get("entity_id") == bound[1]]
         result["reported_output_state"] = str(matches[0].get("state", "unknown")).upper() if len(matches) == 1 else "Unknown"
+        # These are HA entity-report clocks, not a fresh hardware observation.
+        # Keep their original values so an external OFF can be distinguished
+        # from the cached OFF that preceded our accepted ON command.
+        result["reported_state_changed_at"] = matches[0].get("last_changed") if len(matches) == 1 else None
+        result["reported_state_updated_at"] = matches[0].get("last_updated") if len(matches) == 1 else None
         result["reported_state_source"] = "home_assistant_entity_report_not_independently_verified"
         result["provider_calls"] = 4
     result["response_digest"] = digest(result)
