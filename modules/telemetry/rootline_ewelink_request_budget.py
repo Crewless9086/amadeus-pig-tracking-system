@@ -127,6 +127,14 @@ def routine_execution_observation(execution):
         interval = OPTIONAL_OBSERVATION_SECONDS["borehole_routine"]
     start = execution.get("provider_start_evidence" if borehole else "start_evidence") or {}
     started = _time(start.get("retrieved_at") or start.get("observed_at"))
+    if started is None:
+        from modules.telemetry.rootline_camp_confirmation import camp_command
+        from modules.telemetry.rootline_command_acceptance import accepted
+        receipt = execution.get("command_on_receipt")
+        if camp_command(execution) and accepted(receipt, execution, "ON"):
+            # An original accepted-command clock binds the optional read slot;
+            # it is not controller confirmation or a physical start assertion.
+            started = _time(receipt.get("command_attempted_at"))
     if started is None and continuous_borehole(execution):
         # This anchors a read slot, never a claimed provider ON or water start.
         started = _time(execution.get("claimed_at"))

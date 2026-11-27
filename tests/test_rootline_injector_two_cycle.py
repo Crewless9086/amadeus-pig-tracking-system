@@ -124,6 +124,7 @@ class Rig:
             raise TimeoutError("offline family delivery failure")
         return handle_rootline_reassessment_trigger(request, HEADERS, self.env,
             scheduler_now=current, schedule_store=self.schedules,
+            supervision_clock=lambda:self.now, parent_deadline_store=self.store, parent_deadline_wait=self.wait,
             state_store=lambda *args: {"success": True, "created": True},
             short_auxiliary_supervision_cycle=short, active_supervision_cycle=parent,
             managed_device_cycle=self.managed_cycle,
@@ -256,6 +257,9 @@ def test_short_duty_deferral_runs_real_managed_grid_reconciliation(monkeypatch, 
     from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
     from tests.test_rootline_eskom_runtime import CONFIG, canonical
     rig = Rig(monkeypatch, phase=15)
+    from modules.telemetry.rootline_owner_controls import project_owner_controls
+    monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls",
+        lambda *args, **kwargs: project_owner_controls([], now=kwargs.get("now") or rig.now))
     rig.cycle()
     tick = rig.now.replace(second=0, microsecond=0)+timedelta(minutes=1)
     rig.advance((tick-rig.now).total_seconds())
@@ -389,15 +393,17 @@ def test_real_ha_sender_and_canonical_fences_across_two_cycles(monkeypatch,repor
         def __exit__(self,*args): pass
         def request(self,kind,**fields):
             calls.append((kind,deepcopy(fields)))
-            if kind!="call_service": rig.advance(1)
+            if kind!="rootline_observer/command": rig.advance(1)
             if kind=="config/device_registry/list": return deepcopy(devices)
             if kind=="config/entity_registry/list": return deepcopy(entities)
             if kind=="mqtt/device/debug_info": return deepcopy(debug)
-            if kind=="call_service":
-                rig.commands.append({"state":"ON" if fields["service"]=="turn_on" else "OFF",
-                    "attempted_at":rig.now.isoformat(),"entity_id":fields["target"]["entity_id"]})
+            if kind=="rootline_observer/command":
+                rig.commands.append({"state":fields["state"],
+                    "attempted_at":rig.now.isoformat(),"entity_id":f"switch.{fields['device_id']}_{fields['channel']}"})
                 rig.advance(2)
-                return {"success":True}
+                return {**fields,"version":"rootline_controller_command.v1","accepted":True,
+                    "controller_command_attempted":True,"status":"controller_accepted","availability":"online",
+                    "consumed_at":fields["issued_at"],"responded_at":rig.now.isoformat(),"response_digest":"a"*64}
             raise AssertionError(kind)
     read=ha.read_registered_device;send=ha.send_state
     monkeypatch.setattr(ha,"read_registered_device",lambda *a,**k:read(*a,**k,now=rig.now,client_factory=Client))
@@ -406,20 +412,25 @@ def test_real_ha_sender_and_canonical_fences_across_two_cycles(monkeypatch,repor
     original=type(rig.store).__call__
     execute=d.execute
     def sql(statement,args=()):
+        if statement.lstrip().startswith("select exists("):
+            d.result=[(False,)];return d
         if "execution_id'=%s" in statement and "order by created_at,review_event_id" in statement:
             d.result=[(deepcopy(r),) for r in d.rows+d.parents if r.get("execution_id")==args[-1]]
-            return
+            return d
         if statement.lstrip().startswith("select 1 from public.sam_live_stock_conversation_review_events claim"):
             assert args[1]==parent["execution_id"]
-            d.result=[(1,)];return
-        execute(statement,args)
+            d.result=[(1,)];return d
+        return execute(statement,args)
     d.execute=sql
     def store(self,action,body):
         if action=="claim_auxiliary_before_on": d.body=deepcopy(body)
-        if action in {"dispatch_auxiliary_on_edge","dispatch_auxiliary_off_edge","mark_auxiliary_active","record_auxiliary_completed"}:
+        if action in {"dispatch_controller_off","dispatch_auxiliary_on_edge","dispatch_auxiliary_off_edge","mark_auxiliary_active","record_auxiliary_completed"}:
             rig.advance(1);d.now=rig.now
             rig.trace.append((action,rig.now.isoformat()))
             if action=="dispatch_auxiliary_on_edge": return canonical_store._dispatch_auxiliary_on_edge(body)
+            if action=="dispatch_controller_off":
+                from modules.telemetry.rootline_controller_shutdown import dispatch_owned_off
+                return dispatch_owned_off(body)
             if action=="dispatch_auxiliary_off_edge": return canonical_store._dispatch_auxiliary_off_edge(body)
             result=canonical_store._guarded_managed_transition(action,body)
             if result.get("success"):
@@ -429,7 +440,7 @@ def test_real_ha_sender_and_canonical_fences_across_two_cycles(monkeypatch,repor
         return original(self,action,body)
     monkeypatch.setattr(type(rig.store),"__call__",store)
     first,_=rig.cycle()
-    assert first.get("short_auxiliary_duty_owned") is True, [(r.get("action"),r.get("on_outcome"),r.get("reason")) for r in d.rows if r.get("auxiliary_device_id")=="FERTILIZER-INJECTION-CH1"]
+    assert first.get("short_auxiliary_duty_owned") is True, __import__("json").dumps(first.get("managed_device_result"), default=str)
     assert [r["state"] for r in rig.commands]==["ON"]
     owned=deepcopy(rig.store.auxiliary["FERTILIZER-INJECTION-CH1"])
     from modules.telemetry.rootline_command_acceptance import injector_target_matches_rows
@@ -442,4 +453,33 @@ def test_real_ha_sender_and_canonical_fences_across_two_cycles(monkeypatch,repor
     assert terminal["command_on_receipt"]["entity_id"]=="switch.100204d497_1"
     assert terminal["command_off_receipt"]["entity_id"]=="switch.100204d497_1"
     assert injector_target_timing(terminal)["off_delivery_delay_seconds"]==2
-    assert len([kind for kind,fields in calls if kind=="call_service"])==2
+    assert len([kind for kind,fields in calls if kind=="rootline_observer/command"])==2
+
+
+def test_offline_fertilizer_controller_pauses_only_its_work_then_resumes_eligible_pulse(monkeypatch, reports):
+    rig = Rig(monkeypatch, phase=0)
+    parent = deepcopy(rig.store.active)
+    original = rig.transport.read_safety_configuration
+    def offline(**kwargs):
+        result = original(**kwargs)
+        if kwargs["device_id"] == "100204d497":
+            route = result["command_route"]
+            route["command_route_ready"] = False
+            route["controller_availability"] = {"state": "offline", "checked_at": rig.now.isoformat(),
+                "source": "controller_query_unanswered", "output_state": "Unknown"}
+            route["response_digest"] = digest({k:v for k,v in route.items() if k != "response_digest"})
+            result["response_digest"] = route["response_digest"]
+        return result
+    rig.transport.read_safety_configuration = offline
+    rig.cycle()
+    assert rig.commands == []
+    assert rig.store.active["execution_id"] == parent["execution_id"]
+    assert rig.store.active["primary_stop_deadline"] == parent["primary_stop_deadline"]
+    assert not rig.store.auxiliary
+    rig.transport.read_safety_configuration = original
+    rig.advance(60)
+    rig.cycle()
+    assert [row["state"] for row in rig.commands] == ["ON"]
+    assert rig.commands[0]["device_id"] == "100204d497" and rig.commands[0]["channel"] == 1
+    assert rig.store.active["execution_id"] == parent["execution_id"]
+    assert rig.store.active["primary_stop_deadline"] == parent["primary_stop_deadline"]

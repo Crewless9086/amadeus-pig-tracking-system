@@ -54,7 +54,7 @@ def owner_notification_required(result: Mapping[str, Any]) -> bool:
     if rootline_exception_material(result):
         return True
     return any(str((lifecycle.get(zone) or {}).get("state") or "") in {
-        "Started", "Completed", "Failed"
+        "Requested", "Started", "Completed", "Failed"
     } for zone in ZONES if isinstance(lifecycle.get(zone), Mapping))
 
 
@@ -342,6 +342,8 @@ def _lifecycle_decision(lifecycle: Mapping[str, Any], recommendation: Mapping[st
         # historical diagnostic in the ledger; current decisions use current
         # state once shutdown is verified, rather than repeating an old alarm.
     state = str(lifecycle.get("state") or "Held")
+    if state == "Requested":
+        return "Aangevra — wag vir beheerder" if af else "Requested — awaiting controller"
     if state == "Started":
         if lifecycle.get("acceptance_mode") == "command_accepted":
             return "Program loop — AAN-opdrag aanvaar" if af else "Programme running — ON accepted"

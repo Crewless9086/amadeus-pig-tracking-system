@@ -85,11 +85,21 @@ def project_execution_event(event_id, at, row):
         seconds = command_seconds(row)
         if seconds:
             summary += f"; {seconds / 60:.1f} controller minutes accounted"
+        from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed, historical_command_interval
+        if camp_command(row) and not confirmed(row):
+            summary = "OFF command accepted; controller run unconfirmed"
+            interval = historical_command_interval(row)
+            if interval is not None:
+                summary += f"; {interval / 60:.1f} historical command minutes (not confirmed running time)"
     elif accepted(row.get("command_on_receipt"), row, "ON"):
         if "stopping" in action or "contain" in action or "ambiguous" in action or "completed" in action:
             state, summary, kind = "stop_pending", "ON accepted; stop still requires confirmation", "stop_pending"
         else:
             state, summary, kind = "on_command_accepted", "ON command accepted", "run_started"
+            from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+            if camp_command(row):
+                state, summary, kind = (("on_command_accepted", "Controller accepted ON", "run_started") if confirmed(row)
+                    else ("confirmation_pending", "Start requested; awaiting controller report", "run_requested"))
     elif action == "record_eskom_completed":
         proof = row.get("readback") or {}
         if proof.get("authoritative") is True and proof.get("state") in {"ON", "OFF"}:
@@ -216,6 +226,23 @@ def build_owner_control_projection(panel, *, control_state, now=None, database_u
         if panel in {None, "devices"}:
             result["devices"] = project_devices(control_state, data["plan"], events, now,
                 unavailable=unavailable, truncated=data["truncated"])
+            from modules.telemetry.rootline_controller_availability import read_controller_availability
+            from modules.telemetry.rootline_device_registry import get_device_contract
+            try:
+                controllers = read_controller_availability(database_url=database_url, now=now)
+            except Exception:
+                controllers = {}
+            for device in result["devices"]:
+                identity = next((identity for key, _, identity in DEVICES if key == device["id"]), None)
+                if identity == "ESKOM":
+                    continue
+                contract = get_device_contract(identity) or {}
+                availability = controllers.get(contract.get("device_id"))
+                device["controller_availability"] = availability or {"state": "unknown", "output_state": "Unknown"}
+                if availability and availability.get("state") == "offline":
+                    device["state"] = "controller_offline"
+                    device["summary"] = "Controller offline; output state unknown."
+
         if panel in {None, "history"}:
             changes = control_state.get("history", [])
             changes = [row for row in changes if isinstance(row, dict)]
@@ -281,6 +308,10 @@ def project_plan_run(task, operating_date, records, *, truncated=False, unavaila
         if any(word in action for word in ("stopping", "contain", "ambiguous", "completed")):
             return result("unknown", "Stop pending", at, "A later stop outcome is not yet confirmed.")
         if action == "mark_active":
+            from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+            if camp_command(row):
+                return (result("running", "ON command", at, "Controller accepted ON; relay state remains separately observed.") if confirmed(row)
+                    else result("pending", "Requested", at, "Awaiting the controller report; the scheduled stop remains active."))
             return result("running", "Running", at, "ON command accepted; this is recorded controller status.")
     return result("unknown", "Awaiting command evidence", at, "A claim or unresolved controller event is recorded.")
 

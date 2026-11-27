@@ -6,6 +6,62 @@ on:
     branches: [main]
 
 jobs:
+  rootline-controller-transport:
+    name: ROOTLINE controller transport and durable shutdown
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: rootline_ha_command_mode_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55485:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rootline_ha_command_mode_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHON_DOTENV_DISABLED: "1"
+      ROOTLINE_HA_COMMAND_TEST_URL: postgresql://postgres@127.0.0.1:55485/rootline_ha_command_mode_test
+      ROOTLINE_OWNER_CONTROL_TEST_URL: postgresql://postgres@127.0.0.1:55485/rootline_ha_command_mode_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt -r deploy/home-assistant/test-requirements.txt pytest
+      - name: Prepare disposable ROOTLINE database prerequisites
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          with psycopg.connect(os.environ["ROOTLINE_HA_COMMAND_TEST_URL"]) as db:
+              for role in ("anon", "authenticated", "service_role"):
+                  if not db.execute("select 1 from pg_roles where rolname=%s", (role,)).fetchone():
+                      db.execute(psycopg.sql.SQL("CREATE ROLE {} NOLOGIN").format(psycopg.sql.Identifier(role)))
+              for migration in ("202605210001_foundation_migration_log.sql",
+                                "202607280001_create_rootline_water_energy_plans.sql"):
+                  db.execute((Path("supabase/migrations") / migration).read_text(encoding="utf-8"))
+          PY
+      - name: Qualify exact device responses, observer recovery and shutdown races
+        run: >-
+          python -B -m pytest -q -p no:cacheprovider --confcutdir=tests
+          tests/test_rootline_ha_command_adapter.py
+          tests/test_rootline_ha_observer.py
+          tests/test_rootline_home_assistant.py
+          tests/test_rootline_controller_shutdown_postgres.py
+          tests/test_rootline_command_mode_postgres.py
+          tests/test_rootline_controller_availability.py
+          tests/test_rootline_controller_recovery_journey.py
+          tests/test_rootline_injector_two_cycle.py
+          tests/test_rootline_auxiliary_shutdown_history.py
+          tests/test_rootline_parent_deadline_postgres.py
+
   manager-dependency-intake:
     name: Default-inert manager engineering intake with disposable PostgreSQL
     runs-on: ubuntu-latest

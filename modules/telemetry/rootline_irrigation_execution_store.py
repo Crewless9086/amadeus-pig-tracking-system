@@ -25,6 +25,11 @@ class RootlineExecutionStoreUnavailable(RuntimeError):
 
 
 def rootline_irrigation_execution_store(action, payload):
+    if action == "dispatch_controller_off":
+        from modules.telemetry.rootline_controller_shutdown import dispatch_owned_off
+        return dispatch_owned_off(dict(payload or {}))
+    if action == "retire_controller_not_sent":
+        return _retire_controller_not_sent(dict(payload or {}))
     if action == "satisfy_owner_eskom_request":
         from modules.telemetry.rootline_owner_controls import satisfy_owner_eskom_request
         return satisfy_owner_eskom_request(dict(payload or {}))
@@ -91,6 +96,10 @@ def rootline_irrigation_execution_store(action, payload):
         return _complete_eskom_command(body)
     if action == "mark_stopping":
         return _mark_parent_stopping(body)
+    if action == "confirm_irrigation_controller":
+        return _confirm_irrigation_controller(body)
+    if action == "dispatch_irrigation_off_edge":
+        return _dispatch_irrigation_off_edge(body)
     if action == "record_completed":
         return _record_parent_terminal_atomic(action, body)
     if action == "record_job_resolution" and body.get("resolution") == "Cancelled":
@@ -156,6 +165,78 @@ _PARENT_IMMUTABLE = ("execution_id", "zone_id", "device_id", "channel", "job_id"
 
 def _same_parent(left, right):
     return all(left.get(key) == right.get(key) for key in _PARENT_IMMUTABLE)
+
+
+def _dispatch_irrigation_off_edge(body):
+    """Reuse the bounded OFF slots and sender locks; a receipt fences later senders."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_command_acceptance import accepted
+    dispatch = body.get("dispatch")
+    if not callable(dispatch):
+        return {"provider_command_attempted": False, "outcome": None}
+    slot = {"execution_id": body.get("execution_id"), "attempt": body.get("attempt"),
+        "idempotency_key": f"{body.get('execution_id')}:OFF:{body.get('attempt')}"}
+    if type(slot["attempt"]) is not int or not 1 <= slot["attempt"] <= 3:
+        return {"provider_command_attempted": False, "outcome": None}
+    claimed = rootline_irrigation_execution_store("claim_off_attempt", slot)
+    if claimed.get("created") is not True:
+        return {"provider_command_attempted": False, "outcome": None}
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False, read_committed=True) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+            cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+            rows = _managed_edge_rows(cursor, body["execution_id"])
+            claim = next((row for row in rows if row.get("action") == "claim_before_on"), None)
+            if claim is None or any(claim.get(key) != body.get(key) for key in _PARENT_IMMUTABLE if key != "on_attempts"):
+                return {"provider_command_attempted": False, "outcome": None}
+            prior = next((row.get("outcome") for row in rows if row.get("action") == "record_off_outcome"
+                and accepted(row.get("outcome"), body, "OFF")), None)
+            if prior is not None:
+                return {"provider_command_attempted": False, "outcome": prior}
+            if any(_terminal_closes_active(row) for row in rows):
+                return {"provider_command_attempted": False, "outcome": None}
+            try:
+                outcome = dispatch()
+            except Exception:
+                outcome = {"accepted_unambiguous": False, "status": "irrigation_off_outcome_unknown"}
+            if not isinstance(outcome, dict):
+                outcome = {"accepted_unambiguous": False, "status": "irrigation_off_outcome_unknown"}
+            _insert_managed_event(cursor, "record_off_outcome", {**slot, "outcome": outcome})
+            return {"provider_command_attempted": True, "outcome": outcome}
+
+
+def _confirm_irrigation_controller(body):
+    """Append confirmation to the same Active rail, serialized with parent OFF."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.telemetry.rootline_camp_confirmation import confirmed
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False, read_committed=True) as connection:
+        connection.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+        connection.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+        rows = [row[0] for row in connection.execute("""select review_json->'rootline_execution'
+            from public.sam_live_stock_conversation_review_events
+            where event_source=%s and review_json->'rootline_execution'->>'execution_id'=%s
+            order by created_at,review_event_id""", (EVENT_SOURCE, body.get("execution_id"))).fetchall()]
+        if any(row.get("action") in {"mark_stopping", "contain_zone", "record_completed",
+                "record_claim_recovery", "record_ambiguous_shutdown", "claim_off_attempt", "record_off_outcome"}
+                for row in rows):
+            return {"success": False, "created": False, "status": "parent_confirmation_retired"}
+        active = next((row for row in reversed(rows) if row.get("action") == "mark_active"), None)
+        if active is None or not _same_parent(active, body) or active.get("command_on_receipt") != body.get("command_on_receipt"):
+            return {"success": False, "created": False, "status": "parent_confirmation_preimage_changed"}
+        if confirmed(active):
+            return {"success": True, "created": False, "execution": active}
+        now = connection.execute("select clock_timestamp()").fetchone()[0]
+        deadline = _time(active.get("primary_stop_deadline"))
+        if deadline is None or now >= deadline:
+            return {"success": False, "created": False, "status": "parent_confirmation_deadline_reached"}
+        candidate = {**active, "controller_confirmation": body.get("controller_confirmation")}
+        if not confirmed(candidate) or _time(candidate["controller_confirmation"]["confirmed_at"]) > now:
+            return {"success": False, "created": False, "status": "parent_controller_report_invalid"}
+        candidate.pop("event_id", None)
+        result = _write_terminal_review(connection, "mark_active", candidate)
+        return {**result, "execution": result["resolution"]}
 
 
 def _mark_parent_stopping(body):
@@ -298,6 +379,18 @@ def _record_parent_terminal_atomic(action, body):
                     return {"success": False, "created": False, "history_event_created": False,
                         "status": "canonical_weather_stop_already_committed", "canonical_execution": existing}
                 raise _AtomicTerminalWriteFailed("canonical_history_completion_unproven")
+            from modules.telemetry.rootline_command_acceptance import command_execution, terminal_matches_rows
+            prior_command = next((row for row in events if row.get("action") == "record_completed"
+                and row.get("execution_id") == body.get("execution_id")), None)
+            if (command_execution(body) and prior_command is not None
+                    and terminal_matches_rows(body, events) and terminal_matches_rows(prior_command, events)
+                    and _same_parent(body, prior_command)
+                    and all(body.get(key) == prior_command.get(key) for key in (
+                        "command_on_receipt", "command_off_receipt", "reason", "controller_confirmation",
+                        "controller_contradiction", "command_program_completed", "command_job_completed"))
+                    and _append_history(action, prior_command, connection=connection, append=False)):
+                return {"success": True, "created": False, "history_event_created": False,
+                    "canonical_execution": prior_command}
             if any(row.get("action") == "record_completed"
                    and row.get("execution_id") == body.get("execution_id") for row in events):
                 raise ValueError("canonical_completion_history_conflict")
@@ -1123,6 +1216,18 @@ def _no_send_preimage(rows, execution_id):
 
 def _verified_not_dispatched(item, rows):
     from datetime import timedelta
+    if isinstance(item, dict) and item.get("terminal_contract") == "rootline_controller_no_send.v1":
+        proof = _controller_no_send_preimage(rows, item.get("execution_id"))
+        if proof is None:
+            return False
+        claim, outcome = proof
+        return (item.get("action") == "record_execution_not_dispatched"
+            and item.get("event_id") == _event_id("record_execution_not_dispatched", item)
+            and item.get("not_dispatched_verified") is True and item.get("shutdown_verified") is False
+            and item.get("claim_sha256") == _event_digest(claim)
+            and item.get("outcome_sha256") == _event_digest(outcome)
+            and item.get("claim_event_id") == claim.get("event_id")
+            and item.get("outcome_event_id") == outcome.get("event_id"))
     if (not isinstance(item, dict) or item.get("action") != "record_execution_not_dispatched"
             or item.get("terminal_contract") != "rootline_proven_no_send.v1"
             or item.get("not_dispatched_verified") is not True
@@ -1156,6 +1261,54 @@ def _no_send_binding(claim, outcome):
         "channel": claim.get("channel") or (1 if device == "1002851416" else None),
         "claim_event_id": claim["event_id"], "claim_sha256": _event_digest(claim),
         "outcome_event_id": outcome["event_id"], "outcome_sha256": _event_digest(outcome)}
+
+
+def _controller_no_send_preimage(rows, identity):
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    preimage = _no_send_preimage(rows, identity)
+    if preimage is None:
+        return None
+    claim, outcome = preimage
+    result = outcome.get("on_outcome") or {}
+    proof = result.get("controller_response") or {}
+    if (not command_execution(claim) or result.get("status") != "controller_not_sent"
+            or proof.get("version") != "rootline_controller_command.v1"
+            or proof.get("accepted") is not False or proof.get("controller_command_attempted") is not False
+            or proof.get("status") != "controller_not_sent" or proof.get("state") != "ON"
+            or proof.get("device_id") != claim.get("device_id") or proof.get("channel") != claim.get("channel")
+            or proof.get("attempt_id") != identity+":ON"
+            or _time(proof.get("issued_at")) is None or _time(proof.get("consumed_at")) is None
+            or _time(proof.get("expires_at")) is None
+            or not timedelta(0) < _time(proof["expires_at"])-_time(proof["issued_at"]) <= timedelta(seconds=60)
+            or not _time(claim["claimed_at"]) <= _time(proof["issued_at"]) <= _time(proof["consumed_at"]) <= _time(proof["expires_at"])
+            or any(row.get("action") in {"claim_off_attempt", "claim_auxiliary_off_attempt", "claim_borehole_off_attempt"}
+                for row in rows)):
+        return None
+    return preimage
+
+
+def _retire_controller_not_sent(body):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False, read_committed=True) as connection, connection.cursor() as cursor:
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
+        cursor.execute("select pg_advisory_xact_lock(%s)", (1874320912,))
+        rows = _managed_edge_rows(cursor, body.get("execution_id"))
+        existing = next((row for row in rows if _verified_not_dispatched(row, rows)), None)
+        if existing:
+            return {"success": True, "created": False, "execution": existing}
+        preimage = _controller_no_send_preimage(rows, body.get("execution_id"))
+        if preimage is None:
+            return {"success": False, "created": False, "status": "controller_no_send_unproven"}
+        claim, outcome = preimage
+        cursor.execute("select clock_timestamp()")
+        now = cursor.fetchone()[0]
+        retired = {**claim, **_no_send_binding(claim, outcome), "state": "NotDispatched",
+            "terminal_contract": "rootline_controller_no_send.v1", "not_dispatched_verified": True,
+            "shutdown_verified": False, "physical_state": "Unverified", "objective_satisfied": False,
+            "retired_at": now.isoformat()}
+        saved = _insert_managed_event(cursor, "record_execution_not_dispatched", retired)
+        return {**saved, "execution": _stored_event_body("record_execution_not_dispatched", retired, saved["event_id"])}
 
 
 def _no_send_pending(stage, reason, *, status="no_send_off_proof_pending", unknown=False):
@@ -2664,6 +2817,10 @@ def _append_history(action, body, *, connection=None, append=True):
             command_on_receipt=body.get("command_on_receipt"), command_off_receipt=body.get("command_off_receipt"),
             command_execution={key: body.get(key) for key in ("execution_id", "device_id", "channel", "claimed_at", "primary_stop_deadline", "acceptance_mode", "shutdown_verified", "command_duty_closed", "command_on_receipt", "command_off_receipt", "command_program_completed", "command_job_completed", "expected_segment_count", "segment_number", "planned_runtime_seconds", "governed_executable_duration_seconds", "reason", "stop_mode") },
             physical_state="Unverified")
+        details["command_execution"].update(zone_id=body.get("zone_id"),
+            controller_confirmation_required=body.get("controller_confirmation_required"),
+            controller_confirmation=body.get("controller_confirmation"),
+            controller_contradiction=body.get("controller_contradiction"))
     if body.get("stop_mode") == "scheduled":
         details["stop_mode"] = "scheduled"
     if body.get("state") == "Stopped":

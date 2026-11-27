@@ -12,7 +12,7 @@ from modules.telemetry.rootline_irrigation_history import _attach_latest_zone_ex
 from modules.telemetry.rootline_specialist_result import project_water_energy_plan
 from modules.telemetry.rootline_timed_control import timed_control_scope
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline
-from tests.test_rootline_command_mode import start, receipt, recover, ENV
+from tests.test_rootline_command_mode import start, receipt, recover, ENV, confirm_fixture
 from tests.test_rootline_water_energy_plan import daily_program_facts
 from tests.test_oom_sakkie_rootline_reassessment_delivery import memory_store
 
@@ -34,6 +34,7 @@ def execution(zone="E12345", at=CLAIM):
     for row in [*store.rows, store.active]:
         if row.get("command_on_receipt") is not None:
             row["command_on_receipt"] = deepcopy(accepted)
+            confirm_fixture(row, at=at+timedelta(seconds=15))
         if row.get("action") == "record_on_outcome":
             row["on_outcome"] = deepcopy(accepted)
     return store, transport, clock
@@ -132,11 +133,11 @@ def test_real_e_duty_reader_plan_owner_notice_is_stable_on_cutoff_only(monkeypat
 
 
 @pytest.mark.parametrize("zone", ["A12345", "B12345", "C12345", "E12345"])
-def test_all_irrigation_occupies_schedule_but_fertilizer_remains_bc(monkeypatch, zone):
+def test_all_irrigation_occupies_schedule_and_confirmed_parent_supports_fertilizer(monkeypatch, zone):
     store, _, _ = execution(zone)
     result = read_managed(monkeypatch, store.rows, SECOND)
     assert result["irrigation_schedule_context"]["zone_id"] == zone
-    assert bool(result["active_irrigation_context"]) == (zone in {"B12345", "C12345"})
+    assert bool(result["active_irrigation_context"])
     assert exceptions(store.rows) == []
 
 
@@ -145,7 +146,7 @@ def test_all_irrigation_occupies_schedule_but_fertilizer_remains_bc(monkeypatch,
     "stopping", "uncertain_on", "off_attempt", "two_open", "expired"])
 def test_missing_conflicting_or_overdue_command_data_never_clears_alarm_or_occupancy(monkeypatch, change):
     store, _, _ = execution(); rows = deepcopy(store.rows); now = SECOND
-    active = next(r for r in rows if r.get("action") == "mark_active")
+    active = next(r for r in reversed(rows) if r.get("action") == "mark_active")
     if change == "no_claim": rows = [r for r in rows if r.get("action") != "claim_before_on"]
     elif change == "no_outcome": rows = [r for r in rows if r.get("action") != "record_on_outcome"]
     elif change == "receipt_digest": active["command_on_receipt"]["receipt_sha256"] = "invalid"

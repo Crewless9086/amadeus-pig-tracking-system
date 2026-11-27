@@ -394,10 +394,10 @@ class HomeAssistantClient:
             raise HomeAssistantUnavailable("home_assistant_authentication_failed")
 
     def request(self, kind, **fields):
-        if kind not in {"config/device_registry/list", "config/entity_registry/list", "mqtt/device/debug_info", "rootline_observer/snapshot", "rootline_observer/query", "call_service"}:
+        if kind not in {"config/device_registry/list", "config/entity_registry/list", "mqtt/device/debug_info", "rootline_observer/snapshot", "rootline_observer/query", "rootline_observer/command", "call_service"}:
             raise HomeAssistantUnavailable("home_assistant_operation_invalid")
         async def exchange():
-            if (kind == "call_service" and self.command_deadline is not None
+            if (kind in {"call_service", "rootline_observer/command"} and self.command_deadline is not None
                     and time.monotonic() >= self.command_deadline):
                 raise HomeAssistantUnavailable("home_assistant_on_deadline_reached")
             self.counter += 1
@@ -437,6 +437,38 @@ class HomeAssistantClient:
         self.close()
 
 
+def _command_controller_report(device_id, channel, entity, *, now):
+    """Keep the latest original subscription report, including repeated states."""
+    _, topic = validate_discovery(device_id, channel, entity)
+    subscriptions = [row for row in entity.get("subscriptions") or []
+        if isinstance(row, dict) and row.get("topic") == topic]
+    if len(subscriptions) != 1:
+        return None
+    messages = subscriptions[0].get("messages") or []
+    if not isinstance(messages, list):
+        return None
+    parsed = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("topic") != topic:
+            return None
+        at = _time(message.get("time"))
+        try:
+            payload = json.loads(message.get("payload"))
+        except (ValueError, TypeError):
+            return None
+        if at is None or at > now or not isinstance(payload, dict) or payload.get("state") not in {"ON", "OFF"}:
+            return None
+        parsed.append((at, message, payload["state"]))
+    if not parsed:
+        return None
+    at, message, state = max(parsed, key=lambda row: row[0])
+    if any(row[0] == at and (row[2] != state or row[1].get("retain") is not False) for row in parsed):
+        return None
+    return {"source": "home_assistant_mqtt_subscription", "entity_id": entity["entity_id"],
+        "topic": topic, "reported_at": message["time"], "state": state,
+        "retain": False, "qos": message.get("qos")}
+
+
 def read_command_route(device_id, *, environ, now=None, client_factory=HomeAssistantClient):
     """Authenticate exact existing MQTT bindings without asserting output state."""
     from modules.telemetry.rootline_command_acceptance import ROUTE, MODE, digest
@@ -452,6 +484,15 @@ def read_command_route(device_id, *, environ, now=None, client_factory=HomeAssis
                 raise HomeAssistantUnavailable("home_assistant_mqtt_binding_invalid")
             validate_discovery(device_id, channel, matches[0])
         reports = client.states() if device_id == "1002851416" else []
+        observation = {}
+        try:
+            observation = client.request("rootline_observer/snapshot", device_id=device_id)
+            availability = observation.get("controller_availability") or {}
+            last_check = _time(availability.get("checked_at"))
+            if last_check is None or (now or datetime.now(timezone.utc))-last_check >= timedelta(seconds=60):
+                observation = client.request("rootline_observer/query", device_id=device_id)
+        except Exception:
+            observation = {}
     checked = (now or datetime.now(timezone.utc)).isoformat()
     result = {"contract_version": ROUTE, "acceptance_mode": MODE,
         "device_id": device_id, "device_model": MODELS[device_id],
@@ -464,6 +505,20 @@ def read_command_route(device_id, *, environ, now=None, client_factory=HomeAssis
         "channels": [{"channel": channel, "entity_id": entity_id,
             "output_state": "Unknown", "observation_fresh": False, "observed_at": None}
             for channel, entity_id in bound.items()]}
+    result["controller_availability"] = observation.get("controller_availability") or {"state": "unknown"}
+    availability_at = _time(result["controller_availability"].get("checked_at"))
+    if (result["controller_availability"].get("state") == "offline"
+            and result["controller_availability"].get("source") == "controller_query_unanswered"
+            and availability_at is not None and timedelta(0) <= _time(checked)-availability_at <= timedelta(seconds=60)):
+        result["command_route_ready"] = False
+    try:
+        result["controller_observation"] = observer_snapshot(device_id, devices, entities, observation,
+            now=_time(checked), environ=environ)
+    except Exception:
+        result["controller_observation"] = {}
+    for row in result["channels"]:
+        entity = next(item for item in debug["entities"] if item.get("entity_id") == row["entity_id"])
+        row["controller_report"] = _command_controller_report(device_id, row["channel"], entity, now=_time(checked))
     if device_id == "1002851416":
         matches = [row for row in reports if isinstance(row, dict) and row.get("entity_id") == bound[1]]
         result["reported_output_state"] = str(matches[0].get("state", "unknown")).upper() if len(matches) == 1 else "Unknown"
@@ -577,15 +632,33 @@ def send_state(*, environ, device_id, channel, state, before_send=None,
                 client.deadline = min(getattr(client, "deadline", client.command_deadline), client.command_deadline)
             attempted_at = datetime.now(timezone.utc).isoformat()
             attempted = True
-            service_result = client.request("call_service", domain="switch",
-                service="turn_on" if state == "ON" else "turn_off",
-                target={"entity_id": entity_id})
+            from datetime import timedelta
+            remaining = min(30, max(0, client.command_deadline-time.monotonic())) if state == "ON" else 30
+            request_expires = (datetime.fromisoformat(attempted_at) + timedelta(seconds=remaining)).isoformat()
+            service_result = client.request("rootline_observer/command", device_id=device_id,
+                channel=channel, state=state, attempt_id=idempotency_key,
+                issued_at=attempted_at, expires_at=request_expires)
+            if (not isinstance(service_result, dict)
+                    or service_result.get("version") != "rootline_controller_command.v1"
+                    or any(service_result.get(key) != expected for key, expected in {
+                        "device_id": device_id, "channel": channel, "state": state,
+                        "attempt_id": idempotency_key, "issued_at": attempted_at,
+                        "expires_at": request_expires}.items())):
+                raise HomeAssistantUnavailable("home_assistant_controller_response_unproven")
+            if service_result.get("accepted") is not True or service_result.get("status") != "controller_accepted":
+                no_send = (service_result.get("controller_command_attempted") is False
+                    and service_result.get("status") == "controller_not_sent")
+                return {"accepted_unambiguous": False, "provider_command_attempted": not no_send,
+                    "status": "controller_not_sent" if no_send else "provider_outcome_ambiguous",
+                    "provider": TRANSPORT, "command_attempted_at": attempted_at,
+                    "controller_response": service_result}
         from modules.telemetry.rootline_command_acceptance import RECEIPT, digest
         receipt = {"contract_version": RECEIPT, "accepted_unambiguous": True, "status": "accepted",
             "provider_command_attempted": True, "provider": TRANSPORT,
             "device_id": device_id, "channel": channel, "entity_id": entity_id,
             "requested_state": state, "idempotency_key": idempotency_key,
-            "command_attempted_at": attempted_at, "accepted_at": datetime.now(timezone.utc).isoformat()}
+            "command_attempted_at": attempted_at, "accepted_at": datetime.now(timezone.utc).isoformat(),
+            "controller_acceptance": service_result}
         receipt["receipt_sha256"] = digest(receipt)
         return receipt
     except Exception:

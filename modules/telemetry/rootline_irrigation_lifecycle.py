@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 
 STATES = ("Recommended", "Revalidating", "Eligible", "Authorized",
-          "Started", "Completed", "Held", "Failed")
+          "Started", "Requested", "Completed", "Held", "Failed")
 
 
 def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | None,
@@ -71,6 +71,10 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
     elif started:
         from modules.telemetry.rootline_command_acceptance import command_execution
         state, reason, next_action = "Started", _reason(execution, recommendation), ("ON command accepted; ROOTLINE owns the scheduled OFF command. Physical state is unverified." if command_execution(dict(execution)) else "ROOTLINE must verify the scheduled shutdown and controller state.")
+        from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+        if camp_command(dict(execution)):
+            state = "Started" if confirmed(dict(execution)) else "Requested"
+            next_action = "Controller reported ON; ROOTLINE owns the scheduled stop." if state == "Started" else "Awaiting controller confirmation; ROOTLINE owns the scheduled stop."
     elif authorized:
         state, reason, next_action = "Authorized", _reason(execution, recommendation), "ROOTLINE must continue through the existing claimed execution."
     elif unresolved_parent:
@@ -182,7 +186,7 @@ def auxiliary_shutdown_unverified(rows, *, evidence_cutoff):
         "claimed_at", "primary_stop_deadline", "maximum_duration_seconds", "consumption_key",
         "job_id", "job_sha256", "segment_identity", "zone_execution_id", "acceptance_mode")
     terminal_actions = {"contain_auxiliary_device", "record_auxiliary_completed",
-        "record_auxiliary_control_pulse_stopped"}
+        "record_auxiliary_control_pulse_stopped", "record_auxiliary_startup_aborted"}
     duty_actions = terminal_actions | {"claim_auxiliary_before_on", "claim_auxiliary_dispatch",
         "record_auxiliary_on_outcome", "mark_auxiliary_active", "claim_auxiliary_off_attempt",
         "record_auxiliary_off_outcome"}
@@ -214,6 +218,16 @@ def auxiliary_shutdown_unverified(rows, *, evidence_cutoff):
         terminal = duties[-1]
         if terminal.get("action") not in terminal_actions:
             return True
+        if terminal.get("action") == "record_auxiliary_startup_aborted":
+            from modules.telemetry.rootline_irrigation_execution_store import _verified_auxiliary_startup_abort
+            aborted = _aware_timestamp(terminal.get("aborted_at"))
+            if (sum(row.get("action") == "record_auxiliary_startup_aborted" for row in history) != 1
+                    or aborted is None or not claimed <= aborted <= cutoff
+                    or not _verified_auxiliary_startup_abort(dict(terminal), history)):
+                return True
+            # This closes only the original startup duty. It grants no
+            # mixing credit, physical-state assertion, or new ON authority.
+            continue
         if command_execution(claim):
             if (terminal.get("action") == "contain_auxiliary_device"
                     or not terminal_matches_rows(dict(terminal), history)

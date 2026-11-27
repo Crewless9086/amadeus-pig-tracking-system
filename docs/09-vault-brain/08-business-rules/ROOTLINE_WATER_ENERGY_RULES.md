@@ -1,5 +1,44 @@
 # ROOTLINE Water And Energy Rules
 
+## Owner-directed controller recovery and truthful shutdown - 27 November 2026
+
+The owner requested the shared repair after a mixer remained running following
+an OFF notification during intermittent connectivity, and approved implementation
+and release. Home Assistant queue acceptance alone no longer establishes a
+successful Sonoff command. A correlated response from the exact commissioned
+controller accepting the exact channel/state establishes controller acceptance,
+not independently observed relay state or measured flow. Preserve independent
+raw device observations and act on later contradictory OFF reports. MQTT state
+can include a bridge-synthesized command echo and must not alone confirm ON.
+
+Retain each original execution and OFF deadline until the controller accepts
+OFF. After the existing initial three attempts, retry only the still-owned OFF
+at most once per five minutes, with durable serialization and a newer-ownership
+and explicit-isolation fence. Never repeat uncertain ON or reopen an owner-stopped
+or completed programme. A transport-proven failure before any LAN command was
+sent may retire the unused claim without inventing an OFF observation; existing
+eligibility and remaining-window rules govern any subsequent fresh claim.
+
+Availability belongs to the physical controller. Loss of Controller (1) Right
+pauses mixing and injection, not independently eligible irrigation, borehole or
+Eskom. Check connectivity through the existing cycle, preserve the first outage
+time, send one useful outage notice and one recovery notice, and reconcile owned
+OFF duties before admitting remaining eligible work. Unexpected OFF while a
+controller is reachable is an interrupted run, not an offline controller.
+
+A fresh, exactly correlated getState acknowledgement with a device sequence may
+anchor recovery of the existing raw observer after reset. It supplies no switch
+state: outputs remain Unknown until a subsequent decrypted raw device report
+arrives after that anchor with a sequence at least the acknowledged value.
+Anchors expire after sixty seconds and must be reacquired after HA restart.
+Cached discovery data, MQTT echoes and requested state never seed observations.
+The unauthenticated LAN protocol cannot prove a cryptographic boot generation
+or exclude every old-generation replay; report that limitation honestly.
+
+Keep operating durations, native countdown configuration, Eskom policy and
+historical receipts unchanged. No external flow, dose or physical-contact sensor
+is added as an operating prerequisite.
+
 ## Owner-directed borehole power restoration — 27 November 2026
 
 The owner reported an overnight blackout followed by the borehole AC switch
@@ -1038,3 +1077,23 @@ low-battery, grid and other operational warnings retain their existing policy.
 Remove routine optional tank questions from summaries while preserving genuinely
 required owner decisions. These presentation changes do not alter control limits,
 forecast schedules, command authority, original OFF duties or operating policy.
+
+## Owner-directed camp controller confirmation — 27 November 2026
+
+An accepted camp ON request immediately owns its original bounded OFF duty, but
+remains Requested until the existing Home Assistant MQTT subscription reports ON
+for the exact registered controller channel after that command attempt. Use the
+original non-retained subscription report timestamp and validated topic/payload;
+API retrieval time, entity change time, retained replay and service acceptance do
+not establish this confirmation. A confirmed report remains valid until a later
+contradictory report; unchanged state or missing optional reports do not create a
+continuous freshness prerequisite. A later OFF report interrupts the camp through
+the existing serialized, bounded OFF recovery. Pending or contradicted camps,
+including legacy accepted-only duties, cannot authorize injection or receive
+successful programme credit. Never retry ON or extend the original stop deadline.
+Owner messages and the application distinguish Requested, Running and Interrupted.
+This is controller-report evidence, not water or dose measurement. Mixer and
+auxiliary timing/dispatch are unchanged by this bounded camp repair.
+Historical receipt intervals remain visible as unconfirmed command time only;
+they grant no running/completion credit or injector authority. Preserve their
+existing notification identities rather than replaying old results as new alerts.

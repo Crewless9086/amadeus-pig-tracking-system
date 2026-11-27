@@ -1413,17 +1413,20 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if state in {"ProviderUnavailable", "ProviderSafety", "ProviderRestored"}:
                 from modules.oom_sakkie.rootline_transition_notifications import compose_provider_notice
                 answer = compose_provider_notice(state, execution, language=scheduled_principal.language)
+            if state in {"ControllerOffline", "ControllerRecovered"}:
+                from modules.oom_sakkie.rootline_transition_notifications import compose_controller_notice
+                answer = compose_controller_notice(state, execution, language=scheduled_principal.language)
             if state in {"InputUnavailable", "InputRestored"}:
                 from modules.oom_sakkie.rootline_transition_notifications import compose_input_notice
                 answer = compose_input_notice(state, execution, language=scheduled_principal.language)
-            if state in {"Started", "Completed", "Stopped", "Adopted"}:
+            if state in {"Requested", "Started", "Interrupted", "Completed", "Stopped", "Adopted"}:
                 from modules.oom_sakkie.rootline_activity_presentation import activity_notice
                 answer = activity_notice(state, execution, language=scheduled_principal.language)
             base_identity = str(execution.get("notification_identity")
                                 or execution.get("execution_id") or "")
             event_identity = f"{base_identity}:{str(state).upper()}"
             visible = {"success": True, "status": state.lower(), "answer": answer}
-            if state in {"ProviderUnavailable", "ProviderSafety", "ProviderRestored", "InputUnavailable", "InputRestored", "Started", "Completed", "Stopped", "Adopted"}:
+            if state in {"ControllerOffline", "ControllerRecovered", "ProviderUnavailable", "ProviderSafety", "ProviderRestored", "InputUnavailable", "InputRestored", "Requested", "Started", "Interrupted", "Completed", "Stopped", "Adopted"}:
                 visible.update(recipient_render_contract="specialist_structured_recipient_v1",
                     recipient_language=scheduled_principal.language)
             retry_authority = None
@@ -1554,6 +1557,19 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "input_notifications_confirmed": input_outcome.get("success") is True,
                     "telegram_sends": int(supervision.get("telegram_sends") or 0)
                         + int(input_outcome.get("telegram_sends") or 0)}
+            if production_persistence and not provider_only:
+                try:
+                    from modules.telemetry.rootline_controller_availability import notify_controller_availability
+                    from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+                    controller_outcome = stage_timings.call("controller_notifications", notify_controller_availability,
+                        notify=notify, store=rootline_irrigation_execution_store, now=scheduler_now,
+                        database_url=source.get("DATABASE_URL"))
+                except Exception as exc:
+                    controller_outcome = {"success": False, "telegram_sends": 0,
+                        "status": "controller_notifications_deferred", "error_type": type(exc).__name__}
+                supervision = {**supervision,
+                    "controller_notification_status": controller_outcome.get("status"),
+                    "telegram_sends": int(supervision.get("telegram_sends") or 0)+int(controller_outcome.get("telegram_sends") or 0)}
             if provider_only or (not production_persistence and equipment_notification_cycle is None):
                 return supervision
             return transition_reports(supervision)

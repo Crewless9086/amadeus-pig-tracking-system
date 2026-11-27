@@ -59,6 +59,69 @@ def seed(rows):
     with connect() as c, c.cursor() as cursor:
         for row in rows:
             store_module._insert_managed_event(cursor,row["action"],{k:v for k,v in row.items() if k!="action"})
+            c.commit()  # Match the production lifecycle's separately committed edges.
+
+
+def test_camp_confirmation_is_single_durable_transition_and_stop_fenced(db):
+    from concurrent.futures import ThreadPoolExecutor
+    from modules.telemetry.rootline_camp_confirmation import confirmation, confirmed
+    from tests.test_rootline_camp_confirmation import observation
+    at = datetime.now(timezone.utc)-timedelta(seconds=20)
+    _, _, memory, _, _ = start(at=at, confirm=True)
+    for row in memory.rows:
+        if row.get("action") == "mark_active":
+            row.pop("controller_confirmation", None)
+    seed(memory.rows)
+    pending = db("load_active", None)
+    assert pending and not ca.active_command(pending)
+    checked = datetime.now(timezone.utc)
+    future = checked+timedelta(minutes=1)
+    future_proof = confirmation(pending, observation(pending, "ON", future), now=future)
+    assert db("confirm_irrigation_controller", {**pending,"controller_confirmation":future_proof})["success"] is False
+    proof = confirmation(pending, observation(pending, "ON", checked), now=checked)
+    candidate = {**pending, "controller_confirmation":proof}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _:db("confirm_irrigation_controller", candidate), range(2)))
+    assert sum(row["created"] for row in results) == 1, results
+    assert all(row["success"] for row in results)
+    loaded = db("load_active", None)
+    assert confirmed(loaded) and ca.active_command(loaded)
+    assert db("mark_stopping", {**loaded,"state":"stopping","reason":"controller_reported_off"})["success"]
+    assert db("confirm_irrigation_controller", candidate)["success"] is False
+    assert db("load_active", None)["state"] == "stopping"
+
+
+def test_two_camp_supervisors_reuse_one_off_and_close_pending_duty(db):
+    from concurrent.futures import ThreadPoolExecutor
+    from modules.telemetry.rootline_irrigation_coordinator import advance_irrigation_execution
+    from tests.test_rootline_camp_confirmation import observation
+    at = datetime.now(timezone.utc)-timedelta(seconds=20)
+    _, _, memory, _, _ = start(at=at, confirm=False)
+    original = memory.active
+    seed(memory.rows)
+    calls = []
+    class Transport:
+        def read_output_state(self, **kwargs):
+            return observation(original, "OFF", datetime.now(timezone.utc))
+        def set_state(self, **kwargs):
+            assert kwargs["state"] == "OFF"
+            calls.append(kwargs)
+            return receipt(original, "OFF", at=datetime.now(timezone.utc), attempt=int(kwargs["idempotency_key"].rsplit(":",1)[1]))
+    def supervise(_):
+        return advance_irrigation_execution(decision_id="",commissioning_id="",decision_reader=lambda _:None,
+            commissioning_reader=lambda _:None,store=db,transport=Transport(),notify=lambda *args:{},
+            now=datetime.now(timezone.utc),active_only=True)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(supervise, range(2)))
+    assert len(calls) == 1, results
+    assert db("load_active", None) is None
+    with connect() as connection:
+        rows = [row[0] for row in connection.execute("select review_json->'rootline_execution' from public.sam_live_stock_conversation_review_events").fetchall()]
+    terminals = [row for row in rows if row.get("action") == "record_completed"]
+    assert len(terminals) == 1
+    assert terminals[0]["commanded_runtime_seconds"] == 0
+    assert not ca.program_completed(terminals[0])
+    assert not ca.active_irrigation_duty(rows, now=datetime.now(timezone.utc))
 
 
 def test_real_terminal_and_typed_history_keep_command_and_water_separate(db):
@@ -244,8 +307,11 @@ def test_real_locked_ha_transport_sends_exact_entity_once(db,monkeypatch):
             if kind=="config/device_registry/list":return devices
             if kind=="config/entity_registry/list":return entities
             if kind=="mqtt/device/debug_info":return debug
-            assert kind=="call_service"
-            calls.append(fields);return {}
+            assert kind=="rootline_observer/command"
+            calls.append(fields)
+            return {**fields, "version":"rootline_controller_command.v1", "accepted":True,
+                "controller_command_attempted":True,"status":"controller_accepted","availability":"online",
+                "consumed_at":fields["issued_at"],"responded_at":datetime.now(timezone.utc).isoformat(),"response_digest":"a"*64}
     original=ha.send_state
     monkeypatch.setattr(ha,"send_state",lambda **kwargs:original(**kwargs,client_factory=Client))
     def dispatch():
@@ -256,6 +322,7 @@ def test_real_locked_ha_transport_sends_exact_entity_once(db,monkeypatch):
     assert calls==[]
     result=db("dispatch_irrigation_on_edge",{**claim,"dispatch":dispatch})
     assert ca.accepted(result,claim,"ON"),result
-    assert calls==[{"domain":"switch","service":"turn_on","target":{"entity_id":"switch.renamed_1"}}]
+    assert len(calls)==1 and (calls[0]["device_id"],calls[0]["channel"],calls[0]["state"]) == (claim["device_id"],claim["channel"],"ON")
+    assert calls[0]["attempt_id"] == claim["execution_id"]+":ON"
     assert db("dispatch_irrigation_on_edge",{**claim,"dispatch":dispatch})["accepted_unambiguous"] is False
     assert len(calls)==1

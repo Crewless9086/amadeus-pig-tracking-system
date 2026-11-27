@@ -572,6 +572,9 @@ def advance_borehole_execution(*, eligibility, store, transport, now=None, stop_
     store("record_borehole_on_outcome", {**execution, "on_attempts": 1, "on_outcome": on})
     if command_mode:
         from modules.telemetry.rootline_command_acceptance import accepted
+        if on.get("provider_command_attempted") is False and on.get("status") == "controller_not_sent":
+            from modules.telemetry.rootline_irrigation_coordinator import _retire_unsent_execution
+            return _retire_unsent_execution(execution, store, transport)
         if accepted(on, execution, "ON"):
             active = {**execution, "state": "Active", "on_attempts": 1,
                 "command_on_receipt": on, "physical_state": "Unverified"}
@@ -619,7 +622,7 @@ def _later_reported_borehole_off(active, reported, *, now):
 
 
 def _finish_command_borehole(active, store, transport, *, now):
-    from modules.telemetry.rootline_command_acceptance import accepted, terminal
+    from modules.telemetry.rootline_command_acceptance import controller_accepted as accepted, terminal
     prior = store("load_borehole_off_attempts", active["execution_id"]) or []
     off = next((row.get("outcome") for row in prior if accepted(row.get("outcome"), active, "OFF")), None)
     commands = 0 if off else _stop_borehole(active, store, transport)
@@ -669,6 +672,10 @@ def _finish_borehole(active, store, transport, now, *, clock=None, observed_off=
 
 def _stop_borehole(execution, store, transport):
     """The store consumes each OFF slot before its lock-serialized provider send."""
+    from modules.telemetry.rootline_command_acceptance import command_execution
+    if command_execution(execution):
+        from modules.telemetry.rootline_controller_shutdown import bounded_off
+        return bounded_off(execution, store, transport)["commands"]
     commands = 0
     from modules.telemetry.rootline_borehole_conditions import continuous_borehole
     trigger = ({key: execution.get(key) for key in ("stop_reason", "stop_trigger")}

@@ -4,13 +4,15 @@ from datetime import datetime,timedelta,timezone
 from pathlib import Path
 from functools import partial
 import psycopg
+from psycopg.types.json import Jsonb
 import pytest
 from modules.telemetry import rootline_command_acceptance as ca
 from modules.telemetry import rootline_irrigation_execution_store as storemod
 from modules.telemetry.rootline_execution_runtime import supervise_rootline_active_execution
 from modules.telemetry.rootline_timed_control import timed_control_scope
 from tests.test_rootline_owner_controls_postgres import database_url, sql
-from tests.test_rootline_command_mode import start,receipt,ENV as COMMAND_ENV
+from tests.test_rootline_command_mode import start,receipt,route,ENV as COMMAND_ENV
+from modules.telemetry.rootline_ifttt_transport import output_evidence_from_snapshot
 from tests.test_rootline_active_supervision import reports,gateway,Transport,ScheduleStore,payload,ENV
 from tests.test_rootline_active_weather_stop import dry_weather_reader
 
@@ -45,10 +47,14 @@ def test_real_gateway_parent_off_once_and_next_tick_recovery(parent_sql,reports,
             assert kwargs["state"]=="OFF"
             sent.append(kwargs)
             attempt=int(kwargs["idempotency_key"].rsplit(":",1)[1])
-            if mode=="failed" and len(sent)==1:
+            if mode=="failed" and len(sent)<=3:
                 raise RuntimeError("synthetic transport interrupted after OFF attempt")
             return receipt(active,"OFF",at=wall[0],attempt=attempt)
-        def read_output_state(self,**kwargs):pytest.fail("command mode needs no physical feedback")
+        def read_output_state(self,**kwargs):
+            # Routine command-route observation is allowed; it is not physical feedback.
+            assert kwargs == {"device_id":active["device_id"],"channel":active["channel"]}
+            return output_evidence_from_snapshot(route(active["device_id"],now=wall[0]),
+                device_id=active["device_id"],channel=active["channel"])
     supervisor=partial(supervise_rootline_active_execution,store=db,transport=OffTransport(),
         token_store=object(),clock=lambda:wall[0],active_weather_reader=dry_weather_reader)
     def wait(seconds):
@@ -67,15 +73,36 @@ def test_real_gateway_parent_off_once_and_next_tick_recovery(parent_sql,reports,
                 evidence_cutoff=wall[0].isoformat()),
             managed_device_cycle=lambda **kw:{"success":True,"status":"no_eligible_managed_device_task","hardware_commands":0})
     first=invoke()[0]
-    assert len(sent)==1, {"result":first,"trace":trace,"wall":str(wall[0]),"deadline":str(deadline)}
-    assert first["hardware_commands"]==(0 if mode=="concurrent" else 1)
+    expected_attempts=3 if mode=="failed" else 1
+    assert len(sent)==expected_attempts, {"result":first,"trace":trace,"wall":str(wall[0]),"deadline":str(deadline)}
+    assert first["hardware_commands"]==(0 if mode=="concurrent" else expected_attempts)
+    assert all(row["state"]=="OFF" for row in sent)
+    assert wall[0]>=deadline and trace[0]["wait"]==15.0
     if mode=="failed":
         assert db("load_active",None) is not None
         wall[0]+=timedelta(minutes=1)
         second=invoke()[0]
-        assert len(sent)==2 and second["hardware_commands"]==1
+        assert len(sent)==3 and second["hardware_commands"]==0
+        assert db("load_active",None) is not None
+        # Re-seed the disposable fixture with the same complete audit rows at
+        # an older creation clock, as a later worker would read them. The real
+        # append-only trigger stays enabled; no UPDATE/DELETE bypass is used.
+        with psycopg.connect(url) as connection:
+            rows=connection.execute("""select to_jsonb(e) from
+                public.sam_live_stock_conversation_review_events e
+                order by created_at,review_event_id""").fetchall()
+            connection.execute("truncate public.sam_live_stock_conversation_review_events")
+            for (row,) in rows:
+                row["created_at"]=(datetime.fromisoformat(row["created_at"])-timedelta(seconds=301)).isoformat()
+                connection.execute("""insert into public.sam_live_stock_conversation_review_events
+                    select * from jsonb_populate_record(
+                        null::public.sam_live_stock_conversation_review_events,%s::jsonb)""",(Jsonb(row),))
+        wall[0]+=timedelta(minutes=5)
+        third=invoke()[0]
+        assert len(sent)==4 and third["hardware_commands"]==1
+        assert [row["idempotency_key"].rsplit(":",1)[1] for row in sent]==["1","2","3","4"]
     assert db("load_active",None) is None
     with timed_control_scope(COMMAND_ENV):
         replay=supervisor(notify=lambda *a:pytest.fail("terminal replay notification"),environ=COMMAND_ENV,
             now=wall[0],owner_user_id="42",chat_id="42")
-    assert replay["hardware_commands"]==0 and len(sent)==(2 if mode=="failed" else 1)
+    assert replay["hardware_commands"]==0 and len(sent)==(4 if mode=="failed" else 1)

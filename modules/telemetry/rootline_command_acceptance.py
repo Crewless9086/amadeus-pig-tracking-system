@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import os
+import re
 
 MODE = "command_accepted"
 ROUTE = "rootline_home_assistant_command_route.v1"
@@ -87,7 +88,8 @@ def accepted(receipt, execution, state):
         and receipt.get("requested_state") == state
         and receipt.get("device_id") == execution.get("device_id")
         and type(receipt.get("channel")) is int and receipt["channel"] == execution.get("channel")
-        and (key == identity+":ON" if state == "ON" else key in {identity+":OFF:"+str(n) for n in range(1,4)})
+        and (key == identity+":ON" if state == "ON" else isinstance(key, str)
+            and re.fullmatch(re.escape(identity)+r":OFF:[1-9][0-9]*", key) is not None)
         and attempted is not None and at is not None and claimed is not None
         and claimed <= attempted <= at
         and bool(receipt.get("entity_id"))
@@ -100,8 +102,34 @@ def duty_closed(value):
         and accepted(value.get("command_off_receipt"), value, "OFF"))
 
 
+def controller_accepted(receipt, execution, state):
+    """Actual correlated device acceptance, distinct from historical HA queue receipts."""
+    if not accepted(receipt, execution, state):
+        return False
+    proof = receipt.get("controller_acceptance")
+    if not isinstance(proof, dict):
+        return False
+    issued, expires = moment(proof.get("issued_at")), moment(proof.get("expires_at"))
+    responded = moment(proof.get("responded_at"))
+    return (proof.get("version") == "rootline_controller_command.v1"
+        and proof.get("accepted") is True and proof.get("status") == "controller_accepted"
+        and proof.get("availability") == "online"
+        and proof.get("device_id") == execution.get("device_id")
+        and type(proof.get("channel")) is int and proof["channel"] == execution.get("channel")
+        and proof.get("state") == state and proof.get("attempt_id") == receipt.get("idempotency_key")
+        and issued == moment(receipt.get("command_attempted_at"))
+        and issued is not None and expires is not None and responded is not None
+        and timedelta(0) < expires-issued <= timedelta(seconds=60)
+        and issued <= responded <= moment(receipt.get("accepted_at"))
+        and bool(proof.get("response_digest")))
+
+
 def active_command(value, *, now=None):
     if not command_execution(value) or value.get("state") != "Active":
+        return False
+    from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+    if camp_command(value) and (not confirmed(value)
+            or moment(value["controller_confirmation"]["confirmed_at"]) > (now or datetime.now(timezone.utc))):
         return False
     adopted = (value.get("execution_origin") == "ha_reported_external_on"
         and value.get("device_id") == "1002851416" and value.get("channel") == 1
@@ -122,6 +150,11 @@ def active_command(value, *, now=None):
 def command_seconds(value):
     if not duty_closed(value) or not accepted(value.get("command_on_receipt"), value, "ON"):
         return 0
+    if value.get("controller_acceptance_required") is True and not controller_accepted(value.get("command_on_receipt"), value, "ON"):
+        return 0
+    from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+    if camp_command(value) and (not confirmed(value) or value.get("controller_contradiction")):
+        return 0
     start = moment(value["command_on_receipt"]["accepted_at"])
     stop = moment(value["command_off_receipt"]["accepted_at"])
     limit = value.get("planned_runtime_seconds", value.get("maximum_duration_seconds"))
@@ -131,15 +164,19 @@ def command_seconds(value):
 
 
 def terminal(execution, off, *, now=None, reason=None):
-    if not command_execution(execution) or not accepted(off, execution, "OFF"):
+    if not command_execution(execution) or not controller_accepted(off, execution, "OFF"):
         raise ValueError("command_off_acceptance_missing")
     value = {**execution, "state": "Completed", "completed_at": (now or datetime.now(timezone.utc)).isoformat(),
+        "controller_acceptance_required": True,
         "command_off_receipt": off, "command_duty_closed": True, "shutdown_verified": False,
         "physical_state": "Unverified", "completion_scope": "accepted_commands",
         "objective_satisfied": False, "verified_runtime_seconds": 0,
         "physical_outcome_verified": False, "delivered_volume": "Unavailable"}
     if reason:
         value["reason"] = reason
+    from modules.telemetry.rootline_camp_confirmation import camp_command
+    if camp_command(value):
+        value["controller_confirmation_required"] = True
     value["commanded_runtime_seconds"] = command_seconds(value)
     return value
 
@@ -457,6 +494,12 @@ def injector_target_timing(value, off=None):
 
 
 def program_completed(value):
+    if isinstance(value, dict) and value.get("controller_acceptance_required") is True and (not controller_accepted(value.get("command_on_receipt"), value, "ON")
+            or not controller_accepted(value.get("command_off_receipt"), value, "OFF")):
+        return False
+    from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+    if camp_command(value) and (not confirmed(value) or value.get("controller_contradiction")):
+        return False
     if not duty_closed(value) or not accepted(value.get("command_on_receipt"), value, "ON"):
         return False
     if value.get("injector_timing_contract") is not None:

@@ -34,6 +34,51 @@ from modules.telemetry.rootline_water_energy_plan import (
 
 _NATIVE_EXECUTION_STORE = rootline_irrigation_execution_store
 _NATIVE_CONTROLLER_READBACK = read_current_device
+
+
+def _attach_controller_availability(transport, store, database_url, clock):
+    if store is not _NATIVE_EXECUTION_STORE or not isinstance(transport, RootlineIFTTTTransport):
+        return
+    def record(identity, observation):
+        if not isinstance(observation, dict) or not observation.get("checked_at"):
+            return
+        try:
+            from modules.telemetry.rootline_controller_availability import reconcile_controller_availability
+            reconcile_controller_availability(identity, observation, now=_aware(clock()), database_url=database_url)
+        except Exception:
+            # Visibility persistence cannot steal an outstanding OFF deadline.
+            return
+    transport.availability_recorder = record
+
+
+def _refresh_one_controller_availability(transport, store, database_url, clock):
+    """One optional read on the existing cycle, after owned duties and planning."""
+    if store is not _NATIVE_EXECUTION_STORE or not isinstance(transport, RootlineIFTTTTransport):
+        return
+    from modules.telemetry.rootline_home_assistant import selected
+    if not selected(transport.environ):
+        return
+    from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
+    check_owned_deadline()
+    try:
+        from modules.telemetry.rootline_cycle_budget import remaining_seconds
+        if remaining_seconds(15) < 15:
+            return
+        from modules.telemetry.rootline_controller_availability import read_controller_availability
+        from modules.telemetry.rootline_command_acceptance import moment
+        now = _aware(clock())
+        known = read_controller_availability(now=now, database_url=database_url)
+        candidates = []
+        for identity in ("100204e9bc", "100204d497", "1002851416"):
+            checked = moment((known.get(identity) or {}).get("checked_at"))
+            if checked is None or now-checked >= timedelta(seconds=60):
+                candidates.append((checked or datetime.min.replace(tzinfo=timezone.utc), identity))
+        if candidates:
+            identity = min(candidates)[1]
+            transport.read_output_state(device_id=identity, channel=1, routine_read=True)
+    except Exception:
+        pass
+    check_owned_deadline()
 _NATIVE_BC_METHODS = {name: getattr(RootlineIFTTTTransport, name) for name in (
     "read_safety_configuration", "final_bc_check", "_safety_from_snapshot",
     "_validated_snapshot", "_binding", "_channel", "_snapshot")}
@@ -72,6 +117,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
         token_store=token_store, environ=source)
+    _attach_controller_availability(transport, store, database_url, clock)
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     from modules.telemetry.rootline_borehole_commissioning import (
         build_borehole_runtime_eligibility, load_registered_borehole_baseline,
@@ -207,6 +253,9 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
                 context=packet["auxiliary_contexts"][identity], flags=flags,
                 now=current_decision_time(selected), _provider_preflight=True)
             if preflight.get("provider_read_required") is not True:
+                # No safety evidence was read. Preserve a prerequisite refusal
+                # through final admission instead of masking it as absent context.
+                packet["auxiliary_safety"][identity] = {}
                 continue
             contract = rootline_device_registry()[identity]
             try:
@@ -313,6 +362,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         # reads/reporting. Existing owned OFF supervision has already run.
         return result
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
+        _refresh_one_controller_availability(transport, store, database_url, clock)
         return result
     from modules.telemetry.rootline_device_spine import load_device_record
     from modules.telemetry.rootline_eskom_runtime import run_eskom_cycle
@@ -332,6 +382,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     except Exception:
         grid = {"success":False,"status":"eskom_readiness_unavailable","hardware_commands":0}
     # Grid exceptions remain local. They do not suppress gravity irrigation.
+    _refresh_one_controller_availability(transport, store, database_url, clock)
     return {**result,"eskom":grid,
         "hardware_commands":result.get("hardware_commands",0)+grid.get("hardware_commands",0),
         "writes_farm_data":result.get("writes_farm_data") is True or grid.get("writes_farm_data") is True,
@@ -838,6 +889,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
         token_store=token_store, environ=source, readback=readback)
+    _attach_controller_availability(transport, store, database_url or source.get("DATABASE_URL"), clock)
     effects = _admission_effects.get()
     if effects is not None:
         transport = _ObservedAdmissionTransport(transport, effects)
@@ -1158,6 +1210,15 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         # Evaluate original evidence at the independent post-I/O clock. Never
         # refresh a weather/history timestamp merely because a request finished.
         checked_at = _aware((clock or (lambda: datetime.now(timezone.utc)))())
+        if store is _NATIVE_EXECUTION_STORE and isinstance(controller, dict):
+            availability = controller.get("controller_availability") or {}
+            if availability.get("checked_at"):
+                try:
+                    from modules.telemetry.rootline_controller_availability import reconcile_controller_availability
+                    reconcile_controller_availability("100204e9bc", availability, now=checked_at,
+                        database_url=database_url)
+                except Exception:
+                    pass
         artifact = build_current_eligibility(controller=controller, now=checked_at)
     resolution = artifact.get("job_resolution") if isinstance(artifact, dict) else None
     if persist_resolutions and isinstance(resolution, dict):

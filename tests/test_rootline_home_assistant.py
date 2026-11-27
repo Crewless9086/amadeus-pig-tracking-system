@@ -211,9 +211,9 @@ class HomeAssistantTests(unittest.TestCase):
                                state="OFF", client_factory=Client)
         self.assertEqual(result["status"], "provider_outcome_ambiguous")
         self.assertTrue(result["provider_command_attempted"])
-        self.assertEqual(len([c for c in calls if c[0] == "call_service"]), 1)
+        self.assertEqual(len([c for c in calls if c[0] == "rootline_observer/command"]), 1)
         self.assertNotIn("secret", repr(result))
-        self.assertEqual(calls[-1][1]["target"], {"entity_id": "switch.renamed_1"})
+        self.assertEqual((calls[-1][1]["device_id"], calls[-1][1]["channel"], calls[-1][1]["state"]), ("100204e9bc", 1, "OFF"))
 
 if __name__ == "__main__": unittest.main()
 
@@ -259,7 +259,7 @@ class BackendEdgeTests(unittest.TestCase):
                 def request(self, kind, **fields):
                     calls.append(kind)
                     return {"config/device_registry/list": devices, "config/entity_registry/list": entities,
-                        "mqtt/device/debug_info": debug, "call_service": {}}[kind]
+                        "mqtt/device/debug_info": debug, "rootline_observer/command": {}}[kind]
             def guard():
                 self.assertEqual(calls, ["config/device_registry/list", "config/entity_registry/list", "mqtt/device/debug_info"])
                 return deadline
@@ -268,7 +268,7 @@ class BackendEdgeTests(unittest.TestCase):
                     on_guard=None if deadline is None else guard, client_factory=Client)
             with self.subTest(deadline=deadline):
                 self.assertEqual(result["provider_command_attempted"], accepted)
-                self.assertEqual(calls.count("call_service"), int(accepted))
+                self.assertEqual(calls.count("rootline_observer/command"), int(accepted))
 
     def test_only_exact_fresh_owned_borehole_can_prepare_on_guard(self):
         from copy import deepcopy
@@ -342,13 +342,13 @@ class FinalSendTimingTests(unittest.TestCase):
             def request(self, kind, **fields):
                 calls.append(kind)
                 return {"config/device_registry/list":devices,"config/entity_registry/list":entities,
-                    "mqtt/device/debug_info":debug,"call_service":{}}[kind]
+                    "mqtt/device/debug_info":debug,"rootline_observer/command":{}}[kind]
         def attempt(): now[0]=1002
         with patch.object(ha.time,"monotonic",side_effect=lambda:now[0]):
             result=ha.send_state(environ=ENV,device_id="100204e9bc",channel=1,state="ON",
                 on_guard=lambda:1001,network_attempt=attempt,client_factory=Client)
         self.assertFalse(result["provider_command_attempted"])
-        self.assertNotIn("call_service",calls)
+        self.assertNotIn("rootline_observer/command",calls)
 
     def test_on_client_budget_is_clamped_to_original_final_deadline(self):
         devices, entities, _, debug = debug_fixture()
@@ -357,11 +357,11 @@ class FinalSendTimingTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *_): pass
             def request(inner,kind,**fields):
-                if kind=="call_service":
+                if kind=="rootline_observer/command":
                     self.assertEqual(inner.deadline,1001)
                     self.assertEqual(inner.command_deadline,1001)
                 return {"config/device_registry/list":devices,"config/entity_registry/list":entities,
-                    "mqtt/device/debug_info":debug,"call_service":{}}[kind]
+                    "mqtt/device/debug_info":debug,"rootline_observer/command":{}}[kind]
         deadlines=iter([1001,1004])
         with patch.object(ha.time,"monotonic",return_value=1000):
             result=ha.send_state(environ=ENV,device_id="100204e9bc",channel=1,state="ON",
@@ -380,7 +380,7 @@ class FinalSendTimingTests(unittest.TestCase):
         client.command_deadline=ha.time.monotonic()-1
         try:
             with self.assertRaises(ha.HomeAssistantUnavailable):
-                client.request("call_service",domain="switch",service="turn_on",target={"entity_id":"switch.synthetic"})
+                client.request("rootline_observer/command",domain="switch",service="turn_on",target={"entity_id":"switch.synthetic"})
             self.assertEqual(calls,[])
         finally: client.close()
 
