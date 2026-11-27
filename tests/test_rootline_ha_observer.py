@@ -982,3 +982,98 @@ def test_native_resolution_cancellation_disposes_service_listener():
         with pytest.raises(asyncio.CancelledError): await query
         assert not listeners and not receiver.tasks and not session.calls and not state.highwater
     asyncio.run(run())
+
+
+# Bounded query diagnostics preserve operational behavior and private data.
+import asyncio, errno, json
+import pytest
+from aiohttp import ClientConnectionError, ClientConnectorError
+
+@pytest.mark.parametrize("boundary,error,expected", [
+ ("connect",TimeoutError("secret address"),"query_timeout"),
+ ("read",TimeoutError("secret key"),"query_timeout"),
+ ("connect",OSError(errno.EHOSTUNREACH,"secret address"),"query_network_unreachable"),
+ ("connect",OSError(errno.ENETUNREACH,"secret address"),"query_network_unreachable"),
+ ("connect",ConnectionRefusedError(errno.ECONNREFUSED,"secret"),"query_connection_failed"),
+ ("read",ClientConnectionError("secret"),"query_connection_failed"),
+ ("connect",ClientConnectorError(None,OSError(errno.EHOSTUNREACH,"secret")),"query_network_unreachable"),
+ ("read",RuntimeError("secret payload"),"query_unproven"),
+ ("json",None,"query_invalid_json"),
+ ("storage",OSError(errno.EHOSTUNREACH,"secret storage"),"query_storage_failure"),
+])
+def test_actual_query_boundaries_preserve_outcome(boundary,error,expected):
+ async def run():
+  o=observer_module();clock,state=setup_state(endpoint=True)
+  class BrokenStore(Store):
+   async def async_save(self,value):
+    if boundary=="storage":raise error
+    return await super().async_save(value)
+  receiver=o.Receiver(state,BrokenStore(),asyncio.create_task)
+  class BrokenSession(Session):
+   def post(self,url,**kwargs):
+    response=super().post(url,**kwargs)
+    if boundary=="connect":raise error
+    original=response.read
+    async def read(limit):
+     if boundary=="read":raise error
+     if boundary=="json":return b'{SECRET INVALID'
+     return await original(limit)
+    response.read=read
+    return response
+  session=BrokenSession(state.config["devices"][IDENTITY]["device_key"],"ack_seq" if boundary=="storage" else "valid")
+  assert await receiver.query(IDENTITY,session)=="query_unproven"
+  snap=state.snapshot(IDENTITY)
+  assert snap["diagnostics"]["query"]["last_result"]==expected
+  assert len(session.calls)==1 and snap["control_commands"]==0
+  assert all(row["state"]=="Unknown" for row in snap["channels"])
+  assert receiver.availability[IDENTITY]["state"]==("online" if boundary=="storage" else "offline")
+  rendered=json.dumps(snap)
+  assert "secret" not in rendered.lower() and "10.0.0.2" not in rendered
+  assert state.config["devices"][IDENTITY]["device_key"] not in rendered
+ asyncio.run(run())
+
+@pytest.mark.parametrize("boundary",["connect","read","storage"])
+def test_cancellation_is_not_converted_or_retried(boundary):
+ async def run():
+  o=observer_module();clock,state=setup_state(endpoint=True)
+  class CancelStore(Store):
+   async def async_save(self,value):
+    if boundary=="storage":raise asyncio.CancelledError()
+    return await super().async_save(value)
+  receiver=o.Receiver(state,CancelStore(),asyncio.create_task)
+  class CancelSession(Session):
+   def post(self,url,**kwargs):
+    response=super().post(url,**kwargs)
+    if boundary=="connect":raise asyncio.CancelledError()
+    original=response.read
+    async def read(limit):
+     if boundary=="read":raise asyncio.CancelledError()
+     return await original(limit)
+    response.read=read;return response
+  session=CancelSession(state.config["devices"][IDENTITY]["device_key"],"ack_seq" if boundary=="storage" else "valid")
+  with pytest.raises(asyncio.CancelledError):await receiver.query(IDENTITY,session)
+  assert len(session.calls)==1 and not receiver.tasks
+  assert state.snapshot(IDENTITY)["diagnostics"]["query"]["count"]==0
+ asyncio.run(run())
+
+
+def test_outer_timeout_translates_cancellation_without_retry(monkeypatch):
+ async def run():
+  o=observer_module();clock,state=setup_state(endpoint=True)
+  receiver=o.Receiver(state,Store(),asyncio.create_task)
+  timeout=asyncio.timeout;limits=[]
+  def bounded(seconds):
+   limits.append(seconds)
+   return timeout(0.01)
+  monkeypatch.setattr(o.asyncio,"timeout",bounded)
+  class Hanging(Session):
+   def post(self,url,**kwargs):
+    response=super().post(url,**kwargs)
+    async def read(limit):await asyncio.Event().wait()
+    response.read=read;return response
+  session=Hanging(state.config["devices"][IDENTITY]["device_key"])
+  assert await receiver.query(IDENTITY,session)=="query_unproven"
+  assert limits==[5] and len(session.calls)==1 and not receiver.tasks
+  assert state.snapshot(IDENTITY)["diagnostics"]["query"]["last_result"]=="query_timeout"
+  assert receiver.availability[IDENTITY]["state"]=="offline"
+ asyncio.run(run())

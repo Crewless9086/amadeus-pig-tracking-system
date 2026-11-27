@@ -99,6 +99,11 @@ ALLOWLIST = (
         filename="20261120182628_rootline_ewelink_restoration_scope_index.sql",
         sha256="213567a8ce0bf43bc32d45c3510f0255d278d7abb8ab2eb6b246769cb112d29c",
     ),
+    AllowedMigration(
+        migration_id="20261127181319_rootline_camp_inventory_index",
+        filename="20261127181319_rootline_camp_inventory_index.sql",
+        sha256="abd47b4f98abc50d9c1dbea7ba1ababb959c9612eaf9733717111b3eb150ca19",
+    ),
 )
 
 
@@ -178,6 +183,7 @@ FARROWING_PREDECESSOR_ACTION_KINDS = tuple(
 EXPECTED_MIGRATION_LOG_DESCRIPTIONS = {
     accounting_index.MIGRATION_ID: accounting_index.DESCRIPTION,
     accounting_index.RESTORATION_MIGRATION_ID: accounting_index.RESTORATION_DESCRIPTION,
+    accounting_index.CAMP_MIGRATION_ID: accounting_index.CAMP_DESCRIPTION,
     PURPOSE_MIGRATION.migration_id: (
         "Admit exact-preview HERDMASTER purpose review and correction claims; "
         "no farm facts or delegated permissions are changed."
@@ -2297,9 +2303,9 @@ def _verify_purpose_catalog_transition(connection, latest, manifest, digest, *, 
     }
 
 
-def _prior_catalog_without_prepared_restoration(connection, manifest):
+def _prior_catalog_without_prepared_restoration(connection, manifest, *, migration_id=accounting_index.RESTORATION_MIGRATION_ID):
     result = manifest
-    for contract in accounting_index._contracts(accounting_index.RESTORATION_MIGRATION_ID):
+    for contract in accounting_index._contracts(migration_id):
         name, definition, _create, _error = contract
         identity = ("public", "sam_live_stock_conversation_review_events", name)
         rows = [row for row in result.get("indexes", []) if tuple(row[:3]) == identity]
@@ -2307,7 +2313,7 @@ def _prior_catalog_without_prepared_restoration(connection, manifest):
             continue
         expected = [*identity, False, False, True, True, definition]
         if len(rows) != 1 or list(rows[0]) != expected:
-            raise RuntimeError("rootline_restoration_index_catalog_mismatch")
+            raise RuntimeError(_error + "_catalog_mismatch")
         accounting_index._verify_contract(connection, contract)
         result = {**result, "indexes": [row for row in result["indexes"]
                                        if tuple(row[:3]) != identity]}
@@ -2386,6 +2392,11 @@ def _verify_catalog_checkpoint(connection, *, service_id: str | None = None) -> 
     if (restoration_id not in checkpoint_ids
             and any(item.migration_id == restoration_id for item in ALLOWLIST)):
         manifest = _prior_catalog_without_prepared_restoration(connection, manifest)
+        digest = _json_sha256(manifest)
+    camp_id = accounting_index.CAMP_MIGRATION_ID
+    if (camp_id not in checkpoint_ids
+            and any(item.migration_id == camp_id for item in ALLOWLIST)):
+        manifest = _prior_catalog_without_prepared_restoration(connection, manifest, migration_id=camp_id)
         digest = _json_sha256(manifest)
     transition = None
     if digest != latest[3] or manifest != latest[4]:
@@ -2852,7 +2863,9 @@ def run(database_url: str, environ: dict[str, str] | None = None) -> dict:
     with psycopg.connect(database_url, connect_timeout=10, autocommit=True) as connection:
         _acquire_migration_lock(connection)
         try:
-            preparation_key = ("restoration_index_preparation" if any(
+            preparation_key = ("camp_inventory_index_preparation" if any(
+                item.migration_id == accounting_index.CAMP_MIGRATION_ID for item in ALLOWLIST)
+                else "restoration_index_preparation" if any(
                 item.migration_id == accounting_index.RESTORATION_MIGRATION_ID for item in ALLOWLIST)
                 else "accounting_index_preparation")
             report[preparation_key] = _prepare_accounting_index(

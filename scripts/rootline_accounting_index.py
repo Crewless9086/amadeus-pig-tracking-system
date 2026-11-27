@@ -20,7 +20,12 @@ RESTORATION_CREATE_SQL = "CREATE INDEX CONCURRENTLY idx_rootline_ewelink_restora
 FAILURE_INDEX_NAME = 'idx_rootline_ewelink_failure_scope_created'
 FAILURE_EXPECTED_DEFINITION = "CREATE INDEX idx_rootline_ewelink_failure_scope_created ON public.sam_live_stock_conversation_review_events USING btree (chatwoot_conversation_id, ((((review_json -> 'ewelink_request_budget'::text) -> 'detail'::text) ->> 'scope'::text)), created_at, review_event_id) WHERE ((event_source = 'rootline_provider_availability'::text) AND (((review_json -> 'ewelink_request_budget'::text) ->> 'action'::text) = ANY (ARRAY['request_completed'::text, 'snapshot_validation_failed'::text])) AND ((((((review_json -> 'ewelink_request_budget'::text) -> 'state'::text) -> 'scopes'::text) -> (((review_json -> 'ewelink_request_budget'::text) -> 'detail'::text) ->> 'scope'::text)) ->> 'category'::text) IS NOT NULL))"
 FAILURE_CREATE_SQL = "CREATE INDEX CONCURRENTLY idx_rootline_ewelink_failure_scope_created\nON public.sam_live_stock_conversation_review_events\n    (chatwoot_conversation_id,\n     ((review_json->'ewelink_request_budget'->'detail'->>'scope')),\n     created_at, review_event_id)\nWHERE event_source = 'rootline_provider_availability'\n  AND review_json->'ewelink_request_budget'->>'action' IN\n      ('request_completed','snapshot_validation_failed')\n  AND review_json->'ewelink_request_budget'->'state'->'scopes'\n      ->(review_json->'ewelink_request_budget'->'detail'->>'scope')->>'category' IS NOT NULL"
-MIGRATION_IDS = frozenset((MIGRATION_ID, RESTORATION_MIGRATION_ID))
+CAMP_MIGRATION_ID = '20261127181319_rootline_camp_inventory_index'
+CAMP_DESCRIPTION = 'Add exact camp inventory partial index; retain malformed envelopes, full history and outstanding shutdown ownership.'
+CAMP_INDEX_NAME = 'idx_rootline_camp_inventory_created'
+CAMP_EXPECTED_DEFINITION = "CREATE INDEX idx_rootline_camp_inventory_created ON public.sam_live_stock_conversation_review_events USING btree (created_at DESC, review_event_id DESC) WHERE ((event_source = 'rootline_irrigation_execution'::text) AND ((jsonb_typeof((review_json -> 'rootline_execution'::text)) IS DISTINCT FROM 'object'::text) OR (jsonb_typeof(((review_json -> 'rootline_execution'::text) -> 'action'::text)) IS DISTINCT FROM 'string'::text) OR (((review_json -> 'rootline_execution'::text) ->> 'action'::text) = ANY (ARRAY['claim_before_on'::text, 'contain_zone'::text, 'mark_active'::text, 'mark_stopping'::text, 'record_ambiguous_shutdown'::text, 'record_auxiliary_on_outcome'::text, 'record_claim_recovery'::text, 'record_completed'::text, 'record_execution_not_dispatched'::text, 'record_on_outcome'::text]))))"
+CAMP_CREATE_SQL = "CREATE INDEX CONCURRENTLY idx_rootline_camp_inventory_created on public.sam_live_stock_conversation_review_events (created_at desc,review_event_id desc) where event_source='rootline_irrigation_execution' and (jsonb_typeof(review_json->'rootline_execution') is distinct from 'object' or jsonb_typeof(review_json->'rootline_execution'->'action') is distinct from 'string' or review_json->'rootline_execution'->>'action'=any(ARRAY['claim_before_on','contain_zone','mark_active','mark_stopping','record_ambiguous_shutdown','record_auxiliary_on_outcome','record_claim_recovery','record_completed','record_execution_not_dispatched','record_on_outcome']::text[]))"
+MIGRATION_IDS = frozenset((MIGRATION_ID, RESTORATION_MIGRATION_ID, CAMP_MIGRATION_ID))
 
 
 def _contracts(migration_id):
@@ -31,6 +36,8 @@ def _contracts(migration_id):
                  RESTORATION_CREATE_SQL, "rootline_restoration_index"),
                 (FAILURE_INDEX_NAME, FAILURE_EXPECTED_DEFINITION,
                  FAILURE_CREATE_SQL, "rootline_failure_index"))
+    if migration_id == CAMP_MIGRATION_ID:
+        return ((CAMP_INDEX_NAME, CAMP_EXPECTED_DEFINITION, CAMP_CREATE_SQL, "rootline_camp_inventory_index"),)
     raise ValueError("unregistered_concurrent_index_migration")
 
 

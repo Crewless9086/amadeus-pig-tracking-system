@@ -19,6 +19,13 @@ from tests import test_render_production_migration_rail as legacy
 ITEM = next(item for item in rail.ALLOWLIST if item.migration_id == index.RESTORATION_MIGRATION_ID)
 PREFIX = rail.ALLOWLIST[:rail.ALLOWLIST.index(ITEM)]
 
+@pytest.fixture(autouse=True)
+def restoration_prefix_only():
+    # Preserve this historical ceremony when a later reviewed index is appended.
+    with patch.object(rail, "ALLOWLIST", PREFIX + (ITEM,)):
+        yield
+
+
 
 def test_exact_append_only_registration_and_clean_ci_order():
     assert len(PREFIX) == 11 and PREFIX[-1].migration_id == index.MIGRATION_ID
