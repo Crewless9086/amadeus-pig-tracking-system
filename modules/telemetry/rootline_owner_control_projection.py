@@ -85,11 +85,21 @@ def project_execution_event(event_id, at, row):
         seconds = command_seconds(row)
         if seconds:
             summary += f"; {seconds / 60:.1f} controller minutes accounted"
+        from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed, historical_command_interval
+        if camp_command(row) and not confirmed(row):
+            summary = "OFF command accepted; controller run unconfirmed"
+            interval = historical_command_interval(row)
+            if interval is not None:
+                summary += f"; {interval / 60:.1f} historical command minutes (not confirmed running time)"
     elif accepted(row.get("command_on_receipt"), row, "ON"):
         if "stopping" in action or "contain" in action or "ambiguous" in action or "completed" in action:
             state, summary, kind = "stop_pending", "ON accepted; stop still requires confirmation", "stop_pending"
         else:
             state, summary, kind = "on_command_accepted", "ON command accepted", "run_started"
+            from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+            if camp_command(row):
+                state, summary, kind = (("controller_on_reported", "Controller reported ON", "run_started") if confirmed(row)
+                    else ("confirmation_pending", "Start requested; awaiting controller report", "run_requested"))
     elif action == "record_eskom_completed":
         proof = row.get("readback") or {}
         if proof.get("authoritative") is True and proof.get("state") in {"ON", "OFF"}:
@@ -281,6 +291,10 @@ def project_plan_run(task, operating_date, records, *, truncated=False, unavaila
         if any(word in action for word in ("stopping", "contain", "ambiguous", "completed")):
             return result("unknown", "Stop pending", at, "A later stop outcome is not yet confirmed.")
         if action == "mark_active":
+            from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+            if camp_command(row):
+                return (result("running", "Running", at, "Controller reported ON for this run.") if confirmed(row)
+                    else result("pending", "Requested", at, "Awaiting the controller report; the scheduled stop remains active."))
             return result("running", "Running", at, "ON command accepted; this is recorded controller status.")
     return result("unknown", "Awaiting command evidence", at, "A claim or unresolved controller event is recorded.")
 

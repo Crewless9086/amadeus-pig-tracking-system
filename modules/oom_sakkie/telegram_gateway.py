@@ -1416,14 +1416,14 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if state in {"InputUnavailable", "InputRestored"}:
                 from modules.oom_sakkie.rootline_transition_notifications import compose_input_notice
                 answer = compose_input_notice(state, execution, language=scheduled_principal.language)
-            if state in {"Started", "Completed", "Stopped", "Adopted"}:
+            if state in {"Requested", "Started", "Interrupted", "Completed", "Stopped", "Adopted"}:
                 from modules.oom_sakkie.rootline_activity_presentation import activity_notice
                 answer = activity_notice(state, execution, language=scheduled_principal.language)
             base_identity = str(execution.get("notification_identity")
                                 or execution.get("execution_id") or "")
             event_identity = f"{base_identity}:{str(state).upper()}"
             visible = {"success": True, "status": state.lower(), "answer": answer}
-            if state in {"ProviderUnavailable", "ProviderSafety", "ProviderRestored", "InputUnavailable", "InputRestored", "Started", "Completed", "Stopped", "Adopted"}:
+            if state in {"ProviderUnavailable", "ProviderSafety", "ProviderRestored", "InputUnavailable", "InputRestored", "Requested", "Started", "Interrupted", "Completed", "Stopped", "Adopted"}:
                 visible.update(recipient_render_contract="specialist_structured_recipient_v1",
                     recipient_language=scheduled_principal.language)
             retry_authority = None

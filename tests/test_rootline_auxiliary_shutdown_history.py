@@ -15,6 +15,11 @@ from tests.test_rootline_command_mode import ENV, Store, Transport, completed_co
 
 CAPTURE = json.loads((Path(__file__).parent / "fixtures/rootline_auxiliary_closure_history.json").read_text())
 NOW = datetime.fromisoformat(CAPTURE["observed_at"])
+# Later-stage injector tests use a synthetic confirmed parent, while the captured
+# auxiliary shutdown rows and the immutable on-disk replay remain untouched.
+from tests.test_rootline_command_mode import confirm_fixture
+_parent = CAPTURE["active_irrigation_context"]["command_parent_execution"]
+confirm_fixture(_parent, at=datetime.fromisoformat(_parent["command_on_receipt"]["accepted_at"])+timedelta(seconds=1))
 
 
 def history():

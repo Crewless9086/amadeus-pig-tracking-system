@@ -81,7 +81,7 @@
   function renderTiles() {
     const devices=state.devices.length?state.devices:names.map(([id,name])=>({id,name,state:'Unavailable',summary:'Current input details have not been read.'}));
     el('tiles').replaceChildren(...devices.map(d=>{
-      const b=button('',()=>openDevice(d.id),'rl-tile');b.setAttribute('aria-expanded',String(state.selected===d.id));b.setAttribute('aria-controls','rl-detail');b.dataset.device=d.id;b.dataset.on=String(!state.failures.devices&&d.stale!==true&&known(d.observed_at)&&['on_command_accepted','observed_on'].includes(d.state));b.dataset.family=/eskom|mixer/i.test(d.id)?'power':'water';
+      const b=button('',()=>openDevice(d.id),'rl-tile');b.setAttribute('aria-expanded',String(state.selected===d.id));b.setAttribute('aria-controls','rl-detail');b.dataset.device=d.id;b.dataset.on=String(!state.failures.devices&&d.stale!==true&&known(d.observed_at)&&['on_command_accepted','controller_on_reported','observed_on'].includes(d.state));b.dataset.family=/eskom|mixer/i.test(d.id)?'power':'water';
       const title=node('span',d.name,'rl-tile-name');const symbol=node('span',/mixer/i.test(d.id)?'↻':/eskom/i.test(d.id)?'ϟ':/borehole/i.test(d.id)?'≋':'♧','rl-tile-symbol');symbol.setAttribute('aria-hidden','true');title.prepend(symbol);
       b.append(title,node('span',state.failures.devices?'Current state unavailable':human(d.state),'rl-small'),node('span',d.summary||'Summary unavailable','rl-summary'),node('span','Last recorded '+at(d.observed_at),'rl-small rl-muted'),node('span',(modeNames[d.settings?.mode]||'Mode unavailable')+' · Open details →','rl-summary'));return b;
     }));

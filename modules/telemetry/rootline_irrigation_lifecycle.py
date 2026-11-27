@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 
 STATES = ("Recommended", "Revalidating", "Eligible", "Authorized",
-          "Started", "Completed", "Held", "Failed")
+          "Started", "Requested", "Completed", "Held", "Failed")
 
 
 def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | None,
@@ -71,6 +71,10 @@ def project_zone_lifecycle(*, zone_id: str, recommendation: Mapping[str, Any] | 
     elif started:
         from modules.telemetry.rootline_command_acceptance import command_execution
         state, reason, next_action = "Started", _reason(execution, recommendation), ("ON command accepted; ROOTLINE owns the scheduled OFF command. Physical state is unverified." if command_execution(dict(execution)) else "ROOTLINE must verify the scheduled shutdown and controller state.")
+        from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+        if camp_command(dict(execution)):
+            state = "Started" if confirmed(dict(execution)) else "Requested"
+            next_action = "Controller reported ON; ROOTLINE owns the scheduled stop." if state == "Started" else "Awaiting controller confirmation; ROOTLINE owns the scheduled stop."
     elif authorized:
         state, reason, next_action = "Authorized", _reason(execution, recommendation), "ROOTLINE must continue through the existing claimed execution."
     elif unresolved_parent:

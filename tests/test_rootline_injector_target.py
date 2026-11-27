@@ -63,6 +63,8 @@ class Database:
             self.now += timedelta(seconds=self.clock_step)
         elif "pg_advisory_xact_lock" in sql:
             self.result=[]
+        elif "rootline_operational_intake" in sql:
+            self.result=[]
         elif "insert into" in sql:
             value=json.loads(args[-1])["rootline_execution"]
             self.rows.append(value); self.rowcount=1
@@ -72,6 +74,7 @@ class Database:
             selected=self.rows if args[-1]==self.body["execution_id"] else self.parents
             self.result=[(deepcopy(r),) for r in selected]
         else: raise AssertionError(sql)
+        return self
     def fetchone(self): return self.result[0] if self.result else None
     def fetchall(self): return self.result
     def activate(self): return db._guarded_managed_transition("mark_auxiliary_active",deepcopy(self.body))

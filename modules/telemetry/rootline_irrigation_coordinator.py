@@ -200,7 +200,7 @@ def _finish_irrigation_start(execution, accepted, store, transport, notify):
             if not isinstance(marked, dict) or marked.get("success") is not True:
                 return _recover_command_irrigation(execution, store, transport, notify,
                     datetime.now(timezone.utc), reason="active_persistence_unproven")
-            delivery = _notify(notify, store, "Started", active)
+            delivery = _notify(notify, store, "Requested", active)
             return _result("irrigation_on_command_accepted", commands=1,
                 messages=delivery["confirmed"], execution=active, notification=delivery)
         return _recover_command_irrigation(execution, store, transport, notify,
@@ -1194,6 +1194,18 @@ def _bounded_off(execution, store, transport):
     for attempt in range(1, MAX_OFF_ATTEMPTS + 1):
         if attempt in used:
             continue
+        if command_execution(execution):
+            def dispatch():
+                return transport.set_state(device_id=_output_binding(execution)["device_id"], channel=execution["channel"],
+                    state="OFF", idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")
+            result = store("dispatch_irrigation_off_edge", {**execution, "attempt": attempt, "dispatch": dispatch})
+            outcome = result.get("outcome") if isinstance(result, dict) else None
+            if isinstance(outcome, dict):
+                outcomes.append(outcome)
+            commands += int(isinstance(result, dict) and result.get("provider_command_attempted") is True)
+            if accepted(outcome, execution, "OFF"):
+                break
+            continue
         claim = store("claim_off_attempt", {"execution_id": execution["execution_id"],
                       "attempt": attempt, "idempotency_key": f"{execution['execution_id']}:OFF:{attempt}"})
         if not isinstance(claim, dict) or claim.get("created") is not True:
@@ -1243,7 +1255,9 @@ def _finish_command_auxiliary(active, store, transport, *, now, reason):
 
 def _recover_command_irrigation(active, store, transport, notify, now, *, clock=None, weather_reader=None, reason=None):
     from modules.telemetry.rootline_command_acceptance import accepted, terminal
+    from modules.telemetry.rootline_camp_confirmation import confirmation, confirmed, report_after_command
     clock = clock or (lambda: datetime.now(timezone.utc))
+    confirmation_messages = 0
     deadline = _timestamp(active.get("primary_stop_deadline"))
     claimed = _timestamp(active.get("claimed_at"))
     duration = active.get("planned_runtime_seconds")
@@ -1254,6 +1268,32 @@ def _recover_command_irrigation(active, store, transport, notify, now, *, clock=
     if owner_stop:
         reason = "owner_requested_stop"
         active = {**active, "owner_stop_request_id": owner_stop["request_id"]}
+    if reason is None and active.get("state") == "Active" and valid_deadline and now < deadline:
+        # This is an optional report read, never another ON. Its absence cannot
+        # erase a prior confirmation or extend the original shutdown deadline.
+        from modules.telemetry.rootline_owned_deadlines import check_owned_deadline
+        check_owned_deadline()
+        try:
+            from modules.telemetry.rootline_ewelink_request_budget import routine_execution_observation
+            with routine_execution_observation(active):
+                observation = transport.read_output_state(device_id=active["device_id"], channel=active["channel"])
+        except Exception:
+            observation = {}
+        check_owned_deadline()
+        now = _aware(clock())
+        report = report_after_command(active, observation, now=now)
+        confirmation_at = _timestamp((active.get("controller_confirmation") or {}).get("report", {}).get("reported_at"))
+        if report and report["state"] == "OFF" and (confirmation_at is None or _timestamp(report["reported_at"]) > confirmation_at):
+            active = {**active, "controller_contradiction": report}
+            reason = "controller_reported_off"
+        elif not confirmed(active) and now < deadline:
+            proof = confirmation(active, observation, now=now)
+            if proof:
+                saved = store("confirm_irrigation_controller", {**active, "controller_confirmation": proof})
+                if not isinstance(saved, dict) or saved.get("success") is not True:
+                    return _result("controller_confirmation_persistence_pending", commands=0, messages=0, execution=active)
+                active = saved.get("execution") or {**active, "controller_confirmation": proof}
+                confirmation_messages = _notify(notify, store, "Started", active)["confirmed"]
     if reason is None and active.get("state") == "Active" and valid_deadline and now < deadline:
         weather = None
         if callable(weather_reader):
@@ -1268,7 +1308,8 @@ def _recover_command_irrigation(active, store, transport, notify, now, *, clock=
             reason = weather.get("reason") or "weather_stop"
             active = {**active, "command_stop_weather_evidence": weather}
         elif now < deadline:
-            return _result("irrigation_command_duty_active", commands=0, messages=0, execution=active)
+            return _result("irrigation_command_duty_active" if confirmed(active) else "irrigation_controller_confirmation_pending",
+                commands=0, messages=confirmation_messages, execution=active)
     reason = reason or ("primary_deadline_reached" if valid_deadline and now >= deadline else "interrupted_start_or_invalid_deadline")
     stopping = {**active, "state": "stopping", "reason": reason}
     barrier = store("mark_stopping", stopping)
@@ -1276,6 +1317,10 @@ def _recover_command_irrigation(active, store, transport, notify, now, *, clock=
         return _result("active_execution_already_terminal", commands=0, messages=0)
     if not isinstance(barrier, dict) or barrier.get("success") is not True:
         return _stopping_barrier_hold(active, store, notify)
+    if isinstance(barrier.get("execution"), dict):
+        # A concurrent earlier stop owns the immutable reason and report.
+        active = barrier["execution"]
+        reason = active.get("reason") or reason
     auxiliary = _stop_bound_injection(active, store, transport)
     recovery = _bounded_off(active, store, transport)
     off = next((row for row in recovery["outcomes"] if accepted(row, active, "OFF")), None)
@@ -1288,7 +1333,8 @@ def _recover_command_irrigation(active, store, transport, notify, now, *, clock=
             execution=stopping, effects_unknown=True, notification=delivery)
     completed = terminal(active, off, now=_aware(clock()), reason=reason)
     completed.update(command_program_completed=bool(valid_deadline and _timestamp(off.get("accepted_at")) >= deadline
-        and reason == "primary_deadline_reached" and accepted(active.get("command_on_receipt"), active, "ON")),
+        and reason == "primary_deadline_reached" and confirmed(active)
+        and accepted(active.get("command_on_receipt"), active, "ON")),
         job_completed=False, cumulative_verified_runtime_seconds=int(active.get("cumulative_verified_runtime_seconds") or 0))
     completed["command_job_completed"] = (completed["command_program_completed"]
         and active.get("expected_segment_count") == active.get("segment_number") == 1
@@ -1296,8 +1342,10 @@ def _recover_command_irrigation(active, store, transport, notify, now, *, clock=
     recorded = store("record_completed", completed)
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         return _result("command_completion_persistence_unproven", commands=commands, messages=0, execution=active)
-    delivery = _notify(notify, store, "Completed", completed)
-    return _result("irrigation_off_command_accepted", commands=commands, messages=delivery["confirmed"],
+    if isinstance(recorded.get("canonical_execution"), dict):
+        completed = recorded["canonical_execution"]
+    delivery = _notify(notify, store, "Completed" if completed["command_program_completed"] else "Interrupted", completed)
+    return _result("irrigation_off_command_accepted", commands=commands, messages=confirmation_messages+delivery["confirmed"],
         execution=completed, notification=delivery, command_duty_closed=True, shutdown_verified=False)
 
 

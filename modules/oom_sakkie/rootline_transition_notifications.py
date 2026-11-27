@@ -23,12 +23,22 @@ def transition(row):
         if action in {"mark_active", "mark_auxiliary_active", "mark_borehole_active"}:
             if accepted(row.get("command_on_receipt"), row, "ON"):
                 state, at = "Started", row["command_on_receipt"]["accepted_at"]
+                from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+                if camp_command(row):
+                    state = "Started" if confirmed(row) else "Requested"
+                    if state == "Started":
+                        at = row["controller_confirmation"]["report"]["reported_at"]
             elif action == "mark_borehole_active" and active_command(row):
                 state, at = "Adopted", row["claimed_at"]
             else:
                 return None
         elif action in {"record_completed", "record_auxiliary_completed", "record_auxiliary_control_pulse_stopped", "record_borehole_completed"} and duty_closed(row):
             state, at = ("Stopped" if action == "record_borehole_completed" else "Completed"), row["command_off_receipt"]["accepted_at"]
+            from modules.telemetry.rootline_camp_confirmation import camp_command
+            from modules.telemetry.rootline_command_acceptance import program_completed
+            if (camp_command(row) and not program_completed(row)
+                    and (row.get("controller_confirmation_required") is True or row.get("controller_contradiction"))):
+                state = "Interrupted"
         else:
             return None
         return state, {**row, "notification_identity": f"{row['execution_id']}:{state}", "notification_observed_at": at}

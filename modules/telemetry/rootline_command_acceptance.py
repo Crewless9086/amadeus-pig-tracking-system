@@ -103,6 +103,10 @@ def duty_closed(value):
 def active_command(value, *, now=None):
     if not command_execution(value) or value.get("state") != "Active":
         return False
+    from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+    if camp_command(value) and (not confirmed(value)
+            or moment(value["controller_confirmation"]["confirmed_at"]) > (now or datetime.now(timezone.utc))):
+        return False
     adopted = (value.get("execution_origin") == "ha_reported_external_on"
         and value.get("device_id") == "1002851416" and value.get("channel") == 1
         and value.get("stop_mode") == "conditions" and value.get("on_attempts") == 0
@@ -122,6 +126,9 @@ def active_command(value, *, now=None):
 def command_seconds(value):
     if not duty_closed(value) or not accepted(value.get("command_on_receipt"), value, "ON"):
         return 0
+    from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+    if camp_command(value) and (not confirmed(value) or value.get("controller_contradiction")):
+        return 0
     start = moment(value["command_on_receipt"]["accepted_at"])
     stop = moment(value["command_off_receipt"]["accepted_at"])
     limit = value.get("planned_runtime_seconds", value.get("maximum_duration_seconds"))
@@ -140,6 +147,9 @@ def terminal(execution, off, *, now=None, reason=None):
         "physical_outcome_verified": False, "delivered_volume": "Unavailable"}
     if reason:
         value["reason"] = reason
+    from modules.telemetry.rootline_camp_confirmation import camp_command
+    if camp_command(value):
+        value["controller_confirmation_required"] = True
     value["commanded_runtime_seconds"] = command_seconds(value)
     return value
 
@@ -457,6 +467,9 @@ def injector_target_timing(value, off=None):
 
 
 def program_completed(value):
+    from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+    if camp_command(value) and (not confirmed(value) or value.get("controller_contradiction")):
+        return False
     if not duty_closed(value) or not accepted(value.get("command_on_receipt"), value, "ON"):
         return False
     if value.get("injector_timing_contract") is not None:

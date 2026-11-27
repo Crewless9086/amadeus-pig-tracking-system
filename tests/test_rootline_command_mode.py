@@ -38,10 +38,33 @@ def receipt(execution, state, *, at, attempt=1):
     return value
 
 
+def confirm_fixture(execution, *, at):
+    """Explicit synthetic controller report for tests of later lifecycle stages."""
+    from modules.telemetry.rootline_camp_confirmation import confirmation
+    snap = route(execution["device_id"], now=at)
+    row = next(row for row in snap["channels"] if row["channel"] == execution["channel"])
+    row["entity_id"] = execution["command_on_receipt"]["entity_id"]
+    row["controller_report"] = {"source":"home_assistant_mqtt_subscription", "entity_id":row["entity_id"],
+        "topic":f"cube2ha/switch/{execution['device_id']}/toggle_{execution['channel']}/state",
+        "reported_at":at.isoformat(), "state":"ON", "retain":False, "qos":0}
+    snap["response_digest"] = ca.digest({k:v for k,v in snap.items() if k != "response_digest"})
+    proof = confirmation(execution, snap, now=at)
+    assert proof is not None
+    execution["controller_confirmation"] = proof
+    return execution
+
+
 class Store:
     def __init__(self):
         self.active = None; self.auxiliary = {}; self.rows = []; self.fail_terminal = False
     def __call__(self, action, body):
+        if action == "dispatch_irrigation_off_edge":
+            result = body["dispatch"]()
+            self.rows.append({"execution_id":body["execution_id"], "attempt":body["attempt"], "action":"record_off_outcome", "outcome":result})
+            return {"provider_command_attempted":True, "outcome":result}
+        if action == "confirm_irrigation_controller":
+            self("mark_active", body)
+            return {"success": True, "created": True, "execution": deepcopy(body)}
         if action == "load_active": return deepcopy(self.active)
         if action == "load_active_auxiliary": return deepcopy(self.auxiliary.get(body))
         if action == "load_auxiliary_executions": return list(self.auxiliary.values())
@@ -69,7 +92,8 @@ class Store:
         if action == "record_completed": self.active = None
         if action == "record_auxiliary_completed": self.auxiliary.pop(body["auxiliary_device_id"], None)
         if action.startswith("claim_") and any(row["action"] == action and row.get("execution_id") == body.get("execution_id") and row.get("attempt") == body.get("attempt") for row in self.rows):
-            return {"success": True, "created": False}
+            if action != "claim_notification" or any(row["action"] == action and row.get("execution_id") == body.get("execution_id") and row.get("notification_state") == body.get("notification_state") for row in self.rows):
+                return {"success": True, "created": False}
         self.rows.append({**deepcopy(body), "action": action})
         return {"success": True, "created": True}
 
@@ -84,7 +108,17 @@ class Transport:
             "command_route":snap,"scheduled_generation":contract["contract_sha256"],"response_digest":snap["response_digest"],
             "controller_safety_generation":contract["contract_sha256"],"observed_at":self.clock().isoformat(),"output_state":"Unknown"}
     def read_output_state(self, *, device_id, channel, **kwargs):
-        return output_evidence_from_snapshot(route(device_id,now=self.clock()),device_id=device_id,channel=channel)
+        snap = route(device_id,now=self.clock())
+        active = self.store.active
+        if active and active.get("command_on_receipt") and active.get("device_id") == device_id:
+            at = ca.moment(active["command_on_receipt"]["command_attempted_at"]) + timedelta(microseconds=1)
+            if at <= self.clock():
+                row = next(row for row in snap["channels"] if row["channel"] == active["channel"])
+                row["controller_report"] = {"source":"home_assistant_mqtt_subscription", "entity_id":row["entity_id"],
+                    "topic":f"cube2ha/switch/{device_id}/toggle_{active['channel']}/state", "reported_at":at.isoformat(),
+                    "state":"ON", "retain":False, "qos":0}
+                snap["response_digest"] = ca.digest({k:v for k,v in snap.items() if k != "response_digest"})
+        return output_evidence_from_snapshot(snap,device_id=device_id,channel=channel)
     def set_state(self, *, device_id, channel, state, idempotency_key):
         self.calls.append((device_id,channel,state,idempotency_key))
         if self.uncertain_on and state == "ON" or self.reject_off and state == "OFF":
@@ -93,7 +127,7 @@ class Transport:
         return receipt(execution,state,at=self.clock(),attempt=int(idempotency_key.rsplit(":",1)[1]) if state=="OFF" else 1)
 
 
-def start(zone="B12345", *, uncertain=False, at=NOW):
+def start(zone="B12345", *, uncertain=False, at=NOW, confirm=True):
     plan,evidence,_ = inputs(zone=zone)
     selected=at.astimezone(timezone(timedelta(hours=2))).date().isoformat()
     plan["operating_date"]=selected
@@ -113,6 +147,9 @@ def start(zone="B12345", *, uncertain=False, at=NOW):
         result=coordinator.advance_irrigation_execution(decision_id=decision["decision_id"],commissioning_id=identity,
             decision_reader=lambda _:decision,commissioning_reader=lambda _:packet,store=store,transport=transport,
             notify=lambda *args:{},eligibility_revalidator=lambda _:artifact,now=at,clock=lambda:clock[0])
+    if confirm and store.active and store.active.get("state") == "Active":
+        clock[0] += timedelta(microseconds=1)
+        recover(store, transport, clock)
     return result, artifact, store, transport, clock
 
 
@@ -127,7 +164,7 @@ def test_start_restart_and_disabled_mode_shutdown_preserve_truth(zone):
     result,artifact,store,transport,clock=start(zone)
     assert result["status"] == "irrigation_on_command_accepted",result
     active=deepcopy(store.active)
-    assert ca.active_command(active,now=NOW)
+    assert ca.active_command(active,now=clock[0])
     clock[0]+=timedelta(seconds=100)
     assert recover(store,transport,clock)["status"]=="irrigation_command_duty_active"
     clock[0]=NOW+timedelta(seconds=7201)

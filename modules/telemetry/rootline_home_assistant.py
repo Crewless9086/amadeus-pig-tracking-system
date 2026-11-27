@@ -437,6 +437,38 @@ class HomeAssistantClient:
         self.close()
 
 
+def _command_controller_report(device_id, channel, entity, *, now):
+    """Keep the latest original subscription report, including repeated states."""
+    _, topic = validate_discovery(device_id, channel, entity)
+    subscriptions = [row for row in entity.get("subscriptions") or []
+        if isinstance(row, dict) and row.get("topic") == topic]
+    if len(subscriptions) != 1:
+        return None
+    messages = subscriptions[0].get("messages") or []
+    if not isinstance(messages, list):
+        return None
+    parsed = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("topic") != topic:
+            return None
+        at = _time(message.get("time"))
+        try:
+            payload = json.loads(message.get("payload"))
+        except (ValueError, TypeError):
+            return None
+        if at is None or at > now or not isinstance(payload, dict) or payload.get("state") not in {"ON", "OFF"}:
+            return None
+        parsed.append((at, message, payload["state"]))
+    if not parsed:
+        return None
+    at, message, state = max(parsed, key=lambda row: row[0])
+    if any(row[0] == at and (row[2] != state or row[1].get("retain") is not False) for row in parsed):
+        return None
+    return {"source": "home_assistant_mqtt_subscription", "entity_id": entity["entity_id"],
+        "topic": topic, "reported_at": message["time"], "state": state,
+        "retain": False, "qos": message.get("qos")}
+
+
 def read_command_route(device_id, *, environ, now=None, client_factory=HomeAssistantClient):
     """Authenticate exact existing MQTT bindings without asserting output state."""
     from modules.telemetry.rootline_command_acceptance import ROUTE, MODE, digest
@@ -464,6 +496,9 @@ def read_command_route(device_id, *, environ, now=None, client_factory=HomeAssis
         "channels": [{"channel": channel, "entity_id": entity_id,
             "output_state": "Unknown", "observation_fresh": False, "observed_at": None}
             for channel, entity_id in bound.items()]}
+    for row in result["channels"]:
+        entity = next(item for item in debug["entities"] if item.get("entity_id") == row["entity_id"])
+        row["controller_report"] = _command_controller_report(device_id, row["channel"], entity, now=_time(checked))
     if device_id == "1002851416":
         matches = [row for row in reports if isinstance(row, dict) and row.get("entity_id") == bound[1]]
         result["reported_output_state"] = str(matches[0].get("state", "unknown")).upper() if len(matches) == 1 else "Unknown"

@@ -17,12 +17,16 @@ def activity_notice(state, execution, *, language="en"):
         or ((zone[0]+(" Kamp" if af else " Camp")) if zone else
         "Eskom" if execution.get("action") == "record_eskom_completed" else ("Boorgat se AC-rugsteun" if af else "Borehole AC backup")))
     command = command_execution(execution)
-    on = state == "Started"
+    on = state in {"Started", "Requested"}
     receipt = execution.get("command_on_receipt" if on else "command_off_receipt") or {}
     proof = (execution.get("start_evidence" if on else "shutdown_evidence")
         or execution.get("provider_start_evidence" if on else "provider_final_off_evidence")
         or execution.get("readback") or {})
     stamp = receipt.get("accepted_at") or proof.get("retrieved_at") or proof.get("observed_at") or execution.get("notification_observed_at")
+    from modules.telemetry.rootline_camp_confirmation import camp_command, confirmed
+    camp = camp_command(execution)
+    if camp and on and confirmed(execution):
+        stamp = execution["controller_confirmation"]["report"]["reported_at"]
     event_day = ""
     try:
         observed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
@@ -49,16 +53,32 @@ def activity_notice(state, execution, *, language="en"):
     if state == "Adopted":
         title = "Toesig hervat" if af else "Supervision resumed"
         icon = "🔄"
+    if camp and on and accepted(receipt, execution, "ON"):
+        title = ("Loop" if af else "Running") if confirmed(execution) else ("Aangevra" if af else "Requested")
+        icon = "▶️" if confirmed(execution) else "⏳"
+    if camp and state == "Interrupted":
+        title, icon = ("Onderbreek" if af else "Interrupted"), "⏸️"
+    from modules.telemetry.rootline_camp_confirmation import historical_command_interval
+    historical_interval = historical_command_interval(execution) if camp and closed and not confirmed(execution) else None
+    if historical_interval is not None:
+        title, icon = ("Opdragtyd aangeteken" if af else "Command interval recorded"), "📝"
+        interrupted = False
     dated = " · " + event_day if event_day else ""
     lines = [f"<b>{icon} ROOTLINE · {escape(label)} · {title}{dated}</b>"]
     if stamp: lines.append(stamp)
     if state == "Adopted":
         lines += ["", "ROOTLINE hou outomaties toesig oor hierdie bestaande lopie." if af else "ROOTLINE has resumed supervision of this existing run."]
+    elif camp and on and accepted(receipt, execution, "ON"):
+        lines += ["", ("Die beheerder het AAN gerapporteer." if af else "Controller reported ON.") if confirmed(execution) else
+            ("Begin aangevra; wag vir die beheerder se bevestiging." if af else "Start requested; awaiting the controller report.")]
     elif command:
         proven = accepted(receipt, execution, "ON" if on else "OFF")
         lines += ["", ("Die "+("AAN" if on else "AF")+"-opdrag is aanvaar." if af else
             ("ON" if on else "OFF")+" command accepted.") if proven else
             ("Die opdraguitkoms is onbevestig." if af else "Command outcome unconfirmed.")]
+        if historical_interval is not None:
+            lines.append((f"Historiese opdragtyd: {historical_interval/60:g} min; beheerderloop onbevestig." if af else
+                f"Historical command interval: {historical_interval/60:g} min; controller run unconfirmed."))
     else:
         lines += ["", ("Die beheerder is AAN bevestig." if af else "Controller ON confirmed.") if on and edge_proven else
             ("Die beheerder is AF bevestig." if af else "Controller OFF confirmed.") if closed else
@@ -68,6 +88,7 @@ def activity_notice(state, execution, *, language="en"):
         lines.append(("Beplande lopie: " if af else "Planned run: ")+f"{duration/60:g} min.")
     reason = str(execution.get("reason") or execution.get("stop_reason") or "")
     reasons = {
+        "controller_reported_off": ("Die beheerder het AF gerapporteer; die lopie is onderbreek.", "The controller reported OFF; the run was interrupted."),
         "energy_stop": ("Die kragvoorwaardes laat verdere werking nie toe nie.", "Power conditions no longer allow the run."),
         "owner_requested_stop": ("Gestop op jou versoek.", "Stopped at your request."),
         "active_weather_rain_hold": ("Gestop weens reën.", "Stopped because of rain."),

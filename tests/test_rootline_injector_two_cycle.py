@@ -124,6 +124,7 @@ class Rig:
             raise TimeoutError("offline family delivery failure")
         return handle_rootline_reassessment_trigger(request, HEADERS, self.env,
             scheduler_now=current, schedule_store=self.schedules,
+            supervision_clock=lambda:self.now, parent_deadline_store=self.store, parent_deadline_wait=self.wait,
             state_store=lambda *args: {"success": True, "created": True},
             short_auxiliary_supervision_cycle=short, active_supervision_cycle=parent,
             managed_device_cycle=self.managed_cycle,
@@ -256,6 +257,9 @@ def test_short_duty_deferral_runs_real_managed_grid_reconciliation(monkeypatch, 
     from modules.telemetry.rootline_execution_runtime import run_rootline_managed_device_reassessment
     from tests.test_rootline_eskom_runtime import CONFIG, canonical
     rig = Rig(monkeypatch, phase=15)
+    from modules.telemetry.rootline_owner_controls import project_owner_controls
+    monkeypatch.setattr("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls",
+        lambda *args, **kwargs: project_owner_controls([], now=kwargs.get("now") or rig.now))
     rig.cycle()
     tick = rig.now.replace(second=0, microsecond=0)+timedelta(minutes=1)
     rig.advance((tick-rig.now).total_seconds())
@@ -408,11 +412,11 @@ def test_real_ha_sender_and_canonical_fences_across_two_cycles(monkeypatch,repor
     def sql(statement,args=()):
         if "execution_id'=%s" in statement and "order by created_at,review_event_id" in statement:
             d.result=[(deepcopy(r),) for r in d.rows+d.parents if r.get("execution_id")==args[-1]]
-            return
+            return d
         if statement.lstrip().startswith("select 1 from public.sam_live_stock_conversation_review_events claim"):
             assert args[1]==parent["execution_id"]
-            d.result=[(1,)];return
-        execute(statement,args)
+            d.result=[(1,)];return d
+        return execute(statement,args)
     d.execute=sql
     def store(self,action,body):
         if action=="claim_auxiliary_before_on": d.body=deepcopy(body)
@@ -429,7 +433,7 @@ def test_real_ha_sender_and_canonical_fences_across_two_cycles(monkeypatch,repor
         return original(self,action,body)
     monkeypatch.setattr(type(rig.store),"__call__",store)
     first,_=rig.cycle()
-    assert first.get("short_auxiliary_duty_owned") is True, [(r.get("action"),r.get("on_outcome"),r.get("reason")) for r in d.rows if r.get("auxiliary_device_id")=="FERTILIZER-INJECTION-CH1"]
+    assert first.get("short_auxiliary_duty_owned") is True, __import__("json").dumps(first.get("managed_device_result"), default=str)
     assert [r["state"] for r in rig.commands]==["ON"]
     owned=deepcopy(rig.store.auxiliary["FERTILIZER-INJECTION-CH1"])
     from modules.telemetry.rootline_command_acceptance import injector_target_matches_rows

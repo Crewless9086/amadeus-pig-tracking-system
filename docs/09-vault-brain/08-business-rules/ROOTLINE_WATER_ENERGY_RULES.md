@@ -1038,3 +1038,23 @@ low-battery, grid and other operational warnings retain their existing policy.
 Remove routine optional tank questions from summaries while preserving genuinely
 required owner decisions. These presentation changes do not alter control limits,
 forecast schedules, command authority, original OFF duties or operating policy.
+
+## Owner-directed camp controller confirmation — 27 November 2026
+
+An accepted camp ON request immediately owns its original bounded OFF duty, but
+remains Requested until the existing Home Assistant MQTT subscription reports ON
+for the exact registered controller channel after that command attempt. Use the
+original non-retained subscription report timestamp and validated topic/payload;
+API retrieval time, entity change time, retained replay and service acceptance do
+not establish this confirmation. A confirmed report remains valid until a later
+contradictory report; unchanged state or missing optional reports do not create a
+continuous freshness prerequisite. A later OFF report interrupts the camp through
+the existing serialized, bounded OFF recovery. Pending or contradicted camps,
+including legacy accepted-only duties, cannot authorize injection or receive
+successful programme credit. Never retry ON or extend the original stop deadline.
+Owner messages and the application distinguish Requested, Running and Interrupted.
+This is controller-report evidence, not water or dose measurement. Mixer and
+auxiliary timing/dispatch are unchanged by this bounded camp repair.
+Historical receipt intervals remain visible as unconfirmed command time only;
+they grant no running/completion credit or injector authority. Preserve their
+existing notification identities rather than replaying old results as new alerts.
