@@ -75,7 +75,7 @@ def _refresh_one_controller_availability(transport, store, database_url, clock):
                 candidates.append((checked or datetime.min.replace(tzinfo=timezone.utc), identity))
         if candidates:
             identity = min(candidates)[1]
-            transport.read_output_state(device_id=identity, channel=1, routine_read=True)
+            transport.read_controller_connection(device_id=identity)
     except Exception:
         pass
     check_owned_deadline()
@@ -185,6 +185,8 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     import uuid
     preparation_token = uuid.uuid4().hex
     from modules.telemetry.rootline_stage_timings import StageTimings
+    def timing(name):
+        return stage_timings.stage(name) if type(stage_timings) is StageTimings else nullcontext()
     def observe_evidence(function):
         return (stage_timings.stage("managed_evidence")(function)
             if type(stage_timings) is StageTimings else function)
@@ -192,9 +194,10 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
     def build_evidence(*, pending_devices):
         try:
             read_at = _aware(clock())
-            evidence, selected, _planned_at = evidence_loader(
-                database_url=database_url, now=read_at, forecast_mode="live_only",
-                purpose="managed", pending_devices=sorted(pending_devices))
+            with timing("managed_source_reads"):
+                evidence, selected, _planned_at = evidence_loader(
+                    database_url=database_url, now=read_at, forecast_mode="live_only",
+                    purpose="managed", pending_devices=sorted(pending_devices))
             evidence = _refresh_active_irrigation_readback(
                 evidence, transport, read_at, clock=clock, only_when_due=True,
                 injection_enabled="FERTILIZER-INJECTION-CH1" in pending_devices,
@@ -362,27 +365,30 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         # reads/reporting. Existing owned OFF supervision has already run.
         return result
     if str(source.get("ROOTLINE_ESKOM_ENABLED") or "").lower() != "true":
-        _refresh_one_controller_availability(transport, store, database_url, clock)
+        with timing("controller_connectivity"):
+            _refresh_one_controller_availability(transport, store, database_url, clock)
         return result
     from modules.telemetry.rootline_device_spine import load_device_record
     from modules.telemetry.rootline_eskom_runtime import run_eskom_cycle
-    try:
-        from modules.telemetry.rootline_cycle_budget import (
-            remaining_seconds, RootlineCycleDeadlineExceeded,
-        )
-        remaining_seconds()
-        current_energy()
-        canonical = load_device_record("ifttt_smartlife:smartlife_owner_account:"
-            +str(source.get("ROOTLINE_ESKOM_DEVICE_ID") or "")+":1", connect_factory=connect_factory)
-        grid = run_eskom_cycle(power=power_cache["value"],configuration=source,
-            canonical=canonical,store=store,now=_aware(clock()),clock=clock,
-            allow_new_commands=allow_new_starts, owner_controls=power_cache.get("owner_controls"))
-    except RootlineCycleDeadlineExceeded:
-        grid = {"success":False,"status":"eskom_cycle_deadline_deferred","hardware_commands":0}
-    except Exception:
-        grid = {"success":False,"status":"eskom_readiness_unavailable","hardware_commands":0}
+    with timing("managed_grid"):
+        try:
+            from modules.telemetry.rootline_cycle_budget import (
+                remaining_seconds, RootlineCycleDeadlineExceeded,
+            )
+            remaining_seconds()
+            current_energy()
+            canonical = load_device_record("ifttt_smartlife:smartlife_owner_account:"
+                +str(source.get("ROOTLINE_ESKOM_DEVICE_ID") or "")+":1", connect_factory=connect_factory)
+            grid = run_eskom_cycle(power=power_cache["value"],configuration=source,
+                canonical=canonical,store=store,now=_aware(clock()),clock=clock,
+                allow_new_commands=allow_new_starts, owner_controls=power_cache.get("owner_controls"))
+        except RootlineCycleDeadlineExceeded:
+            grid = {"success":False,"status":"eskom_cycle_deadline_deferred","hardware_commands":0}
+        except Exception:
+            grid = {"success":False,"status":"eskom_readiness_unavailable","hardware_commands":0}
     # Grid exceptions remain local. They do not suppress gravity irrigation.
-    _refresh_one_controller_availability(transport, store, database_url, clock)
+    with timing("controller_connectivity"):
+        _refresh_one_controller_availability(transport, store, database_url, clock)
     return {**result,"eskom":grid,
         "hardware_commands":result.get("hardware_commands",0)+grid.get("hardware_commands",0),
         "writes_farm_data":result.get("writes_farm_data") is True or grid.get("writes_farm_data") is True,

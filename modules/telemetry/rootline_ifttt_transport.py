@@ -749,6 +749,16 @@ class RootlineIFTTTTransport:
         final_guard()
         return final_guard
 
+    def read_controller_connection(self, *, device_id):
+        """Optional HA connectivity, never command/relay confirmation."""
+        if not self._home_assistant():
+            raise RuntimeError("home_assistant_connection_probe_required")
+        from modules.telemetry.rootline_home_assistant import read_controller_connection
+        value = read_controller_connection(device_id, environ=self.environ)
+        if callable(getattr(self, "availability_recorder", None)) and value.get("checked_at"):
+            self.availability_recorder(device_id, value)
+        return value
+
     def _snapshot(self, device_id, channel, *, routine_read=False):
         contract = self._binding(device_id, channel)
         if self._home_assistant():

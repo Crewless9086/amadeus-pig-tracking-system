@@ -1561,8 +1561,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 try:
                     from modules.telemetry.rootline_controller_availability import notify_controller_availability
                     from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+                    # Reachability may have been recorded during this cycle.
+                    # Judge its original clock at delivery time, not tick start.
                     controller_outcome = stage_timings.call("controller_notifications", notify_controller_availability,
-                        notify=notify, store=rootline_irrigation_execution_store, now=scheduler_now,
+                        notify=notify, store=rootline_irrigation_execution_store, now=parent_clock(),
                         database_url=source.get("DATABASE_URL"))
                 except Exception as exc:
                     controller_outcome = {"success": False, "telegram_sends": 0,
