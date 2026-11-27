@@ -1067,9 +1067,17 @@ def _project_managed_live_fields(plan, evidence, now):
 
 def read_current_water_energy_evidence(
     operating_date=None, database_url=None, now=None, *, evidence_cutoff=None,
-    forecast_mode="current", forecast_packet=None, purpose="irrigation", pending_devices=None
+    forecast_mode="current", forecast_packet=None, purpose="irrigation", pending_devices=None,
+    _reporting_readers=None, _reporting_results=None
 ):
     """Read canonical ROOTLINE evidence without persisting a plan or observation."""
+    presentation_names = {"presentation_provider_availability", "presentation_input_health"}
+    if _reporting_readers is not None or _reporting_results is not None:
+        if (purpose != "irrigation" or forecast_mode != "live_only" or evidence_cutoff is None
+                or not isinstance(_reporting_readers, dict) or set(_reporting_readers) != presentation_names
+                or not all(callable(reader) for reader in _reporting_readers.values())
+                or type(_reporting_results) is not dict or _reporting_results):
+            raise ValueError("reporting_presentation_scope_invalid")
     if purpose == "managed":
         if forecast_mode != "live_only":
             raise ValueError("managed_evidence_requires_live_only")
@@ -1176,7 +1184,13 @@ def read_current_water_energy_evidence(
     # reader a worker immediately and keep the outer bound above the nested
     # contract so normal queueing jitter cannot turn a safe read into a false
     # database outage.
+    # Decorations share the existing worker cap and cutoff, but never enter
+    # canonical evidence, hashes, persistence or admission/cutoff traversal.
+    if _reporting_readers is not None:
+        readers.update(_reporting_readers)
     loaded = run_bounded_read_group(readers,max_workers=4,deadline_seconds=25)
+    if _reporting_readers is not None:
+        _reporting_results.update({name: loaded.pop(name) for name in presentation_names})
     power_packet, _ = loaded["power"]
     forecast_packet, _ = loaded.get("forecast", ({}, 200))
     advisor, _ = loaded["advisor"]

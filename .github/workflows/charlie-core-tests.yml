@@ -62,7 +62,7 @@ jobs:
           tests/test_rootline_auxiliary_shutdown_history.py
           tests/test_rootline_parent_deadline_postgres.py
           tests/test_rootline_registry_read_scope.py
-          tests/test_rootline_reporting_read_efficiency.py
+          tests/test_rootline_reporting_read_efficiency.py tests/test_rootline_reporting_overlap.py
           tests/test_rootline_reporting_continuity.py
 
   manager-dependency-intake:
