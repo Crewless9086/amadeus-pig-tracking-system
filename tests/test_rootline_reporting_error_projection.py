@@ -15,8 +15,13 @@ NOW = datetime(2026, 11, 19, 17, 12, tzinfo=timezone.utc)
 ])
 def test_failure_label_survives_persistence_and_cron_without_exception_text(label, expected):
     saved = []
+    claims = {}
     def store(action, identity, payload):
-        if action.startswith("load_"):
+        if action == "load_schedule":
+            return claims.get(identity)
+        if action == "claim_schedule":
+            claims[identity] = dict(payload)
+        if action == "load_latest_outcome":
             return None
         if action == "record_outcome":
             saved.append(payload)

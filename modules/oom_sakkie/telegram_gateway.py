@@ -1253,14 +1253,15 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 def base_scheduled_loader():
                     # Evidence recovery belongs to planning, not to the safety
                     # prerequisite for an already-running canonical segment.
-                    recovery = recover_pending_manager_rootline_observation(database_url=str(
+                    recovery = stage_timings.call("plan_manager_recovery",
+                        recover_pending_manager_rootline_observation, database_url=str(
                         source.get("DATABASE_URL") or "") or None, owner_user_id=scheduled_owner,
                         chat_id=scheduled_chat, provider_message_id="3717")
                     if recovery.get("success") is not True:
                         return {"success": False, "status": str(recovery.get("status") or
                             "rootline_manager_observation_recovery_failed")}
                     return refresh_current_rootline_specialist_result(
-                        now=cutoff(), evidence_cutoff=cutoff())
+                        now=cutoff(), evidence_cutoff=cutoff(), stage_timings=stage_timings)
             else:
                 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
                 base_scheduled_loader = lambda: build_current_rootline_specialist_result(

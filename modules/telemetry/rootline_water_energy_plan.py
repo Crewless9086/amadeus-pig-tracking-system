@@ -708,7 +708,7 @@ def read_program_history(operating_date, database_url=None, *, connection=None):
 
 def ensure_saved_daily_program(operating_date, *, database_url=None, now=None,
         actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER", connection=None,
-        evidence_loader=None, forecast_reader=None):
+        evidence_loader=None, forecast_reader=None, _replace_history=False):
     """Serialize initial binding under the exact existing append date lock."""
     selected = date.fromisoformat(str(operating_date)).isoformat()
     now = _as_za(now or datetime.now(timezone.utc))
@@ -716,7 +716,8 @@ def ensure_saved_daily_program(operating_date, *, database_url=None, now=None,
     if not database_url and connection is None:
         return _unavailable("database_not_configured", selected), 503
     if connection is None:
-        current, status = get_current_water_energy_plan(selected, database_url)
+        current, status = get_current_water_energy_plan(selected, database_url,
+            **({"_omit_replaced_history": True} if _replace_history else {}))
         if _saved_program(current):
             return current, status
     try:
@@ -931,7 +932,8 @@ def revise_program_remainder(saved, evidence, *, now=None, database_url=None,
         return _unavailable("daily_program_revision_unavailable", saved["operating_date"], exc), 503
 
 
-def get_current_water_energy_plan(operating_date=None, database_url=None, *, connection=None):
+def get_current_water_energy_plan(operating_date=None, database_url=None, *, connection=None,
+        _omit_replaced_history=False):
     selected = str(operating_date or datetime.now(ZA_TZ).date().isoformat())[:10]
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url and connection is None:
@@ -941,16 +943,22 @@ def get_current_water_energy_plan(operating_date=None, database_url=None, *, con
         with (nullcontext(connection) if connection is not None else
               connect_bounded_rootline_postgres(database_url=database_url, read_only=True)) as connection:
             with connection.cursor() as cursor:
+                # Internal consumers immediately replace this history, or only
+                # project managed fields. Legacy adoption and canonical APIs stay full.
+                projection = ("case when g.plan_json->'success'='true'::jsonb "
+                    "and g.plan_json->'daily_program'->'version'=to_jsonb(%s::text) "
+                    "then g.plan_json-'recent_irrigation_history' else g.plan_json end"
+                    if _omit_replaced_history else "g.plan_json")
                 cursor.execute(
                     """
-                    select g.plan_json, g.generation, g.evidence_sha256,
+                    select """ + projection + """, g.generation, g.evidence_sha256,
                            g.evidence_observed_at, g.replacement_reason
                       from public.rootline_water_energy_plan_identities i
                       join public.rootline_water_energy_plan_generations g
                         on g.plan_id=i.plan_id and g.generation=i.current_generation
                      where i.operating_date=%s
                     """,
-                    (selected,),
+                    (DAILY_PROGRAM_VERSION, selected) if _omit_replaced_history else (selected,),
                 )
                 row = cursor.fetchone()
     except Exception as exc:
@@ -1017,7 +1025,8 @@ def _read_managed_live_evidence(operating_date, database_url, now, *, pending_de
         "owner_controls": lambda: load_runtime_owner_controls(database_url, now=now)}
     needs_program = bool(pending & {"FERTILIZER-MIXER-CH2", "FERTILIZER-INJECTION-CH1", "BOREHOLE-1-MINI-R4-CH1"})
     if needs_program:
-        readers["saved_daily_plan"] = lambda: get_current_water_energy_plan(selected, database_url)
+        readers["saved_daily_plan"] = lambda: get_current_water_energy_plan(
+            selected, database_url, _omit_replaced_history=True)
         readers["managed_devices"] = lambda: _read_managed_device_evidence(database_url, now, **bounded)
     loaded = run_bounded_read_group(readers, max_workers=3, deadline_seconds=25)
     managed = loaded.get("managed_devices") or {}
@@ -1092,6 +1101,11 @@ def read_current_water_energy_evidence(
     bounded = {"evidence_cutoff": evidence_cutoff} if reporting else {}
 
     from threading import Lock
+    execution_scope = {}
+    if reporting:
+        from modules.telemetry.rootline_irrigation_history import _reporting_execution_rows
+        execution_scope["_execution_rows"] = _reporting_execution_rows(
+            database_url, evidence_cutoff=evidence_cutoff)
     power_lock, power_cache = Lock(), {}
     def read_power_once():
         with power_lock:
@@ -1143,15 +1157,18 @@ def read_current_water_energy_evidence(
         "advisor": read_advisor,
         "balances": lambda: read_latest_zone_water_balances(database_url, now=now),
         "history": lambda: _read_historical_context(database_url, **bounded),
-        "irrigation_history": lambda: _read_recent_irrigation_history(database_url, now, **bounded),
+        "irrigation_history": lambda: _read_recent_irrigation_history(
+            database_url, now, **bounded, **execution_scope),
         "tanks": lambda: _read_latest_tank_observation(database_url, **bounded),
         "owner_zone_need": lambda: _read_latest_owner_zone_need(database_url, now, **bounded),
-        "managed_devices": lambda: _read_managed_device_evidence(database_url, now, **bounded),
+        "managed_devices": lambda: _read_managed_device_evidence(
+            database_url, now, **bounded, **execution_scope),
     }
     if forecast_mode == "live_only":
         readers.pop("forecast")
         readers.pop("history")
-        readers["saved_daily_plan"] = lambda: get_current_water_energy_plan(selected, database_url)
+        readers["saved_daily_plan"] = lambda: get_current_water_energy_plan(
+            selected, database_url, _omit_replaced_history=True)
     elif forecast_mode == "nightly_pinned":
         readers["forecast"] = lambda: (deepcopy(forecast_packet), 200)
     # The advisor is itself a bounded aggregate of canonical reads and can
@@ -1595,44 +1612,51 @@ def _read_historical_context(database_url, *, evidence_cutoff=None):
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
 
 
-def _read_recent_irrigation_history(database_url, now, *, evidence_cutoff=None):
+def _read_recent_irrigation_history(database_url, now, *, evidence_cutoff=None, _execution_rows=None):
     from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
     return read_canonical_irrigation_history(database_url, now=now,
+        **({"_execution_rows": _execution_rows} if _execution_rows is not None else {}),
         **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}))
 
 
-def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
+def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None, _execution_rows=None):
     """Compose managed-device facts from existing append-only ROOTLINE rails."""
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return {"status": UNAVAILABLE, "irrigation_schedule_context": {"status": "Unknown"}}
     try:
-        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
-        with connect_bounded_read(database_url=database_url) as connection:
+        from modules.oom_sakkie.bounded_postgres_read import (
+            connect_bounded_read, connect_bounded_rootline_postgres)
+        factory = connect_bounded_rootline_postgres if _execution_rows is not None else connect_bounded_read
+        with factory(database_url=database_url) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("""select review_json->'rootline_execution'
-                    from public.sam_live_stock_conversation_review_events
-                    where event_source='rootline_irrigation_execution'
-                      and (jsonb_typeof(review_json->'rootline_execution')
-                               is distinct from 'object'
-                           or jsonb_typeof(review_json->'rootline_execution'->'action')
-                               is distinct from 'string'
-                           or review_json->'rootline_execution'->>'action' in (
-                               'record_auxiliary_completed', 'claim_auxiliary_before_on',
-                               'claim_auxiliary_dispatch', 'claim_auxiliary_off_attempt',
-                               'record_auxiliary_startup_aborted', 'reconcile_unstarted_auxiliary',
-                               'record_auxiliary_control_pulse_stopped', 'contain_auxiliary_device',
-                               'mark_auxiliary_active', 'mark_active',
-                               'record_completed', 'record_ambiguous_shutdown',
-                               'record_claim_recovery', 'contain_zone',
-                               'record_fertilizer_sequence_completed',
-                               'record_execution_not_dispatched','record_auxiliary_on_outcome','record_auxiliary_off_outcome',
-                               'record_on_outcome', 'claim_before_on', 'claim_irrigation_dispatch',
-                               'mark_stopping', 'claim_off_attempt', 'record_off_outcome'))
-                    """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
-                    " order by created_at,review_event_id",
-                    (evidence_cutoff,) if evidence_cutoff is not None else None)
-                executions = [_json_object(row[0]) for row in cursor.fetchall()]
+                if _execution_rows is None:
+                    cursor.execute("""select review_json->'rootline_execution'
+                        from public.sam_live_stock_conversation_review_events
+                        where event_source='rootline_irrigation_execution'
+                          and (jsonb_typeof(review_json->'rootline_execution')
+                                   is distinct from 'object'
+                               or jsonb_typeof(review_json->'rootline_execution'->'action')
+                                   is distinct from 'string'
+                               or review_json->'rootline_execution'->>'action' in (
+                                   'record_auxiliary_completed', 'claim_auxiliary_before_on',
+                                   'claim_auxiliary_dispatch', 'claim_auxiliary_off_attempt',
+                                   'record_auxiliary_startup_aborted', 'reconcile_unstarted_auxiliary',
+                                   'record_auxiliary_control_pulse_stopped', 'contain_auxiliary_device',
+                                   'mark_auxiliary_active', 'mark_active',
+                                   'record_completed', 'record_ambiguous_shutdown',
+                                   'record_claim_recovery', 'contain_zone',
+                                   'record_fertilizer_sequence_completed',
+                                   'record_execution_not_dispatched','record_auxiliary_on_outcome','record_auxiliary_off_outcome',
+                                   'record_on_outcome', 'claim_before_on', 'claim_irrigation_dispatch',
+                                   'mark_stopping', 'claim_off_attempt', 'record_off_outcome'))
+                        """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
+                        " order by created_at,review_event_id",
+                        (evidence_cutoff,) if evidence_cutoff is not None else None)
+                    executions = [_json_object(row[0]) for row in cursor.fetchall()]
+                else:
+                    executions = [_json_object(row) for row in
+                        _execution_rows("managed", evidence_cutoff, cursor)]
                 cursor.execute("""select review_json->'rootline_operational_intake'->'outcome'
                     from public.sam_live_stock_conversation_review_events
                     where event_source='oom_sakkie_rootline_operational_intake'
@@ -1642,6 +1666,7 @@ def _read_managed_device_evidence(database_url, now, *, evidence_cutoff=None):
                     " order by created_at,review_event_id",
                     (evidence_cutoff,) if evidence_cutoff is not None else None)
                 outcomes = [_json_object(row[0]) for row in cursor.fetchall()]
+
     except Exception as exc:
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__,
             "irrigation_schedule_context": {"status": "Unknown"}}

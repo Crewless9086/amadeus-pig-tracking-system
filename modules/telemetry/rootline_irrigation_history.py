@@ -34,7 +34,71 @@ QUALIFYING_FIELDS = (
 )
 
 
-def read_canonical_irrigation_history(database_url=None, *, connect=None, now=None, evidence_cutoff=None):
+MANAGED_ACCOUNTING_ACTIONS = (
+    "record_auxiliary_completed", "claim_auxiliary_before_on",
+    "claim_auxiliary_dispatch", "claim_auxiliary_off_attempt",
+    "record_auxiliary_startup_aborted", "reconcile_unstarted_auxiliary",
+    "record_auxiliary_control_pulse_stopped", "contain_auxiliary_device",
+    "mark_auxiliary_active", "mark_active", "record_completed",
+    "record_ambiguous_shutdown", "record_claim_recovery", "contain_zone",
+    "record_fertilizer_sequence_completed", "record_execution_not_dispatched",
+    "record_auxiliary_on_outcome", "record_auxiliary_off_outcome",
+    "record_on_outcome", "claim_before_on", "claim_irrigation_dispatch",
+    "mark_stopping", "claim_off_attempt", "record_off_outcome",
+)
+
+
+def _reporting_execution_rows(database_url, *, evidence_cutoff, connect=None):
+    """One reporting invocation, one ordered statement; never command authority.
+
+    PostgreSQL computes the original predicates, including malformed JSON.
+    Separate deep copies keep projector mutation from changing the other view.
+    A shared failure is re-raised for each reader's existing unavailable boundary.
+    """
+    from copy import deepcopy
+    from threading import Lock
+    if not isinstance(evidence_cutoff, datetime) or evidence_cutoff.tzinfo is None:
+        raise ValueError("reporting_execution_cutoff_required")
+    lock, loaded = Lock(), {}
+    def read(kind, cutoff, cursor=None):
+        if kind not in ("parent", "managed") or cutoff != evidence_cutoff:
+            raise ValueError("reporting_execution_scope_mismatch")
+        with lock:
+            if not loaded:
+                try:
+                    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+                    factory = connect or (lambda: connect_bounded_rootline_postgres(database_url=database_url))
+                    from contextlib import ExitStack
+                    with ExitStack() as resources:
+                        if cursor is None:
+                            connection = resources.enter_context(factory())
+                            cursor = resources.enter_context(connection.cursor())
+                        cursor.execute("""select payload, parent_match, managed_match
+                                from (
+                                  select review_json->'rootline_execution' as payload,
+                                    review_json->'rootline_execution'->>'action'=any(%s) as parent_match,
+                                    (jsonb_typeof(review_json->'rootline_execution') is distinct from 'object'
+                                     or jsonb_typeof(review_json->'rootline_execution'->'action') is distinct from 'string'
+                                     or review_json->'rootline_execution'->>'action'=any(%s)) as managed_match,
+                                    created_at, review_event_id
+                                  from public.sam_live_stock_conversation_review_events
+                                  where event_source='rootline_irrigation_execution' and created_at<=%s
+                                ) selected
+                                where parent_match or managed_match
+                                order by created_at,review_event_id""",
+                                (list(PARENT_ACCOUNTING_ACTIONS), list(MANAGED_ACCOUNTING_ACTIONS), evidence_cutoff))
+                        loaded["rows"] = cursor.fetchall()
+                except Exception as exc:
+                    loaded["error"] = exc
+            if "error" in loaded:
+                raise loaded["error"]
+            index = 1 if kind == "parent" else 2
+            return deepcopy([row[0] for row in loaded["rows"] if row[index] is True])
+    return read
+
+
+def read_canonical_irrigation_history(database_url=None, *, connect=None, now=None,
+        evidence_cutoff=None, _execution_rows=None):
     now = _aware(now or datetime.now(timezone.utc))
     if connect is None:
         import os
@@ -64,16 +128,19 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                     (list(ZONES), EPOCH_EVENT, evidence_cutoff, evidence_cutoff)
                     if evidence_cutoff is not None else (list(ZONES), EPOCH_EVENT))
                 rows = cursor.fetchall()
-                cursor.execute("""select review_json->'rootline_execution'
-                    from public.sam_live_stock_conversation_review_events
-                    where event_source='rootline_irrigation_execution'
-                      and review_json->'rootline_execution'->>'action'
-                          = any(%s)
-                    """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
-                    " order by created_at,review_event_id",
-                    (list(PARENT_ACCOUNTING_ACTIONS), evidence_cutoff) if evidence_cutoff is not None
-                    else (list(PARENT_ACCOUNTING_ACTIONS),))
-                execution_rows = [row[0] for row in cursor.fetchall()]
+                if _execution_rows is None:
+                    cursor.execute("""select review_json->'rootline_execution'
+                        from public.sam_live_stock_conversation_review_events
+                        where event_source='rootline_irrigation_execution'
+                          and review_json->'rootline_execution'->>'action'
+                              = any(%s)
+                        """ + (" and created_at <= %s" if evidence_cutoff is not None else "") +
+                        " order by created_at,review_event_id",
+                        (list(PARENT_ACCOUNTING_ACTIONS), evidence_cutoff) if evidence_cutoff is not None
+                        else (list(PARENT_ACCOUNTING_ACTIONS),))
+                    execution_rows = [row[0] for row in cursor.fetchall()]
+                else:
+                    execution_rows = _execution_rows("parent", evidence_cutoff, cursor)
         result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
         _attach_parent_jobs(result, execution_rows, canonical_ordered=True)
         from modules.telemetry.rootline_water_credit import project_water_credits

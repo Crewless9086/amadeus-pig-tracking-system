@@ -9,6 +9,13 @@ from modules.telemetry import power_service as power
 from modules.telemetry import weather_service as weather
 
 class ReportingCutoffTests(unittest.TestCase):
+    def setUp(self):
+        from modules.telemetry.rootline_owner_controls import project_owner_controls
+        patcher = mock.patch("modules.telemetry.rootline_owner_controls.load_runtime_owner_controls",
+            side_effect=lambda *args, **kwargs: project_owner_controls([], now=kwargs["now"]))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def refresh(self, facts, *, cutoff=NOW):
         stored={}
         initial=deepcopy(facts)
