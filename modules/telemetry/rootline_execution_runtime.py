@@ -362,7 +362,7 @@ def run_rootline_managed_device_reassessment(*, environ=None, now=None,
         allow_borehole_starts=allow_borehole_starts,
         energy_reader=current_energy,borehole_safety_reader=current_borehole_safety,clock=clock,
         borehole_conditions_reader=current_borehole_conditions,
-        after_safety=after_safety, refresh_after_safety=refresh_after_safety)
+        after_safety=after_safety, refresh_after_safety=refresh_after_safety, stage_timings=stage_timings)
     if result.get("short_auxiliary_duty_owned") is True:
         # Leave the next minute free to inherit the pulse before optional grid
         # reads/reporting. Existing owned OFF supervision has already run.
