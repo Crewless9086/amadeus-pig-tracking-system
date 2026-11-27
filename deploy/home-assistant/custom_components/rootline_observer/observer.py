@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import errno
+from aiohttp import ClientConnectionError, ClientConnectorError
 from copy import deepcopy
 from datetime import timedelta
 import hashlib
@@ -13,6 +15,23 @@ from zeroconf import DNSText, RecordUpdateListener, current_time_millis
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo
 
 from .protocol import DEVICES, MAX_BYTES, InvalidObservation, ObserverState, decode, digest, need, parse_txt, query_payload
+
+
+def query_failure_code(exc, phase):
+    """Enum-only diagnostics; no exception text, endpoint or payload escapes."""
+    if phase == "storage":
+        return "query_storage_failure"
+    if phase in {"connect", "read"}:
+        if isinstance(exc, TimeoutError):
+            return "query_timeout"
+        cause = exc.os_error if isinstance(exc, ClientConnectorError) else exc
+        if isinstance(cause, OSError) and cause.errno in {errno.ENETUNREACH, errno.EHOSTUNREACH}:
+            return "query_network_unreachable"
+        if isinstance(exc, (ClientConnectionError, OSError)):
+            return "query_connection_failed"
+    if phase == "json" and isinstance(exc, (json.JSONDecodeError, UnicodeDecodeError)):
+        return "query_invalid_json"
+    return "query_unproven"
 
 
 class EndpointDiscovery:
@@ -314,6 +333,7 @@ class Receiver:
             previous = self.state.highwater.get(identity, {}).get("sources", {}).get("query", {}).get("sequence", 0)
             request_id = str(max(time.time_ns() // 1_000_000, previous + 1))
             payload = query_payload(identity, device["device_key"], request_id)
+            phase = "discovery"
             try:
                 if self.discovery is not None:
                     try:
@@ -336,15 +356,19 @@ class Receiver:
                 async with asyncio.timeout(5):
                     self.availability[identity] = {"state": "offline", "checked_at": self.state.utcnow().isoformat(),
                         "source": "controller_query_unanswered", "output_state": "Unknown"}
+                    phase = "connect"
                     async with session.post(
                             f"http://{endpoint['address']}:{endpoint['port']}/zeroconf/getState",
                             json=payload, allow_redirects=False,
                             headers={"Connection": "close"}) as response:
                         need(response.status == 200, "query_http_unproven")
+                        phase = "read"
                         raw = await response.content.read(MAX_BYTES+1)
                         received_at, received_mono = self.state.utcnow(), self.state.monotonic()
                         need(len(raw) <= MAX_BYTES, "query_response_too_large")
+                        phase = "json"
                         envelope = json.loads(raw)
+                        phase = "validation"
                         need(isinstance(envelope, dict) and type(envelope.get("error")) is int
                             and envelope["error"] == 0, "query_response_unproven")
                         need("deviceid" not in envelope or envelope["deviceid"] == identity, "query_identity_mismatch")
@@ -371,6 +395,7 @@ class Receiver:
                             entry["anchor"] = {"request_id": request_id, "device_sequence": seq,
                                 "received_at": received_at.isoformat()}
                             self.state.invalidate(identity, "query_anchor_waiting_report")
+                            phase = "storage"
                             try:
                                 await self.store.async_save(metadata)
                             except BaseException:
@@ -401,8 +426,8 @@ class Receiver:
             except InvalidObservation as exc:
                 self.state.diagnose(identity, "query", str(exc))
                 return "query_unproven"
-            except Exception:
-                self.state.diagnose(identity, "query", "query_unproven")
+            except Exception as exc:
+                self.state.diagnose(identity, "query", query_failure_code(exc, phase))
                 return "query_unproven"
 
     async def stop(self):

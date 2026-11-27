@@ -26,6 +26,8 @@ MAX_AGE = 60
 MAX_BYTES = 16384
 DIAGNOSTIC_CODES = frozenset({
     "explicit_report_processed", "query_unproven", "report_processing_failed",
+    "query_timeout", "query_network_unreachable", "query_connection_failed",
+    "query_invalid_json", "query_storage_failure",
     "endpoint_metadata_resolved", "discovery_unproven", "discovery_unavailable",
     "discovery_partial_or_conflicting", "discovery_identity_unproven",
     "discovery_endpoint_invalid", "discovery_device_conflict",
