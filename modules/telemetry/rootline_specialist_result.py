@@ -173,18 +173,28 @@ def build_current_rootline_specialist_result(
     return _with_provider_availability(result, database_url=database_url, now=generated_at)
 
 
-def _with_provider_availability(result, *, database_url=None, now=None):
-    from modules.telemetry.rootline_provider_availability import read_provider_availability, CONTRACT
-    try:
-        availability = read_provider_availability(database_url=database_url, now=now)
-    except Exception:
-        availability = {"contract": CONTRACT, "status": "unknown", "scopes": []}
-    from modules.telemetry.rootline_input_health import read_input_health, CONTRACT as INPUT_CONTRACT
-    try:
-        inputs = read_input_health(database_url=database_url, now=now)
-    except Exception:
-        inputs = {"contract": INPUT_CONTRACT, "status": "unknown", "inputs": {}}
-    return {**result, "provider_availability": availability, "input_health": inputs}
+def _presentation_readers(*, database_url=None, now=None):
+    """Independent read-only decorations; never planning or command authority."""
+    def provider():
+        from modules.telemetry.rootline_provider_availability import read_provider_availability, CONTRACT
+        try:
+            return read_provider_availability(database_url=database_url, now=now)
+        except Exception:
+            return {"contract": CONTRACT, "status": "unknown", "scopes": []}
+    def inputs():
+        from modules.telemetry.rootline_input_health import read_input_health, CONTRACT
+        try:
+            return read_input_health(database_url=database_url, now=now)
+        except Exception:
+            return {"contract": CONTRACT, "status": "unknown", "inputs": {}}
+    return {"presentation_provider_availability": provider, "presentation_input_health": inputs}
+
+
+def _with_provider_availability(result, *, database_url=None, now=None, _read_results=None):
+    values = (_read_results if _read_results else
+        {name: reader() for name, reader in _presentation_readers(database_url=database_url, now=now).items()})
+    return {**result, "provider_availability": values["presentation_provider_availability"],
+        "input_health": values["presentation_input_health"]}
 
 
 def refresh_current_rootline_specialist_result(
@@ -204,9 +214,12 @@ def refresh_current_rootline_specialist_result(
     from modules.telemetry.rootline_water_energy_plan import (
         ensure_saved_daily_program, revise_program_remainder)
     selected_date = str(operating_date or generated_at.date().isoformat())[:10]
+    presentation = {}
+    reporting_reads = ({"_reporting_readers": _presentation_readers(database_url=database_url, now=generated_at),
+        "_reporting_results": presentation} if evidence_cutoff is not None else {})
     evidence, _, _ = measured("plan_evidence", read_current_water_energy_evidence,
         operating_date=selected_date, database_url=database_url, now=generated_at,
-        forecast_mode="live_only",
+        forecast_mode="live_only", **reporting_reads,
         **({"evidence_cutoff": evidence_cutoff} if evidence_cutoff is not None else {}))
     if evidence_cutoff is not None:
         error = _reporting_evidence_error(evidence, evidence_cutoff, generated_at)
@@ -219,7 +232,7 @@ def refresh_current_rootline_specialist_result(
     if status >= 400 or saved.get("success") is not True:
         return measured("plan_enrichment", _with_provider_availability,
             _unavailable_result(selected_date, generated_at, saved.get("status")),
-            database_url=database_url, now=generated_at)
+            database_url=database_url, now=generated_at, _read_results=presentation)
     if evidence_cutoff is not None:
         saved_cutoff = datetime.fromisoformat(saved["daily_program"]["creation_cutoff"])
         if saved_cutoff > evidence_cutoff:
@@ -231,11 +244,11 @@ def refresh_current_rootline_specialist_result(
     if status >= 400 or current.get("success") is not True:
         return measured("plan_enrichment", _with_provider_availability,
             _unavailable_result(selected_date, generated_at, current.get("status")),
-            database_url=database_url, now=generated_at)
+            database_url=database_url, now=generated_at, _read_results=presentation)
     result = project_water_energy_plan(current, now=generated_at)
     result["canonical_plan"] = {key: current.get(key) for key in (
         "plan_id", "generation", "evidence_sha256", "evidence_observed_at")}
-    return measured("plan_enrichment", _with_provider_availability,result, database_url=database_url, now=generated_at)
+    return measured("plan_enrichment", _with_provider_availability,result, database_url=database_url, now=generated_at, _read_results=presentation)
 
 
 def _reporting_evidence_error(evidence, cutoff, generated_at):
