@@ -3,6 +3,8 @@
 The reference changes only the SELECT back to the pre-optimization query. Both
 paths execute the production loader and its unchanged reducer. Payload metrics
 are reserialized JSON bytes, not PostgreSQL wire bytes or measured live egress.
+Final-selection and total transferred payload metrics are separate; conservative
+borehole fallback can read a candidate before reading the complete history.
 """
 from contextlib import contextmanager
 from copy import deepcopy
@@ -58,18 +60,29 @@ class MeasuredCursor:
 
     def execute(self, query, params):
         self.metrics["selects"] += 1
+        self.candidate = query == store._BOREHOLE_CANDIDATE_SQL
+        self.metrics["query_kinds"].append("candidate" if self.candidate else "full")
+        if self.reference:
+            assert not self.candidate, "reference must bypass candidate optimization"
         if self.reference:
             query, params = OLD_QUERY, (params[0],)
         return self.cursor.execute(query, params)
 
     def fetchall(self):
         rows = self.cursor.fetchall()
-        self.metrics["rows"] += len(rows)
-        self.metrics["json_payload_bytes"] += sum(
-            len(json.dumps(row[0], ensure_ascii=False, sort_keys=True,
+        payloads = ([row[1] for row in rows if row[1] is not None]
+                    if self.candidate else [row[0] for row in rows])
+        self.metrics["rows"] = len(payloads)
+        self.metrics["json_payload_bytes"] = sum(
+            len(json.dumps(body, ensure_ascii=False, sort_keys=True,
                            separators=(",", ":")).encode("utf-8"))
-            for row in rows
-        )
+            for body in payloads)
+        self.metrics["total_rows"] += self.metrics["rows"]
+        self.metrics["total_json_payload_bytes"] += self.metrics["json_payload_bytes"]
+        if self.candidate:
+            self.metrics["candidate_supported"] = bool(rows) and all(
+                row[0] is True and isinstance(row[1], dict) for row in rows)
+            self.metrics["candidate_payloads"] = payloads
         return rows
 
 
@@ -105,7 +118,8 @@ def history(disposable_url, monkeypatch, record_property):
                     ])
 
     def run(action, reference):
-        metrics = {"selects": 0, "rows": 0, "json_payload_bytes": 0}
+        metrics = {"selects": 0, "rows": 0, "json_payload_bytes": 0,
+                   "total_rows": 0, "total_json_payload_bytes": 0, "query_kinds": []}
         connections = []
 
         @contextmanager
@@ -118,11 +132,21 @@ def history(disposable_url, monkeypatch, record_property):
 
         with monkeypatch.context() as patch:
             patch.setattr(bounded, "connect_bounded_rootline_postgres", measured_factory)
+            if reference and action == "load_active_borehole":
+                patch.setattr(store, "_load_active_borehole",
+                    lambda cursor: store._active_borehole(store._borehole_state_rows(cursor)))
             try:
                 outcome = (store.rootline_irrigation_execution_store(action, None), None)
             except Exception as exc:
                 outcome = (None, (type(exc).__module__, type(exc).__name__, str(exc)))
-        assert metrics["selects"] == 1
+        if reference or action != "load_active_borehole":
+            assert metrics["query_kinds"] == ["full"] and metrics["selects"] == 1
+        else:
+            assert metrics["query_kinds"] in (["candidate"], ["candidate", "full"])
+            assert metrics["selects"] == len(metrics["query_kinds"])
+            if metrics["selects"] == 2 and metrics["candidate_supported"]:
+                assert store._active_borehole(metrics["candidate_payloads"]) is None
+        metrics.pop("candidate_payloads", None)
         assert len(connections) == 1 and connections[0].closed
         return outcome, metrics
 
@@ -130,6 +154,8 @@ def history(disposable_url, monkeypatch, record_property):
         old, before = run(action, True)
         new, after = run(action, False)
         assert new == old
+        assert after["total_rows"] <= before["total_rows"] * after["selects"]
+        assert after["total_json_payload_bytes"] <= before["total_json_payload_bytes"] * after["selects"]
         assert after["rows"] <= before["rows"]
         assert after["json_payload_bytes"] <= before["json_payload_bytes"]
         for phase, metrics in (("before", before), ("after", after)):
@@ -254,7 +280,10 @@ def test_replay_order_and_inactive_rows_preserve_latest_candidate(history, load,
     else:
         result = history.compare(load)
         assert result.error is None and result.value == latest
-    assert result.before["rows"] == 5 and result.after["rows"] == 4
+    assert result.before["rows"] == 5
+    assert result.after["rows"] == (2 if load == "load_active_borehole" else 4)
+    if load == "load_active_borehole":
+        assert result.after["query_kinds"] == ["candidate"]
 
 
 @pytest.mark.parametrize("terminal_first", [False, True])
