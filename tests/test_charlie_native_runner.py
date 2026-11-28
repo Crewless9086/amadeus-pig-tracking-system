@@ -1165,3 +1165,21 @@ class HostedCharlieNativeRunnerTests(unittest.TestCase):
         ):
             test_recovered_invalid_committed_candidate_is_rejected_before_remote_mutation(
                 Path("."), candidate_path, summary, reason)
+
+
+def test_builder_contract_examples_are_exclusive_and_unified_example_applies(tmp_path):
+    from modules.charlie.native_runner.execution import (NATIVE_PATCH_INSTRUCTIONS,
+        BUILDER_CORRECTIONS, PatchValidator, run_argv)
+    from modules.charlie.native_runner.schemas import validate_native_response
+    examples = json.loads(NATIVE_PATCH_INSTRUCTIONS.split("current packet content:\n", 1)[1])
+    assert [validate_native_response(row)["state"] for row in examples] == [
+        "PATCH_READY", "NEEDS_CONTEXT", "BLOCKED"]
+    assert "advisory only" in NATIVE_PATCH_INSTRUCTIONS
+    assert "Never copy illustrative example paths" in NATIVE_PATCH_INSTRUCTIONS
+    target = tmp_path / "example" / "illustration.py"
+    target.parent.mkdir()
+    target.write_text("value = 1\n", encoding="utf-8")
+    assert run_argv(["git", "init"], cwd=tmp_path).returncode == 0
+    assert PatchValidator(tmp_path, ["example/illustration.py"]).validate(examples[0]["unified_diff"]) == (
+        "example/illustration.py",)
+    assert all(0 < len(value.encode()) < 2000 for value in BUILDER_CORRECTIONS.values())
